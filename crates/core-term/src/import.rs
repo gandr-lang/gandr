@@ -200,6 +200,7 @@ impl Image
                 Value::PathRefl(ref mut body)
                 | Value::Here(ref mut body)
                 | Value::Stay(ref mut body)
+                | Value::Forward(ref mut body)
                 | Value::Injection(_, ref mut body)
                 | Value::Lift { ref mut body, .. }
                 | Value::StaticLambda(ref mut body)
@@ -227,6 +228,7 @@ impl Image
                 | Value::Funext(ref mut first, ref mut second)
                 | Value::Equiv(ref mut first, ref mut second)
                 | Value::Then(ref mut first, ref mut second)
+                | Value::FunctionFlow(ref mut first, ref mut second)
                 | Value::SessionRelated {
                     source: ref mut first,
                     target: ref mut second,

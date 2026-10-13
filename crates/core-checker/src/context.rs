@@ -290,6 +290,9 @@ pub struct CheckingContext<'arena>
     /// The session statements the judgement decided, by node, with the
     /// engine's pairs the kernel replays.
     flows: BTreeMap<ValueId, crate::flow::Statement>,
+    /// The forward and function flows the judgement decided, by node, with
+    /// the images and dialogues the kernel replays.
+    directed: BTreeMap<ValueId, crate::forward::Directed>,
     /// The reflexivities the judgement checked, by node, with the dialogues
     /// relating each point to its endpoints.
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
@@ -434,6 +437,7 @@ impl<'arena> CheckingContext<'arena>
             funexts: BTreeMap::new(),
             equivalences: BTreeMap::new(),
             flows: BTreeMap::new(),
+            directed: BTreeMap::new(),
             reflexivities: BTreeMap::new(),
             universals: BTreeMap::new(),
             nesting: BTreeMap::new(),
@@ -1482,6 +1486,38 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.flows.insert(at, statement);
     }
 
+    /// The forward and function flows the judgement decided, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn directed(&self) -> &BTreeMap<ValueId, crate::forward::Directed>
+    {
+        &self.directed
+    }
+
+    /// Record the forward or function flow the judgement decided at `at`.
+    ///
+    /// # Specification
+    /// - requires: `directed` is what [`crate::forward`] decided at `at`.
+    /// - ensures: `at` has `directed` as its record, replacing an earlier one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decided statement crosses with exactly its recorded
+    ///   classifier, images and dialogues.
+    /// - witness: `forward::tests::directed_statements_cross_and_replay`
+    #[spec(ensures: self.directed.contains_key(&at))]
+    pub(crate) fn record_directed(
+        &mut self,
+        at: ValueId,
+        directed: crate::forward::Directed,
+    )
+    {
+        self.directed.insert(at, directed);
+    }
+
     /// The reflexivities the judgement checked, by node.
     ///
     /// # Specification
@@ -2066,6 +2102,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             | Value::Here(_)
             | Value::Stay(_)
             | Value::Then(..)
+            | Value::Forward(_)
+            | Value::FunctionFlow(..)
             | Value::SessionRelated { .. }
             | Value::Recorded(_)
             | Value::Funext(..)

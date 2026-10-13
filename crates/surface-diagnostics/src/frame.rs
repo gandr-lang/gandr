@@ -191,6 +191,17 @@ pub fn sentence(role: FrameRole) -> Sentence
         | FrameRole::RideFlow => "synthesising the flow this ride follows",
         | FrameRole::RideMotive => "forming the motive of this ride",
         | FrameRole::RideValue => "checking the value this ride moves against the flow's source",
+        | FrameRole::ForwardTranslator => {
+            "deciding this forward flow at every input of its translator"
+        },
+        | FrameRole::ArrowDomain => "synthesising the domain flow of this arrow",
+        | FrameRole::ArrowCodomain => "synthesising the codomain flow of this arrow",
+        | FrameRole::ArrowAgainst => {
+            "checking this arrow's boundaries against the function codes it relates"
+        },
+        | FrameRole::StayEndpoints => {
+            "meeting the point of this stay with both endpoints of its flow"
+        },
         | FrameRole::ReturnedEndpoint => "synthesising the computation of this endpoint",
         | FrameRole::Ran => "synthesising the computation this runs where a value is read",
         | FrameRole::PrimitiveSecond => "checking the first argument of this operation",
@@ -453,6 +464,11 @@ mod tests
             FrameRole::RideFlow,
             FrameRole::RideMotive,
             FrameRole::RideValue,
+            FrameRole::ForwardTranslator,
+            FrameRole::ArrowDomain,
+            FrameRole::ArrowCodomain,
+            FrameRole::ArrowAgainst,
+            FrameRole::StayEndpoints,
             FrameRole::ReturnedEndpoint,
             FrameRole::Ran,
             FrameRole::ElementTransportPath,

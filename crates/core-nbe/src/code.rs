@@ -755,6 +755,8 @@ _ => ret == Ok(Atom::Other(node)),
                     | Value::Here(_)
                     | Value::Stay(_)
                     | Value::Then(..)
+                    | Value::Forward(_)
+                    | Value::FunctionFlow(..)
                     | Value::SessionRelated { .. }
                     | Value::Recorded(_)
                     | Value::Funext(..)
@@ -810,6 +812,8 @@ _ => ret == Ok(Atom::Other(node)),
                         | Value::Here(_)
                         | Value::Stay(_)
                         | Value::Then(..)
+                        | Value::Forward(_)
+                        | Value::FunctionFlow(..)
                         | Value::SessionRelated { .. }
                         | Value::Recorded(_)
                         | Value::Funext(..)
@@ -851,6 +855,7 @@ _ => ret == Ok(Atom::Other(node)),
             | DomainValue::PathCertificate { .. }
             | DomainValue::PathProduct { .. }
             | DomainValue::Here { .. }
+            | DomainValue::Flow { .. }
             | DomainValue::Thunk { .. }
             | DomainValue::Lift { .. } => Ok(Atom::Other(stood)),
         }
@@ -938,6 +943,7 @@ _ => ret == Ok(Atom::Other(node)),
                 | Elimination::Projection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::PathTransport { .. }
+                | Elimination::Ride { .. }
                 | Elimination::TelescopeTransport { .. }
                 | Elimination::Apply(_)
                 | Elimination::Force

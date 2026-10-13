@@ -357,6 +357,9 @@ pub enum EvalFault
     NativePrimitive(gandr_core_term::primitive::Primitive),
     /// Transport met neither a native path nor a neutral path operand.
     TransportedNonPath,
+    /// A ride met a canonical flow and a value no row of the directed
+    /// computation table moves, and no neutral flow to stack on.
+    RodeUncomputed,
     /// Transport met `ua` written in place. The path it names is the one the
     /// checker derives at its stratum, which a declaration whose body is the
     /// statement unfolds to; written in place, it has no path to compute
@@ -868,6 +871,15 @@ enum Task
     /// Transport the operand above the element path on the value stack in a
     /// motive.
     PathTransport(crate::arena::ValueClosureId),
+    /// Ride the value above the flow on the value stack along it, in a
+    /// motive.
+    Ride(crate::arena::ValueClosureId),
+    /// Assemble a flow introduction from its evaluated parts.
+    Flow
+    {
+        /// The source introduction, naming the former and its parts.
+        term: ValueId,
+    },
     /// Transport the operand above the identity over the path, the start and
     /// the path on the value stack, along a two-entry telescope in a motive.
     TelescopeTransport(crate::arena::ValueClosureId),
@@ -2334,7 +2346,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(
-        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::TelescopeTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
+        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32 && {
                 let mut tasks = ret.machine.tasks.iter().rev();
@@ -2349,6 +2361,8 @@ impl<'run> Evaluation<'run>
                         matches!(tasks.next(), Some(Task::ProductTransport(held)) if *held == path) },
                     Elimination::PathTransport { motive, value } => { answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::PathTransport(held)) if *held == motive) },
+                    Elimination::Ride { motive, value } => { answer = Answer::Computation;
+                        matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::Ride(held)) if *held == motive) },
                     Elimination::TelescopeTransport { motive, start, over, value } => { answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::Supply(held)) if *held == start) && matches!(tasks.next(), Some(Task::Supply(held)) if *held == over)
                         && matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::TelescopeTransport(held)) if *held == motive) },
@@ -2413,7 +2427,7 @@ impl<'run> Evaluation<'run>
     ///   verdict or the replay.
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
     #[spec(
-        requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
+        requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32
             && ret.machine.tasks.iter().filter(|task| matches!(task, Task::Returned)).count() == 1_usize
@@ -2736,7 +2750,10 @@ fn run(
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
             | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) | Task::ListFold { .. }
-            | Task::PathTransport(_) | Task::TelescopeTransport(_) | Task::TransportTuple(_) | Task::TransportInjection(_) | Task::TransportCons => machine.tasks.len() >= entry_tasks,
+            | Task::PathTransport(_) | Task::Ride(_) | Task::TelescopeTransport(_) | Task::TransportTuple(_) | Task::TransportInjection(_) | Task::TransportCons => machine.tasks.len() >= entry_tasks,
+            Task::Flow { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
+                && machine.values.len() <= entry_values
+                && matches!(machine.values.last().and_then(|value| domain.value(*value)), Some(DomainValue::Flow { .. })),
             Task::Here { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && machine.values.len() == entry_values
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)),
@@ -2766,6 +2783,19 @@ fn run(
             Task::Body { body: crate::closure::CompBody::Then { then, .. }, .. } => machine.values.len() == entry_values
                 && machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks.saturating_add(2)
                 && matches!(machine.tasks.get(entry_tasks..), Some([Task::BindClosure(held), Task::Body { .. }]) if *held == then),
+            Task::Body { body: crate::closure::CompBody::RideAlong { motive, flow }, env } => machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values.saturating_add(2)
+                && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)).is_some_and(|bound| machine.values.ends_with(&[flow, bound])))
+                && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::Ride(held)]) if held == motive),
+            Task::Body { body: crate::closure::CompBody::RideFunction { .. }, .. } => machine.values.len() == entry_values
+                && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
+                && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Lambda { .. })),
+            Task::Body { body: crate::closure::CompBody::RideArgument { motive, .. }, .. } => machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values.saturating_add(2)
+                && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::BindClosure(_), Task::BindClosure(_), Task::Ride(held)]) if held == motive),
+            Task::Body { body: crate::closure::CompBody::ForceApplied(function), .. } => machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values.saturating_add(1)
+                && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::Apply, Task::Force, Task::Supply(held)]) if held == function),
             Task::PathProduct(_) => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && entry_values.checked_sub(1) == Some(machine.values.len())
                 && matches!(machine.values.last().and_then(|&id| domain.value(id)), Some(&DomainValue::PathProduct { first, second, .. })
@@ -2860,13 +2890,35 @@ fn step(
                 | Recall::Unshared | Recall::Pending => step_comp(core, domain, machine, term, env),
             }
         },
+        // The thunk a function flow rides a function to, forced: the lambda
+        // that rides its argument, applies the function and rides the result.
+        | Task::Body {
+            body:
+                crate::closure::CompBody::RideFunction {
+                    motive,
+                    flow,
+                    function,
+                },
+            ..
+        } => {
+            let applied = domain.native_continuation(crate::closure::CompBody::RideArgument {
+                motive,
+                flow,
+                function,
+            });
+            machine
+                .comps
+                .push(domain.comp_lambda(applied, CompTermFace::Reduced));
+            Ok(())
+        },
         | Task::Body { body, env } => {
             let bound = machine
                 .env(env)?
                 .lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))
                 .ok_or(EvalFault::MachineInvariant)?;
             match body {
-                | crate::closure::CompBody::Source(_) => Err(EvalFault::MachineInvariant),
+                | crate::closure::CompBody::Source(_)
+                | crate::closure::CompBody::RideFunction { .. } => Err(EvalFault::MachineInvariant),
                 | crate::closure::CompBody::Pair(first) => {
                     let pair = domain.value_tuple([first, bound], TermFace::Reduced);
                     machine
@@ -2903,6 +2955,52 @@ fn step(
                     machine.tasks.push(Task::Body { body, env });
                     Ok(())
                 },
+                // After the first leg of a composite rode, ride its result
+                // along the second leg in the same motive.
+                | crate::closure::CompBody::RideAlong { motive, flow } => {
+                    machine.tasks.push(Task::Ride(motive));
+                    machine.values.extend([flow, bound]);
+                    Ok(())
+                },
+                // `a'. a ← ride(El, d, a'); b ← force f a; ride(El, c, b)`:
+                // the argument rides the domain flow, the function applies,
+                // and the result rides the codomain flow.
+                | crate::closure::CompBody::RideArgument {
+                    motive,
+                    flow,
+                    function,
+                } => {
+                    let Some(&DomainValue::Flow {
+                        former: crate::domain::FlowFormer::Function,
+                        parts,
+                        ..
+                    }) = domain.value(flow)
+                    else {
+                        return Err(EvalFault::MachineInvariant);
+                    };
+                    let &[argument, result] = domain.fields(parts).map_err(EvalFault::Domain)?
+                    else {
+                        return Err(EvalFault::MachineInvariant);
+                    };
+                    let onward = domain.native_continuation(crate::closure::CompBody::RideAlong {
+                        motive,
+                        flow: result,
+                    });
+                    let applied = domain
+                        .native_continuation(crate::closure::CompBody::ForceApplied(function));
+                    machine.tasks.push(Task::BindClosure(onward));
+                    machine.tasks.push(Task::BindClosure(applied));
+                    machine.tasks.push(Task::Ride(motive));
+                    machine.values.extend([argument, bound]);
+                    Ok(())
+                },
+                | crate::closure::CompBody::ForceApplied(function) => {
+                    machine.values.push(bound);
+                    machine.tasks.push(Task::Apply);
+                    machine.tasks.push(Task::Force);
+                    machine.tasks.push(Task::Supply(function));
+                    Ok(())
+                },
             }
         },
         | Task::PathProduct(term) => {
@@ -2928,6 +3026,40 @@ fn step(
             step_transport(core, domain, machine)
         },
         | Task::PathTransport(motive) => step_path_transport(core, domain, machine, motive),
+        | Task::Ride(motive) => step_ride(core, domain, machine, motive),
+        | Task::Flow { term } => {
+            let flow = match core.value(term) {
+                | Some(&(Value::Stay(part) | Value::Forward(part))) => {
+                    let former = if matches!(core.value(term), Some(Value::Stay(_))) {
+                        crate::domain::FlowFormer::Stay
+                    }
+                    else {
+                        crate::domain::FlowFormer::Forward
+                    };
+                    let evaluated = machine.pop_value()?;
+                    let face = composite_face(denotes(domain, evaluated, part), term);
+                    domain.value_flow(former, [evaluated], face)
+                },
+                | Some(&(Value::Then(left, right) | Value::FunctionFlow(left, right))) => {
+                    let former = if matches!(core.value(term), Some(Value::Then(..))) {
+                        crate::domain::FlowFormer::Then
+                    }
+                    else {
+                        crate::domain::FlowFormer::Function
+                    };
+                    let second = machine.pop_value()?;
+                    let first = machine.pop_value()?;
+                    let face = composite_face(
+                        denotes(domain, first, left).and(denotes(domain, second, right)),
+                        term,
+                    );
+                    domain.value_flow(former, [first, second], face)
+                },
+                | _ => return Err(EvalFault::DanglingTerm),
+            };
+            machine.values.push(flow);
+            Ok(())
+        },
         | Task::TelescopeTransport(motive) => {
             step_telescope_transport(core, domain, machine, motive)
         },
@@ -3219,21 +3351,33 @@ fn step_value(
             Ok(())
         },
         // A closed native path, a closed funext, a closed equivalence, a
-        // univalence statement, a session statement, a directed reflexivity, a
-        // directed composition and a recorded run are inert certificates:
-        // nothing reduces them, and transport reads their syntax.
+        // univalence statement, a session statement and a recorded run are
+        // inert certificates: nothing reduces them, and transport reads their
+        // syntax.
         | Value::PathRefl(_)
         | Value::PathEquiv { .. }
         | Value::Funext(..)
         | Value::Equiv(..)
         | Value::Ua { .. }
         | Value::SessionRelated { .. }
-        | Value::Stay(_)
-        | Value::Then(..)
         | Value::Recorded(_) => {
             machine
                 .values
                 .push(domain.value_path_certificate(term, TermFace::Source(term)));
+            Ok(())
+        },
+        // A flow introduction evaluates its parts where it stands, so a ride
+        // reads a composite's or a function flow's parts in the environment
+        // they were written in.
+        | Value::Stay(part) | Value::Forward(part) => {
+            machine.tasks.push(Task::Flow { term });
+            machine.tasks.push(Task::Value { term: part, env });
+            Ok(())
+        },
+        | Value::Then(first, second) | Value::FunctionFlow(first, second) => {
+            machine.tasks.push(Task::Flow { term });
+            machine.tasks.push(Task::Value { term: second, env });
+            machine.tasks.push(Task::Value { term: first, env });
             Ok(())
         },
         | Value::Here(point) => {
@@ -3603,9 +3747,19 @@ fn step_comp(
             machine.comps.push(domain.comp_fixpoint(closure, face));
             Ok(())
         },
-        // A ride the checker admitted moves a value along a flow without
-        // changing it: its result is the value it rides.
-        | Computation::Return(value) | Computation::Ride { value, .. } => {
+        | Computation::Ride {
+            motive,
+            flow,
+            value,
+        } => {
+            let captured = machine.capture(env)?;
+            let motive = domain.value_closure_node(crate::ValueBody::ValueType(motive), captured);
+            machine.tasks.push(Task::Ride(motive));
+            machine.tasks.push(Task::Value { term: value, env });
+            machine.tasks.push(Task::Value { term: flow, env });
+            Ok(())
+        },
+        | Computation::Return(value) => {
             machine.tasks.push(Task::Return { term });
             machine.tasks.push(Task::Value { term: value, env });
             Ok(())
@@ -3789,6 +3943,7 @@ fn step_force(
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
+        | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
         | DomainValue::ListNil { .. }
@@ -3914,6 +4069,7 @@ fn step_apply(
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
+                | DomainValue::Flow { .. }
                 | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Injection { .. }
@@ -4078,6 +4234,7 @@ fn step_static_apply(
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
+        | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
         | DomainValue::ListNil { .. }
@@ -4253,6 +4410,7 @@ fn step_case(
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
+        | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
         | DomainValue::ListNil { .. }
@@ -4409,6 +4567,7 @@ fn step_case_branches(
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
+        | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
         | DomainValue::ListNil { .. }
@@ -4701,6 +4860,254 @@ fn step_path_transport(
     Ok(())
 }
 
+/// Ride the value above a flow along it, in a motive, by the kernel's directed
+/// computation table.
+///
+/// # Specification
+/// - requires: the flow, then the value, occupy the top of the value stack;
+///   `motive` closes a value type under one binder over the environment the
+///   ride was read in.
+/// - ensures: the kernel's rows in its order: `stay` returns the value; a
+///   composite rides its first leg, then its second from the result; a motive
+///   that ignores its binder returns the value; a product motive over a tuple
+///   of its arity, a sum motive over an injection and a list motive over a list
+///   cell ride constructorwise, `nil` returning unchanged; at the decode of the
+///   motive's own binder a forward flow applies its translator and a function
+///   flow returns the function wrapped by its boundaries, in a thunk that rides
+///   the argument along the domain flow, applies the function and rides the
+///   result along the codomain flow; at the singleton `y. Flow(D, l, y)` a
+///   `stay` value returns the flow and any other value composes with it. A
+///   session simulation returns the run unchanged — the checker admitted it by
+///   the protocol's simulation, and runs move between related sessions as
+///   themselves. Any other configuration over a stuck flow stacks the ride on
+///   the flow's spine.
+/// - provides: the ride's computation rules, the same table the kernel replays,
+///   and its stuck form.
+/// - fails: [`EvalFault::MachineInvariant`] for a missing operand, a flow of
+///   the wrong part count or a motive closure holding no type;
+///   [`EvalFault::RodeUncomputed`] for a canonical flow no row moves the value
+///   along; domain faults for dangling nodes; [`EvalFault::DanglingTerm`] for a
+///   family naming no core node.
+/// - panics: none.
+///
+/// # Errors
+/// An `EvalFault`, as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `stay`, a composite of two forward flows, a constant
+///   motive over a stuck flow, a pair motive, a forward flow and a function
+///   flow at the decode of the binder, the flow singleton, and a stuck flow at
+///   the identity motive each reach their own row; dropping a row, reordering a
+///   composite's legs or a function flow's boundaries changes the read-back
+///   term.
+/// - witness: `identity::tests::rides_compute_by_the_kernels_rows`
+/// - witness: `identity::tests::a_function_flow_rides_in_variance_order`
+#[spec(
+    captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err() || (machine.comps.len() == comps.saturating_add(1_usize) && machine.tasks.len() == tasks && machine.values.len() == values.saturating_sub(2_usize))
+        || (machine.comps.len() == comps && machine.tasks.len() > tasks),
+)]
+fn step_ride(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    motive: crate::arena::ValueClosureId,
+) -> Result<(), EvalFault>
+{
+    let value = machine.pop_value()?;
+    let flow = machine.pop_value()?;
+    let dangling = EvalFault::Domain(DomainFault::Dangling);
+    let carried = *domain.value(flow).ok_or(dangling)?;
+    match carried {
+        | DomainValue::Flow {
+            former: crate::domain::FlowFormer::Stay,
+            ..
+        } => {
+            machine
+                .comps
+                .push(domain.comp_return(value, CompTermFace::Reduced));
+            return Ok(());
+        },
+        | DomainValue::Flow {
+            former: crate::domain::FlowFormer::Then,
+            parts,
+            ..
+        } => {
+            let &[first, second] = domain.fields(parts).map_err(EvalFault::Domain)?
+            else {
+                return Err(EvalFault::MachineInvariant);
+            };
+            let onward = domain.native_continuation(crate::closure::CompBody::RideAlong {
+                motive,
+                flow: second,
+            });
+            machine.tasks.push(Task::BindClosure(onward));
+            machine.tasks.push(Task::Ride(motive));
+            machine.values.extend([first, value]);
+            return Ok(());
+        },
+        | DomainValue::PathCertificate { certificate, .. }
+            if matches!(core.value(certificate), Some(Value::SessionRelated { .. })) =>
+        {
+            machine
+                .comps
+                .push(domain.comp_return(value, CompTermFace::Reduced));
+            return Ok(());
+        },
+        | _ => {},
+    }
+    let closure = domain.value_closure(motive).ok_or(dangling)?;
+    let crate::ValueBody::ValueType(family) = closure.body()
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    let environment = closure.environment().clone();
+    let free = |fault| match fault {
+        | crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
+        | crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
+    };
+    if crate::identity::binder_read(core, family).map_err(free)? == crate::free::Membership::Absent
+    {
+        machine
+            .comps
+            .push(domain.comp_return(value, CompTermFace::Reduced));
+        return Ok(());
+    }
+    match (
+        core.value_type(family),
+        *domain.value(value).ok_or(dangling)?,
+    ) {
+        | (Some(&ValueType::Product(ref components)), DomainValue::Tuple { fields, .. }) => {
+            let fields = domain.fields(fields).map_err(EvalFault::Domain)?.to_vec();
+            if fields.len() == components.len() {
+                machine
+                    .tasks
+                    .push(Task::TransportTuple(ComponentCount::from(fields.len())));
+                for (&component, &field) in components.iter().zip(&fields).rev() {
+                    let motive = domain.value_closure_node(
+                        crate::ValueBody::ValueType(component),
+                        environment.clone(),
+                    );
+                    machine.tasks.push(Task::Ride(motive));
+                    machine.tasks.push(Task::Supply(field));
+                    machine.tasks.push(Task::Supply(flow));
+                }
+                return Ok(());
+            }
+        },
+        | (
+            Some(&ValueType::Sum(ref summands)),
+            DomainValue::Injection {
+                summand,
+                body: payload,
+                ..
+            },
+        ) => {
+            if let Some(&component) = summands.get(usize::from(summand)) {
+                let motive =
+                    domain.value_closure_node(crate::ValueBody::ValueType(component), environment);
+                machine.tasks.push(Task::TransportInjection(summand));
+                machine.tasks.push(Task::Ride(motive));
+                machine.tasks.push(Task::Supply(payload));
+                machine.tasks.push(Task::Supply(flow));
+                return Ok(());
+            }
+        },
+        | (Some(&ValueType::List(_)), DomainValue::ListNil { .. }) => {
+            machine
+                .comps
+                .push(domain.comp_return(value, CompTermFace::Reduced));
+            return Ok(());
+        },
+        | (Some(&ValueType::List(element)), DomainValue::ListCons { first, second, .. }) => {
+            let head = domain.value_closure_node(crate::ValueBody::ValueType(element), environment);
+            machine.tasks.push(Task::TransportCons);
+            machine.tasks.push(Task::Ride(motive));
+            machine.tasks.push(Task::Supply(second));
+            machine.tasks.push(Task::Supply(flow));
+            machine.tasks.push(Task::Ride(head));
+            machine.tasks.push(Task::Supply(first));
+            machine.tasks.push(Task::Supply(flow));
+            return Ok(());
+        },
+        // The motive's own binder decoded: a forward flow applies its
+        // translator, and a function flow wraps the function in its
+        // boundaries.
+        | (Some(&ValueType::Element { code, .. }), _)
+            if matches!(
+                core.value(code),
+                Some(&Value::Variable { zone: gandr_core_term::Zone::Intuitionistic, index }) if u32::from(index) == 0
+            ) =>
+        {
+            match carried {
+                | DomainValue::Flow {
+                    former: crate::domain::FlowFormer::Forward,
+                    parts,
+                    ..
+                } => {
+                    let &[translator] = domain.fields(parts).map_err(EvalFault::Domain)?
+                    else {
+                        return Err(EvalFault::MachineInvariant);
+                    };
+                    machine.values.push(value);
+                    machine.tasks.push(Task::Apply);
+                    machine.tasks.push(Task::Force);
+                    machine.tasks.push(Task::Supply(translator));
+                    return Ok(());
+                },
+                | DomainValue::Flow {
+                    former: crate::domain::FlowFormer::Function,
+                    ..
+                } => {
+                    let wrapped =
+                        domain.native_continuation(crate::closure::CompBody::RideFunction {
+                            motive,
+                            flow,
+                            function: value,
+                        });
+                    let thunk = domain.value_thunk(wrapped, TermFace::Reduced);
+                    machine
+                        .comps
+                        .push(domain.comp_return(thunk, CompTermFace::Reduced));
+                    return Ok(());
+                },
+                | _ => {},
+            }
+        },
+        | (Some(&ValueType::Flow { .. }), held) => {
+            if crate::identity::transport_family(core, family).map_err(free)?
+                == crate::identity::TransportFamily::Singleton
+            {
+                let result = match held {
+                    | DomainValue::Flow {
+                        former: crate::domain::FlowFormer::Stay,
+                        ..
+                    } => flow,
+                    | _ => domain.value_flow(
+                        crate::domain::FlowFormer::Then,
+                        [value, flow],
+                        TermFace::Reduced,
+                    ),
+                };
+                machine
+                    .comps
+                    .push(domain.comp_return(result, CompTermFace::Reduced));
+                return Ok(());
+            }
+        },
+        | _ => {},
+    }
+    let DomainValue::Neutral { neutral, .. } = carried
+    else {
+        return Err(EvalFault::RodeUncomputed);
+    };
+    let grown = extend_spine(domain, neutral, Elimination::Ride { motive, value })?;
+    machine
+        .comps
+        .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+    Ok(())
+}
+
 /// Transport the operand above an identity over a path, a start and the path
 /// along a two-entry telescope, in a motive `Π (y : A). Π (z : B). F C`.
 ///
@@ -4902,6 +5309,11 @@ fn push_eliminations(
             | Elimination::PathTransport { motive, value } => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::PathTransport(motive));
+                machine.tasks.push(Task::Supply(value));
+            },
+            | Elimination::Ride { motive, value } => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::Ride(motive));
                 machine.tasks.push(Task::Supply(value));
             },
             | Elimination::TelescopeTransport {

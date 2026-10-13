@@ -538,11 +538,17 @@ fn checked(
              would be produced",
         ),
         | CheckRefusal::RideUnsupported { .. } => f.write_str(
-            "`ride` moves a run of the moving endpoint, or a value whose type does not \
-             depend on it",
+            "`ride` moves a run of the moving endpoint, a value whose type does not depend \
+             on it, or a value the flow's translator computes",
         ),
         | CheckRefusal::RunNotAdmitted { .. } => {
             f.write_str("the protocol does not admit this run")
+        },
+        | CheckRefusal::ForwardUnsupported { .. } => {
+            f.write_str("`forward` cannot image this translator at every input")
+        },
+        | CheckRefusal::Boundary { .. } => {
+            f.write_str("this boundary flow runs against the variance of its position")
         },
         | CheckRefusal::TypeMismatch(_) => f.write_str("mismatched types"),
         | CheckRefusal::ShapeMismatch { wanted, .. } => write!(f, "expected {}", Shape(wanted)),
@@ -1228,6 +1234,8 @@ mod tests
                     1_u32,
                 )),
             },
+            CheckRefusal::ForwardUnsupported { at: value },
+            CheckRefusal::Boundary { at: value },
         ]
         .map(Refusal::Checking);
         let corpus = Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot {

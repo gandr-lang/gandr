@@ -794,7 +794,7 @@ pub enum Spines
                 EliminationShape::Projection(_) => 0_usize,
                 EliminationShape::Case(branches) => branches,
                 EliminationShape::Split(_) => 1_usize,
-                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::PathTransport { .. } => 2_usize,Elimination::TelescopeTransport { .. } => 4_usize,_ => 1_usize },
+                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::PathTransport { .. } | Elimination::Ride { .. } => 2_usize,Elimination::TelescopeTransport { .. } => 4_usize,_ => 1_usize },
             };
             Ok((true,count.saturating_add(added)))
         });
@@ -859,6 +859,16 @@ pub fn spine_subgoals(
                     value: left_value,
                 },
                 Elimination::PathTransport {
+                    motive: right_motive,
+                    value: right_value,
+                },
+            )
+            | (
+                Elimination::Ride {
+                    motive: left_motive,
+                    value: left_value,
+                },
+                Elimination::Ride {
                     motive: right_motive,
                     value: right_value,
                 },
@@ -935,6 +945,7 @@ pub fn spine_subgoals(
                 | Elimination::Projection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::PathTransport { .. }
+                | Elimination::Ride { .. }
                 | Elimination::TelescopeTransport { .. }
                 | Elimination::Apply(_)
                 | Elimination::Force
@@ -1380,6 +1391,7 @@ fn value_neutrality(
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
+        | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
         | DomainValue::ListNil { .. }
@@ -1739,6 +1751,35 @@ fn plan_values(
             Subgoal::Values(left_second, right_second),
         ])),
         | (
+            DomainValue::Flow {
+                former: left_former,
+                parts: left_parts,
+                ..
+            },
+            DomainValue::Flow {
+                former: right_former,
+                parts: right_parts,
+                ..
+            },
+        ) => {
+            let left_parts = domain.fields(left_parts).map_err(ConversionFault::Domain)?;
+            let right_parts = domain
+                .fields(right_parts)
+                .map_err(ConversionFault::Domain)?;
+            if left_former == right_former && left_parts.len() == right_parts.len() {
+                Plan::Decompose(
+                    left_parts
+                        .iter()
+                        .zip(right_parts)
+                        .map(|(a, b)| Subgoal::Values(*a, *b))
+                        .collect(),
+                )
+            }
+            else {
+                Plan::Leaf(Settled::NotConvertible)
+            }
+        },
+        | (
             DomainValue::Injection {
                 summand: left_summand,
                 body: left_body,
@@ -1851,6 +1892,7 @@ fn plan_values(
             | DomainValue::Record { .. }
             | DomainValue::PathProduct { .. }
             | DomainValue::Here { .. }
+            | DomainValue::Flow { .. }
             | DomainValue::Tuple { .. }
             | DomainValue::Literal { .. }
             | DomainValue::ListNil { .. }

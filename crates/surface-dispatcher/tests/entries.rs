@@ -97,7 +97,7 @@ mod entries
         ("Expression continue", Standing::Design(EXIT)),
         ("Expression fn", Standing::Owed(0)),
         ("Expression force", Standing::Owed(0)),
-        ("Expression identifier", Standing::Owed(251)),
+        ("Expression identifier", Standing::Owed(250)),
         ("Expression loop", Standing::Owed(0)),
         ("Expression number", Standing::Owed(1)),
         ("Expression offer", Standing::Owed(0)),
@@ -159,12 +159,15 @@ mod entries
     /// The names of the primitive formers a call can head: the call is one
     /// core node, and its head names the former rather than a term.
     const FORMERS: &[&str] = &[
+        "arrow",
         "back",
         "cong",
         "cons",
         "equiv",
+        "forward",
         "funext",
         "here",
+        "stay",
         "transport",
         "ua",
     ];

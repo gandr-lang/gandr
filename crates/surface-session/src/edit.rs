@@ -2922,6 +2922,8 @@ fn read(
                 }
                 Value::Stay(_) => matches!(ret, ContentNode::Stay(_)),
                 Value::Then(..) => matches!(ret, ContentNode::Then(..)),
+                Value::Forward(_) => matches!(ret, ContentNode::Forward(_)),
+                Value::FunctionFlow(..) => matches!(ret, ContentNode::FunctionFlow(..)),
                 Value::Recorded(ref moves) => {
                     matches!(ret, ContentNode::Recorded(ref found) if found.len() == moves.len()
                         && found.iter().zip(moves.iter()).all(|(left, right)| left.carrying(()) == right.carrying(())))
@@ -3068,6 +3070,11 @@ where
         | Some(&Value::Then(first, second)) => {
             let first = child(Root::Value(first));
             ContentNode::Then(first, child(Root::Value(second)))
+        },
+        | Some(&Value::Forward(translator)) => ContentNode::Forward(child(Root::Value(translator))),
+        | Some(&Value::FunctionFlow(domain, codomain)) => {
+            let domain = child(Root::Value(domain));
+            ContentNode::FunctionFlow(domain, child(Root::Value(codomain)))
         },
         | Some(&Value::Recorded(ref moves)) => ContentNode::Recorded(
             moves

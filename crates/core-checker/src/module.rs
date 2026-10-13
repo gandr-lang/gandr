@@ -238,6 +238,8 @@ pub struct ModuleReport
     equivalences: BTreeMap<ValueId, Equivalence>,
     /// The session statements the run decided, by node.
     flows: BTreeMap<ValueId, crate::flow::Statement>,
+    /// The forward and function flows the run decided, by node.
+    directed: BTreeMap<ValueId, crate::forward::Directed>,
     /// The reflexivities the run checked, by node.
     reflexivities: BTreeMap<ValueId, Reflexivity>,
     /// The path endpoint pairs each accepted declaration's type conversions
@@ -367,6 +369,18 @@ impl ModuleReport
     pub const fn flows(&self) -> &BTreeMap<ValueId, crate::flow::Statement>
     {
         &self.flows
+    }
+
+    /// The forward and function flows the run decided, by node, with the
+    /// images and dialogues the kernel replays.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn directed(&self) -> &BTreeMap<ValueId, crate::forward::Directed>
+    {
+        &self.directed
     }
 
     /// The reflexivities the run checked, by node, with the dialogues relating
@@ -932,6 +946,7 @@ pub fn check_declaration_supported(
     && &ret.funexts == context.funexts()
     && &ret.equivalences == context.equivalences()
     && &ret.flows == context.flows()
+    && &ret.directed == context.directed()
     && &ret.reflexivities == context.reflexivities()
     && &ret.relations == context.relations()
     && &ret.universals == context.universals()
@@ -975,6 +990,7 @@ pub fn check_module(
         funexts: context.funexts().clone(),
         equivalences: context.equivalences().clone(),
         flows: context.flows().clone(),
+        directed: context.directed().clone(),
         reflexivities: context.reflexivities().clone(),
         relations: context.relations().clone(),
         universals: context.universals().clone(),

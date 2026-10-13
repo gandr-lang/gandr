@@ -29,11 +29,11 @@
 //! # The identity vocabulary is names nothing else binds
 //!
 //! `here`, `funext`, `equiv`, `transport`, `back`, `cong`, `bisim`, `sim`,
-//! `stay`, `ride` and `recorded` are spelled as ordinary calls and resolved
-//! after every binder and every earlier declaration, so a parameter or a
-//! definition of the same name shadows them, as it shadows a prelude
-//! primitive; `then` is the grammar's own infix tile, and `Flow` a type head
-//! resolved the same way.
+//! `stay`, `forward`, `arrow`, `ride` and `recorded` are spelled as ordinary
+//! calls and resolved after every binder and every earlier declaration, so a
+//! parameter or a definition of the same name shadows them, as it shadows a
+//! prelude primitive; `then` is the grammar's own infix tile, and `Flow` a
+//! type head resolved the same way.
 //! Reserving the names outright was the alternative; it would break every
 //! program that already binds one. Reversal: a namespace for the identity
 //! vocabulary, `Path.here`, once the namespaces carry formers rather than
@@ -115,10 +115,28 @@
 //! `Path(A, a, b)` is. `stay(a)` is the identity flow, `f then g` composes
 //! two flows where the position answers a written flow type, and
 //! `ride(\X. T, f, v)` moves `v` along `f` in the family its static
-//! abstraction states, as `transport` does; `back` and `cong` have no flow
-//! reading, since a flow is not reversed. The alternatives — an infix
+//! abstraction states, as `transport` does. The alternatives — an infix
 //! `A <: B`, statements over translators as `equiv` takes — are recorded with
 //! the checker's rules.
+//!
+//! # A flow between data is one translator
+//!
+//! `forward(f)` reads one closed translator as a value and stands as a value
+//! of `Flow(Type, A, B)`, `f : U(A → F B)`; the checker decides it by running
+//! `f` at every input pattern of `A`. `arrow(d, c)` reads two flows, `d :
+//! Flow(Type, A', A)` into the argument and `c : Flow(Type, B, B')` out of the
+//! result, and stands as a value of `Flow(Type, ⌜U(A → F B)⌝, ⌜U(A' → F
+//! B')⌝)`: the domain flow is written first and runs against the function, as
+//! the arrow's own variance reads. The spelling follows `equiv(f, g)`, one call
+//! per statement; the alternatives, `Flow_U(A, B)` taking a translator or an
+//! infix `d -> c` over flows, would overload a type head or the arrow tile.
+//! Reversal: a type-directed `forward` that reads its endpoints off the
+//! position's answer, once the checker elaborates against expected types.
+//!
+//! `back(f)` where the position answers a written flow type is the symmetry
+//! ride `ride(\y. Flow(A, y, b), f, stay(b))`
+//! (`gandr_core_term::identity::back_flow`), which the checker refuses by
+//! its motive; `cong` has no flow reading.
 //!
 //! A statement names its protocols bare, as type members of the module it is
 //! written in, which a term position reads as the types they state: the term
@@ -222,7 +240,8 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - ensures: reflexivity, function and universe extensionality, transport in a
 ///   one-binder motive or a telescope, the two derived operations, the native
-///   list cell, the two session statements, the identity flow, a ride along a
+///   list cell, the two session statements, the identity flow, the forward flow
+///   of a translator, the function flow of two boundary flows, a ride along a
 ///   flow and a recorded run, spelled as calls.
 /// - executable: none — a tag holds no head to check its spelling against.
 ///
@@ -233,6 +252,7 @@ quenchant_shape::reason_enum! {
 /// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
 /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
 /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
+/// - witness: `lower::identity::tests::directed_statements_lower_to_their_formers`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) enum Operation
 {
@@ -256,6 +276,10 @@ pub(super) enum Operation
     Sim,
     /// `stay(a)`.
     Stay,
+    /// `forward(f)`.
+    Forward,
+    /// `arrow(d, c)`.
+    Arrow,
     /// `ride(\X. T, f, v)`.
     Ride,
     /// `recorded(m₀, …, mₙ)`.
@@ -280,7 +304,8 @@ pub(super) enum Operation
 /// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
 /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
 /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
-const SPELLED: [(&str, Operation); 12] = [
+/// - witness: `lower::identity::tests::directed_statements_lower_to_their_formers`
+const SPELLED: [(&str, Operation); 14] = [
     (HERE, Operation::Here),
     ("funext", Operation::Funext),
     ("equiv", Operation::Equiv),
@@ -291,6 +316,8 @@ const SPELLED: [(&str, Operation); 12] = [
     ("bisim", Operation::Bisim),
     ("sim", Operation::Sim),
     ("stay", Operation::Stay),
+    ("forward", Operation::Forward),
+    ("arrow", Operation::Arrow),
     ("ride", Operation::Ride),
     ("recorded", Operation::Recorded),
 ];
@@ -601,12 +628,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   [`Self::recorded_move`] reads it. Every operand is read under the
     ///   site's frame.
     /// - fails: the wrong-sort refusal where the operation's sort is not read;
-    ///   the arity refusal for other than one argument to `here`, `stay` or
-    ///   `back`, two to `funext`, `equiv`, `cons`, `cong`, `bisim` or `sim`,
-    ///   three to `ride`, and three or five to `transport`; the unannotated
-    ///   refusal for a three-operand transport or a ride whose motive is no
-    ///   static abstraction; [`Self::derive`]'s refusal; a move's refusal; the
-    ///   argument list's fault.
+    ///   the arity refusal for other than one argument to `here`, `stay`,
+    ///   `forward` or `back`, two to `funext`, `equiv`, `cons`, `cong`,
+    ///   `bisim`, `sim` or `arrow`, three to `ride`, and three or five to
+    ///   `transport`; the unannotated refusal for a three-operand transport or
+    ///   a ride whose motive is no static abstraction; [`Self::derive`]'s
+    ///   refusal; a move's refusal; the argument list's fault.
     /// - panics: none.
     ///
     /// # Errors
@@ -637,6 +664,8 @@ impl<'source> Lowerer<'_, 'source>
                         | (Operation::Bisim, Some(&Plan::SessionRelated(SessionRelation::Equivalence, ..)))
                         | (Operation::Sim, Some(&Plan::SessionRelated(SessionRelation::Subtyping, ..)))
                         | (Operation::Ride, Some(&Plan::Ride(..)))
+                        | (Operation::Forward, Some(&Plan::Forward(_)))
+                        | (Operation::Arrow, Some(&Plan::FunctionFlow(..)))
                         | (Operation::Recorded, Some(&Plan::Recorded(_)))
                         | (Operation::Transport, Some(&(Plan::Transport(..) | Plan::TelescopeTransport(_))))
                         | (Operation::Back | Operation::Cong, Some(&Plan::Derived(_))) => true,
@@ -659,6 +688,8 @@ impl<'source> Lowerer<'_, 'source>
             | Operation::Bisim
             | Operation::Sim
             | Operation::Stay
+            | Operation::Forward
+            | Operation::Arrow
             | Operation::Recorded => Produced::Value,
             | Operation::Back | Operation::Cong | Operation::Transport | Operation::Ride => {
                 Produced::Computation
@@ -684,6 +715,8 @@ impl<'source> Lowerer<'_, 'source>
             | Operation::Bisim
             | Operation::Sim
             | Operation::Stay
+            | Operation::Forward
+            | Operation::Arrow
             | Operation::Back
             | Operation::Cong
             | Operation::Transport
@@ -707,7 +740,8 @@ impl<'source> Lowerer<'_, 'source>
                 | Operation::Equiv
                 | Operation::Cons
                 | Operation::Bisim
-                | Operation::Sim,
+                | Operation::Sim
+                | Operation::Arrow,
                 2_usize,
                 Some(left),
                 Some(right),
@@ -724,6 +758,7 @@ impl<'source> Lowerer<'_, 'source>
                     | Operation::Sim => {
                         Plan::SessionRelated(SessionRelation::Subtyping, left, right)
                     },
+                    | Operation::Arrow => Plan::FunctionFlow(left, right),
                     | _ => Plan::Funext(left, right),
                 };
                 self.plan(site, plan);
@@ -779,6 +814,11 @@ impl<'source> Lowerer<'_, 'source>
             },
             | (Operation::Back, 1_usize, Some(path), ..) => {
                 self.derive(site, frame, Derivation::Back { path })
+            },
+            | (Operation::Forward, 1_usize, Some(translator), ..) => {
+                self.read(translator, Reading::Value(frame));
+                self.plan(site, Plan::Forward(translator));
+                Ok(())
             },
             | (Operation::Cong, 2_usize, Some(function), Some(path), _) => {
                 self.derive(site, frame, Derivation::Cong { function, path })
@@ -962,11 +1002,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: every operand is read as a value under `frame`, and the
     ///   operation is planned against the path type its position answers; `f
     ///   then g` where the position answers a written flow type is planned as
-    ///   the returned composite of the two flows.
+    ///   the returned composite of the two flows, and `back(f)` there against
+    ///   the flow type, as the symmetry ride the checker refuses.
     /// - fails: the unannotated refusal where the position answers no type, or
-    ///   one that is not a written path type, or for `then` a written flow
-    ///   type, under at most a returner and parentheses; the allowance refusal
-    ///   from that walk.
+    ///   one that is not a written path type, or for `then` and `back` a
+    ///   written flow type, under at most a returner and parentheses; the
+    ///   allowance refusal from that walk.
     /// - panics: none.
     ///
     /// # Errors
@@ -1002,14 +1043,16 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Unannotated));
         };
         if self.answers_path(site, answer.node)? == Answered::Flow {
-            let Derivation::Then { first, second } = derivation
-            else {
-                return Err(site.out(FragmentBoundary::Unannotated));
-            };
-            self.read(first, Reading::Value(frame));
-            self.read(second, Reading::Value(frame));
-            self.plan(site, Plan::FlowThen(first, second));
-            return Ok(());
+            match derivation {
+                | Derivation::Then { first, second } => {
+                    self.read(first, Reading::Value(frame));
+                    self.read(second, Reading::Value(frame));
+                    self.plan(site, Plan::FlowThen(first, second));
+                    return Ok(());
+                },
+                | Derivation::Cong { .. } => return Err(site.out(FragmentBoundary::Unannotated)),
+                | Derivation::Back { .. } => {},
+            }
         }
         match derivation {
             | Derivation::Back { path } => self.read(path, Reading::Value(frame)),
@@ -1139,13 +1182,15 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the operands and the answer are already minted or absent.
-    /// - ensures: the answer, a returner over `Path(A, a, b)` relocated to the
-    ///   operation's frame, gives the carrier and the endpoints: `back(p)` is
-    ///   `tr(y. Path(A, y, b), p, here(b))`, `p then q` is `tr(y. Path(A, a,
-    ///   y), q, p)` and `cong(f, p)` is `tr(y. Path(A, a, ⟨force f y⟩), p,
-    ///   here(a))`. The transport carries the written origin and every other
-    ///   node minted for it the inserted identity origin. Nothing when an
-    ///   operand or the answer did not lower.
+    /// - ensures: the answer, a returner over `Path(A, a, b)` or `Flow(A, a,
+    ///   b)` relocated to the operation's frame, gives the carrier and the
+    ///   endpoints: `back(p)` is `tr(y. Path(A, y, b), p, here(b))`, `p then q`
+    ///   is `tr(y. Path(A, a, y), q, p)` and `cong(f, p)` is `tr(y. Path(A, a,
+    ///   ⟨force f y⟩), p, here(a))`; `back(f)` under a flow answer is the
+    ///   symmetry ride `ride(y. Flow(A, y, b), f, stay(b))`. The operation
+    ///   carries the written origin and every other node minted for it the
+    ///   inserted identity origin. Nothing when an operand or the answer did
+    ///   not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1195,19 +1240,24 @@ impl<'source> Lowerer<'_, 'source>
             .saturating_sub(self.scope.telescope_binders(derived.answer.frame).count());
         let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
         let answered = self.relocate(sink.arena, written, derived.answer.frame, lift, None);
-        let path = match sink.arena.comp_type(answered) {
+        let identity = match sink.arena.comp_type(answered) {
             | Some(&CompType::Returner { result, .. }) => match sink.arena.value_type(result) {
                 | Some(&ValueType::Path {
                     carrier,
                     left,
                     right,
-                }) => Some((carrier, left, right)),
+                }) => Some((Answered::Path, carrier, left, right)),
+                | Some(&ValueType::Flow {
+                    carrier,
+                    source,
+                    target,
+                }) => Some((Answered::Flow, carrier, source, target)),
                 | _ => None,
             },
             | _ => None,
         };
         let inserted = origin.inserted(Insertion::Identity);
-        let Some((carrier, left, right)) = path
+        let Some((answered_as, carrier, left, right)) = identity
         else {
             record_since(
                 sink,
@@ -1217,15 +1267,27 @@ impl<'source> Lowerer<'_, 'source>
             );
             return Maybe::Absent(lowered::Absent::OtherSort);
         };
-        let root = match derived.derivation {
-            | Derivation::Back { .. } => {
+        let root = match (answered_as, derived.derivation) {
+            | (Answered::Path, Derivation::Back { .. }) => {
                 gandr_core_term::identity::back(sink.arena, carrier, right, first)
             },
-            | Derivation::Then { .. } => {
+            | (Answered::Flow, Derivation::Back { .. }) => {
+                gandr_core_term::identity::back_flow(sink.arena, carrier, right, first)
+            },
+            | (Answered::Path, Derivation::Then { .. }) => {
                 gandr_core_term::identity::then(sink.arena, carrier, left, first, second)
             },
-            | Derivation::Cong { .. } => {
+            | (Answered::Path, Derivation::Cong { .. }) => {
                 gandr_core_term::identity::cong(sink.arena, carrier, first, left, second)
+            },
+            | (Answered::Flow, Derivation::Then { .. } | Derivation::Cong { .. }) => {
+                record_since(
+                    sink,
+                    mark,
+                    inserted,
+                    Maybe::Absent(rooted::Absent::Unminted),
+                );
+                return Maybe::Absent(lowered::Absent::OtherSort);
             },
         };
         record_since(sink, mark, inserted, Maybe::Present((root, origin)));

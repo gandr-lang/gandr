@@ -18,6 +18,7 @@ use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::RecursionIndex;
 use gandr_core_term::session::SessionRelation;
 use gandr_core_term::session::SessionType;
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -28,6 +29,7 @@ use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::Value as KernelValue;
 use quenchant_shape::shape::Maybe;
 
+use super::computed;
 use super::covariant;
 use super::universe;
 use crate::bridge;
@@ -635,12 +637,9 @@ fn stays_and_composites_record_their_simulation()
         matches!(outcomes.as_slice(), [
             Outcome::Defined { .. },
             Outcome::Defined { .. },
-            Outcome::Refused(bridge::Refusal::OutOfFragment {
-                former: UnadmittedFormer::ElementFlow,
-                ..
-            })
+            Outcome::Defined { .. },
         ]),
-        "the composite crosses as one replayed simulation; an element flow stays: {outcomes:?}"
+        "the composite crosses as one replayed simulation, and a stay at a string as the kernel's stay: {outcomes:?}"
     );
 }
 
@@ -684,5 +683,23 @@ fn motives_ride_only_covariantly()
             Err(CheckRefusal::RideUnsupported { at }),
         ],
         "a run, an arrow's codomain and a flow's target ride; a domain, a flow's source and a path do not; an outer binder is unsupported"
+    );
+    let decoded = arena.value_type_element(code, Level::zero());
+    let decoded_pair = arena.value_type_product(&[decoded, unit_type]);
+    let mut fields = BTreeMap::new();
+    fields.insert(FieldLabel::from(String::from("seat")), decoded);
+    let record = arena.value_type_record(fields);
+    let returns_decoded = arena.comp_type_returner(decoded);
+    let reader = arena.comp_type_arrow(unit_type, returns_decoded);
+    let suspended = arena.value_type_thunk(reader);
+    let moved: Vec<_> = [decoded, decoded_pair, target, record, suspended]
+        .iter()
+        .map(|&motive| computed(&arena, at, motive))
+        .collect();
+    let unsupported = Err(CheckRefusal::RideUnsupported { at });
+    assert_eq!(
+        moved,
+        [Ok(()), Ok(()), Ok(()), unsupported, unsupported],
+        "a decode of the code, a pair of it and a flow singleton compute; a record of it and a thunk returning it do not"
     );
 }

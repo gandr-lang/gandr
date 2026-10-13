@@ -427,6 +427,10 @@ pub enum Former<'source, Node>
     Stay(Node),
     /// Directed composition `then(f, g)`.
     Then(Node, Node),
+    /// A forward flow `forward(f)` over its translator.
+    Forward(Node),
+    /// A function flow `arrow(d, c)` over its domain and codomain flows.
+    FunctionFlow(Node, Node),
     /// The recorded runs of a session code, `Run(s)`.
     RunType(Node),
     /// The returner over its value: `v` where a path through a body ends,

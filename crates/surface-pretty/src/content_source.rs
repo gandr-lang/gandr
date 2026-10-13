@@ -354,6 +354,8 @@ impl Source for ContentSource<'_>
             } => Former::SessionRelated(relation, source, target),
             | ContentNode::Stay(point) => Former::Stay(point),
             | ContentNode::Then(first, second) => Former::Then(first, second),
+            | ContentNode::Forward(translator) => Former::Forward(translator),
+            | ContentNode::FunctionFlow(domain, codomain) => Former::FunctionFlow(domain, codomain),
             | ContentNode::RunType(code) => Former::RunType(code),
             | ContentNode::Ua {
                 stratum,
@@ -642,7 +644,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn named(key: ItemKey) -> ContentNode
+    fn key(key: ItemKey) -> ContentNode
     {
         ContentNode::Abstract(Reference::Item {
             key,
@@ -711,7 +713,7 @@ mod tests
             faithful("Unit".into())
         );
         assert_eq!(
-            spelled(&[named(ItemKey::from("Shape"))]),
+            spelled(&[key(ItemKey::from("Shape"))]),
             faithful("Shape".into())
         );
         assert_eq!(
@@ -965,7 +967,7 @@ mod tests
     {
         let [_, n1, n2, ..] = indices();
         assert_eq!(
-            spelled(&[named(ItemKey::from("Maybe?"))]),
+            spelled(&[key(ItemKey::from("Maybe?"))]),
             faithful("Maybe?".into())
         );
         let integer = ContentNode::Base(BaseType::Integer);

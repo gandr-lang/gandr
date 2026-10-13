@@ -271,6 +271,17 @@ pub enum FrameRole
     RideMotive,
     /// A ride's value is being checked, then admitted at the target.
     RideValue,
+    /// A `forward` waits on its translator's type, then is decided at every
+    /// covering input.
+    ForwardTranslator,
+    /// A function flow waits on its domain boundary's type.
+    ArrowDomain,
+    /// A function flow waits on its codomain boundary's type.
+    ArrowCodomain,
+    /// A function flow is compared with the flow type it is checked against.
+    ArrowAgainst,
+    /// A stay's point is checked at the carrier, then met with both endpoints.
+    StayEndpoints,
 }
 
 impl fmt::Display for FrameRole
@@ -384,6 +395,11 @@ impl fmt::Display for FrameRole
             | Self::RideFlow => "RideFlow",
             | Self::RideMotive => "RideMotive",
             | Self::RideValue => "RideValue",
+            | Self::ForwardTranslator => "ForwardTranslator",
+            | Self::ArrowDomain => "ArrowDomain",
+            | Self::ArrowCodomain => "ArrowCodomain",
+            | Self::ArrowAgainst => "ArrowAgainst",
+            | Self::StayEndpoints => "StayEndpoints",
         })
     }
 }
@@ -822,6 +838,11 @@ mod tests
             FrameRole::RideFlow,
             FrameRole::RideMotive,
             FrameRole::RideValue,
+            FrameRole::ForwardTranslator,
+            FrameRole::ArrowDomain,
+            FrameRole::ArrowCodomain,
+            FrameRole::ArrowAgainst,
+            FrameRole::StayEndpoints,
         ];
         let names: Vec<_> = roles.iter().map(ToString::to_string).collect();
         for (index, name) in names.iter().enumerate() {

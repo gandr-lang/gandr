@@ -1,5 +1,6 @@
-//! Directed identity over sessions: `Flow(A, a, b)`, the statements that
-//! inhabit it and its path counterpart, and the recorded runs that ride it.
+//! Directed identity: `Flow(A, a, b)`, the session statements that inhabit it
+//! and its path counterpart, `stay` and `then`, the ride and the table it
+//! computes by, and the recorded runs that ride it.
 //!
 //! # The statements
 //!
@@ -21,11 +22,14 @@
 //! against the erased graphs and trusts nothing the engine decided.
 //!
 //! `stay(a)` synthesises `Flow(A, a, a)` from the type `a` synthesises, and
-//! `f then g` synthesises `Flow(A, a, c)` from `f : Flow(A, a, b)` and `g`
-//! checked against `Flow(A, b, c)`. When the carrier is the value universe
-//! and the endpoints are session codes, the engine decides the composite's
-//! own simulation and the judgement records it as it records `sim`, so the
-//! kernel replays a stay or a composite as one simulation.
+//! checked against `Flow(A, x, y)` meets `a` with both endpoints; `f then g`
+//! synthesises `Flow(A, a, c)` from `f : Flow(A, a, b)` and `g` checked
+//! against `Flow(A, b, c)`. When the carrier is the value universe and the
+//! endpoints are session codes, the engine decides the composite's own
+//! simulation and the judgement records it as it records `sim`, so the kernel
+//! replays a stay or a composite as one simulation. Over any other carrier or
+//! codes the bridge erases a stay to the kernel's own stay and a composite to
+//! its sequence, which admission checks by conversion.
 //!
 //! # The run type
 //!
@@ -51,8 +55,10 @@
 //! its reverse.
 //!
 //! A motive that does not read `X`, and a flow whose two endpoints convert,
-//! ride as the identity. Between two distinct session codes the motive must be
-//! `Run(X)` ([`CheckRefusal::RideUnsupported`] otherwise): the run moves by
+//! ride as the identity, as does any ride along a flow whose carrier is no
+//! universe: such a flow is a stay or a composite of stays, and a stay
+//! returns what it rides. Between two distinct session codes the motive must
+//! be `Run(X)` ([`CheckRefusal::RideUnsupported`] otherwise): the run moves by
 //! `gandr-core-session`'s recorded-run consumer along the engine's simulation,
 //! never by the kernel's lowering of a flow, which refuses a session flow as
 //! `RecordedRunRequired`. A literal run is advanced move by move at check
@@ -61,6 +67,21 @@
 //! open run is admitted when the simulation narrows no offer, so every run of
 //! the source is a run of the target. An admitted ride returns the run
 //! unchanged: its skeleton is the target's, labels and payloads kept.
+//!
+//! Between codes that are not both sessions — the forward and function flows
+//! of [`crate::forward`] — the motive must be one the directed computation
+//! table moves:
+//!
+//! | motive position reading `X` | the ride |
+//! |---|---|
+//! | `X` decoded, `El X` | a forward flow applies its translator; a function flow wraps the function in its two boundaries |
+//! | a product, a sum or a list of such positions | constructorwise, `nil` unchanged |
+//! | `Flow(Type, l, X)`, the singleton | `stay(l)` becomes the flow; any other flow composes with it |
+//!
+//! Any other position reading `X` — a record of it, a thunk of an arrow into
+//! it — is [`CheckRefusal::RideUnsupported`]. The kernel's ride reduction,
+//! the normaliser and the runtime compute the same rows, so a ride the
+//! judgement admits computes in all three.
 //!
 //! # Decisions
 //!
@@ -91,6 +112,12 @@
 //! - **Closed motives.** A motive reads no binder but its own, which keeps the
 //!   covariance check a reach count. Reversal: an occurrence walk that tracks
 //!   each binder's polarity.
+//! - **Walking the wrong family is a shape mismatch.** `transport` along a flow
+//!   wants a path and `ride` along a path wants a flow; each is
+//!   [`CheckRefusal::ShapeMismatch`] naming the shape the eliminator expects.
+//!   The alternative, a refusal of its own for crossing families, would name
+//!   the same fact twice. Reversal: a derived coercion from paths to flows,
+//!   which would let a path ride.
 //!
 //! # What a consumer may assume
 //!
@@ -809,15 +836,19 @@ pub fn covariant(
 ///   formed under a binder of the flow's carrier.
 /// - ensures: the motive at the flow's source, the returner of the motive at
 ///   its target, and whether a run moves: fixed for a motive that ignores its
-///   code or a flow whose endpoints convert; moving for a run motive between
-///   two session codes the engine relates by subtyping.
+///   code, a flow whose endpoints convert, a flow at an element carrier, or a
+///   motive the directed computation table moves ([`computed`]) along a flow
+///   between codes that are not both session codes; moving for a run motive
+///   between two session codes the engine relates by subtyping.
 /// - fails: [`CheckRefusal::NonCovariantMotive`] and
 ///   [`CheckRefusal::RideUnsupported`] as [`covariant`] raises them;
 ///   [`CheckRefusal::RideUnsupported`] at `at` for a motive other than `Run(X)`
-///   between distinct endpoints; [`CheckRefusal::SessionCodeExpected`] at an
-///   endpoint that is no session code; [`CheckRefusal::SessionNotSubtype`] at
-///   the flow for sessions the engine does not relate; a shape mismatch for a
-///   classifier that is no flow type.
+///   between distinct session codes, and for a motive the computation table
+///   does not move between distinct codes;
+///   [`CheckRefusal::SessionCodeExpected`] at an endpoint of a run motive that
+///   is no session code; [`CheckRefusal::SessionNotSubtype`] at the flow for
+///   sessions the engine does not relate; a shape mismatch for a classifier
+///   that is no flow type.
 /// - panics: none.
 ///
 /// # Errors
@@ -825,9 +856,13 @@ pub fn covariant(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a run motive moves between a session and its widening, a
-///   list motive between them is unsupported, and a stay rides fixed.
+///   list motive between them is unsupported, a stay rides fixed, a decode of
+///   the code rides a migration fixed while a record of it is unsupported, and
+///   the symmetry motive along a migration is refused.
 /// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
 /// - witness: `flow::tests::motives_ride_only_covariantly`
+/// - witness: `forward::tests::a_migration_is_decided_at_every_covering_input`
+/// - witness: `forward::tests::the_symmetry_ride_along_a_migration_is_refused`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::NonCovariantMotive { at: site } | CheckRefusal::RideUnsupported { at: site }) => site == at,
     | Ok(_) | Err(_) => true,
@@ -846,7 +881,7 @@ pub fn ride(
     else {
         return Err(CheckRefusal::MachineInvariant);
     };
-    let (_, source, target) = endpoints(context, TermNode::Computation(at), flow)?;
+    let (carrier, source, target) = endpoints(context, TermNode::Computation(at), flow)?;
     covariant(context.arena(), at, motive)?;
     let constant = usize::from(loose_reach(
         context.arena(),
@@ -873,7 +908,24 @@ pub fn ride(
         )
     );
     if !run_motive {
-        return Err(CheckRefusal::RideUnsupported { at });
+        let carrier = context.whnf_value_type(carrier)?;
+        if !matches!(
+            value_type_view(context.arena(), carrier)?,
+            ValueTypeView::Universe {
+                sort: GroundSort::Value,
+                ..
+            }
+        ) {
+            return Ok(fixed);
+        }
+        if let (Maybe::Present(_), Maybe::Present(_)) = (
+            session_code(context, source)?,
+            session_code(context, target)?,
+        ) {
+            return Err(CheckRefusal::RideUnsupported { at });
+        }
+        computed(context.arena(), at, motive)?;
+        return Ok(fixed);
     }
     let (left, right) = sessions(context, (source, target))?;
     if let Maybe::Absent(_) = relation_evidence(context, (&left, &right), Relation::Subtype)? {
@@ -883,6 +935,84 @@ pub fn ride(
         moving: Moving::Run,
         ..fixed
     })
+}
+
+/// Check that the directed computation table moves `motive`: each position
+/// that reads the code is the decode of the code itself, a product, a sum or a
+/// list of such positions, or a flow singleton `Flow(Type, l, X)` whose source
+/// ignores the code.
+///
+/// # Specification
+/// - requires: `motive` stands under one binder, its code, and passed
+///   [`covariant`].
+/// - ensures: success exactly when every position the walk meets that reads the
+///   code is one of the rows above; a position ignoring the code is returned
+///   unchanged by every row.
+/// - provides: the rows the kernel's ride reduction, the normaliser and the
+///   runtime share, so a ride the judgement accepts computes in all three.
+/// - fails: [`CheckRefusal::RideUnsupported`] at `at` for any other position
+///   reading the code; a dangling node.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Termination
+/// - reason: a `while let` worklist over the motive's finite tree, not
+///   recursion.
+/// - measure: the positions left, each replaced by its strictly smaller parts.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decode of the code and a pair of it pass; a record of
+///   it and a thunk of an arrow into it are refused.
+/// - witness: `flow::tests::motives_ride_only_covariantly`
+#[spec(ensures: |ret| match ret {
+    | Err(CheckRefusal::RideUnsupported { at: site }) => site == at,
+    | Ok(()) | Err(_) => true,
+})]
+fn computed(
+    arena: &CoreArena,
+    at: ComputationId,
+    motive: ValueTypeId,
+) -> Result<(), CheckRefusal>
+{
+    let unsupported = CheckRefusal::RideUnsupported { at };
+    let reads = |node| loose_reach(arena, node).map(|reach| usize::from(reach) != 0);
+    let code = |id| {
+        matches!(
+            arena.value(id),
+            Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == 0
+        )
+    };
+    let mut pending = Vec::from([motive]);
+    while let Some(position) = pending.pop() {
+        if !reads(CoreNode::Type(TypeNode::Value(position)))? {
+            continue;
+        }
+        let node = CoreNode::Type(TypeNode::Value(position));
+        match *arena
+            .value_type(position)
+            .ok_or(CheckRefusal::DanglingNode { node })?
+        {
+            | ValueType::Element {
+                code: decoded,
+                ref target,
+            } if code(decoded) && *target == Level::zero() => {},
+            | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                pending.extend(parts.iter().copied());
+            },
+            | ValueType::List(element) => pending.push(element),
+            | ValueType::Flow {
+                carrier,
+                source,
+                target,
+            } if code(target)
+                && !reads(CoreNode::Type(TypeNode::Value(carrier)))?
+                && !reads(CoreNode::Term(TermNode::Value(source)))? => {},
+            | _ => return Err(unsupported),
+        }
+    }
+    Ok(())
 }
 
 /// Admit the ridden value `value` at the flow's target.

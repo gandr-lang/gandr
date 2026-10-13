@@ -161,6 +161,8 @@ pub enum GuardTag
     Injection,
     /// Reflexivity of an element path.
     Here,
+    /// A flow introduction.
+    Flow,
     /// A universe lift.
     Lift,
     /// A neutral standing in a value position.

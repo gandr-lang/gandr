@@ -367,6 +367,7 @@ fn walk(
                         | Value::Funext(first, second)
                         | Value::Equiv(first, second)
                         | Value::Then(first, second)
+                        | Value::FunctionFlow(first, second)
                         | Value::SessionRelated {
                             source: first,
                             target: second,
@@ -400,6 +401,7 @@ fn walk(
                         &(Value::PathRefl(body)
                         | Value::Here(body)
                         | Value::Stay(body)
+                        | Value::Forward(body)
                         | Value::Injection(_, body)
                         | Value::Lift { body, .. }
                         | Value::Mark { body, .. }),

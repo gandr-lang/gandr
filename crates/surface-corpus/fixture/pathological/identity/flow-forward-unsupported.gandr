@@ -1,0 +1,19 @@
+module Schema {
+  type Old = #{String, Integer};
+  type New = #{Integer, String};
+  @[ checks ]
+  def anonymise(old : Old) -> -F New {
+    case old {
+      #{name, age} => return #{age, "anonymous"}
+    }
+  }
+  @[ refuses("ForwardUnsupported") ]
+  def scrub : Flow(Type, Old, New) ;
+  def scrub = forward(anonymise) ;
+  @[ checks ]
+  def wrap(xs : List(Integer)) -> -F List(Integer) {
+    return xs
+  }
+  @[ refuses("ForwardUnsupported") ]
+  def lists = forward(wrap) ;
+}

@@ -378,6 +378,7 @@ use gandr_kernel_term::MarkedDeclaration;
 use gandr_kernel_term::QuantifiedStep;
 use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::SealScope;
+use gandr_kernel_term::Seam;
 use gandr_kernel_term::StructuredName;
 use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
@@ -1117,6 +1118,7 @@ where
         funexts: report.funexts(),
         equivalences: report.equivalences(),
         flows: report.flows(),
+        directed: report.directed(),
         reflexivities: report.reflexivities(),
         relations: report.relations(),
         universals: report.universals(),
@@ -1325,6 +1327,8 @@ struct Source<'source>
     equivalences: &'source BTreeMap<ValueId, crate::equiv::Equivalence>,
     /// The session statements the judgement decided, by node.
     flows: &'source BTreeMap<ValueId, crate::flow::Statement>,
+    /// The forward and function flows the judgement decided, by node.
+    directed: &'source BTreeMap<ValueId, crate::forward::Directed>,
     /// The reflexivities the judgement checked against a path type, by node.
     reflexivities: &'source BTreeMap<ValueId, Reflexivity>,
     /// The path endpoint pairs each accepted declaration's conversions
@@ -1824,6 +1828,36 @@ enum Image<Erased>
     Erased(Erased),
 }
 
+/// Which identity an identity frame erases: the symmetric path or the
+/// directed flow, whose kernel formers share their shape.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Family
+{
+    /// `Path`, `here`, transport.
+    Path,
+    /// `Flow`, `stay`, `ride`.
+    Flow,
+}
+
+/// A forward flow part-way through erasure: its flow type and translator
+/// crossed, its images crossing in coverage order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ForwardErasure
+{
+    /// The forward flow.
+    at: ValueId,
+    /// The flow type's image.
+    flow_type: gandr_kernel_term::ValueTypeId,
+    /// The translator's image.
+    translator: gandr_kernel_term::ValueId,
+    /// The decided images, in coverage order.
+    images: alloc::sync::Arc<[ValueId]>,
+    /// The images crossed so far.
+    erased: Vec<gandr_kernel_term::ValueId>,
+    /// The decided dialogues, in coverage order.
+    dialogues: alloc::sync::Arc<[gandr_kernel_term::Dialogue]>,
+}
+
 /// A rule waiting on the image of a child.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Frame
@@ -2031,71 +2065,157 @@ enum Frame
         /// The engine's pairs.
         evidence: alloc::sync::Arc<gandr_kernel_term::session::Evidence>,
     },
-    /// Await the carrier of an element path type.
+    /// Await the carrier of an element path or flow type.
     PathCarrier
     {
-        /// The path type.
+        /// The path or flow type.
         at: ValueTypeId,
         /// The source endpoint.
         left: ValueId,
         /// The target endpoint.
         right: ValueId,
+        /// Which identity the type states.
+        family: Family,
     },
-    /// Await the source endpoint of an element path type.
+    /// Await the source endpoint of an element path or flow type.
     PathLeft
     {
-        /// The path type.
+        /// The path or flow type.
         at: ValueTypeId,
         /// The carrier image.
         carrier: gandr_kernel_term::ValueTypeId,
         /// The target endpoint.
         right: ValueId,
+        /// Which identity the type states.
+        family: Family,
     },
-    /// Await the target endpoint of an element path type.
+    /// Await the target endpoint of an element path or flow type.
     PathRight
     {
-        /// The path type.
+        /// The path or flow type.
         at: ValueTypeId,
         /// The carrier image.
         carrier: gandr_kernel_term::ValueTypeId,
         /// The source endpoint image.
         left: gandr_kernel_term::ValueId,
+        /// Which identity the type states.
+        family: Family,
     },
-    /// Await the point of a reflexivity `here(a)`.
+    /// Await the point of a reflexivity `here(a)` or a stay `stay(a)`.
     Here
     {
-        /// The reflexivity.
+        /// The reflexivity or stay.
         at: ValueId,
+        /// Which identity the point inhabits.
+        family: Family,
     },
-    /// Await the motive of an element transport.
+    /// Await the motive of an element transport or a ride.
     PathTransportMotive
     {
-        /// The transport.
+        /// The transport or ride.
         at: ComputationId,
-        /// The path.
+        /// The path or flow.
         path: ValueId,
         /// The operand.
         value: ValueId,
+        /// Which identity the operand moves along.
+        family: Family,
     },
-    /// Await the path of an element transport.
+    /// Await the path or flow of an element transport or a ride.
     PathTransportPath
     {
-        /// The transport.
+        /// The transport or ride.
         at: ComputationId,
         /// The motive image.
         motive: gandr_kernel_term::ValueTypeId,
         /// The operand.
         value: ValueId,
+        /// Which identity the operand moves along.
+        family: Family,
     },
-    /// Await the operand of an element transport.
+    /// Await the operand of an element transport or a ride.
     PathTransportValue
     {
-        /// The transport.
+        /// The transport or ride.
         at: ComputationId,
         /// The motive image.
         motive: gandr_kernel_term::ValueTypeId,
-        /// The path image.
+        /// The path or flow image.
         path: gandr_kernel_term::ValueId,
+        /// Which identity the operand moves along.
+        family: Family,
+    },
+    /// Await the first leg of a composite flow.
+    ThenFirst
+    {
+        /// The composite.
+        at: ValueId,
+        /// The second leg.
+        second: ValueId,
+    },
+    /// Await the second leg of a composite flow.
+    ThenSecond
+    {
+        /// The composite.
+        at: ValueId,
+        /// The first leg's image.
+        first: gandr_kernel_term::ValueId,
+    },
+    /// Await the flow type a forward flow was decided at.
+    ForwardType
+    {
+        /// The forward flow.
+        at: ValueId,
+        /// The translator.
+        translator: ValueId,
+        /// The decided images, in coverage order.
+        images: alloc::sync::Arc<[ValueId]>,
+        /// The decided dialogues, in coverage order.
+        dialogues: alloc::sync::Arc<[gandr_kernel_term::Dialogue]>,
+    },
+    /// Await the translator of a forward flow.
+    ForwardTranslator
+    {
+        /// The forward flow.
+        at: ValueId,
+        /// The flow type's image.
+        flow_type: gandr_kernel_term::ValueTypeId,
+        /// The decided images, in coverage order.
+        images: alloc::sync::Arc<[ValueId]>,
+        /// The decided dialogues, in coverage order.
+        dialogues: alloc::sync::Arc<[gandr_kernel_term::Dialogue]>,
+    },
+    /// Await the next image of a forward flow.
+    ForwardImages(ForwardErasure),
+    /// Await the flow type a function flow was decided at.
+    FunctionFlowType
+    {
+        /// The function flow.
+        at: ValueId,
+        /// The domain boundary.
+        domain: ValueId,
+        /// The codomain boundary.
+        codomain: ValueId,
+    },
+    /// Await the domain boundary of a function flow.
+    FunctionFlowDomain
+    {
+        /// The function flow.
+        at: ValueId,
+        /// The flow type's image.
+        flow_type: gandr_kernel_term::ValueTypeId,
+        /// The codomain boundary.
+        codomain: ValueId,
+    },
+    /// Await the codomain boundary of a function flow.
+    FunctionFlowCodomain
+    {
+        /// The function flow.
+        at: ValueId,
+        /// The flow type's image.
+        flow_type: gandr_kernel_term::ValueTypeId,
+        /// The domain boundary's image.
+        domain: gandr_kernel_term::ValueId,
     },
     /// Await the motive of a telescope transport.
     TelescopeMotive
@@ -3425,7 +3545,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
             | Value::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
-            | Value::Here(point) => (Frame::Here { at }, CoreNode::Term(TermNode::Value(point))),
+            | Value::Here(point) => (
+                Frame::Here {
+                    at,
+                    family: Family::Path,
+                },
+                CoreNode::Term(TermNode::Value(point)),
+            ),
             | Value::Funext(..) => return self.prepare_funext(target, at),
             | Value::Equiv(forward, backward) => {
                 let Some(decided) = self.source.equivalences.get(&at)
@@ -3442,18 +3568,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     CoreNode::Type(TypeNode::Value(decided.classifier())),
                 )
             },
-            | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) => {
+            | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..)
+                if self.source.flows.contains_key(&at) =>
+            {
                 let Some(decided) = self.source.flows.get(&at)
                 else {
-                    // A statement is always recorded; a stay or a composite only
-                    // over session codes, so any other flow stays on the
-                    // checker's side.
-                    return Err(if matches!(*value, Value::SessionRelated { .. }) {
-                        Refusal::MachineInvariant
-                    }
-                    else {
-                        unadmitted(UnadmittedFormer::ElementFlow)
-                    });
+                    return Err(Refusal::MachineInvariant);
                 };
                 (
                     Frame::SessionCertificate {
@@ -3463,6 +3583,44 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     },
                     CoreNode::Type(TypeNode::Value(decided.classifier())),
                 )
+            },
+            | Value::Stay(point) => (
+                Frame::Here {
+                    at,
+                    family: Family::Flow,
+                },
+                CoreNode::Term(TermNode::Value(point)),
+            ),
+            | Value::Then(first, second) => (
+                Frame::ThenFirst { at, second },
+                CoreNode::Term(TermNode::Value(first)),
+            ),
+            | Value::Forward(translator) => match self.source.directed.get(&at) {
+                | Some(&crate::forward::Directed::Forward(ref decided)) => (
+                    Frame::ForwardType {
+                        at,
+                        translator,
+                        images: alloc::sync::Arc::from(decided.images()),
+                        dialogues: alloc::sync::Arc::from(decided.dialogues()),
+                    },
+                    CoreNode::Type(TypeNode::Value(decided.classifier())),
+                ),
+                | Some(&crate::forward::Directed::Function(_)) | None => {
+                    return Err(Refusal::MachineInvariant);
+                },
+            },
+            | Value::FunctionFlow(domain, codomain) => match self.source.directed.get(&at) {
+                | Some(&crate::forward::Directed::Function(classifier)) => (
+                    Frame::FunctionFlowType {
+                        at,
+                        domain,
+                        codomain,
+                    },
+                    CoreNode::Type(TypeNode::Value(classifier)),
+                ),
+                | Some(&crate::forward::Directed::Forward(_)) | None => {
+                    return Err(Refusal::MachineInvariant);
+                },
             },
             | Value::Recorded(_) => return Err(unadmitted(UnadmittedFormer::Run)),
             | Value::Ua { .. } => {
@@ -3475,8 +3633,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 return Ok(Step::Descend(CoreNode::Term(TermNode::Value(path))));
             },
             // Elaboration replaces every nested computation and written run
-            // before a verdict's body is answered, so none reaches the kernel.
-            | Value::Nested(_) | Value::Run(_) => return Err(Refusal::MachineInvariant),
+            // before a verdict's body is answered, so none reaches the kernel;
+            // a session statement is always recorded.
+            | Value::Nested(_) | Value::Run(_) | Value::SessionRelated { .. } => {
+                return Err(Refusal::MachineInvariant);
+            },
             | Value::Returned(computation) => (
                 Frame::Returned { at },
                 CoreNode::Term(TermNode::Computation(computation)),
@@ -3942,7 +4103,20 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Computation::Shift(_) => return Err(unadmitted(UnadmittedFormer::Shift)),
             | Computation::Exercise { .. } => return Err(unadmitted(UnadmittedFormer::Exercise)),
             | Computation::Scope { .. } => return Err(unadmitted(UnadmittedFormer::Scope)),
-            | Computation::Ride { .. } => return Err(unadmitted(UnadmittedFormer::Run)),
+            | Computation::Ride {
+                motive,
+                flow,
+                value,
+            } => {
+                self.memo().computations.insert(at, Image::Open);
+                self.frames.push(Frame::PathTransportMotive {
+                    at,
+                    path: flow,
+                    value,
+                    family: Family::Flow,
+                });
+                return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(motive))));
+            },
             | Computation::With(first, second) => (
                 Frame::WithFirst { at, second },
                 TermNode::Computation(first),
@@ -3988,8 +4162,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 value,
             } => {
                 self.memo().computations.insert(at, Image::Open);
-                self.frames
-                    .push(Frame::PathTransportMotive { at, path, value });
+                self.frames.push(Frame::PathTransportMotive {
+                    at,
+                    path,
+                    value,
+                    family: Family::Path,
+                });
                 return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(motive))));
             },
             | Computation::TelescopeTransport { motive, .. } => {
@@ -4104,15 +4282,19 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     level,
                 }) = value_type_view(self.arena, carrier)
                 else {
-                    return Err(Refusal::OutOfFragment {
-                        at: CoreNode::Type(TypeNode::Value(at)),
-                        former: UnadmittedFormer::ElementFlow,
+                    self.memo().value_types.insert(at, Image::Open);
+                    self.frames.push(Frame::PathCarrier {
+                        at,
+                        left: source,
+                        right: target_code,
+                        family: Family::Flow,
                     });
+                    return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(carrier))));
                 };
                 if *level != Level::zero() {
                     return Err(Refusal::OutOfFragment {
                         at: CoreNode::Type(TypeNode::Value(at)),
-                        former: UnadmittedFormer::ElementFlow,
+                        former: UnadmittedFormer::HigherFlow,
                     });
                 }
                 (
@@ -4151,7 +4333,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 left,
                 right,
             } => (
-                Frame::PathCarrier { at, left, right },
+                Frame::PathCarrier {
+                    at,
+                    left,
+                    right,
+                    family: Family::Path,
+                },
                 CoreNode::Type(TypeNode::Value(carrier)),
             ),
             | ValueTypeView::Integer => {
@@ -4437,6 +4624,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     | Value::SessionRelated { .. }
                     | Value::Stay(_)
                     | Value::Then(..)
+                    | Value::Forward(_)
+                    | Value::FunctionFlow(..)
                     | Value::Recorded(_),
                     _,
                 ) => return Err(Refusal::MachineInvariant),
@@ -4511,6 +4700,50 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             code = reduct;
         }
         Ok(Step::Descend(CoreNode::Term(TermNode::Value(code))))
+    }
+
+    /// Cross the next image of the forward flow `erasure` holds, or mint the
+    /// kernel's forward flow once every image has crossed.
+    ///
+    /// # Specification
+    /// - requires: `erasure` holds the images crossed so far, in coverage
+    ///   order.
+    /// - ensures: while an image remains, the erasure waits on it and the next
+    ///   image is the next goal; once none remains, the kernel's forward flow
+    ///   over the flow type, the translator, every image in order and the
+    ///   decided dialogues is recorded at the flow and ascends.
+    /// - panics: none.
+    /// - executable: none — the kernel node is minted into the target arena the
+    ///   frame stack hands back later, out of the predicate's reach.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as [`Self::argument`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a migration's forward flow crosses with one image per
+    ///   pattern and replays in the kernel.
+    /// - witness: `forward::tests::directed_statements_cross_and_replay`
+    fn forward_images(
+        &mut self,
+        target: &mut TermArena,
+        erasure: ForwardErasure,
+    ) -> Result<Step, Refusal>
+    {
+        if let Some(&next) = erasure.images.get(erasure.erased.len()) {
+            self.frames.push(Frame::ForwardImages(erasure));
+            return self.argument(next);
+        }
+        let ForwardErasure {
+            at,
+            flow_type,
+            translator,
+            erased,
+            dialogues,
+            ..
+        } = erasure;
+        let image =
+            target.value_forward_flow(flow_type, translator, erased.into_boxed_slice(), dialogues);
+        Ok(self.erased_value(at, image))
     }
 
     /// Hand `image` to the rule `frame` holds.
@@ -4734,55 +4967,216 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (Frame::TransportValue { at, path }, AnyNode::Value(value)) => {
                 Ok(self.erased_computation(at, target.computation_transport(path, value)))
             },
-            | (Frame::PathCarrier { at, left, right }, AnyNode::ValueType(carrier)) => {
-                self.frames.push(Frame::PathLeft { at, carrier, right });
+            | (
+                Frame::PathCarrier {
+                    at,
+                    left,
+                    right,
+                    family,
+                },
+                AnyNode::ValueType(carrier),
+            ) => {
+                self.frames.push(Frame::PathLeft {
+                    at,
+                    carrier,
+                    right,
+                    family,
+                });
                 self.argument(left)
             },
-            | (Frame::PathLeft { at, carrier, right }, AnyNode::Value(left)) => {
-                self.frames.push(Frame::PathRight { at, carrier, left });
+            | (
+                Frame::PathLeft {
+                    at,
+                    carrier,
+                    right,
+                    family,
+                },
+                AnyNode::Value(left),
+            ) => {
+                self.frames.push(Frame::PathRight {
+                    at,
+                    carrier,
+                    left,
+                    family,
+                });
                 self.argument(right)
             },
-            | (Frame::PathRight { at, carrier, left }, AnyNode::Value(right)) => {
-                Ok(self.erased_value_type(at, target.value_type_path(carrier, left, right)))
+            | (
+                Frame::PathRight {
+                    at,
+                    carrier,
+                    left,
+                    family,
+                },
+                AnyNode::Value(right),
+            ) => {
+                let image = match family {
+                    | Family::Path => target.value_type_path(carrier, left, right),
+                    | Family::Flow => target.value_type_flow(carrier, left, right),
+                };
+                Ok(self.erased_value_type(at, image))
             },
             // A reflexivity checked against a path type carries the
             // dialogues relating its point to each endpoint; one only
             // synthesised relates it to itself and carries none.
-            | (Frame::Here { at }, AnyNode::Value(point)) => {
-                let image = match self.source.reflexivities.get(&at) {
-                    | Some(reflexivity) => target.value_here_relating(
-                        point,
-                        alloc::sync::Arc::new(EndpointDialogues {
-                            left: reflexivity
-                                .left()
-                                .iter()
-                                .map(|decision| decision.map(|_| ()))
-                                .collect(),
-                            right: reflexivity
-                                .right()
-                                .iter()
-                                .map(|decision| decision.map(|_| ()))
-                                .collect(),
-                        }),
-                    ),
-                    | None => target.value_here(point),
+            | (Frame::Here { at, family }, AnyNode::Value(point)) => {
+                let dialogues = self.source.reflexivities.get(&at).map(|reflexivity| {
+                    alloc::sync::Arc::new(EndpointDialogues {
+                        left: reflexivity
+                            .left()
+                            .iter()
+                            .map(|decision| decision.map(|_| ()))
+                            .collect(),
+                        right: reflexivity
+                            .right()
+                            .iter()
+                            .map(|decision| decision.map(|_| ()))
+                            .collect(),
+                    })
+                });
+                let image = match (family, dialogues) {
+                    | (Family::Path, Some(dialogues)) => {
+                        target.value_here_relating(point, dialogues)
+                    },
+                    | (Family::Path, None) => target.value_here(point),
+                    | (Family::Flow, Some(dialogues)) => {
+                        target.value_stay_relating(point, dialogues)
+                    },
+                    | (Family::Flow, None) => target.value_stay(point),
                 };
                 Ok(self.erased_value(at, image))
             },
-            | (Frame::PathTransportMotive { at, path, value }, AnyNode::ValueType(motive)) => {
-                self.frames
-                    .push(Frame::PathTransportPath { at, motive, value });
+            | (
+                Frame::PathTransportMotive {
+                    at,
+                    path,
+                    value,
+                    family,
+                },
+                AnyNode::ValueType(motive),
+            ) => {
+                self.frames.push(Frame::PathTransportPath {
+                    at,
+                    motive,
+                    value,
+                    family,
+                });
                 Ok(Step::Descend(CoreNode::Term(TermNode::Value(path))))
             },
-            | (Frame::PathTransportPath { at, motive, value }, AnyNode::Value(path)) => {
-                self.frames
-                    .push(Frame::PathTransportValue { at, motive, path });
+            | (
+                Frame::PathTransportPath {
+                    at,
+                    motive,
+                    value,
+                    family,
+                },
+                AnyNode::Value(path),
+            ) => {
+                self.frames.push(Frame::PathTransportValue {
+                    at,
+                    motive,
+                    path,
+                    family,
+                });
                 self.argument(value)
             },
-            | (Frame::PathTransportValue { at, motive, path }, AnyNode::Value(value)) => {
-                Ok(self
-                    .erased_computation(at, target.computation_path_transport(motive, path, value)))
+            | (
+                Frame::PathTransportValue {
+                    at,
+                    motive,
+                    path,
+                    family,
+                },
+                AnyNode::Value(value),
+            ) => {
+                let image = match family {
+                    | Family::Path => target.computation_path_transport(motive, path, value),
+                    | Family::Flow => target.computation_ride(motive, path, value),
+                };
+                Ok(self.erased_computation(at, image))
             },
+            | (Frame::ThenFirst { at, second }, AnyNode::Value(first)) => {
+                self.frames.push(Frame::ThenSecond { at, first });
+                self.argument(second)
+            },
+            | (Frame::ThenSecond { at, first }, AnyNode::Value(second)) => {
+                Ok(self.erased_value(at, target.value_then(first, second, Seam::Sequence)))
+            },
+            | (
+                Frame::ForwardType {
+                    at,
+                    translator,
+                    images,
+                    dialogues,
+                },
+                AnyNode::ValueType(flow_type),
+            ) => {
+                self.frames.push(Frame::ForwardTranslator {
+                    at,
+                    flow_type,
+                    images,
+                    dialogues,
+                });
+                self.argument(translator)
+            },
+            | (
+                Frame::ForwardTranslator {
+                    at,
+                    flow_type,
+                    images,
+                    dialogues,
+                },
+                AnyNode::Value(translator),
+            ) => self.forward_images(target, ForwardErasure {
+                at,
+                flow_type,
+                translator,
+                images,
+                erased: Vec::new(),
+                dialogues,
+            }),
+            | (Frame::ForwardImages(mut erasure), AnyNode::Value(image)) => {
+                erasure.erased.push(image);
+                self.forward_images(target, erasure)
+            },
+            | (
+                Frame::FunctionFlowType {
+                    at,
+                    domain,
+                    codomain,
+                },
+                AnyNode::ValueType(flow_type),
+            ) => {
+                self.frames.push(Frame::FunctionFlowDomain {
+                    at,
+                    flow_type,
+                    codomain,
+                });
+                self.argument(domain)
+            },
+            | (
+                Frame::FunctionFlowDomain {
+                    at,
+                    flow_type,
+                    codomain,
+                },
+                AnyNode::Value(domain),
+            ) => {
+                self.frames.push(Frame::FunctionFlowCodomain {
+                    at,
+                    flow_type,
+                    domain,
+                });
+                self.argument(codomain)
+            },
+            | (
+                Frame::FunctionFlowCodomain {
+                    at,
+                    flow_type,
+                    domain,
+                },
+                AnyNode::Value(codomain),
+            ) => Ok(self.erased_value(at, target.value_function_flow(flow_type, domain, codomain))),
             | (Frame::TelescopeMotive { at }, AnyNode::CompType(motive)) => {
                 let Some(&Computation::TelescopeTransport { path, .. }) =
                     self.arena.computation(at)
@@ -5048,7 +5442,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::UnmarkedValue { .. }
                 | Frame::StaticHead { .. }
                 | Frame::StaticArgument { .. }
-                | Frame::DecodeOf { .. },
+                | Frame::DecodeOf { .. }
+                | Frame::ThenFirst { .. }
+                | Frame::ThenSecond { .. }
+                | Frame::ForwardTranslator { .. }
+                | Frame::ForwardImages(_)
+                | Frame::FunctionFlowDomain { .. }
+                | Frame::FunctionFlowCodomain { .. },
                 AnyNode::Computation(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
             )
             | (
@@ -5068,6 +5468,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::PiDomain { .. }
                 | Frame::StaticPiDomain { .. }
                 | Frame::StaticPiCodomain { .. }
+                | Frame::ForwardType { .. }
+                | Frame::FunctionFlowType { .. }
                 | Frame::Decoded {
                     at: TypeNode::Value(_),
                 },
@@ -5530,6 +5932,7 @@ mod tests
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
             flows: &BTreeMap::new(),
+            directed: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
             relations: &BTreeMap::new(),
             universals: &BTreeMap::new(),
@@ -7790,6 +8193,7 @@ mod tests
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
             flows: &BTreeMap::new(),
+            directed: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
             relations: &BTreeMap::new(),
             universals: &BTreeMap::new(),
@@ -8495,6 +8899,7 @@ mod tests
             funexts: &BTreeMap::new(),
             equivalences: &BTreeMap::new(),
             flows: &BTreeMap::new(),
+            directed: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
             relations: &BTreeMap::new(),
             universals: &BTreeMap::new(),

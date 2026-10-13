@@ -102,12 +102,14 @@ pub enum Form
     Fixpoint,
     /// A session action: the image has no channels.
     Session,
-    /// A session statement, stay or composite flow: a certificate with no
-    /// runtime content.
+    /// A session statement: a certificate with no runtime content.
     SessionIdentity,
+    /// A flow — a stay, a composite, a forward or a function flow: the image
+    /// has no translator closures.
+    Flow,
     /// A recorded run: the image has no traces.
     RecordedRun,
-    /// A ride along a flow: the recorded-run consumer moves it.
+    /// A ride along a flow: the image runs no motive's action.
     Ride,
     /// A tuple of other than zero or two components: the image's products
     /// are binary.
@@ -178,6 +180,7 @@ impl core::fmt::Display for Form
             | Self::Fixpoint => "a fixpoint",
             | Self::Session => "a session action",
             | Self::SessionIdentity => "a session identity",
+            | Self::Flow => "a flow",
             | Self::RecordedRun => "a recorded run",
             | Self::Ride => "a ride along a flow",
             | Self::TupleArity => "a tuple of neither zero nor two components",
@@ -561,8 +564,14 @@ pub fn lower_computation(
                     | Value::Nested(_) | Value::Run(_) => {
                         return Err(LowerError::OutsideSlice(Form::Nested));
                     },
-                    | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) => {
+                    | Value::SessionRelated { .. } => {
                         return Err(LowerError::OutsideSlice(Form::SessionIdentity));
+                    },
+                    | Value::Stay(_)
+                    | Value::Then(..)
+                    | Value::Forward(_)
+                    | Value::FunctionFlow(..) => {
+                        return Err(LowerError::OutsideSlice(Form::Flow));
                     },
                     | Value::Recorded(_) => {
                         return Err(LowerError::OutsideSlice(Form::RecordedRun));

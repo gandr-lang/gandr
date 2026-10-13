@@ -427,6 +427,40 @@ pub enum CompBody
         /// environment.
         then: CompClosureId,
     },
+    /// Ride the bound value along `flow` in `motive`: the continuation `x.
+    /// ride(P, g, x)` a composite's first leg binds into.
+    RideAlong
+    {
+        /// The ride's motive, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The flow the bound value rides along next.
+        flow: DomainValueId,
+    },
+    /// The body of the thunk a function flow rides a function to: forced, it
+    /// returns the lambda [`Self::RideArgument`] enters at the argument.
+    RideFunction
+    {
+        /// The ride's motive, `El(x)`, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The function flow, holding the domain and codomain flows.
+        flow: DomainValueId,
+        /// The function ridden.
+        function: DomainValueId,
+    },
+    /// `a'. a ← ride(El, d, a'); b ← force f a; ride(El, c, b)`: the ridden
+    /// function's body at the bound argument.
+    RideArgument
+    {
+        /// The ride's motive, `El(x)`, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The function flow, holding the domain and codomain flows.
+        flow: DomainValueId,
+        /// The function ridden.
+        function: DomainValueId,
+    },
+    /// Apply the held thunk, forced, to the bound value: the continuation `a.
+    /// force f a`.
+    ForceApplied(DomainValueId),
 }
 
 /// A suspended **computation** body with the environment its free variables

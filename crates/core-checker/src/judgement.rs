@@ -288,7 +288,9 @@
 //! decides by computation and the bridge erases to `PathEquiv` with the
 //! dialogues it recorded, and univalence at a stratum `ua[n, k](a, b, f, g)`,
 //! which [`crate::ua`] derives and the bridge erases to the path product of
-//! one `PathEquiv` per corolla. The bridge mode, higher fields, `Flow_U` and
+//! one `PathEquiv` per corolla. The directed family's statements — `sim`,
+//! `forward` and `arrow` at `Flow(Type, A, B)` — are the rules of
+//! [`crate::flow`] and [`crate::forward`]. The bridge mode, higher fields and
 //! guarded List inhabitants stay at their kernel rule-language boundaries;
 //! function extensionality is the element-identity rule below.
 //!
@@ -1492,6 +1494,55 @@ enum Frame
         /// Whether the value is a run moving between distinct sessions.
         moving: crate::flow::Moving,
     },
+    /// Await the type a `forward`'s translator synthesised: the two codes the
+    /// statement relates.
+    ForwardTranslator
+    {
+        /// The `forward`.
+        at: ValueId,
+        /// Its translator.
+        translator: ValueId,
+    },
+    /// Await the type a function flow's domain boundary synthesised.
+    ArrowDomain
+    {
+        /// The function flow.
+        at: ValueId,
+        /// Its codomain boundary.
+        codomain: ValueId,
+    },
+    /// Await the type a function flow's codomain boundary synthesised.
+    ArrowCodomain
+    {
+        /// The function flow.
+        at: ValueId,
+        /// The domain boundary's type.
+        domain_type: ValueTypeId,
+    },
+    /// Await the type a function flow synthesised, then compare it with the
+    /// flow type it is checked against, naming a misdirected boundary.
+    ArrowAgainst
+    {
+        /// The function flow.
+        at: ValueId,
+        /// The flow type it is checked against.
+        expected: ValueTypeId,
+    },
+    /// Await the check of a stay's point against the carrier, then meet the
+    /// point with both endpoints of the flow type it is checked against.
+    StayEndpoints
+    {
+        /// The stay.
+        at: ValueId,
+        /// Its point.
+        point: ValueId,
+        /// The flow type's carrier.
+        carrier: ValueTypeId,
+        /// The flow type's source.
+        left: ValueId,
+        /// The flow type's target.
+        right: ValueId,
+    },
     /// Await the path classifier of the telescope transport `at`; its motive
     /// then forms.
     TelescopePath
@@ -1913,6 +1964,11 @@ impl Frame
             | Self::RideFlow { .. } => FrameRole::RideFlow,
             | Self::RideMotive { .. } => FrameRole::RideMotive,
             | Self::RideValue { .. } => FrameRole::RideValue,
+            | Self::ForwardTranslator { .. } => FrameRole::ForwardTranslator,
+            | Self::ArrowDomain { .. } => FrameRole::ArrowDomain,
+            | Self::ArrowCodomain { .. } => FrameRole::ArrowCodomain,
+            | Self::ArrowAgainst { .. } => FrameRole::ArrowAgainst,
+            | Self::StayEndpoints { .. } => FrameRole::StayEndpoints,
         }
     }
 
@@ -2020,7 +2076,12 @@ impl Frame
             | Self::ThenSecond { .. }
             | Self::RideFlow { .. }
             | Self::RideMotive { .. }
-            | Self::RideValue { .. } => 0_usize,
+            | Self::RideValue { .. }
+            | Self::ForwardTranslator { .. }
+            | Self::ArrowDomain { .. }
+            | Self::ArrowCodomain { .. }
+            | Self::ArrowAgainst { .. }
+            | Self::StayEndpoints { .. } => 0_usize,
         })
     }
 }
@@ -3601,6 +3662,23 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            | Value::Forward(translator) => {
+                self.wait(Frame::ForwardTranslator {
+                    at: term,
+                    translator,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: translator,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | Value::FunctionFlow(domain, codomain) => {
+                self.wait(Frame::ArrowDomain { at: term, codomain });
+                Ok(Step::Descend(Goal::Value {
+                    term: domain,
+                    direction: Direction::Synthesise,
+                }))
+            },
             | Value::Recorded(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Run(term),
             }),
@@ -3850,6 +3928,39 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 })),
             },
             | Value::Recorded(_) => self.check_recorded(term, expected),
+            | Value::Stay(point) => {
+                let head = self.context.whnf_value_type(expected)?;
+                if let ValueTypeView::Flow {
+                    carrier,
+                    source: left,
+                    target: right,
+                } = value_type_view(self.context.arena(), head)?
+                {
+                    self.wait(Frame::StayEndpoints {
+                        at: term,
+                        point,
+                        carrier,
+                        left,
+                        right,
+                    });
+                    return Ok(Step::Descend(Goal::Value {
+                        term: point,
+                        direction: Direction::Check(carrier),
+                    }));
+                }
+                self.wait(Frame::ValueBridge { at: term, expected });
+                Ok(Step::Descend(Goal::Value {
+                    term,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | Value::FunctionFlow(..) => {
+                self.wait(Frame::ArrowAgainst { at: term, expected });
+                Ok(Step::Descend(Goal::Value {
+                    term,
+                    direction: Direction::Synthesise,
+                }))
+            },
             | Value::PathRefl(_)
             | Value::Returned(_)
             | Value::Run(_)
@@ -3868,8 +3979,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::QuoteComputation(_)
             | Value::StaticApplication(..)
             | Value::SessionRelated { .. }
-            | Value::Stay(_)
-            | Value::Then(..) => {
+            | Value::Then(..)
+            | Value::Forward(_) => {
                 self.wait(Frame::ValueBridge { at: term, expected });
                 Ok(Step::Descend(Goal::Value {
                     term,
@@ -4084,6 +4195,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::SessionRelated { .. }
             | Value::Stay(_)
             | Value::Then(..)
+            | Value::Forward(_)
+            | Value::FunctionFlow(..)
             | Value::Recorded(_) => false,
         };
         if normalizes_away {
@@ -5990,6 +6103,64 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 crate::flow::admit(self.context, at, value, flow, moving)?;
                 Ok(Step::Ascend(Produced::CompType(result)))
             },
+            | (Frame::ForwardTranslator { at, translator }, Produced::ValueType(classifier)) => {
+                let codes = crate::forward::codes(self.context, at, classifier)?;
+                let decided = crate::forward::decide(self.context, at, translator, codes)?;
+                let flow = decided.classifier();
+                self.context
+                    .record_directed(at, crate::forward::Directed::Forward(decided));
+                Ok(Step::Ascend(Produced::ValueType(flow)))
+            },
+            | (Frame::ArrowDomain { at, codomain }, Produced::ValueType(domain_type)) => {
+                self.wait(Frame::ArrowCodomain { at, domain_type });
+                Ok(Step::Descend(Goal::Value {
+                    term: codomain,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | (Frame::ArrowCodomain { at, domain_type }, Produced::ValueType(codomain_type)) => {
+                let Value::FunctionFlow(domain, codomain) = *self.value(at)?
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let flow = crate::forward::arrow(
+                    self.context,
+                    at,
+                    (domain, domain_type),
+                    (codomain, codomain_type),
+                )?;
+                self.context
+                    .record_directed(at, crate::forward::Directed::Function(flow));
+                Ok(Step::Ascend(Produced::ValueType(flow)))
+            },
+            | (Frame::ArrowAgainst { at, expected }, Produced::ValueType(synthesised)) => {
+                let Value::FunctionFlow(domain, codomain) = *self.value(at)?
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                crate::forward::against(
+                    self.context,
+                    at,
+                    (domain, codomain),
+                    (synthesised, expected),
+                    &mut self.conversions,
+                )?;
+                Ok(Step::Ascend(Produced::Checked))
+            },
+            | (
+                Frame::StayEndpoints {
+                    at,
+                    point,
+                    carrier,
+                    left,
+                    right,
+                },
+                Produced::Checked,
+            ) => {
+                self.reaches(at, point, left, right)?;
+                crate::flow::record_simulation(self.context, at, carrier, (left, right))?;
+                Ok(Step::Ascend(Produced::Checked))
+            },
             | (Frame::TelescopePath { at }, Produced::ValueType(classifier)) => {
                 let PathReading::Known {
                     carrier,
@@ -6479,7 +6650,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::StaySynthesised { .. }
                 | Frame::ThenFirst { .. }
                 | Frame::ThenSecond { .. }
-                | Frame::RideFlow { .. },
+                | Frame::RideFlow { .. }
+                | Frame::ForwardTranslator { .. }
+                | Frame::ArrowDomain { .. }
+                | Frame::ArrowCodomain { .. }
+                | Frame::ArrowAgainst { .. },
                 Produced::CompType(_) | Produced::Checked,
             )
             | (
@@ -6539,7 +6714,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ForkChild { .. }
                 | Frame::SessionStatement { .. }
                 | Frame::RideMotive { .. }
-                | Frame::RideValue { .. },
+                | Frame::RideValue { .. }
+                | Frame::StayEndpoints { .. },
                 Produced::ValueType(_) | Produced::CompType(_),
             )
             | (Frame::BindBody { .. }, Produced::ValueType(_)) => {
@@ -10227,7 +10403,7 @@ mod tests
                     | Value::StaticApplication(..)
                     | Value::Hole(_)
                     | Value::Mark { .. }
-                    | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::Recorded(_) => {
+                    | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) => {
                         prop_assert!(false, "the recipe mints no pair, injection, lift, quote, static operator, hole or mark");
                     },
                 }

@@ -1,0 +1,30 @@
+module Schema {
+  type Old = #{String, Integer};
+  type New = #{Integer, String};
+  @[ checks ]
+  def toNew(old : Old) -> -F New {
+    case old {
+      #{name, age} => return #{age, name}
+    }
+  }
+  @[ checks ]
+  def upgrade : Flow(Type, Old, New) ;
+  def upgrade = forward(toNew) ;
+  @[ checks ]
+  def reader : Flow(Type, +U (New -> -F Integer), +U (Old -> -F Integer)) ;
+  def reader = arrow(upgrade, stay(Integer)) ;
+  @[ checks ]
+  def age(record : New) -> -F Integer {
+    case record {
+      #{years, name} => return years
+    }
+  }
+  @[ checks ]
+  def legacy(record : Old) -> -F Integer {
+    run read <- ride(\X. X, reader, age) ;
+    become read(record)
+  }
+  @[ runs("30") ]
+  def aged : +U (-F Integer) ;
+  def aged = thunk { become legacy(#{"ada", 30}) } ;
+}

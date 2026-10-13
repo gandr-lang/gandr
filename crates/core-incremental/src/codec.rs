@@ -1377,6 +1377,15 @@ where
             write_index(writer, first)?;
             write_index(writer, second)?;
         },
+        | ContentNode::Forward(translator) => {
+            writer.tag(Tag(0x69));
+            write_index(writer, translator)?;
+        },
+        | ContentNode::FunctionFlow(domain, codomain) => {
+            writer.tag(Tag(0x6A));
+            write_index(writer, domain)?;
+            write_index(writer, codomain)?;
+        },
         | ContentNode::Recorded(ref moves) => {
             writer.tag(Tag(0x65));
             writer.count(Count(moves.len()))?;
@@ -2947,6 +2956,8 @@ fn read_effect_row(
                     | ContentNode::SessionRelated { .. } => tag == 0x62,
                     | ContentNode::Stay(_) => tag == 0x63,
                     | ContentNode::Then(..) => tag == 0x64,
+                    | ContentNode::Forward(_) => tag == 0x69,
+                    | ContentNode::FunctionFlow(..) => tag == 0x6A,
                     | ContentNode::Recorded(_) => tag == 0x65,
                     | ContentNode::Ride { .. } => tag == 0x66,
                     | ContentNode::FlowType { .. } => tag == 0x67,
@@ -3104,6 +3115,8 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         },
         | 0x63 => ContentNode::Stay(read_index(reader)?),
         | 0x64 => ContentNode::Then(read_index(reader)?, read_index(reader)?),
+        | 0x69 => ContentNode::Forward(read_index(reader)?),
+        | 0x6A => ContentNode::FunctionFlow(read_index(reader)?, read_index(reader)?),
         | 0x65 => {
             let count = reader.count()?;
             let mut moves = Vec::new();
@@ -4405,7 +4418,7 @@ const FORMERS: [UnadmittedFormer; 21] = [
     UnadmittedFormer::Exercise,
     UnadmittedFormer::Scope,
     UnadmittedFormer::Run,
-    UnadmittedFormer::ElementFlow,
+    UnadmittedFormer::HigherFlow,
 ];
 
 /// The shapes a rule can require, in stable wire order.
@@ -5160,6 +5173,14 @@ where
             writer.tag(Tag(kind));
             writer.word(Word(u64::from(u32::from(step))));
         },
+        | Refusal::ForwardUnsupported(at) => {
+            writer.tag(Tag(70));
+            write_site(writer, at)?;
+        },
+        | Refusal::Boundary(at) => {
+            writer.tag(Tag(71));
+            write_site(writer, at)?;
+        },
     }
     Ok(())
 }
@@ -5301,6 +5322,8 @@ where
                     | Refusal::NonCovariantMotive(_) => 67,
                     | Refusal::RideUnsupported(_) => 68,
                     | Refusal::RunNotAdmitted { .. } => 69,
+                    | Refusal::ForwardUnsupported(_) => 70,
+                    | Refusal::Boundary(_) => 71,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -5586,6 +5609,8 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         | 66 => Refusal::SessionCodeExpected(read_site(reader)?),
         | 67 => Refusal::NonCovariantMotive(read_site(reader)?),
         | 68 => Refusal::RideUnsupported(read_site(reader)?),
+        | 70 => Refusal::ForwardUnsupported(read_site(reader)?),
+        | 71 => Refusal::Boundary(read_site(reader)?),
         | 69 => {
             let at = read_site(reader)?;
             let kind = reader.tag()?.0;

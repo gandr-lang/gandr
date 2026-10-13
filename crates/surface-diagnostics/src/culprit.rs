@@ -317,6 +317,8 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             | RunFault::Incomplete(_) => "a run that stops before the protocol ends",
             | RunFault::OfferNarrowed => "a run that may take an offer the target drops",
         },
+        | CheckRefusal::ForwardUnsupported { .. } => "a translator the rule cannot image",
+        | CheckRefusal::Boundary { .. } => "a boundary flow running against its variance",
     })
 }
 

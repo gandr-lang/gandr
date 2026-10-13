@@ -774,6 +774,8 @@ impl CodeDefinitions
             | Value::Here(_)
             | Value::Stay(_)
             | Value::Then(..)
+            | Value::Forward(_)
+            | Value::FunctionFlow(..)
             | Value::SessionRelated { .. }
             | Value::Recorded(_)
             | Value::Funext(..)
@@ -1667,6 +1669,7 @@ pub fn loose_reach(
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
                     | Value::Then(first, second)
+                    | Value::FunctionFlow(first, second)
                     | Value::SessionRelated {
                         source: first,
                         target: second,
@@ -1685,6 +1688,7 @@ pub fn loose_reach(
                     | Value::PathRefl(body)
                     | Value::Here(body)
                     | Value::Stay(body)
+                    | Value::Forward(body)
                     | Value::Injection(_, body)
                     | Value::Lift { body, .. }
                     | Value::Mark { body, .. } => {
