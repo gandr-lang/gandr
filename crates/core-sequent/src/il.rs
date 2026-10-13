@@ -115,16 +115,20 @@ index_wrapper! {
 /// A constructor head `K` of a positive type.
 ///
 /// The vocabulary is the core language's positive introductions: a tuple of
-/// any arity (the unit its empty case), an injection into a summand by
-/// position, the explicit universe lift and a nominal datatype's
-/// constructors. Each head declares its arity; the typed-IL check
-/// and the machine read the declaration rather than a constant.
+/// any arity (the unit its empty case), a structural record by its labels, an
+/// injection into a summand by position, the explicit universe lift and a
+/// nominal datatype's constructors. Each head declares its arity; the typed-IL
+/// check and the machine read the declaration rather than a constant.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ConstructorTag
 {
     /// The tuple `(p₁, …, pₙ)` of this many fields; the unit `()` is the
     /// tuple of none.
     Tuple(ProducerArity),
+    /// The structural record `{l₁ = p₁, …, lₙ = pₙ}`, one field per label, the
+    /// labels in the core's canonical order: strictly increasing as UTF-8
+    /// bytes. The record of no labels is a record, not the unit.
+    Record(alloc::sync::Arc<[gandr_core_term::FieldLabel]>),
     /// The empty native list.
     ListNil,
     /// A native list cell with head and tail fields.
@@ -151,9 +155,9 @@ impl ConstructorTag
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a tuple's and a datatype constructor's own field count, `0`
-    ///   for the empty list, `2` for a list cell, `1` for an injection and a
-    ///   lift.
+    /// - ensures: a tuple's and a datatype constructor's own field count, a
+    ///   record's label count, `0` for the empty list, `2` for a list cell, `1`
+    ///   for an injection and a lift.
     /// - provides: the one arity table a constructor node is held to.
     /// - fails: never.
     /// - panics: none.
@@ -171,6 +175,7 @@ impl ConstructorTag
         | Self::ListCons => matches!(ret, ProducerArity::TWO),
         | Self::Injection(_) | Self::Lift(_) => matches!(ret, ProducerArity::ONE),
         | Self::Tuple(arity) | Self::Data { arity, .. } => ret == arity,
+        | Self::Record(ref labels) => ret == ProducerArity::from(labels.len()),
     })]
     pub fn producer_arity(&self) -> ProducerArity
     {
@@ -179,6 +184,7 @@ impl ConstructorTag
             | Self::ListCons => ProducerArity::TWO,
             | Self::Injection(_) | Self::Lift(_) => ProducerArity::ONE,
             | Self::Tuple(arity) | Self::Data { arity, .. } => arity,
+            | Self::Record(ref labels) => ProducerArity::from(labels.len()),
         }
     }
 
@@ -205,6 +211,7 @@ impl ConstructorTag
     {
         match *self {
             | Self::Tuple(_)
+            | Self::Record(_)
             | Self::ListNil
             | Self::ListCons
             | Self::Injection(_)
@@ -494,6 +501,18 @@ pub enum ConsumerNode
         /// The continuation each branch returns to.
         then: ConsumerId,
     },
+    /// A selection `select[f](c)`: the value it receives is a tuple or a
+    /// record, and the field `f` names is delivered to `c`. The width is read
+    /// from the constructor the selection meets, never stated, so a record
+    /// wider than the type it was checked at still answers by label. The
+    /// selection opens no binder, so its continuation `c` is any consumer.
+    Select
+    {
+        /// The field the selection reads.
+        selector: Selector,
+        /// The continuation the field is delivered to.
+        then: ConsumerId,
+    },
     /// A pure native fold, retaining annotations for inverse focusing.
     ListFold
     {
@@ -510,6 +529,16 @@ pub enum ConsumerNode
     },
     /// The terminal consumer `★`: the run's answer is what reaches it.
     Top,
+}
+
+/// The field a [`ConsumerNode::Select`] reads from the value it meets.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Selector
+{
+    /// A tuple's component, by its position from zero.
+    Component(gandr_core_term::Component),
+    /// A record's field, by its label.
+    Label(gandr_core_term::FieldLabel),
 }
 
 /// A command node.
@@ -1340,6 +1369,7 @@ impl CommandArena
         | ConsumerNode::Case { ref arms } => arms.iter().all(|arm| self.command(arm.body).is_some()),
         | ConsumerNode::DataCase { ref branches, then } =>
             branches.iter().all(|id| self.producer(*id).is_some()) && self.consumer(then).is_some(),
+        | ConsumerNode::Select { then, .. } => self.consumer(then).is_some(),
         | ConsumerNode::ListFold { element, result, on_nil, on_cons, continuation } => self.annotations.value_type(element).is_some() && self.annotations.value_type(result).is_some() && self.command(on_nil).is_some() && self.command(on_cons).is_some() && self.consumer(continuation).is_some(),
     })]
     fn consumer_children_resolve(
@@ -1366,6 +1396,7 @@ impl CommandArena
                 self.consumer_resolves(continuation)
             },
             | ConsumerNode::MuTilde { body } => self.command_resolves(body),
+            | ConsumerNode::Select { then, .. } => self.consumer_resolves(then),
             | ConsumerNode::Destructor {
                 ref producers,
                 ref consumers,
@@ -1476,6 +1507,14 @@ mod tests
                 },
                 3_usize,
             ),
+            (ConstructorTag::Record(alloc::sync::Arc::from([])), 0_usize),
+            (
+                ConstructorTag::Record(alloc::sync::Arc::from([
+                    gandr_core_term::FieldLabel::from(String::from("a")),
+                    gandr_core_term::FieldLabel::from(String::from("s")),
+                ])),
+                2_usize,
+            ),
         ];
         for (tag, arity) in cases {
             assert_eq!(
@@ -1522,6 +1561,9 @@ mod tests
                 tag: gandr_kernel_term::ConstructorTag::from(0_usize),
                 arity: ProducerArity::TWO,
             },
+            ConstructorTag::Record(alloc::sync::Arc::from([gandr_core_term::FieldLabel::from(
+                String::from("a"),
+            )])),
         ] {
             assert_eq!(
                 ConsumerArity::ZERO,
@@ -1641,6 +1683,14 @@ mod tests
                 then: ConsumerId::from(6_u32),
             }),
             "a nominal match's continuation dangles"
+        );
+        assert_eq!(
+            Err(MintRefusal::DanglingConsumer(ConsumerId::from(7_u32))),
+            arena.mint_consumer(ConsumerNode::Select {
+                selector: Selector::Component(gandr_core_term::Component::from(1_usize)),
+                then: ConsumerId::from(7_u32),
+            }),
+            "a selection's continuation dangles"
         );
         assert_eq!(entry, arena.watermark(), "a refused mint appends nothing");
     }
@@ -1832,6 +1882,10 @@ mod tests
                     constructor: ConstructorTag::Tuple(ProducerArity::ZERO),
                     body,
                 }]),
+            },
+            ConsumerNode::Select {
+                selector: Selector::Label(gandr_core_term::FieldLabel::from(String::from("s"))),
+                then: top,
             },
         ] {
             let id = arena

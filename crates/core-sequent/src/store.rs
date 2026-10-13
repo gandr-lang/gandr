@@ -387,6 +387,13 @@ pub enum Frame
         /// The branches' ambient environment.
         environment: Environment,
     },
+    /// A pending selection: the value arriving here is a tuple or a record,
+    /// and its selected field passes on.
+    Select
+    {
+        /// The [`crate::ConsumerNode::Select`] carrying the selector.
+        select: ConsumerId,
+    },
     /// The write-back of a forcing: the value arriving here is the cell's.
     Update
     {
@@ -416,6 +423,7 @@ impl Frame
             | Self::Bind { .. }
             | Self::Case { .. }
             | Self::ListFold { .. }
+            | Self::Select { .. }
             | Self::Update { .. } => 0,
         })
     }

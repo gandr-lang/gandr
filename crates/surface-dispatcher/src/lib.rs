@@ -126,7 +126,6 @@ use std::path::PathBuf;
 use anodized::spec;
 
 pub use crate::compose::Admission;
-pub use crate::compose::Awaiting;
 pub use crate::compose::ComposeFault;
 pub use crate::compose::Composed;
 pub use crate::compose::Judged;

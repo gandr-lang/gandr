@@ -5,6 +5,7 @@
 //! 𝓥⟦x⟧            = x                       𝓥⟦thunk M⟧ = {force(α) ⇒ 𝓕⟦M⟧α}
 //! 𝓥⟦()⟧, 𝓥⟦(v, w)⟧, 𝓥⟦inj v⟧, 𝓥⟦lift v⟧    = the constructor over the images
 //! 𝓥⟦c_i(v̄)⟧        = ctor[i](𝓥⟦v̄⟧)            the datatype erased
+//! 𝓥⟦{l̄ = v̄}⟧       = record{l̄}(𝓥⟦v̄⟧)          the labels in canonical order
 //!
 //! 𝓕⟦return v⟧c    = ⟨𝓥⟦v⟧ |+ c⟩
 //! 𝓕⟦force v⟧c     = ⟨𝓥⟦v⟧ |+ force(c)⟩
@@ -16,6 +17,7 @@
 //! 𝓕⟦case v {l, r}⟧c = ⟨𝓥⟦v⟧ |+ case {inl(x) ⇒ 𝓕⟦l⟧c, inr(x) ⇒ 𝓕⟦r⟧c}⟩   c a tail
 //!                 = ⟨μα. ⟨𝓥⟦v⟧ |+ case {… 𝓕⟦·⟧α …}⟩ |ε c⟩     otherwise
 //! 𝓕⟦case v [C] of {b̄}⟧c = ⟨𝓥⟦v⟧ |+ datacase(𝓥⟦thunk b̄⟧; c)⟩   the motive erased
+//! 𝓕⟦v.i⟧c, 𝓕⟦v.l⟧c = ⟨𝓥⟦v⟧ |+ select[i](c)⟩, ⟨𝓥⟦v⟧ |+ select[.l](c)⟩
 //! ```
 //!
 //! A tail is a covariable or `★`. A continuation that is not a tail is never
@@ -37,7 +39,7 @@
 //!
 //! ```text
 //! 𝓥⟦x⟧ = x        𝓥⟦thunk M⟧ = {force(α) ⇒ 𝓕⟦M⟧α}        𝓥⟦(v̄)⟧, 𝓥⟦inj_i v⟧, 𝓥⟦lift v⟧ = the constructor
-//! 𝓥⟦c_i(v̄)⟧ = ctor[i](𝓥⟦v̄⟧)
+//! 𝓥⟦c_i(v̄)⟧ = ctor[i](𝓥⟦v̄⟧)        𝓥⟦{l̄ = v̄}⟧ = record{l̄}(𝓥⟦v̄⟧)
 //!
 //! 𝓕⟦return v⟧c        = ⟨𝓥⟦v⟧ |+ c⟩
 //! 𝓕⟦force v⟧c         = ⟨𝓥⟦v⟧ |+ force(c)⟩
@@ -48,6 +50,8 @@
 //! 𝓕⟦case v {b̄}⟧c     = ⟨𝓥⟦v⟧ |+ case {inj_i(x) ⇒ 𝓕⟦b_i⟧c, …}⟩       c a tail
 //!                     = ⟨μα. ⟨𝓥⟦v⟧ |+ case {… 𝓕⟦·⟧α …}⟩ |ε c⟩        otherwise
 //! 𝓕⟦case_D v {b̄}⟧c   = ⟨𝓥⟦v⟧ |+ datacase({force(α) ⇒ 𝓕⟦b_i⟧α}, …; c)⟩
+//! 𝓕⟦v.i⟧c             = ⟨𝓥⟦v⟧ |+ select[i](c)⟩
+//! 𝓕⟦v.l⟧c             = ⟨𝓥⟦v⟧ |+ select[.l](c)⟩
 //! 𝓕⟦fix x. M⟧c        = ⟨fix{x; force(α) ⇒ 𝓕⟦M⟧α} |+ force(c)⟩
 //! ```
 //!
@@ -58,13 +62,14 @@
 //! only the tail `α0`. A nominal match opens no binder of its own: each branch
 //! is a thunk of the function over the fields the core writes, and the match's
 //! continuation `c` is carried once, beside the branches, so it is neither
-//! shifted nor named. Every continuation that crosses a binder is then a tail,
-//! nothing is shifted or copied, every focused covariable is index `0`, and two
-//! focusings of one term build identical arenas. A core value is never a `μ`,
-//! so every frame argument and constructor field of an image is a value.
-//! `Provenance` records, for each command focusing creates, the core former it
-//! was created for. A refused translation truncates the arena and the
-//! provenance table to the marks it took on entry.
+//! shifted nor named; a selection carries its continuation the same way.
+//! Every continuation that crosses a binder is then a tail, nothing is shifted
+//! or copied, every focused covariable is index `0`, and two focusings of one
+//! term build identical arenas. A core value is never a `μ`, so every frame
+//! argument and constructor field of an image is a value. `Provenance`
+//! records, for each command focusing creates, the core former it was created
+//! for. A refused translation truncates the arena and the provenance table to
+//! the marks it took on entry.
 //!
 //! Passing a continuation unchanged under a binder is sound for named
 //! covariables but not for indexed producer operands. Shifting its producers
@@ -83,6 +88,33 @@
 //! b, c)`. The pretty printer spells the binary heads `unit`, `pair`, `inl` and
 //! `inr`, and the others `tuple` and `inj[i]`. Revisit if a consumer of the IL
 //! needs a fixed set of heads.
+//!
+//! # Records carry their labels
+//!
+//! A record focuses to one `Record(labels)` head over its fields, the labels in
+//! the core's canonical order and each field under its own label. A tuple
+//! projection and a record projection focus to the positive cut of their
+//! subject against a selection, `select[i](c)` or `select[.l](c)`, which names
+//! the field and carries the projection's continuation beside it. The machine
+//! reads the field's place from the head the selection meets: component `i` of
+//! a `Tuple(n)`, or the field under `l` among a record's labels. A selection
+//! that meets a value without its field is stuck as an unmatched match is.
+//!
+//! The core record has width and depth subtyping: a record of more labels
+//! checks where one of fewer is expected, so a projection's static type fixes
+//! neither the width of the value it meets nor the place of its label. The
+//! alternatives each fixed a place at focusing time: elaborating a projection
+//! to a `split` of the arity and at the position its type states, which
+//! mis-splits a wider record that width subtyping admitted; a positional
+//! selection alone, which has no place to read for a label; and a destructor
+//! per label, which puts a string into the copyable destructor tag every frame
+//! carries. The record of no labels stays a record rather than the unit, so
+//! readback returns the record the core wrote.
+//!
+//! Revisit when the core record becomes an ordered telescope without width
+//! subtyping: its fields then have a static place, so a record focuses as
+//! `Tuple(n)` in its written order and a projection as the split at its place,
+//! and the labels leave the IL.
 //!
 //! # A code has no producer
 //!
@@ -137,6 +169,7 @@ use crate::il::MintRefusal;
 use crate::il::PatternArm;
 use crate::il::ProducerId;
 use crate::il::ProducerNode;
+use crate::il::Selector;
 
 /// The source construct a focused command was created for: the un-sugaring
 /// view of a focused term.
@@ -168,6 +201,9 @@ pub enum FocusOrigin
     /// `case v {…}`: the cut of the scrutinee against the match, or the cut
     /// naming the continuation the match's arms share.
     Case,
+    /// `v.f`: the cut of a tuple or a record against the selection of one of
+    /// its fields.
+    Projection,
     /// `x ← M; N`: the cut naming the continuation a bind passes under its
     /// binder.
     Bind,
@@ -307,15 +343,6 @@ pub enum FocusRefusal
     /// Reflexivity or a compound endpoint: the command IL carries no paths,
     /// so neither has a producer to become.
     ElementPath(ValueId),
-    /// A structural record has no command-IL producer form. It, and the two
-    /// projections below, are the positive record and tuple the IL gains
-    /// under [#221](https://github.com/gandr-lang/gandr/issues/221).
-    Record(ValueId),
-    /// A record projection has no command-IL destructor.
-    RecordProjection(ComputationId),
-    /// A tuple projection has no command-IL destructor: the IL splits no
-    /// positive tuple.
-    TupleProjection(ComputationId),
     /// A core value id names no node of the core arena.
     DanglingValue(ValueId),
     /// A core computation id names no node of the core arena.
@@ -359,13 +386,6 @@ impl fmt::Display for FocusRefusal
             },
             | Self::ElementPath(_) => {
                 f.write_str("reflexivity or a compound endpoint has no command-IL producer")
-            },
-            | Self::Record(_) => f.write_str("a record has no command-IL producer"),
-            | Self::RecordProjection(_) => {
-                f.write_str("a record projection has no command-IL destructor")
-            },
-            | Self::TupleProjection(_) => {
-                f.write_str("a tuple projection has no command-IL destructor")
             },
             | Self::DanglingValue(_) => f.write_str("a core value id names no node"),
             | Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
@@ -632,6 +652,8 @@ enum Task
     },
     /// Pop this many producers and mint their tuple.
     Tuple(ProducerArity),
+    /// Pop one producer per label and mint the record of those labels.
+    Record(alloc::sync::Arc<[gandr_core_term::FieldLabel]>),
     /// Pop head and tail producers and mint their native cell.
     ListCons,
     /// Pop one producer and mint its injection into this summand.
@@ -827,6 +849,7 @@ impl<'run> Focusing<'run>
             | &Task::Case { branches } => !self.producers.is_empty() && self.commands.len() >= usize::from(branches),
             | &Task::Split(_) => !self.producers.is_empty() && !self.commands.is_empty(),
             | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.producers.len() >= usize::from(arity),
+            | &Task::Record(ref labels) => self.producers.len() >= labels.len(),
             | &Task::DataCase { branches, .. } => self.producers.len() > usize::from(branches),
             | &Task::Value(_) | &Task::Computation { .. } => true,
         },
@@ -882,6 +905,15 @@ impl<'run> Focusing<'run>
                 let components: alloc::vec::Vec<ProducerId> =
                     self.producers.drain(start ..).collect();
                 self.constructor(ConstructorTag::Tuple(arity), &components)
+            },
+            | Task::Record(labels) => {
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(labels.len())
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let fields: Vec<ProducerId> = self.producers.drain(start ..).collect();
+                self.constructor(ConstructorTag::Record(labels), &fields)
             },
             | Task::ListCons => {
                 let tail = self.pop_producer()?;
@@ -1252,7 +1284,6 @@ impl<'run> Focusing<'run>
     /// - provides: the `𝓥` rows.
     /// - fails: [`FocusRefusal::DanglingValue`], [`FocusRefusal::Code`] for a
     ///   quote of either sort, a static lambda or a static application,
-    ///   [`FocusRefusal::Record`] for a structural record,
     ///   [`FocusRefusal::IncompleteValue`] for a hole or a mark, or a refused
     ///   mint.
     /// - panics: none.
@@ -1268,7 +1299,7 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
-    /// - witness: `focus::tests::a_record_or_its_projection_is_refused_by_name`
+    /// - witness: `focus::tests::a_record_focuses_to_its_labels_in_canonical_order`
     /// - witness: `focus::tests::a_code_is_refused_by_name`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
     /// - witness: `focus::tests::a_hole_or_a_mark_is_refused_by_name`
@@ -1278,7 +1309,6 @@ impl<'run> Focusing<'run>
             | None => ret == Err(FocusRefusal::DanglingValue(id)),
             | Some(&Value::Quote(_) | &Value::QuoteComputation(_)) => ret == Err(FocusRefusal::Code(id)),
             | Some(&Value::Hole(_) | &Value::Mark { .. }) => ret == Err(FocusRefusal::IncompleteValue(id)),
-            | Some(&Value::Record(_)) => ret == Err(FocusRefusal::Record(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work || self.producers.len() > results,
         },
     )]
@@ -1289,7 +1319,14 @@ impl<'run> Focusing<'run>
     {
         let node = self.core.value(id).ok_or(FocusRefusal::DanglingValue(id))?;
         let leaf = match *node {
-            | Value::Record(_) => return Err(FocusRefusal::Record(id)),
+            | Value::Record(ref fields) => {
+                self.tasks
+                    .push(Task::Record(fields.keys().cloned().collect()));
+                for &field in fields.values().rev() {
+                    self.tasks.push(Task::Value(field));
+                }
+                return Ok(());
+            },
             | Value::Constructor {
                 tag, ref fields, ..
             } => {
@@ -1395,8 +1432,6 @@ impl<'run> Focusing<'run>
     /// - provides: the `𝓕` rows.
     /// - fails: [`FocusRefusal::DanglingComputation`],
     ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark,
-    ///   [`FocusRefusal::RecordProjection`] for a record projection,
-    ///   [`FocusRefusal::TupleProjection`] for a tuple projection,
     ///   [`FocusRefusal::UniverseTransport`] for a universe transport,
     ///   [`FocusRefusal::ElementTransport`] for an element transport, or a
     ///   refused mint.
@@ -1413,7 +1448,7 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
-    /// - witness: `focus::tests::a_record_or_its_projection_is_refused_by_name`
+    /// - witness: `focus::tests::a_projection_selects_by_position_or_label`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
     /// - witness: `focus::tests::a_hole_or_a_mark_is_refused_by_name`
     #[spec(
@@ -1421,8 +1456,6 @@ impl<'run> Focusing<'run>
         ensures: |ret| match self.core.computation(id) {
             | None => ret == Err(FocusRefusal::DanglingComputation(id)),
             | Some(&Computation::Hole(_) | &Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
-            | Some(&Computation::RecordProjection(..)) => ret == Err(FocusRefusal::RecordProjection(id)),
-            | Some(&Computation::TupleProjection(..)) => ret == Err(FocusRefusal::TupleProjection(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work,
         },
     )]
@@ -1437,11 +1470,11 @@ impl<'run> Focusing<'run>
             .computation(id)
             .ok_or(FocusRefusal::DanglingComputation(id))?;
         match *node {
-            | Computation::RecordProjection(..) => {
-                return Err(FocusRefusal::RecordProjection(id));
+            | Computation::RecordProjection(record, ref label) => {
+                self.select(record, Selector::Label(label.clone()), continuation)?;
             },
-            | Computation::TupleProjection(..) => {
-                return Err(FocusRefusal::TupleProjection(id));
+            | Computation::TupleProjection(tuple, component) => {
+                self.select(tuple, Selector::Component(component), continuation)?;
             },
             | Computation::Split {
                 scrutinee,
@@ -1694,6 +1727,53 @@ impl<'run> Focusing<'run>
         Ok(())
     }
 
+    /// Schedule `𝓕⟦v.f⟧c = ⟨𝓥⟦v⟧ |+ select[f](c)⟩`: the selection carries `c`
+    /// beside its field and opens no binder, so `c` is neither shifted nor
+    /// named.
+    ///
+    /// # Specification
+    /// - requires: `continuation` was minted for the projection's depth.
+    /// - ensures: the selection of `selector` returning to `continuation` is
+    ///   minted, and the positive cut of `subject`'s producer against it is
+    ///   scheduled, recorded as [`FocusOrigin::Projection`].
+    /// - provides: the image of a record projection and a tuple projection.
+    /// - fails: a refused mint.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a component and a label projection of a variable,
+    ///   each under a non-tail continuation, are observed at their exact
+    ///   selector, continuation, cut polarity and origin; a selection that
+    ///   named or shifted its continuation changes the consumer it returns to.
+    /// - witness: `focus::tests::a_projection_selects_by_position_or_label`
+    #[spec(
+        captures: [work = self.tasks.len()],
+        ensures: |ret| ret.is_err() || (work.checked_add(2) == Some(self.tasks.len())
+            && matches!(self.tasks.last(), Some(&Task::Value(scheduled)) if scheduled == subject)),
+    )]
+    fn select(
+        &mut self,
+        subject: ValueId,
+        selector: Selector,
+        continuation: ConsumerId,
+    ) -> Result<(), FocusRefusal>
+    {
+        let select = self.arena.mint_consumer(ConsumerNode::Select {
+            selector,
+            then: continuation,
+        })?;
+        self.tasks.push(Task::Cut {
+            origin: FocusOrigin::Projection,
+            polarity: Polarity::Positive,
+            consumer: select,
+        });
+        self.tasks.push(Task::Value(subject));
+        Ok(())
+    }
+
     /// The continuation a binder's body is translated under: `continuation`
     /// itself when it is a tail, otherwise the innermost covariable, with the
     /// naming cut scheduled to run once the body's command is built.
@@ -1747,6 +1827,7 @@ impl<'run> Focusing<'run>
             | ConsumerNode::MuTilde { .. }
             | ConsumerNode::Case { .. }
             | ConsumerNode::DataCase { .. }
+            | ConsumerNode::Select { .. }
             | ConsumerNode::ListFold { .. } => Polarity::Positive,
         };
         self.tasks.push(Task::Name {
@@ -2135,30 +2216,148 @@ mod tests
         }
     }
 
-    /// A structural record and its projection have no command-IL image: each
-    /// is refused by name and the arena is left at its mark.
+    /// A record focuses to the record head of its labels in the core's
+    /// canonical order, each field under its own label: two records holding
+    /// the same fields under swapped labels have swapped images, and the record
+    /// of no labels is a record, not the unit.
     #[test]
-    fn a_record_or_its_projection_is_refused_by_name()
+    fn a_record_focuses_to_its_labels_in_canonical_order()
     {
         let mut core = CoreArena::new();
-        let unit = core.value_unit();
-        let label = gandr_kernel_term::FieldLabel::from(alloc::string::String::from("a"));
-        let record = core.value_record(alloc::collections::BTreeMap::from([(label.clone(), unit)]));
-        let returned = core.computation_return(record);
-        let projected = core.computation_record_projection(record, label);
-        for (term, refusal) in [
-            (returned, FocusRefusal::Record(record)),
-            (projected, FocusRefusal::RecordProjection(projected)),
-        ] {
+        let label =
+            |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+        let first = core.value_constant(gandr_kernel_term::ConstantIndex::from(0_usize));
+        let second = core.value_constant(gandr_kernel_term::ConstantIndex::from(1_usize));
+        let record = core.value_record(alloc::collections::BTreeMap::from([
+            (label("b"), second),
+            (label("a"), first),
+        ]));
+        let swapped = core.value_record(alloc::collections::BTreeMap::from([
+            (label("b"), first),
+            (label("a"), second),
+        ]));
+        let empty = core.value_record(alloc::collections::BTreeMap::new());
+        let mut arena = CommandArena::new();
+        let mut provenance = Provenance::new();
+        let mut image = |value| {
+            let producer =
+                focus_value(&core, value, &mut arena, &mut provenance).expect("a record focuses");
+            let Some(ProducerNode::Constructor {
+                tag: ConstructorTag::Record(labels),
+                producers,
+                consumers,
+            }) = arena.producer(producer).cloned()
+            else {
+                panic!("a record focuses to a record head");
+            };
+            assert!(consumers.is_empty(), "a record carries no consumer");
+            let labels: Vec<_> = labels
+                .iter()
+                .map(AsRef::as_ref)
+                .map(alloc::string::String::from)
+                .collect();
+            let fields: Vec<_> = producers
+                .iter()
+                .map(|&field| arena.producer(field).cloned())
+                .collect();
+            (labels, fields)
+        };
+        let constant = |position: usize| {
+            Some(ProducerNode::Constant(
+                gandr_kernel_term::ConstantIndex::from(position),
+            ))
+        };
+        assert_eq!(
+            (
+                alloc::vec![
+                    alloc::string::String::from("a"),
+                    alloc::string::String::from("b")
+                ],
+                alloc::vec![constant(0), constant(1)]
+            ),
+            image(record),
+            "the fields stand in label order, each under its own label"
+        );
+        assert_eq!(
+            (
+                alloc::vec![
+                    alloc::string::String::from("a"),
+                    alloc::string::String::from("b")
+                ],
+                alloc::vec![constant(1), constant(0)]
+            ),
+            image(swapped),
+            "swapping the fields' labels swaps the fields"
+        );
+        assert_eq!(
+            (Vec::new(), Vec::new()),
+            image(empty),
+            "the record of no labels is a record head of none"
+        );
+    }
+
+    /// A tuple projection and a record projection each focus to the positive
+    /// cut of their subject against a selection of the field they name, which
+    /// carries the continuation itself: a projection bound by a sequence
+    /// returns straight to the binder, neither named nor shifted.
+    #[test]
+    fn a_projection_selects_by_position_or_label()
+    {
+        let mut core = CoreArena::new();
+        let subject = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        let label = gandr_kernel_term::FieldLabel::from(alloc::string::String::from("s"));
+        let component = gandr_core_term::Component::from(2_usize);
+        let rest = core.computation_return(subject);
+        let projections = [
+            (
+                core.computation_record_projection(subject, label.clone()),
+                Selector::Label(label),
+            ),
+            (
+                core.computation_tuple_projection(subject, component),
+                Selector::Component(component),
+            ),
+        ];
+        for (projection, selector) in projections {
+            let term = core.computation_bind(projection, rest);
             let mut arena = CommandArena::new();
             let mut provenance = Provenance::new();
-            let mark = arena.watermark();
+            let root = focus_computation(&core, term, &mut arena, &mut provenance)
+                .expect("a projection of a bound variable focuses");
+            let Some(&crate::il::CommandNode::Cut {
+                polarity,
+                producer,
+                consumer,
+            }) = arena.command(root)
+            else {
+                panic!("the projection is the root cut");
+            };
             assert_eq!(
-                focus_computation(&core, term, &mut arena, &mut provenance),
-                Err(refusal),
-                "the record former is refused by name"
+                Polarity::Positive,
+                polarity,
+                "a selection observes positive data"
             );
-            assert_eq!(mark, arena.watermark(), "the arena is back at its mark");
+            assert_eq!(
+                Some(&ProducerNode::Variable {
+                    zone: gandr_core_term::Zone::Intuitionistic,
+                    index: 0_u32.into(),
+                }),
+                arena.producer(producer),
+                "the subject is sent as it is"
+            );
+            let Some(&ConsumerNode::Select {
+                selector: ref found,
+                then,
+            }) = arena.consumer(consumer)
+            else {
+                panic!("the subject is cut against a selection");
+            };
+            assert_eq!(&selector, found, "the selection names the projected field");
+            assert!(
+                matches!(arena.consumer(then), Some(&ConsumerNode::MuTilde { .. })),
+                "the selection returns straight to the sequence's binder"
+            );
+            assert_eq!(Some(FocusOrigin::Projection), provenance.origin(root));
         }
     }
 

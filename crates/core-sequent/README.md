@@ -29,13 +29,13 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - `Environment`, `ValueScope`, `CovalueScope`: persistent environment chains in the heap region, read innermost first.
 - `Frame`, `ContinuationMark` and `Store::shrink_to`: the walkable frame region, marks refused once stale, and the decline of every forcing a shrink abandons.
 - `Store::peak_height`: the highest the frame region has stood since the store was made, the observation that a tail call holds no continuation of its own.
-- `focus_computation`, `focus_value` and `focus_top_value`, recording each created command's `FocusOrigin` in a `Provenance` table: total on closed well-typed core terms that hold no code and no record, every image well formed and closed, every covariable the innermost one, a code, a record, a record projection and a tuple projection refused by name, a split focused as a case on its one tuple pattern, and a refused translation leaving the arena and the table at their marks. A datatype's constructors, its nominal match and the fixpoint focus.
+- `focus_computation`, `focus_value` and `focus_top_value`, recording each created command's `FocusOrigin` in a `Provenance` table: total on closed well-typed core terms that hold no code, every image well formed and closed, every covariable the innermost one, a code refused by name, a record focused as the head of its labels and a tuple or record projection as a selection of its field, a split focused as a case on its one tuple pattern, and a refused translation leaving the arena and the table at their marks. A datatype's constructors, its nominal match and the fixpoint focus.
 - `unfocus_command` and `unfocus_value`: the left inverse of focusing, refusing IL outside its image by name with `UnfocusRefusal` and leaving the core arena at its mark.
 - Native `ListNil` and `ListCons` constructors and a `ListFold` consumer. Folding preserves cell order and outer scope; each branch has its own return covariable, and the cell branch binds head then folded result. The command arena owns imported type annotations, includes them in rollback, and unfocusing closes their ambient variables rather than copying foreign ids.
 - `check_command` with `CheckRefusal`, `ArityHead` and `FreeSet`: reference integrity, arity from the head, focus, polarity, and the free variables and covariables of a command.
 - `render_command`, `render_producer` and `render_consumer`: the IL's notation, binders shown with their indices.
-- `Machine::run` with `Definitions`, `Definition`, `StepCount`, `Outcome`, `Stuck` and `MachineFault`: the L machine over the store, halting with a value, stopping stuck by name, or faulting out of steps; transparent constants unfold once per machine, opaque ones are carried as themselves; a nominal match runs the branch of its value's ordinal over the fields, and a recursive thunk runs with itself bound.
-- `Machine::read_back` and `Machine::read_back_value` with `ReadbackRefusal`: a terminal as `return v` or the function it is, thunks, recursive thunks and functions closed over their captured environments, a datatype's constructor at the unknown value type, a suspended capture refused with the core arena at its mark.
+- `Machine::run` with `Definitions`, `Definition`, `StepCount`, `Outcome`, `Stuck` and `MachineFault`: the L machine over the store, halting with a value, stopping stuck by name, or faulting out of steps; transparent constants unfold once per machine, opaque ones are carried as themselves; a nominal match runs the branch of its value's ordinal over the fields, a selection delivers the field of the tuple or record it meets, and a recursive thunk runs with itself bound.
+- `Machine::read_back` and `Machine::read_back_value` with `ReadbackRefusal`: a terminal as `return v` or the function it is, thunks, recursive thunks and functions closed over their captured environments, a record with its labels, a datatype's constructor at the unknown value type, a suspended capture refused with the core arena at its mark.
 - `stats`, `Stats`, `origin_histogram` and `dump`: an arena's population, its commands counted by the core former each came from, and a root's rendering with both.
 - `reify_command` with `ConstructorResolver` and `ReifyRefusal`: a ground cell pattern reified node for node, a return-side frame as its `μ̃` definiens, a metavariable, an unresolved symbol, an arity mismatch and an operation frame refused with the arena at its mark.
 
@@ -115,7 +115,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Topic | Module |
 | ----- | ------ |
 | Covariables as indices, children before parents | [`il`](src/il.rs) |
-| Focusing, codes and native universe paths | [`focus`](src/focus.rs) |
+| Focusing, records, codes and native universe paths | [`focus`](src/focus.rs) |
 | Unfocusing | [`unfocus`](src/unfocus.rs) |
 | The typed-IL check | [`check`](src/check.rs) |
 | Marks, fixpoints, effects and delimited control | [`machine`](src/machine.rs) |

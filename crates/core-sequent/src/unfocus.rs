@@ -4,7 +4,8 @@
 //! A command `⟨p |ε c⟩` decodes as a head read from `p` — a `μ`'s body, a
 //! copattern object's function, a recursive thunk forced, or a value — and a
 //! spine read from `c`: an application frame applies, `μ̃` binds, a force
-//! frame forces, a match cases, and the current return point ends the spine.
+//! frame forces, a match cases, a selection projects, and the current return
+//! point ends the spine.
 //! The current return point is `★` at the root and covariable `0` under a
 //! `μ`, a thunk, a recursive thunk or a copattern arm; any other covariable
 //! escapes the computation and is refused. Every command focusing builds
@@ -28,15 +29,16 @@
 //! `return`, a force frame a `force`, an application frame an application, a
 //! copattern object of one `apply` arm a `λ`, a `μ̃` a bind, a match on the two
 //! injections a `case`, a nominal match a `case_D` over its branch thunks'
-//! bodies, a recursive thunk under a force frame the fixpoint, and a `μ` cut
-//! the bind or case it names, under the frame it was named for. The IL carries
-//! no types, so a datatype's constructor reads back at the unknown value type
-//! and a nominal match at the unknown motive. The return point is `★` at the
-//! root and `α0` under the nearest covariable binder; a covariable reaching
-//! past it is a jump the core cannot state and is refused as
-//! `UnfocusRefusal::EscapingContinuation`. A `μ` in value position, a match on
-//! anything but the two injections and every other node outside the image is
-//! refused by name, and a refused reading truncates the core arena to its mark.
+//! bodies, a selection the projection of its field, a recursive thunk under a
+//! force frame the fixpoint, and a `μ` cut the bind or case it names, under the
+//! frame it was named for. The IL carries no types, so a datatype's
+//! constructor reads back at the unknown value type and a nominal match at the
+//! unknown motive. The return point is `★` at the root and `α0` under the
+//! nearest covariable binder; a covariable reaching past it is a jump the core
+//! cannot state and is refused as `UnfocusRefusal::EscapingContinuation`. A `μ`
+//! in value position, a match on anything but the two injections and every
+//! other node outside the image is refused by name, and a refused reading
+//! truncates the core arena to its mark.
 //! Over closed well-typed terms `unfocus ∘ focus` is the identity up to the
 //! core's structure and the types focusing erases, which the round-trip
 //! properties check node by node across the two arenas.
@@ -76,6 +78,7 @@ use crate::il::ConsumerNode;
 use crate::il::DestructorTag;
 use crate::il::ProducerId;
 use crate::il::ProducerNode;
+use crate::il::Selector;
 
 /// Why a command or producer has no core reading.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -424,6 +427,10 @@ enum Task
     Spine(ConsumerId, Depth),
     /// Pop this many values and build their tuple.
     Tuple(ProducerArity),
+    /// Pop one value per label and build the record of those labels.
+    Record(alloc::sync::Arc<[gandr_core_term::FieldLabel]>),
+    /// Pop one value and build its projection of the selected field.
+    Select(Selector),
     /// Pop one value and build its injection into this summand.
     Injection(Summand),
     /// Pop one value and build its lift.
@@ -584,10 +591,11 @@ impl Unfocusing<'_>
             | &Task::Project(_) | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda | &Task::Spine(..) => !self.computations.is_empty(),
             | &Task::Primitive(_, arguments) => self.values.len() >= arguments.len(),
             | &Task::ListCons => self.values.len() >= 2,
-            | &Task::Injection(_) | &Task::Lift(_) | &Task::Return | &Task::Force => !self.values.is_empty(),
+            | &Task::Injection(_) | &Task::Lift(_) | &Task::Return | &Task::Force | &Task::Select(_) => !self.values.is_empty(),
             | &Task::Application | &Task::Split(_) => !self.values.is_empty() && !self.computations.is_empty(),
             | &Task::ListFold(..) => !self.values.is_empty() && self.computations.len() >= 2,
             | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.values.len() >= usize::from(arity),
+            | &Task::Record(ref labels) => self.values.len() >= labels.len(),
             | &Task::Case(branches) | &Task::DataCase(branches) => !self.values.is_empty() && self.computations.len() >= usize::from(branches),
             | &Task::Value(..) | &Task::Command(..) => true,
         },
@@ -650,6 +658,34 @@ impl Unfocusing<'_>
                 let components: Vec<ValueId> = self.values.drain(start ..).collect();
                 let tuple = self.core.value_tuple(&components);
                 self.values.push(tuple);
+                Ok(())
+            },
+            | Task::Record(labels) => {
+                let start = self
+                    .values
+                    .len()
+                    .checked_sub(labels.len())
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let fields: alloc::collections::BTreeMap<_, _> = labels
+                    .iter()
+                    .cloned()
+                    .zip(self.values.drain(start ..))
+                    .collect();
+                let record = self.core.value_record(fields);
+                self.values.push(record);
+                Ok(())
+            },
+            | Task::Select(selector) => {
+                let subject = self.pop_value()?;
+                let projected = match selector {
+                    | Selector::Component(component) => {
+                        self.core.computation_tuple_projection(subject, component)
+                    },
+                    | Selector::Label(label) => {
+                        self.core.computation_record_projection(subject, label)
+                    },
+                };
+                self.computations.push(projected);
                 Ok(())
             },
             | Task::ListCons => {
@@ -1096,6 +1132,20 @@ impl Unfocusing<'_>
                         }
                         return Ok(());
                     },
+                    | (&ConstructorTag::Record(ref labels), fields)
+                        if fields.len() == labels.len()
+                            && labels
+                                .iter()
+                                .zip(labels.iter().skip(1))
+                                .all(|(before, after)| before < after) =>
+                    {
+                        self.tasks
+                            .push(Task::Record(alloc::sync::Arc::clone(labels)));
+                        for &field in fields.iter().rev() {
+                            self.tasks.push(Task::Value(field, depth));
+                        }
+                        return Ok(());
+                    },
                     | (&ConstructorTag::Injection(summand), &[body]) => {
                         self.tasks.push(Task::Injection(summand));
                         self.tasks.push(Task::Value(body, depth));
@@ -1408,6 +1458,10 @@ impl Unfocusing<'_>
                         .push(Task::Command(body, depth.under_covariable()));
                 }
             },
+            | ConsumerNode::Select { ref selector, then } => {
+                self.tasks.push(Task::Spine(then, depth));
+                self.tasks.push(Task::Select(selector.clone()));
+            },
             | ConsumerNode::Covariable(_)
             | ConsumerNode::Top
             | ConsumerNode::MuTilde { .. }
@@ -1502,8 +1556,8 @@ impl Unfocusing<'_>
     /// - provides: the spine rows.
     /// - fails: [`UnfocusRefusal::EscapingContinuation`] for a covariable or
     ///   `★` that is not the return point, and
-    ///   [`UnfocusRefusal::ConsumerOutsideTheImage`] for a force frame, a match
-    ///   or a frame of the wrong arity after a computation.
+    ///   [`UnfocusRefusal::ConsumerOutsideTheImage`] for a force frame, a
+    ///   match, a selection or a frame of the wrong arity after a computation.
     /// - panics: none.
     ///
     /// # Errors
@@ -1530,7 +1584,7 @@ impl Unfocusing<'_>
             | Some(&ConsumerNode::Top) => if depth.covariables == 0 {
                 ret.is_ok() && self.tasks.len() == work
             } else { ret == Err(UnfocusRefusal::EscapingContinuation(id)) },
-            | Some(&ConsumerNode::ListFold { .. } | &ConsumerNode::Destructor { tag: DestructorTag::Force, .. } | &ConsumerNode::Case { .. } | &ConsumerNode::DataCase { .. }) =>
+            | Some(&ConsumerNode::ListFold { .. } | &ConsumerNode::Destructor { tag: DestructorTag::Force, .. } | &ConsumerNode::Case { .. } | &ConsumerNode::DataCase { .. } | &ConsumerNode::Select { .. }) =>
                 ret == Err(UnfocusRefusal::ConsumerOutsideTheImage(id)),
             | Some(&ConsumerNode::Destructor { tag, ref producers, ref consumers })
                 if producers.len() != usize::from(tag.producer_arity()) || consumers.len() != 1 => ret == Err(UnfocusRefusal::ConsumerOutsideTheImage(id)),
@@ -1602,7 +1656,8 @@ impl Unfocusing<'_>
             }
             | ConsumerNode::ListFold { .. }
             | ConsumerNode::Case { .. }
-            | ConsumerNode::DataCase { .. } => Err(UnfocusRefusal::ConsumerOutsideTheImage(id)),
+            | ConsumerNode::DataCase { .. }
+            | ConsumerNode::Select { .. } => Err(UnfocusRefusal::ConsumerOutsideTheImage(id)),
         }
     }
 

@@ -65,6 +65,9 @@ enum Stop
     /// A nominal match met a value that is not a constructor it has a branch
     /// for.
     UnmatchedConstructor,
+    /// A projection met a value that is not a tuple or a record holding the
+    /// component or the label it names.
+    UnprojectedField,
     /// A variable no binding answers.
     UnboundVariable,
 }
@@ -209,9 +212,10 @@ fn machine(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the common semantic stop for an unobservable apply or force, an
-///   unmatched structural or nominal match, or an unbound value variable.
+///   unmatched structural or nominal match, an unmatched selection, or an
+///   unbound value variable.
 /// - provides: an evaluator-independent refusal vocabulary.
-/// - panics: for any machine state outside those five classes.
+/// - panics: for any machine state outside those six classes.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — hand-built applications, forces, cases and nominal
@@ -221,12 +225,15 @@ fn machine(
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
 /// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
+/// - witness: `tests::differential::hand_built_projection_cases_agree`
 #[spec(ensures: |ret| match *stuck {
     | Stuck::Unobservable { head: DestructorTag::Apply, .. } => ret == Stop::AppliedNonFunction,
     | Stuck::Unobservable { head: DestructorTag::Force, .. } => ret == Stop::ForcedNonThunk,
-    | Stuck::Unmatched { arms, .. } => if matches!(arena.consumer(arms), Some(&ConsumerNode::DataCase { .. })) {
-        ret == Stop::UnmatchedConstructor
-    } else { ret == Stop::CasedNonInjection },
+    | Stuck::Unmatched { arms, .. } => match arena.consumer(arms) {
+        | Some(&ConsumerNode::DataCase { .. }) => ret == Stop::UnmatchedConstructor,
+        | Some(&ConsumerNode::Select { .. }) => ret == Stop::UnprojectedField,
+        | _ => ret == Stop::CasedNonInjection,
+    },
     | Stuck::UnboundVariable { .. } => ret == Stop::UnboundVariable,
     | _ => false,
 })]
@@ -246,6 +253,7 @@ fn machine_stop(
         } => Stop::ForcedNonThunk,
         | Stuck::Unmatched { arms, .. } => match arena.consumer(arms) {
             | Some(&ConsumerNode::DataCase { .. }) => Stop::UnmatchedConstructor,
+            | Some(&ConsumerNode::Select { .. }) => Stop::UnprojectedField,
             | Some(
                 &(ConsumerNode::Case { .. }
                 | ConsumerNode::ListFold { .. }
@@ -338,10 +346,11 @@ fn normalised(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the common semantic stop for each wrong-head elimination and
-///   unbound variable, without conflating the five classes; a non-injection and
+///   unbound variable, without conflating the six classes; a non-injection and
 ///   an injection without an arm are the one structural stop, as a
 ///   non-constructor and a constructor without a branch are the one nominal
-///   stop.
+///   stop, and a projection of the wrong kind of value or of an absent field
+///   the one projection stop.
 /// - provides: the normalizer side of the shared refusal vocabulary.
 /// - panics: for fuel, dangling-term, domain or machine-invariant faults, or a
 ///   non-returning bind outside the supported fixtures.
@@ -354,12 +363,14 @@ fn normalised(
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
 /// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
+/// - witness: `tests::differential::hand_built_projection_cases_agree`
 #[spec(ensures: |ret| match fault {
     | EvalFault::AppliedNonFunction => ret == Stop::AppliedNonFunction,
     | EvalFault::ForcedNonThunk => ret == Stop::ForcedNonThunk,
     | EvalFault::CasedNonInjection | EvalFault::UnknownSummand { .. } => ret == Stop::CasedNonInjection,
     | EvalFault::CasedNonConstructor | EvalFault::UnknownConstructor { .. } => ret == Stop::UnmatchedConstructor,
     | EvalFault::UnboundVariable { .. } => ret == Stop::UnboundVariable,
+    | EvalFault::ProjectedNonRecord | EvalFault::AbsentRecordField | EvalFault::ProjectedNonTuple | EvalFault::AbsentTupleComponent => ret == Stop::UnprojectedField,
     | _ => false,
 })]
 fn normaliser_stop(fault: EvalFault) -> Stop
@@ -374,11 +385,11 @@ fn normaliser_stop(fault: EvalFault) -> Stop
             Stop::UnmatchedConstructor
         },
         | EvalFault::UnboundVariable { .. } => Stop::UnboundVariable,
-        | EvalFault::TransportedNonPath
         | EvalFault::ProjectedNonRecord
         | EvalFault::AbsentRecordField
         | EvalFault::ProjectedNonTuple
-        | EvalFault::AbsentTupleComponent
+        | EvalFault::AbsentTupleComponent => Stop::UnprojectedField,
+        | EvalFault::TransportedNonPath
         | EvalFault::SplitNonTuple
         | EvalFault::SplitArity
         | EvalFault::RuntimeControl(_)
@@ -501,6 +512,7 @@ fn agreement(
 /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
 /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
 /// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
+/// - witness: `tests::differential::hand_built_projection_cases_agree`
 #[spec(requires: cases.iter().all(|case| case.core.computation(case.root).is_some()))]
 fn assert_cases(cases: Vec<Case>)
 {
@@ -1159,6 +1171,105 @@ fn an_unbound_forced_name_is_still_stuck()
             core.computation_application(forced, five)
         },
     )]);
+}
+
+/// A projection delivers the field it names, whatever the width of the value
+/// and the place of the field in it, and the machine's reading is the normal
+/// form; projecting past the width, an absent label, or the wrong kind of value
+/// stops both evaluators at the one projection stop.
+#[test]
+fn hand_built_projection_cases_agree()
+{
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let quadruple = |core: &mut CoreArena| {
+        let fields = [0_i32, 1_i32, 2_i32, 3_i32].map(|digit| integer(core, Integer(digit)));
+        core.value_tuple(&fields)
+    };
+    let record = |core: &mut CoreArena, names: [&str; 3]| {
+        let fields = names
+            .iter()
+            .zip([10_i32, 20_i32, 30_i32])
+            .map(|(&name, digit)| (label(name), integer(core, Integer(digit))))
+            .collect();
+        core.value_record(fields)
+    };
+    assert_cases(alloc::vec![
+        case(
+            Label("a quadruple's third component"),
+            Expected::Exactly,
+            |core| {
+                let tuple = quadruple(core);
+                core.computation_tuple_projection(tuple, 2_usize.into())
+            }
+        ),
+        case(
+            Label("a label second of three"),
+            Expected::Exactly,
+            |core| {
+                let fields = record(core, ["a", "s", "z"]);
+                core.computation_record_projection(fields, label("s"))
+            }
+        ),
+        case(
+            Label("the same label last of three"),
+            Expected::Exactly,
+            |core| {
+                let fields = record(core, ["a", "b", "s"]);
+                core.computation_record_projection(fields, label("s"))
+            }
+        ),
+        case(
+            Label("a projected field bound and paired"),
+            Expected::Exactly,
+            |core| {
+                let fields = record(core, ["a", "s", "z"]);
+                let projected = core.computation_record_projection(fields, label("z"));
+                let body = returning(core, |core| {
+                    let bound = variable(core, Index(0));
+                    let one = integer(core, Integer(1_i32));
+                    core.value_tuple(&[bound, one])
+                });
+                core.computation_bind(projected, body)
+            }
+        ),
+        case(
+            Label("a record returned whole"),
+            Expected::Exactly,
+            |core| { returning(core, |core| record(core, ["c", "a", "b"])) }
+        ),
+        case(
+            Label("a component past the width"),
+            Expected::Stops(Stop::UnprojectedField),
+            |core| {
+                let tuple = quadruple(core);
+                core.computation_tuple_projection(tuple, 4_usize.into())
+            },
+        ),
+        case(
+            Label("an absent label"),
+            Expected::Stops(Stop::UnprojectedField),
+            |core| {
+                let fields = record(core, ["a", "s", "z"]);
+                core.computation_record_projection(fields, label("b"))
+            },
+        ),
+        case(
+            Label("a label of a tuple"),
+            Expected::Stops(Stop::UnprojectedField),
+            |core| {
+                let tuple = quadruple(core);
+                core.computation_record_projection(tuple, label("s"))
+            },
+        ),
+        case(
+            Label("a component of a record"),
+            Expected::Stops(Stop::UnprojectedField),
+            |core| {
+                let fields = record(core, ["a", "s", "z"]);
+                core.computation_tuple_projection(fields, 0_usize.into())
+            },
+        ),
+    ]);
 }
 
 proptest! {

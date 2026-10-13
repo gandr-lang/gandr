@@ -1,0 +1,37 @@
+@[ checks ]
+def point : #{n : Integer, s : String} ;
+def point = #{.s = "x", .n = 3} ;
+
+@[ checks ]
+def shorthand : #{n : Integer, s : String} ;
+def shorthand = #{n = 3, s = "x"} ;
+
+@[ checks ]
+def punned(r : #{n : Integer, s : String}) -> -F String {
+  case r {
+    #{.n, .s} => return s
+  }
+}
+
+@[ checks ]
+def renamed(r : #{n : Integer, s : String}) -> -F Integer {
+  case r {
+    #{.n = m} => return m
+  }
+}
+
+@[ runs("#{\"n\": 3, \"s\": \"x\"}") ]
+def whole : #{n : Integer, s : String} ;
+def whole = #{.s = "x", .n = 3} ;
+
+@[ runs("\"x\"") ]
+def named : +U (-F String) ;
+def named = thunk { become punned(#{.s = "x", .n = 3}) } ;
+
+@[ runs("3") ]
+def numbered : +U (-F Integer) ;
+def numbered = thunk { become renamed(#{n = 3, s = "x"}) } ;
+
+@[ runs("4") ]
+def widened : +U (-F Integer) ;
+def widened = thunk { become renamed(#{.a = unit, .n = 4, .s = "y"}) } ;

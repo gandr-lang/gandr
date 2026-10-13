@@ -36,6 +36,7 @@ use crate::il::ConsumerNode;
 use crate::il::DestructorTag;
 use crate::il::ProducerId;
 use crate::il::ProducerNode;
+use crate::il::Selector;
 
 /// Fixed text a rendering writes.
 #[repr(transparent)]
@@ -541,9 +542,9 @@ fn producer(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the covariable, terminal, binder, destructor, match or nominal
-///   match syntax; children remain in source order at depth, and absent
-///   consumers are marked.
+/// - ensures: the covariable, terminal, binder, destructor, match, nominal
+///   match or selection syntax; children remain in source order at depth, and
+///   absent consumers are marked.
 /// - provides: consumer syntax before recursive expansion.
 /// - panics: none.
 ///
@@ -557,6 +558,7 @@ fn producer(
 /// - witness: `pretty::tests::renders_datatype_heads_nominal_matches_and_recursive_thunks`
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
+/// - witness: `pretty::tests::renders_records_and_selections`
 #[spec(ensures: |ref ret| ret.iter().all(|piece| match *piece {
     | Piece::Command(_, under) | Piece::Producer(_, under) | Piece::Consumer(_, under) => under == depth,
     | Piece::Text(_) | Piece::Owned(_) | Piece::Name(_) => true,
@@ -575,6 +577,11 @@ fn producer(
         | ConsumerNode::DataCase { ref branches, then } => matches!(ret.first(), Some(&Piece::Text(Token("datacase"))))
             && ret.iter().filter_map(|piece| match *piece { Piece::Producer(id, _) => Some(id), _ => None }).eq(branches.iter().copied())
             && ret.iter().filter_map(|piece| match *piece { Piece::Consumer(id, _) => Some(id), _ => None }).eq(core::iter::once(then)),
+        | ConsumerNode::Select { ref selector, then } => matches!(ret.as_slice(), &[Piece::Text(Token("select")), Piece::Owned(ref field), Piece::Text(Token("(")), Piece::Consumer(found, _), Piece::Text(Token(")"))]
+            if found == then && *field == match *selector {
+                | Selector::Component(component) => alloc::format!("[{}]", usize::from(component)),
+                | Selector::Label(ref label) => alloc::format!("[.{}]", label.as_ref()),
+            }),
     },
 })]
 fn consumer(
@@ -624,6 +631,17 @@ fn consumer(
             core::slice::from_ref(&then),
             depth,
         ),
+        | ConsumerNode::Select { ref selector, then } => {
+            let mut pieces = applied(Token("select"), &[], core::slice::from_ref(&then), depth);
+            let field = match *selector {
+                | Selector::Component(component) => {
+                    alloc::format!("[{}]", usize::from(component))
+                },
+                | Selector::Label(ref label) => alloc::format!("[.{}]", label.as_ref()),
+            };
+            pieces.insert(1, Piece::Owned(field));
+            pieces
+        },
         | ConsumerNode::Case { ref arms } => {
             let mut pieces = alloc::vec![text!("case {")];
             for (position, arm) in arms.iter().enumerate() {
@@ -704,11 +722,11 @@ fn applied(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: unit for the empty tuple, pair for a tuple of two, tuple for any
-///   other; inl and inr for the first two summands, inj past them; nil, cons,
-///   lift or ctor for the corresponding constructor.
+///   other; record for a record; inl and inr for the first two summands, inj
+///   past them; nil, cons, lift or ctor for the corresponding constructor.
 /// - provides: the fixed head spelling, independent of a lift's level; a
-///   datatype constructor's ordinal and a summand past the second are written
-///   after it by the caller.
+///   datatype constructor's ordinal, a record's labels and a summand past the
+///   second are written after it by the caller.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -725,6 +743,7 @@ fn applied(
     | ConstructorTag::Tuple(ProducerArity::ZERO) => matches!(ret.0.as_bytes(), b"unit"),
     | ConstructorTag::Tuple(ProducerArity::TWO) => matches!(ret.0.as_bytes(), b"pair"),
     | ConstructorTag::Tuple(_) => matches!(ret.0.as_bytes(), b"tuple"),
+    | ConstructorTag::Record(_) => matches!(ret.0.as_bytes(), b"record"),
     | ConstructorTag::ListNil => matches!(ret.0.as_bytes(), b"nil"),
     | ConstructorTag::ListCons => matches!(ret.0.as_bytes(), b"cons"),
     | ConstructorTag::Injection(summand) => match usize::from(summand) {
@@ -741,6 +760,7 @@ fn constructor_name(tag: &ConstructorTag) -> Token
         | ConstructorTag::Tuple(ProducerArity::ZERO) => Token("unit"),
         | ConstructorTag::Tuple(ProducerArity::TWO) => Token("pair"),
         | ConstructorTag::Tuple(_) => Token("tuple"),
+        | ConstructorTag::Record(_) => Token("record"),
         | ConstructorTag::ListNil => Token("nil"),
         | ConstructorTag::ListCons => Token("cons"),
         | ConstructorTag::Injection(summand) => match usize::from(summand) {
@@ -754,7 +774,7 @@ fn constructor_name(tag: &ConstructorTag) -> Token
 }
 
 /// The position a head's name is qualified by: a datatype constructor's
-/// ordinal, and a summand past the second.
+/// ordinal, a record's labels, and a summand past the second.
 ///
 /// # Specification
 /// trivial.
@@ -767,6 +787,7 @@ fn qualifier(tag: &ConstructorTag) -> Option<Piece<'static>>
         | ConstructorTag::Injection(summand) if usize::from(summand) > 1 => {
             Some(Piece::Owned(alloc::format!("[{}]", usize::from(summand))))
         },
+        | ConstructorTag::Record(ref labels) => Some(Piece::Owned(labels_spelled(labels))),
         | _ => None,
     }
 }
@@ -794,6 +815,8 @@ fn qualifier(tag: &ConstructorTag) -> Option<Piece<'static>>
     | (&ConstructorTag::Tuple(ProducerArity::TWO), &Piece::Text(Token(text))) => text == "pair(x, x) ⇒ ",
     | (&ConstructorTag::Tuple(arity), &Piece::Owned(ref text)) =>
         text.starts_with("tuple(") && text.matches('x').count() == usize::from(arity),
+    | (&ConstructorTag::Record(ref labels), &Piece::Owned(ref text)) =>
+        *text == alloc::format!("record{}({}) ⇒ ", labels_spelled(labels), alloc::vec!["x"; labels.len()].join(", ")),
     | (&ConstructorTag::ListNil, &Piece::Text(Token(text))) => text == "nil ⇒ ",
     | (&ConstructorTag::ListCons, &Piece::Text(Token(text))) => text == "cons(x, x) ⇒ ",
     | (&ConstructorTag::Injection(summand), &Piece::Text(Token(text))) => match usize::from(summand) {
@@ -818,6 +841,13 @@ fn pattern(tag: &ConstructorTag) -> Piece<'static>
             let binders = alloc::vec!["x"; usize::from(arity)].join(", ");
             Piece::Owned(alloc::format!("tuple({binders}) ⇒ "))
         },
+        | ConstructorTag::Record(ref labels) => {
+            let binders = alloc::vec!["x"; labels.len()].join(", ");
+            Piece::Owned(alloc::format!(
+                "record{}({binders}) ⇒ ",
+                labels_spelled(labels)
+            ))
+        },
         | ConstructorTag::ListNil => text!("nil ⇒ "),
         | ConstructorTag::ListCons => text!("cons(x, x) ⇒ "),
         | ConstructorTag::Injection(summand) => match usize::from(summand) {
@@ -837,6 +867,16 @@ fn pattern(tag: &ConstructorTag) -> Piece<'static>
             ))
         },
     }
+}
+
+/// A record head's labels, in its order, between braces: `{a, b}`.
+///
+/// # Specification
+/// trivial.
+fn labels_spelled(labels: &[gandr_core_term::FieldLabel]) -> alloc::string::String
+{
+    let spelled: Vec<&str> = labels.iter().map(AsRef::as_ref).collect();
+    alloc::format!("{{{}}}", spelled.join(", "))
 }
 
 /// A literal's source spelling.
@@ -1111,6 +1151,88 @@ mod tests
             "<dangling>",
             render_command(&arena, CommandId::from(99_u32)),
             "a dangling root"
+        );
+    }
+
+    /// A record writes its labels after its head and its fields in their
+    /// order, the record of none apart from the unit; a selection writes the
+    /// component or the label it reads and the continuation it returns to; a
+    /// structural arm on a record names its labels and binds one field each.
+    #[test]
+    fn renders_records_and_selections()
+    {
+        let mut arena = CommandArena::new();
+        let label = |name: &str| gandr_kernel_term::FieldLabel::from(String::from(name));
+        let first = arena
+            .mint_producer(ProducerNode::Constant(1_usize.into()))
+            .expect("a leaf mints");
+        let second = arena
+            .mint_producer(ProducerNode::Constant(2_usize.into()))
+            .expect("a leaf mints");
+        let record = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: ConstructorTag::Record(alloc::sync::Arc::from([label("a"), label("b")])),
+                producers: Box::from([second, first]),
+                consumers: Box::from([]),
+            })
+            .expect("fields resolve");
+        assert_eq!(
+            "record{a, b}(c2, c1)",
+            render_producer(&arena, record),
+            "the labels, then the fields in their order"
+        );
+        let empty = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: ConstructorTag::Record(alloc::sync::Arc::from([])),
+                producers: Box::from([]),
+                consumers: Box::from([]),
+            })
+            .expect("a leaf mints");
+        assert_eq!(
+            "record{}()",
+            render_producer(&arena, empty),
+            "the record of no labels is not the unit"
+        );
+
+        let top = arena
+            .mint_consumer(ConsumerNode::Top)
+            .expect("a leaf mints");
+        let by_label = arena
+            .mint_consumer(ConsumerNode::Select {
+                selector: Selector::Label(label("b")),
+                then: top,
+            })
+            .expect("the continuation resolves");
+        let by_position = arena
+            .mint_consumer(ConsumerNode::Select {
+                selector: Selector::Component(2_usize.into()),
+                then: by_label,
+            })
+            .expect("the continuation resolves");
+        assert_eq!(
+            "select[2](select[.b](★))",
+            render_consumer(&arena, by_position),
+            "each selection's field, then its continuation"
+        );
+
+        let returned = arena
+            .mint_cut(Polarity::Positive, first, top)
+            .expect("children resolve");
+        let matcher = arena
+            .mint_consumer(ConsumerNode::Case {
+                arms: Box::from([PatternArm {
+                    constructor: ConstructorTag::Record(alloc::sync::Arc::from([
+                        label("a"),
+                        label("b"),
+                    ])),
+                    body: returned,
+                }]),
+            })
+            .expect("the arm resolves");
+        assert_eq!(
+            "case {record{a, b}(x, x) ⇒ ⟨c1 |+ ★⟩}",
+            render_consumer(&arena, matcher),
+            "a record arm binds one field per label"
         );
     }
 

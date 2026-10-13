@@ -14,6 +14,8 @@
 //! deliver v datacase(t̄; c) ρ
 //!                       v = K_i(w̄): load c, push apply(w̄), force t_i
 //! deliver v D(ā; c) ρ   load c, observe v by D with the arguments ā
+//! deliver v select[f](c) ρ
+//!                       v a tuple or a record: deliver its field f to c
 //! return v m            shrink the frame region to m, then pop
 //! pop v                 the top frame receives v; an empty region halts
 //! ```
@@ -48,6 +50,8 @@
 //! deliver v μ̃x.s         run s with x bound to v    deliver v case     run v's arm, fields bound
 //! deliver v D(ā; c)      load c, observe v by D     return v m         shrink to m, pop
 //! deliver c_i(v̄) datacase(b̄; c)                     load c, push apply(v_j) for each field, force b_i
+//! deliver K(v̄) select[f](c)                          deliver the field f names to c, reading
+//!                                                     the width from K
 //! ```
 //!
 //! Loading a consumer pushes the frames it denotes: a chain of destructor
@@ -180,6 +184,7 @@ use crate::il::CovariableIndex;
 use crate::il::DestructorTag;
 use crate::il::ProducerId;
 use crate::il::ProducerNode;
+use crate::il::Selector;
 use crate::readback::ReadbackRefusal;
 use crate::readback::read_back_terminal;
 use crate::readback::read_back_value;
@@ -323,12 +328,14 @@ pub enum Stuck
         /// The destructor.
         head: DestructorTag,
     },
-    /// A match has no arm for the value it met.
+    /// A match, a fold or a selection has no arm for the value it met: a
+    /// selection meets something other than a tuple or a record, or one
+    /// without the component or the label it names.
     Unmatched
     {
         /// The value.
         value: HeapValueId,
-        /// The match.
+        /// The match, the fold or the selection.
         arms: ConsumerId,
     },
     /// A command the arena does not hold.
@@ -1438,6 +1445,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
     /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
     /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+    /// - witness: `machine::tests::a_selection_reads_the_width_of_the_value_it_meets`
     #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&next|
         self.arena.consumer(consumer).is_some_and(|node| {
             if let Some((body, captured)) = self.suspended_capture(value)
@@ -1459,6 +1467,7 @@ impl<'program> Machine<'program>
                 | ConsumerNode::Case { .. } => matches!(next, Next::Continue(Control::Run(..))),
                 | ConsumerNode::ListFold { .. } => matches!(next, Next::Continue(Control::ListFold(..))),
                 | ConsumerNode::DataCase { .. } | ConsumerNode::Destructor { .. } => matches!(next, Next::Continue(Control::Run(..) | Control::Return(..))),
+                | ConsumerNode::Select { then, .. } => matches!(next, Next::Continue(Control::Deliver(_, found, inner)) if found == then && inner == environment),
             }
         })))]
     fn deliver(
@@ -1524,6 +1533,10 @@ impl<'program> Machine<'program>
                     self.observation_arguments(consumer, tag, producers, environment)?;
                 let mark = self.load(then, environment)?;
                 self.observe(value, tag, arguments.as_slice(), mark)
+            },
+            | ConsumerNode::Select { then, .. } => {
+                let field = self.selection(value, consumer)?;
+                Ok(Next::Continue(Control::Deliver(field, then, environment)))
             },
         }
     }
@@ -1636,8 +1649,8 @@ impl<'program> Machine<'program>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a destructor frame observes the value, a binder frame binds
-    ///   it, a match frame selects on it, and an update frame writes it back to
-    ///   its cell and passes it on.
+    ///   it, a match frame selects on it, a selection frame passes its field
+    ///   on, and an update frame writes it back to its cell and passes it on.
     /// - provides: returning into the frame region.
     /// - fails: as [`Self::step`].
     /// - panics: none.
@@ -1655,6 +1668,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::case_selects_the_matching_arm`
     /// - witness: `machine::tests::a_shared_thunk_is_forced_once`
     /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
+    /// - witness: `machine::tests::a_selection_reads_the_width_of_the_value_it_meets`
     #[spec(
         captures: [height = self.store.frame_height()],
         ensures: |ref ret| if usize::from(height) == 0 { *ret == Ok(Next::Halt(value)) }
@@ -1695,6 +1709,10 @@ impl<'program> Machine<'program>
             },
             | Frame::Case { arms, environment } => self.select(value, arms, environment),
             | Frame::ListFold { fold, environment } => self.list_fold(value, fold, environment),
+            | Frame::Select { select } => {
+                let field = self.selection(value, select)?;
+                Ok(Next::Continue(Control::Pop(field)))
+            },
             | Frame::Update { cell } => {
                 self.store.write_back(cell, value)?;
                 Ok(Next::Continue(Control::Pop(value)))
@@ -1912,6 +1930,7 @@ impl<'program> Machine<'program>
             | ConsumerNode::MuTilde { .. }
             | ConsumerNode::Destructor { .. }
             | ConsumerNode::ListFold { .. }
+            | ConsumerNode::Select { .. }
             | ConsumerNode::Top => return Err(Stuck::IllFormedConsumer(arms).into()),
         };
         let unmatched = Stuck::Unmatched { value, arms };
@@ -1934,6 +1953,86 @@ impl<'program> Machine<'program>
             position = FieldPosition(position.0.saturating_add(1));
         }
         Ok(Next::Continue(Control::Run(arm.body, inner)))
+    }
+
+    /// The field a selection reads from the value it meets.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a component selects the field at its position of a tuple, and
+    ///   a label the field at the label's place among a record's labels; the
+    ///   width is the value's own, never one the selection states.
+    /// - provides: the elimination of a tuple or a record by one field.
+    /// - fails: [`Stuck::Unmatched`] for a component of anything but a tuple
+    ///   holding it, or a label of anything but a record carrying it;
+    ///   [`Stuck::IllFormedConsumer`] when `select` is not a selection.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a middle component of a tuple wider than three, a
+    ///   label at a different place in two records of different widths, a
+    ///   component past the width, an absent label and a selection of the other
+    ///   kind's value distinguish an off-by-one position, a width read from the
+    ///   selection and a label matched by place. The predicate pairs labels
+    ///   with fields, where the body searches for a place.
+    /// - witness: `machine::tests::a_selection_reads_the_width_of_the_value_it_meets`
+    #[spec(ensures: |ref ret| match self.arena.consumer(select) {
+        | Some(&ConsumerNode::Select { ref selector, .. }) => {
+            let unmatched = Stop::Stuck(Stuck::Unmatched { value, arms: select });
+            *ret == match (selector, self.store.value(value)) {
+                | (&Selector::Component(component), Some(&HeapValue::Constructed { tag: ConstructorTag::Tuple(_), ref fields })) =>
+                    fields.get(usize::from(component)).copied().ok_or(unmatched),
+                | (&Selector::Label(ref label), Some(&HeapValue::Constructed { tag: ConstructorTag::Record(ref labels), ref fields })) =>
+                    labels.iter().zip(fields.iter()).find(|&(held, _)| held == label).map(|(_, &field)| field).ok_or(unmatched),
+                | _ => Err(unmatched),
+            }
+        },
+        | _ => *ret == Err(Stop::Stuck(Stuck::IllFormedConsumer(select))),
+    })]
+    fn selection(
+        &self,
+        value: HeapValueId,
+        select: ConsumerId,
+    ) -> Result<HeapValueId, Stop>
+    {
+        let node = self
+            .arena
+            .consumer(select)
+            .ok_or(Stuck::IllFormedConsumer(select))?;
+        let ConsumerNode::Select { ref selector, .. } = *node
+        else {
+            return Err(Stuck::IllFormedConsumer(select).into());
+        };
+        let place = match (selector, self.store.value(value)) {
+            | (
+                &Selector::Component(component),
+                Some(&HeapValue::Constructed {
+                    tag: ConstructorTag::Tuple(_),
+                    ref fields,
+                }),
+            ) => fields.get(usize::from(component)),
+            | (
+                &Selector::Label(ref label),
+                Some(&HeapValue::Constructed {
+                    tag: ConstructorTag::Record(ref labels),
+                    ref fields,
+                }),
+            ) => labels
+                .iter()
+                .position(|held| held == label)
+                .and_then(|place| fields.get(place)),
+            | _ => None,
+        };
+        place.copied().ok_or_else(|| {
+            Stuck::Unmatched {
+                value,
+                arms: select,
+            }
+            .into()
+        })
     }
 
     /// Force the branch a nominal match selects for a constructed value
@@ -2048,6 +2147,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
     /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
     /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+    /// - witness: `machine::tests::a_selection_reads_the_width_of_the_value_it_meets`
     #[spec(
         captures: [height = self.store.frame_height()],
         ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&mark| self.store.mark() == mark
@@ -2055,7 +2155,7 @@ impl<'program> Machine<'program>
                 | ConsumerNode::Top => mark == ContinuationMark::BASE,
                 | ConsumerNode::Covariable(index) => self.store.lookup_covalue(environment, index) == Some(crate::store::Covalue::Pinned(mark)) || (height == mark.height() && self.store.lookup_covalue(environment, index) == Some(crate::store::Covalue::FallThrough)),
                 | ConsumerNode::MuTilde { .. } | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } => usize::from(height).checked_add(1) == Some(usize::from(mark.height())),
-                | ConsumerNode::Destructor { .. } | ConsumerNode::ListFold { .. } => true,
+                | ConsumerNode::Destructor { .. } | ConsumerNode::ListFold { .. } | ConsumerNode::Select { .. } => true,
                 })),
     )]
     fn load(
@@ -2089,6 +2189,10 @@ impl<'program> Machine<'program>
                         environment,
                     });
                     cursor = continuation;
+                },
+                | ConsumerNode::Select { then, .. } => {
+                    pending.push(Frame::Select { select: cursor });
+                    cursor = then;
                 },
                 | ConsumerNode::MuTilde { body } => {
                     pending.push(Frame::Bind { body, environment });
@@ -4153,6 +4257,141 @@ mod tests
                 "the match is stuck unmatched: {outcome:?}"
             );
         }
+    }
+
+    /// A selection reads the width of the value it meets: the middle
+    /// component of a triple and of a quadruple, and the label `s` of records
+    /// of one and three labels holding it first, second and last, each deliver
+    /// that field to the continuation the selection carries, whether the
+    /// selection meets the value in a cut or is loaded as a frame a captured
+    /// command's value pops into; a record returned whole reads back with its
+    /// labels. A component past the width, an absent label, a label of a
+    /// tuple, a component of a record and a selection of a literal are each
+    /// stuck unmatched at the selection.
+    #[test]
+    fn a_selection_reads_the_width_of_the_value_it_meets()
+    {
+        let mut core = CoreArena::new();
+        let label = |name: &str| gandr_kernel_term::FieldLabel::from(String::from(name));
+        let [zero, one, two, three] =
+            ["0", "1", "2", "3"].map(|digits| integer(&mut core, Digits(digits)));
+        let triple = core.value_tuple(&[zero, one, two]);
+        let quadruple = core.value_tuple(&[zero, one, two, three]);
+        let alone = core.value_record(alloc::collections::BTreeMap::from([(label("s"), one)]));
+        let second = core.value_record(alloc::collections::BTreeMap::from([
+            (label("a"), zero),
+            (label("s"), two),
+            (label("z"), three),
+        ]));
+        let last = core.value_record(alloc::collections::BTreeMap::from([
+            (label("a"), zero),
+            (label("b"), one),
+            (label("s"), three),
+        ]));
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let rebound = core.computation_return(bound);
+        let middle = core.computation_tuple_projection(quadruple, 1_usize.into());
+        let delivered = [
+            (
+                core.computation_tuple_projection(triple, 1_usize.into()),
+                "⟨1 |+ ★⟩",
+            ),
+            (
+                core.computation_tuple_projection(quadruple, 2_usize.into()),
+                "⟨2 |+ ★⟩",
+            ),
+            (core.computation_bind(middle, rebound), "⟨1 |+ ★⟩"),
+            (
+                core.computation_record_projection(alone, label("s")),
+                "⟨1 |+ ★⟩",
+            ),
+            (
+                core.computation_record_projection(second, label("s")),
+                "⟨2 |+ ★⟩",
+            ),
+            (
+                core.computation_record_projection(last, label("s")),
+                "⟨3 |+ ★⟩",
+            ),
+            (
+                core.computation_return(second),
+                "⟨record{a, s, z}(0, 2, 3) |+ ★⟩",
+            ),
+        ];
+        for (program, expected) in delivered {
+            assert_eq!(
+                expected,
+                evaluated(&mut core, program),
+                "the selected field"
+            );
+        }
+
+        let five = integer(&mut core, Digits("5"));
+        let unmatched = [
+            core.computation_tuple_projection(triple, 3_usize.into()),
+            core.computation_record_projection(second, label("b")),
+            core.computation_record_projection(triple, label("s")),
+            core.computation_tuple_projection(alone, 0_usize.into()),
+            core.computation_tuple_projection(five, 0_usize.into()),
+        ];
+        for program in unmatched {
+            let mut arena = CommandArena::new();
+            let mut provenance = Provenance::new();
+            let command = focus_computation(&core, program, &mut arena, &mut provenance)
+                .expect("a closed projection focuses");
+            let definitions = Definitions::new();
+            let mut machine = Machine::new(&arena, &definitions);
+            let outcome = machine.run(command, budget());
+            assert!(
+                matches!(outcome, Ok(Outcome::Stuck(Stuck::Unmatched { arms, .. }))
+                    if matches!(arena.consumer(arms), Some(&ConsumerNode::Select { .. }))),
+                "the selection is stuck unmatched: {outcome:?}"
+            );
+        }
+
+        let mut arena = CommandArena::new();
+        let mut provenance = Provenance::new();
+        let held =
+            focus_value(&core, quadruple, &mut arena, &mut provenance).expect("a tuple focuses");
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
+        let named = arena
+            .mint_consumer(ConsumerNode::Covariable(crate::il::CovariableIndex::from(
+                0_u32,
+            )))
+            .expect("a leaf");
+        let returned = arena
+            .mint_cut(gandr_theory_cell_complexes::Polarity::Positive, held, named)
+            .expect("live children");
+        let captured = arena
+            .mint_producer(ProducerNode::Mu { body: returned })
+            .expect("a live body");
+        let select = arena
+            .mint_consumer(ConsumerNode::Select {
+                selector: Selector::Component(2_usize.into()),
+                then: top,
+            })
+            .expect("a live continuation");
+        let root = arena
+            .mint_cut(
+                gandr_theory_cell_complexes::Polarity::Positive,
+                captured,
+                select,
+            )
+            .expect("live children");
+        let definitions = Definitions::new();
+        let mut machine = Machine::new(&arena, &definitions);
+        let Ok(Outcome::Halted(value)) = machine.run(root, budget())
+        else {
+            panic!("the captured command's value pops into the selection");
+        };
+        let back = machine
+            .read_back_value(value, &mut core)
+            .expect("a literal reads back");
+        assert_eq!(
+            core.value(two),
+            core.value(back),
+            "the loaded selection delivers"
+        );
     }
 
     /// `(fix self. λn. case n {zero ⇒ return zero | succ k ⇒ r ← force self k;
