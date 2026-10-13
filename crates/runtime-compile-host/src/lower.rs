@@ -420,7 +420,8 @@ pub fn lower_computation(
                     | Computation::Transport(..) => {
                         return Err(LowerError::OutsideSlice(Form::Transport));
                     },
-                    | Computation::PathTransport { .. } => {
+                    | Computation::PathTransport { .. }
+                    | Computation::TelescopeTransport { .. } => {
                         return Err(LowerError::OutsideSlice(Form::ElementTransport));
                     },
                     | Computation::Hole(_) => return Err(LowerError::OutsideSlice(Form::Hole)),

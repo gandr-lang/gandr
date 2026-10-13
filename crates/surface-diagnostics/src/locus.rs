@@ -607,7 +607,8 @@ impl Annotations
     labelled && match refusal {
         CheckRefusal::DataFieldLevel {..} | CheckRefusal::MissingRecordField {..} => role(&ret.context[0_usize],Label::Expected) && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
         CheckRefusal::TypeMismatch(_) | CheckRefusal::SortMismatch { .. }
-            | CheckRefusal::LevelMismatch { .. } | CheckRefusal::FamilyArgumentClassifier { .. } =>
+            | CheckRefusal::LevelMismatch { .. } | CheckRefusal::FamilyArgumentClassifier { .. }
+            | CheckRefusal::NotOver { .. } =>
             role(&ret.context[0_usize], Label::Expected) && role(&ret.context[1_usize], Label::Synthesised),
         CheckRefusal::DependentBind { .. } | CheckRefusal::CompoundEndpoint { .. } | CheckRefusal::FunextUnsupported { .. }
             | CheckRefusal::EquivUnsupported { .. } | CheckRefusal::UncertifiedStratum { .. } => role(&ret.context[0_usize], Label::Synthesised)
@@ -696,6 +697,11 @@ fn checked(
             synthesised,
             expected,
             ..
+        }
+        | CheckRefusal::NotOver {
+            at,
+            synthesised,
+            expected,
         } => (spanned(origins.value(at)), [
             annotated(spanned(origins.value_type(expected)), Label::Expected),
             annotated(spanned(origins.value_type(synthesised)), Label::Synthesised),
@@ -969,6 +975,7 @@ impl fmt::Display for Checked
             | CheckRefusal::EquivUnsupported { .. } => f.write_str("a universe equivalence is decided for closed pure translators between finite first-order types"),
             | CheckRefusal::UncertifiedStratum { .. } => f.write_str("a universe equivalence over a recursive type has no finite coverage to certify its round trips"),
             | CheckRefusal::RoundTripDistinct { .. } => f.write_str("a universe equivalence requires each round trip to return its input at every pattern"),
+            | CheckRefusal::NotOver { .. } => f.write_str("a telescope transport requires its second identity to lie over its path, from the start transported along it"),
             | CheckRefusal::TypeMismatch(_) => f.write_str(
                 "the type this term synthesises does not convert to the type it is checked against",
             ),
@@ -1132,6 +1139,7 @@ impl fmt::Display for Shape
             | ExpectedShape::Product => "an eager product `A * B`",
             | ExpectedShape::StaticPi => "a type operator's classifier `K -> J`",
             | ExpectedShape::Path => "an element path type `Path(A, a, b)`",
+            | ExpectedShape::Telescope => "a telescope motive `Π (y : A). Π (z : B). F C`",
         })
     }
 }

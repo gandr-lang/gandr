@@ -497,6 +497,20 @@ fn walk(
                     pending.push((AnyNode::Value(path), depth, results));
                     pending.push((AnyNode::Value(value), depth, results));
                 },
+                // The motive's arrows bind the telescope themselves.
+                | Some(&Computation::TelescopeTransport {
+                    motive,
+                    path,
+                    start,
+                    over,
+                    value,
+                }) => {
+                    pending.push((AnyNode::CompType(motive), depth, results));
+                    pending.extend(
+                        [path, start, over, value]
+                            .map(|child| (AnyNode::Value(child), depth, results)),
+                    );
+                },
                 | Some(&Computation::RelatedApplication {
                     path,
                     left,

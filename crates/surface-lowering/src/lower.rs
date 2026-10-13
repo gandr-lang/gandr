@@ -339,9 +339,13 @@
 //! product type is `#{A}`. `(A1, …, An) => B` is exactly `+U (A1 -> … -> An ->
 //! -F B)`, every former at the alias's origin, so a program spelled with the
 //! alias and one spelled without it lower to one core term and one content
-//! digest; a parenthesised list of types anywhere but before `=>` is refused as
-//! `MisplacedTile` at its first comma. The lazy product `C & D` is a
-//! computation type, the core's `With`.
+//! digest. A computation arrow whose domain is one binder, `(x : A) -> C`, is
+//! the dependent arrow `Π (x : A). C`, so the telescope `(x : A, y : B(x)) =>
+//! C` is exactly `+U ((x : A) -> (y : B(x)) -> -F C)` and has a spelling
+//! where the alias cannot stand, an argument among them. A parenthesised list
+//! of types anywhere but before `=>` is refused as `MisplacedTile` at its
+//! first comma. The lazy product `C & D` is a computation type, the core's
+//! `With`.
 //!
 //! The alternative was a core former for the alias, which would give one type
 //! two digests by its spelling. It was declined because `=>` is notation for
@@ -1822,6 +1826,9 @@ enum Plan
     /// store, each binding the ones after it, to the returner of the
     /// codomain.
     Telescope(Stretch, NodeIndex),
+    /// A dependent arrow `(x : A) -> C`: its one binder, in the parameter
+    /// store, and its codomain.
+    DependentArrow(Stretch, NodeIndex),
     /// Adopt the child's lowered node unchanged.
     Transparent(NodeIndex),
     /// A thunk over its block.
@@ -1865,6 +1872,8 @@ enum Plan
     /// `back`, `then` or `cong`, unfolded to the transport it derives
     /// against the path type its position answers.
     Derived(identity::Derived),
+    /// The dependent transport over its telescope motive.
+    TelescopeTransport(identity::Transported),
 }
 
 /// A node's lowered core node, at the sort its own form produced.
@@ -5355,7 +5364,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::ListCons(..) | Plan::Transport(..) | Plan::Derived(_))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_))) => true,
                     | _ => false,
                 }
         },
@@ -6784,8 +6793,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify an arrow type: the computation arrow `A -> C`, or the static
-    /// Pi `A -> B` where a value type is read.
+    /// Classify an arrow type: the computation arrow `A -> C`, the dependent
+    /// arrow `(x : A) -> C`, or the static Pi `A -> B` where a value type is
+    /// read.
     ///
     /// # Specification
     /// - requires: `site` is an arrow in type position, or in value position
@@ -6793,8 +6803,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: an arrow standing as a value type is the static Pi, its
     ///   domain and codomain each read as a value type under the arrow's own
     ///   frame, since the codomain binds nothing; any other arrow stands as a
-    ///   computation type, reads its domain as a value type and its codomain as
-    ///   a computation type. Either is planned over both operands.
+    ///   computation type: one whose domain is one binder is the dependent
+    ///   arrow [`Self::dependent_arrow`] plans, and the rest read their domain
+    ///   as a value type and their codomain as a computation type. Each is
+    ///   planned over both operands.
     /// - provides: the function type of the fragment and the classifier of a
     ///   type operator.
     /// - fails: yields the wrong-sort refusal where neither sort suits the
@@ -6813,12 +6825,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
     /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
     /// - witness: `lower::tests::a_computation_codomain_of_a_static_pi_is_refused`
+    /// - witness: `lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || match self.plans.get(usize::from(site.at.node)) {
                     | Some(&Plan::StaticPi(..)) => matches!(site.reading, Reading::ValueType(_)),
-                    | Some(&Plan::Arrow(..)) => !matches!(site.reading, Reading::ValueType(_)),
+                    | Some(&(Plan::Arrow(..) | Plan::DependentArrow(..))) => !matches!(site.reading, Reading::ValueType(_)),
                     | _ => false,
                 }
         },
@@ -6841,6 +6854,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         closed(site, &mut cursor, TileName::ARROW)?;
         let codomain = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
+        if !static_pi
+            && self.dependent_arrow(site, frame, domain, codomain)? == arity::Planned(true)
+        {
+            return Ok(());
+        }
         self.read(domain.node, Reading::ValueType(frame));
         if static_pi {
             self.read(codomain.node, Reading::ValueType(frame));
@@ -7683,7 +7701,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::ListNil
                 | Plan::ListCons(..)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -7698,7 +7716,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Former(TypeFormer::Thunk | TypeFormer::List, _)
                 | Plan::Path(..)
                 | Plan::Data(..) => Some(Produced::ValueType),
-                | Plan::Arrow(..) | Plan::With(_) | Plan::Former(TypeFormer::Returner, _) => {
+                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(_) | Plan::Former(TypeFormer::Returner, _) => {
                     Some(Produced::CompType)
                 },
                 | Plan::Decode(_, _, universe) => Some(match universe.sort {
@@ -7857,6 +7875,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Telescope(entries, codomain) => {
                 self.mint_telescope(entries, codomain, sink, origin)
             },
+            | Plan::DependentArrow(entries, codomain) => {
+                self.mint_dependent_arrow(entries, codomain, sink, origin)
+            },
             | Plan::Transparent(child) => self.lowered_at(child),
             | Plan::Former(former, argument) => self.mint_former(former, argument, sink, origin),
             | Plan::Application(head, arguments) => {
@@ -7882,6 +7903,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             | Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
             | Plan::Derived(derived) => self.mint_derived(derived, sink, origin),
+            | Plan::TelescopeTransport(transported) => {
+                self.mint_telescope_transport(transported, sink, origin)
+            },
             | Plan::Arrow(..)
             | Plan::StaticPi(..)
             | Plan::Path(..)
@@ -8503,6 +8527,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Injection(..)
             | Plan::ValueFunction(..)
             | Plan::Telescope(..)
+            | Plan::DependentArrow(..)
             | Plan::Former(..)
             | Plan::Transparent(_)
             | Plan::Application(..)
@@ -8518,7 +8543,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Copattern(_)
             | Plan::Observe(..)
             | Plan::Block(_)
-            | Plan::Derived(_) => Maybe::Absent(lowered::Absent::Unminted),
+            | Plan::Derived(_)
+            | Plan::TelescopeTransport(_) => Maybe::Absent(lowered::Absent::Unminted),
         }
     }
 

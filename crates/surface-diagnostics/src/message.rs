@@ -428,6 +428,10 @@ fn checked(
         | CheckRefusal::RoundTripDistinct { .. } => {
             f.write_str("`equiv` needs each round trip to return its input")
         },
+        | CheckRefusal::NotOver { .. } => f.write_str(
+            "`transport` needs its identity over the path to start from the start transported \
+             along the path",
+        ),
         | CheckRefusal::TypeMismatch(_) => f.write_str("mismatched types"),
         | CheckRefusal::ShapeMismatch { wanted, .. } => write!(f, "expected {}", Shape(wanted)),
         | CheckRefusal::NotSynthesisable { form } => write!(
@@ -843,6 +847,11 @@ mod tests
                 code: value_type,
             },
             CheckRefusal::RoundTripDistinct { at: value },
+            CheckRefusal::NotOver {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            },
         ]
         .map(Refusal::Checking);
         let corpus = Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot {

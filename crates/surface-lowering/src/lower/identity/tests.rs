@@ -610,6 +610,97 @@ fn a_derived_operation_needs_a_written_path_answer()
 }
 
 #[test]
+fn a_dependent_transport_lowers_to_its_telescope()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def moved(a: Integer, b: Integer, q: Path(Integer, a, b), z0: Path(Integer, a, a), o: Integer, v: Integer) -> -F Integer {\n",
+            "  become transport(+U ((y : Integer) -> (z : Path(Integer, a, y)) -> -F Path(Path(Integer, a, y), z, z)), q, z0, o, v)\n",
+            "}\n",
+            "def plain(n: Integer, q: Path(Integer, 1, 2), v: Integer) -> -F Integer {\n",
+            "  become transport(+U (Integer -> Integer -> -F Path(Integer, n, n)), q, v, v, v)\n",
+            "}\n",
+            "def short(q: Path(Integer, 1, 2), v: Integer) -> -F Integer {\n",
+            "  become transport(+U (Integer -> Integer -> -F Integer), q, v, v)\n",
+            "}\n",
+        )),
+        &mut arena,
+    );
+    let telescope = |name: &str| {
+        let Some(&Computation::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        }) = arena.computation(tail_of(&module, &arena, name.into()))
+        else {
+            panic!("`{name}` lowers to a telescope transport");
+        };
+        let Some(&gandr_core_term::CompType::Pi {
+            domain: outer,
+            codomain,
+        }) = arena.comp_type(motive)
+        else {
+            panic!("`{name}`'s motive binds the endpoint");
+        };
+        let Some(&gandr_core_term::CompType::Pi {
+            domain: inner,
+            codomain,
+        }) = arena.comp_type(codomain)
+        else {
+            panic!("`{name}`'s motive binds the element");
+        };
+        let Some(&gandr_core_term::CompType::Returner { result, .. }) = arena.comp_type(codomain)
+        else {
+            panic!("`{name}`'s motive returns its body");
+        };
+        (outer, inner, result, [path, start, over, value])
+    };
+
+    let (_, inner, body, operands) = telescope("moved");
+    assert_eq!(
+        operands.map(|operand| arena.value(operand).cloned()),
+        [3_u32, 2, 1, 0].map(|index| Some(variable(index.into()))),
+        "the path, the start, the identity over the path and the value, in order"
+    );
+    assert!(
+        matches!(arena.value_type(inner), Some(&ValueType::Path { right, .. }) if arena.value(right) == Some(&variable(0_u32.into()))),
+        "the family names the endpoint its entry binds"
+    );
+    assert!(
+        matches!(
+            arena.value_type(body),
+            Some(&ValueType::Path { left, right, .. })
+                if arena.value(left) == Some(&variable(0_u32.into()))
+                    && arena.value(right) == Some(&variable(0_u32.into()))
+        ),
+        "the body names the element its second entry binds"
+    );
+    let (_, _, body, _) = telescope("plain");
+    assert!(
+        matches!(
+            arena.value_type(body),
+            Some(&ValueType::Path { left, .. }) if arena.value(left) == Some(&variable(4_u32.into()))
+        ),
+        "an arrow entry becomes dependent, its codomain moved under the binder it now stands \
+         under"
+    );
+
+    assert!(
+        matches!(
+            outcome_of(&module, "short".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(count),
+                ..
+            }) if count == OperandCount::from(4_usize)
+        ),
+        "`transport` takes a motive and two values, or a telescope motive and four"
+    );
+}
+
+#[test]
 fn matching_reflexivity_is_refused_as_k()
 {
     let source = "def uip(n: Integer, p: Path(Integer, n, n)) -> -F Integer {\n  case p { here => return 0 }\n}\n";

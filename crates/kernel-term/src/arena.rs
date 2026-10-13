@@ -886,6 +886,7 @@ impl TermArena
             Computation::Return(value) | Computation::Force(value) => self.value(value).is_some(),
             Computation::Transport(path, value) => self.value(path).is_some() && self.value(value).is_some(),
             Computation::PathTransport { motive, path, value } => self.value_type(motive).is_some() && self.value(path).is_some() && self.value(value).is_some(),
+            Computation::TelescopeTransport { motive, path, start, over, value } => self.comp_type(motive).is_some() && self.value(path).is_some() && self.value(start).is_some() && self.value(over).is_some() && self.value(value).is_some(),
             Computation::RelatedApplication { path, left, right, evidence, body } => self.value(path).is_some() && self.value(left).is_some() && self.value(right).is_some() && self.value(evidence).is_some() && self.computation(body).is_some(),
             Computation::Bind(bound, body) | Computation::With(bound, body) => self.computation(bound).is_some() && self.computation(body).is_some(),
             Computation::Project(_, pair) => self.computation(pair).is_some(),
@@ -2547,6 +2548,30 @@ impl TermArena
         })
     }
 
+    /// Mint transport over a two-entry telescope; admission reads the
+    /// telescope off the motive and derives the source and result types.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_telescope_transport(
+        &mut self,
+        motive: CompTypeId,
+        path: ValueId,
+        start: ValueId,
+        over: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        })
+    }
+
     /// Mint application of a function identity at related inputs.
     ///
     /// # Specification
@@ -2620,6 +2645,7 @@ Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)]
             Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => ret.as_slice() == [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)],
             Some(&Computation::Transport(path, value)) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(value)],
             Some(&Computation::PathTransport { motive, path, value }) => ret.as_slice() == [AnyNode::ValueType(motive), AnyNode::Value(path), AnyNode::Value(value)],
+            Some(&Computation::TelescopeTransport { motive, path, start, over, value }) => ret.as_slice() == [AnyNode::CompType(motive), AnyNode::Value(path), AnyNode::Value(start), AnyNode::Value(over), AnyNode::Value(value)],
             Some(&Computation::RelatedApplication { path, left, right, evidence, body }) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(left), AnyNode::Value(right), AnyNode::Value(evidence), AnyNode::Computation(body)],
             Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => ret.as_slice() == [AnyNode::Computation(body)],
             Some(&Computation::Application(head, argument)) =>
@@ -2779,6 +2805,21 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.extend([
                         AnyNode::ValueType(motive),
                         AnyNode::Value(path),
+                        AnyNode::Value(value),
+                    ]);
+                },
+                | Some(&Computation::TelescopeTransport {
+                    motive,
+                    path,
+                    start,
+                    over,
+                    value,
+                }) => {
+                    children.extend([
+                        AnyNode::CompType(motive),
+                        AnyNode::Value(path),
+                        AnyNode::Value(start),
+                        AnyNode::Value(over),
                         AnyNode::Value(value),
                     ]);
                 },

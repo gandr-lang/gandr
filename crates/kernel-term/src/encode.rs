@@ -798,6 +798,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Computation::TupleProjection(..)) => tags::NODE_C_TUPLE_PROJECTION,
             Some(&Computation::Transport(..)) => tags::NODE_C_TRANSPORT,
             Some(&Computation::PathTransport { .. }) => tags::NODE_C_PATH_TRANSPORT,
+            Some(&Computation::TelescopeTransport { .. }) => tags::NODE_C_TELESCOPE_TRANSPORT,
             Some(&Computation::RelatedApplication { .. }) => tags::NODE_C_RELATED_APPLICATION,
             None | Some(&Computation::Return(_)) => tags::NODE_C_RETURN,
             Some(&Computation::Lambda(_)) => tags::NODE_C_LAMBDA,
@@ -993,6 +994,9 @@ fn encode_entry(
             | Some(&Computation::Transport(..)) => out.put_tag(tags::NODE_C_TRANSPORT),
             | Some(&Computation::PathTransport { .. }) => {
                 out.put_tag(tags::NODE_C_PATH_TRANSPORT);
+            },
+            | Some(&Computation::TelescopeTransport { .. }) => {
+                out.put_tag(tags::NODE_C_TELESCOPE_TRANSPORT);
             },
             | Some(&Computation::RelatedApplication { .. }) => {
                 out.put_tag(tags::NODE_C_RELATED_APPLICATION);

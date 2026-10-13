@@ -1644,7 +1644,7 @@ impl<'run> Focusing<'run>
                 }
             },
             | Computation::Transport(..) => return Err(FocusRefusal::UniverseTransport(id)),
-            | Computation::PathTransport { .. } => {
+            | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } => {
                 return Err(FocusRefusal::ElementTransport(id));
             },
             | Computation::Hole(_) | Computation::Mark { .. } => {

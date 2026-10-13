@@ -559,7 +559,8 @@ fn checking_row(
                 | ExpectedShape::Arrow
                 | ExpectedShape::Product
                 | ExpectedShape::StaticPi
-                | ExpectedShape::Path,
+                | ExpectedShape::Path
+                | ExpectedShape::Telescope,
             ..
         }
         | CheckRefusal::NotSynthesisable {
@@ -586,6 +587,7 @@ fn checking_row(
         | CheckRefusal::EquivUnsupported { .. }
         | CheckRefusal::UncertifiedStratum { .. }
         | CheckRefusal::RoundTripDistinct { .. }
+        | CheckRefusal::NotOver { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
         | CheckRefusal::UnknownOperation { .. }
         | CheckRefusal::HandlerCoverage { .. }
@@ -897,6 +899,15 @@ fn formers(
                     | Computation::PathTransport { path, value, .. }),
                 ) => {
                     worklist.extend([Node::Value(path), Node::Value(value)]);
+                },
+                | Some(&Computation::TelescopeTransport {
+                    path,
+                    start,
+                    over,
+                    value,
+                    ..
+                }) => {
+                    worklist.extend([path, start, over, value].map(Node::Value));
                 },
                 | Some(&Computation::Lambda(under)) => {
                     rows.mark(Row::LambdaChecks);

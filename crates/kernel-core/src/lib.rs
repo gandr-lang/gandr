@@ -180,6 +180,28 @@
 //! clauses. Each decision, with its alternatives and reversal, is stated in
 //! that module; the fold's bridge reading has no persisted node.
 //!
+//! **A motive that depends on the path is a telescope, carried by its own
+//! node.** The motive is the computation type `Π (y : A). Π (z : B). F C`,
+//! `B` a family over the endpoint and `C` over both entries, and the
+//! telescope transport `tr₂(M, p, z₀, q, v)` carries, besides the path and the
+//! value, the family element `z₀` at the source and the identity `q` over
+//! the path. The checker reads both entries off the motive, checks `z₀` at
+//! `B[a]`, requires `q` to synthesize `Path(B[b], ⟨tr(y. B, p, z₀)⟩, z₁)`,
+//! refusing it by name (`IdentityError::NotOver`) otherwise, checks `v` at
+//! `C[a, z₀]` and returns `C[b, z₁]`, each instance by iterated single
+//! substitution, outer binder first; a motive of any other shape is a
+//! computation-shape mismatch naming the telescope. The replay computes it by
+//! two clauses: `here` along both identities returns the value, and `here(c)`
+//! along the path transports the value along `q` in the fibre `z. C[c, z]`;
+//! everything else sticks. `J` is not a node: it is this transport in the
+//! singleton, `tr₂(Π y. Π q : Path(A, a, y). F C, p, here(a), here(p), d)`,
+//! whose identity over the path checks because the singleton clause carries
+//! `here(a)` to `p`. The alternatives were widening the one-binder
+//! transport's motive to a telescope, which would change what a persisted
+//! node means, and a primitive `J`, which the identity fold does not need.
+//! Reversal: once Σ is kernel syntax, the telescope transport is the
+//! one-binder transport over the Σ of its two entries, and the node retires.
+//!
 //! # The trusted equality reflexivity reads
 //!
 //! Type conversion stays the structural comparison above. Term equality the

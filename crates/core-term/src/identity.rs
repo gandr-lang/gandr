@@ -19,9 +19,10 @@
 //! the checker and the kernel boundary meet only `tr`, `here` and `Path`.
 //! Transport computes on `here`, so every law the three obey at reflexivity —
 //! `then` associates and is unital, `back` inverts, `cong` respects `then` —
-//! holds by normalisation. At a path that is not reflexivity only the right
-//! unit of `then` holds definitionally; the rest are paths between paths, the
-//! business of identity between identities.
+//! holds by normalisation. At a path that is not reflexivity both units of
+//! `then` hold definitionally, the left one because transport in the singleton
+//! family carries `here(a)` to the path itself; the rest are paths between
+//! paths, the business of identity between identities.
 //!
 //! # Decisions
 //!
@@ -29,16 +30,20 @@
 //!   The alternatives were a node per operation, which would give each its own
 //!   evaluation rule, typing rule and kernel tag, three places for the laws to
 //!   drift apart, and a primitive `J`, whose motive ranges over the path as
-//!   well as its endpoint and which transport derives in the singleton.
-//!   Reversal: an operation whose derived form costs too much to normalise
-//!   earns a node, with its law as the node's evaluation rule.
-//! - **The motive is first order.** [`Computation::PathTransport`]'s motive is
-//!   one value type under one binder, the moving endpoint. The dependent-arrow
-//!   extension, a motive `y. U((x : B[y]) → C[x, y])`, transports a function by
-//!   carrying its argument back along the path and its result forward over both
-//!   binders, so it needs a motive under two binders and the function clause of
-//!   the recursion beyond first-order arguments. Reversal: that extension adds
-//!   a second motive former beside this one.
+//!   well as its endpoint: `J` is the telescope transport of
+//!   [`Computation::TelescopeTransport`] in the singleton `(y : A, q : Path(A,
+//!   a, y))`, starting at `here(a)` and moving along `here(p)`. Reversal: an
+//!   operation whose derived form costs too much to normalise earns a node,
+//!   with its law as the node's evaluation rule.
+//! - **A motive that depends on the path is a telescope.**
+//!   [`Computation::PathTransport`]'s motive is one value type under one
+//!   binder, the moving endpoint. A motive that also reads an element of a
+//!   family over the endpoint is the dependent arrow `Π (y : A). Π (z : B). F
+//!   C` of [`Computation::TelescopeTransport`], moved by the path and by an
+//!   identity over it. The alternative, one former whose motive ranges over any
+//!   number of entries, would make every transport pay for a telescope its
+//!   first-order motive does not have. Reversal: a third entry earns the
+//!   general former.
 //! - **The motive is written, not inferred.** A caller names the carrier and
 //!   the fixed endpoint, which a checking position reads off its expected path
 //!   type. The alternative, inferring them from the path's own type, needs the

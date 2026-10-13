@@ -2891,7 +2891,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             _ => true,
         },
         Term::Computation(computation) => match self.arena.computation(computation) {
-            Some(&(Computation::Transport(..) | Computation::PathTransport { .. } | Computation::RelatedApplication { .. } | Computation::Lambda(_) | Computation::Bind(..) | Computation::Case { .. } | Computation::With(..) | Computation::Project(..))) | None => ret == Rigidity::Flexible,
+            Some(&(Computation::Transport(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::RelatedApplication { .. } | Computation::Lambda(_) | Computation::Bind(..) | Computation::Case { .. } | Computation::With(..) | Computation::Project(..))) | None => ret == Rigidity::Flexible,
             _ => true,
         },
     })]
@@ -2964,6 +2964,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     | Some(
                         &(Computation::Transport(..)
                         | Computation::PathTransport { .. }
+                        | Computation::TelescopeTransport { .. }
                         | Computation::RelatedApplication { .. }
                         | Computation::DataCase { .. }
                         | Computation::RecordProjection(..)
@@ -3260,6 +3261,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     | Computation::With(..)
                     | Computation::Return(_)
                     | Computation::PathTransport { .. }
+                    | Computation::TelescopeTransport { .. }
                     | Computation::RelatedApplication { .. }),
                 )
                 | None => {
@@ -3532,6 +3534,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     | Computation::With(..)
                     | Computation::Return(_)
                     | Computation::PathTransport { .. }
+                    | Computation::TelescopeTransport { .. }
                     | Computation::RelatedApplication { .. }),
                 )
                 | None => {
@@ -3836,6 +3839,35 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         value,
                     };
                     match crate::element_identity::transport_beta(
+                        self.arena,
+                        &mut self.table,
+                        &mut self.memo,
+                        term,
+                    )
+                    .map_err(|_unreadable_term| unreadable())?
+                    {
+                        | crate::path_universe::Reduction::Reduced(reduct) => {
+                            focus = reduct;
+                            progress = Progress::Reduced;
+                        },
+                        | crate::path_universe::Reduction::Stuck => break,
+                    }
+                },
+                | Some(&Computation::TelescopeTransport {
+                    motive,
+                    path,
+                    start,
+                    over,
+                    value,
+                }) => {
+                    let term = crate::element_identity::TelescopeStep {
+                        motive,
+                        path,
+                        start,
+                        over,
+                        value,
+                    };
+                    match crate::element_identity::telescope_beta(
                         self.arena,
                         &mut self.table,
                         &mut self.memo,

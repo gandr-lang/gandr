@@ -73,6 +73,7 @@ fn children(
             | Computation::ListFold { .. }
             | Computation::Transport(..)
             | Computation::PathTransport { .. }
+            | Computation::TelescopeTransport { .. }
             | Computation::RelatedApplication { .. }
             | Computation::DataCase { .. }
             | Computation::RecordProjection(..)
@@ -172,6 +173,7 @@ fn translate(
                     | Computation::ListFold { .. }
                     | Computation::Transport(..)
                     | Computation::PathTransport { .. }
+                    | Computation::TelescopeTransport { .. }
                     | Computation::RelatedApplication { .. }
                     | Computation::DataCase { .. }
                     | Computation::RecordProjection(..)

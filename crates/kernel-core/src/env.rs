@@ -1887,6 +1887,21 @@ fn collect_reachable(
                     pending.push(AnyNode::Value(path));
                     pending.push(AnyNode::Value(value));
                 },
+                | Some(&Computation::TelescopeTransport {
+                    motive,
+                    path,
+                    start,
+                    over,
+                    value,
+                }) => {
+                    pending.extend([
+                        AnyNode::CompType(motive),
+                        AnyNode::Value(path),
+                        AnyNode::Value(start),
+                        AnyNode::Value(over),
+                        AnyNode::Value(value),
+                    ]);
+                },
                 | Some(&Computation::RelatedApplication {
                     path,
                     left,

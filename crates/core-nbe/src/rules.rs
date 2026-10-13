@@ -183,7 +183,9 @@ pub enum Subgoal
     Values(DomainValueId, DomainValueId),
     /// Two closures, compared once both are opened under one fresh variable.
     Opened(CompClosureId, CompClosureId),
-    /// The complete nominal classifiers captured by two constructor values.
+    /// Two closed types quoted as codes at the goal's depth: the complete
+    /// nominal classifiers captured by two constructor values, or two
+    /// telescope motives, whose arrows bind their own entries.
     Classifiers(crate::arena::ValueClosureId, crate::arena::ValueClosureId),
     /// Two case motives, quoted under the same fresh scrutinee variable.
     CaseMotives(CompClosureId, CompClosureId),
@@ -722,7 +724,7 @@ pub enum Spines
                 EliminationShape::Projection(_) => 0_usize,
                 EliminationShape::Case(branches) => branches,
                 EliminationShape::Split(_) => 1_usize,
-                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::PathTransport { .. } => 2_usize,_ => 1_usize },
+                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::PathTransport { .. } => 2_usize,Elimination::TelescopeTransport { .. } => 4_usize,_ => 1_usize },
             };
             Ok((true,count.saturating_add(added)))
         });
@@ -794,6 +796,29 @@ pub fn spine_subgoals(
                 subgoals.push(Subgoal::Motives(left_motive, right_motive));
                 subgoals.push(Subgoal::Values(left_value, right_value));
             },
+            // A telescope motive binds through its own arrows, so it compares
+            // as a code at the spine's depth, the way captured classifiers do.
+            | (
+                Elimination::TelescopeTransport {
+                    motive: left_motive,
+                    start: left_start,
+                    over: left_over,
+                    value: left_value,
+                },
+                Elimination::TelescopeTransport {
+                    motive: right_motive,
+                    start: right_start,
+                    over: right_over,
+                    value: right_value,
+                },
+            ) => {
+                subgoals.extend([
+                    Subgoal::Classifiers(left_motive, right_motive),
+                    Subgoal::Values(left_start, right_start),
+                    Subgoal::Values(left_over, right_over),
+                    Subgoal::Values(left_value, right_value),
+                ]);
+            },
             | (Elimination::Bind(left_body), Elimination::Bind(right_body)) => {
                 subgoals.push(Subgoal::Opened(left_body, right_body));
             },
@@ -840,6 +865,7 @@ pub fn spine_subgoals(
                 | Elimination::Projection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::PathTransport { .. }
+                | Elimination::TelescopeTransport { .. }
                 | Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)

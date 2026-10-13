@@ -169,7 +169,9 @@ fn children(
             | Computation::ListFold { .. } => {
                 panic!("list elimination is outside the path fixture fragment")
             },
-            | Computation::PathTransport { .. } | Computation::RelatedApplication { .. } => {
+            | Computation::PathTransport { .. }
+            | Computation::TelescopeTransport { .. }
+            | Computation::RelatedApplication { .. } => {
                 panic!("element identity is outside the universe-path fixture fragment")
             },
             | Computation::Fixpoint { .. } => {
@@ -495,6 +497,7 @@ fn translate(
                         panic!("list elimination is outside the path fixture fragment")
                     },
                     | Computation::PathTransport { .. }
+                    | Computation::TelescopeTransport { .. }
                     | Computation::RelatedApplication { .. } => {
                         panic!("element identity is outside the universe-path fixture fragment")
                     },

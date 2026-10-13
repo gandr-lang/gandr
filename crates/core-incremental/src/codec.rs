@@ -1463,6 +1463,18 @@ where
             write_index(writer, path)?;
             write_index(writer, value)?;
         },
+        | ContentNode::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        } => {
+            writer.tag(Tag(0x4B));
+            for child in [motive, path, start, over, value] {
+                write_index(writer, child)?;
+            }
+        },
         | ContentNode::Returned(computation) => {
             writer.tag(Tag(0x48));
             write_index(writer, computation)?;
@@ -2107,6 +2119,7 @@ fn read_effect_row(
                     | ContentNode::Returned(_) => tag == 0x48,
                     | ContentNode::Funext(..) => tag == 0x49,
                     | ContentNode::Equiv(..) => tag == 0x4A,
+                    | ContentNode::TelescopeTransport { .. } => tag == 0x4B,
                     | ContentNode::Variable { .. } => tag == 0x01,
                     | ContentNode::Constant(_) => tag == 0x02,
                     | ContentNode::Literal(_) => tag == 0x04,
@@ -2533,6 +2546,13 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         | 0x48 => ContentNode::Returned(read_index(reader)?),
         | 0x49 => ContentNode::Funext(read_index(reader)?, read_index(reader)?),
         | 0x4A => ContentNode::Equiv(read_index(reader)?, read_index(reader)?),
+        | 0x4B => ContentNode::TelescopeTransport {
+            motive: read_index(reader)?,
+            path: read_index(reader)?,
+            start: read_index(reader)?,
+            over: read_index(reader)?,
+            value: read_index(reader)?,
+        },
         | _ => return Err(CodecError::Corrupt),
     };
     Ok(node)
@@ -3807,6 +3827,16 @@ where
             writer.tag(Tag(47));
             write_site(writer, site)?;
         },
+        | Refusal::NotOver {
+            at,
+            ref synthesised,
+            ref expected,
+        } => {
+            writer.tag(Tag(52));
+            write_site(writer, at)?;
+            write_type(writer, synthesised)?;
+            write_type(writer, expected)?;
+        },
         | Refusal::TypeMismatch {
             at,
             ref synthesised,
@@ -4138,6 +4168,7 @@ where
                     | Refusal::RepresentationAboveKind { .. } => 49,
                     | Refusal::NotAnAbstractType(_) => 50,
                     | Refusal::SealSiteRepeated(_) => 51,
+                    | Refusal::NotOver { .. } => 52,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -4355,6 +4386,11 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             code: read_type(reader)?,
         },
         | 47 => Refusal::RoundTripDistinct(read_site(reader)?),
+        | 52 => Refusal::NotOver {
+            at: read_site(reader)?,
+            synthesised: read_type(reader)?,
+            expected: read_type(reader)?,
+        },
         | 28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
         | 29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),
         | 30 => Refusal::IndexOccurrence(read_occurrence_site(reader)?),

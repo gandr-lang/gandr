@@ -48,8 +48,10 @@
 //!   of a function's domain; a domain that is itself a function is the same
 //!   clause one level up, and the clause does not yet descend into it.
 //! - **Two motives compare by capture.** A stuck transport's motive is a type
-//!   under a binder, so two of them agree when they are one type over captures
-//!   whose bindings agree, and wait for a binder otherwise.
+//!   under a binder — a value type under one, or a telescope transport's
+//!   computation type under the two its arrows bind — so two of them agree when
+//!   they are one type over captures whose bindings agree, and wait for a
+//!   binder otherwise.
 
 use alloc::vec::Vec;
 
@@ -62,6 +64,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 
 use crate::arena::DomainArena;
@@ -69,6 +72,10 @@ use crate::arena::DomainFault;
 use crate::arena::DomainValueId;
 use crate::arena::ValueClosureId;
 use crate::domain::DomainValue;
+use crate::free::CoreTerm;
+use crate::free::FreeFault;
+use crate::free::FreeIndices;
+use crate::free::Membership;
 
 /// Why the recursion could not read its operands.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -437,12 +444,13 @@ pub enum Motives
     Unlike,
 }
 
-/// Compare two transport motives by their type and their captures.
+/// Compare two transport motives by their body and their captures.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: [`Motives::Alike`] with every binding pair when both closures
-///   hold one value type over environments of one depth per zone;
+///   hold one body, a one-binder transport's value type or a telescope
+///   transport's computation type, over environments of one depth per zone;
 ///   [`Motives::Unlike`] otherwise.
 /// - provides: the congruence two stuck transports' motives settle by in the
 ///   structural walk, which never opens a binder.
@@ -492,6 +500,84 @@ pub fn motives(
         );
     }
     Ok(Motives::Alike(bindings))
+}
+
+/// How a one-binder transport's family reads at a reflexive operand.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum TransportFamily
+{
+    /// The singleton `y. Path(D, l, y)`: its right endpoint is the binder,
+    /// and its carrier and left endpoint never read it.
+    Singleton,
+    /// Any other family.
+    Other,
+}
+
+/// Read a one-binder transport's family as the singleton or not.
+///
+/// # Specification
+/// - requires: `family` is a transport motive's value type, read under its one
+///   binder.
+/// - ensures: [`TransportFamily::Singleton`] exactly when `family` is a path
+///   type whose right endpoint is the binder and whose carrier and left
+///   endpoint read no index the binder binds; [`TransportFamily::Other`]
+///   otherwise.
+/// - provides: the guard of the singleton row, the kernel's own clause:
+///   transport in `y. Path(D, l, y)` carries `here(l)` to the path itself,
+///   which is what lets `J` check its identity over the path.
+/// - fails: the free-index walk's fault for a dangling node.
+/// - panics: none.
+///
+/// # Errors
+/// A [`FreeFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the singleton returns the path, and a family whose left
+///   endpoint is the binder keeps the transport stuck.
+/// - witness: `identity::tests::transport_in_the_singleton_returns_the_path`
+#[spec(ensures: |ret| !matches!(ret, Ok(TransportFamily::Singleton)) || matches!(
+    core.value_type(family),
+    Some(&ValueType::Path { right, .. })
+        if matches!(core.value(right), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == 0_u32)
+))]
+pub(crate) fn transport_family(
+    core: &CoreArena,
+    family: ValueTypeId,
+) -> Result<TransportFamily, FreeFault>
+{
+    let Some(&ValueType::Path {
+        carrier,
+        left,
+        right,
+    }) = core.value_type(family)
+    else {
+        return Ok(TransportFamily::Other);
+    };
+    let bound = DeBruijnIndex::from(0_u32);
+    let endpoint = matches!(
+        core.value(right),
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        }) if index == bound
+    );
+    if !endpoint {
+        return Ok(TransportFamily::Other);
+    }
+    let mut free = FreeIndices::default();
+    if free.of_type(core, carrier)?.intuitionistic().holds(bound) == Membership::Held {
+        return Ok(TransportFamily::Other);
+    }
+    Ok(
+        match free
+            .of(core, CoreTerm::Value(left))?
+            .intuitionistic()
+            .holds(bound)
+        {
+            | Membership::Held => TransportFamily::Other,
+            | Membership::Absent => TransportFamily::Singleton,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -679,6 +765,32 @@ mod tests
     }
 
     #[test]
+    fn transport_in_the_singleton_returns_the_path()
+    {
+        let mut core = CoreArena::new();
+        let five = literal(&mut core, Word::Five);
+        let carrier = text_type(&mut core);
+        let endpoint = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        let singleton = core.value_type_path(carrier, five, endpoint);
+        let path = stuck(&mut core, ConstantIndex::from(0_usize));
+        let start = core.value_here(five);
+        let transported = core.computation_path_transport(singleton, path, start);
+        let expected = core.computation_return(path);
+        assert_eq!(
+            normalises_to(&mut core, transported, expected),
+            CertificateEquality::Equal,
+            "reflexivity transported in the singleton is the path itself"
+        );
+        let diagonal = core.value_type_path(carrier, endpoint, endpoint);
+        let moved = core.computation_path_transport(diagonal, path, start);
+        assert_eq!(
+            normalises_to(&mut core, moved, moved),
+            CertificateEquality::Equal,
+            "a family whose left endpoint is the binder is no singleton and stays stuck"
+        );
+    }
+
+    #[test]
     fn transport_along_a_stuck_path_is_stuck()
     {
         let mut core = CoreArena::new();
@@ -690,6 +802,90 @@ mod tests
             normalises_to(&mut core, transported, transported),
             CertificateEquality::Equal,
             "a transport along a path no rule reduces reads back as itself"
+        );
+    }
+
+    /// The telescope motive `Π (y : Text). Π (z : Text). F Path(Text, z, y)`,
+    /// whose fibre at a point is no singleton, so its transport keeps the
+    /// operand's own form.
+    ///
+    /// # Specification
+    /// trivial.
+    fn telescope_motive(core: &mut CoreArena) -> gandr_core_term::CompTypeId
+    {
+        let carrier = text_type(core);
+        let outer = core.value_variable(gandr_core_term::Zone::Intuitionistic, 1_u32.into());
+        let inner = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        let body = core.value_type_path(carrier, inner, outer);
+        let returned = core.comp_type_returner(body);
+        let entry = core.comp_type_pi(carrier, returned);
+        core.comp_type_pi(carrier, entry)
+    }
+
+    #[test]
+    fn telescope_transport_along_here_is_the_identity()
+    {
+        let mut core = CoreArena::new();
+        let five = literal(&mut core, Word::Five);
+        let six = literal(&mut core, Word::Six);
+        let seven = literal(&mut core, Word::Seven);
+        let motive = telescope_motive(&mut core);
+        let path = core.value_here(five);
+        let over = core.value_here(six);
+        let operand = core.value_here(seven);
+        let transported = core.computation_telescope_transport(motive, path, six, over, operand);
+        let expected = core.computation_return(operand);
+        assert_eq!(
+            normalises_to(&mut core, transported, expected),
+            CertificateEquality::Equal,
+            "transport along reflexivity over reflexivity returns its operand untouched"
+        );
+    }
+
+    #[test]
+    fn telescope_transport_along_here_replays_the_fibre()
+    {
+        let mut core = CoreArena::new();
+        let five = literal(&mut core, Word::Five);
+        let six = literal(&mut core, Word::Six);
+        let seven = literal(&mut core, Word::Seven);
+        let motive = telescope_motive(&mut core);
+        let path = core.value_here(five);
+        let over = stuck(&mut core, ConstantIndex::from(0_usize));
+        let operand = core.value_here(seven);
+        let transported = core.computation_telescope_transport(motive, path, six, over, operand);
+        let carrier = text_type(&mut core);
+        let inner = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        let fibre = core.value_type_path(carrier, inner, five);
+        let expected = core.computation_path_transport(fibre, over, operand);
+        assert_eq!(
+            normalises_to(&mut core, transported, expected),
+            CertificateEquality::Equal,
+            "along reflexivity the operand transports along the identity over it in the fibre \
+             at the path's point"
+        );
+    }
+
+    #[test]
+    fn telescope_transport_along_a_stuck_path_is_stuck()
+    {
+        let mut core = CoreArena::new();
+        let six = literal(&mut core, Word::Six);
+        let seven = literal(&mut core, Word::Seven);
+        let motive = telescope_motive(&mut core);
+        let path = stuck(&mut core, ConstantIndex::from(0_usize));
+        let over = stuck(&mut core, ConstantIndex::from(1_usize));
+        let transported = core.computation_telescope_transport(motive, path, six, over, seven);
+        assert_eq!(
+            normalises_to(&mut core, transported, transported),
+            CertificateEquality::Equal,
+            "a telescope transport along a path no rule reduces reads back as itself"
+        );
+        let other = core.computation_telescope_transport(motive, path, seven, over, seven);
+        assert_eq!(
+            normalises_to(&mut core, transported, other),
+            CertificateEquality::Different,
+            "the stuck form keeps its start"
         );
     }
 
@@ -1015,14 +1211,13 @@ mod tests
     }
 
     #[test]
-    fn then_is_right_unital_at_a_stuck_path()
+    fn then_is_unital_at_a_stuck_path()
     {
         let mut core = CoreArena::new();
         let carrier = text_type(&mut core);
         let five = literal(&mut core, Word::Five);
-        let six = literal(&mut core, Word::Six);
         let path = stuck(&mut core, ConstantIndex::from(0_usize));
-        let here = core.value_here(six);
+        let here = core.value_here(five);
         let composed = then(&mut core, carrier, five, path, here);
         let expected = core.computation_return(path);
         assert_eq!(
@@ -1033,8 +1228,8 @@ mod tests
         let reversed = then(&mut core, carrier, five, here, path);
         assert_eq!(
             normalises_to(&mut core, reversed, expected),
-            CertificateEquality::Different,
-            "the left unit is a path between paths, not a computation"
+            CertificateEquality::Equal,
+            "composing with reflexivity on the left is the singleton's transport, the path itself"
         );
     }
 

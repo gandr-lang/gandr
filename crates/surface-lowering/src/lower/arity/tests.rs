@@ -870,3 +870,35 @@ fn a_telescope_binds_each_entry_in_the_ones_after_it()
         "a binder is written once"
     );
 }
+
+#[test]
+fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def spelled : +U ((a : Type) -> (x : a) -> -F a) ; def aliased : (a : Type, x : a) => a \
+         ; def ignored : +U ((n : Integer) -> -F Integer) ;",
+        &mut arena,
+    );
+    assert_eq!(
+        declared(&arena, &module, "spelled").get(.. 2_usize),
+        Some(&[String::from("U"), String::from("Pi")][..]),
+        "a computation arrow whose domain names its binder is dependent"
+    );
+    let signature = |name: &str| match outcome(&module, name) {
+        | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
+        | other => panic!("`{name}` lowers a signature, not {other:?}"),
+    };
+    let (spelled, aliased) = (signature("spelled"), signature("aliased"));
+    let (spelled, aliased) = (arena.value_quote(spelled), arena.value_quote(aliased));
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(&arena, spelled, aliased),
+        gandr_core_term::CertificateEquality::Equal,
+        "the dependent arrows under a thunk are the term the alias abbreviates"
+    );
+    assert_eq!(
+        declared(&arena, &module, "ignored"),
+        ["U", "Pi", "Integer", "F", "Integer"],
+        "a named binder binds whether or not the codomain mentions it"
+    );
+}

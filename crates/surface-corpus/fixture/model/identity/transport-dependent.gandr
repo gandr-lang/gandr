@@ -1,0 +1,24 @@
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ checks ]
+def reduced : Path(Nat, transport(+U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat), here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero));
+def reduced = here(Succ(Zero));
+
+@[ checks ]
+def flipped(a: Nat, b: Nat, q: Path(Nat, a, b)) -> -F Path(Nat, b, a) {
+  become transport(+U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a)), q, here(a), here(q), here(a))
+}
+
+@[ refuses("NotOver") ]
+def astray(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
+  become transport(+U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat), q, here(a), here(here(a)), v)
+}
+
+@[ refuses("ShapeMismatch") ]
+def flat(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
+  become transport(+U ((y : Nat) -> -F Nat), q, v, v, v)
+}

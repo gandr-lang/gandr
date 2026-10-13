@@ -330,6 +330,9 @@ pub enum RefusalName
     UncertifiedStratum,
     /// A universe equivalence whose round trip does not return its input.
     RoundTripDistinct,
+    /// A telescope transport's second identity that does not lie over its
+    /// path.
+    NotOver,
     /// A term name no binder or earlier declaration answers.
     UnresolvedName,
     /// A documentation link to a name nothing declares.
@@ -441,7 +444,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 78_usize] = [
+    pub const VOCABULARY: [Self; 79_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -470,6 +473,7 @@ impl RefusalName
         Self::EquivUnsupported,
         Self::UncertifiedStratum,
         Self::RoundTripDistinct,
+        Self::NotOver,
         Self::UnresolvedName,
         Self::UnresolvedDocLink,
         Self::UnresolvedTypeHead,
@@ -604,6 +608,7 @@ impl RefusalName
         | (Self::EquivUnsupported, b"EquivUnsupported")
         | (Self::UncertifiedStratum, b"UncertifiedStratum")
         | (Self::RoundTripDistinct, b"RoundTripDistinct")
+        | (Self::NotOver, b"NotOver")
     )
 },
     )]
@@ -651,6 +656,7 @@ impl RefusalName
             | Self::EquivUnsupported => "EquivUnsupported",
             | Self::UncertifiedStratum => "UncertifiedStratum",
             | Self::RoundTripDistinct => "RoundTripDistinct",
+            | Self::NotOver => "NotOver",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
             | Self::GradedBridge => "GradedBridge",
@@ -916,6 +922,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::EquivUnsupported { .. }), RefusalName::EquivUnsupported)
         | (Self::Checking(CheckRefusal::UncertifiedStratum { .. }), RefusalName::UncertifiedStratum)
         | (Self::Checking(CheckRefusal::RoundTripDistinct { .. }), RefusalName::RoundTripDistinct)
+        | (Self::Checking(CheckRefusal::NotOver { .. }), RefusalName::NotOver)
     )
 },
     )]
@@ -1120,6 +1127,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::EquivUnsupported { .. }, RefusalName::EquivUnsupported)
         | (CheckRefusal::UncertifiedStratum { .. }, RefusalName::UncertifiedStratum)
         | (CheckRefusal::RoundTripDistinct { .. }, RefusalName::RoundTripDistinct)
+        | (CheckRefusal::NotOver { .. }, RefusalName::NotOver)
     )
 },
 )]
@@ -1153,6 +1161,7 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::EquivUnsupported { .. } => RefusalName::EquivUnsupported,
         | CheckRefusal::UncertifiedStratum { .. } => RefusalName::UncertifiedStratum,
         | CheckRefusal::RoundTripDistinct { .. } => RefusalName::RoundTripDistinct,
+        | CheckRefusal::NotOver { .. } => RefusalName::NotOver,
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
         | CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,

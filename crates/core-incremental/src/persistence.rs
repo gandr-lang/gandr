@@ -1769,6 +1769,7 @@ mod tests
             | Typing::Refused(Refusal::EquivUnsupported { .. }) => "equiv-unsupported",
             | Typing::Refused(Refusal::UncertifiedStratum { .. }) => "uncertified-stratum",
             | Typing::Refused(Refusal::RoundTripDistinct(_)) => "round-trip-distinct",
+            | Typing::Refused(Refusal::NotOver { .. }) => "not-over",
             | Typing::Refused(Refusal::EffectSignatureConflict { .. }) => {
                 "effect-signature-conflict"
             },

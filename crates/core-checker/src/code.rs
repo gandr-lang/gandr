@@ -1359,6 +1359,18 @@ pub fn loose_reach(
                         work.push((CoreNode::Term(TermNode::Value(path)), depth));
                         work.push((CoreNode::Term(TermNode::Value(value)), depth));
                     },
+                    | Computation::TelescopeTransport {
+                        motive,
+                        path,
+                        start,
+                        over,
+                        value,
+                    } => {
+                        work.push((CoreNode::Type(TypeNode::Computation(motive)), depth));
+                        for child in [path, start, over, value] {
+                            work.push((CoreNode::Term(TermNode::Value(child)), depth));
+                        }
+                    },
                     | Computation::Application(head, argument) => {
                         work.push((CoreNode::Term(TermNode::Computation(head)), depth));
                         work.push((CoreNode::Term(TermNode::Value(argument)), depth));

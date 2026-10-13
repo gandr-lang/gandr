@@ -65,6 +65,28 @@
 //! nothing but itself; the kernel admits the same declaration and seals it at
 //! the same place.
 //!
+//! # Dependent transport
+//!
+//! A transport whose motive depends on the path's endpoint is the telescope
+//! transport `tr₂(Π (y : A). Π (z : B). F C, p, z₀, q, v)`: `z₀` is the family
+//! element at the path's source and `q` an identity over the path. The rule
+//! synthesises `p` at `Path(A', a, b)` and requires `A'` to convert to `A`,
+//! checks `z₀` at `B[a]`, synthesises `q` and requires it at `Path(B[b],
+//! ⟨tr(y. B, p, z₀)⟩, z₁)`, refusing it as [`CheckRefusal::NotOver`] when it
+//! does not convert, then checks `v` at `C[a, z₀]` and returns `C[b, z₁]`,
+//! each instance outer binder first. A motive of another shape is a
+//! [`CheckRefusal::ShapeMismatch`] wanting a telescope. The normaliser computes
+//! exactly the kernel's clauses — `here` along both identities, `here(c)`
+//! along the path into a one-binder transport along `q` in the fibre `z. C[c,
+//! z]` — and stacks every other transport on its path's spine, comparing the
+//! motive as a closed code; it never computes a clause the kernel's replay
+//! lacks, so every acceptance re-derives. `J` is this transport in the
+//! singleton, `tr₂(Π y. Π q : Path(A, a, y). F C, p, here(a), here(p), d)`,
+//! not a rule of its own. The alternatives were a motive under two binders of
+//! the one-binder transport, which changes what an exported node means, and a
+//! primitive `J`. Reversal: a Σ type in the core makes this the one-binder
+//! transport over the Σ of the two entries.
+//!
 //! # Example
 //!
 //! ```

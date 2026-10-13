@@ -912,6 +912,21 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(path));
                             tasks.push(ReachTask::OpenValue(value));
                         },
+                        | Computation::TelescopeTransport {
+                            motive,
+                            path,
+                            start,
+                            over,
+                            value,
+                        } => {
+                            tasks.extend([
+                                ReachTask::OpenCompType(motive),
+                                ReachTask::OpenValue(path),
+                                ReachTask::OpenValue(start),
+                                ReachTask::OpenValue(over),
+                                ReachTask::OpenValue(value),
+                            ]);
+                        },
                         | Computation::RelatedApplication {
                             path,
                             left,
@@ -1463,6 +1478,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
         Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => self.cached_value_type(element).join(self.cached_value_type(result)).join(self.cached_value(list)).join(self.cached_comp(on_nil)).join(self.cached_comp(on_cons).under_binder().under_binder()),
         Some(&Computation::Transport(path, value)) => self.cached_value(path).join(self.cached_value(value)),
         Some(&Computation::PathTransport { motive, path, value }) => self.cached_value_type(motive).under_binder().join(self.cached_value(path)).join(self.cached_value(value)),
+        Some(&Computation::TelescopeTransport { motive, path, start, over, value }) => self.cached_comp_type(motive).join(self.cached_value(path)).join(self.cached_value(start)).join(self.cached_value(over)).join(self.cached_value(value)),
         Some(&Computation::RelatedApplication { path, left, right, evidence, body }) => self.cached_value(path).join(self.cached_value(left)).join(self.cached_value(right)).join(self.cached_value(evidence)).join(self.cached_comp(body).under_binder().under_binder().under_binder()),
         Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => self.cached_comp(body).under_binder(),
         Some(&Computation::Application(head, argument)) => self.cached_comp(head).join(self.cached_value(argument)),
@@ -1517,6 +1533,18 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 .cached_value_type(motive)
                 .under_binder()
                 .join(self.cached_value(path))
+                .join(self.cached_value(value)),
+            | Computation::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
+                value,
+            } => self
+                .cached_comp_type(motive)
+                .join(self.cached_value(path))
+                .join(self.cached_value(start))
+                .join(self.cached_value(over))
                 .join(self.cached_value(value)),
             | Computation::RelatedApplication {
                 path,

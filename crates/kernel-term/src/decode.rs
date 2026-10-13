@@ -1981,6 +1981,18 @@ fn decode_entry(
             let id = table.arena.computation_path_transport(motive, path, value);
             (DecodedNode::Computation(id), Family::Computation)
         },
+        | tags::NODE_C_TELESCOPE_TRANSPORT => {
+            let motive = read_comp_type(reader, table, this, &mut children)
+                .map_err(|error| named_polarity(error, MalformedSite::TelescopeMotive))?;
+            let path = read_value(reader, table, this, &mut children)?;
+            let start = read_value(reader, table, this, &mut children)?;
+            let over = read_value(reader, table, this, &mut children)?;
+            let value = read_value(reader, table, this, &mut children)?;
+            let id = table
+                .arena
+                .computation_telescope_transport(motive, path, start, over, value);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
         | tags::NODE_V_HIGHER => {
             let program = decode_higher_program(reader)?;
             let mut evidence = Vec::new();
@@ -5188,7 +5200,7 @@ mod tests
             _,
             super::DecodedNode::ValueType(vt1),
             super::DecodedNode::Value(v1),
-            _,
+            super::DecodedNode::CompType(ct1),
             super::DecodedNode::Computation(c1),
         ] = table.nodes.as_slice()
         else {
@@ -5229,6 +5241,11 @@ mod tests
             ),
             (&[0x34, 7], super::DecodedNode::Value(v1), &[7]),
             (
+                &[0x35, 6, 5, 1, 5, 1],
+                super::DecodedNode::Computation(c1),
+                &[6, 5, 1, 5, 1],
+            ),
+            (
                 &[0x38, 1, 1, 11, 0, 5, 1, 5],
                 super::DecodedNode::Value(v1),
                 &[5, 1, 5],
@@ -5260,6 +5277,13 @@ mod tests
             Computation::PathTransport {
                 motive: vt1,
                 path: v1,
+                value: v0,
+            },
+            Computation::TelescopeTransport {
+                motive: ct1,
+                path: v1,
+                start: v0,
+                over: v1,
                 value: v0,
             },
             Computation::RelatedApplication {
@@ -5330,6 +5354,9 @@ mod tests
             }),
             (&[0x32, 5, 5, 1], DecodeError::Malformed {
                 site: MalformedSite::TransportMotive,
+            }),
+            (&[0x35, 4, 5, 1, 5, 1], DecodeError::Malformed {
+                site: MalformedSite::TelescopeMotive,
             }),
             (&[0x33, 1, 0, 1, 0, 1, 5], DecodeError::Malformed {
                 site: MalformedSite::HigherLayer,
@@ -5406,7 +5433,12 @@ mod tests
         let transport = arena.computation_path_transport(identity, here, evaluation);
         let related =
             arena.computation_related_application(here, (unit, endpoint), field, returned);
-        let sequenced = arena.computation_bind(transport, related);
+        let family = arena.comp_type_returner(unit_type);
+        let family = arena.comp_type_pi(identity, family);
+        let telescope = arena.comp_type_pi(unit_type, family);
+        let carried = arena.computation_telescope_transport(telescope, here, here, field, unit);
+        let sequenced = arena.computation_bind(related, carried);
+        let sequenced = arena.computation_bind(transport, sequenced);
         let body = arena.value_thunk(sequenced);
         let returns = arena.comp_type_returner(identity);
         let declared = arena.value_type_thunk(returns);
