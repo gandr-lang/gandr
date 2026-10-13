@@ -14,19 +14,15 @@ slow-timeout = { period = "30s", terminate-after = 4 }
 # tables are the reviewed output of `mise run ci:timing`, which proposes each
 # test's level from the enforcing lane's recent merge-queue durations.
 [[profile.default.overrides]]
-filter = "test(=editor::scenarios::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful) or test(=editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful)"
-priority = 100
-
-[[profile.default.overrides]]
-filter = "test(=acceptance::table_verdicts_equal_dry_run_verdicts)"
+filter = "test(=acceptance::table_verdicts_equal_dry_run_verdicts) or test(=editor::scenarios::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful)"
 priority = 90
 
 [[profile.default.overrides]]
-filter = "test(=editor::scenarios::random_edits_keep_every_answer_faithful) or test(=inline::tests::every_corpus_cursor_has_a_ghost_text)"
+filter = "test(=inline::tests::every_corpus_cursor_has_a_ghost_text)"
 priority = 80
 
 [[profile.default.overrides]]
-filter = "test(=editor::scenarios::two_editors_on_one_buffer_each_keep_their_answers) or test(=editor::scenarios::two_editors_on_their_own_buffers_each_keep_their_answers) or test(=tests::every_source_keeps_its_meaning_and_formats_once)"
+filter = "test(=editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful) or test(=tests::every_source_keeps_its_meaning_and_formats_once)"
 priority = 70
 
 # The editor's scenarios drive the language server one keystroke at a time
