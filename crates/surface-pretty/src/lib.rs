@@ -24,7 +24,8 @@
 //! `Integer`, `String`, `Unit`, `#{A, B}`, `#{l : A, m : B}`, `+{A, B}`,
 //! `&{C, D}`, `+U C`, `-F A`, `A -> C`, `(x : A) -> C`, `Type`, `Type[-]`,
 //! `Type[+, l]`, `Type[-, l]`; `unit`, literals, `#{a, b}`, `#{.l = v}`,
-//! `+{.i = v}`, `here(a)`, `funext(f, g)`, `equiv(f, g)`. Every braced former
+//! `+{.i = v}`, `here(a)`, `funext(f, g)`, `equiv(f, g)`,
+//! `ua[n, k](a, b, f, g)`. Every braced former
 //! is written between its delimiters at any arity from one, its labels in
 //! their declared order; the binary sugar `A * B`, `A + B`, `C & D` and
 //! `(a, b)` parses and is never printed. A former the surface does not write —
@@ -42,7 +43,9 @@
 //! abstract type and a constant by name, and a decode as the code it reads;
 //! values are `unit`, literals with their canonical digits and escapes,
 //! `#{a, b, …}`, `#{.l = v, …}`, `+{.i = v}`, `here(a)`, `funext(f, g)`,
-//! `equiv(f, g)`, the static abstraction `\a. v`, and a static application as
+//! `equiv(f, g)`, univalence at a stratum `ua[n, k](a, b, f, g)` with its two
+//! descriptions by name, the static abstraction `\a. v`, and a static
+//! application as
 //! its spine, `f(a, b)` for `f` applied to `a` and then to `b` (the type
 //! operators of `gandr-surface-grammar`). Binding strength follows the
 //! grammar's bands, tightest first: atoms, every braced former among them,
@@ -377,11 +380,11 @@ where
 /// - ensures: the root written as [`present_type`] writes a type, a value's
 ///   formers spelled `unit`, as their literal, `#{a, b}`, `#{.l = v}` in label
 ///   order and `+{.i = v}` at any summand, `here(a)`, `funext(f, g)`, `equiv(f,
-///   g)`, a constant by its name and the code of a type as the type; a thunk is
-///   written `<thunk>`, and a value [`DEPTH_LIMIT`] value formers deep is
-///   written `<deep>` inside the formers around it, each making the
-///   presentation approximate. Output has the same line-ending and width
-///   guarantees as [`present_type`].
+///   g)`, `ua[n, k](a, b, f, g)`, a constant by its name and the code of a type
+///   as the type; a thunk is written `<thunk>`, and a value [`DEPTH_LIMIT`]
+///   value formers deep is written `<deep>` inside the formers around it, each
+///   making the presentation approximate. Output has the same line-ending and
+///   width guarantees as [`present_type`].
 /// - provides: the normal form a transcript line or a probe shows.
 /// - fails: as [`present_type`].
 /// - panics: none.
@@ -402,6 +405,7 @@ where
 /// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
 /// - witness: `goldens::tests::fidelity_follows_nodes_not_the_characters_of_a_name`
 /// - witness: `goldens::tests::here_witness_pins_identity_notation`
+/// - witness: `goldens::tests::univalence_spells_its_stratum_and_descriptions`
 #[spec(ensures: |ref ret| match *ret {
     Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
     Err(PresentationError::Render(RenderError::InvalidWidth)) => false,

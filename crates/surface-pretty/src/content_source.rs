@@ -128,6 +128,9 @@ impl Source for ContentSource<'_>
         | (Some(&ContentNode::Arrow { domain: a, codomain: b }), Former::Arrow { domain: c, codomain: d })
         | (Some(&ContentNode::Pi { domain: a, codomain: b }), Former::Pi { domain: c, codomain: d })
         | (Some(&ContentNode::StaticPi { domain: a, codomain: b }), Former::StaticPi { domain: c, codomain: d }) => a == c && b == d,
+        (Some(&ContentNode::Ua { stratum, ref sides, forward, backward }), Former::Ua { stratum: actual_stratum, source, target, forward: actual_forward, backward: actual_backward }) =>
+            stratum == actual_stratum && source.as_ref() == sides.source.name.as_ref() && target.as_ref() == sides.target.name.as_ref()
+                && forward == actual_forward && backward == actual_backward,
         (Some(&ContentNode::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
             zone == actual_zone && index == actual_index,
         (Some(&ContentNode::Constant(Reference::Item { ref key, .. })), Former::Constant(name))
@@ -215,6 +218,18 @@ impl Source for ContentSource<'_>
             | ContentNode::PathUniverse(source, target) => Former::PathUniverse(source, target),
             | ContentNode::Funext(left, right) => Former::Funext(left, right),
             | ContentNode::Equiv(forward, backward) => Former::Equiv(forward, backward),
+            | ContentNode::Ua {
+                stratum,
+                ref sides,
+                forward,
+                backward,
+            } => Former::Ua {
+                stratum,
+                source: Name::from(sides.source.name.as_ref()),
+                target: Name::from(sides.target.name.as_ref()),
+                forward,
+                backward,
+            },
             | ContentNode::PathRefl(code) => Former::PathRefl(code),
             | ContentNode::Here(point) => Former::Here(point),
             | ContentNode::PathProduct(first, second) => Former::PathProduct(first, second),

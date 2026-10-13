@@ -1,0 +1,52 @@
+sign Magma {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+}
+
+@[ checks ]
+def exchange(b : Bool) -> -F Bool {
+  case b {
+    true => return +{.1 = unit},
+    false => return +{.0 = unit}
+  }
+}
+
+@[ checks ]
+def flip(b : Bool) -> -F Bool {
+  run c <- exchange(b);
+  run d <- exchange(c);
+  become exchange(d)
+}
+
+@[ checks ]
+def stay(b : Bool) -> -F Bool {
+  return b
+}
+
+@[ checks ]
+def keep(e : +{Unit}) -> -F +{Unit} {
+  return e
+}
+
+@[ checks ]
+def opposite = ua[1, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+
+@[ checks ]
+def moves : Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
+def moves = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
+
+@[ refuses("EndpointMismatch") ]
+def stays : Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.0 = unit}}}) ;
+def stays = here(#{unit, #{+{.0 = unit}, +{.0 = unit}}}) ;
+
+@[ checks ]
+def reopposite = ua[1, 4](Magma, Magma, #{.mul = flip, .one = keep}, #{.mul = flip, .one = keep}) ;
+
+@[ checks ]
+def agree : Path(+U (Bool -> -F Bool), exchange, flip) ;
+def agree = funext(exchange, flip) ;
+
+@[ refuses("PointwiseDistinct") ]
+def disagree : Path(+U (Bool -> -F Bool), exchange, stay) ;
+def disagree = funext(exchange, stay) ;

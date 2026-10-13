@@ -49,7 +49,7 @@ use crate::resolve::SurfaceName;
 /// - hypothesis: L3 — every witness below reads its module through here.
 /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
 #[spec(ensures: |ret| !ret.declarations().is_empty())]
-fn lowered<'source>(
+pub(in crate::lower) fn lowered<'source>(
     source: SourceText<'source>,
     arena: &mut CoreArena,
 ) -> LoweredModule<'source>
@@ -82,7 +82,7 @@ fn lowered<'source>(
 ///   its base agree with the answer it was read off.
 /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
 #[spec(ensures: |ret| ret.judged().len() <= module.declarations().len())]
-fn judged(
+pub(in crate::lower) fn judged(
     module: &LoweredModule<'_>,
     arena: &mut CoreArena,
 ) -> ModuleReport
@@ -128,7 +128,7 @@ fn judged(
 ///
 /// # Specification
 /// trivial.
-fn assert_accepted(report: &ModuleReport)
+pub(in crate::lower) fn assert_accepted(report: &ModuleReport)
 {
     let accepted = report.judged().iter().all(|judged| {
         matches!(
@@ -151,7 +151,7 @@ fn assert_accepted(report: &ModuleReport)
 /// - hypothesis: L3 — the witnesses read each outcome here.
 /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
 #[spec(ensures: |ret| module.declarations().iter().any(|declaration| declaration.outcome() == ret))]
-fn outcome_of<'source>(
+pub(in crate::lower) fn outcome_of<'source>(
     module: &LoweredModule<'source>,
     name: SurfaceName<'_>,
 ) -> DeclarationOutcome<'source>

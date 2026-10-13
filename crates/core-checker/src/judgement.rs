@@ -286,9 +286,11 @@
 //! transport. The surface writes none of these forms itself: it writes a
 //! universe equivalence `equiv(f, g)`, which the rule in [`crate::equiv`]
 //! decides by computation and the bridge erases to `PathEquiv` with the
-//! dialogues it recorded. The bridge mode, higher fields, `Flow_U` and guarded
-//! List inhabitants stay at their kernel rule-language boundaries; function
-//! extensionality is the element-identity rule below.
+//! dialogues it recorded, and univalence at a stratum `ua[n, k](a, b, f, g)`,
+//! which [`crate::ua`] derives and the bridge erases to the path product of
+//! one `PathEquiv` per corolla. The bridge mode, higher fields, `Flow_U` and
+//! guarded List inhabitants stay at their kernel rule-language boundaries;
+//! function extensionality is the element-identity rule below.
 //!
 //! **Choice.** Preserve untrusted native evidence across the export boundary
 //! instead of treating successful frontend checking as certification.
@@ -1334,6 +1336,13 @@ enum Frame
         /// The source code's type and the target code's.
         codes: (ValueTypeId, ValueTypeId),
     },
+    /// Await the checks of a `ua`'s translators, then derive its path at its
+    /// stratum.
+    UaTranslators
+    {
+        /// The `ua`.
+        at: ValueId,
+    },
     /// Await the type a compound endpoint's computation synthesises, which
     /// must be a pure returner.
     ReturnedEndpoint
@@ -1682,6 +1691,7 @@ impl Frame
             | Self::FunextRight { .. } => FrameRole::FunextRight,
             | Self::EquivForward { .. } => FrameRole::EquivForward,
             | Self::EquivBackward { .. } => FrameRole::EquivBackward,
+            | Self::UaTranslators { .. } => FrameRole::UaTranslators,
             | Self::ReturnedEndpoint { .. } => FrameRole::ReturnedEndpoint,
             | Self::ElementTransportPath { .. } => FrameRole::ElementTransportPath,
             | Self::ElementTransportMotive { .. } => FrameRole::ElementTransportMotive,
@@ -1776,6 +1786,7 @@ impl Frame
             | Self::FunextRight { .. }
             | Self::EquivForward { .. }
             | Self::EquivBackward { .. }
+            | Self::UaTranslators { .. }
             | Self::ReturnedEndpoint { .. }
             | Self::ElementTransportPath { .. }
             | Self::ElementTransportMotive { .. }
@@ -3023,6 +3034,25 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            | Value::Ua { .. } => {
+                let premises = crate::ua::premises(self.context, term)?;
+                let owner = self.owner;
+                self.frames.push(Waiting {
+                    frame: Frame::UaTranslators { at: term },
+                    owner,
+                });
+                for &(translator, expected) in premises.iter().rev() {
+                    self.frames.push(Waiting {
+                        frame: Frame::NativeNext(Goal::Value {
+                            term: translator,
+                            direction: Direction::Check(expected),
+                        }),
+                        owner,
+                    });
+                }
+                let first = self.frames.pop().ok_or(CheckRefusal::MachineInvariant)?;
+                self.resume(first.frame, Produced::Checked)
+            },
             | Value::Returned(computation) => {
                 self.wait(Frame::ReturnedEndpoint { at: term });
                 Ok(Step::Descend(Goal::Computation {
@@ -3204,6 +3234,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Returned(_)
             | Value::Funext(..)
             | Value::Equiv(..)
+            | Value::Ua { .. }
             | Value::Constructor { .. }
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
@@ -3358,6 +3389,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Here(_)
             | Value::Funext(..)
             | Value::Equiv(..)
+            | Value::Ua { .. }
             | Value::Returned(_)
             | Value::Constructor { .. }
             | Value::Record(_)
@@ -4976,6 +5008,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.context.record_equivalence(at, decided);
                 Ok(Step::Ascend(Produced::ValueType(path)))
             },
+            | (Frame::UaTranslators { at }, Produced::Checked) => {
+                let universal = crate::ua::decide(self.context, at)?;
+                self.context.record_universal(at, universal.path());
+                let identity = universal.identity(self.context.arena_mut());
+                Ok(Step::Ascend(Produced::ValueType(identity)))
+            },
             | (Frame::ReturnedEndpoint { at }, Produced::CompType(synthesised)) => {
                 let head = self.context.whnf_comp_type(synthesised)?;
                 match comp_type_view(self.context.arena(), head)? {
@@ -5529,6 +5567,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::HereEndpoints { .. }
                 | Frame::FunextRight { .. }
                 | Frame::EquivBackward { .. }
+                | Frame::UaTranslators { .. }
                 | Frame::ElementTransportMotive { .. }
                 | Frame::TelescopeMotive { .. }
                 | Frame::TelescopeStart { .. }
@@ -9220,7 +9259,7 @@ mod tests
                             "a synthesising value checks exactly as it synthesises, then crosses the value bridge"
                         );
                     },
-                    | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Returned(_)
+                    | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_)
                     | Value::Constructor { .. } | Value::Record(_)
                     | Value::Reify(_)
                     | Value::PathProduct(..)

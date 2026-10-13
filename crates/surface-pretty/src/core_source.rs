@@ -141,6 +141,9 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Equiv(forward, backward)), Former::Equiv(actual_forward, actual_backward))
         | (Some(&Value::PathEquiv { forward, backward, .. }), Former::PathEquiv(actual_forward, actual_backward)) =>
             actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
+        | (Some(&Value::Ua { stratum, ref sides, forward, backward }), Former::Ua { stratum: actual_stratum, source, target, forward: actual_forward, backward: actual_backward }) =>
+            stratum == actual_stratum && source.as_ref() == sides.source.name.as_ref() && target.as_ref() == sides.target.name.as_ref()
+                && actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
         | (Some(&Value::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
             zone == actual_zone && index == actual_index,
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
@@ -181,8 +184,8 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
             // is displayed by the session, not spelled here, a compound
             // endpoint has no former of its own, and the surface writes no
             // empty record: `#{}` is the unit. Element identity is `here`,
-            // function extensionality `funext` and universe equivalence
-            // `equiv`.
+            // function extensionality `funext`, universe equivalence `equiv`
+            // and univalence at a stratum `ua[n, k]`.
             | Value::Constructor { .. }
             | Value::Hole(_)
             | Value::Mark { .. }
@@ -193,6 +196,18 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
             },
             | Value::Equiv(forward, backward) => {
                 Former::Equiv(CoreNode::Value(forward), CoreNode::Value(backward))
+            },
+            | Value::Ua {
+                stratum,
+                ref sides,
+                forward,
+                backward,
+            } => Former::Ua {
+                stratum,
+                source: Name::from(sides.source.name.as_ref()),
+                target: Name::from(sides.target.name.as_ref()),
+                forward: CoreNode::Value(forward),
+                backward: CoreNode::Value(backward),
             },
             | Value::Record(ref fields) if fields.is_empty() => Former::Unreadable,
             | Value::Record(ref fields) => Former::Record(Arity::from(fields.len())),
@@ -444,7 +459,7 @@ impl Source for CoreSource<'_>
             | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk(_)
             | Former::ValueLift | Former::Reify | Former::ListNil | Former::ListCons(..)
             | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
-            | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Unreadable),
+            | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Ua { .. } | Former::Unreadable),
         | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
             | Former::Stack(..) | Former::List(_)
             | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift

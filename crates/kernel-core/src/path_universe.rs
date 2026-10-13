@@ -25,8 +25,10 @@
 //! paths. `Computation::Transport` computes for the first three; session
 //! evidence describes recorded action skeletons, not kernel endpoint values.
 //! They participate in ordinary arena traversal, declaration admission,
-//! structural conversion and artifact encoding. The surface writes only the
-//! equivalence, `equiv(f, g)`, which its frontend erases to `PathEquiv`.
+//! structural conversion and artifact encoding. The surface writes the
+//! equivalence, `equiv(f, g)`, which its frontend erases to `PathEquiv`, and
+//! univalence at a stratum, `ua[n, k](a, b, f, g)`, which it erases to a
+//! `PathProduct` of `PathEquiv`s over the reflexivity at the unit.
 //!
 //! | Rule | Kernel obligation or computation |
 //! | ---- | -------------------------------- |

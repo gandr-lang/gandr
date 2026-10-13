@@ -701,6 +701,7 @@ impl CodeDefinitions
             | Value::Here(_)
             | Value::Funext(..)
             | Value::Equiv(..)
+            | Value::Ua { .. }
             | Value::Returned(_)
             | Value::Constructor { .. }
             | Value::Record(_)
@@ -1574,6 +1575,11 @@ pub fn loose_reach(
                     | Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
+                    | Value::Ua {
+                        forward: first,
+                        backward: second,
+                        ..
+                    }
                     | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second) => {
                         work.push((CoreNode::Term(TermNode::Value(first)), depth));

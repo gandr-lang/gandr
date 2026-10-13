@@ -32,10 +32,12 @@ serde.workspace = true
 serde_json.workspace = true
 
 # The suite builds diagnostics from real compositions: the dispatcher's walk
-# over the built-in grammar.
+# over the built-in grammar. The univalence refusals carry the sites' degree,
+# shape and element indices.
 [dev-dependencies]
 gandr-surface-dispatcher.workspace = true
 gandr-surface-grammar.workspace = true
+gandr-theory-sites.workspace = true
 
 [lints]
 workspace = true

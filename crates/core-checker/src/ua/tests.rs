@@ -1,15 +1,25 @@
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::equal_certificate_syntax;
+use gandr_core_term::ua::Description;
+use gandr_core_term::ua::Generator;
+use gandr_core_term::ua::Sides;
+use gandr_core_term::ua::Stratum;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldLabel;
+use gandr_theory_levitation::Name;
 use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::Defect;
 use gandr_theory_sites::Degree;
@@ -25,9 +35,12 @@ use gandr_theory_sites::Table;
 use gandr_theory_sites::Uncertified;
 use quenchant_shape::shape::Maybe;
 
+use super::StratumDefect;
 use super::Translators;
+use super::UaDefect;
 use super::UaRefusal;
 use super::Universal;
+use super::Way;
 use super::code;
 use super::derive;
 use super::tabulate;
@@ -61,6 +74,16 @@ struct At(usize);
 /// Two constants of a module, by position.
 #[derive(Clone, Copy, Debug)]
 struct Constants(usize, usize);
+
+/// Text a fixture spells: a field label.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Spelled<'text>(&'text str);
+
+/// A statement's head `ua[degree, bound]`: its degree and its catalogue
+/// bound.
+#[derive(Clone, Copy, Debug)]
+struct Head(usize, usize);
 
 /// Whether a module came through whole.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -880,4 +903,245 @@ fn what_the_stratum_does_not_admit_it_refuses_by_name()
         })),
         "the empty shape is no corolla"
     );
+}
+
+/// The magma's description: `mul : 2 → 1`, then `one : 0 → 1`.
+///
+/// # Specification
+/// trivial.
+fn magma() -> Description
+{
+    Description {
+        name: Name::from("Magma"),
+        generators: Box::from([
+            Generator {
+                label: label(Spelled("mul")),
+                profile: profile(Legs(2, 1)),
+            },
+            Generator {
+                label: label(Spelled("one")),
+                profile: profile(Legs(0, 1)),
+            },
+        ]),
+    }
+}
+
+/// The field label `text` spells.
+///
+/// # Specification
+/// trivial.
+fn label(Spelled(text): Spelled<'_>) -> FieldLabel
+{
+    FieldLabel::from(String::from(text))
+}
+
+/// The written statement `ua[degree, bound](Magma, Magma, forward,
+/// backward)`, each record keyed by the labels beside its translators.
+///
+/// # Specification
+/// trivial.
+fn written(
+    arena: &mut CoreArena,
+    Head(degree, bound): Head,
+    forward: &[(Spelled<'_>, ValueId)],
+    backward: &[(Spelled<'_>, ValueId)],
+) -> ValueId
+{
+    let [forward, backward] = [forward, backward].map(|fields| {
+        arena.value_record(
+            fields
+                .iter()
+                .map(|&(text, translator)| (label(text), translator))
+                .collect(),
+        )
+    });
+    arena.value_ua(
+        Stratum {
+            degree: Degree::from(degree),
+            bound: ShapeSize::from(bound),
+        },
+        Arc::new(Sides {
+            source: magma(),
+            target: magma(),
+        }),
+        forward,
+        backward,
+    )
+}
+
+#[test]
+fn a_written_statement_derives_the_path_at_its_stratum()
+{
+    let mut arena = CoreArena::new();
+    let swap = table(&mut arena, Images(&[1, 0]));
+    let keep = table(&mut arena, Images(&[0]));
+    let fields = [(Spelled("mul"), swap), (Spelled("one"), keep)];
+    let statement = written(&mut arena, Head(1, 4), &fields, &fields);
+    let unsigned = Declaration::new(
+        ConstantIndex::from(0_usize),
+        Maybe::Absent(crate::declaration::signature::Absent::Unsigned),
+        Maybe::Present(statement),
+        OriginToken::from(0_usize),
+    );
+    let (report, readmission) = judged(&mut arena, &[unsigned]);
+    let [ref judged] = *report.judged()
+    else {
+        panic!("one declaration, one verdict");
+    };
+    let Verdict::Synthesised { synthesised, .. } = judged.verdict()
+    else {
+        panic!("the statement synthesises its type: {report:?}");
+    };
+    let Some(&ValueType::Path {
+        carrier,
+        left,
+        right,
+    }) = arena.value_type(synthesised.produced().id())
+    else {
+        panic!("the statement inhabits an identity");
+    };
+    assert!(
+        matches!(arena.value_type(carrier), Some(&ValueType::Universe { .. })),
+        "the identity is at the universe, as `equiv`'s is"
+    );
+    assert!(
+        matches!(arena.value(left), Some(&Value::Quote(_)))
+            && matches!(arena.value(right), Some(&Value::Quote(_))),
+        "between the quotes of the two telescopes"
+    );
+    let Some(&path) = report.universals().get(&statement)
+    else {
+        panic!("the checker records the derived path");
+    };
+    let Some(&Value::PathProduct(unit, rest)) = arena.value(path)
+    else {
+        panic!("degree zero, then the corollas");
+    };
+    assert!(matches!(arena.value(unit), Some(&Value::PathRefl(_))));
+    assert!(
+        matches!(
+            arena.value(rest),
+            Some(&Value::PathProduct(constant, binary))
+                if matches!(arena.value(constant), Some(&Value::PathEquiv { forward, .. }) if forward == keep)
+                    && matches!(arena.value(binary), Some(&Value::PathEquiv { forward, .. }) if forward == swap)
+        ),
+        "each corolla's certificate carries the translator its label names"
+    );
+    assert!(
+        readmission
+            .readmitted()
+            .iter()
+            .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. })),
+        "the bridge erases the statement to its derived path and the kernel admits it: {:?}",
+        readmission.readmitted()
+    );
+}
+
+#[test]
+fn a_written_statement_refuses_each_defect_by_name()
+{
+    let mut arena = CoreArena::new();
+    let swap = table(&mut arena, Images(&[1, 0]));
+    let same = table(&mut arena, Images(&[0, 1]));
+    let keep = table(&mut arena, Images(&[0]));
+    let fields = [(Spelled("mul"), swap), (Spelled("one"), keep)];
+    let refusal = |arena: &mut CoreArena, statement: ValueId| {
+        let unsigned = Declaration::new(
+            ConstantIndex::from(0_usize),
+            Maybe::Absent(crate::declaration::signature::Absent::Unsigned),
+            Maybe::Present(statement),
+            OriginToken::from(0_usize),
+        );
+        let (report, _readmission) = judged(arena, &[unsigned]);
+        match report.judged().first().map(Judged::verdict) {
+            | Some(Verdict::Refused(refusal)) => refusal,
+            | other => panic!("the statement is refused: {other:?}"),
+        }
+    };
+    let cases = [
+        (
+            written(&mut arena, Head(5, 4), &fields, &fields),
+            "a degree above every shape of the catalogue",
+        ),
+        (
+            written(&mut arena, Head(1, 0), &fields, &fields),
+            "a catalogue whose site fails the corolla condition",
+        ),
+        (
+            written(&mut arena, Head(1, 6), &fields, &fields),
+            "a catalogue past the allowance",
+        ),
+        (
+            written(&mut arena, Head(1, 3), &fields, &fields),
+            "a binary corolla past the bound",
+        ),
+        (
+            written(
+                &mut arena,
+                Head(1, 4),
+                &[(Spelled("mul"), swap), (Spelled("unit"), keep)],
+                &fields,
+            ),
+            "a label the description does not declare",
+        ),
+        (
+            written(&mut arena, Head(1, 4), &[(Spelled("mul"), swap)], &fields),
+            "a corolla with no forward translator",
+        ),
+        (
+            written(&mut arena, Head(1, 4), &fields, &[
+                (Spelled("mul"), same),
+                (Spelled("one"), keep),
+            ]),
+            "a backward table that is not the forward one's inverse",
+        ),
+    ];
+    let refusals = cases.map(|(statement, case)| (refusal(&mut arena, statement), case));
+    let expected = [
+        |refusal: CheckRefusal| {
+            matches!(refusal, CheckRefusal::UaUncertified {
+                stratum: StratumDefect::Degree { degree },
+                ..
+            } if degree == Degree::from(5))
+        },
+        |refusal: CheckRefusal| {
+            matches!(refusal, CheckRefusal::UaUncertified {
+                stratum: StratumDefect::Condition { degree },
+                ..
+            } if degree == Degree::from(1))
+        },
+        |refusal: CheckRefusal| {
+            matches!(refusal, CheckRefusal::UaUncertified {
+                stratum: StratumDefect::Allowance { bound },
+                ..
+            } if bound == ShapeSize::from(6))
+        },
+        |refusal: CheckRefusal| {
+            matches!(refusal, CheckRefusal::UaInequivalent {
+                defect: UaDefect::PastTheBound { profile: found },
+                ..
+            } if found == profile(Legs(2, 1)))
+        },
+        |refusal: CheckRefusal| {
+            matches!(refusal, CheckRefusal::UaInequivalent {
+                defect: UaDefect::UnknownGenerator { way: Way::Forward },
+                ..
+            })
+        },
+        |refusal: CheckRefusal| {
+            matches!(refusal, CheckRefusal::UaInequivalent {
+                defect: UaDefect::Tables { .. },
+                ..
+            })
+        },
+        |refusal: CheckRefusal| {
+            matches!(refusal, CheckRefusal::UaInequivalent {
+                defect: UaDefect::NotInverse { element, .. },
+                ..
+            } if element == ElementIndex::from(0))
+        },
+    ];
+    for ((refusal, case), expected) in refusals.into_iter().zip(expected) {
+        assert!(expected(refusal), "{case}: {refusal:?}");
+    }
 }

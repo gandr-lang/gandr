@@ -178,6 +178,10 @@ quenchant_shape::reason_enum! {
             ValueRead,
             /// The adopted type could not be seated in the edited arena.
             Unseated,
+            /// The body is univalence at a stratum, whose value the checker
+            /// derives as it judges it; adoption does not replay the
+            /// derivation, so the declaration is judged again.
+            Derived,
         }
     }
 }
@@ -1713,7 +1717,8 @@ where
                     | recall::Absent::ValueRead => bump(&mut census.value_reads),
                     | recall::Absent::Opaque
                     | recall::Absent::Missed
-                    | recall::Absent::Unseated => {},
+                    | recall::Absent::Unseated
+                    | recall::Absent::Derived => {},
                 }
                 bump(&mut census.judged);
                 let supported = check_declaration_supported(&mut context, declaration);
@@ -1848,26 +1853,33 @@ struct AdoptionInput<'input, 'base>
 /// - requires: `input.supplied` holds the answer of every item before
 ///   `input.ordinal`.
 /// - ensures: when the item is transparent, the support holds pointwise, no
-///   type position meets the value-changed set and the type seats, the item is
-///   admitted with its seated type and the checkpoint's support, typing and
-///   answer are returned; otherwise the context is unchanged.
+///   type position meets the value-changed set, the body is no accepted
+///   univalence statement and the type seats, the item is admitted with its
+///   seated type and the checkpoint's support, typing and answer are returned;
+///   otherwise the context is unchanged.
 /// - provides: the reason the checkpoint does not answer: `Opaque`, `Outdated`,
-///   `ValueRead` or `Unseated`, checked in that order.
+///   `ValueRead`, `Derived` or `Unseated`, checked in that order.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — changed support, an ascription reading a changed value
 ///   and opaque content separate three guards. Generated edits exercise
 ///   successful seating; this is not exhaustive evidence of refusal precedence
-///   or context preservation on every formation error.
+///   or context preservation on every formation error. An accepted univalence
+///   statement is judged again, so a later transport along it unfolds to the
+///   path the judgement derives, as a fresh check's does.
 /// - witness: `tests::incremental::type_change_retypes_the_dependent`
 /// - witness: `tests::incremental::an_ascription_endpoint_is_a_read`
 /// - witness: `tests::incremental::a_changed_value_reaches_through_an_untouched_definition`
 /// - witness: `tests::incremental::an_opaque_footprint_is_never_adopted`
+/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
 #[spec(
     requires: input.supplied.len() == usize::from(input.ordinal),
     ensures: |ret| {
         let transparent = input.item.content.opacity() == Opacity::Transparent;
+        let derived = matches!(input.candidate.checkpoint.typing, Typing::Checked { .. } | Typing::Synthesised { .. })
+            && matches!(*input.declaration.content(), gandr_core_checker::DeclarationContent::Value { body: Maybe::Present(held), .. }
+                if matches!(context.arena().value(held), Some(gandr_core_term::Value::Ua { .. })));
         let supported =
             support_holds(input, &input.candidate.checkpoint.support) == Standing::Stands;
         let untouched = touches(input, &input.candidate.checkpoint.support) == Standing::Stands;
@@ -1876,6 +1888,7 @@ struct AdoptionInput<'input, 'base>
                 transparent
                     && supported
                     && untouched
+                    && !derived
                     && support == &input.candidate.checkpoint.support
                     && typing == &input.candidate.checkpoint.typing
             },
@@ -1889,6 +1902,9 @@ struct AdoptionInput<'input, 'base>
                     }
                     else if !untouched {
                         recall::Absent::ValueRead
+                    }
+                    else if derived {
+                        recall::Absent::Derived
                     }
                     else {
                         recall::Absent::Unseated
@@ -1991,6 +2007,18 @@ fn adopt(
             ));
         },
     };
+    if let Maybe::Present(held) = body
+        && matches!(
+            checkpoint.typing,
+            Typing::Checked { .. } | Typing::Synthesised { .. }
+        )
+        && matches!(
+            context.arena().value(held),
+            Some(gandr_core_term::Value::Ua { .. })
+        )
+    {
+        return Maybe::Absent(recall::Absent::Derived);
+    }
     if matches!(checkpoint.typing, Typing::Data) {
         return Maybe::Absent(recall::Absent::Unseated);
     }

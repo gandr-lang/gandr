@@ -390,6 +390,7 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::ProjectedNonTuple
         | EvalFault::AbsentTupleComponent => Stop::UnprojectedField,
         | EvalFault::TransportedNonPath
+        | EvalFault::TransportedUnderived
         | EvalFault::SplitNonTuple
         | EvalFault::SplitArity
         | EvalFault::RuntimeControl(_)

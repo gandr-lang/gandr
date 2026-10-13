@@ -51,6 +51,8 @@ use anodized::spec;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
 use gandr_core_checker::Mismatch;
+use gandr_core_checker::ua::StratumDefect;
+use gandr_core_checker::ua::UaDefect;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
@@ -221,6 +223,22 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         | CheckRefusal::UncertifiedStratum { .. } => "a recursive type",
         | CheckRefusal::RoundTripDistinct { .. } => "translators that are not inverse",
         | CheckRefusal::NotOver { .. } => "an identity not over the path",
+        | CheckRefusal::UaUncertified { stratum, .. } => match stratum {
+            | StratumDefect::Degree { .. } => "a degree no shape of the catalogue reaches",
+            | StratumDefect::Condition { .. } => {
+                "a catalogue failing the corolla or Segal condition"
+            },
+            | StratumDefect::Allowance { .. } => "a catalogue past the checker's allowance",
+        },
+        | CheckRefusal::UaInequivalent { defect, .. } => match defect {
+            | UaDefect::UnknownGenerator { .. } => "no generator of the description",
+            | UaDefect::PastTheBound { .. } => "a generator past the catalogue's bound",
+            | UaDefect::Cardinality { .. } => "species of different sizes at a corolla",
+            | UaDefect::Tables { .. } => "a corolla translated other than once",
+            | UaDefect::NotInverse { .. } => "translators that are not inverse",
+            | UaDefect::NotNatural { .. } => "translators that break the corolla's symmetry",
+            | UaDefect::Stuck { .. } => "a translator that returns no element",
+        },
         | CheckRefusal::TypeMismatch(Mismatch::Value { .. } | Mismatch::Computation { .. }) => {
             "its type does not convert"
         },

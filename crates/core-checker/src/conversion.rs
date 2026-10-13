@@ -1033,6 +1033,7 @@ fn convert(
                                         | Value::Here(_)
                                         | Value::Funext(..)
                                         | Value::Equiv(..)
+                                        | Value::Ua { .. }
                                         | Value::Returned(_)
                                         | Value::Constructor { .. }
                                         | Value::Record(_)

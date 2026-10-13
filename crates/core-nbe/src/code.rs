@@ -755,6 +755,7 @@ _ => ret == Ok(Atom::Other(node)),
                     | Value::Here(_)
                     | Value::Funext(..)
                     | Value::Equiv(..)
+                    | Value::Ua { .. }
                     | Value::Returned(_)
                     | Value::Reify(_)
                     | Value::Primitive { .. }
@@ -803,6 +804,7 @@ _ => ret == Ok(Atom::Other(node)),
                         | Value::Here(_)
                         | Value::Funext(..)
                         | Value::Equiv(..)
+                        | Value::Ua { .. }
                         | Value::Returned(_)
                         | Value::Primitive { .. }
                         | Value::Constructor { .. }

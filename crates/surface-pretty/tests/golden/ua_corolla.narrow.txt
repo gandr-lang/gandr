@@ -1,0 +1,3 @@
+ua[1, 4](Magma, Magma,
+  #{.mul = exchange, .one = keep},
+  #{.mul = exchange, .one = keep})

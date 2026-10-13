@@ -37,9 +37,10 @@
 //!
 //! The content table preserves universe sorts and levels, quotes, static
 //! operators and native universe paths. Native path tags occupy `0x40–0x44` in
-//! this cache codec, and element identity `0x45–0x4B`: the path type, `here`,
+//! this cache codec, and element identity `0x45–0x4C`: the path type, `here`,
 //! element transport, a compound endpoint, `funext` over its two functions,
-//! `equiv` over its two translators, and the telescope transport. None is a
+//! `equiv` over its two translators, the telescope transport, and `ua` over
+//! its stratum, its two descriptions and its translator records. None is a
 //! kernel artifact tag.
 //! Candidate evidence is exact content, including ordered direction and
 //! dialogue boundaries, and never a cached admission receipt; a `funext` or an
@@ -402,6 +403,19 @@ pub enum ContentNode
     Funext(NodeIndex, NodeIndex),
     /// A universe equivalence over its forward and backward translators.
     Equiv(NodeIndex, NodeIndex),
+    /// Univalence at a stratum over its two translator records, retaining
+    /// the stratum and the descriptions in the cache identity.
+    Ua
+    {
+        /// The degree and the catalogue bound.
+        stratum: gandr_core_term::ua::Stratum,
+        /// The two descriptions.
+        sides: alloc::sync::Arc<gandr_core_term::ua::Sides>,
+        /// The forward translator record.
+        forward: NodeIndex,
+        /// The backward translator record.
+        backward: NodeIndex,
+    },
     /// An equivalence, retaining its evidence in the cache identity.
     PathEquiv
     {
@@ -844,6 +858,7 @@ impl ContentNode
         | Self::PathProduct(..)
         | Self::Funext(..)
         | Self::Equiv(..)
+        | Self::Ua { .. }
         | Self::PathEquiv { .. }
         | Self::Variable { .. }
         | Self::Constant(_)
@@ -928,6 +943,7 @@ impl ContentNode
             | Self::PathProduct(..)
             | Self::Funext(..)
             | Self::Equiv(..)
+            | Self::Ua { .. }
             | Self::PathEquiv { .. }
             | Self::Variable { .. }
             | Self::Constant(_)
@@ -1050,7 +1066,7 @@ impl ContentNode
             | Self::UnknownComputationType => ret.count == 0,
             | Self::Tuple(ref components) => ret.iter().eq(components.iter().map(|&component| (component, V))),
             | Self::ListFold { element, result, list, on_nil, on_cons } => actual == Some(&[(element, A), (result, A), (list, V), (on_nil, M), (on_cons, M)][..]),
-            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Equiv(a, b) | Self::Transport(a, b) => {
+            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Equiv(a, b) | Self::Ua { forward: a, backward: b, .. } | Self::Transport(a, b) => {
                 actual == Some(&[(a, V), (b, V)][..])
             },
             | Self::PathEquiv { path_type, forward, backward, .. } => actual == Some(&[(path_type, A), (forward, V), (backward, V)][..]),
@@ -1200,6 +1216,11 @@ impl ContentNode
             | Self::PathProduct(first, second)
             | Self::Funext(first, second)
             | Self::Equiv(first, second)
+            | Self::Ua {
+                forward: first,
+                backward: second,
+                ..
+            }
             | Self::Transport(first, second)
             | Self::ListCons(first, second)
             | Self::StaticApplication(first, second) => Children::of(&[(first, V), (second, V)]),
@@ -1320,6 +1341,7 @@ impl ContentNode
             | Self::PathProduct(..)
             | Self::Funext(..)
             | Self::Equiv(..)
+            | Self::Ua { .. }
             | Self::PathEquiv { .. }
             | Self::Transport(..)
             | Self::Variable { .. }
@@ -2324,6 +2346,17 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 let forward = self.discover(ArenaNode::Value(forward));
                 ContentNode::Equiv(forward, self.discover(ArenaNode::Value(backward)))
             },
+            | Value::Ua {
+                stratum,
+                ref sides,
+                forward,
+                backward,
+            } => ContentNode::Ua {
+                stratum,
+                sides: alloc::sync::Arc::clone(sides),
+                forward: self.discover(ArenaNode::Value(forward)),
+                backward: self.discover(ArenaNode::Value(backward)),
+            },
             | Value::PathEquiv {
                 path_type,
                 forward,
@@ -3018,6 +3051,20 @@ where
             let forward = image(forward);
             ContentNode::Equiv(forward, image(backward))
         },
+        | ContentNode::Ua {
+            stratum,
+            ref sides,
+            forward,
+            backward,
+        } => {
+            let forward = image(forward);
+            ContentNode::Ua {
+                stratum,
+                sides: alloc::sync::Arc::clone(sides),
+                forward,
+                backward: image(backward),
+            }
+        },
         | ContentNode::PathEquiv {
             path_type,
             forward,
@@ -3583,6 +3630,7 @@ fn mint_node(
         | ContentNode::PathProduct(..)
         | ContentNode::Funext(..)
         | ContentNode::Equiv(..)
+        | ContentNode::Ua { .. }
         | ContentNode::PathEquiv { .. }
         | ContentNode::Transport(..)
         | ContentNode::Element { .. }

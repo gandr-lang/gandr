@@ -475,6 +475,26 @@ pub enum CheckRefusal
         /// The identity over the path the transport owes.
         expected: ValueTypeId,
     },
+    /// Univalence at a stratum the checker does not certify: a degree no
+    /// shape of the catalogue reaches, a catalogue whose site fails the
+    /// corolla or the Segal condition, or a bound past the catalogue it
+    /// enumerates.
+    UaUncertified
+    {
+        /// The `ua`.
+        at: ValueId,
+        /// Why the stratum is not certified.
+        stratum: crate::ua::StratumDefect,
+    },
+    /// Univalence at a certified stratum whose translators are no equivalence
+    /// of the two species there.
+    UaInequivalent
+    {
+        /// The `ua`.
+        at: ValueId,
+        /// What the translators fail.
+        defect: crate::ua::UaDefect,
+    },
     /// A synthesising term in checking position synthesised a type the expected
     /// type does not convert to.
     TypeMismatch(Mismatch),
@@ -696,12 +716,13 @@ impl CheckRefusal
     ///   reference past its block, a descent claim that does not replay,
     ///   reflexivity at endpoints its point does not reach, a compound endpoint
     ///   that returns no pure value, an abstract type's kind that is no
-    ///   universe, a representation above it and an atom naming no abstract
-    ///   type are malformed source; a former outside the fragment is
-    ///   unrepresentable; an unbound index, an exhausted allowance, a dangling
-    ///   id, an admission out of order, a repeated sealing site, a machine
-    ///   invariant and an undecided unfolding are engine faults; nothing is a
-    ///   user absence.
+    ///   universe, a representation above it, an atom naming no abstract type
+    ///   and translators that are no equivalence of species are malformed
+    ///   source; a former outside the fragment and a stratum the checker does
+    ///   not certify are unrepresentable; an unbound index, an exhausted
+    ///   allowance, a dangling id, an admission out of order, a repeated
+    ///   sealing site, a machine invariant and an undecided unfolding are
+    ///   engine faults; nothing is a user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -712,7 +733,7 @@ impl CheckRefusal
     ///   than turning the rejection into an obligation.
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
-        | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
@@ -720,7 +741,7 @@ impl CheckRefusal
         | Self::SealSiteRepeated(_)
         | Self::MachineInvariant
         | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
-        | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. }
+        | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. }
         | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
@@ -749,6 +770,7 @@ impl CheckRefusal
             | Self::PointwiseDistinct { .. }
             | Self::RoundTripDistinct { .. }
             | Self::NotOver { .. }
+            | Self::UaInequivalent { .. }
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
@@ -787,7 +809,8 @@ impl CheckRefusal
             | Self::OutOfFragment { .. }
             | Self::FunextUnsupported { .. }
             | Self::EquivUnsupported { .. }
-            | Self::UncertifiedStratum { .. } => FailureClass::Unrepresentable,
+            | Self::UncertifiedStratum { .. }
+            | Self::UaUncertified { .. } => FailureClass::Unrepresentable,
             | Self::UnboundIndex { .. }
             | Self::BudgetExceeded { .. }
             | Self::DanglingNode { .. }
@@ -914,6 +937,8 @@ impl CheckRefusal
             | Self::EndpointMismatch { .. }
             | Self::PointwiseDistinct { .. }
             | Self::RoundTripDistinct { .. }
+            | Self::UaUncertified { .. }
+            | Self::UaInequivalent { .. }
             | Self::EffectSignatureConflict { .. }
             | Self::NotSynthesisable { .. }
             | Self::UnknownConstant { .. }

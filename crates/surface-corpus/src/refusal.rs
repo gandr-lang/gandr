@@ -58,6 +58,8 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::ua::StratumDefect;
+use gandr_core_checker::ua::UaDefect;
 use gandr_core_term::FailureClass;
 use gandr_kernel_term::StringLiteral;
 use gandr_surface_lowering::LoweringRefusal;
@@ -335,6 +337,28 @@ pub enum RefusalName
     /// A telescope transport's second identity that does not lie over its
     /// path.
     NotOver,
+    /// Univalence at a degree no shape of the catalogue reaches.
+    UncertifiedDegree,
+    /// Univalence over a catalogue whose site fails the corolla or the Segal
+    /// condition.
+    UncertifiedCondition,
+    /// Univalence over a catalogue past the one the checker enumerates.
+    UncertifiedAllowance,
+    /// A translator record naming a generator its description does not
+    /// declare.
+    UnknownGenerator,
+    /// A generator whose corolla is past the catalogue's bound.
+    PastTheBound,
+    /// Two species with different numbers of elements at a corolla.
+    CorollaCardinality,
+    /// A corolla whose translators are missing on one side or given twice.
+    CorollaTables,
+    /// Translator tables that are not mutually inverse.
+    NotInverse,
+    /// Translator tables that do not commute with a corolla's automorphisms.
+    NotNatural,
+    /// A translator that returns no element of its target code.
+    TranslatorStuck,
     /// A term name no binder or earlier declaration answers.
     UnresolvedName,
     /// A documentation link to a name nothing declares.
@@ -449,7 +473,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 80_usize] = [
+    pub const VOCABULARY: [Self; 90_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -479,6 +503,16 @@ impl RefusalName
         Self::UncertifiedStratum,
         Self::RoundTripDistinct,
         Self::NotOver,
+        Self::UncertifiedDegree,
+        Self::UncertifiedCondition,
+        Self::UncertifiedAllowance,
+        Self::UnknownGenerator,
+        Self::PastTheBound,
+        Self::CorollaCardinality,
+        Self::CorollaTables,
+        Self::NotInverse,
+        Self::NotNatural,
+        Self::TranslatorStuck,
         Self::UnresolvedName,
         Self::UnresolvedDocLink,
         Self::UnresolvedTypeHead,
@@ -617,6 +651,16 @@ impl RefusalName
         | (Self::UncertifiedStratum, b"UncertifiedStratum")
         | (Self::RoundTripDistinct, b"RoundTripDistinct")
         | (Self::NotOver, b"NotOver")
+        | (Self::UncertifiedDegree, b"UncertifiedDegree")
+        | (Self::UncertifiedCondition, b"UncertifiedCondition")
+        | (Self::UncertifiedAllowance, b"UncertifiedAllowance")
+        | (Self::UnknownGenerator, b"UnknownGenerator")
+        | (Self::PastTheBound, b"PastTheBound")
+        | (Self::CorollaCardinality, b"CorollaCardinality")
+        | (Self::CorollaTables, b"CorollaTables")
+        | (Self::NotInverse, b"NotInverse")
+        | (Self::NotNatural, b"NotNatural")
+        | (Self::TranslatorStuck, b"TranslatorStuck")
     )
 },
     )]
@@ -665,6 +709,16 @@ impl RefusalName
             | Self::UncertifiedStratum => "UncertifiedStratum",
             | Self::RoundTripDistinct => "RoundTripDistinct",
             | Self::NotOver => "NotOver",
+            | Self::UncertifiedDegree => "UncertifiedDegree",
+            | Self::UncertifiedCondition => "UncertifiedCondition",
+            | Self::UncertifiedAllowance => "UncertifiedAllowance",
+            | Self::UnknownGenerator => "UnknownGenerator",
+            | Self::PastTheBound => "PastTheBound",
+            | Self::CorollaCardinality => "CorollaCardinality",
+            | Self::CorollaTables => "CorollaTables",
+            | Self::NotInverse => "NotInverse",
+            | Self::NotNatural => "NotNatural",
+            | Self::TranslatorStuck => "TranslatorStuck",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
             | Self::GradedBridge => "GradedBridge",
@@ -934,6 +988,8 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::UncertifiedStratum { .. }), RefusalName::UncertifiedStratum)
         | (Self::Checking(CheckRefusal::RoundTripDistinct { .. }), RefusalName::RoundTripDistinct)
         | (Self::Checking(CheckRefusal::NotOver { .. }), RefusalName::NotOver)
+        | (Self::Checking(CheckRefusal::UaUncertified { .. }), RefusalName::UncertifiedDegree | RefusalName::UncertifiedCondition | RefusalName::UncertifiedAllowance)
+        | (Self::Checking(CheckRefusal::UaInequivalent { .. }), RefusalName::UnknownGenerator | RefusalName::PastTheBound | RefusalName::CorollaCardinality | RefusalName::CorollaTables | RefusalName::NotInverse | RefusalName::NotNatural | RefusalName::TranslatorStuck)
     )
 },
     )]
@@ -1077,9 +1133,9 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
 /// The vocabulary name of a checker refusal.
 ///
 /// # Specification
-/// - requires: nothing.
 /// - ensures: returns the vocabulary name of the producer variant,
-///   independently of its payload.
+///   independently of its payload, except that univalence at a stratum is named
+///   by the defect it carries.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1141,6 +1197,16 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::UncertifiedStratum { .. }, RefusalName::UncertifiedStratum)
         | (CheckRefusal::RoundTripDistinct { .. }, RefusalName::RoundTripDistinct)
         | (CheckRefusal::NotOver { .. }, RefusalName::NotOver)
+        | (CheckRefusal::UaUncertified { stratum: StratumDefect::Degree { .. }, .. }, RefusalName::UncertifiedDegree)
+        | (CheckRefusal::UaUncertified { stratum: StratumDefect::Condition { .. }, .. }, RefusalName::UncertifiedCondition)
+        | (CheckRefusal::UaUncertified { stratum: StratumDefect::Allowance { .. }, .. }, RefusalName::UncertifiedAllowance)
+        | (CheckRefusal::UaInequivalent { defect: UaDefect::UnknownGenerator { .. }, .. }, RefusalName::UnknownGenerator)
+        | (CheckRefusal::UaInequivalent { defect: UaDefect::PastTheBound { .. }, .. }, RefusalName::PastTheBound)
+        | (CheckRefusal::UaInequivalent { defect: UaDefect::Cardinality { .. }, .. }, RefusalName::CorollaCardinality)
+        | (CheckRefusal::UaInequivalent { defect: UaDefect::Tables { .. }, .. }, RefusalName::CorollaTables)
+        | (CheckRefusal::UaInequivalent { defect: UaDefect::NotInverse { .. }, .. }, RefusalName::NotInverse)
+        | (CheckRefusal::UaInequivalent { defect: UaDefect::NotNatural { .. }, .. }, RefusalName::NotNatural)
+        | (CheckRefusal::UaInequivalent { defect: UaDefect::Stuck { .. }, .. }, RefusalName::TranslatorStuck)
     )
 },
 )]
@@ -1175,6 +1241,20 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::UncertifiedStratum { .. } => RefusalName::UncertifiedStratum,
         | CheckRefusal::RoundTripDistinct { .. } => RefusalName::RoundTripDistinct,
         | CheckRefusal::NotOver { .. } => RefusalName::NotOver,
+        | CheckRefusal::UaUncertified { stratum, .. } => match stratum {
+            | StratumDefect::Degree { .. } => RefusalName::UncertifiedDegree,
+            | StratumDefect::Condition { .. } => RefusalName::UncertifiedCondition,
+            | StratumDefect::Allowance { .. } => RefusalName::UncertifiedAllowance,
+        },
+        | CheckRefusal::UaInequivalent { defect, .. } => match defect {
+            | UaDefect::UnknownGenerator { .. } => RefusalName::UnknownGenerator,
+            | UaDefect::PastTheBound { .. } => RefusalName::PastTheBound,
+            | UaDefect::Cardinality { .. } => RefusalName::CorollaCardinality,
+            | UaDefect::Tables { .. } => RefusalName::CorollaTables,
+            | UaDefect::NotInverse { .. } => RefusalName::NotInverse,
+            | UaDefect::NotNatural { .. } => RefusalName::NotNatural,
+            | UaDefect::Stuck { .. } => RefusalName::TranslatorStuck,
+        },
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
         | CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,

@@ -40,6 +40,8 @@ use core::fmt;
 
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
+use gandr_core_checker::ua::StratumDefect;
+use gandr_core_checker::ua::UaDefect;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
@@ -440,6 +442,40 @@ fn checked(
             "`transport` needs its identity over the path to start from the start transported \
              along the path",
         ),
+        | CheckRefusal::UaUncertified { stratum, .. } => match stratum {
+            | StratumDefect::Degree { .. } => {
+                f.write_str("`ua` is certified from degree 1 to the catalogue's largest degree")
+            },
+            | StratumDefect::Condition { .. } => f.write_str(
+                "`ua` needs a catalogue whose site meets the corolla and Segal conditions",
+            ),
+            | StratumDefect::Allowance { .. } => {
+                f.write_str("`ua` enumerates catalogues of bound 5 at most")
+            },
+        },
+        | CheckRefusal::UaInequivalent { defect, .. } => match defect {
+            | UaDefect::UnknownGenerator { .. } => {
+                f.write_str("a `ua` translator record must name the generators of its description")
+            },
+            | UaDefect::PastTheBound { .. } => {
+                f.write_str("a generator stands at a corolla past the `ua` catalogue bound")
+            },
+            | UaDefect::Cardinality { .. } => f.write_str(
+                "the two descriptions have different numbers of generators at a corolla",
+            ),
+            | UaDefect::Tables { .. } => {
+                f.write_str("`ua` needs exactly one translator per corolla on each side")
+            },
+            | UaDefect::NotInverse { .. } => {
+                f.write_str("the `ua` translators are not inverse to each other")
+            },
+            | UaDefect::NotNatural { .. } => {
+                f.write_str("the `ua` translators do not commute with the symmetries of a corolla")
+            },
+            | UaDefect::Stuck { .. } => {
+                f.write_str("a `ua` translator returns no element of its target code")
+            },
+        },
         | CheckRefusal::TypeMismatch(_) => f.write_str("mismatched types"),
         | CheckRefusal::ShapeMismatch { wanted, .. } => write!(f, "expected {}", Shape(wanted)),
         | CheckRefusal::NotSynthesisable { form } => write!(
@@ -563,6 +599,9 @@ mod tests
     use gandr_core_checker::TermNode;
     use gandr_core_checker::TypeNode;
     use gandr_core_checker::UnadmittedFormer;
+    use gandr_core_checker::ua::StratumDefect;
+    use gandr_core_checker::ua::UaDefect;
+    use gandr_core_checker::ua::Way;
     use gandr_core_term::BinderDepth;
     use gandr_core_term::CoreArena;
     use gandr_core_term::Zone;
@@ -594,6 +633,12 @@ mod tests
     use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::GrammarFingerprint;
     use gandr_surface_syntax::MoldId;
+    use gandr_theory_sites::Degree;
+    use gandr_theory_sites::ElementIndex;
+    use gandr_theory_sites::PortCount;
+    use gandr_theory_sites::Profile;
+    use gandr_theory_sites::ShapeIndex;
+    use gandr_theory_sites::ShapeSize;
 
     use super::Plain;
 
@@ -614,6 +659,8 @@ mod tests
             .copied()
             .expect("the registry holds a name");
         let site = OccurrenceSite::Parameter(ParameterPosition::from(0_usize));
+        let corolla = ShapeIndex::from(0_usize);
+        let element = ElementIndex::from(0_usize);
         let lowering = [
             LoweringRefusal::UnresolvedName { span, name },
             LoweringRefusal::UnresolvedDocLink { span, name },
@@ -871,6 +918,57 @@ mod tests
                 at: value,
                 synthesised: value_type,
                 expected: value_type,
+            },
+            CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Degree {
+                    degree: Degree::from(2_usize),
+                },
+            },
+            CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Condition {
+                    degree: Degree::from(1_usize),
+                },
+            },
+            CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Allowance {
+                    bound: ShapeSize::from(6_usize),
+                },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::UnknownGenerator { way: Way::Forward },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::PastTheBound {
+                    profile: Profile {
+                        inputs: PortCount::from(2_usize),
+                        outputs: PortCount::from(1_usize),
+                    },
+                },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::Cardinality { corolla },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::Tables { corolla },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::NotInverse { corolla, element },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::NotNatural { corolla, element },
+            },
+            CheckRefusal::UaInequivalent {
+                at: value,
+                defect: UaDefect::Stuck { corolla, element },
             },
         ]
         .map(Refusal::Checking);
