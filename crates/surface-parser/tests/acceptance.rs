@@ -11,9 +11,12 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_parser::DisagreementCount;
 use gandr_surface_parser::Expected;
+use gandr_surface_parser::FormSplit;
 use gandr_surface_parser::Lexeme;
 use gandr_surface_parser::MeldState;
+use gandr_surface_parser::MoldVerdicts;
 use gandr_surface_parser::Molder;
 use gandr_surface_parser::Oblig;
 use gandr_surface_parser::SpaceText;
@@ -2488,6 +2491,108 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
             .take(LISTED)
             .map(|entry| &entry.2)
             .collect::<Vec<_>>()
+    );
+    Ok(())
+}
+
+/// The molder's tables reach the dry runs' verdict at every decision the
+/// corpus and its one-token drops produce, in both modes.
+///
+/// A molder in [`MoldVerdicts::Differential`] runs the dry runs and the tables
+/// at every decision and counts each where their admitted menus, their
+/// eligible menus or their choices differ; the count must stay zero. Every
+/// corpus source is molded whole, and each source of the fixture and strict
+/// roots also cut short after each significant token and with each dropped —
+/// the drop harness's matrix. Each text is molded as one stream, as [`parse`]
+/// does, and form run by form run, as an editing session does. The stray
+/// cases the molder's cost was measured on come first: their windows are the
+/// ones the window classes share most.
+///
+/// `check` samples the matrix as the drop harness does, every sixteenth
+/// significant token's rows, and every sixty-fourth under `anodized_panic`,
+/// where every clause of both procedures runs; `GANDR_RECOVERY_WHOLE=1` runs
+/// every row (`mise run ci:recovery`).
+#[test]
+fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
+{
+    /// The sampled run molds the rows of the significant tokens whose index
+    /// this divides.
+    const SAMPLE_STRIDE: usize = if cfg!(anodized_panic) { 64 } else { 16 };
+    /// The strays the molder's cost was measured on, each a one-token edit of
+    /// a corpus-shaped definition.
+    const STRAYS: [&str; 6] = [
+        "def f(x : In[: Nat]) -> Nat { pure x }",
+        "def g(b : Unit) -> Unit { run c <- not b); become not(c) }",
+        "too_big = Type ;\ndef wrong_sort : Type ;",
+        "def : Integer ;\ndef y = 1 ;",
+        "def h(x : List[Nat) -> Nat { pure x }",
+        "def k(a : Unit) -> Unit { run r go(a); pure r }",
+    ];
+
+    let pbg = built();
+    let stride = if std::env::var_os("GANDR_RECOVERY_WHOLE").is_some() {
+        1
+    }
+    else {
+        SAMPLE_STRIDE
+    };
+    let mut molder = Molder::with_verdicts(pbg, MoldVerdicts::Differential);
+    let mut molded = 0_usize;
+    let mut disagreeing: Vec<String> = Vec::new();
+    let mut differential = |name: &dyn Fn() -> String, text: &str| {
+        let before = molder.disagreements();
+        let source = SourceText::from(text);
+        let mut state = MeldState::new(pbg);
+        molder.mold_stream(&mut state, &label(SourceFragment::from(text)), source);
+        let split = FormSplit::new(&molder, source);
+        for &run in split.runs() {
+            let _unit = split.mold(&mut molder, run);
+        }
+        molded = molded.saturating_add(1);
+        if molder.disagreements() != before {
+            disagreeing.push(name());
+        }
+    };
+    for stray in STRAYS {
+        differential(&|| format!("stray {stray:?}"), stray);
+    }
+    let root = corpus_root();
+    for path in gandr_files(&root) {
+        let rel = path
+            .strip_prefix(&root)?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let src = read_source(&path)?;
+        differential(&|| format!("{rel} whole"), &src);
+        if !(rel.starts_with("fixture/") || rel.starts_with("strict/")) {
+            continue;
+        }
+        let significant = label(SourceFragment::from(src.as_str()))
+            .into_iter()
+            .filter(|token| token.lexeme != Lexeme::Space);
+        for (index, token) in significant.enumerate() {
+            if !index.is_multiple_of(stride) {
+                continue;
+            }
+            let start = usize::try_from(token.start)?;
+            let end = usize::try_from(token.end)?;
+            differential(
+                &|| format!("{rel} cut after token {index}"),
+                src.get(.. end).unwrap_or_default(),
+            );
+            let mut dropped = String::with_capacity(src.len());
+            dropped.push_str(src.get(.. start).unwrap_or_default());
+            dropped.push_str(src.get(end ..).unwrap_or_default());
+            differential(&|| format!("{rel} drop {index}"), &dropped);
+        }
+    }
+    assert!(molded > STRAYS.len(), "the corpus sources are present");
+    assert_eq!(
+        DisagreementCount(0),
+        molder.disagreements(),
+        "{} of {molded} texts mold differently by the tables and the dry runs; first {:?}",
+        disagreeing.len(),
+        disagreeing.iter().take(16).collect::<Vec<_>>()
     );
     Ok(())
 }

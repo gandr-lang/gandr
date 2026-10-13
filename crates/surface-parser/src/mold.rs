@@ -238,6 +238,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_surface_grammar::CandidateCount;
 use gandr_surface_grammar::LabelText;
+use gandr_surface_grammar::Observation;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::StepSym;
@@ -256,12 +257,19 @@ use crate::meld::CandidateLabels;
 use crate::meld::DeclarationStart;
 use crate::meld::FormUnit;
 use crate::meld::Mark;
+use crate::meld::MoldAdmissibility;
+use crate::meld::SlopeHeight;
 use crate::meld::SpaceText;
 use crate::meld::TileText;
 use crate::meld::UnitSeam;
 use crate::meld::declaration_head;
 use crate::meld::primitive_copy_wrapper;
 use crate::oblig::Delta;
+use crate::tables::Admission;
+use crate::tables::PushKey;
+use crate::tables::SettleChain;
+use crate::tables::WindowClass;
+use crate::tables::WindowClasses;
 
 /// The most candidate labels a single lexeme can map to (a lowercase word: its
 /// own keyword tile spelling, `identifier`, `type_variable`, and `hole_name`).
@@ -286,6 +294,12 @@ const LABEL_CAPACITY: usize = MAX_LABELS + RESERVED_FALLBACK_LABELS.len();
 /// width one, no branching) so the cost stays bounded and the choice
 /// deterministic.
 const LOOKAHEAD: usize = 8;
+
+/// The widest menu the tables admit candidate by candidate: composing an
+/// [`Admission`] context reads one tile set per admitting context, which a
+/// menu this narrow does not repay. Measured over the corpus, where most
+/// menus hold a handful of molds.
+pub const ADMISSION_MENU: usize = 4;
 
 /// Exact text of one labeled token.
 #[repr(transparent)]
@@ -1180,6 +1194,59 @@ pub fn lookahead_reach(
     TokenIndex::from(reach)
 }
 
+/// How a [`Molder`] reaches its verdicts.
+///
+/// The verdicts are the dry runs' in every mode: the modes differ in how
+/// many dry runs and windows reach them. [`Tables`](Self::Tables) is the
+/// molder [`Molder::new`] builds; [`DryRuns`](Self::DryRuns) is the
+/// procedure the tables are witnessed against, kept as their oracle;
+/// [`Differential`](Self::Differential) runs both at every decision.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MoldVerdicts
+{
+    /// Admit through the grammar's tile sets, dry-run one candidate per push
+    /// class, and mold one window per window class (`crate::tables`).
+    #[default]
+    Tables,
+    /// Admit, dry-run and mold a window for every candidate and opener.
+    DryRuns,
+    /// Decide every token both ways, push the dry runs' verdict, and count
+    /// each decision where the two disagree.
+    Differential,
+}
+
+/// One way of reaching a decision: the procedure a [`MoldVerdicts`] mode
+/// runs, or each of the two a differential molder runs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Procedure
+{
+    /// Through the tables.
+    Tables,
+    /// Through a dry run per candidate and a window per opener.
+    DryRuns,
+}
+
+/// How many decisions a differential molder saw its two procedures settle
+/// differently: the admitted menu or the chosen mold.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub struct DisagreementCount(pub usize);
+
+/// What a window class's first window showed of its members' windows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WindowRun
+{
+    /// The window read nothing of its opener beyond the class: every member
+    /// molds it alike, so none molds its own.
+    Shared,
+    /// The window gathered a token's whole declared menu, where the members'
+    /// own successors meet it: each member molds its own window.
+    Exposed,
+}
+
 /// The obligation-minimizing mold selector over a checked PBG.
 ///
 /// The molder owns a reusable candidate buffer so the per-token dry-run loop
@@ -1206,6 +1273,8 @@ pub struct Molder<'pbg>
 {
     /// The grammar whose candidate menus the molder reads.
     pbg: &'pbg Pbg,
+    /// How the molder reaches its verdicts.
+    verdicts: MoldVerdicts,
     /// Reused candidate-mold buffer, sorted and de-duplicated per token.
     candidates: Vec<MoldId>,
     /// Reused per-token candidates that survive the pre-filter (or the whole
@@ -1218,15 +1287,45 @@ pub struct Molder<'pbg>
     /// Reused tied lookahead openers; separate from `tied` because each
     /// opener's window scores its own tokens.
     openers: Vec<MoldId>,
+    /// The frontiers a push may consult, read once per decision.
+    chain: SettleChain,
+    /// Reused observation classes of the ranked candidates, sorted, to find
+    /// a class two of them share.
+    observed: Vec<Observation>,
+    /// Reused streaming deltas of the push classes dry-run this decision.
+    pushes: Vec<(PushKey, Delta)>,
+    /// Reused completion deltas of the push classes this decision.
+    completions: Vec<(PushKey, Delta)>,
+    /// Reused window-signature buffers.
+    windows: WindowClasses,
+    /// Reused window classes of the openers, beside `openers`.
+    opener_classes: Vec<WindowClass>,
+    /// Reused push keys of the openers, beside `openers`.
+    opener_keys: Vec<PushKey>,
+    /// Reused sorted copy of `opener_keys`, to find a key two openers share.
+    shared_keys: Vec<PushKey>,
+    /// Reused classes whose first window this decision molded.
+    windowed: Vec<(PushKey, WindowClass, WindowRun)>,
+    /// Inside a window, the slope height the window's opener stands at: a
+    /// frontier at or above it is the opener's form or the window's own.
+    window_floor: Option<SlopeHeight>,
+    /// Whether the window being molded gathered a token's whole declared
+    /// menu where a push could reach a frontier at or above the window's
+    /// floor below the nearest.
+    exposed: bool,
+    /// How many decisions the two procedures settled differently.
+    disagreements: DisagreementCount,
 }
 
 impl<'pbg> Molder<'pbg>
 {
-    /// Create a molder over `pbg`.
+    /// Create a molder over `pbg` that reaches its verdicts through the
+    /// tables.
     ///
     /// # Specification
     /// - requires: `pbg` is a checked PBG.
-    /// - ensures: returns a molder with an empty candidate buffer.
+    /// - ensures: returns a molder with an empty candidate buffer, in
+    ///   [`MoldVerdicts::Tables`] mode.
     /// - provides: the molder constructor.
     /// - fails: never.
     /// - panics: none.
@@ -1239,17 +1338,69 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.candidates.is_empty() && ret.eligible.is_empty() && ret.ranked.is_empty() && ret.tied.is_empty() && ret.openers.is_empty())]
+    #[spec(ensures: |ret| ret.verdicts == MoldVerdicts::Tables && ret.candidates.is_empty() && ret.eligible.is_empty() && ret.ranked.is_empty() && ret.tied.is_empty() && ret.openers.is_empty())]
     pub fn new(pbg: &'pbg Pbg) -> Self
+    {
+        Self::with_verdicts(pbg, MoldVerdicts::Tables)
+    }
+
+    /// Create a molder over `pbg` that reaches its verdicts as `verdicts`
+    /// says.
+    ///
+    /// # Specification
+    /// - requires: `pbg` is a checked PBG.
+    /// - ensures: returns a molder with empty buffers and no disagreement, in
+    ///   `verdicts` mode.
+    /// - provides: the oracle and differential molders the tables are witnessed
+    ///   with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the differential witness builds its molders here and
+    ///   reads their verdicts against each other.
+    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.verdicts == verdicts && ret.disagreements == DisagreementCount(0) && ret.candidates.is_empty())]
+    pub fn with_verdicts(
+        pbg: &'pbg Pbg,
+        verdicts: MoldVerdicts,
+    ) -> Self
     {
         Self {
             pbg,
+            verdicts,
             candidates: Vec::new(),
             eligible: Vec::new(),
             ranked: Vec::new(),
             tied: Vec::new(),
             openers: Vec::new(),
+            chain: SettleChain::default(),
+            observed: Vec::new(),
+            pushes: Vec::new(),
+            completions: Vec::new(),
+            windows: WindowClasses::default(),
+            opener_classes: Vec::new(),
+            opener_keys: Vec::new(),
+            shared_keys: Vec::new(),
+            windowed: Vec::new(),
+            window_floor: None,
+            exposed: false,
+            disagreements: DisagreementCount(0),
         }
+    }
+
+    /// How many decisions this molder's two procedures settled differently:
+    /// always none outside [`MoldVerdicts::Differential`] mode.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn disagreements(&self) -> DisagreementCount
+    {
+        self.disagreements
     }
 
     /// The grammar this molder molds against.
@@ -1786,8 +1937,47 @@ impl<'pbg> Molder<'pbg>
             // A stray form-continuation with no matching frontier: the full menu
             // supplies the tile the melder pushes to flag the exact obligation.
             self.gather_menu(labels, open, CandidateMenu::Declared);
+            // Every open frontier's successors of the label are in the
+            // declared menu: a window class's members meet their own here
+            // when a push can reach their form below the nearest frontier.
+            self.note_declared_menu(state);
         }
         self.gather_reserved_fallback(state, lexeme, text, open);
+    }
+
+    /// Mark the window being molded exposed when this token's declared menu
+    /// can meet its opener's form: when a push of a menu mold can reach,
+    /// below the nearest frontier, a frontier at or above the window's floor.
+    ///
+    /// The nearest frontier continues no mold of the menu — its successors of
+    /// the label would have filled the fresh menu — so the menu meets a
+    /// window class's members alike unless a push passes the nearest to one
+    /// of their own frontiers below it.
+    ///
+    /// # Specification
+    /// - requires: the token's declared menu was just gathered over `state`.
+    /// - ensures: inside a window, sets `self.exposed` when
+    ///   [`MeldState::settles_into`] the window's floor; outside one, changes
+    ///   nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the differential witness reads every windowed tie of
+    ///   the corpus, the drop matrix and the editor scenario: a declared menu
+    ///   that met a member's own frontier unmarked shares a window whose
+    ///   verdict differs from the member's dry run.
+    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[spec(captures: before = self.exposed, ensures: |()| self.window_floor.is_some() || self.exposed == before)]
+    fn note_declared_menu(
+        &mut self,
+        state: &MeldState<'_>,
+    )
+    {
+        if let Some(floor) = self.window_floor
+            && bool::from(state.settles_into(floor))
+        {
+            self.exposed = true;
+        }
     }
 
     /// Widen a **reserved uppercase word**'s menu to its lexical class's
@@ -1859,6 +2049,7 @@ impl<'pbg> Molder<'pbg>
         self.gather_labels(&generic, open, CandidateMenu::Fresh);
         if self.candidates.is_empty() {
             self.gather_labels(&generic, open, CandidateMenu::Declared);
+            self.note_declared_menu(state);
         }
         self.candidates.extend_from_slice(&reserved);
         self.candidates.sort_unstable();
@@ -2088,22 +2279,27 @@ impl<'pbg> Molder<'pbg>
     /// an empty delta and the next floor lies above it, no remaining candidate
     /// can reach it and their dry-runs are skipped. The keys found are the
     /// [`CandidateKey`] of each visited candidate, so the least key and its
-    /// ties are exactly those of scoring every candidate.
+    /// ties are exactly those of scoring every candidate. Through the tables
+    /// a candidate whose push class an earlier candidate dry-ran takes that
+    /// delta rather than its own dry run.
     ///
     /// # Specification
     /// - requires: `self.eligible` holds distinct molds in ascending order.
     /// - ensures: `self.tied` holds, in ascending order, exactly the eligible
     ///   candidates whose [`CandidateKey`] is the least among all eligible
     ///   candidates; it is empty exactly when none is eligible; the melder is
-    ///   restored exactly.
+    ///   restored exactly; through the tables, `self.chain` is the state's
+    ///   settle chain.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — menus whose least key has an empty delta, a nonempty
     ///   delta, and ties across one floor; the chosen molds and the corpus
-    ///   moldings expose a skipped candidate that could have tied or won.
+    ///   moldings expose a skipped candidate that could have tied or won, and
+    ///   the differential witness a push class whose members flag differently.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
+    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2117,6 +2313,7 @@ impl<'pbg> Molder<'pbg>
         state: &mut MeldState<'_>,
         text: TokenText<'_>,
         frontier: &Frontier,
+        procedure: Procedure,
     )
     {
         self.ranked.clear();
@@ -2128,6 +2325,28 @@ impl<'pbg> Molder<'pbg>
             let floor = self.floor_key(state, mold, frontier);
             self.ranked.push((floor, mold));
         }
+        if procedure == Procedure::Tables {
+            // Candidates share a push only when their observation classes
+            // agree; with every class distinct, each is dry-run alone.
+            self.observed.clear();
+            for &(_, mold) in &self.ranked {
+                if let Ok(observation) = self.pbg.observation(mold) {
+                    self.observed.push(observation);
+                }
+            }
+            self.observed.sort_unstable();
+            if self
+                .observed
+                .windows(2)
+                .any(|pair| matches!(pair, [left, right] if left == right))
+            {
+                self.chain.read(self.pbg, state);
+            }
+            else {
+                self.chain.unkey();
+            }
+        }
+        self.pushes.clear();
         self.tied.clear();
         let mut least: Option<CandidateKey> = None;
         for floor in RANK_FLOORS {
@@ -2145,10 +2364,21 @@ impl<'pbg> Molder<'pbg>
                 {
                     continue;
                 }
-                let key = CandidateKey {
-                    delta: Self::push_delta(state, mold, text),
-                    ..floor
+                let delta = match procedure {
+                    | Procedure::DryRuns => Self::push_delta(state, mold, text),
+                    | Procedure::Tables => {
+                        let class = self.chain.key(self.pbg, mold);
+                        match self.pushes.iter().find(|&&(held, _)| held == class) {
+                            | Some(&(_, delta)) => delta,
+                            | None => {
+                                let delta = Self::push_delta(state, mold, text);
+                                self.pushes.push((class, delta));
+                                delta
+                            },
+                        }
+                    },
                 };
+                let key = CandidateKey { delta, ..floor };
                 match least {
                     | Some(found) if key > found => {},
                     | Some(found) if key == found => self.tied.push(mold),
@@ -2218,13 +2448,17 @@ impl<'pbg> Molder<'pbg>
     /// candidates the next significant token cannot follow
     /// ([`drop_refuted`](Self::drop_refuted)): a list's separator before its
     /// closer is the trailing one, never the one that opens another element.
+    /// The molder's [`MoldVerdicts`] mode says how the verdict is reached;
+    /// a differential molder reaches it both ways and pushes the dry runs'.
     ///
     /// # Specification
     /// - requires: the candidate menu is canonical and belongs to this grammar.
     /// - ensures: selects a menu member, minimizing admissible key, then, when
     ///   `ahead` names a stream, keeping only what the next significant token
     ///   can follow unless it can follow none, then completion then identity;
-    ///   an empty menu yields none.
+    ///   an empty menu yields none. A differential molder counts the decision
+    ///   as a disagreement when the two procedures admit different menus or
+    ///   choose different molds.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2237,13 +2471,7 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::dry_runs_restore_exact_state`
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
     /// - witness: `mold::tests::a_window_reads_the_token_after_a_tied_separator`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body walks the same candidate menu to filter it by admissibility"
-        )
-    )]
+    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), ensures: |ret| ret.map_or_else(|| self.candidates.is_empty(), |mold| self.candidates.contains(&mold)))]
     fn choose(
         &mut self,
@@ -2252,21 +2480,75 @@ impl<'pbg> Molder<'pbg>
         ahead: Ahead<'_, '_>,
     ) -> Option<MoldId>
     {
+        let procedure = match self.verdicts {
+            | MoldVerdicts::Tables => Procedure::Tables,
+            | MoldVerdicts::DryRuns => Procedure::DryRuns,
+            | MoldVerdicts::Differential => return self.choose_both(state, text, ahead),
+        };
+        self.choose_by(state, text, ahead, procedure)
+    }
+
+    /// Choose as [`choose`](Self::choose) does by both procedures, counting a
+    /// disagreement, and keep the dry runs' verdict.
+    ///
+    /// # Specification
+    /// - requires: as [`choose`](Self::choose).
+    /// - ensures: the dry runs' choice; the disagreement count grows by one
+    ///   when the two procedures admit different menus or choose different
+    ///   molds.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the differential witness reads every decision of the
+    ///   corpus, the drop matrix and the editor scenario through this
+    ///   comparison; a comparison that missed the menus or the choice would let
+    ///   a table verdict differ unseen.
+    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[cold]
+    #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = self.disagreements, ensures: |ret| self.disagreements >= before && ret.map_or_else(|| self.candidates.is_empty(), |mold| self.candidates.contains(&mold)))]
+    fn choose_both(
+        &mut self,
+        state: &mut MeldState<'_>,
+        text: TokenText<'_>,
+        ahead: Ahead<'_, '_>,
+    ) -> Option<MoldId>
+    {
+        let oracle = self.choose_by(state, text, ahead, Procedure::DryRuns);
+        let admitted = self.eligible.clone();
+        let table = self.choose_by(state, text, ahead, Procedure::Tables);
+        if table != oracle || self.eligible != admitted {
+            self.disagreements.0 = self.disagreements.0.saturating_add(1);
+        }
+        oracle
+    }
+
+    /// Choose as [`choose`](Self::choose) does, through `procedure`.
+    ///
+    /// # Specification
+    /// - requires: as [`choose`](Self::choose).
+    /// - ensures: as [`choose`](Self::choose), for either procedure; the
+    ///   admitted menu is left in `self.eligible`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`choose`](Self::choose); the differential witness
+    ///   reads the two procedures against each other.
+    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), ensures: |ret| ret.map_or_else(|| self.candidates.is_empty(), |mold| self.candidates.contains(&mold)))]
+    fn choose_by(
+        &mut self,
+        state: &mut MeldState<'_>,
+        text: TokenText<'_>,
+        ahead: Ahead<'_, '_>,
+        procedure: Procedure,
+    ) -> Option<MoldId>
+    {
         // Fast path: the pre-filter usually collapses the menu to
         // a lone admissible candidate, which needs no dry-run at all — the whole
         // point of the filter, and what keeps the batch cost inside budget. The
         // admissibility frontier is computed once and reused for every candidate.
         let frontier = state.admissibility_frontier();
-        self.eligible.clear();
-        for slot in 0 .. self.candidates.len() {
-            let Some(&mold) = self.candidates.get(slot)
-            else {
-                break;
-            };
-            if bool::from(state.admits_at(mold, &frontier)) {
-                self.eligible.push(mold);
-            }
-        }
+        self.admit(state, &frontier, procedure, None);
         if let [sole] = *self.eligible.as_slice() {
             return Some(sole);
         }
@@ -2280,7 +2562,7 @@ impl<'pbg> Molder<'pbg>
         // ties, in ascending `MoldId` order. The expensive `completion` finalize
         // only breaks a residual key-tie, and the overwhelming majority of
         // tokens have a unique key minimum, so the finalize never runs for them.
-        self.least_candidates(state, text, &frontier);
+        self.least_candidates(state, text, &frontier, procedure);
         if self.tied.len() <= 1 {
             return self.tied.first().copied();
         }
@@ -2302,14 +2584,30 @@ impl<'pbg> Molder<'pbg>
         // Pass two: break the key-tie by the single-token completion penalty,
         // keeping the smaller `MoldId` on a further tie (ascending visitation).
         // An empty completion is the least there is, so no later tie can beat
-        // it.
+        // it. Through the tables a push class's completion is read once: the
+        // chain the classes are keyed over is the one `least_candidates` read
+        // from this unchanged state.
+        self.completions.clear();
         let mut best: Option<(Delta, MoldId)> = None;
         for slot in 0 .. self.tied.len() {
             let Some(&mold) = self.tied.get(slot)
             else {
                 break;
             };
-            let completion = Self::completion(state, mold, text);
+            let completion = match procedure {
+                | Procedure::DryRuns => Self::completion(state, mold, text),
+                | Procedure::Tables => {
+                    let class = self.chain.key(self.pbg, mold);
+                    match self.completions.iter().find(|&&(held, _)| held == class) {
+                        | Some(&(_, completion)) => completion,
+                        | None => {
+                            let completion = Self::completion(state, mold, text);
+                            self.completions.push((class, completion));
+                            completion
+                        },
+                    }
+                },
+            };
             if best
                 .as_ref()
                 .is_none_or(|&(best_completion, _mold)| completion < best_completion)
@@ -2321,6 +2619,67 @@ impl<'pbg> Molder<'pbg>
             }
         }
         best.map(|(_, mold)| mold)
+    }
+
+    /// Admit the gathered menu into `self.eligible` through `procedure`: each
+    /// candidate [`MeldState::admits_at`] admits, or the tables' [`Admission`]
+    /// does, which answers alike; on the stream, only the direct rule binder
+    /// the tokens after it bear out. The tables compose an admission context
+    /// only for a menu wider than [`ADMISSION_MENU`]: a narrower one is
+    /// admitted candidate by candidate, which costs less than composing it.
+    ///
+    /// # Specification
+    /// - requires: `frontier` is `state`'s admissibility frontier; `binder`
+    ///   names the stream and the token's index when the token is molded on the
+    ///   stream.
+    /// - ensures: `self.eligible` holds, in menu order, exactly the candidates
+    ///   `admits_at` admits at `frontier` and, with `binder`, whose
+    ///   direct-binder reading the stream bears out.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the differential witness compares the two procedures'
+    ///   admitted menus at every decision.
+    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same candidate menu to filter it by admissibility"
+        )
+    )]
+    #[spec(ensures: |()| self.eligible.iter().all(|mold| self.candidates.contains(mold)))]
+    fn admit(
+        &mut self,
+        state: &MeldState<'_>,
+        frontier: &Frontier,
+        procedure: Procedure,
+        binder: Option<(&[Token], TokenIndex, &SourceFragment<'_>)>,
+    )
+    {
+        self.eligible.clear();
+        let mut admission = (procedure == Procedure::Tables
+            && self.candidates.len() > ADMISSION_MENU)
+            .then(|| Admission::new(self.pbg, frontier));
+        for slot in 0 .. self.candidates.len() {
+            let Some(&mold) = self.candidates.get(slot)
+            else {
+                break;
+            };
+            let admitted = match admission.as_mut() {
+                | Some(admission) => admission.admits(mold),
+                | None => state.admits_at(mold, frontier),
+            };
+            let kept = match binder {
+                | Some((tokens, index, source)) => bool::from(
+                    self.direct_rule_binder_admits(mold, frontier, admitted, tokens, index, source),
+                ),
+                | None => bool::from(admitted),
+            };
+            if kept {
+                self.eligible.push(mold);
+            }
+        }
     }
 
     /// Return whether a direct circuit-rule binder opener has a binder-shaped
@@ -2336,9 +2695,11 @@ impl<'pbg> Molder<'pbg>
     ///
     /// # Specification
     /// - requires: `tokens` is the labeler output for `source`; `index` names
-    ///   the current `(` token.
-    /// - ensures: returns `true` only for the direct circuit binder opener when
-    ///   the next significant tokens have its binder prefix.
+    ///   the current `(` token; `admitted` is whether the frontier admits
+    ///   `mold`.
+    /// - ensures: returns `true` only for an admitted mold, and for the direct
+    ///   circuit binder opener only when the next significant tokens have its
+    ///   binder prefix.
     /// - provides: batch-only disambiguation for the direct circuit binder.
     /// - fails: never; missing lookahead rejects the direct reading.
     /// - panics: none.
@@ -2349,18 +2710,18 @@ impl<'pbg> Molder<'pbg>
     ///   grammar form. Admitting an otherwise forbidden mold or confusing a
     ///   colon-bearing binder with a call changes the committed structure.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
-    #[spec(ensures: |ret| !bool::from(ret) || bool::from(state.admits_at(mold, frontier)))]
+    #[spec(ensures: |ret| !bool::from(ret) || bool::from(admitted))]
     fn direct_rule_binder_admits(
         &self,
-        state: &MeldState<'_>,
         mold: MoldId,
         frontier: &Frontier,
+        admitted: MoldAdmissibility,
         tokens: &[Token],
         index: TokenIndex,
         source: &SourceFragment<'_>,
     ) -> DirectRuleBinderAdmission
     {
-        if !bool::from(state.admits_at(mold, frontier)) {
+        if !bool::from(admitted) {
             return DirectRuleBinderAdmission::from(false);
         }
         if frontier.expected != Sort::Expression || bool::from(frontier.head_operand) {
@@ -2437,12 +2798,16 @@ impl<'pbg> Molder<'pbg>
     /// and the reading whose window closes with the fewest obligations wins
     /// — deterministically, keeping the smaller [`MoldId`] on an exact
     /// window tie. When the local minimum is unique the fast path returns
-    /// it directly.
+    /// it directly. Through the tables the openers of one window class share
+    /// the least member's window (`crate::tables`). A differential molder
+    /// decides both ways and pushes the dry runs' verdict.
     ///
     /// # Specification
     /// - requires: candidates are canonical for the current token.
     /// - ensures: returns no choice for an absent token or empty menu;
-    ///   otherwise selects a grammar mold by bounded lookahead.
+    ///   otherwise selects a grammar mold by bounded lookahead. A differential
+    ///   molder counts the decision as a disagreement when the two procedures
+    ///   admit different menus or choose different molds.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2452,13 +2817,7 @@ impl<'pbg> Molder<'pbg>
     ///   mutations change the checkpoint bytes.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     /// - witness: `mold::tests::lookahead_window_stops_after_eight_significant_tokens`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body walks the same candidate menu to filter it by admissibility"
-        )
-    )]
+    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = (self.candidates.len(), tokens.get(index.0).is_some()), ensures: |ret| ret.is_some() == (before.1 && before.0 > 0) && ret.is_none_or(|mold| self.pbg.mold(mold).is_ok()))]
     fn choose_stream<'src>(
         &mut self,
@@ -2468,6 +2827,85 @@ impl<'pbg> Molder<'pbg>
         source: &'src SourceFragment<'src>,
     ) -> Option<MoldId>
     {
+        let procedure = match self.verdicts {
+            | MoldVerdicts::Tables => Procedure::Tables,
+            | MoldVerdicts::DryRuns => Procedure::DryRuns,
+            | MoldVerdicts::Differential => {
+                return self.choose_stream_both(state, tokens, index, source);
+            },
+        };
+        self.choose_stream_by(state, tokens, index, source, procedure)
+    }
+
+    /// Choose as [`choose_stream`](Self::choose_stream) does by both
+    /// procedures, counting a disagreement, and keep the dry runs' verdict.
+    ///
+    /// # Specification
+    /// - requires: as [`choose_stream`](Self::choose_stream).
+    /// - ensures: the dry runs' choice, the menu as it was given; the
+    ///   disagreement count grows by one when the two procedures admit
+    ///   different menus or choose different molds.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the differential witness reads every decision of the
+    ///   corpus, the drop matrix and the editor scenario through this
+    ///   comparison; a comparison that missed the menus, the choice, or a menu
+    ///   one procedure's windows gathered over would let a table verdict differ
+    ///   unseen.
+    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[cold]
+    #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = (self.candidates.len(), tokens.get(index.0).is_some(), self.disagreements), ensures: |ret| self.disagreements >= before.2 && ret.is_some() == (before.1 && before.0 > 0) && ret.is_none_or(|mold| self.pbg.mold(mold).is_ok()))]
+    fn choose_stream_both<'src>(
+        &mut self,
+        state: &mut MeldState<'_>,
+        tokens: &[Token],
+        index: TokenIndex,
+        source: &'src SourceFragment<'src>,
+    ) -> Option<MoldId>
+    {
+        // The windows gather over the menu, so each procedure starts from a
+        // copy of it; the admitted menus are compared before either runs.
+        let menu = self.candidates.clone();
+        let frontier = state.admissibility_frontier();
+        let binder = Some((tokens, index, source));
+        self.admit(state, &frontier, Procedure::DryRuns, binder);
+        let admitted = self.eligible.clone();
+        self.admit(state, &frontier, Procedure::Tables, binder);
+        let admitted_alike = self.eligible == admitted;
+        let oracle = self.choose_stream_by(state, tokens, index, source, Procedure::DryRuns);
+        self.candidates.clone_from(&menu);
+        let table = self.choose_stream_by(state, tokens, index, source, Procedure::Tables);
+        self.candidates = menu;
+        if table != oracle || !admitted_alike {
+            self.disagreements.0 = self.disagreements.0.saturating_add(1);
+        }
+        oracle
+    }
+
+    /// Choose as [`choose_stream`](Self::choose_stream) does, through
+    /// `procedure`.
+    ///
+    /// # Specification
+    /// - requires: as [`choose_stream`](Self::choose_stream).
+    /// - ensures: as [`choose_stream`](Self::choose_stream), for either
+    ///   procedure.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`choose_stream`](Self::choose_stream); the
+    ///   differential witness reads the two procedures against each other.
+    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = (self.candidates.len(), tokens.get(index.0).is_some()), ensures: |ret| ret.is_some() == (before.1 && before.0 > 0) && ret.is_none_or(|mold| self.pbg.mold(mold).is_ok()))]
+    fn choose_stream_by<'src>(
+        &mut self,
+        state: &mut MeldState<'_>,
+        tokens: &[Token],
+        index: TokenIndex,
+        source: &'src SourceFragment<'src>,
+        procedure: Procedure,
+    ) -> Option<MoldId>
+    {
         let token = *tokens.get(usize::from(index))?;
         let slice = token.text(source);
         let text = TokenText::from(AsRef::<str>::as_ref(&slice));
@@ -2475,18 +2913,7 @@ impl<'pbg> Molder<'pbg>
         // Fast path: a lone admissible candidate needs no dry-run.
         // The admissibility frontier is computed once and reused per candidate.
         let frontier = state.admissibility_frontier();
-        self.eligible.clear();
-        for slot in 0 .. self.candidates.len() {
-            let Some(&mold) = self.candidates.get(slot)
-            else {
-                break;
-            };
-            if bool::from(
-                self.direct_rule_binder_admits(state, mold, &frontier, tokens, index, source),
-            ) {
-                self.eligible.push(mold);
-            }
-        }
+        self.admit(state, &frontier, procedure, Some((tokens, index, source)));
         if let [sole] = *self.eligible.as_slice() {
             return Some(sole);
         }
@@ -2497,7 +2924,7 @@ impl<'pbg> Molder<'pbg>
         // MoldId order (the process-invariant tie-break). Each tied opener's
         // window scores its own tokens into `self.tied`, so the openers move
         // to their own buffer.
-        self.least_candidates(state, text, &frontier);
+        self.least_candidates(state, text, &frontier, procedure);
         if self.tied.len() <= 1 {
             return self.tied.first().copied();
         }
@@ -2523,11 +2950,55 @@ impl<'pbg> Molder<'pbg>
         {
             return Some(mold);
         }
+        // Through the tables, each opener's window class: its push key over
+        // the chain `least_candidates` read from this state, and its window
+        // signature over the window's tokens and the one after them, which
+        // the window's last tie reads. Openers share a window only when their
+        // push keys agree, so a tie whose keys are all distinct molds every
+        // window as the dry runs do and signs none.
+        let mut classed = false;
+        if procedure == Procedure::Tables {
+            self.opener_keys.clear();
+            for slot in 0 .. self.openers.len() {
+                if let Some(&opener) = self.openers.get(slot) {
+                    self.opener_keys.push(self.chain.key(self.pbg, opener));
+                }
+            }
+            self.shared_keys.clone_from(&self.opener_keys);
+            self.shared_keys.sort_unstable();
+            classed = self
+                .shared_keys
+                .windows(2)
+                .any(|pair| matches!(pair, [left, right] if left == right));
+        }
+        if classed {
+            let mut window = [TokenLabels::new(); LOOKAHEAD + 1];
+            let mut positions = 0_usize;
+            let mut cursor = index;
+            while let Some((next, _token)) = next_significant(tokens, cursor)
+                && let Some(labels) = next_labels(tokens, cursor, source)
+                && let Some(slot) = window.get_mut(positions)
+            {
+                *slot = labels;
+                positions = positions.saturating_add(1);
+                cursor = next;
+            }
+            self.windows.classify(
+                self.pbg,
+                &self.openers,
+                window.get(.. positions).unwrap_or(&[]),
+                &mut self.opener_classes,
+            );
+            self.windowed.clear();
+        }
         // A shared-prefix family: break the tie by a bounded greedy lookahead.
         // Windows run in ascending MoldId order and a later opener wins only
         // with a strictly smaller delta, so each window after the first is
         // bounded by the best delta so far: a window delta never shrinks as
-        // tokens are molded, and one that reaches the bound cannot win.
+        // tokens are molded, and one that reaches the bound cannot win. A
+        // class's least member molds first; a later member's window is the
+        // same window unless the first gathered a whole declared menu, so it
+        // ties or is dominated and cannot win.
         let start = TokenIndex::from(usize::from(index).saturating_add(1));
         let mut best: Option<(Delta, MoldId)> = None;
         for slot in 0 .. self.openers.len() {
@@ -2535,12 +3006,42 @@ impl<'pbg> Molder<'pbg>
             else {
                 break;
             };
+            let class = if classed {
+                self.opener_keys
+                    .get(slot)
+                    .copied()
+                    .zip(self.opener_classes.get(slot).copied())
+            }
+            else {
+                None
+            };
+            let first_of_class = match class {
+                | Some((key, signature)) => {
+                    match self
+                        .windowed
+                        .iter()
+                        .find(|&&(held, seen, _)| (held, seen) == (key, signature))
+                    {
+                        | Some(&(_, _, WindowRun::Shared)) => continue,
+                        | Some(&(_, _, WindowRun::Exposed)) => false,
+                        | None => true,
+                    }
+                },
+                | None => false,
+            };
+            self.exposed = false;
             let mark = state.mark();
             state.push_text(mold, TileText::from(text));
+            // The opener's cell is the slope's top: everything at or above
+            // it is the opener's form or the window's. Only a class's first
+            // window is recorded, so only it watches for exposure.
+            self.window_floor = first_of_class
+                .then(|| SlopeHeight::from(usize::from(state.slope_height()).saturating_sub(1)));
             let bound = best.map_or(WindowBound::Unbounded, |(delta, _mold)| {
                 WindowBound::Below(delta)
             });
             let end = self.mold_window(state, tokens, start, source, &mark, bound);
+            self.window_floor = None;
             if end == WindowEnd::Molded {
                 let delta = state.completion_delta(state.delta_since(&mark));
                 // Ascending MoldId visitation with a strict `<` keeps the
@@ -2554,6 +3055,15 @@ impl<'pbg> Molder<'pbg>
                 }
             }
             state.rollback_to(&mark);
+            if first_of_class && let Some((key, signature)) = class {
+                let run = if self.exposed {
+                    WindowRun::Exposed
+                }
+                else {
+                    WindowRun::Shared
+                };
+                self.windowed.push((key, signature, run));
+            }
         }
         best.map(|(_, mold)| mold)
     }

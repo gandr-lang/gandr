@@ -13,6 +13,9 @@
 //! - [`walk_index`] instantiates the theory-graphs walk machine over a
 //!   grammar's molds; [`comparison_table`] reads the operator-precedence
 //!   relation off it.
+//! - [`Pbg::tile_kind`], [`Pbg::observation`] and [`Pbg::tile_set`] read the
+//!   tile automaton: each mold's kind and observation class, and the sets a
+//!   parser admits by kind and sort, as bitsets derived once per grammar.
 //! - [`built_in`] is the gandr surface: [`built_in_prec_table`]'s groups and
 //!   the term, type-and-shell and circuit forms.
 //! - [`named_kind_parity`] is the inventory of how each named kind of the
@@ -90,6 +93,7 @@
 
 extern crate alloc;
 
+mod automaton;
 mod check;
 mod highlight;
 mod model;
@@ -98,6 +102,13 @@ mod parity;
 mod surface;
 mod walk;
 
+pub use crate::automaton::MoldSet;
+pub use crate::automaton::MoldWord;
+pub use crate::automaton::MoldWordIndex;
+pub use crate::automaton::Observation;
+pub use crate::automaton::TileKind;
+pub use crate::automaton::TileSet;
+pub use crate::automaton::TileTableBytes;
 pub use crate::check::validate_assumption_3;
 pub use crate::check::validate_operator_form;
 pub use crate::check::validate_unique_tiles;
@@ -129,6 +140,7 @@ pub use crate::mold::MoldDef;
 pub use crate::mold::MoldHasPredecessor;
 pub use crate::mold::MoldHasRequiredTail;
 pub use crate::mold::MoldHasSuccessor;
+pub use crate::mold::MoldInSet;
 pub use crate::mold::MoldIsFormFirst;
 pub use crate::mold::MoldIsFormLast;
 pub use crate::mold::MoldsAdjacent;

@@ -23,11 +23,24 @@
 //! while the incremental path the line cadence still drives at every
 //! keystroke is what the replay is for; the scripted and random sessions, on
 //! short texts, keep the keystroke cadence.
+//!
+//! Every keystroke's text is also molded by a molder that decides each token
+//! both by its tables and by the dry runs they replace, form run by form run
+//! as a session molds it, and the two must agree. With specifications
+//! enforced that differential takes the oracle's cadence.
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use std::sync::LazyLock;
 
 use anodized::spec;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::built_in;
+use gandr_surface_parser::DisagreementCount;
+use gandr_surface_parser::FormSplit;
+use gandr_surface_parser::MoldVerdicts;
+use gandr_surface_parser::Molder;
+use gandr_surface_syntax::SourceText;
 use serde_json::Value;
 use serde_json::json;
 
@@ -48,6 +61,10 @@ const WHOLE: [Method; 3] = [
     Method("textDocument/documentSymbol"),
     Method("textDocument/foldingRange"),
 ];
+
+/// The built-in grammar, which the server parses with, built once for the
+/// differential molds.
+static GRAMMAR: LazyLock<Pbg> = LazyLock::new(|| built_in().expect("the built-in grammar builds"));
 
 /// When a session consults the oracle.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -392,12 +409,15 @@ impl Session
     /// # Specification
     /// - requires: the latest publication is in `published`.
     /// - ensures: the inline completion at the cursor answers without an error,
-    ///   once. Against the oracle, the hover and selection ranges at the cursor
-    ///   answer likewise, and the published diagnostics, the whole-document
-    ///   answers and the inline completion and selection ranges at the cursor
-    ///   equal a fresh connection's for the buffer's text.
+    ///   once, and the buffer's text molds alike by the molder's tables and by
+    ///   its dry runs, form run by form run as a session molds it. Against the
+    ///   oracle, the hover and selection ranges at the cursor answer likewise,
+    ///   and the published diagnostics, the whole-document answers and the
+    ///   inline completion and selection ranges at the cursor equal a fresh
+    ///   connection's for the buffer's text.
     /// - provides: the per-keystroke invariants.
-    /// - panics: a query is refused or answered twice, or an answer disagrees.
+    /// - panics: a query is refused or answered twice, an answer disagrees, or
+    ///   a decision of the molder's tables differs from its dry runs'.
     /// - executable: none — the answers compared are the two connections'
     ///   replies, read and asserted inside the call; it returns nothing and
     ///   keeps no record of them.
@@ -406,7 +426,9 @@ impl Session
     /// - hypothesis: L2 — the oracle is a fresh connection opening the text
     ///   whole, external to the incremental path; an incremental reparse, a
     ///   stale form or a text applied differently changes some text-derived
-    ///   answer at the keystroke that caused it, or by the next line.
+    ///   answer at the keystroke that caused it, or by the next line. The
+    ///   molder's dry runs are the oracle of its tables: a table verdict that
+    ///   differs on an intermediate text fails at that keystroke.
     /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
     /// - witness: `editor::editor::scenarios::random_edits_keep_every_answer_faithful`
     fn check(
@@ -414,6 +436,21 @@ impl Session
         cadence: Oracle,
     )
     {
+        // With specifications enforced, both procedures' clauses run at
+        // every decision, so the differential takes the oracle's cadence.
+        if cadence == Oracle::Keystroke || !cfg!(anodized_panic) {
+            let mut molder = Molder::with_verdicts(&GRAMMAR, MoldVerdicts::Differential);
+            let split = FormSplit::new(&molder, SourceText::from(self.buffer.text().0));
+            for &run in split.runs() {
+                let _unit = split.mold(&mut molder, run);
+            }
+            assert_eq!(
+                DisagreementCount(0),
+                molder.disagreements(),
+                "the molder's tables decide as its dry runs do{}",
+                self.scene()
+            );
+        }
         let document = json!({ "uri": self.uri });
         let at = json!({ "textDocument": document, "position": self.buffer.position().json() });
         let inline = json!({
