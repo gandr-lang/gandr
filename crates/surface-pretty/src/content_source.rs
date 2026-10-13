@@ -104,7 +104,7 @@ impl Source for ContentSource<'_>
 &ContentNode::Unresolved(_) | &ContentNode::Hole(_) | &ContentNode::ValueMark { .. } |
 &ContentNode::ComputationHole(_) | &ContentNode::ComputationMark { .. } |
 &ContentNode::UnknownType | &ContentNode::UnknownComputationType |
-&ContentNode::PathType { .. } | &ContentNode::Here(_) | &ContentNode::Returned(_)) | None, Former::Unreadable) |
+&ContentNode::PathType { .. } | &ContentNode::Returned(_)) | None, Former::Unreadable) |
 (Some(&ContentNode::Reify(_)), Former::Reify) |
 (Some(&ContentNode::DataCase { .. } | &ContentNode::RecordProjection(..) | &ContentNode::TupleProjection(..) |
 &ContentNode::Primitive(..) | &ContentNode::Transport(..) | &ContentNode::ElementTransport { .. } |
@@ -140,6 +140,7 @@ impl Source for ContentSource<'_>
         (Some(held), Former::Unit) => matches!(*held, ContentNode::Tuple(ref components) if components.is_empty()),
         (Some(held), Former::Tuple(arity)) => matches!(*held, ContentNode::Tuple(ref components) if !components.is_empty() && components.len() == usize::from(arity)),
         (Some(&ContentNode::PathRefl(a)), Former::PathRefl(b))
+        | (Some(&ContentNode::Here(a)), Former::Here(b))
         | (Some(&ContentNode::Quote(a)), Former::Quote(b))
         | (Some(&ContentNode::QuoteComputation(a)), Former::QuoteComputation(b))
         | (Some(&ContentNode::List(a)), Former::List(b))
@@ -203,6 +204,7 @@ impl Source for ContentSource<'_>
             | ContentNode::Fixpoint { .. } => Former::Computation,
             | ContentNode::PathUniverse(source, target) => Former::PathUniverse(source, target),
             | ContentNode::PathRefl(code) => Former::PathRefl(code),
+            | ContentNode::Here(point) => Former::Here(point),
             | ContentNode::PathProduct(first, second) => Former::PathProduct(first, second),
             | ContentNode::PathEquiv {
                 forward, backward, ..
@@ -257,6 +259,10 @@ impl Source for ContentSource<'_>
                 Former::StaticApplication(operator, argument)
             },
             | ContentNode::StaticPi { domain, codomain } => Former::StaticPi { domain, codomain },
+            // Data has no printer reader. A hole or a mark is displayed by
+            // the session. `Path` carries three children, more than a bracket
+            // join holds, and a compound endpoint has no former of its own.
+            // Element identity is `here`.
             | ContentNode::Data { .. }
             | ContentNode::Constructor { .. }
             | ContentNode::Unresolved(_)
@@ -265,12 +271,9 @@ impl Source for ContentSource<'_>
             | ContentNode::ComputationHole(_)
             | ContentNode::ComputationMark { .. }
             | ContentNode::UnknownType
-            | ContentNode::UnknownComputationType => Former::Unreadable,
-            // The printer spells element identity as unknown: its brackets
-            // carry at most two children, and `Path` carries three.
-            | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) => {
-                Former::Unreadable
-            },
+            | ContentNode::UnknownComputationType
+            | ContentNode::PathType { .. }
+            | ContentNode::Returned(_) => Former::Unreadable,
         }
     }
 

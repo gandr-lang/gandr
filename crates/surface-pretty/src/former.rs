@@ -311,6 +311,8 @@ pub enum Former<'source, Node>
     /// A static application of an operator to one argument; the printer
     /// spells a spine of them as one application, `f(a, b)`.
     StaticApplication(Node, Node),
+    /// Element identity `here(a)`, the reflexivity the surface writes.
+    Here(Node),
     /// A computation term, which no position the printer fills admits.
     Computation,
     /// A handle that names no node, or a node whose name the source cannot

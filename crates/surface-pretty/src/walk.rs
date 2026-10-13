@@ -57,6 +57,17 @@
 //! `native_paths_preserve_ordered_endpoints_and_maps` checks the order and
 //! approximation boundary through public presentation.
 //!
+//! # Element identity
+//!
+//! `here(a)` is the surface spelling of element identity, and it is faithful:
+//! the grammar parses the call and the lowering mints the witness. It is not
+//! the native `refl`, which stays approximate. The point is the call's one
+//! argument, so a pair reads `here(#{2, 2})`.
+//!
+//! - **Alternatives.** Writing `?`, the spelling of a node the surface does not
+//!   write, would hide a former the grammar parses.
+//! - **Reversal.** A ruled change to the identity spelling.
+//!
 //! # Break points
 //!
 //! A break point is a choice between the byte the one-line spelling carries
@@ -265,7 +276,7 @@ enum Kind
         | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk | Former::ValueLift
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
-        | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..)),
+        | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_)),
     | Kind::Computation => matches!(*former, Former::Computation),
     | Kind::Unknown => matches!(*former, Former::Unreadable),
 })]
@@ -309,7 +320,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Quote(_)
         | Former::QuoteComputation(_)
         | Former::StaticLambda(_)
-        | Former::StaticApplication(..) => Kind::Value,
+        | Former::StaticApplication(..)
+        | Former::Here(_) => Kind::Value,
         | Former::Computation => Kind::Computation,
         | Former::Unreadable => Kind::Unknown,
     }
@@ -482,7 +494,7 @@ enum Children<Node>
         Children::One(Slot { admits: Admits::CompType, .. })),
     | Former::List(_) | Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Quote(_) => matches!(ret,
         Children::One(Slot { admits: Admits::ValueType, .. })),
-    | Former::PathRefl(_) | Former::Element(_) | Former::ComputationElement(_) | Former::Injection(..) | Former::StaticLambda(_) => matches!(ret,
+    | Former::PathRefl(_) | Former::Here(_) | Former::Element(_) | Former::ComputationElement(_) | Former::Injection(..) | Former::StaticLambda(_) => matches!(ret,
         Children::One(Slot { admits: Admits::Value, .. })),
     | _ => matches!(ret, Children::None),
 })]
@@ -545,7 +557,8 @@ where
         | Former::Element(child)
         | Former::ComputationElement(child)
         | Former::Injection(_, child)
-        | Former::StaticLambda(child) => Children::One(slot(child, Admits::Value)),
+        | Former::StaticLambda(child)
+        | Former::Here(child) => Children::One(slot(child, Admits::Value)),
         | Former::BaseType(_)
         | Former::Universe { .. }
         | Former::TypeLift
@@ -702,6 +715,8 @@ enum Bracket
     Stack,
     /// A native path classifier.
     PathUniverse,
+    /// Element identity, `here(a)`.
+    Here,
     /// Native reflexivity.
     PathRefl,
     /// A native equivalence's maps.
@@ -1723,6 +1738,7 @@ impl Walk<'_, '_, '_>
                 self.fidelity = Fidelity::Approximate;
                 Some(Join::Bracket(Bracket::PathRefl))
             },
+            | Former::Here(_) => Some(Join::Bracket(Bracket::Here)),
             | Former::PathEquiv(..) => {
                 self.fidelity = Fidelity::Approximate;
                 Some(Join::Bracket(Bracket::PathEquiv))
@@ -2004,7 +2020,7 @@ impl Walk<'_, '_, '_>
     /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
-            Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Bracket(Bracket::PathRefl) => Some(1_usize),
+            Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Bracket(Bracket::PathRefl | Bracket::Here) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } => Some(count),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
             Join::Arrow | Join::Pi | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct) => Some(2_usize),
@@ -2141,10 +2157,16 @@ impl Walk<'_, '_, '_>
                             | Bracket::PathProduct => "pathProduct(",
                             | Bracket::ListCons => "cons(",
                             | Bracket::PathRefl => "refl(",
+                            | Bracket::Here => "here(",
                         }))?;
                         let comma = self.leaf(Glyphs(","))?;
                         let comma = self.space_or_break(comma)?;
                         items.extend([opener, first.doc, comma, second.doc]);
+                    },
+                    | Bracket::Here => {
+                        let body = self.pop()?;
+                        let opener = self.leaf(Glyphs("here("))?;
+                        items.extend([opener, body.doc]);
                     },
                     | Bracket::PathRefl => {
                         let body = self.pop()?;
