@@ -53,6 +53,7 @@ use std::path::PathBuf;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
+use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::Verdict;
 use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
@@ -114,8 +115,8 @@ enum Root
 /// - requires: the fixture producer preserves the source and boundary
 ///   correspondence represented.
 /// - ensures: Distinguishes definitions and assumptions that enter the artifact
-///   from marked, withheld, static, unfinished, session and never-offered
-///   declarations.
+///   from marked, withheld, static, unfinished, session, unrepresentable and
+///   never-offered declarations.
 /// - panics: none.
 /// - executable: none — The enum holds no checker/readmission pair or artifact;
 ///   `class_of`, `export` and the partition witness establish its
@@ -155,6 +156,10 @@ enum Class
     /// The checker accepted it holding a session, which the kernel has no
     /// former for: it stays on the checker's side.
     Session,
+    /// The checker accepted it, and it holds this former, which the pure
+    /// kernel has no rule for: an effectful declaration — a capability, its
+    /// exercise, its scope — stays on the checker's side.
+    Unrepresentable(UnadmittedFormer),
     /// The lowering refused it, under this name, and nothing was offered.
     NeverOffered(RefusalName),
 }
@@ -301,8 +306,9 @@ fn sources(root: Root) -> Vec<PathBuf>
 /// - requires: the checker verdict and kernel readmission agree: accepted
 ///   definitions or static operators, owed assumptions, matching refusal marks,
 ///   accepted/owed declarations withheld by a dependency, accepted/owed
-///   declarations holding a hole or the unknown type, or accepted declarations
-///   holding a session.
+///   declarations holding a hole or the unknown type, accepted declarations
+///   holding a session, or accepted/owed declarations holding a former the pure
+///   kernel has no rule for.
 /// - ensures: returns exactly the corresponding boundary class, retaining the
 ///   checker refusal’s canonical name for a mark.
 /// - panics: when the fixture’s verdict and readmission disagree.
@@ -326,6 +332,7 @@ fn sources(root: Root) -> Vec<PathBuf>
             | bridge::Refusal::Hole { .. }
             | bridge::Refusal::Unknown { .. }
             | bridge::Refusal::Session { .. }
+            | bridge::Refusal::OutOfFragment { .. }
         )),
     )
     | (
@@ -335,6 +342,7 @@ fn sources(root: Root) -> Vec<PathBuf>
             bridge::Refusal::Withheld { .. }
             | bridge::Refusal::Hole { .. }
             | bridge::Refusal::Unknown { .. }
+            | bridge::Refusal::OutOfFragment { .. }
         )),
     )
     | (Verdict::Data, &bridge::Outcome::Data { .. }) => true,
@@ -357,6 +365,11 @@ fn sources(root: Root) -> Vec<PathBuf>
         Class::Unfinished,
     )
     | (_, &bridge::Outcome::Refused(bridge::Refusal::Session { .. }), Class::Session) => true,
+    (
+        _,
+        &bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. }),
+        Class::Unrepresentable(found),
+    ) => former == found,
     (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark), Class::Marked(name)) => {
         refusal == mark && name == Refusal::Checking(refusal).name()
     }
@@ -396,6 +409,10 @@ fn class_of(
             Verdict::Checked { .. } | Verdict::Synthesised { .. },
             &bridge::Outcome::Refused(bridge::Refusal::Session { .. }),
         ) => Class::Session,
+        | (
+            Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
+            &bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. }),
+        ) => Class::Unrepresentable(former),
         | (verdict, outcome) => panic!(
             "{}: the verdict {verdict:?} and the kernel's outcome {outcome:?} disagree",
             path.display()

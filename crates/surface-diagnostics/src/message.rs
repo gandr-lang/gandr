@@ -515,6 +515,7 @@ fn checked(
                 | CheckingForm::Fixpoint(_) => "a recursive definition",
                 | CheckingForm::Nested(_) => "a computation written where a value is read",
                 | CheckingForm::Offer(_) => "an offer",
+                | CheckingForm::Scope(_) => "a capability scope",
             }
         ),
         | CheckRefusal::UnknownConstant { .. } => {
@@ -638,6 +639,24 @@ fn checked(
             | LinearityDefect::Unbound { .. } => {
                 f.write_str("internal error: a session action names an endpoint no `fork` opened")
             },
+        },
+        | CheckRefusal::CapabilityForged { .. } => f.write_str(
+            "a capability cannot be made from a term; only one held or granted can stand here",
+        ),
+        | CheckRefusal::CapabilityAmplified(_) => {
+            f.write_str("this capability grants less than the one expected here")
+        },
+        | CheckRefusal::CapabilityOutsideAuthority { .. } => {
+            f.write_str("the capability does not grant this operation")
+        },
+        | CheckRefusal::CapabilityEscaped { .. } => {
+            f.write_str("a capability its scope introduced would outlive the scope here")
+        },
+        | CheckRefusal::CapabilityConsumable(_) => {
+            f.write_str("a consumable capability is not supported")
+        },
+        | CheckRefusal::CapabilityUngranted { .. } => {
+            f.write_str("this capability claims authority the host did not grant")
         },
     }
 }
@@ -1115,6 +1134,28 @@ mod tests
                 defect: LinearityDefect::Unbound {
                     index: DeBruijnIndex::from(0_u32),
                 },
+            },
+            CheckRefusal::CapabilityForged {
+                at: value,
+                expected: value_type,
+            },
+            CheckRefusal::CapabilityAmplified(Mismatch::Value {
+                at: value,
+                synthesised: value_type,
+                expected: value_type,
+            }),
+            CheckRefusal::CapabilityOutsideAuthority {
+                at: computation,
+                capability: value_type,
+            },
+            CheckRefusal::CapabilityEscaped {
+                at: TermNode::Value(value),
+                found: TypeNode::Value(value_type),
+            },
+            CheckRefusal::CapabilityConsumable(value_type),
+            CheckRefusal::CapabilityUngranted {
+                constant: ConstantIndex::from(0_usize),
+                declared: value_type,
             },
             CheckRefusal::UnenclosedRun { at: value },
         ]

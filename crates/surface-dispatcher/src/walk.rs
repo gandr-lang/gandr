@@ -88,6 +88,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use anodized::spec;
+use gandr_core_checker::HostGrant;
 use gandr_surface_corpus::Settlement;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
@@ -99,7 +100,6 @@ use crate::compose::ComposeFault;
 use crate::compose::Composed;
 use crate::compose::Lowering;
 use crate::compose::LoweringCount;
-use crate::compose::compose;
 use crate::compose::judge_lowering;
 use crate::compose::lower_source;
 use crate::report::RunReport;
@@ -299,6 +299,8 @@ pub struct Walk
     text: String,
     /// What the walk has counted so far.
     report: RunReport,
+    /// The host operations every source's held capabilities are bounded by.
+    grant: HostGrant,
 }
 
 /// Where a walk is among the paths it was given.
@@ -413,7 +415,34 @@ impl Walk
             traversal: Traversal::new(paths),
             text: String::new(),
             report: RunReport::default(),
+            grant: HostGrant::UNBOUNDED,
         }
+    }
+
+    /// The walk judging every source's held capabilities within `grant`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the walk, unchanged but for its grant, which every source it
+    ///   composes is judged under; a walk is under no grant until given one.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source declaring a held capability beyond the grant
+    ///   is refused by name under the grant, at one width and several, and owed
+    ///   under none.
+    /// - witness: `walk::tests::a_grant_bounds_every_source_the_walk_judges`
+    #[inline]
+    #[must_use]
+    #[spec(captures: [expected = grant.clone()], ensures: |ref ret| ret.grant == expected)]
+    pub fn granting(
+        mut self,
+        grant: HostGrant,
+    ) -> Self
+    {
+        self.grant = grant;
+        self
     }
 
     /// What the walk has counted so far: once the walk is exhausted, the
@@ -561,6 +590,7 @@ impl Walk
                 return ControlFlow::Continue(self.report);
             },
         };
+        let grant = &self.grant;
         let mut paths = Vec::new();
         let mut found = Vec::new();
         while let Maybe::Present(reached) = self.traversal.reach() {
@@ -672,7 +702,7 @@ impl Walk
                             } => {
                                 self.report.lowerings_mut().absorb(lowerings);
                                 let composed = lowering.and_then(|lowering| {
-                                    judge_lowering(root.corpus_root(), lowering)
+                                    judge_lowering(root.corpus_root(), lowering, grant)
                                 });
                                 settled(&mut self.report, path, root, text, composed)
                             },
@@ -966,12 +996,8 @@ impl Walk
             },
         };
         let text = SourceText::from(self.text.as_str());
-        let composed = compose(
-            grammar,
-            root.corpus_root(),
-            text,
-            self.report.lowerings_mut(),
-        );
+        let composed = lower_source(grammar, text, self.report.lowerings_mut())
+            .and_then(|lowering| judge_lowering(root.corpus_root(), lowering, &self.grant));
         settled(&mut self.report, &self.traversal.path, root, text, composed)
     }
 }
@@ -1162,6 +1188,8 @@ pub mod tests
     use std::path::PathBuf;
 
     use anodized::spec;
+    use gandr_core_checker::HostGrant;
+    use gandr_core_term::effect::OperationName;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
@@ -1666,6 +1694,55 @@ pub mod tests
                 (seen.clone(), report),
                 "a visit at {width:?} stands each source under its root"
             );
+        }
+    }
+
+    #[test]
+    fn a_grant_bounds_every_source_the_walk_judges()
+    {
+        let scratch = Scratch::new(Path::new("granted"));
+        scratch.file(
+            Path::new("corpus/fixture/both.gandr"),
+            SourceText::from("@[ owes(1) ] def fs : Cap {read, write} ;"),
+        );
+        scratch.file(
+            Path::new("corpus/fixture/read.gandr"),
+            SourceText::from("@[ owes(1) ] def reads : Cap {read} ;"),
+        );
+        let reading =
+            HostGrant::within([&OperationName::from("read")]).expect("the host offers `read`");
+        for width in widths() {
+            for (grant, both) in [
+                (HostGrant::UNBOUNDED, Standing::Settled),
+                (reading.clone(), Standing::Unsettled),
+            ] {
+                let mut seen = Vec::new();
+                let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.join("corpus")])
+                    .granting(grant.clone())
+                    .visit(width, |step| -> ControlFlow<Infallible> {
+                        let kind = Seen::from(&step);
+                        let path = match step {
+                            | Step::Source { path, .. } | Step::Fault { path, .. } => path,
+                        };
+                        seen.push((
+                            path.strip_prefix(&scratch.0).unwrap_or(path).to_path_buf(),
+                            kind,
+                        ));
+                        ControlFlow::Continue(())
+                    });
+                assert_eq!(
+                    seen,
+                    rows(&[
+                        (Path::new("corpus/fixture/both.gandr"), Seen::Source(both)),
+                        (
+                            Path::new("corpus/fixture/read.gandr"),
+                            Seen::Source(Standing::Settled)
+                        ),
+                    ]),
+                    "at {width:?} under {grant:?}, a capability claiming `write` is owed \
+                     only where no grant bounds it, and one within the grant stays owed"
+                );
+            }
         }
     }
 

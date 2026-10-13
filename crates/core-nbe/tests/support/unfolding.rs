@@ -136,7 +136,8 @@ pub struct Unfolded(pub u64);
                 match *node {
                     Computation::DataCase { ref branches, .. } => 3_u64.saturating_add(u64::try_from(branches.len()).unwrap_or(u64::MAX)),
                     Computation::Perform { ref signature, .. } => 2_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).expect("walkable interface arity"),
-                    Computation::Handle { ref signature, ref clauses, .. } => 3_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).and_then(|count| count.checked_add(u64::try_from(clauses.len()).expect("walkable clause arity"))).expect("walkable handler arity"),
+                    Computation::Handle { ref signature, ref clauses, .. } | Computation::Scope { ref signature, ref clauses, .. } => 3_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).and_then(|count| count.checked_add(u64::try_from(clauses.len()).expect("walkable clause arity"))).expect("walkable handler arity"),
+                    Computation::Exercise { ref signature, .. } => 3_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).expect("walkable interface arity"),
                     Computation::Resume(..) | Computation::Split { .. } | Computation::With(..) | Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _) => 3,
                     Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 2,
                     Computation::Hole(_) => 1,
@@ -154,6 +155,7 @@ pub struct Unfolded(pub u64);
                     ValueType::Product(ref parts) | ValueType::Sum(ref parts) => 1_u64.saturating_add(u64::try_from(parts.len()).unwrap_or(u64::MAX)),
                     ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 1,
                     ValueType::Session(ref session) => 1_u64.saturating_add(u64::try_from(session.payloads().len()).unwrap_or(u64::MAX)),
+                    ValueType::Capability { ref authority, .. } => 1_u64.checked_add(u64::try_from(authority.types().count()).expect("walkable authority arity")).expect("walkable authority arity"),
                     ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::StaticPi { .. } => 3,
                     ValueType::Path { .. } => 4,
                     ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 2,
@@ -295,7 +297,22 @@ pub fn unfolded(
                         pending.push(CoreNode::Value(payload));
                         pending.extend(signature.types().map(CoreNode::ValueType));
                     },
+                    | Computation::Exercise {
+                        capability,
+                        payload,
+                        ref signature,
+                        ..
+                    } => {
+                        pending.extend([CoreNode::Value(capability), CoreNode::Value(payload)]);
+                        pending.extend(signature.types().map(CoreNode::ValueType));
+                    },
                     | Computation::Handle {
+                        subject,
+                        on_return,
+                        ref signature,
+                        ref clauses,
+                    }
+                    | Computation::Scope {
                         subject,
                         on_return,
                         ref signature,
@@ -433,6 +450,9 @@ pub fn unfolded(
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
                     | ValueType::Unknown => {},
+                    | ValueType::Capability { ref authority, .. } => {
+                        pending.extend(authority.types().map(CoreNode::ValueType));
+                    },
                     | ValueType::StaticPi {
                         domain: first,
                         codomain: second,

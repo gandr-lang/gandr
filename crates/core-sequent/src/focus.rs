@@ -358,6 +358,11 @@ pub enum FocusRefusal
     IncompleteValue(ValueId),
     /// A hole or a mark in computation position.
     IncompleteComputation(ComputationId),
+    /// An exercise or a capability scope: the command IL resolves an
+    /// operation by its interface to the innermost handler, while a
+    /// capability's operation belongs to the scope that introduced it, so
+    /// neither has an image.
+    CapabilityControl(ComputationId),
     /// A session action: the command IL carries no channels, so a send, a
     /// receive, a choice, a close or a fork has no image in it.
     Session(ComputationId),
@@ -406,6 +411,9 @@ impl fmt::Display for FocusRefusal
                 "a computation standing as a value before elaboration has no command-IL producer",
             ),
             | Self::Session(_) => f.write_str("a session action has no image in the command IL"),
+            | Self::CapabilityControl(_) => {
+                f.write_str("a capability's operation has no image in the command IL")
+            },
         }
     }
 }
@@ -1538,6 +1546,9 @@ impl<'run> Focusing<'run>
                     continuation,
                 });
                 self.tasks.push(Task::Value(payload));
+            },
+            | Computation::Exercise { .. } | Computation::Scope { .. } => {
+                return Err(FocusRefusal::CapabilityControl(id));
             },
             | Computation::Handle {
                 subject,

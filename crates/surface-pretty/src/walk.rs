@@ -322,7 +322,7 @@ enum Kind
     | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
-        | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::PathUniverse(..) | Former::Session { .. }),
+        | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_)),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
@@ -351,7 +351,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Element(_)
         | Former::Abstract(_)
         | Former::Session { .. }
-        | Former::StaticPi { .. } => Kind::ValueType,
+        | Former::StaticPi { .. }
+        | Former::Capability { .. } => Kind::ValueType,
         | Former::Returner(_)
         | Former::With(..)
         | Former::EffectfulReturner { .. }
@@ -737,6 +738,7 @@ where
         | Former::Universe { .. }
         | Former::TypeLift
         | Former::Abstract(_)
+        | Former::Capability { .. }
         | Former::Variable { .. }
         | Former::Constant(_)
         | Former::Unit
@@ -2194,6 +2196,27 @@ impl Walk<'_, '_, '_>
             | Former::Literal(value) => {
                 let spelled = literal(value);
                 return self.atom(Glyphs(spelled.0.as_str()));
+            },
+            | Former::Capability {
+                authority,
+                grade,
+                region,
+            } => {
+                let mut spelled = alloc::string::String::from("Cap");
+                if grade == gandr_core_term::effect::capability::CapabilityGrade::Consumable {
+                    spelled.push_str("[1]");
+                }
+                spelled.push_str(" {");
+                spelled.push_str(&authority.granted().join(", "));
+                spelled.push('}');
+                return match region {
+                    | gandr_core_term::effect::capability::Region::Held => {
+                        self.atom(Glyphs(spelled.as_str()))
+                    },
+                    | gandr_core_term::effect::capability::Region::Scoped(_) => {
+                        self.approximate(Glyphs(spelled.as_str()))
+                    },
+                };
             },
             | Former::Universe { sort, level } => {
                 return match universe(sort, level) {

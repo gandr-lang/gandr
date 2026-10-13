@@ -110,7 +110,7 @@ impl Source for ContentSource<'_>
 (Some(&ContentNode::Reify(_)), Former::Reify) |
 (Some(&ContentNode::DataCase { .. } | &ContentNode::RecordProjection(..) | &ContentNode::TupleProjection(..) |
 &ContentNode::Primitive(..) | &ContentNode::Transport(..) | &ContentNode::ElementTransport { .. } | &ContentNode::TelescopeTransport { .. } |
-&ContentNode::Perform { .. } | &ContentNode::Handle { .. } | &ContentNode::Resume(..) | &ContentNode::Split(..) | &ContentNode::Reset(_) | &ContentNode::Shift(_) | &ContentNode::With(..) | &ContentNode::Project(..) | &ContentNode::ListFold { .. } |
+&ContentNode::Perform { .. } | &ContentNode::Handle { .. } | &ContentNode::Exercise { .. } | &ContentNode::Scope { .. } | &ContentNode::Resume(..) | &ContentNode::Split(..) | &ContentNode::Reset(_) | &ContentNode::Shift(_) | &ContentNode::With(..) | &ContentNode::Project(..) | &ContentNode::ListFold { .. } |
 &ContentNode::Case { .. } | &ContentNode::Fixpoint { .. } | &ContentNode::Session(_)), Former::Computation) |
 (Some(&ContentNode::ListNil), Former::ListNil) |
 (Some(&ContentNode::ValueLift { .. }), Former::ValueLift) |
@@ -169,6 +169,8 @@ impl Source for ContentSource<'_>
             sort == actual_sort && level == actual_level,
         (Some(found), Former::Session { protocol, state, payloads }) => matches!(*found, ContentNode::SessionType(ref session)
             if core::ptr::eq(core::ptr::from_ref(protocol), core::ptr::from_ref(session.protocol())) && state == session.state() && usize::from(payloads) == session.payloads().len()),
+        (Some(&ContentNode::Capability { grade, region, .. }), Former::Capability { grade: actual_grade, region: actual_region, .. }) =>
+            grade == actual_grade && region == actual_region,
 
         (Some(&ContentNode::Constant(ref reference) | &ContentNode::Abstract(ref reference)), Former::Unreadable) =>
             match *reference {
@@ -200,6 +202,8 @@ impl Source for ContentSource<'_>
             | ContentNode::Primitive(..)
             | ContentNode::Perform { .. }
             | ContentNode::Handle { .. }
+            | ContentNode::Exercise { .. }
+            | ContentNode::Scope { .. }
             | ContentNode::Resume(..)
             | ContentNode::Split(..)
             | ContentNode::Reset(_)
@@ -297,6 +301,15 @@ impl Source for ContentSource<'_>
                 protocol: session.protocol(),
                 state: session.state(),
                 payloads: Arity::from(session.payloads().len()),
+            },
+            | ContentNode::Capability {
+                ref authority,
+                grade,
+                region,
+            } => Former::Capability {
+                authority,
+                grade,
+                region,
             },
             // Data has no printer reader. A hole or a mark is displayed by
             // the session. `Path` carries three children, more than a bracket

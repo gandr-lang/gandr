@@ -125,6 +125,13 @@ pub enum FrameRole
     HandlerReturn,
     /// One of a handler's operation clauses is being checked.
     HandlerClause,
+    /// An exercise waits on its capability's type.
+    ExerciseCapability,
+    /// A capability scope waits on the formation of its subject's type.
+    ScopeForm,
+    /// A capability scope's subject is being checked under the capability
+    /// it introduces.
+    ScopeSubject,
     /// A stack literal waits on one of its frames.
     StackNext,
     /// A stack literal's bind frame waits on its body's type.
@@ -294,6 +301,9 @@ impl fmt::Display for FrameRole
             | Self::HandlerSubject => "HandlerSubject",
             | Self::HandlerReturn => "HandlerReturn",
             | Self::HandlerClause => "HandlerClause",
+            | Self::ExerciseCapability => "ExerciseCapability",
+            | Self::ScopeForm => "ScopeForm",
+            | Self::ScopeSubject => "ScopeSubject",
             | Self::StackNext => "StackNext",
             | Self::StackBind => "StackBind",
             | Self::ListFold(_) => "ListFold",
@@ -722,6 +732,9 @@ mod tests
             FrameRole::HandlerSubject,
             FrameRole::HandlerReturn,
             FrameRole::HandlerClause,
+            FrameRole::ExerciseCapability,
+            FrameRole::ScopeForm,
+            FrameRole::ScopeSubject,
             FrameRole::StackNext,
             FrameRole::StackBind,
             FrameRole::ListFold(FoldPremise::Element),

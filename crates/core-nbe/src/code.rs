@@ -1132,6 +1132,7 @@ _ => ret == Ok(Atom::Other(node)),
                 {
                     | ValueType::Element { code, .. } => (code, place),
                     | ValueType::PathUniverse(..)
+                    | ValueType::Capability { .. }
                     | ValueType::Path { .. }
                     | ValueType::Data { .. }
                     | ValueType::Record(_)
@@ -1360,6 +1361,27 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         ]);
                         Ok(Alike::Same)
                     }
+                    else if let ValueType::Capability {
+                        authority: ref first,
+                        grade,
+                        region,
+                    } = *matched_left_value
+                        && let ValueType::Capability {
+                            authority: ref second,
+                            grade: other_grade,
+                            region: other_region,
+                        } = *matched_right_value
+                    {
+                        if (grade, region) != (other_grade, other_region)
+                            || matching_effect_shapes(first, second) == Alike::Different
+                        {
+                            return Ok(Alike::Different);
+                        }
+                        pending.extend(first.types().zip(second.types()).map(|(left, right)| {
+                            (Node::ValueType(left, here), Node::ValueType(right, there))
+                        }));
+                        Ok(Alike::Same)
+                    }
                     else if let ValueType::List(a) = *matched_left_value
                         && let ValueType::List(b) = *matched_right_value
                     {
@@ -1513,6 +1535,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         {
                             match *matched_left_value {
                                 | ValueType::PathUniverse(..)
+                                | ValueType::Capability { .. }
                                 | ValueType::Path { .. }
                                 | ValueType::Data { .. }
                                 | ValueType::Record(_)
@@ -2111,6 +2134,9 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         | ValueType::Base(_)
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_) => {},
+                        | ValueType::Capability { ref authority, .. } => {
+                            types.extend(authority.types().map(|ty| Node::ValueType(ty, place)));
+                        },
                         // An unknown type is what a fill may still decide, so
                         // nothing that holds one is apart from anything.
                         | ValueType::Unknown => return Ok(Rigidity::Flexible),

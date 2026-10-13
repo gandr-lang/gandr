@@ -294,6 +294,7 @@
 extern crate alloc;
 
 pub mod bridge;
+mod capability;
 mod code;
 mod context;
 mod conversion;
@@ -324,6 +325,8 @@ pub mod template;
 pub mod ua;
 mod view;
 
+pub use crate::capability::Grants;
+pub use crate::capability::HostGrant;
 pub use crate::code::Certificate;
 pub use crate::code::CodeDefinitions;
 pub use crate::code::Evaluation;

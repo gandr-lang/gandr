@@ -831,6 +831,49 @@ mod cli
     }
 
     #[test]
+    fn a_grant_bounds_held_capabilities_and_refuses_an_unknown_operation()
+    {
+        let scratch = Scratch::new(Path::new("grant"));
+        let source = scratch.file(
+            Path::new("held.gandr"),
+            Text::from("def fs : Cap {read, write} ;\n"),
+        );
+        let at = |grant: &[&str]| {
+            let mut command = gandr(&["check"]);
+            command.args(grant).arg(&source);
+            ran(command)
+        };
+        let narrow = at(&["--grant", "read"]);
+        assert_eq!(code(&narrow), Code(1_i32), "{}", stderr(&narrow));
+        assert!(
+            stdout(&narrow).contains("error[CapabilityUngranted]"),
+            "a capability claiming `write` beyond the grant is refused by name: {}",
+            stdout(&narrow)
+        );
+        for grant in [
+            &["--grant", "read,write"][..],
+            &["--grant", "write", "--grant", "read"],
+            &[],
+        ] {
+            let within = at(grant);
+            assert_eq!(code(&within), Code(1_i32), "{grant:?}");
+            assert!(
+                stdout(&within).contains("`fs` states checks owing 0; produced checks owing 1")
+                    && !stdout(&within).contains("CapabilityUngranted"),
+                "{grant:?}: a capability within the grant, or under none, is owed: {}",
+                stdout(&within)
+            );
+        }
+        let unknown = at(&["--grant", "read,delete"]);
+        assert_eq!(code(&unknown), Code(2_i32));
+        assert!(unknown.stdout.is_empty(), "no source is read");
+        assert_eq!(
+            stderr(&unknown),
+            "gandr: --grant: no host interface offers `delete`\n"
+        );
+    }
+
+    #[test]
     fn help_exits_zero()
     {
         for arguments in [&["--help"][..], &["check", "--help"], &["--version"]] {

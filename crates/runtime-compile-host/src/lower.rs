@@ -137,6 +137,8 @@ impl core::fmt::Display for Form
                 | ControlFormer::Shift => "a shift",
                 | ControlFormer::With => "a lazy pair",
                 | ControlFormer::Project => "a lazy projection",
+                | ControlFormer::Exercise => "an exercised capability",
+                | ControlFormer::Scope => "a capability scope",
             },
             | Self::List => "a native List introduction",
             | Self::ListFold => "a native List fold",
@@ -368,6 +370,16 @@ pub fn lower_computation(
                     | Computation::Handle { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Control(
                             gandr_core_term::control::ControlFormer::Handle,
+                        )));
+                    },
+                    | Computation::Exercise { .. } => {
+                        return Err(LowerError::OutsideSlice(Form::Control(
+                            gandr_core_term::control::ControlFormer::Exercise,
+                        )));
+                    },
+                    | Computation::Scope { .. } => {
+                        return Err(LowerError::OutsideSlice(Form::Control(
+                            gandr_core_term::control::ControlFormer::Scope,
                         )));
                     },
                     | Computation::Resume(..) => {

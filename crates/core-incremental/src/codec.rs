@@ -1377,6 +1377,53 @@ where
                 write_index(writer, clause.body)?;
             }
         },
+        | ContentNode::Exercise {
+            capability,
+            ref signature,
+            ref operation,
+            payload,
+        } => {
+            writer.tag(Tag(0x7B));
+            write_index(writer, capability)?;
+            write_index(writer, payload)?;
+            write_effect_signature(writer, signature)?;
+            writer.bytes(Bytes(operation.as_ref().as_bytes()))?;
+        },
+        | ContentNode::Scope {
+            ref signature,
+            subject,
+            on_return,
+            ref clauses,
+        } => {
+            writer.tag(Tag(0x7C));
+            write_index(writer, subject)?;
+            write_index(writer, on_return)?;
+            write_effect_signature(writer, signature)?;
+            writer.count(Count(clauses.len()))?;
+            for clause in clauses.iter() {
+                writer.bytes(Bytes(clause.operation.as_ref().as_bytes()))?;
+                write_index(writer, clause.body)?;
+            }
+        },
+        | ContentNode::Capability {
+            ref authority,
+            grade,
+            region,
+        } => {
+            writer.tag(Tag(0x7D));
+            write_effect_row(writer, authority)?;
+            writer.tag(match grade {
+                | gandr_core_term::effect::capability::CapabilityGrade::Durable => Tag(0),
+                | gandr_core_term::effect::capability::CapabilityGrade::Consumable => Tag(1),
+            });
+            match region {
+                | gandr_core_term::effect::capability::Region::Held => writer.tag(Tag(0)),
+                | gandr_core_term::effect::capability::Region::Scoped(depth) => {
+                    writer.tag(Tag(1));
+                    writer.word(Word(u64::from(u32::from(depth))));
+                },
+            }
+        },
         | ContentNode::Resume(stack, body) => {
             writer.tag(Tag(0x76));
             write_index(writer, stack)?;
@@ -2824,6 +2871,9 @@ fn read_effect_row(
                     | ContentNode::Session(_) => tag == 0x61,
                     | ContentNode::Perform { .. } => tag == 0x74,
                     | ContentNode::Handle { .. } => tag == 0x75,
+                    | ContentNode::Exercise { .. } => tag == 0x7B,
+                    | ContentNode::Scope { .. } => tag == 0x7C,
+                    | ContentNode::Capability { .. } => tag == 0x7D,
                     | ContentNode::Resume(..) => tag == 0x76,
                     | ContentNode::Reset(_) => tag == 0x77,
                     | ContentNode::Shift(_) => tag == 0x78,
@@ -2974,7 +3024,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 payload,
             }
         },
-        | 0x75 => {
+        | 0x75 | 0x7C => {
             let subject = read_index(reader)?;
             let on_return = read_index(reader)?;
             let signature = read_effect_signature(reader)?;
@@ -2990,11 +3040,61 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                     body: read_index(reader)?,
                 });
             }
-            ContentNode::Handle {
+            if tag.0 == 0x7C {
+                ContentNode::Scope {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses: clauses.into(),
+                }
+            }
+            else {
+                ContentNode::Handle {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses: clauses.into(),
+                }
+            }
+        },
+        | 0x7B => {
+            let capability = read_index(reader)?;
+            let payload = read_index(reader)?;
+            let signature = read_effect_signature(reader)?;
+            let operation = gandr_core_term::effect::OperationName::from(
+                core::str::from_utf8(reader.bytes()?.0)
+                    .map_err(|_invalid_utf8| CodecError::Corrupt)?,
+            );
+            ContentNode::Exercise {
+                capability,
                 signature,
-                subject,
-                on_return,
-                clauses: clauses.into(),
+                operation,
+                payload,
+            }
+        },
+        | 0x7D => {
+            use gandr_core_term::effect::capability::CapabilityGrade;
+            use gandr_core_term::effect::capability::Region;
+            use gandr_core_term::effect::capability::RegionDepth;
+            let authority = read_effect_row(reader)?;
+            let grade = match reader.tag()?.0 {
+                | 0 => CapabilityGrade::Durable,
+                | 1 => CapabilityGrade::Consumable,
+                | _ => return Err(CodecError::Corrupt),
+            };
+            let region = match reader.tag()?.0 {
+                | 0 => Region::Held,
+                | 1 => {
+                    let depth =
+                        u32::try_from(reader.word()?.0).map_err(|_overflow| CodecError::Corrupt)?;
+                    Region::Scoped(RegionDepth::from(depth))
+                },
+                | _ => return Err(CodecError::Corrupt),
+            };
+            ContentNode::Capability {
+                authority,
+                grade,
+                region,
             }
         },
         | 0x76 => ContentNode::Resume(read_index(reader)?, read_index(reader)?),
@@ -4165,7 +4265,7 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in stable wire order.
-const FORMERS: [UnadmittedFormer; 16] = [
+const FORMERS: [UnadmittedFormer; 19] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::NumericAtom,
@@ -4182,10 +4282,13 @@ const FORMERS: [UnadmittedFormer; 16] = [
     UnadmittedFormer::Resume,
     UnadmittedFormer::Reset,
     UnadmittedFormer::Shift,
+    UnadmittedFormer::Capability,
+    UnadmittedFormer::Exercise,
+    UnadmittedFormer::Scope,
 ];
 
 /// The shapes a rule can require, in stable wire order.
-const SHAPES: [ExpectedShape; 13] = [
+const SHAPES: [ExpectedShape; 14] = [
     ExpectedShape::Thunk,
     ExpectedShape::Returner,
     ExpectedShape::Arrow,
@@ -4199,6 +4302,7 @@ const SHAPES: [ExpectedShape; 13] = [
     ExpectedShape::With,
     ExpectedShape::List,
     ExpectedShape::Session,
+    ExpectedShape::Capability,
 ];
 
 /// The actions a session state admits, in stable wire order.
@@ -4706,6 +4810,10 @@ where
                     writer.tag(Tag(16));
                     write_site(writer, site)?;
                 },
+                | Form::Scope(site) => {
+                    writer.tag(Tag(17));
+                    write_site(writer, site)?;
+                },
             }
         },
         | Refusal::UnknownConstant { at, ref constant } => {
@@ -4859,6 +4967,39 @@ where
             write_site(writer, at)?;
             write_linearity(writer, defect)?;
         },
+        | Refusal::CapabilityForged { at, ref expected } => {
+            writer.tag(Tag(58));
+            write_site(writer, at)?;
+            write_type(writer, expected)?;
+        },
+        | Refusal::CapabilityAmplified {
+            at,
+            ref synthesised,
+            ref expected,
+        } => {
+            writer.tag(Tag(59));
+            write_site(writer, at)?;
+            write_type(writer, synthesised)?;
+            write_type(writer, expected)?;
+        },
+        | Refusal::CapabilityOutsideAuthority { at, ref capability } => {
+            writer.tag(Tag(60));
+            write_site(writer, at)?;
+            write_type(writer, capability)?;
+        },
+        | Refusal::CapabilityEscaped { at, ref found } => {
+            writer.tag(Tag(61));
+            write_site(writer, at)?;
+            write_type(writer, found)?;
+        },
+        | Refusal::CapabilityConsumable(at) => {
+            writer.tag(Tag(62));
+            write_site(writer, at)?;
+        },
+        | Refusal::CapabilityUngranted(declared) => {
+            writer.tag(Tag(63));
+            write_site(writer, declared)?;
+        },
     }
     Ok(())
 }
@@ -4988,6 +5129,12 @@ where
                     | Refusal::UnenclosedRun { .. } => 55,
                     | Refusal::SessionMismatch { .. } => 56,
                     | Refusal::Linearity { .. } => 57,
+                    | Refusal::CapabilityForged { .. } => 58,
+                    | Refusal::CapabilityAmplified { .. } => 59,
+                    | Refusal::CapabilityOutsideAuthority { .. } => 60,
+                    | Refusal::CapabilityEscaped { .. } => 61,
+                    | Refusal::CapabilityConsumable(_) => 62,
+                    | Refusal::CapabilityUngranted(_) => 63,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -5079,6 +5226,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 | 14 => Form::Split(read_site(reader)?),
                 | 15 => Form::Nested(read_site(reader)?),
                 | 16 => Form::Offer(read_site(reader)?),
+                | 17 => Form::Scope(read_site(reader)?),
                 | _ => return Err(CodecError::Corrupt),
             };
             Refusal::NotSynthesisable { form }
@@ -5247,6 +5395,25 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             at: read_site(reader)?,
             defect: read_linearity(reader)?,
         },
+        | 58 => Refusal::CapabilityForged {
+            at: read_site(reader)?,
+            expected: read_type(reader)?,
+        },
+        | 59 => Refusal::CapabilityAmplified {
+            at: read_site(reader)?,
+            synthesised: read_type(reader)?,
+            expected: read_type(reader)?,
+        },
+        | 60 => Refusal::CapabilityOutsideAuthority {
+            at: read_site(reader)?,
+            capability: read_type(reader)?,
+        },
+        | 61 => Refusal::CapabilityEscaped {
+            at: read_site(reader)?,
+            found: read_type(reader)?,
+        },
+        | 62 => Refusal::CapabilityConsumable(read_site(reader)?),
+        | 63 => Refusal::CapabilityUngranted(read_site(reader)?),
         | 28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
         | 29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),
         | 30 => Refusal::IndexOccurrence(read_occurrence_site(reader)?),
@@ -6377,6 +6544,9 @@ mod tests
         use gandr_core_term::control::StackFrame;
         use gandr_core_term::effect::EffectOp;
         use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::capability::CapabilityGrade;
+        use gandr_core_term::effect::capability::Region;
+        use gandr_core_term::effect::capability::RegionDepth;
         use gandr_kernel_term::Side;
         let index = NodeIndex::from;
         let signature = EffectSig::new("State".into(), [
@@ -6402,6 +6572,16 @@ mod tests
                 body: index(6_usize),
             },
         ]);
+        let authority = gandr_core_term::effect::EffectRow::from_signatures([EffectSig::new(
+            "State".into(),
+            [EffectOp {
+                name: "first".into(),
+                payload: index(3_usize),
+                reply: index(4_usize),
+            }],
+        )
+        .expect("one operation")])
+        .expect("one restriction");
         let nodes = [
             ContentNode::Reify(alloc::sync::Arc::from([
                 StackFrame::Apply(index(1_usize)),
@@ -6420,10 +6600,37 @@ mod tests
                 payload: index(1_usize),
             },
             ContentNode::Handle {
-                signature,
+                signature: signature.clone(),
+                subject: index(1_usize),
+                on_return: index(2_usize),
+                clauses: alloc::sync::Arc::clone(&clauses),
+            },
+            ContentNode::Scope {
+                signature: signature.clone(),
                 subject: index(1_usize),
                 on_return: index(2_usize),
                 clauses,
+            },
+            ContentNode::Exercise {
+                capability: index(1_usize),
+                signature,
+                operation: "second".into(),
+                payload: index(2_usize),
+            },
+            ContentNode::Capability {
+                authority: authority.clone(),
+                grade: CapabilityGrade::Durable,
+                region: Region::Held,
+            },
+            ContentNode::Capability {
+                authority: authority.clone(),
+                grade: CapabilityGrade::Durable,
+                region: Region::Scoped(RegionDepth::from(2_u32)),
+            },
+            ContentNode::Capability {
+                authority,
+                grade: CapabilityGrade::Consumable,
+                region: Region::Held,
             },
             ContentNode::Resume(index(1_usize), index(2_usize)),
             ContentNode::Reset(index(1_usize)),
@@ -6455,7 +6662,26 @@ mod tests
             super::Refusal::ShiftWithoutReset { at },
             super::Refusal::DependentStack {
                 at,
-                synthesised: typed,
+                synthesised: typed.clone(),
+            },
+            super::Refusal::CapabilityForged {
+                at,
+                expected: typed.clone(),
+            },
+            super::Refusal::CapabilityAmplified {
+                at,
+                synthesised: typed.clone(),
+                expected: typed.clone(),
+            },
+            super::Refusal::CapabilityOutsideAuthority {
+                at,
+                capability: typed.clone(),
+            },
+            super::Refusal::CapabilityEscaped { at, found: typed },
+            super::Refusal::CapabilityConsumable(at),
+            super::Refusal::CapabilityUngranted(at),
+            super::Refusal::NotSynthesisable {
+                form: super::Form::Scope(at),
             },
             super::Refusal::NotSynthesisable {
                 form: super::Form::Reify(at),

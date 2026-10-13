@@ -25,7 +25,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `Width` and `Threads`: how many threads a walk lowers its sources on, the host's physical performance cores by default.
 - `compose`, `Composed`, `ComposeFault` and `LoweringCount`: the composition.
 - `lower_source`, `lower_parsed`, `Lowering`, `Lowered` and `judge_module`: the composition's two halves, for a caller that keeps the lowered module beside the verdicts; `lower_parsed` lowers a parse the caller made.
-- `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, for a caller that renders the report before the kernel is offered the module.
+- `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, under a `HostGrant`, for a caller that renders the report before the kernel is offered the module.
 - `spellings` and `failures` on `Composed::Settled`: the diagnostics model's `Spellings` of the types a module's checker refusals compare and its failures name, spelled while its arena was at hand, and the `Failures` the checking machine kept for each refused body, by admission position.
 - `Entries` and `entries`: what one step prints under a verb, in order, each a diagnostic the diagnostics model builds — refusals, unsettled declarations, goals, shadowing warnings, lint findings and ledger lines.
 - `Lints`, `Reach` and `Entries::linting`: the lints an invocation enables; a lint reaches every source when enabled, and otherwise only the declarations and modules whose attribute asks for it, `Lints::asking_effects` narrowing `explicit-runs` to the runs that perform an effect. `inferred` on `Composed::Settled` holds the exits the lowering inferred, which the `explicit-exits` lint reports, and `runs` the runs the checker inferred, which the `explicit-runs` lint reports.
@@ -34,6 +34,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `TypeTable`, `TypedSpan`, `Subject`, `Declared`, `typing::Absent` and `checked_against::Absent`: the type of every node of one source a face can point at — each binder, term and written type with its span, spelled when a face asks, with the type a term was checked against when it differs — and each declaration's type or refusal under both its signature's and its definition's keys, from one typed run of the checker.
 - `SourceRoot` and `classify`: the root a source sits under, by its path.
 - `Walk`, `Walk::visit`, `Step`, `Standing`, `Standing::of`, `SourceFault` and `walk_step::Absent`: the walk at any width, and the standing a step or a session submission carries.
+- `HostGrant`, `OperationName`, `AuthorityError` and `Walk::granting`: the host operations every capability a checked declaration holds is bounded by; `compose` and `test` judge under none.
 - `RunReport`, `RunVerdict`, `SourceCounts`, `SourceCount`, `Verb`, `Goals`, `Shown` and `shown`: the runner's report, the gate and what each verb prints.
 - `Exercised` and `Row`: the fragment's exercised table, counted.
 - `Program`, `Evaluation`, `ValueSpelling`, `Unfinished`, `Unrunnable`, `RunStatus`, `run_target::Absent` and `declaration_name::Absent`: the run stage.

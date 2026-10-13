@@ -348,7 +348,8 @@ enum Task
 ///   level for a thunk type and a returner, and its carrier's for a path type;
 ///   the join of its children's for an eager product, a static Pi, an arrow and
 ///   a dependent arrow, whose codomain's level does not depend on the binder,
-///   and of its payloads' for a session type.
+///   and of its payloads' for a session type, and of its operations' payloads
+///   and replies for a capability.
 /// - provides: the level part of every classifier, and the level a code is
 ///   decoded at when the judgement unfolds a code constant.
 /// - fails: the view's refusal for a node outside the fragment or a dangling
@@ -465,6 +466,13 @@ pub fn level_of(
                     for &payload in session.payloads().iter().rev() {
                         tasks.push(Task::Join);
                         tasks.push(Task::Enter(TypeNode::Value(payload)));
+                    }
+                },
+                | ValueTypeView::Capability { authority, .. } => {
+                    levels.push(Level::zero());
+                    for operation_type in authority.types() {
+                        tasks.push(Task::Join);
+                        tasks.push(Task::Enter(TypeNode::Value(operation_type)));
                     }
                 },
                 | ValueTypeView::StaticPi {

@@ -386,6 +386,9 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::effect::capability::CapabilityGrade;
+use gandr_core_term::effect::capability::Region;
+use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::hole::CodomainScope;
 use gandr_core_term::hole::Components;
 use gandr_core_term::hole::matched_function;
@@ -1185,6 +1188,34 @@ enum Frame
         /// The next clause.
         position: Ordinal,
     },
+    /// Await the synthesised type of the capability an operation is exercised
+    /// through.
+    ExerciseCapability
+    {
+        /// The exercise.
+        at: ComputationId,
+    },
+    /// Check a capability scope's subject after forming the type it is
+    /// checked at.
+    ScopeForm
+    {
+        /// The scope.
+        at: ComputationId,
+        /// Its answer type.
+        answer: CompTypeId,
+        /// The subject's type, in the scope's own context.
+        subject: CompTypeId,
+    },
+    /// Close the capability binder once the subject checks, then open the
+    /// return clause. While it waits, the region of the scope at its depth
+    /// is live.
+    ScopeSubject
+    {
+        /// The scope.
+        at: ComputationId,
+        /// Its answer type.
+        answer: CompTypeId,
+    },
     /// Continue a stack after its current frame synthesizes an output.
     StackNext
     {
@@ -1738,6 +1769,9 @@ impl Frame
             | Self::HandlerSubject { .. } => FrameRole::HandlerSubject,
             | Self::HandlerReturn { .. } => FrameRole::HandlerReturn,
             | Self::HandlerClause { .. } => FrameRole::HandlerClause,
+            | Self::ExerciseCapability { .. } => FrameRole::ExerciseCapability,
+            | Self::ScopeForm { .. } => FrameRole::ScopeForm,
+            | Self::ScopeSubject { .. } => FrameRole::ScopeSubject,
             | Self::StackNext { .. } => FrameRole::StackNext,
             | Self::StackBind { .. } => FrameRole::StackBind,
             | Self::ListFold { phase, .. } => FrameRole::ListFold(match phase {
@@ -1811,9 +1845,9 @@ impl Frame
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one for an abstraction body, a bind body, a formation under a
-    ///   binder, a return clause, a stack bind and a case motive; two for an
-    ///   operation clause; the component count for a split body; zero
-    ///   otherwise.
+    ///   binder, a return clause, a capability scope's subject, a stack bind
+    ///   and a case motive; two for an operation clause; the component count
+    ///   for a split body; zero otherwise.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1829,7 +1863,8 @@ impl Frame
             | Self::FormBinder
             | Self::HandlerReturn { .. }
             | Self::StackBind { .. }
-            | Self::NativeMotive { .. } => 1_usize,
+            | Self::NativeMotive { .. }
+            | Self::ScopeSubject { .. } => 1_usize,
             | Self::HandlerClause { .. } => 2_usize,
             | Self::SplitBody(arity) => usize::from(arity),
             | Self::NativeNext(_)
@@ -1847,6 +1882,8 @@ impl Frame
             | Self::Reset { .. }
             | Self::HandlerForm { .. }
             | Self::HandlerSubject { .. }
+            | Self::ExerciseCapability { .. }
+            | Self::ScopeForm { .. }
             | Self::StackNext { .. }
             | Self::ListFold { .. }
             | Self::PathProductFirst { .. }
@@ -2352,7 +2389,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }))
     }
 
-    /// Open one deep operation clause: payload first, resumption second.
+    /// Open one deep operation clause of a handler or a capability scope:
+    /// payload first, resumption second.
     ///
     /// # Specification
     /// - ensures: the resumption consumes the operation reply with the answer's
@@ -2376,11 +2414,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
         position: Ordinal,
     ) -> Result<Step, CheckRefusal>
     {
-        let Computation::Handle {
+        let (Computation::Handle {
             ref signature,
             ref clauses,
             ..
-        } = *self.computation(at)?
+        }
+        | Computation::Scope {
+            ref signature,
+            ref clauses,
+            ..
+        }) = *self.computation(at)?
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
@@ -2419,6 +2462,280 @@ impl<'context, 'arena> Machine<'context, 'arena>
         });
         Ok(Step::Descend(Goal::Computation {
             term: body,
+            direction: Direction::Check(expected),
+        }))
+    }
+
+    /// The region the next capability scope introduces: one deeper than every
+    /// scope enclosing it, each counted by the subject it is checking.
+    ///
+    /// # Specification
+    /// - ensures: [`Region::Scoped`] at one past the number of waiting
+    ///   [`Frame::ScopeSubject`] frames.
+    /// - fails: [`CheckRefusal::MachineInvariant`] past the depth a region
+    ///   counts.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope nested in another's subject introduces its
+    ///   capability at depth two, and its escape is refused at that depth.
+    /// - witness: `capability::tests::a_scoped_capability_never_leaves_its_scope`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Region::Scoped(_))))]
+    fn next_region(&self) -> Result<Region, CheckRefusal>
+    {
+        let depth = self
+            .frames
+            .iter()
+            .filter(|waiting| matches!(waiting.frame, Frame::ScopeSubject { .. }))
+            .count()
+            .checked_add(1)
+            .and_then(|depth| u32::try_from(depth).ok())
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        Ok(Region::Scoped(RegionDepth::from(depth)))
+    }
+
+    /// Type an operation exercised through a capability, once the capability
+    /// synthesised `classifier`: the Exercise rule.
+    ///
+    /// # Specification
+    /// - requires: `at` is an exercise whose capability synthesised
+    ///   `classifier`.
+    /// - ensures: the payload is checked against the operation's payload type
+    ///   next, and the exercise synthesises the returner of the operation's
+    ///   reply whose row is the operation's interface alone; a capability of
+    ///   the unknown type grants every operation.
+    /// - fails: [`CheckRefusal::UnknownOperation`] for an operation outside the
+    ///   carried interface; [`CheckRefusal::ShapeMismatch`] wanting
+    ///   [`ExpectedShape::Capability`] for a capability of another former;
+    ///   [`CheckRefusal::CapabilityOutsideAuthority`] for an operation the
+    ///   capability's authority does not grant with the interface's own payload
+    ///   and reply types.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a granted operation synthesising its interface's row,
+    ///   an operation of the interface the authority withholds, a value of
+    ///   another type in capability position and an operation outside the
+    ///   interface, each asserted as the exact type or refusal.
+    /// - witness: `capability::tests::an_operation_is_exercised_only_within_the_authority`
+    #[spec(captures: depth = self.frames.len(), ensures: |ret| ret.is_err() || (self.frames.len() == depth.saturating_add(1) && matches!(ret, Ok(Step::Descend(Goal::Form(_))))))]
+    fn exercise(
+        &mut self,
+        at: ComputationId,
+        classifier: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Computation::Exercise {
+            capability,
+            ref signature,
+            ref operation,
+            payload,
+        } = *self.computation(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let Maybe::Present(requested) = signature.operation(operation)
+        else {
+            return Err(CheckRefusal::UnknownOperation { at });
+        };
+        let (expected, reply) = (requested.payload, requested.reply);
+        let (signature, operation) = (signature.clone(), operation.clone());
+        let head = self.context.whnf_value_type(classifier)?;
+        crate::capability::authorise(
+            self.context.arena(),
+            at,
+            capability,
+            classifier,
+            head,
+            &signature,
+            &operation,
+        )?;
+        let effects = gandr_core_term::effect::EffectRow::singleton(signature);
+        let result = self
+            .context
+            .arena_mut()
+            .comp_type_returner_with_effects(reply, effects);
+        self.wait(Frame::PerformPayload {
+            payload,
+            expected,
+            result,
+        });
+        Ok(Step::Descend(Goal::Form(TypeNode::Computation(result))))
+    }
+
+    /// Start a capability scope checked against `answer`: the Scope rule's
+    /// coverage, its region side condition and the type its subject is checked
+    /// at.
+    ///
+    /// # Specification
+    /// - ensures: the subject's type `F^⟨I | ε⟩ A` is formed next, where `I` is
+    ///   the handled interface and `F^ε A` the answer, with the scope waiting
+    ///   on it.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] for an answer that is no
+    ///   returner; [`CheckRefusal::HandlerCoverage`] for clauses that do not
+    ///   cover the interface exactly once; [`CheckRefusal::CapabilityEscaped`]
+    ///   for an answer that mentions the scope's own region or a deeper one;
+    ///   [`CheckRefusal::EffectSignatureConflict`] for an answer row giving the
+    ///   interface's name other operations.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope whose subject exercises its own capability
+    ///   checks; an answer mentioning the scope's region, a missing clause and
+    ///   a conflicting answer row are each refused by name.
+    /// - witness: `capability::tests::a_scope_handles_the_capability_it_introduces`
+    /// - witness: `capability::tests::a_scoped_capability_never_leaves_its_scope`
+    #[spec(captures: depth = self.frames.len(), ensures: |ret| ret.is_err() || (self.frames.len() == depth.saturating_add(1) && matches!(self.frames.last(), Some(Waiting { frame: Frame::ScopeForm { at: site, .. }, .. }) if *site == at)))]
+    fn scope(
+        &mut self,
+        at: ComputationId,
+        answer: CompTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let result = self.returner_expected(at, answer)?;
+        let Computation::Scope {
+            ref signature,
+            ref clauses,
+            ..
+        } = *self.computation(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        if signature.operations().len() != clauses.len() {
+            return Err(CheckRefusal::HandlerCoverage { at });
+        }
+        let mut names: Vec<_> = clauses.iter().map(|clause| &clause.operation).collect();
+        names.sort_unstable();
+        if !names
+            .into_iter()
+            .zip(signature.operations())
+            .all(|(name, operation)| name == &operation.name)
+        {
+            return Err(CheckRefusal::HandlerCoverage { at });
+        }
+        let signature = signature.clone();
+        let region = self.next_region()?;
+        if crate::capability::reaches(self.context.arena(), answer, region)?
+            == crate::capability::Reach::Mentions
+        {
+            return Err(CheckRefusal::CapabilityEscaped {
+                at: TermNode::Computation(at),
+                found: TypeNode::Computation(answer),
+            });
+        }
+        let head = self.context.whnf_comp_type(answer)?;
+        let ambient = match comp_type_view(self.context.arena(), head)? {
+            | CompTypeView::Returner { effects, .. } => effects.clone(),
+            | CompTypeView::Unknown => gandr_core_term::effect::EffectRow::EMPTY,
+            | CompTypeView::Element { .. }
+            | CompTypeView::Arrow { .. }
+            | CompTypeView::Pi { .. }
+            | CompTypeView::With(..) => return Err(CheckRefusal::MachineInvariant),
+        };
+        let handled = gandr_core_term::effect::EffectRow::singleton(signature);
+        let Ok(row) = ambient.union(&handled, self.context.arena())
+        else {
+            let interface = self
+                .context
+                .arena_mut()
+                .comp_type_returner_with_effects(result, handled);
+            return Err(CheckRefusal::EffectSignatureConflict {
+                at,
+                first: answer,
+                second: interface,
+            });
+        };
+        let subject = self
+            .context
+            .arena_mut()
+            .comp_type_returner_with_effects(result, row);
+        self.wait(Frame::ScopeForm {
+            at,
+            answer,
+            subject,
+        });
+        Ok(Step::Descend(Goal::Form(TypeNode::Computation(subject))))
+    }
+
+    /// Open a capability scope's binder and check its subject beneath it.
+    ///
+    /// # Specification
+    /// - requires: `subject` is the formed type the subject is checked at, in
+    ///   the scope's own context.
+    /// - ensures: one intuitionistic binder of the capability `Cap_ρ ⟨I⟩`,
+    ///   durable, at the region one deeper than every enclosing scope; the
+    ///   subject is checked against `subject` shifted past it.
+    /// - fails: [`CheckRefusal::MachineInvariant`] for a node that is no scope.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the subject exercising the binder checks, and the
+    ///   binder returned through the subject is refused as escaping.
+    /// - witness: `capability::tests::a_scope_handles_the_capability_it_introduces`
+    /// - witness: `capability::tests::a_scoped_capability_never_leaves_its_scope`
+    #[spec(captures: depth = usize::from(self.context.depth(Zone::Intuitionistic)), ensures: |ret| ret.is_err() || usize::from(self.context.depth(Zone::Intuitionistic)) == depth.saturating_add(1))]
+    fn scope_subject(
+        &mut self,
+        at: ComputationId,
+        answer: CompTypeId,
+        subject: CompTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Computation::Scope {
+            ref signature,
+            subject: body,
+            ..
+        } = *self.computation(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let authority = gandr_core_term::effect::EffectRow::singleton(signature.clone());
+        let region = self.next_region()?;
+        let arena = self.context.arena_mut();
+        let capability = arena.value_type_capability(authority, CapabilityGrade::Durable, region);
+        let expected = shift_comp_type(arena, subject, Binders::from(1_u32));
+        self.context
+            .binders()
+            .open(Zone::Intuitionistic, capability);
+        self.wait(Frame::ScopeSubject { at, answer });
+        Ok(Step::Descend(Goal::Computation {
+            term: body,
+            direction: Direction::Check(expected),
+        }))
+    }
+
+    /// Close a capability scope's binder and open its return clause.
+    ///
+    /// # Specification
+    /// - ensures: the capability's binder is closed; one binder of the answer's
+    ///   result is open, and the return clause is checked against the answer
+    ///   shifted past it.
+    /// - fails: [`CheckRefusal::MachineInvariant`] when the binder stack is not
+    ///   where the scope left it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a return clause typed at the answer checks; one
+    ///   returning another type is refused.
+    /// - witness: `capability::tests::a_scope_handles_the_capability_it_introduces`
+    #[spec(captures: depth = usize::from(self.context.depth(Zone::Intuitionistic)), ensures: |ret| ret.is_err() || usize::from(self.context.depth(Zone::Intuitionistic)) == depth)]
+    fn scope_return(
+        &mut self,
+        at: ComputationId,
+        answer: CompTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        self.close()?;
+        let result = self.returner_expected(at, answer)?;
+        let Computation::Scope { on_return, .. } = *self.computation(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let expected = shift_comp_type(self.context.arena_mut(), answer, Binders::from(1_u32));
+        self.context.binders().open(Zone::Intuitionistic, result);
+        self.wait(Frame::HandlerReturn { at, answer });
+        Ok(Step::Descend(Goal::Computation {
+            term: on_return,
             direction: Direction::Check(expected),
         }))
     }
@@ -2849,7 +3166,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             } => self.stack_step(judgement, position, input),
             | Goal::Value { term, direction } => match direction {
                 | Direction::Synthesise => self.synthesise_value(term),
-                | Direction::Check(expected) => self.check_value(term, expected),
+                | Direction::Check(expected) => self
+                    .check_value(term, expected)
+                    .or_else(|refusal| self.forged(term, expected, refusal)),
             },
             | Goal::Computation { term, direction } => match direction {
                 | Direction::Synthesise => self.synthesise_comp(term),
@@ -3202,6 +3521,49 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         self.wait(Frame::Quote(quoted));
         Step::Descend(Goal::Form(quoted))
+    }
+
+    /// Name a checking rule's refusal of `term` at a capability type as the
+    /// forgery it is: no value former introduces a capability, so a checking
+    /// form met at one is a term standing where only a capability hypothesis
+    /// may.
+    ///
+    /// # Specification
+    /// - ensures: `refusal` unchanged, but for a shape mismatch at `term` whose
+    ///   found type is a capability at its weak head, which becomes
+    ///   [`CheckRefusal::CapabilityForged`] at `term` against `expected`.
+    /// - fails: always; the weak head's refusal when it does not unfold.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a thunk and a pair checked at a capability type are
+    ///   refused as forged, and a thunk checked at the integers keeps its shape
+    ///   mismatch.
+    /// - witness: `capability::tests::no_term_forges_a_capability`
+    #[spec(ensures: |ret| ret.is_err())]
+    fn forged(
+        &mut self,
+        term: ValueId,
+        expected: ValueTypeId,
+        refusal: CheckRefusal,
+    ) -> Result<Step, CheckRefusal>
+    {
+        if let CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(at),
+            found: TypeNode::Value(found),
+            ..
+        } = refusal
+            && at == term
+        {
+            let head = self.context.whnf_value_type(found)?;
+            if matches!(
+                value_type_view(self.context.arena(), head)?,
+                ValueTypeView::Capability { .. }
+            ) {
+                return Err(CheckRefusal::CapabilityForged { at, expected });
+            }
+        }
+        Err(refusal)
     }
 
     /// The checking rules over values.
@@ -3630,6 +3992,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 });
                 Ok(Step::Descend(Goal::Form(TypeNode::Computation(result))))
             },
+            | Computation::Exercise { capability, .. } => {
+                self.wait(Frame::ExerciseCapability { at: term });
+                Ok(Step::Descend(Goal::Value {
+                    term: capability,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | Computation::Scope { .. } => Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Scope(term),
+            }),
             | Computation::Resume(stack, body) => {
                 self.wait(Frame::Resume { stack, body });
                 Ok(Step::Descend(Goal::Value {
@@ -3821,6 +4193,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         match *self.computation(term)? {
             | Computation::Handle { .. } => self.handle(term, expected),
+            | Computation::Scope { .. } => self.scope(term, expected),
             | Computation::Reset(body) => {
                 self.wait(Frame::Reset {
                     answer: expected,
@@ -3883,6 +4256,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::RecordProjection(..)
             | Computation::TupleProjection(..)
             | Computation::Perform { .. }
+            | Computation::Exercise { .. }
             | Computation::Resume(..)
             | Computation::Project(..)
             | Computation::ListFold { .. }
@@ -4289,14 +4663,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   static Pi forms both classifiers, then awaits their check as static
     ///   classifiers; a path type forms its carrier, open or closed, then
     ///   checks each endpoint against it, left first; a session type forms each
-    ///   payload, then awaits their check as no session types. A former formed
-    ///   at once leaves the frames as found, but for a data type, a record, a
-    ///   product, a sum and a session type, which queue their components; one
-    ///   that descends leaves them no shorter.
+    ///   payload, then awaits their check as no session types; a capability
+    ///   forms the payload and reply of every operation its authority grants,
+    ///   and is refused when consumable. A former formed at once leaves the
+    ///   frames as found, but for a data type, a record, a product, a sum, a
+    ///   session type and a capability, which queue their components; one that
+    ///   descends leaves them no shorter.
     /// - fails: the view's refusal for a former outside the fragment or a
     ///   dangling id; [`CheckRefusal::OutOfFragment`] naming
     ///   [`UnadmittedFormer::TopUniverse`]; [`CheckRefusal::NotAnAbstractType`]
-    ///   for a sealed atom no admitted abstract type declares.
+    ///   for a sealed atom no admitted abstract type declares;
+    ///   [`CheckRefusal::CapabilityConsumable`] for a consumable capability,
+    ///   whose linear zone no former binds into.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -4307,7 +4685,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     #[spec(
         captures: depth = self.frames.len(),
         ensures: |ret| match ret {
-            | Ok(Step::Ascend(_)) => self.frames.len() == depth || (matches!(self.context.arena().value_type(at), Some(gandr_core_term::ValueType::Data { .. } | gandr_core_term::ValueType::Record(_) | gandr_core_term::ValueType::Product(_) | gandr_core_term::ValueType::Sum(_) | gandr_core_term::ValueType::Session(_))) && self.frames.len() >= depth),
+            | Ok(Step::Ascend(_)) => self.frames.len() == depth || (matches!(self.context.arena().value_type(at), Some(gandr_core_term::ValueType::Data { .. } | gandr_core_term::ValueType::Record(_) | gandr_core_term::ValueType::Product(_) | gandr_core_term::ValueType::Sum(_) | gandr_core_term::ValueType::Session(_) | gandr_core_term::ValueType::Capability { .. })) && self.frames.len() >= depth),
             | Ok(Step::Descend(_)) => self.frames.len() >= depth,
             | Err(_) => true,
         },
@@ -4413,6 +4791,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.wait(Frame::FormStaticPi(at));
                 self.wait(Frame::FormNext(TypeNode::Value(codomain)));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
+            },
+            | ValueTypeView::Capability {
+                authority, grade, ..
+            } => {
+                if grade == gandr_core_term::effect::capability::CapabilityGrade::Consumable {
+                    return Err(CheckRefusal::CapabilityConsumable(at));
+                }
+                let owner = self.owner;
+                self.frames
+                    .extend(authority.types().rev().map(|ty| Waiting {
+                        frame: Frame::FormNext(TypeNode::Value(ty)),
+                        owner,
+                    }));
+                Ok(Step::Ascend(Produced::Checked))
             },
         }
     }
@@ -4675,6 +5067,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Sum(..)
                 | ValueTypeView::List(_)
                 | ValueTypeView::Stack { .. }
+                | ValueTypeView::Capability { .. }
                 | ValueTypeView::Integer
                 | ValueTypeView::String
                 | ValueTypeView::Unit
@@ -4738,6 +5131,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Sum(..)
                 | ValueTypeView::List(_)
                 | ValueTypeView::Stack { .. }
+                | ValueTypeView::Capability { .. }
                 | ValueTypeView::Integer
                 | ValueTypeView::String
                 | ValueTypeView::Unit
@@ -4980,6 +5374,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::CompType(subject),
             ) => self.handle_subject(at, answer, interface, subject),
+            | (Frame::ExerciseCapability { at }, Produced::ValueType(classifier)) => {
+                self.exercise(at, classifier)
+            },
+            | (
+                Frame::ScopeForm {
+                    at,
+                    answer,
+                    subject,
+                },
+                Produced::Checked,
+            ) => self.scope_subject(at, answer, subject),
+            | (Frame::ScopeSubject { at, answer }, Produced::Checked) => {
+                self.scope_return(at, answer)
+            },
             | (Frame::HandlerReturn { at, answer }, Produced::Checked) => {
                 self.close()?;
                 self.handle_clause(at, answer, Ordinal::FIRST)
@@ -5762,7 +6170,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ValueBridge { .. }
                 | Frame::FormElement(_)
                 | Frame::StaticSpine { .. }
-                | Frame::StaticArgument { .. },
+                | Frame::StaticArgument { .. }
+                | Frame::ExerciseCapability { .. },
                 Produced::CompType(_) | Produced::Checked,
             )
             | (
@@ -5785,6 +6194,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::HandlerForm { .. }
                 | Frame::HandlerReturn { .. }
                 | Frame::HandlerClause { .. }
+                | Frame::ScopeForm { .. }
+                | Frame::ScopeSubject { .. }
                 | Frame::PathChecked { .. }
                 | Frame::PrimitiveSecond { .. }
                 | Frame::PrimitiveResult { .. }
@@ -9555,6 +9966,7 @@ mod tests
                     },
                     | Computation::ListFold { .. } | Computation::Case { .. } | Computation::Split { .. }
                     | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..)
+                    | Computation::Exercise { .. } | Computation::Scope { .. }
                     | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..)
                     | Computation::Hole(_) | Computation::Mark { .. } | Computation::Session(_) => {
                         prop_assert!(false, "the recipe mints no former outside the fragment, no hole and no mark");

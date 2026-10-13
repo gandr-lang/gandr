@@ -11,6 +11,8 @@ use quenchant_shape::shape::Maybe;
 
 use crate::ValueTypeId;
 
+pub mod capability;
+
 pub mod host;
 
 /// The name of an effect interface.

@@ -195,6 +195,17 @@ pub enum ValueTypeView<'arena>
     },
     /// A sealed abstract type: the atom declared at this admission position.
     Abstract(gandr_kernel_term::ConstantIndex),
+    /// A capability `Cap E`: a hypothesis carrying the authority `E` for a
+    /// region at a grade.
+    Capability
+    {
+        /// The grant atoms.
+        authority: &'arena gandr_core_term::effect::EffectRow,
+        /// How often it may be exercised.
+        grade: gandr_core_term::effect::capability::CapabilityGrade,
+        /// How long it lives.
+        region: gandr_core_term::effect::capability::Region,
+    },
     /// A session type: the protocol state an endpoint is at, with its
     /// payloads.
     Session(&'arena gandr_core_term::session::SessionType),
@@ -256,8 +267,9 @@ pub enum CompTypeView<'arena>
 ///   atom, the empty product (the unit type), a thunk type, a universe of a
 ///   ground sort, a lift, a decode, a product of one or more components, a sum
 ///   of any number of summands, a static Pi, a path type, a sealed atom or a
-///   session type; the children are the node's own. The unknown type, and a
-///   decode whose code is a hole or a mark, view as [`ValueTypeView::Unknown`].
+///   session type or a capability; the children are the node's own. The unknown
+///   type, and a decode whose code is a hole or a mark, view as
+///   [`ValueTypeView::Unknown`].
 /// - provides: the one decision of which value types the judgement and the
 ///   bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
@@ -301,6 +313,7 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::StaticPi { domain, codomain }) => matches!(arena.value_type(value_type), Some(ValueType::StaticPi { domain: found_domain, codomain: found_codomain }) if *found_domain == domain && *found_codomain == codomain),
     | Ok(ValueTypeView::Abstract(atom)) => matches!(arena.value_type(value_type), Some(&ValueType::Abstract(found)) if found == atom),
     | Ok(ValueTypeView::Session(session)) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Session(ref found) if found == session)),
+    | Ok(ValueTypeView::Capability { authority, grade, region }) => matches!(arena.value_type(value_type), Some(&ValueType::Capability { authority: ref found, grade: found_grade, region: found_region }) if found == authority && found_grade == grade && found_region == region),
     | Ok(ValueTypeView::Unknown) => value_type_knowledge(arena, value_type) == Knowledge::Unknown,
     | Err(FragmentRefusal::DanglingNode { node }) => arena.value_type(value_type).is_none() && node == CoreNode::Type(TypeNode::Value(value_type)),
     | Err(FragmentRefusal::OutOfFragment { at, former }) => at == CoreNode::Type(TypeNode::Value(value_type))
@@ -371,6 +384,15 @@ pub fn value_type_view(
         | ValueType::StaticPi { domain, codomain } => {
             Ok(ValueTypeView::StaticPi { domain, codomain })
         },
+        | ValueType::Capability {
+            ref authority,
+            grade,
+            region,
+        } => Ok(ValueTypeView::Capability {
+            authority,
+            grade,
+            region,
+        }),
         | ValueType::Unknown => Ok(ValueTypeView::Unknown),
     }
 }

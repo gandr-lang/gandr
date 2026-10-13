@@ -1013,6 +1013,31 @@ Err(_) => false,
                         clauses = operations;
                         two(computation(subject), computation(on_return), Lowering::ONE)
                     },
+                    | Computation::Exercise {
+                        capability,
+                        signature: ref held,
+                        payload,
+                        ..
+                    } => {
+                        signature = Some(held);
+                        two(value(capability), value(payload), Lowering::NONE)
+                    },
+                    | Computation::Scope {
+                        signature: ref held,
+                        subject,
+                        on_return,
+                        clauses: ref operations,
+                    } => {
+                        signature = Some(held);
+                        clauses = operations;
+                        [
+                            Some((computation(subject), Lowering::ONE)),
+                            Some((computation(on_return), Lowering::ONE)),
+                            None,
+                            None,
+                            None,
+                        ]
+                    },
                     | Computation::Resume(stack, body) => {
                         two(value(stack), computation(body), Lowering::NONE)
                     },
@@ -1179,6 +1204,10 @@ Err(_) => false,
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
                     | ValueType::Unknown => [None, None, None, None, None],
+                    | ValueType::Capability { ref authority, .. } => {
+                        effects = Some(authority);
+                        [None, None, None, None, None]
+                    },
                     | ValueType::StaticPi {
                         domain: first,
                         codomain: second,

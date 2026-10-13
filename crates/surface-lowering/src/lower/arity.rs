@@ -170,7 +170,7 @@ mod tests;
 ///
 /// # Specification
 /// trivial.
-const fn clause_body(clause: NodeIndex) -> Block
+pub(super) const fn clause_body(clause: NodeIndex) -> Block
 {
     Block {
         statements: Stretch { start: 0, end: 0 },

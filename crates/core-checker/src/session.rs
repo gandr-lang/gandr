@@ -296,6 +296,7 @@ pub(crate) fn session_at(
         | ValueTypeView::Element { .. }
         | ValueTypeView::Product(_)
         | ValueTypeView::StaticPi { .. }
+        | ValueTypeView::Capability { .. }
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Unknown => Err(CheckRefusal::MachineInvariant),
     }

@@ -125,6 +125,9 @@ mod width;
 use std::path::PathBuf;
 
 use anodized::spec;
+pub use gandr_core_checker::HostGrant;
+pub use gandr_core_term::effect::OperationName;
+pub use gandr_core_term::effect::host::AuthorityError;
 
 pub use crate::compose::Admission;
 pub use crate::compose::ComposeFault;
@@ -211,6 +214,8 @@ pub enum Invocation
         /// Where each lint reports its findings: within its attributes, or
         /// everywhere for a lint the run enables.
         lints: Lints,
+        /// The host operations every held capability is bounded by.
+        grant: HostGrant,
         /// The sources and directories of sources to check, in order.
         paths: Vec<PathBuf>,
         /// The threads the sources are parsed and lowered on.
@@ -326,16 +331,16 @@ impl core::fmt::Display for StatusReport
 /// - requires: nothing; every [`Invocation`] variant routes.
 /// - ensures: each variant maps to exactly one [`Outcome`] variant: a bare
 ///   invocation to the status report, `check` to a walk run under
-///   [`Verb::Check`] with the same goals and lints settings, and `test` to a
-///   walk run under [`Verb::Test`] with every lint at its attributes, each walk
-///   over the invocation's paths in order at the invocation's width; `run` to a
-///   [`Script`] of its path; `stage` to a [`Staging`] of its programs, in
-///   order, at its width; `fmt` to a [`Formatting`] of its paths, in order, at
-///   its page and rewrite. Routing performs no I/O of its own: a walk, a script
-///   or a formatting reads nothing until it is advanced, a staging builds
-///   nothing until it runs, and building the grammar a walk parses with is
-///   computation. The optional `tracing` feature reports a span to the caller's
-///   subscriber.
+///   [`Verb::Check`] with the same goals and lints settings, under its grant,
+///   and `test` to a walk run under [`Verb::Test`] with every lint at its
+///   attributes and no grant, each walk over the invocation's paths in order at
+///   the invocation's width; `run` to a [`Script`] of its path; `stage` to a
+///   [`Staging`] of its programs, in order, at its width; `fmt` to a
+///   [`Formatting`] of its paths, in order, at its page and rewrite. Routing
+///   performs no I/O of its own: a walk, a script or a formatting reads nothing
+///   until it is advanced, a staging builds nothing until it runs, and building
+///   the grammar a walk parses with is computation. The optional `tracing`
+///   feature reports a span to the caller's subscriber.
 /// - provides: the outcome the driver renders.
 /// - fails: never; routing is total over the invocation vocabulary.
 /// - panics: none.
@@ -392,12 +397,13 @@ pub fn dispatch(invocation: Invocation) -> Outcome
         | Invocation::Check {
             goals,
             lints,
+            grant,
             paths,
             width,
         } => Outcome::Run {
             verb: Verb::Check(goals),
             lints,
-            walk: Walk::new(paths),
+            walk: Walk::new(paths).granting(grant),
             width,
         },
         | Invocation::Test { paths, width } => Outcome::Run {
@@ -427,6 +433,7 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::Goals;
+    use super::HostGrant;
     use super::Invocation;
     use super::Lints;
     use super::Outcome;
@@ -504,6 +511,7 @@ mod tests
             let outcome = dispatch(Invocation::Check {
                 goals,
                 lints,
+                grant: HostGrant::UNBOUNDED,
                 paths,
                 width,
             });

@@ -397,11 +397,13 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     // construct kinds (new rule provenances)
     "become_expression",
     "break_expression",
+    "capability_type",
     "codata_declaration",
     "continue_expression",
     "data_declaration",
     "for_expression",
     "glob_expression",
+    "handle_expression",
     "import_declaration",
     "circuit_declaration",
     "labelled_sum_expression",

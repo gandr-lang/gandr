@@ -1,0 +1,17 @@
+@[ owes(1) ]
+def fs : Cap {read, write} ;
+
+@[ checks ]
+def peek(c : Cap {read}) -> -F [Fs] String {
+  become c.read("notes")
+}
+
+@[ checks ]
+def main() -> -F [Fs] String {
+  become peek(fs)
+}
+
+@[ refuses("CapabilityOutsideAuthority") ]
+def save(c : Cap {read}) -> -F [Fs] Unit {
+  become c.write("notes", "draft")
+}

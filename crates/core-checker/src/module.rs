@@ -673,7 +673,11 @@ fn decide(
             }
         },
         | Maybe::Absent(body::Absent::Hole) => {
-            match hole(direction, constant, declaration.origin()) {
+            let owed = hole(direction, constant, declaration.origin()).and_then(|absence| {
+                crate::capability::held(context, constant, absence.declared())?;
+                Ok(absence)
+            });
+            match owed {
                 | Ok(absence) => (
                     Verdict::Owed(ObligationEntry::from(absence)),
                     Maybe::Absent(kept::Absent::Accepted),

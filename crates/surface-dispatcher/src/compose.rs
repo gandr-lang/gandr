@@ -19,10 +19,19 @@
 //! After the checker judges a module, every declaration it accepted is offered
 //! to the kernel through the checker's bridge. A declaration the kernel
 //! rejects, or one the bridge refuses for any reason but a reference to a
-//! declaration that did not cross, is `ComposeFault::Readmission`: a
-//! disagreement between the two checkers is an engine fault, exit `2`, never a
-//! verdict about the author's source. A refused declaration crosses as its mark
-//! and a reference to it is withheld, and neither is a disagreement.
+//! declaration that did not cross or an effectful former, is
+//! `ComposeFault::Readmission`: a disagreement between the two checkers is an
+//! engine fault, exit `2`, never a verdict about the author's source. A
+//! refused declaration crosses as its mark and a reference to it is withheld,
+//! and neither is a disagreement.
+//!
+//! An effectful declaration — one holding an effect row, a capability, an
+//! exercise, a scope or any other control former — stays on the checker's
+//! side: the kernel is pure and has no rule for them by design, so the
+//! bridge's refusal by that former's name is the expected answer rather than
+//! a disagreement, and what names the declaration is withheld. A pure former
+//! the bridge refuses remains a fault. Reversal: when the kernel admits
+//! effectful computations.
 //!
 //! This goes beyond the slice's plan, which settles the checker's verdicts
 //! alone. The kernel is the oracle the checker answers to, and the readmission
@@ -107,11 +116,13 @@ use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::ComponentOrdinal;
 use gandr_core_checker::Declaration;
+use gandr_core_checker::HostGrant;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::Nesting;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::SealSite;
 use gandr_core_checker::SealingSite;
+use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::body;
 use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
@@ -828,12 +839,13 @@ pub fn lower_parsed<'source>(
 /// # Specification
 /// - requires: `module` was lowered into `arena`; `root` is the corpus root the
 ///   source sits under.
-/// - ensures: the module is adapted to the checker's input, judged, built into
-///   a [`Program`] and settled under `root`, the program running each
-///   declaration that states a run outcome. The settled composition carries one
-///   report per declared name, the exercised rows its settled declarations
-///   carry, the refusals of the declarations refused at their own form, which
-///   no expectation can state, the lowering's origin table, moved rather than
+/// - ensures: the module is adapted to the checker's input, judged with its
+///   held capabilities bounded by `grant` minted into `arena`, built into a
+///   [`Program`] and settled under `root`, the program running each declaration
+///   that states a run outcome. The settled composition carries one report per
+///   declared name, the exercised rows its settled declarations carry, the
+///   refusals of the declarations refused at their own form, which no
+///   expectation can state, the lowering's origin table, moved rather than
 ///   copied, the spellings of the types its checker refusals compare and its
 ///   failures name, the failures themselves, every builtin the source shadowed,
 ///   every exit the lowering inferred, every run the checker inferred, the
@@ -851,6 +863,7 @@ pub fn lower_parsed<'source>(
 ///   renders, before its admission; admitted, it is the composition.
 /// - witness: `compose::tests::a_judged_module_renders_before_its_admission`
 /// - witness: `compose::tests::a_module_settles_every_declaration_once`
+/// - witness: `walk::tests::a_grant_bounds_every_source_the_walk_judges`
 #[inline]
 #[must_use]
 #[spec(
@@ -866,17 +879,18 @@ pub fn lower_parsed<'source>(
         Err(_) => true,
     },
 )]
-pub fn judge(
+pub fn judge<'source>(
     root: CorpusRoot,
-    module: LoweredModule<'_>,
+    module: LoweredModule<'source>,
     mut arena: CoreArena,
-) -> Judged<'_>
+    grant: &HostGrant,
+) -> Judged<'source>
 {
     let declarations = adapt(&module);
-    let verdicts = check_module(
-        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-        &declarations,
-    );
+    let grants = grant.grants(&mut arena);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    context.grant(grants);
+    let verdicts = check_module(&mut context, &declarations);
     let names = module.structured_names();
     let mut program = Program::new(&arena, &module, &verdicts);
     let settled = match settle(root, &arena, &module, &verdicts, &mut program) {
@@ -957,7 +971,7 @@ fn inferred_runs(
 /// # Specification
 /// - requires: `module` was lowered into `arena`; `root` is the corpus root the
 ///   source sits under.
-/// - ensures: [`judge`], then [`Judged::admit`]: the result is
+/// - ensures: [`judge`] under `grant`, then [`Judged::admit`]: the result is
 ///   [`Composed::Settled`] with one report per declared name, the exercised
 ///   rows its settled declarations carry, the refusals of the declarations
 ///   refused at their own form, which no expectation can state, the lowering's
@@ -1001,13 +1015,14 @@ fn inferred_runs(
         Ok(Composed::Refused(_)) | Err(ComposeFault::Parse(_) | ComposeFault::Lowering(_)) => false,
     },
 )]
-pub fn judge_module(
+pub fn judge_module<'source>(
     root: CorpusRoot,
-    module: LoweredModule<'_>,
+    module: LoweredModule<'source>,
     arena: CoreArena,
-) -> Result<Composed<'_>, ComposeFault<'_>>
+    grant: &HostGrant,
+) -> Result<Composed<'source>, ComposeFault<'source>>
 {
-    judge(root, module, arena).admit()
+    judge(root, module, arena, grant).admit()
 }
 
 /// Carry one source through the pipeline: parse, lower, adapt, check, settle.
@@ -1016,11 +1031,11 @@ pub fn judge_module(
 /// - requires: `grammar` is the checked grammar the source is parsed under;
 ///   `root` is the corpus root the source sits under.
 /// - ensures: [`lower_source`] then, for a module the lowering read,
-///   [`judge_module`]: after parsing succeeds, the source is lowered once and
-///   `lowerings` advances once, saturating; a parse failure leaves it
-///   unchanged. A read module is [`Composed::Settled`] with one report per
-///   declared name; an author or fragment refusal of the whole source is
-///   [`Composed::Refused`].
+///   [`judge_module`] under no grant: after parsing succeeds, the source is
+///   lowered once and `lowerings` advances once, saturating; a parse failure
+///   leaves it unchanged. A read module is [`Composed::Settled`] with one
+///   report per declared name; an author or fragment refusal of the whole
+///   source is [`Composed::Refused`].
 /// - provides: the one verdict set a run gives the source, whichever verb runs
 ///   it.
 /// - fails: as [`lower_source`] and [`judge_module`].
@@ -1069,15 +1084,15 @@ pub fn compose<'source>(
 ) -> Result<Composed<'source>, ComposeFault<'source>>
 {
     let lowering = lower_source(grammar, source, lowerings)?;
-    judge_lowering(root, lowering)
+    judge_lowering(root, lowering, &HostGrant::UNBOUNDED)
 }
 
 /// Judge what the lowering made of one source, its obligations given up.
 ///
 /// # Specification
 /// - requires: `root` is the corpus root the source sits under.
-/// - ensures: a module the lowering read is judged by [`judge_module`]; a
-///   whole-source refusal is [`Composed::Refused`].
+/// - ensures: a module the lowering read is judged by [`judge_module`] under
+///   `grant`; a whole-source refusal is [`Composed::Refused`].
 /// - provides: the half of [`compose()`] that stays in walk order when a wider
 ///   walk lowers its sources on several threads.
 /// - fails: as [`judge_module`].
@@ -1103,13 +1118,14 @@ pub fn compose<'source>(
         Err(ComposeFault::Parse(_) | ComposeFault::Lowering(_)) => false,
     },
 )]
-pub fn judge_lowering(
+pub fn judge_lowering<'source>(
     root: CorpusRoot,
-    lowering: Lowering<'_>,
-) -> Result<Composed<'_>, ComposeFault<'_>>
+    lowering: Lowering<'source>,
+    grant: &HostGrant,
+) -> Result<Composed<'source>, ComposeFault<'source>>
 {
     match lowering.into_lowered() {
-        | Lowered::Module { module, arena } => judge_module(root, module, arena),
+        | Lowered::Module { module, arena } => judge_module(root, module, arena, grant),
         | Lowered::Refused(refusal) => Ok(Composed::Refused(refusal)),
     }
 }
@@ -1285,17 +1301,18 @@ fn abstract_type(sealing: Sealing) -> AbstractType
 /// - requires: `verdicts` was judged over `arena`.
 /// - ensures: succeeds with the readmission when every accepted declaration
 ///   crossed as a definition or an axiom, or stays on the checker's side as a
-///   static definition; a refused declaration crosses as its mark, a
-///   declaration withheld because it names a refused one carries that one's
-///   reason, a declaration holding a term hole or the unknown type stays behind
-///   as the user absence it is, and a declaration holding a session stays
-///   behind on the checker's side, the kernel having no session former, so none
-///   of these is a disagreement.
+///   static definition or as an effectful one the bridge refuses by its
+///   effectful former; a refused declaration crosses as its mark, a declaration
+///   withheld because it names a refused one carries that one's reason, a
+///   declaration holding a term hole or the unknown type stays behind as the
+///   user absence it is, and a declaration holding a session stays behind on
+///   the checker's side, the kernel having no session former, so none of these
+///   is a disagreement.
 /// - provides: the kernel's repetition of every acceptance a run reports, and
 ///   the environment the run's kernel artifact is exported from.
 /// - fails: the readmission of the first declaration the kernel rejected or the
-///   bridge refused for any reason but a withheld constant, a user absence or a
-///   session.
+///   bridge refused for any reason but a withheld constant, a user absence, a
+///   session or an effectful former.
 /// - panics: none.
 ///
 /// # Errors
@@ -1305,27 +1322,30 @@ fn abstract_type(sealing: Sealing) -> AbstractType
 /// - hypothesis: L3 — a mark, withheld reference and definition are admitted
 ///   over their own arena. A foreign arena exposes the checked reference's
 ///   dangling ids at the first nonzero failure position. Kernel-export names
-///   also observe an axiom crossing. These cases do not exercise every bridge
+///   also observe an axiom crossing, and an exercise and a scope stay checked
+///   beside a readmitted definition. These cases do not exercise every bridge
 ///   refusal or certificate rejection.
 /// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
 /// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
+/// - witness: `compose::tests::an_effectful_declaration_stays_on_the_checkers_side`
 #[spec(ensures: |ref ret| match *ret {
     Ok(ref readmission) => readmission.readmitted().len() == verdicts.judged().len()
         && readmission.readmitted().iter().zip(verdicts.judged()).all(|(crossed, judged)|
-            crossed.constant() == judged.constant() && matches!(*crossed.outcome(),
+            crossed.constant() == judged.constant() && (matches!(*crossed.outcome(),
                 bridge::Outcome::Defined { .. } | bridge::Outcome::Assumed { .. }
                     | bridge::Outcome::Data { .. }
                     | bridge::Outcome::Marked(_) | bridge::Outcome::Static
                     | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. } | bridge::Refusal::WithheldData { .. }
                         | bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }
-                        | bridge::Refusal::Session { .. }))),
+                        | bridge::Refusal::Session { .. }))
+                || matches!(*crossed.outcome(), bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. }) if residence(former) == Residence::Checker))),
     Err(ref fault) =>
         verdicts.judged().iter().any(|judged| judged.constant() == fault.constant())
-            && matches!(*fault.outcome(), bridge::Outcome::Rejected(_)
-                | bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { .. }
-                    | bridge::Refusal::DanglingNode { .. }
+            && (matches!(*fault.outcome(), bridge::Outcome::Rejected(_)
+                | bridge::Outcome::Refused(bridge::Refusal::DanglingNode { .. }
                     | bridge::Refusal::Cyclic { .. } | bridge::Refusal::CertificateDeclined { .. }
-                    | bridge::Refusal::MachineInvariant)),
+                    | bridge::Refusal::MachineInvariant))
+                || matches!(*fault.outcome(), bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. }) if residence(former) == Residence::Kernel)),
 })]
 fn readmitted(
     arena: &mut CoreArena,
@@ -1347,6 +1367,8 @@ fn readmitted(
                 | bridge::Refusal::Unknown { .. }
                 | bridge::Refusal::Session { .. },
             ) => {},
+            | bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. })
+                if residence(former) == Residence::Checker => {},
             | bridge::Outcome::Refused(
                 bridge::Refusal::OutOfFragment { .. }
                 | bridge::Refusal::DanglingNode { .. }
@@ -1362,12 +1384,75 @@ fn readmitted(
     Ok(readmission)
 }
 
+/// Which side of the boundary a declaration holding a former the kernel has
+/// no rule for belongs on.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Residence
+{
+    /// The former is effectful and the kernel pure by design: the declaration
+    /// stays on the checker's side.
+    Checker,
+    /// The former is pure: the kernel is meant to admit it, so the bridge's
+    /// refusal is a disagreement.
+    Kernel,
+}
+
+/// The side of the boundary a declaration the bridge refuses for `former`
+/// belongs on.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the checker's side for an effect row, a stack and its literal, a
+///   request, a handler, a resumption, a delimiter, a capture, a capability, an
+///   exercise and a scope; the kernel's for every pure former.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module holding a capability, its exercise and its scope
+///   settles with nothing crossed for them, while a foreign arena's refusal is
+///   still a fault.
+/// - witness: `compose::tests::an_effectful_declaration_stays_on_the_checkers_side`
+/// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
+#[spec(ensures: |ret| (ret == Residence::Kernel) == matches!(former,
+    UnadmittedFormer::ValueLift | UnadmittedFormer::NumericLiteral | UnadmittedFormer::NumericAtom
+        | UnadmittedFormer::TypeLift | UnadmittedFormer::Abstract | UnadmittedFormer::SortParameter
+        | UnadmittedFormer::TopUniverse | UnadmittedFormer::StaticLambda))]
+fn residence(former: UnadmittedFormer) -> Residence
+{
+    match former {
+        | UnadmittedFormer::EffectRow
+        | UnadmittedFormer::Reify
+        | UnadmittedFormer::Stack
+        | UnadmittedFormer::Perform
+        | UnadmittedFormer::Handle
+        | UnadmittedFormer::Resume
+        | UnadmittedFormer::Reset
+        | UnadmittedFormer::Shift
+        | UnadmittedFormer::Capability
+        | UnadmittedFormer::Exercise
+        | UnadmittedFormer::Scope => Residence::Checker,
+        | UnadmittedFormer::ValueLift
+        | UnadmittedFormer::NumericLiteral
+        | UnadmittedFormer::NumericAtom
+        | UnadmittedFormer::TypeLift
+        | UnadmittedFormer::Abstract
+        | UnadmittedFormer::SortParameter
+        | UnadmittedFormer::TopUniverse
+        | UnadmittedFormer::StaticLambda => Residence::Kernel,
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
     use anodized::spec;
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckingContext;
+    use gandr_core_checker::HostGrant;
     use gandr_core_checker::Verdict;
     use gandr_core_checker::bridge;
     use gandr_core_checker::check_module;
@@ -1536,6 +1621,37 @@ def wrong = "text" ;"#,
             usize::from(report.ledger()),
             1_usize,
             "the owed signature is the module's one obligation"
+        );
+    }
+
+    #[test]
+    fn an_effectful_declaration_stays_on_the_checkers_side()
+    {
+        let grammar = grammar();
+        let report = settled(
+            &grammar,
+            CorpusRoot::Strict,
+            SourceText::from(concat!(
+                "def peek(c : Cap {read}) -> -F [Fs] String { c.read(\"notes\") }\n",
+                "def quit() -> -F Unit { handle c : Proc { c.exit(1) } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
+                "def answer : Integer ;\n",
+                "def answer = 42 ;\n",
+            )),
+        );
+        let rows: Vec<(String, Settlement)> = report
+            .declarations()
+            .iter()
+            .map(|declaration| (declaration.name().to_string(), declaration.settlement()))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("peek".to_owned(), Settlement::Settled),
+                ("quit".to_owned(), Settlement::Settled),
+                ("answer".to_owned(), Settlement::Settled),
+            ],
+            "the kernel's refusal of an exercise and a scope is no disagreement, \
+             and the pure declaration beside them is still readmitted"
         );
     }
 
@@ -1864,7 +1980,7 @@ def h = 1 ;"#,
                 program,
             };
             let (module, arena) = lower(&mut lowerings);
-            let judged = judge(CorpusRoot::Fixture, module, arena);
+            let judged = judge(CorpusRoot::Fixture, module, arena, &HostGrant::UNBOUNDED);
             let Ok(
                 ref settled @ Composed::Settled {
                     kernel: Maybe::Absent(admitted::Absent::Pending),

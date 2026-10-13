@@ -348,6 +348,7 @@ fn operand_of(
         | Former::Block
         | Former::Call
         | Former::Case
+        | Former::Scope
         | Former::Telescope
         | Former::Injection
         | Former::LazyRecord
@@ -363,6 +364,7 @@ fn operand_of(
         | Former::ProductType
         | Former::LazyProductType
         | Former::TelescopeType
+        | Former::CapabilityType
         | Former::LabelledSumType
         | Former::LazyRecordType
         | Former::ValueFunctionType

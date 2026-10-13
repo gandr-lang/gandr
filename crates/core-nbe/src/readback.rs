@@ -779,6 +779,12 @@ enum Task
         /// The source classifier whose inline effect row is being rebuilt.
         source: CompTypeId,
     },
+    /// Assemble the operation types of the source capability's authority.
+    CapabilityType
+    {
+        /// The source classifier whose authority is being rebuilt.
+        source: ValueTypeId,
+    },
     /// Assemble an arrow from the two types on the stacks.
     Arrow,
     /// Assemble a dependent arrow from the two types on the stacks.
@@ -2145,6 +2151,11 @@ fn run(
             && core.comp_type(source).is_some_and(|node| match *node { CompType::Returner { ref effects, .. } => entry_value_types.checked_sub(1_usize.saturating_add(effects.types().count())) == Some(machine.value_types.len()), _ => false })
             && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comp_types.len())
             && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
+        | Task::CapabilityType { source } => machine.tasks.len() == entry_tasks
+            && machine.values.len() == entry_values && machine.comps.len() == entry_comps
+            && core.value_type(source).is_some_and(|node| match *node { ValueType::Capability { ref authority, .. } => entry_value_types.checked_sub(authority.types().count()).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len()), _ => false })
+            && machine.comp_types.len() == entry_comp_types
+            && machine.value_types.last().is_some_and(|id| core.value_type(*id).is_some()),
         | Task::Arrow | Task::Pi => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
@@ -2646,6 +2657,27 @@ fn step(
                 .push(core.comp_type_returner_with_effects(result, effects));
             Ok(())
         },
+        | Task::CapabilityType { source } => {
+            let source = core
+                .value_type(source)
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let ValueType::Capability {
+                ref authority,
+                grade,
+                region,
+            } = *source
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let authority = authority
+                .try_map_types(gandr_core_term::effect::TypeOrder::Reverse, |_| {
+                    machine.pop_value_type()
+                })?;
+            machine
+                .value_types
+                .push(core.value_type_capability(authority, grade, region));
+            Ok(())
+        },
         | Task::Arrow => {
             let codomain = machine.pop_comp_type()?;
             let domain_type = machine.pop_value_type()?;
@@ -2867,6 +2899,10 @@ fn held_level(
         ValueType::Stack { input, output } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::StackType, Task::QuotedCompType { quoted: second, frame: second_frame, binders: second_binders }, Task::QuotedCompType { quoted: first, frame: first_frame, binders: first_binders }] if *first == input && *second == output && *first_frame == frame && *second_frame == frame && *first_binders == binders && *second_binders == binders),
         ValueType::List(element) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::ListType, Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *child == element && *child_frame == frame && *child_binders == binders),
 ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
+ValueType::Capability { ref authority, .. } => machine.value_types.len() == entry_results
+            && new_tasks.first() == Some(&Task::CapabilityType { source: quoted })
+            && new_tasks.len() == authority.types().count().saturating_add(1)
+            && new_tasks.iter().skip(1).zip(authority.types().rev()).all(|(task, child)| *task == Task::QuotedValueType { quoted: child, frame, binders }),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) if parts.is_empty() => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => machine.value_types.len() == entry_results
             && new_tasks.first() == Some(&if matches!(*matched_native_node, ValueType::Product(_)) { Task::ProductType(quoted) } else { Task::SumType(quoted) })
@@ -2956,6 +2992,10 @@ fn step_quoted_value_type(
         | ValueType::Abstract(_)
         | ValueType::Unknown => {
             machine.value_types.push(quoted);
+        },
+        | ValueType::Capability { ref authority, .. } => {
+            machine.tasks.push(Task::CapabilityType { source: quoted });
+            machine.tasks.extend(authority.types().rev().map(at));
         },
         // The empty product and the empty sum are closed leaves.
         | ValueType::Product(ref parts) | ValueType::Sum(ref parts) if parts.is_empty() => {

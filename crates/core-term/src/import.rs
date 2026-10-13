@@ -147,6 +147,7 @@ impl Image
                 | ValueType::Sum(_)
                 | ValueType::Universe { .. }
                 | ValueType::Abstract(_)
+                | ValueType::Capability { .. }
                 | ValueType::Unknown
                 | ValueType::Session(_),
             )
@@ -160,6 +161,11 @@ impl Image
             },
             | Self::Computation(
                 Computation::Handle {
+                    subject: ref mut first,
+                    on_return: ref mut second,
+                    ..
+                }
+                | Computation::Scope {
                     subject: ref mut first,
                     on_return: ref mut second,
                     ..
@@ -224,7 +230,14 @@ impl Image
                 | Value::ListCons(ref mut first, ref mut second)
                 | Value::StaticApplication(ref mut first, ref mut second),
             )
-            | Self::Computation(Computation::Transport(ref mut first, ref mut second))
+            | Self::Computation(
+                Computation::Transport(ref mut first, ref mut second)
+                | Computation::Exercise {
+                    capability: ref mut first,
+                    payload: ref mut second,
+                    ..
+                },
+            )
             | Self::ValueType(ValueType::PathUniverse(ref mut first, ref mut second)) => {
                 [Some(V(first)), Some(V(second)), None, None, None]
             },
@@ -491,7 +504,8 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                             .map(|&body| Task::Open(Node::Computation(body))),
                                     );
                                 },
-                                | Computation::Perform { ref signature, .. } => {
+                                | Computation::Perform { ref signature, .. }
+                                | Computation::Exercise { ref signature, .. } => {
                                     self.pending.extend(
                                         signature
                                             .types()
@@ -500,6 +514,11 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                     );
                                 },
                                 | Computation::Handle {
+                                    ref signature,
+                                    ref clauses,
+                                    ..
+                                }
+                                | Computation::Scope {
                                     ref signature,
                                     ref clauses,
                                     ..
@@ -565,6 +584,14 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         .rev()
                                         .map(|&ty| Task::Open(Node::ValueType(ty))),
                                 ),
+                                | ValueType::Capability { ref authority, .. } => {
+                                    self.pending.extend(
+                                        authority
+                                            .types()
+                                            .rev()
+                                            .map(|ty| Task::Open(Node::ValueType(ty))),
+                                    );
+                                },
                                 | _ => {},
                             }
                         },
@@ -680,17 +707,29 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 }
                             }
                         },
-                        | Image::Computation(Computation::Perform {
-                            ref mut signature, ..
-                        }) => {
+                        | Image::Computation(
+                            Computation::Perform {
+                                ref mut signature, ..
+                            }
+                            | Computation::Exercise {
+                                ref mut signature, ..
+                            },
+                        ) => {
                             *signature = signature
                                 .try_map_types(crate::effect::TypeOrder::Forward, map_type)?;
                         },
-                        | Image::Computation(Computation::Handle {
-                            ref mut signature,
-                            ref mut clauses,
-                            ..
-                        }) => {
+                        | Image::Computation(
+                            Computation::Handle {
+                                ref mut signature,
+                                ref mut clauses,
+                                ..
+                            }
+                            | Computation::Scope {
+                                ref mut signature,
+                                ref mut clauses,
+                                ..
+                            },
+                        ) => {
                             *signature = signature
                                 .try_map_types(crate::effect::TypeOrder::Forward, map_type)?;
                             for index in 0 .. clauses.len() {
@@ -720,6 +759,12 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                         | Image::ValueType(ValueType::Session(ref mut session)) => {
                             *session = session
                                 .try_map_payloads(crate::session::ChildOrder::Forward, map_type)?;
+                        },
+                        | Image::ValueType(ValueType::Capability {
+                            ref mut authority, ..
+                        }) => {
+                            *authority = authority
+                                .try_map_types(crate::effect::TypeOrder::Forward, map_type)?;
                         },
                         | _ => {},
                     }

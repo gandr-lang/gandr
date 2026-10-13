@@ -291,6 +291,14 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             | LinearityDefect::Unrestricted => "an endpoint outside a fork",
             | LinearityDefect::Unbound { .. } => "no endpoint bound here",
         },
+        | CheckRefusal::CapabilityForged { .. } => "no capability hypothesis",
+        | CheckRefusal::CapabilityAmplified(_) => "a capability granting less",
+        | CheckRefusal::CapabilityOutsideAuthority { .. } => {
+            "an operation its capability withholds"
+        },
+        | CheckRefusal::CapabilityEscaped { .. } => "a capability outliving its scope",
+        | CheckRefusal::CapabilityConsumable(_) => "a consumable capability",
+        | CheckRefusal::CapabilityUngranted { .. } => "authority the host did not grant",
     })
 }
 

@@ -1130,7 +1130,7 @@ impl<'source> Program<'source>
         },
         Some(&Computation::Primitive { .. } |
 &(Computation::Transport(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Application(..) |
-Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) |
+Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) |
 Computation::ListFold { .. } | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. }
 | Computation::Hole(_) | Computation::Mark { .. } | Computation::Fixpoint { .. } | Computation::Session(_))) |
 None => ret.0 == "<computation>",
@@ -1154,6 +1154,8 @@ None => ret.0 == "<computation>",
                 | Computation::Application(..)
                 | Computation::Perform { .. }
                 | Computation::Handle { .. }
+                | Computation::Exercise { .. }
+                | Computation::Scope { .. }
                 | Computation::Resume(..)
                 | Computation::Split { .. }
                 | Computation::Reset(_)
@@ -1479,15 +1481,28 @@ fn references(
                     pending.push(Node::Value(record));
                 },
                 | Some(&Computation::Perform { payload, .. }) => pending.push(Node::Value(payload)),
-                | Some(&Computation::Handle {
-                    subject,
-                    on_return,
-                    ref clauses,
-                    ..
-                }) => {
+                | Some(
+                    &(Computation::Handle {
+                        subject,
+                        on_return,
+                        ref clauses,
+                        ..
+                    }
+                    | Computation::Scope {
+                        subject,
+                        on_return,
+                        ref clauses,
+                        ..
+                    }),
+                ) => {
                     pending.extend([Node::Computation(subject), Node::Computation(on_return)]);
                     pending.extend(clauses.iter().map(|clause| Node::Computation(clause.body)));
                 },
+                | Some(&Computation::Exercise {
+                    capability,
+                    payload,
+                    ..
+                }) => pending.extend([Node::Value(capability), Node::Value(payload)]),
                 | Some(
                     &(Computation::Resume(value, body)
                     | Computation::Split {

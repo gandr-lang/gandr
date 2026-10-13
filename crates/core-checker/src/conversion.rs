@@ -94,10 +94,18 @@
 //! the reverse. Operation payload and reply types are invariant. A stack
 //! `Stack(B, C)` is contravariant in what it consumes and covariant in what it
 //! delivers: it stands where `Stack(B′, C′)` is expected when `B′ ⊑ B` and `C ⊑
-//! C′`. Witnesses:
+//! C′`. A capability is contravariant in its authority and covariant in its
+//! region: `Cap E` stands where `Cap E′` is expected when every grant atom of
+//! `E′` is one of `E` (Attenuate) and its region lives wherever the expected
+//! one does; its grade is invariant. The first failure is
+//! [`CheckRefusal::CapabilityAmplified`], the second
+//! [`CheckRefusal::CapabilityEscaped`], and a type of another former where a
+//! capability is expected is [`CheckRefusal::CapabilityForged`]: no term but a
+//! capability hypothesis stands at a capability type. Witnesses:
 //! `conversion::tests::returner_rows_are_covariant_but_signature_types_are_invariant`,
-//! `conversion::tests::stack_is_contravariant_in_b_covariant_in_c_positive` and
-//! `conversion::tests::stack_variance_negative`.
+//! `conversion::tests::stack_is_contravariant_in_b_covariant_in_c_positive`,
+//! `conversion::tests::stack_variance_negative` and
+//! `capability::tests::attenuation_narrows_and_never_widens`.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -110,6 +118,8 @@ use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::effect::RowInclusion;
+use gandr_core_term::effect::capability::RegionOrder;
 use gandr_core_term::hole::Knowledge;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::GroundSort;
@@ -226,6 +236,11 @@ pub enum Agreement
     Convertible,
     /// The two types differ at some node.
     Apart,
+    /// Two capabilities whose expected authority grants an atom the found
+    /// one does not.
+    Amplified,
+    /// Two capabilities whose found region ends before the expected one.
+    Escaped,
 }
 
 /// Cross the value bridge: the type `at` synthesised against the type it is
@@ -245,7 +260,12 @@ pub enum Agreement
 ///   sorts; [`CheckRefusal::LevelMismatch`] for a level above the expected one,
 ///   or below it in the computation sort; [`CheckRefusal::TypeMismatch`] with
 ///   [`Mismatch::Value`] naming `at` and both types when they differ otherwise;
-///   the unfolding's refusal when a decode does not unfold.
+///   [`CheckRefusal::CapabilityForged`] when a capability is expected and the
+///   synthesised type is of another known former;
+///   [`CheckRefusal::CapabilityAmplified`] and
+///   [`CheckRefusal::CapabilityEscaped`] when [`convert`] finds a capability
+///   granting less or living shorter than the one expected; the unfolding's
+///   refusal when a decode does not unfold.
 /// - panics: none.
 /// - intension: one crossing per call, counted in `tally`.
 ///
@@ -327,13 +347,30 @@ pub fn value_bridge(
             expected: wanted,
         });
     }
+    let mismatch = Mismatch::Value {
+        at,
+        synthesised,
+        expected,
+    };
     match convert(context, Pairing::Assignable(found, wanted))? {
         | Agreement::Convertible => Ok(()),
-        | Agreement::Apart => Err(CheckRefusal::TypeMismatch(Mismatch::Value {
-            at,
-            synthesised,
-            expected,
-        })),
+        | Agreement::Apart
+            if matches!(
+                value_type_view(context.arena(), wanted)?,
+                ValueTypeView::Capability { .. }
+            ) && !matches!(
+                value_type_view(context.arena(), found)?,
+                ValueTypeView::Capability { .. }
+            ) =>
+        {
+            Err(CheckRefusal::CapabilityForged { at, expected })
+        },
+        | Agreement::Apart => Err(CheckRefusal::TypeMismatch(mismatch)),
+        | Agreement::Amplified => Err(CheckRefusal::CapabilityAmplified(mismatch)),
+        | Agreement::Escaped => Err(CheckRefusal::CapabilityEscaped {
+            at: TermNode::Value(at),
+            found: crate::refusal::TypeNode::Value(synthesised),
+        }),
     }
 }
 
@@ -346,8 +383,11 @@ pub fn value_bridge(
 ///   advances once on every outcome, saturating at its ceiling.
 /// - provides: the only comparison of computation types the judgement makes.
 /// - fails: [`CheckRefusal::TypeMismatch`] with [`Mismatch::Computation`]
-///   naming `at` and both types when they differ; the unfolding's refusal when
-///   a decode does not unfold.
+///   naming `at` and both types when they differ;
+///   [`CheckRefusal::CapabilityAmplified`] and
+///   [`CheckRefusal::CapabilityEscaped`] when a capability inside grants less
+///   or lives shorter than the one expected; the unfolding's refusal when a
+///   decode does not unfold.
 /// - panics: none.
 /// - intension: one crossing per call, counted in `tally`.
 ///
@@ -380,13 +420,19 @@ pub fn comp_bridge(
 ) -> Result<(), CheckRefusal>
 {
     *tally = tally.crossed();
+    let mismatch = Mismatch::Computation {
+        at,
+        synthesised,
+        expected,
+    };
     match convert(context, Pairing::SubComps(synthesised, expected))? {
         | Agreement::Convertible => Ok(()),
-        | Agreement::Apart => Err(CheckRefusal::TypeMismatch(Mismatch::Computation {
-            at,
-            synthesised,
-            expected,
-        })),
+        | Agreement::Apart => Err(CheckRefusal::TypeMismatch(mismatch)),
+        | Agreement::Amplified => Err(CheckRefusal::CapabilityAmplified(mismatch)),
+        | Agreement::Escaped => Err(CheckRefusal::CapabilityEscaped {
+            at: TermNode::Computation(at),
+            found: crate::refusal::TypeNode::Computation(synthesised),
+        }),
     }
 }
 
@@ -479,6 +525,7 @@ pub fn decode_bridge(
         | ValueTypeView::Sum(..)
         | ValueTypeView::List(_)
         | ValueTypeView::Stack { .. }
+        | ValueTypeView::Capability { .. }
         | ValueTypeView::Integer
         | ValueTypeView::String
         | ValueTypeView::Unit
@@ -727,6 +774,35 @@ fn convert(
                     | (ValueTypeView::Abstract(left), ValueTypeView::Abstract(right)) => {
                         left == right
                     },
+                    | (
+                        ValueTypeView::Capability {
+                            authority: found,
+                            grade: found_grade,
+                            region: found_region,
+                        },
+                        ValueTypeView::Capability {
+                            authority: wanted,
+                            grade: wanted_grade,
+                            region: wanted_region,
+                        },
+                    ) => {
+                        let arena = context.arena();
+                        let narrows = wanted.grants_within(found, arena) == RowInclusion::Included;
+                        if subtyping {
+                            if !narrows {
+                                return Ok(Agreement::Amplified);
+                            }
+                            if found_region.outlives(wanted_region) == RegionOrder::EndsFirst {
+                                return Ok(Agreement::Escaped);
+                            }
+                            found_grade == wanted_grade
+                        }
+                        else {
+                            narrows
+                                && found.grants_within(wanted, arena) == RowInclusion::Included
+                                && (found_grade, found_region) == (wanted_grade, wanted_region)
+                        }
+                    },
                     | (ValueTypeView::Thunk(left), ValueTypeView::Thunk(right)) => {
                         pending.push(comps(left, right));
                         true
@@ -831,7 +907,8 @@ fn convert(
                         | ValueTypeView::Product(..)
                         | ValueTypeView::Abstract(_)
                         | ValueTypeView::Session(_)
-                        | ValueTypeView::StaticPi { .. },
+                        | ValueTypeView::StaticPi { .. }
+                        | ValueTypeView::Capability { .. },
                         _,
                     ) => false,
                 }

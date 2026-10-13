@@ -158,11 +158,11 @@ const CLOSERS: &[&str] = &[")", "]", "subshell_close", "}"];
 const KEYWORDS: &[&str] = &[
     "+U", "-F", "acquire", "as", "at", "become", "break", "case", "close", "co", "codata",
     "continue", "data", "def", "drop", "dup", "else", "end", "extern", "feed", "fn", "for",
-    "forall", "force", "fork", "from", "glob", "hold", "if", "import", "in", "infix", "infixl",
-    "infixr", "leta", "loop", "migrate", "module", "mu", "node", "offer", "op", "oper", "pack",
-    "package", "postfix", "prefix", "pure", "rec", "recv", "release", "return", "rule", "run",
-    "select", "send", "sign", "sort", "tail", "then", "thunk", "type", "unit", "unpack", "val",
-    "while", "with",
+    "forall", "force", "fork", "from", "glob", "handle", "hold", "if", "import", "in", "infix",
+    "infixl", "infixr", "leta", "loop", "migrate", "module", "mu", "node", "offer", "op", "oper",
+    "pack", "package", "postfix", "prefix", "pure", "rec", "recv", "release", "return", "rule",
+    "run", "select", "send", "sign", "sort", "tail", "then", "thunk", "type", "unit", "unpack",
+    "val", "while", "with",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
@@ -206,15 +206,17 @@ const OPERATORS: &[&str] = &[
 
 /// The primitive type spellings, and the universe.
 const PRIMITIVE_TYPES: &[&str] = &[
-    "Any", "Boolean", "Char", "Integer", "Never", "Path", "String", "Symbol", "Type", "Unit",
-    "Unknown", "Void", "f32", "f64", "i32", "i64", "u32", "u64",
+    "Any", "Boolean", "Cap", "Char", "Integer", "Never", "Path", "String", "Symbol", "Type",
+    "Unit", "Unknown", "Void", "f32", "f64", "i32", "i64", "u32", "u64",
 ];
 
 /// The keywords whose next identifier names what the declaration defines.
 const DEFINERS: &[&str] = &["data", "def", "op", "oper", "rec", "rule"];
 
 /// The keywords whose next identifier binds a name.
-const BINDERS: &[&str] = &["as", "feed", "for", "leta", "module", "node", "unpack"];
+const BINDERS: &[&str] = &[
+    "as", "feed", "for", "handle", "leta", "module", "node", "unpack",
+];
 
 /// The bracket a tile occurrence stands inside within its own form.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

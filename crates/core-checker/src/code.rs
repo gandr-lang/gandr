@@ -1653,6 +1653,44 @@ pub fn loose_reach(
                         );
                         work.push((CoreNode::Term(TermNode::Value(payload)), depth));
                     },
+                    | Computation::Exercise {
+                        capability,
+                        ref signature,
+                        payload,
+                        ..
+                    } => {
+                        work.extend(
+                            signature
+                                .types()
+                                .map(|ty| (CoreNode::Type(TypeNode::Value(ty)), depth)),
+                        );
+                        work.push((CoreNode::Term(TermNode::Value(capability)), depth));
+                        work.push((CoreNode::Term(TermNode::Value(payload)), depth));
+                    },
+                    | Computation::Scope {
+                        ref signature,
+                        subject,
+                        on_return,
+                        ref clauses,
+                    } => {
+                        let clause_depth =
+                            under.checked_add(1).ok_or(CheckRefusal::MachineInvariant)?;
+                        work.extend(
+                            signature
+                                .types()
+                                .map(|ty| (CoreNode::Type(TypeNode::Value(ty)), depth)),
+                        );
+                        work.extend(clauses.iter().map(|clause| {
+                            (
+                                CoreNode::Term(TermNode::Computation(clause.body)),
+                                clause_depth,
+                            )
+                        }));
+                        work.extend([
+                            (CoreNode::Term(TermNode::Computation(subject)), under),
+                            (CoreNode::Term(TermNode::Computation(on_return)), under),
+                        ]);
+                    },
                     | Computation::Handle {
                         ref signature,
                         subject,
@@ -1836,6 +1874,11 @@ pub fn loose_reach(
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
                     | ValueType::Unknown => {},
+                    | ValueType::Capability { ref authority, .. } => work.extend(
+                        authority
+                            .types()
+                            .map(|ty| (CoreNode::Type(TypeNode::Value(ty)), depth)),
+                    ),
                     | ValueType::StaticPi {
                         domain: first,
                         codomain: second,
