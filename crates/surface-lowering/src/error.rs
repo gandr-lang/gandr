@@ -131,11 +131,11 @@ quenchant_shape::reason_enum! {
 ///   the required sort could be derived.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a declaration at the root and a lambda in value position
-///   report module and value respectively, separating expected sort from the
-///   form's own sort. These witnesses bound the claim to those positions.
+/// - hypothesis: L3 — a declaration at the root and a number as a run's operand
+///   report module and computation respectively, separating expected sort from
+///   the form's own sort. These witnesses bound the claim to those positions.
 /// - witness: `lower::tests::a_root_that_is_not_a_module_is_refused`
-/// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+/// - witness: `lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FragmentSort
 {
@@ -194,13 +194,13 @@ impl fmt::Display for FragmentSort
 ///
 /// # Adequacy
 /// - hypothesis: L3 — reserved recursion claims, unadmitted forms, a wrong-sort
-///   lambda and zero/two-operand refusals distinguish the four boundaries by
-///   exact typed payloads. The fixtures do not enumerate every grammar form.
+///   run operand and zero/two-operand refusals distinguish the four boundaries
+///   by exact typed payloads. The fixtures do not enumerate every grammar form.
 /// - witness: `lower::native::tests::only_the_descent_claim_heads_a_recursive_call`
 /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
 /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
-/// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+/// - witness: `lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
 /// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
 /// - witness: `lower::tests::the_empty_parentheses_are_never_the_unit`
 /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`

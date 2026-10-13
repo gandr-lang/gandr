@@ -333,7 +333,7 @@ fn code_no_path_reaches_is_refused()
 /// - hypothesis: L3 — the inference witnesses locate each tail here.
 /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
 #[spec(ensures: |ret| source.as_ref().get(usize::from(ret.start()) .. usize::from(ret.end())) == Some(needle.as_ref()))]
-fn spelled_within(
+pub(in crate::lower) fn spelled_within(
     source: SourceText<'_>,
     context: SourceText<'_>,
     needle: SourceText<'_>,

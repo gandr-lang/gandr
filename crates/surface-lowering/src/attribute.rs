@@ -42,7 +42,8 @@
 //! # Attributes: a closed registry and a side table
 //!
 //! The registry is closed: `checks` and `explicit_exits` take no payload,
-//! `owes` an integer, `refuses`, `runs` and `doc` a text. Five diagnostics
+//! `explicit_runs` none or a text naming its one option, `effects`, `owes` an
+//! integer, `refuses`, `runs` and `doc` a text. Five diagnostics
 //! cover what an attribute can get wrong, checked in this order: an unknown
 //! name, with the registered name within edit distance two when one exists;
 //! the same attribute written twice for one declared name, naming the first;
@@ -55,7 +56,9 @@
 //! reads it as documentation (the `doc` module); `doc` is registered so that a
 //! malformed one meets the payload diagnostics. `explicit_exits` is read by
 //! the lowering, which marks every exit it inferred under the declaration or
-//! module the attribute decorates as asked for; a module takes attributes as a
+//! module the attribute decorates as asked for; `explicit_runs` likewise marks
+//! every computation it held nested there, asked for every run or, under
+//! `effects`, for the effectful ones; a module takes attributes as a
 //! declaration does, and the lowering files them under the module's key.
 //!
 //! Executable predicates preserve the registry inventory, exact lookup, the
@@ -176,6 +179,14 @@ impl RegisteredAttribute
     /// decorates asks for every exit to be written, so the `explicit-exits`
     /// lint reports each exit the lowering inferred there.
     pub const EXPLICIT_EXITS: Self = Self("explicit_exits");
+    /// `explicit_runs`: the declaration, or every member of the module, it
+    /// decorates asks for every run the checker infers there to be written,
+    /// or, with the text `"effects"`, every run that performs an effect, so
+    /// the `explicit-runs` lint reports each.
+    pub const EXPLICIT_RUNS: Self = Self("explicit_runs");
+    /// The one option `explicit_runs` takes: only the runs that perform an
+    /// effect are asked for.
+    pub const EFFECTS: &'static str = "effects";
 }
 
 impl AsRef<str> for RegisteredAttribute
@@ -248,6 +259,8 @@ pub enum AttributeSchema
     Integer,
     /// One text literal.
     Text,
+    /// A bare marker, or the one text literal spelling the option named.
+    MarkerOr(&'static str),
 }
 
 impl fmt::Display for AttributeSchema
@@ -266,6 +279,7 @@ impl fmt::Display for AttributeSchema
             | Self::Marker => f.write_str("no payload"),
             | Self::Integer => f.write_str("an integer payload"),
             | Self::Text => f.write_str("a text payload"),
+            | Self::MarkerOr(option) => write!(f, "no payload or the text \"{option}\""),
         }
     }
 }
@@ -280,6 +294,9 @@ pub enum PayloadForm
     Integer,
     /// A text literal.
     Text,
+    /// A text literal spelling no option its schema names: what a text is
+    /// read as where a [`AttributeSchema::MarkerOr`] schema stands.
+    OtherText,
     /// A value of the fragment that is neither literal form.
     OtherValue,
 }
@@ -300,6 +317,7 @@ impl fmt::Display for PayloadForm
             | Self::Absent => f.write_str("no payload"),
             | Self::Integer => f.write_str("an integer payload"),
             | Self::Text => f.write_str("a text payload"),
+            | Self::OtherText => f.write_str("another text"),
             | Self::OtherValue => f.write_str("a non-literal payload"),
         }
     }
@@ -356,7 +374,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 6_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 7_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -365,6 +383,10 @@ const REGISTRY: [(&str, AttributeSchema); 6_usize] = [
     (
         RegisteredAttribute::EXPLICIT_EXITS.0,
         AttributeSchema::Marker,
+    ),
+    (
+        RegisteredAttribute::EXPLICIT_RUNS.0,
+        AttributeSchema::MarkerOr(RegisteredAttribute::EFFECTS),
     ),
 ];
 
@@ -523,9 +545,11 @@ impl AttributeRegistry
 ///
 /// # Specification
 /// - requires: nothing; the function is total over both closed vocabularies.
-/// - ensures: absence is admitted exactly by the bare marker, an integer
-///   literal exactly by the integer schema, a text literal exactly by the text
-///   schema; every other pair is refused, and the refusal is the missing one
+/// - ensures: absence is admitted exactly by the bare marker and the
+///   marker-or-option schema; an integer literal exactly by the integer schema;
+///   a text literal by the text schema and, read as the option it spells, by
+///   the marker-or-option schema; a text spelling no option by the text schema
+///   alone; every other pair is refused, and the refusal is the missing one
 ///   exactly when nothing was written for a schema that takes something.
 /// - provides: the one decision the payload half of the attribute pass makes,
 ///   separated from the diagnostics that report it.
@@ -534,19 +558,20 @@ impl AttributeRegistry
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the domain is the finite product of two closed
-///   vocabularies, enumerated exhaustively against a pinned twelve-row table,
+///   vocabularies, enumerated exhaustively against a pinned twenty-row table,
 ///   so a swapped or widened arm breaks one row.
 /// - witness: `attribute::tests::the_payload_verdict_table_is_pinned`
 #[spec(
     ensures: |ret| {
         let admitted = matches!(
             (schema, form),
-            (AttributeSchema::Marker, PayloadForm::Absent)
+            (AttributeSchema::Marker | AttributeSchema::MarkerOr(_), PayloadForm::Absent)
                 | (AttributeSchema::Integer, PayloadForm::Integer)
-                | (AttributeSchema::Text, PayloadForm::Text)
+                | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
+                | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
         );
-        let missing =
-            matches!(form, PayloadForm::Absent) && !matches!(schema, AttributeSchema::Marker);
+        let missing = matches!(form, PayloadForm::Absent)
+            && matches!(schema, AttributeSchema::Integer | AttributeSchema::Text);
         matches!(ret, PayloadVerdict::Admitted) == admitted
             && matches!(ret, PayloadVerdict::Missing) == missing
             && matches!(ret, PayloadVerdict::IllTyped) == (!admitted && !missing)
@@ -560,20 +585,29 @@ pub const fn payload_verdict(
 ) -> PayloadVerdict
 {
     match (schema, form) {
-        | (AttributeSchema::Marker, PayloadForm::Absent)
+        | (AttributeSchema::Marker | AttributeSchema::MarkerOr(_), PayloadForm::Absent)
         | (AttributeSchema::Integer, PayloadForm::Integer)
-        | (AttributeSchema::Text, PayloadForm::Text) => PayloadVerdict::Admitted,
+        | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
+        | (AttributeSchema::MarkerOr(_), PayloadForm::Text) => PayloadVerdict::Admitted,
         | (AttributeSchema::Integer | AttributeSchema::Text, PayloadForm::Absent) => {
             PayloadVerdict::Missing
         },
         | (
             AttributeSchema::Marker,
-            PayloadForm::Integer | PayloadForm::Text | PayloadForm::OtherValue,
+            PayloadForm::Integer
+            | PayloadForm::Text
+            | PayloadForm::OtherText
+            | PayloadForm::OtherValue,
         )
-        | (AttributeSchema::Integer, PayloadForm::Text | PayloadForm::OtherValue)
-        | (AttributeSchema::Text, PayloadForm::Integer | PayloadForm::OtherValue) => {
-            PayloadVerdict::IllTyped
-        },
+        | (
+            AttributeSchema::Integer,
+            PayloadForm::Text | PayloadForm::OtherText | PayloadForm::OtherValue,
+        )
+        | (AttributeSchema::Text, PayloadForm::Integer | PayloadForm::OtherValue)
+        | (
+            AttributeSchema::MarkerOr(_),
+            PayloadForm::Integer | PayloadForm::OtherText | PayloadForm::OtherValue,
+        ) => PayloadVerdict::IllTyped,
     }
 }
 
@@ -623,6 +657,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Become
         | Former::Block
         | Former::Force
+        | Former::Run
         | Former::Call
         | Former::Case
         | Former::Telescope
@@ -1076,6 +1111,7 @@ mod tests
             ("runs", AttributeSchema::Text),
             ("doc", AttributeSchema::Text),
             ("explicit_exits", AttributeSchema::Marker),
+            ("explicit_runs", AttributeSchema::MarkerOr("effects")),
         ];
 
         for (spelling, schema) in expected {
@@ -1124,6 +1160,7 @@ mod tests
             ("run", "runs"),
             ("docs", "doc"),
             ("explicit_exit", "explicit_exits"),
+            ("explicit_run", "explicit_runs"),
         ];
 
         for (written, nearest) in expected {
@@ -1207,6 +1244,7 @@ mod tests
     #[test]
     fn the_payload_verdict_table_is_pinned()
     {
+        let option = AttributeSchema::MarkerOr("effects");
         let expected = [
             (
                 AttributeSchema::Marker,
@@ -1225,6 +1263,11 @@ mod tests
             ),
             (
                 AttributeSchema::Marker,
+                PayloadForm::OtherText,
+                PayloadVerdict::IllTyped,
+            ),
+            (
+                AttributeSchema::Marker,
                 PayloadForm::OtherValue,
                 PayloadVerdict::IllTyped,
             ),
@@ -1245,6 +1288,11 @@ mod tests
             ),
             (
                 AttributeSchema::Integer,
+                PayloadForm::OtherText,
+                PayloadVerdict::IllTyped,
+            ),
+            (
+                AttributeSchema::Integer,
                 PayloadForm::OtherValue,
                 PayloadVerdict::IllTyped,
             ),
@@ -1265,9 +1313,19 @@ mod tests
             ),
             (
                 AttributeSchema::Text,
+                PayloadForm::OtherText,
+                PayloadVerdict::Admitted,
+            ),
+            (
+                AttributeSchema::Text,
                 PayloadForm::OtherValue,
                 PayloadVerdict::IllTyped,
             ),
+            (option, PayloadForm::Absent, PayloadVerdict::Admitted),
+            (option, PayloadForm::Integer, PayloadVerdict::IllTyped),
+            (option, PayloadForm::Text, PayloadVerdict::Admitted),
+            (option, PayloadForm::OtherText, PayloadVerdict::IllTyped),
+            (option, PayloadForm::OtherValue, PayloadVerdict::IllTyped),
         ];
 
         for (schema, form, verdict) in expected {
@@ -1279,7 +1337,7 @@ mod tests
         }
         assert_eq!(
             expected.len(),
-            12_usize,
+            20_usize,
             "the pinned table covers the whole product of the two vocabularies"
         );
     }

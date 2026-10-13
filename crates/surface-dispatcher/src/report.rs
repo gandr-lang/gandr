@@ -51,6 +51,7 @@ use gandr_surface_corpus::Settlement;
 use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::Tally;
 use gandr_surface_diagnostics::Lint;
+use gandr_surface_lowering::AskedRuns;
 use gandr_surface_lowering::DeclarationCount;
 
 use crate::compose::Composed;
@@ -98,7 +99,9 @@ pub enum Reach
 /// # Specification
 /// - requires: nothing.
 /// - ensures: every lint reaches the forms an attribute enables it on, and a
-///   lint the run enables reaches everywhere.
+///   lint the run enables reaches everywhere: `explicit-exits` every inferred
+///   exit, `explicit-runs` every inferred run or, under its `effects` option,
+///   every one that performs an effect.
 /// - provides: the driver's `--lint` flags, read by
 ///   [`crate::Entries::linting`].
 /// - fails: never.
@@ -106,20 +109,25 @@ pub enum Reach
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an asked and an unasked inferred exit, under the default
-///   and under `explicit-exits` enabled, each printed or not.
+///   and under `explicit-exits` enabled, each printed or not; a pure and an
+///   effectful inferred run under `explicit-runs` and under its `effects`
+///   option, each printed or not.
 /// - witness: `entry::tests::an_inferred_exit_is_reported_where_a_lint_reaches`
-#[repr(transparent)]
+/// - witness: `entry::tests::an_inferred_run_is_reported_where_a_lint_reaches`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Lints
 {
     /// Where `explicit-exits` reports.
     explicit_exits: Reach,
+    /// Which runs `explicit-runs` reports everywhere, beyond what an
+    /// attribute asks for.
+    explicit_runs: AskedRuns,
 }
 
 impl Lints
 {
     /// The lints that reach everywhere: each of `enabled`, the rest within
-    /// their attributes.
+    /// their attributes; `explicit-runs` reaches every run.
     ///
     /// # Specification
     /// trivial.
@@ -133,9 +141,25 @@ impl Lints
         for lint in enabled {
             match lint {
                 | Lint::ExplicitExits => lints.explicit_exits = Reach::Everywhere,
+                | Lint::ExplicitRuns => lints.explicit_runs = AskedRuns::Every,
             }
         }
         lints
+    }
+
+    /// These lints, `explicit-runs` reaching, under its `effects` option,
+    /// every run that performs an effect, unless it already reaches every run.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn asking_effects(self) -> Self
+    {
+        Self {
+            explicit_runs: self.explicit_runs.max(AskedRuns::Effectful),
+            ..self
+        }
     }
 
     /// Where `explicit-exits` reports.
@@ -147,6 +171,17 @@ impl Lints
     pub const fn explicit_exits(self) -> Reach
     {
         self.explicit_exits
+    }
+
+    /// Which runs `explicit-runs` reports everywhere.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn explicit_runs(self) -> AskedRuns
+    {
+        self.explicit_runs
     }
 }
 
@@ -981,6 +1016,7 @@ def broken = missing ;"#,
             failures: gandr_surface_diagnostics::Failures::default(),
             shadowed: Vec::new(),
             inferred: Vec::new(),
+            runs: Vec::new(),
             program,
         };
         let mut engine = RunReport::default();

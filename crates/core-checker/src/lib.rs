@@ -26,6 +26,22 @@
 //! compares types itself, and each crossing is counted in the result a face
 //! returns.
 //!
+//! **A computation where a value is read runs or is suspended by the type
+//! expected there.** Beside the lowering's three sort-directed bridges, the
+//! fourth is the checker's, by three rules: against a thunk type a nested
+//! computation is suspended and against any other type it runs; runs bind
+//! in written order around the innermost enclosing computation, never out of
+//! a thunk or a case arm; and the checker elaborates the accepted body, each
+//! run a bind at the nested call's span, and judges the result again. With no
+//! type expected it is refused by name, [`CheckRefusal::NotSynthesisable`]
+//! with [`CheckingForm::Nested`], and a run no computation encloses is
+//! [`CheckRefusal::UnenclosedRun`]. The recorded decision was that the
+//! lowering inserts every bridge, which held while the checker answered
+//! verdicts rather than terms; whether a nested computation runs is the
+//! expected type's, which only the checker holds, so a verdict now carries
+//! the elaborated body and [`ModuleReport::nested_elaborations`] reports each
+//! [`Nesting`]. The `nested` module states the alternatives and the reversal.
+//!
 //! **A type has one classifier.** Formation runs in the judgement's machine
 //! and answers each formed type's universe — its family's sort at its natural
 //! level — and never asks a smallness question.
@@ -284,6 +300,7 @@ mod funext;
 mod judgement;
 mod ledger;
 mod module;
+mod nested;
 mod occurrence;
 mod refusal;
 mod seal;
@@ -363,6 +380,8 @@ pub use crate::module::check_declaration;
 pub use crate::module::check_declaration_supported;
 pub use crate::module::check_module;
 pub use crate::module::type_module;
+pub use crate::nested::NestedElaboration;
+pub use crate::nested::Nesting;
 pub use crate::refusal::ArgumentPosition;
 pub use crate::refusal::CheckRefusal;
 pub use crate::refusal::CheckingForm;

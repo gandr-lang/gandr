@@ -24,6 +24,7 @@
 //! | `gandr check --goals <paths>` | as `check`, a declaration unsettled by its obligations alone marked `goal:` | any unsettled declaration but those |
 //! | `gandr check --jobs <threads> <paths>` | as `check`, its sources parsed and lowered on that many threads | as `check` |
 //! | `gandr check --lint explicit-exits <paths>` | as `check`, plus a warning for every exit the lowering inferred where a body ends, each with the fix that writes its keyword; without the flag only the declarations and modules marked `@[ explicit_exits ]` are linted | as `check`: a finding settles nothing |
+//! | `gandr check --lint explicit-runs <paths>` | as `check`, plus a warning for every run the checker inferred where a computation stands in a position that reads a value, each with the fix that writes `run`; `--lint explicit-runs=effects` reports only the runs that perform an effect; without a flag only the declarations and modules marked `@[ explicit_runs ]` or `@[ explicit_runs("effects") ]` are linted | as `check`: a finding settles nothing |
 //! | `gandr check --verbosity <level> <paths>` | as `check`, each report at `user` (the default), `detailed` (adding its class, the producer's wording and the offending source text), `debug` (adding byte spans and the producer's refusal) or `json` (each report, ledger line and the run's summary as one line of JSON); `test` takes the flag too | as `check` |
 //! | `gandr test <paths>` | as `check`, plus every fixture, settled or not, and every pending source's refusal | as `check` |
 //! | `gandr run <file>` | the value, alone, on standard output; every report `check --goals` would print, and why a run stopped or never started, on standard error | a run blamed or stuck, or a source that never reached the machine |
@@ -587,26 +588,42 @@ impl From<Level> for Verbosity
 }
 
 /// A lint `check --lint` enables everywhere, beyond the forms an attribute
-/// enables it on.
+/// enables it on, each spelled as the lint is.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
 enum LintName
 {
-    /// Every exit the lowering inferred where a path through a body ends.
-    ExplicitExits,
+    /// `explicit-exits`: every exit the lowering inferred where a path
+    /// through a body ends.
+    #[value(name = "explicit-exits")]
+    Exits,
+    /// `explicit-runs`: every run the checker inferred where a computation
+    /// stands in a position that reads a value.
+    #[value(name = "explicit-runs")]
+    Runs,
+    /// `explicit-runs` under its `effects` option: every inferred run that
+    /// performs an effect.
+    #[value(name = "explicit-runs=effects")]
+    EffectfulRuns,
 }
 
-impl From<LintName> for Lint
+/// The lints `names` enable everywhere, each widening the reach the others
+/// leave: `explicit-runs` reaches every run whether or not
+/// `explicit-runs=effects` is named beside it.
+///
+/// # Specification
+/// trivial.
+fn enabled(names: &[LintName]) -> Lints
 {
-    /// The lint `name` names.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(name: LintName) -> Self
-    {
-        match name {
-            | LintName::ExplicitExits => Self::ExplicitExits,
-        }
+    let lints = Lints::enabling(names.iter().filter_map(|name| match *name {
+        | LintName::Exits => Some(Lint::ExplicitExits),
+        | LintName::Runs => Some(Lint::ExplicitRuns),
+        | LintName::EffectfulRuns => None,
+    }));
+    if names.contains(&LintName::EffectfulRuns) {
+        lints.asking_effects()
+    }
+    else {
+        lints
     }
 }
 
@@ -701,7 +718,7 @@ fn main() -> ExitCode
         }) => (
             Invocation::Check {
                 goals: if goals { Goals::Reported } else { Goals::Gated },
-                lints: Lints::enabling(lint.into_iter().map(Lint::from)),
+                lints: enabled(&lint),
                 paths,
                 width: Width::from(jobs),
             },

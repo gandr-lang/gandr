@@ -1035,6 +1035,8 @@ fn convert(
                                         | Value::Equiv(..)
                                         | Value::Ua { .. }
                                         | Value::Returned(_)
+                                        | Value::Nested(_)
+                                        | Value::Run(_)
                                         | Value::Constructor { .. }
                                         | Value::Record(_)
                                         | Value::Primitive { .. }

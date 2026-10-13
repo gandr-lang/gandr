@@ -703,6 +703,8 @@ impl CodeDefinitions
             | Value::Equiv(..)
             | Value::Ua { .. }
             | Value::Returned(_)
+            | Value::Nested(_)
+            | Value::Run(_)
             | Value::Constructor { .. }
             | Value::Record(_)
             | Value::Reify(_)
@@ -1595,7 +1597,10 @@ pub fn loose_reach(
                     | Value::StaticLambda(body) => {
                         work.push((CoreNode::Term(TermNode::Value(body)), under));
                     },
-                    | Value::Thunk(body) | Value::Returned(body) => {
+                    | Value::Thunk(body)
+                    | Value::Returned(body)
+                    | Value::Nested(body)
+                    | Value::Run(body) => {
                         work.push((CoreNode::Term(TermNode::Computation(body)), depth));
                     },
                     | Value::Quote(quoted) => {

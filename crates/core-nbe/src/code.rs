@@ -757,6 +757,8 @@ _ => ret == Ok(Atom::Other(node)),
                     | Value::Equiv(..)
                     | Value::Ua { .. }
                     | Value::Returned(_)
+                    | Value::Nested(_)
+                    | Value::Run(_)
                     | Value::Reify(_)
                     | Value::Primitive { .. }
                     | Value::PathProduct(..)
@@ -806,6 +808,8 @@ _ => ret == Ok(Atom::Other(node)),
                         | Value::Equiv(..)
                         | Value::Ua { .. }
                         | Value::Returned(_)
+                        | Value::Nested(_)
+                        | Value::Run(_)
                         | Value::Primitive { .. }
                         | Value::Constructor { .. }
                         | Value::Record(_)

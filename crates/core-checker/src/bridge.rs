@@ -3370,6 +3370,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 self.frames.push(Frame::Reduced { at });
                 return Ok(Step::Descend(CoreNode::Term(TermNode::Value(path))));
             },
+            // Elaboration replaces every nested computation and written run
+            // before a verdict's body is answered, so none reaches the kernel.
+            | Value::Nested(_) | Value::Run(_) => return Err(Refusal::MachineInvariant),
             | Value::Returned(computation) => (
                 Frame::Returned { at },
                 CoreNode::Term(TermNode::Computation(computation)),
@@ -4259,6 +4262,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     | Value::Equiv(..)
                     | Value::Ua { .. }
                     | Value::Returned(_)
+                    | Value::Nested(_)
+                    | Value::Run(_)
                     | Value::Constructor { .. }
                     | Value::Record(_)
                     | Value::Primitive { .. }

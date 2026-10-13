@@ -239,6 +239,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             | UaDefect::NotNatural { .. } => "translators that break the corolla's symmetry",
             | UaDefect::Stuck { .. } => "a translator that returns no element",
         },
+        | CheckRefusal::UnenclosedRun { .. } => "a run with no computation to run before",
         | CheckRefusal::TypeMismatch(Mismatch::Value { .. } | Mismatch::Computation { .. }) => {
             "its type does not convert"
         },

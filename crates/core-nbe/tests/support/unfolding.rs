@@ -128,7 +128,7 @@ pub struct Unfolded(pub u64);
                     Value::Tuple(ref components) => 1_u64.saturating_add(u64::try_from(components.len()).unwrap_or(u64::MAX)),
                     Value::ListCons(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::StaticApplication(_, _) => 3,
                     Value::PathEquiv { .. } => 4,
-                    Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
+                    Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
                 }
             },
             CoreNode::Computation(id) => {
@@ -259,7 +259,10 @@ pub fn unfolded(
                 | Value::Mark { body, .. } => {
                     pending.push(CoreNode::Value(body));
                 },
-                | Value::Thunk(body) | Value::Returned(body) => {
+                | Value::Thunk(body)
+                | Value::Returned(body)
+                | Value::Nested(body)
+                | Value::Run(body) => {
                     pending.push(CoreNode::Computation(body));
                 },
                 | Value::Quote(quoted) => pending.push(CoreNode::ValueType(quoted)),

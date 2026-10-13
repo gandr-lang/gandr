@@ -533,7 +533,12 @@ fn worst(
                 ) => {
                     pending.push((AnyNode::Value(body), reach));
                 },
-                | Some(&(Value::Thunk(body) | Value::Returned(body))) => {
+                | Some(
+                    &(Value::Thunk(body)
+                    | Value::Returned(body)
+                    | Value::Nested(body)
+                    | Value::Run(body)),
+                ) => {
                     pending.push((AnyNode::Computation(body), reach));
                 },
                 | Some(&Value::Quote(quoted)) => pending.push((AnyNode::ValueType(quoted), reach)),

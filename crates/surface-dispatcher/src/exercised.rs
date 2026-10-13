@@ -577,7 +577,8 @@ fn checking_row(
                 | CheckingForm::Return(_)
                 | CheckingForm::Hole(_)
                 | CheckingForm::StaticLambda(_)
-                | CheckingForm::Fixpoint(_),
+                | CheckingForm::Fixpoint(_)
+                | CheckingForm::Nested(_),
         }
         | CheckRefusal::PathCode(_)
         | CheckRefusal::EndpointMismatch { .. }
@@ -590,6 +591,7 @@ fn checking_row(
         | CheckRefusal::NotOver { .. }
         | CheckRefusal::UaUncertified { .. }
         | CheckRefusal::UaInequivalent { .. }
+        | CheckRefusal::UnenclosedRun { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
         | CheckRefusal::UnknownOperation { .. }
         | CheckRefusal::HandlerCoverage { .. }
@@ -821,7 +823,11 @@ fn formers(
                     worklist.push(Node::Value(injected));
                 },
                 | Some(&Value::Lift { body: lifted, .. }) => worklist.push(Node::Value(lifted)),
-                | Some(&Value::Returned(computation)) => {
+                | Some(
+                    &(Value::Returned(computation)
+                    | Value::Nested(computation)
+                    | Value::Run(computation)),
+                ) => {
                     worklist.push(Node::Computation(computation));
                 },
                 // A quote carries a type, and a static operator and its
@@ -1138,7 +1144,7 @@ def d : Integer ;
         let source = SourceText::from(
             r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { become force (thunk { return 3 }) } ;
 @[ refuses("ShapeMismatch") ] def b : Integer ; def b = thunk { return 3 } ;
-@[ refuses("OutOfFragment") ] def c = fn (x) { return x } ;"#,
+@[ refuses("OutOfFragment") ] def c = 1.5 ;"#,
         );
         let mut lowerings = LoweringCount::default();
         let Composed::Settled {

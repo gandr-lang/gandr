@@ -85,6 +85,14 @@
 //! — so the types it keeps are the ones the judgement met. A face answering a
 //! position inside a declaration reads them; no other entry pays for them.
 //! Witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`.
+//!
+//! # A body holding a nested computation is judged twice
+//!
+//! A body holding a computation written where a value is read is judged, then
+//! elaborated as the judgement decided each one, then judged again: the
+//! verdict is the second run's and carries the elaborated body, and the report
+//! keeps what the elaboration did under the declaration's position. The
+//! decisions, the alternatives and the reversal are in `nested`.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -104,6 +112,9 @@ use crate::declaration::body;
 use crate::declaration::signature;
 use crate::equiv::Equivalence;
 use crate::failure::Failure;
+use crate::failure::Pursuit;
+use crate::failure::Stage;
+use crate::failure::judged;
 use crate::formation::FormedValueType;
 use crate::formation::form_value_type;
 use crate::funext::Funext;
@@ -117,8 +128,11 @@ use crate::judgement::type_value;
 use crate::ledger::Absence;
 use crate::ledger::ObligationEntry;
 use crate::ledger::ObligationLedger;
+use crate::nested::NestedElaboration;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
+use crate::refusal::CoreNode;
+use crate::refusal::TermNode;
 use crate::seal::SealTable;
 use crate::support::Supported;
 
@@ -234,6 +248,9 @@ pub struct ModuleReport
     abstract_types: BTreeMap<ConstantIndex, AbstractType>,
     /// The failure of each body the judgement refused, by position.
     failures: BTreeMap<ConstantIndex, Failure>,
+    /// What elaborating each body that held a computation written where a
+    /// value is read did, by position.
+    nested_elaborations: BTreeMap<ConstantIndex, NestedElaboration>,
     /// The sealing sites the run minted atoms for, in minting order.
     seal_table: SealTable,
 }
@@ -381,6 +398,20 @@ impl ModuleReport
     {
         &self.failures
     }
+
+    /// What elaborating each body that held a computation written where a
+    /// value is read did, by position: the decisions, the rebuilt nodes beside
+    /// the nodes they were built from, and each minted bind beside its run.
+    /// A body the first run refused, or that held none, has no entry.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn nested_elaborations(&self) -> &BTreeMap<ConstantIndex, NestedElaboration>
+    {
+        &self.nested_elaborations
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -411,6 +442,21 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a declaration's judgement carries no elaboration.
+    mod elaborated {
+        /// The reason no elaboration is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The body held no computation written where a value is read, or
+            /// there was no body.
+            Unnested,
+            /// The first run refused the body, so nothing was elaborated.
+            Unaccepted,
+        }
+    }
+}
+
 /// Whether a declaration's judgement also keeps the type of every term its
 /// body judges.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -432,10 +478,11 @@ enum Run
 ///   formed signature; a signature and a hole give [`Verdict::Owed`] with the
 ///   hole's absence; a body alone gives [`Verdict::Synthesised`] when it
 ///   synthesises; neither is refused. An accepted verdict carries the body it
-///   judged and defines the constant as that body. A formed signature enters
-///   the signature table after the body is judged, whatever the body's verdict;
-///   a synthesised type enters it after synthesis; a refused body alone enters
-///   nothing.
+///   judged — the declaration's own, or its elaboration when the body held a
+///   computation written where a value is read, minted after it — and defines
+///   the constant as that body. A formed signature enters the signature table
+///   after the body is judged, whatever the body's verdict; a synthesised type
+///   enters it after synthesis; a refused body alone enters nothing.
 /// - provides: the one obligation a declaration can owe, carried in its
 ///   verdict, so a caller judging a single declaration needs no ledger.
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
@@ -461,9 +508,9 @@ enum Run
             | crate::DeclarationContent::Abstract(_) => context.abstract_types().any(|(constant, _)| constant == declaration.constant()),
             | crate::DeclarationContent::Value { .. } => false,
         },
-        | Verdict::Checked { declared, body, .. } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(ty), body: Maybe::Present(value) } if *ty == declared.id() && *value == body)
+        | Verdict::Checked { declared, body, .. } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(ty), body: Maybe::Present(value) } if *ty == declared.id() && *value <= body)
             && context.signature(declaration.constant()) == Maybe::Present(declared),
-        | Verdict::Synthesised { synthesised, body } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Absent(_), body: Maybe::Present(value) } if *value == body)
+        | Verdict::Synthesised { synthesised, body } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Absent(_), body: Maybe::Present(value) } if *value <= body)
             && context.signature(declaration.constant()) == Maybe::Present(synthesised.produced()),
         | Verdict::Owed(entry) => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(ty), body: Maybe::Absent(_) } if *ty == entry.absence().declared().id())
             && entry.absence().constant() == declaration.constant()
@@ -479,30 +526,52 @@ pub fn check_declaration(
     declaration: &Declaration,
 ) -> Verdict
 {
-    decide(context, declaration, Run::Judged).0
+    decide(context, declaration, Run::Judged).verdict
 }
 
-/// Judge one declaration in `context`, keeping a refused body's failure and,
-/// when `run` asks, the type of every term its body judges.
+/// What judging one declaration answers.
+#[derive(Clone, Debug)]
+struct Decision
+{
+    /// The verdict.
+    verdict: Verdict,
+    /// The failure of the run that refused the body, when one did.
+    failure: Maybe<Failure, kept::Absent>,
+    /// The type of every term the body judged, when asked.
+    typings: Maybe<Typings, typed::Absent>,
+    /// What elaborating the body did, when it held a computation written
+    /// where a value is read and the first run accepted it.
+    elaboration: Maybe<NestedElaboration, elaborated::Absent>,
+}
+
+/// Judge one declaration in `context`, keeping a refused body's failure, what
+/// elaborating its body did and, when `run` asks, the type of every term its
+/// body judges.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the verdict [`check_declaration`] gives, with the same effect on
-///   `context`; beside it, when the body was run and refused, the failure of
-///   that run, whose refusal is the verdict's; and, when `run` is
-///   [`Run::Typed`] and the body was run, what [`type_value`] keeps for it,
-///   read before the declaration's own type entered the table.
+///   `context`; beside it, when a run of the body refused, the failure of that
+///   run, whose refusal is the verdict's; when the first run accepted a body
+///   holding a computation written where a value is read, what elaborating it
+///   did, the verdict then being the second run's over the elaborated body;
+///   and, when `run` is [`Run::Typed`] and the body was run, what
+///   [`type_value`] keeps for the body as written, read before the
+///   declaration's own type entered the table.
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a module with a body refused inside a thunk, a signature
 ///   refused before its body, and an accepted body separate the kept, the unrun
-///   and the accepted answers.
+///   and the accepted answers; a nested run accepted, one refused by the second
+///   run and one with nowhere to run separate the elaborated answers.
 /// - witness: `module::tests::a_refused_body_keeps_the_rules_it_was_refused_inside`
 /// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
-#[spec(ensures: |ret| (run == Run::Typed || matches!(ret.2, Maybe::Absent(typed::Absent::Unasked)))
-    && match (&ret.0, &ret.1) {
+/// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
+/// - witness: `module::tests::a_run_in_a_definition_s_own_value_is_unenclosed`
+#[spec(ensures: |ret| (run == Run::Typed || matches!(ret.typings, Maybe::Absent(typed::Absent::Unasked)))
+    && match (&ret.verdict, &ret.failure) {
     | (&Verdict::Refused(refusal), &Maybe::Present(ref failure)) => failure.refusal() == refusal,
     | (&Verdict::Refused(_), &Maybe::Absent(kept::Absent::Unrun))
     | (&(Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_)), &Maybe::Absent(kept::Absent::Accepted)) => true,
@@ -512,22 +581,17 @@ fn decide(
     context: &mut CheckingContext<'_>,
     declaration: &Declaration,
     run: Run,
-) -> (
-    Verdict,
-    Maybe<Failure, kept::Absent>,
-    Maybe<Typings, typed::Absent>,
-)
+) -> Decision
 {
     let untyped = match run {
         | Run::Judged => typed::Absent::Unasked,
         | Run::Typed => typed::Absent::Unrun,
     };
-    let unrun = |refusal| {
-        (
-            Verdict::Refused(refusal),
-            Maybe::Absent(kept::Absent::Unrun),
-            Maybe::Absent(untyped),
-        )
+    let unrun = |refusal| Decision {
+        verdict: Verdict::Refused(refusal),
+        failure: Maybe::Absent(kept::Absent::Unrun),
+        typings: Maybe::Absent(untyped),
+        elaboration: Maybe::Absent(elaborated::Absent::Unnested),
     };
     let constant = declaration.constant();
     if let Err(refusal) = context.admit(constant) {
@@ -538,11 +602,12 @@ fn decide(
             return match crate::former::form_signature(context, constant, signature) {
                 | Ok(()) => {
                     context.record_data(constant, alloc::sync::Arc::clone(signature));
-                    (
-                        Verdict::Data,
-                        Maybe::Absent(kept::Absent::Accepted),
-                        Maybe::Absent(untyped),
-                    )
+                    Decision {
+                        verdict: Verdict::Data,
+                        failure: Maybe::Absent(kept::Absent::Accepted),
+                        typings: Maybe::Absent(untyped),
+                        elaboration: Maybe::Absent(elaborated::Absent::Unnested),
+                    }
                 },
                 | Err(refusal) => unrun(refusal),
             };
@@ -551,11 +616,12 @@ fn decide(
             let sealed = crate::former::form_abstract(context, declared)
                 .and_then(|level| context.seal_abstract(constant, declared, level));
             return match sealed {
-                | Ok(_atom) => (
-                    Verdict::Data,
-                    Maybe::Absent(kept::Absent::Accepted),
-                    Maybe::Absent(untyped),
-                ),
+                | Ok(_atom) => Decision {
+                    verdict: Verdict::Data,
+                    failure: Maybe::Absent(kept::Absent::Accepted),
+                    typings: Maybe::Absent(untyped),
+                    elaboration: Maybe::Absent(elaborated::Absent::Unnested),
+                },
                 | Err(refusal) => unrun(refusal),
             };
         },
@@ -572,20 +638,32 @@ fn decide(
         | Maybe::Absent(signature::Absent::Unsigned) => Direction::Synthesise,
     };
     let mut typings = Maybe::Absent(untyped);
+    let mut elaboration = Maybe::Absent(elaborated::Absent::Unnested);
     let (verdict, failure) = match body {
         | Maybe::Present(body) => {
-            let judged = match direction {
-                | Direction::Synthesise => synthesise_value_with_failure(context, body)
-                    .map(|synthesised| Verdict::Synthesised { body, synthesised }),
-                | Direction::Check(declared) => check_value_with_failure(context, body, declared)
-                    .map(|evidence| Verdict::Checked {
-                        declared,
-                        body,
-                        evidence,
-                    }),
+            let _stale = context.take_nesting();
+            let first = judge(context, body, direction);
+            let decisions = context.take_nesting();
+            let judged = match first {
+                | Ok(_) if !decisions.is_empty() => {
+                    match crate::nested::elaborate(context.arena_mut(), body, &decisions) {
+                        | Ok((elaborated, done)) => {
+                            elaboration = Maybe::Present(done);
+                            judge(context, elaborated, direction)
+                        },
+                        | Err(unenclosed) => Err(unenclosed_failure(unenclosed.run())),
+                    }
+                },
+                | Ok(_) | Err(_) => {
+                    if !decisions.is_empty() {
+                        elaboration = Maybe::Absent(elaborated::Absent::Unaccepted);
+                    }
+                    first
+                },
             };
             if run == Run::Typed {
                 typings = Maybe::Present(type_value(context, body, direction));
+                let _typed = context.take_nesting();
             }
             match judged {
                 | Ok(verdict) => (verdict, Maybe::Absent(kept::Absent::Accepted)),
@@ -624,7 +702,71 @@ fn decide(
             Verdict::Data | Verdict::Checked { .. } | Verdict::Owed(_) | Verdict::Refused(_),
         ) => {},
     }
-    (verdict, failure, typings)
+    Decision {
+        verdict,
+        failure,
+        typings,
+        elaboration,
+    }
+}
+
+/// Judge `body` in `direction`: the verdict an accepted body gets, or the
+/// failure of the run that refused it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Verdict::Checked`] over `body` when it checks against a
+///   declared type, [`Verdict::Synthesised`] over `body` when it synthesises
+///   one; the run's failure otherwise.
+/// - fails: the failure of the run that refused `body`.
+/// - panics: none.
+///
+/// # Errors
+/// The run's [`Failure`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decide`].
+/// - witness: `module::tests::each_combination_of_halves_gets_its_verdict`
+#[spec(ensures: |ret| match ret {
+    | Ok(Verdict::Checked { body: judged, .. } | Verdict::Synthesised { body: judged, .. }) => judged == body,
+    | Ok(_) => false,
+    | Err(_) => true,
+})]
+fn judge(
+    context: &mut CheckingContext<'_>,
+    body: ValueId,
+    direction: Direction<FormedValueType>,
+) -> Result<Verdict, Failure>
+{
+    match direction {
+        | Direction::Synthesise => synthesise_value_with_failure(context, body)
+            .map(|synthesised| Verdict::Synthesised { body, synthesised }),
+        | Direction::Check(declared) => {
+            check_value_with_failure(context, body, declared).map(|evidence| Verdict::Checked {
+                declared,
+                body,
+                evidence,
+            })
+        },
+    }
+}
+
+/// The failure of a body whose elaboration found `run` with no computation
+/// around it: no rule of the judgement is pending, and the refusal names the
+/// run.
+///
+/// # Specification
+/// trivial.
+fn unenclosed_failure(run: ValueId) -> Failure
+{
+    Failure::bare(
+        CheckRefusal::UnenclosedRun { at: run },
+        Pursuit::new(
+            CoreNode::Term(TermNode::Value(run)),
+            Maybe::Absent(judged::Absent::Synthesised),
+            Stage::Starting,
+        ),
+    )
 }
 
 /// Judge one declaration in `context`, and report the signature answers the
@@ -681,7 +823,9 @@ pub fn check_declaration_supported(
 ///   every lift the context's value bridges recorded by the run's end, the
 ///   function extensionalities every one it decided, and the definitions every
 ///   body the context defines a constant as; each body run and refused keeps
-///   its failure under its position, and no other declaration has one.
+///   its failure under its position, and no other declaration has one; each
+///   body the first run accepted holding a computation written where a value is
+///   read keeps its elaboration under its position.
 /// - provides: total marking — a refused declaration does not stop the run.
 /// - fails: never.
 /// - panics: none.
@@ -729,18 +873,22 @@ pub fn check_module(
     let mut judged = Vec::with_capacity(declarations.len());
     let mut ledger = ObligationLedger::new();
     let mut failures = BTreeMap::new();
+    let mut nested_elaborations = BTreeMap::new();
     for declaration in declarations {
-        let (verdict, failure, _untyped) = decide(context, declaration, Run::Judged);
-        if let Maybe::Present(failure) = failure {
+        let decision = decide(context, declaration, Run::Judged);
+        if let Maybe::Present(failure) = decision.failure {
             failures.insert(declaration.constant(), failure);
         }
-        if let Verdict::Owed(entry) = verdict {
+        if let Maybe::Present(elaboration) = decision.elaboration {
+            nested_elaborations.insert(declaration.constant(), elaboration);
+        }
+        if let Verdict::Owed(entry) = decision.verdict {
             ledger.record(entry);
         }
         judged.push(Judged {
             constant: declaration.constant(),
             origin: declaration.origin(),
-            verdict,
+            verdict: decision.verdict,
         });
     }
     ModuleReport {
@@ -756,6 +904,7 @@ pub fn check_module(
         abstract_types: context.abstract_types().collect(),
         seal_table: context.seal_table().clone(),
         failures,
+        nested_elaborations,
     }
 }
 
@@ -790,7 +939,7 @@ pub fn type_module(
 {
     let mut typed = BTreeMap::new();
     for declaration in declarations {
-        if let (_, _, Maybe::Present(typings)) = decide(context, declaration, Run::Typed) {
+        if let Maybe::Present(typings) = decide(context, declaration, Run::Typed).typings {
             typed.insert(declaration.constant(), typings);
         }
     }
@@ -843,9 +992,11 @@ mod tests
     use gandr_core_term::Sort;
     use gandr_core_term::ValueId;
     use gandr_core_term::ValueTypeId;
+    use gandr_core_term::effect::Purity;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::SealExtent;
     use quenchant_shape::shape::Maybe;
@@ -869,6 +1020,7 @@ mod tests
     use crate::failure::judged;
     use crate::fixture::integer_literal;
     use crate::fixture::text_literal;
+    use crate::nested::Nesting;
     use crate::refusal::CheckRefusal;
     use crate::refusal::CheckingForm;
     use crate::refusal::CoreNode;
@@ -1453,6 +1605,324 @@ mod tests
             refused.marks().len(),
             1_usize,
             "the text component is the one mark"
+        );
+    }
+
+    /// `U (Integer -> F Integer)`, and the identity function of that type.
+    ///
+    /// # Specification
+    /// trivial.
+    fn integer_function(arena: &mut CoreArena) -> (ValueTypeId, ValueId)
+    {
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returns = arena.comp_type_returner(integer);
+        let arrow = arena.comp_type_arrow(integer, returns);
+        let function = arena.value_type_thunk(arrow);
+        let argument = arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(0_u32),
+        );
+        let returned = arena.computation_return(argument);
+        let lambda = arena.computation_lambda(returned);
+        (function, arena.value_thunk(lambda))
+    }
+
+    /// A call of the constant `callee`, forced, at `argument`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn call(
+        arena: &mut CoreArena,
+        callee: ConstantIndex,
+        argument: ValueId,
+    ) -> gandr_core_term::ComputationId
+    {
+        let callee = arena.value_constant(callee);
+        let forced = arena.computation_force(callee);
+        arena.computation_application(forced, argument)
+    }
+
+    #[test]
+    fn a_nested_run_elaborates_into_a_bind_before_its_region()
+    {
+        let mut arena = CoreArena::new();
+        let (function, identity) = integer_function(&mut arena);
+        let [inner_x, expected_x, expected_inner_r, expected_r] = [(); 4].map(|()| {
+            arena.value_variable(
+                gandr_core_term::Zone::Intuitionistic,
+                DeBruijnIndex::from(0_u32),
+            )
+        });
+        let inner = call(&mut arena, ConstantIndex::from(0_usize), inner_x);
+        let inner = arena.value_nested(inner);
+        let outer = call(&mut arena, ConstantIndex::from(0_usize), inner);
+        let outer = arena.value_nested(outer);
+        let returned = arena.computation_return(outer);
+        let lambda = arena.computation_lambda(returned);
+        let twice = arena.value_thunk(lambda);
+        let expected = {
+            let first = call(&mut arena, ConstantIndex::from(0_usize), expected_x);
+            let second = call(&mut arena, ConstantIndex::from(0_usize), expected_inner_r);
+            let ran = arena.computation_bind(first, second);
+            let returned = arena.computation_return(expected_r);
+            let bound = arena.computation_bind(ran, returned);
+            let lambda = arena.computation_lambda(bound);
+            arena.value_thunk(lambda)
+        };
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            check_module(&mut context, &[
+                declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
+                declaration(At(1), Maybe::Present(function), Maybe::Present(twice)),
+            ])
+        };
+        let Verdict::Checked { body, .. } = report.judged()[1].verdict()
+        else {
+            panic!("the nested calls check: {:?}", report.judged()[1].verdict());
+        };
+        assert_ne!(body, twice, "the verdict carries the elaborated body");
+        assert_eq!(
+            gandr_core_term::equal_certificate_syntax(&arena, body, expected),
+            gandr_core_term::CertificateEquality::Equal,
+            "the inner call runs inside the outer one's computation, and the outer before the return"
+        );
+        assert_eq!(
+            report.definitions().get(&ConstantIndex::from(1_usize)),
+            Some(&body),
+            "the constant is defined as the elaborated body"
+        );
+        let elaboration = &report.nested_elaborations()[&ConstantIndex::from(1_usize)];
+        assert_eq!(
+            elaboration
+                .decisions()
+                .iter()
+                .map(|(&at, &decided)| (at, decided))
+                .collect::<Vec<_>>(),
+            [
+                (inner, Nesting::Ran(Purity::Pure)),
+                (outer, Nesting::Ran(Purity::Pure))
+            ],
+            "both nested calls run, and neither performs an effect"
+        );
+        assert_eq!(
+            elaboration
+                .binds()
+                .iter()
+                .map(|&(run, _)| run)
+                .collect::<Vec<_>>(),
+            [inner, outer],
+            "each run is reported beside the bind minted for it, the inner first"
+        );
+        assert!(
+            !report
+                .nested_elaborations()
+                .contains_key(&ConstantIndex::from(0_usize)),
+            "a body holding no nested computation is not elaborated"
+        );
+        let readmission = crate::bridge::readmit(&mut arena, &report);
+        assert!(
+            readmission.readmitted().iter().all(|readmitted| matches!(
+                readmitted.outcome(),
+                crate::bridge::Outcome::Defined { .. }
+            )),
+            "the kernel re-derives the elaborated body: {readmission:?}"
+        );
+    }
+
+    #[test]
+    fn a_nested_call_runs_with_the_effects_its_returner_performs()
+    {
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        let mut arena = CoreArena::new();
+        let (function, identity) = integer_function(&mut arena);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let interface = EffectSig::new("Ask".into(), [EffectOp {
+            name: OperationName::from("ask"),
+            payload: integer,
+            reply: integer,
+        }])
+        .expect("one operation");
+        let asks =
+            arena.comp_type_returner_with_effects(integer, EffectRow::singleton(interface.clone()));
+        let asking_arrow = arena.comp_type_arrow(integer, asks);
+        let asking_type = arena.value_type_thunk(asking_arrow);
+        let [asked_x, effectful_x, pure_x] = [(); 3].map(|()| {
+            arena.value_variable(
+                gandr_core_term::Zone::Intuitionistic,
+                DeBruijnIndex::from(0_u32),
+            )
+        });
+        let asking = {
+            let performed =
+                arena.computation_perform(interface, OperationName::from("ask"), asked_x);
+            let lambda = arena.computation_lambda(performed);
+            arena.value_thunk(lambda)
+        };
+        let returned_of = |arena: &mut CoreArena, callee: ConstantIndex, argument: ValueId| {
+            let called = call(arena, callee, argument);
+            let nested = arena.value_nested(called);
+            let returned = arena.computation_return(nested);
+            let lambda = arena.computation_lambda(returned);
+            (nested, arena.value_thunk(lambda))
+        };
+        let (effectful, asks_twice) =
+            returned_of(&mut arena, ConstantIndex::from(1_usize), effectful_x);
+        let (pure, identity_twice) = returned_of(&mut arena, ConstantIndex::from(0_usize), pure_x);
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            check_module(&mut context, &[
+                declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
+                declaration(At(1), Maybe::Present(asking_type), Maybe::Present(asking)),
+                declaration(
+                    At(2),
+                    Maybe::Present(asking_type),
+                    Maybe::Present(asks_twice),
+                ),
+                declaration(
+                    At(3),
+                    Maybe::Present(function),
+                    Maybe::Present(identity_twice),
+                ),
+            ])
+        };
+        let decided = |constant: usize, at: ValueId| {
+            report
+                .nested_elaborations()
+                .get(&ConstantIndex::from(constant))
+                .and_then(|elaboration| elaboration.decisions().get(&at).copied())
+        };
+        assert_eq!(
+            decided(2, effectful),
+            Some(Nesting::Ran(Purity::Effectful)),
+            "a call whose returner performs `Ask` runs effectfully: {:?}",
+            report.judged()[2].verdict()
+        );
+        assert_eq!(
+            decided(3, pure),
+            Some(Nesting::Ran(Purity::Pure)),
+            "a call whose returner performs nothing runs purely"
+        );
+    }
+
+    #[test]
+    fn a_nested_computation_is_decided_by_its_expected_type()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returns = arena.comp_type_returner(integer);
+        let suspended_type = arena.value_type_thunk(returns);
+        let parameter = arena.comp_type_arrow(suspended_type, returns);
+        let consumer_type = arena.value_type_thunk(parameter);
+        let consumer = {
+            let argument = arena.value_variable(
+                gandr_core_term::Zone::Intuitionistic,
+                DeBruijnIndex::from(0_u32),
+            );
+            let forced = arena.computation_force(argument);
+            let lambda = arena.computation_lambda(forced);
+            arena.value_thunk(lambda)
+        };
+        let zero = arena.value_literal(integer_literal());
+        let produce = arena.computation_return(zero);
+        let suspended = arena.value_nested(produce);
+        let consumed = call(&mut arena, ConstantIndex::from(0_usize), suspended);
+        let use_site = arena.value_thunk(consumed);
+        let unsigned_zero = arena.value_literal(integer_literal());
+        let unsigned_produce = arena.computation_return(unsigned_zero);
+        let unsigned = arena.value_nested(unsigned_produce);
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            check_module(&mut context, &[
+                declaration(
+                    At(0),
+                    Maybe::Present(consumer_type),
+                    Maybe::Present(consumer),
+                ),
+                declaration(
+                    At(1),
+                    Maybe::Present(suspended_type),
+                    Maybe::Present(use_site),
+                ),
+                declaration(At(2), UNSIGNED, Maybe::Present(unsigned)),
+            ])
+        };
+        let Verdict::Checked { body, .. } = report.judged()[1].verdict()
+        else {
+            panic!(
+                "the nested computation checks at the thunk type: {:?}",
+                report.judged()[1].verdict()
+            );
+        };
+        let elaboration = &report.nested_elaborations()[&ConstantIndex::from(1_usize)];
+        assert_eq!(
+            elaboration.decisions().get(&suspended),
+            Some(&Nesting::Suspended),
+            "at a thunk-typed parameter it is suspended"
+        );
+        assert!(elaboration.binds().is_empty(), "a suspension mints no bind");
+        let Some(&gandr_core_term::Value::Thunk(call_body)) = arena.value(body)
+        else {
+            panic!("the use site stays a thunk");
+        };
+        let Some(&gandr_core_term::Computation::Application(_, argument)) =
+            arena.computation(call_body)
+        else {
+            panic!("the call stands as written");
+        };
+        assert_eq!(
+            arena.value(argument),
+            Some(&gandr_core_term::Value::Thunk(produce)),
+            "the argument is the thunk of the written computation"
+        );
+        assert_eq!(
+            report.judged()[2].verdict(),
+            Verdict::Refused(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Nested(unsigned),
+            }),
+            "with no type expected there is nothing to decide by, and it is refused by name"
+        );
+    }
+
+    #[test]
+    fn a_run_in_a_definition_s_own_value_is_unenclosed()
+    {
+        let mut arena = CoreArena::new();
+        let (function, identity) = integer_function(&mut arena);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let zero = arena.value_literal(integer_literal());
+        let computation = call(&mut arena, ConstantIndex::from(0_usize), zero);
+        let nested = arena.value_nested(computation);
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            check_module(&mut context, &[
+                declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
+                declaration(At(1), Maybe::Present(integer), Maybe::Present(nested)),
+            ])
+        };
+        let refusal = CheckRefusal::UnenclosedRun { at: nested };
+        assert_eq!(
+            report.judged()[1].verdict(),
+            Verdict::Refused(refusal),
+            "the call checks at the integer, but no computation encloses it to run before"
+        );
+        assert_eq!(refusal.classify(), FailureClass::MalformedSource);
+        let failure = &report.failures()[&ConstantIndex::from(1_usize)];
+        assert!(
+            failure.obligations().is_empty(),
+            "no rule of the judgement is pending"
+        );
+        assert_eq!(
+            failure.pursuit().at(),
+            CoreNode::Term(TermNode::Value(nested))
+        );
+        assert!(
+            !report
+                .definitions()
+                .contains_key(&ConstantIndex::from(1_usize)),
+            "a refused body defines nothing"
         );
     }
 

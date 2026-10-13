@@ -108,6 +108,7 @@ use gandr_core_checker::CheckingContext;
 use gandr_core_checker::ComponentOrdinal;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::ModuleReport;
+use gandr_core_checker::Nesting;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::SealSite;
 use gandr_core_checker::SealingSite;
@@ -129,6 +130,7 @@ use gandr_surface_diagnostics::Spellings;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::InferredExit;
+use gandr_surface_lowering::InferredRun;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
@@ -261,6 +263,10 @@ pub enum Composed<'source>
         /// in source order: each a finding of the `explicit-exits` lint where
         /// an attribute or the run asks for it.
         inferred: Vec<InferredExit>,
+        /// Every run the checker inferred where a computation stands in a
+        /// position that reads a value, in source order: each a finding of
+        /// the `explicit-runs` lint where an attribute or the run asks for it.
+        runs: Vec<InferredRun>,
         /// The kernel artifact of every declaration that crossed into the
         /// kernel, in kernel admission order, each under its structured name,
         /// once the module's admission ran; a composition read before its
@@ -328,6 +334,7 @@ impl Composed<'_>
                 failures,
                 shadowed,
                 inferred,
+                runs,
                 program,
                 ..
             } => Self::Settled {
@@ -339,6 +346,7 @@ impl Composed<'_>
                 failures,
                 shadowed,
                 inferred,
+                runs,
                 kernel: Maybe::Present(kernel),
                 program,
             },
@@ -828,10 +836,10 @@ pub fn lower_parsed<'source>(
 ///   no expectation can state, the lowering's origin table, moved rather than
 ///   copied, the spellings of the types its checker refusals compare and its
 ///   failures name, the failures themselves, every builtin the source shadowed,
-///   every exit the lowering inferred, the program, and no kernel artifact yet
-///   ([`admitted::Absent::Pending`]); a settle fault is carried in its place.
-///   The admission holds the arena the verdicts were judged over, the verdicts
-///   and the module's structured names.
+///   every exit the lowering inferred, every run the checker inferred, the
+///   program, and no kernel artifact yet ([`admitted::Absent::Pending`]); a
+///   settle fault is carried in its place. The admission holds the arena the
+///   verdicts were judged over, the verdicts and the module's structured names.
 /// - provides: the composition a face renders before the kernel has been
 ///   offered anything; the readmission mints nothing the settle comparison or
 ///   the program reads.
@@ -879,6 +887,7 @@ pub fn judge(
             let spellings = Spellings::of(&arena, &module, &report, &failures);
             let shadowed = module.recognition().shadowed().to_vec();
             let inferred = module.inferred_exits().to_vec();
+            let runs = inferred_runs(&module, &verdicts);
             Ok(Composed::Settled {
                 report,
                 exercised,
@@ -888,6 +897,7 @@ pub fn judge(
                 failures,
                 shadowed,
                 inferred,
+                runs,
                 kernel: Maybe::Absent(admitted::Absent::Pending),
                 program,
             })
@@ -902,6 +912,44 @@ pub fn judge(
             names,
         },
     }
+}
+
+/// The runs the checker inferred over `module`, joined with the lowering's
+/// record of where each nested computation stands.
+///
+/// # Specification
+/// - requires: `verdicts` are the checker's over `module`'s declarations.
+/// - ensures: one record per nested computation the checker decided to run in
+///   any elaborated body, as [`LoweredModule::inferred_runs`] lists it, in
+///   source order and each once; a suspended one gives none.
+/// - provides: the `explicit-runs` lint's findings, before a verb filters them.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested calls in three declarations of a strict source,
+///   each listed once, in source order, and reported where a lint reaches it.
+/// - witness: `entry::tests::an_inferred_run_is_reported_where_a_lint_reaches`
+#[spec(ensures: |ret| ret.is_sorted() && ret.windows(2_usize).all(|pair| pair.first() != pair.get(1_usize)))]
+fn inferred_runs(
+    module: &LoweredModule<'_>,
+    verdicts: &ModuleReport,
+) -> Vec<InferredRun>
+{
+    module.inferred_runs(
+        verdicts
+            .nested_elaborations()
+            .values()
+            .flat_map(|elaboration| {
+                elaboration
+                    .decisions()
+                    .iter()
+                    .filter_map(|(&at, &decided)| match decided {
+                        | Nesting::Ran(purity) => Some((at, purity)),
+                        | Nesting::Suspended => None,
+                    })
+            }),
+    )
 }
 
 /// Judge one lowered module: the second half of the composition.
@@ -1346,6 +1394,7 @@ mod tests
     use gandr_surface_pretty::Fidelity;
     use gandr_surface_pretty::Name;
     use gandr_surface_pretty::PageWidth;
+    use gandr_surface_pretty::Restoration;
     use gandr_surface_pretty::present_computation;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
@@ -1796,6 +1845,7 @@ def h = 1 ;"#,
             let spellings = super::Spellings::of(&arena, &module, &report, &failures);
             let shadowed = module.recognition().shadowed().to_vec();
             let inferred = module.inferred_exits().to_vec();
+            let runs = super::inferred_runs(&module, &verdicts);
             let readmitted_first = Composed::Settled {
                 report,
                 exercised,
@@ -1805,6 +1855,7 @@ def h = 1 ;"#,
                 failures,
                 shadowed,
                 inferred,
+                runs,
                 kernel: Maybe::Present(kernel),
                 program,
             };
@@ -2082,6 +2133,97 @@ def h = 1 ;"#,
                 equal_certificate_syntax(&arena, body(written), body(&restated)),
                 CertificateEquality::Equal,
                 "`{written}`'s printed body reads back to its term"
+            );
+        }
+    }
+
+    #[test]
+    fn a_body_prints_with_its_runs_elided_and_reads_back_to_its_elaboration()
+    {
+        let grammar = grammar();
+        let source = SourceText::from(
+            "def kept(n : Integer) -> -F Integer { n }\n\
+             def bound(n : Integer) -> -F Integer { run m <- kept(n) ; kept(m) }\n\
+             def nested(n : Integer) -> -F Integer { kept(kept(n)) }\n\
+             def nested_printed : +U (Integer -> -F Integer) ;\n\
+             def nested_printed = thunk { fn (a) { kept(kept(a)) } } ;\n\
+             def written(n : Integer) -> -F Integer { kept(run kept(n)) }\n\
+             def written_printed : +U (Integer -> -F Integer) ;\n\
+             def written_printed = thunk { fn (a) { kept(run kept(a)) } } ;\n",
+        );
+        let mut lowerings = LoweringCount::default();
+        let Lowered::Module { module, mut arena } = lower_source(&grammar, source, &mut lowerings)
+            .expect("the module lowers")
+            .into_lowered()
+        else {
+            panic!("the module is read");
+        };
+        let verdicts = check_module(
+            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &adapt(&module),
+        );
+        let spelled = constant_names(&module);
+        let names: Vec<Name<'_>> = spelled
+            .iter()
+            .map(|name| Name::from(name.as_str()))
+            .collect();
+        let constant = |wanted: &str| {
+            module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"))
+                .constant()
+        };
+        let defined = |wanted: &str| {
+            *verdicts
+                .definitions()
+                .get(&constant(wanted))
+                .unwrap_or_else(|| panic!("`{wanted}` checks"))
+        };
+        let printed = |wanted: &str| {
+            let restoration = verdicts
+                .nested_elaborations()
+                .get(&constant(wanted))
+                .map_or_else(Restoration::default, |elaboration| {
+                    Restoration::of(elaboration.carried())
+                });
+            let Some(&Value::Thunk(computation)) = arena.value(defined(wanted))
+            else {
+                panic!("`{wanted}` is a suspended function");
+            };
+            let presentation = present_computation(
+                &CoreSource::new(&arena, &names).restoring(&restoration),
+                CoreNode::Computation(computation),
+                PageWidth::from(100_u32),
+            )
+            .expect("the body lays out");
+            (presentation.to_string(), presentation.fidelity())
+        };
+        for (name, expected) in [
+            ("bound", "fn (a) { run b <- kept(a) ; kept(b) }"),
+            ("nested", "fn (a) { kept(kept(a)) }"),
+            ("nested_printed", "fn (a) { kept(kept(a)) }"),
+            ("written", "fn (a) { kept(run kept(a)) }"),
+            ("written_printed", "fn (a) { kept(run kept(a)) }"),
+        ] {
+            assert_eq!(
+                printed(name),
+                (String::from(expected), Fidelity::Faithful),
+                "`{name}` prints in the canonical form: an inferred run elided, a written one \
+                 and a bind as written"
+            );
+        }
+        for (left, right) in [
+            ("nested", "bound"),
+            ("nested", "nested_printed"),
+            ("written", "bound"),
+            ("written", "written_printed"),
+        ] {
+            assert_eq!(
+                equal_certificate_syntax(&arena, defined(left), defined(right)),
+                CertificateEquality::Equal,
+                "`{left}` and `{right}` elaborate to one term"
             );
         }
     }

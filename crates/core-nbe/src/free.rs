@@ -910,9 +910,10 @@ Err(_) => false,
                     | Value::Injection(_, body) | Value::Lift { body, .. } => {
                         one(value(body), Lowering::NONE)
                     },
-                    | Value::Returned(body) | Value::Thunk(body) => {
-                        one(computation(body), Lowering::NONE)
-                    },
+                    | Value::Returned(body)
+                    | Value::Nested(body)
+                    | Value::Run(body)
+                    | Value::Thunk(body) => one(computation(body), Lowering::NONE),
                     | Value::Quote(quoted) => one(Reached::ValueType(quoted), Lowering::NONE),
                     | Value::QuoteComputation(quoted) => {
                         one(Reached::CompType(quoted), Lowering::NONE)

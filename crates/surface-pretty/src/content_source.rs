@@ -154,6 +154,8 @@ impl Source for ContentSource<'_>
         | (Some(&ContentNode::Element { code: a, .. }), Former::Element(b))
         | (Some(&ContentNode::ComputationElement { code: a, .. }), Former::ComputationElement(b))
         | (Some(&ContentNode::Thunk(a)), Former::Thunk(b))
+        | (Some(&ContentNode::Nested(a)), Former::Nested(b))
+        | (Some(&ContentNode::Run(a)), Former::Run(b))
         | (Some(&ContentNode::Lambda(a)), Former::Lambda(b))
         | (Some(&ContentNode::Return(a)), Former::Return(b))
         | (Some(&ContentNode::Force(a)), Former::Force(b))
@@ -247,6 +249,8 @@ impl Source for ContentSource<'_>
                 Former::Injection(Component::from(usize::from(summand)), body)
             },
             | ContentNode::Thunk(body) => Former::Thunk(body),
+            | ContentNode::Nested(body) => Former::Nested(body),
+            | ContentNode::Run(body) => Former::Run(body),
             | ContentNode::ValueLift { .. } => Former::ValueLift,
             | ContentNode::Quote(quoted) => Former::Quote(quoted),
             | ContentNode::QuoteComputation(quoted) => Former::QuoteComputation(quoted),

@@ -27,7 +27,7 @@ The diagnostics model: what a refusal, an unsettled declaration, a goal, a shado
 | `Diagnostic` and its parts | `primary`, `details` per `Verbosity`, `json`; contexts carry their role's sentence, the type judged and the binders they introduce. |
 | `Failures`, `Spellings`, `spelling`, `kept` | The machine's failure per refused body and the spelled types, kept while the arena lives. |
 | `sentence`, `Label`, `Culprit` | The frame table, the labels a locus reads as, and the culprit a lowering refusal names. |
-| `Lint`, `Identifier`, `Fix` | A lint's finding, named by the lint rather than a refusal: the `explicit-exits` lint reports each inferred exit as a warning whose `fix` inserts the keyword, the edit that settles it. |
+| `Lint`, `Identifier`, `Fix` | A lint's finding, named by the lint rather than a refusal: the `explicit-exits` lint reports each inferred exit as a warning whose `fix` inserts the keyword, the edit that settles it; the `explicit-runs` lint reports each inferred run, its `fix` writing `run` before the computation, parenthesised where the computation begins a statement. |
 
 ## Expected features
 
@@ -71,7 +71,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The culprit a lowering refusal names | [`culprit`](src/culprit.rs) |
 | Spelled types and kept failures | [`spelled`](src/spelled.rs) |
 | Verbosity | [`verbosity`](src/verbosity.rs) |
-| Lints, `explicit-exits` among them | [`lint`](src/lint.rs) |
+| Lints, `explicit-exits` and `explicit-runs` among them | [`lint`](src/lint.rs) |
 
 ## License
 

@@ -122,6 +122,62 @@ def rec map_nat_elided(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   }
 }
 
+@[ checks ]
+def rec plus_nested(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => n,
+    Succ(p) => Succ(plus_nested[<](n, p))
+  }
+}
+
+@[ checks ]
+def rec plus_run(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => n,
+    Succ(p) => Succ(run plus_run[<](n, p))
+  }
+}
+
+@[ checks ]
+def rec length_nested(a : Type, xs : List(a)) -> -F Nat {
+  case xs {
+    Nil => Zero,
+    Cons(x, rest) => Succ(length_nested[<](a, rest))
+  }
+}
+
+@[ checks ]
+def rec append_nested(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
+  case xs {
+    Nil => ys,
+    Cons(x, rest) => (Cons(x, append_nested[<](a, ys, rest)) : List(a))
+  }
+}
+
+@[ checks ]
+def rec map_nested(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
+  case xs {
+    Nil => (Nil : List(b)),
+    Cons(x, rest) => (Cons(f(x), map_nested[<](a, b, f, rest)) : List(b))
+  }
+}
+
+@[ checks ]
+def rec map_nat_nested(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
+  case xs {
+    Nil => (Nil : List(Nat)),
+    Cons(x, rest) => (Cons(f(x), map_nat_nested[<](f, rest)) : List(Nat))
+  }
+}
+
+@[ checks ]
+def rec map_nat_run(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
+  case xs {
+    Nil => (Nil : List(Nat)),
+    Cons(x, rest) => (Cons(run f(x), run map_nat_run[<](f, rest)) : List(Nat))
+  }
+}
+
 @[ runs("ctor[1](ctor[1](ctor[0]()))") ]
 def two : Nat ;
 def two = Succ(Succ(Zero)) ;
@@ -137,6 +193,18 @@ def five = thunk { become plus(two, three) } ;
 @[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]())))))") ]
 def five_elided : +U (-F Nat) ;
 def five_elided = thunk { plus_elided(two, three) } ;
+
+@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]())))))") ]
+def five_nested : +U (-F Nat) ;
+def five_nested = thunk { plus_nested(two, three) } ;
+
+@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]())))))") ]
+def five_run : +U (-F Nat) ;
+def five_run = thunk { plus_run(two, three) } ;
+
+@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))))))") ]
+def six : +U (-F Nat) ;
+def six = thunk { Succ(plus_nested(two, three)) } ;
 
 @[ runs("ctor[1](ctor[1](ctor[1](ctor[0]())), ctor[1](ctor[0](), ctor[0]()))") ]
 def small : List(Nat) ;
@@ -173,6 +241,14 @@ def bumped = thunk { become map_nat(bump, small) } ;
 @[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[0]()), ctor[0]()))") ]
 def bumped_elided : +U (-F List(Nat)) ;
 def bumped_elided = thunk { map_nat_elided(bump_elided, small) } ;
+
+@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[0]()), ctor[0]()))") ]
+def bumped_nested : +U (-F List(Nat)) ;
+def bumped_nested = thunk { map_nat_nested(bump, small) } ;
+
+@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[0]()), ctor[0]()))") ]
+def bumped_run : +U (-F List(Nat)) ;
+def bumped_run = thunk { map_nat_run(bump, small) } ;
 
 @[ checks ]
 def lengthened : +U (-F Nat) ;

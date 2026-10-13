@@ -1,0 +1,59 @@
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ checks ]
+def rec down(n : Nat) -> -F Nat {
+  case n {
+    Zero => n,
+    Succ(p) => down[<](p)
+  }
+}
+
+@[ runs("ctor[0]()") ]
+def held : +U (-F Nat) ;
+def held = down(Succ(Zero)) ;
+
+@[ refuses("UnenclosedRun") ]
+def ran : Nat ;
+def ran = down(Zero) ;
+
+@[ refuses("NotSynthesisable") ]
+def scrutinised(n : Nat) -> -F Nat {
+  case down(n) {
+    Zero => n,
+    Succ(p) => p
+  }
+}
+
+@[ checks ]
+def scrutinised_run(n : Nat) -> -F Nat {
+  run m <- down(n) ;
+  case m {
+    Zero => n,
+    Succ(p) => p
+  }
+}
+
+@[ checks ]
+def kept(n : Nat) -> -F (+U (-F Nat)) {
+  return thunk { Succ(down(n)) }
+}
+
+@[ checks ]
+def armed(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => Succ(down(p))
+  }
+}
+
+@[ runs("ctor[1](ctor[0]())") ]
+def armed_three : +U (-F Nat) ;
+def armed_three = thunk { armed(Succ(Succ(Succ(Zero)))) } ;
+
+@[ runs("ctor[1](ctor[0]())") ]
+def kept_three : +U (-F Nat) ;
+def kept_three = thunk { run k <- kept(Succ(Succ(Zero))) ; force k } ;

@@ -33,6 +33,16 @@ def twice_elided(n : Nat) -> -F Nat {
 }
 
 @[ checks ]
+def twice_nested(n : Nat) -> -F Nat {
+  become down(down(n))
+}
+
+@[ checks ]
+def twice_run(n : Nat) -> -F Nat {
+  down(run down(n))
+}
+
+@[ checks ]
 def count(n : Nat) -> -F Integer {
   return 1
 }
@@ -100,6 +110,16 @@ def sequenced(n : Nat) -> -F Nat {
 def sequenced_elided(n : Nat) -> -F Nat {
   run m <- down(n) ;
   m
+}
+
+@[ checks ]
+def sequenced_nested(n : Nat) -> -F Nat {
+  return down(n)
+}
+
+@[ checks ]
+def sequenced_run(n : Nat) -> -F Nat {
+  return run down(n)
 }
 
 @[ refuses("OutOfFragment") ]

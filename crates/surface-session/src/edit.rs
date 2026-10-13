@@ -2841,6 +2841,8 @@ fn read(
                 Value::PathRefl(_) => matches!(ret, ContentNode::PathRefl(_)),
                 Value::Here(_) => matches!(ret, ContentNode::Here(_)),
                 Value::Returned(_) => matches!(ret, ContentNode::Returned(_)),
+                Value::Nested(_) => matches!(ret, ContentNode::Nested(_)),
+                Value::Run(_) => matches!(ret, ContentNode::Run(_)),
                 Value::PathProduct(..) => matches!(ret, ContentNode::PathProduct(..)),
                 Value::Funext(..) => matches!(ret, ContentNode::Funext(..)),
                 Value::Equiv(..) => matches!(ret, ContentNode::Equiv(..)),
@@ -2954,6 +2956,10 @@ where
         | Some(&Value::Returned(computation)) => {
             ContentNode::Returned(child(Root::Computation(computation)))
         },
+        | Some(&Value::Nested(computation)) => {
+            ContentNode::Nested(child(Root::Computation(computation)))
+        },
+        | Some(&Value::Run(computation)) => ContentNode::Run(child(Root::Computation(computation))),
         | Some(&Value::PathProduct(first, second)) => {
             let first = child(Root::Value(first));
             ContentNode::PathProduct(first, child(Root::Value(second)))

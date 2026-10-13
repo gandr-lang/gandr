@@ -187,6 +187,7 @@ use gandr_surface_layout::render::render;
 pub use crate::content_source::ContentSource;
 pub use crate::core_source::CoreNode;
 pub use crate::core_source::CoreSource;
+pub use crate::core_source::Restoration;
 pub use crate::error::PresentationError;
 pub use crate::former::Arity;
 pub use crate::former::Component;

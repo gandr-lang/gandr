@@ -361,6 +361,21 @@ pub enum Value
     /// effects, and evaluates by running the computation, so the endpoint is
     /// compared by what it computes rather than erased.
     Returned(ComputationId),
+    /// A computation written where a value is read, with no keyword: before
+    /// elaboration only. The checker decides it by the type expected there —
+    /// against a thunk type it suspends, as a thunk does; against any other it
+    /// runs, before the innermost computation enclosing it, and stands for the
+    /// value it returns — and elaboration replaces it by the thunk or by the
+    /// variable of the bind it mints, so neither the kernel nor the evaluator
+    /// meets it. It only checks: with no expected type there is nothing to
+    /// decide by.
+    Nested(ComputationId),
+    /// A written `run c` standing where a value is read: before elaboration
+    /// only. It runs the computation before the innermost computation enclosing
+    /// it and stands for the value the computation returns, which is what it
+    /// synthesises; elaboration replaces it by the variable of the bind it
+    /// mints.
+    Run(ComputationId),
     /// A bound value variable, in a named zone of the unified context.
     Variable
     {
@@ -1092,6 +1107,12 @@ fn equal_syntax(
                     }
                     else if let Value::Returned(a) = *matched_left_value
                         && let Value::Returned(b) = *matched_right_value
+                    {
+                        pending.push(C(a, b));
+                    }
+                    else if let (&Value::Nested(a), &Value::Nested(b))
+                    | (&Value::Run(a), &Value::Run(b)) =
+                        (matched_left_value, matched_right_value)
                     {
                         pending.push(C(a, b));
                     }

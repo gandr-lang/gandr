@@ -414,6 +414,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "unpack_statement",
     "rec_block",
     "return_expression",
+    "run_expression",
     "sign_declaration",
     "static_abstraction",
     "telescope_expression",

@@ -1874,6 +1874,33 @@ impl CoreArena
         self.alloc_value(Value::Returned(computation))
     }
 
+    /// Mint a computation written where a value is read, which elaboration runs
+    /// or suspends by the type expected there.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_nested(
+        &mut self,
+        computation: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Nested(computation))
+    }
+
+    /// Mint a written `run c` standing where a value is read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_run(
+        &mut self,
+        computation: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Run(computation))
+    }
+
     /// Mint transport `tr(P, p, x)` along an element path, the motive under
     /// one intuitionistic binder.
     ///

@@ -937,6 +937,122 @@ mod diagnostics
     }
 
     #[test]
+    fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
+    {
+        let text = "def id(n: Integer) -> -F Integer { n }\n@[ explicit_runs ]\ndef nested(n: \
+                    Integer) -> -F Integer { id(id(n)) }\ndef returned(n: Integer) -> -F Integer \
+                    { return id(n) }\ndef leading(n: Integer) -> -F Integer { id(n) + 1 }\ndef \
+                    grouped(n: Integer) -> -F Integer { return n + 1 }\n";
+        let path = Path::new("runs.gandr");
+        let call = |context: &str, offset: usize| {
+            let start = text
+                .find(context)
+                .expect("the call is written")
+                .saturating_add(offset);
+            (
+                ByteSpan::new(
+                    ByteOffset::from(start),
+                    ByteOffset::from(start.saturating_add(5_usize)),
+                )
+                .expect("the call is ordered"),
+                ByteSpan::new(ByteOffset::from(start), ByteOffset::from(start))
+                    .expect("an insertion is ordered"),
+            )
+        };
+        let (inner, before_inner) = call("{ id(id(n)) }", 5_usize);
+        let (returned, before_returned) = call("{ return id(n) }", 9_usize);
+        let (leading, _) = call("{ id(n) + 1 }", 2_usize);
+        let (grouped, _) = call("{ return n + 1 }", 9_usize);
+        let finding = |diagnostic: &Diagnostic| {
+            (
+                diagnostic.severity,
+                diagnostic.detail.class,
+                diagnostic.identifier,
+                diagnostic.span,
+                diagnostic
+                    .annotations
+                    .first()
+                    .map(|primary| primary.label.clone()),
+                diagnostic.fix.clone(),
+            )
+        };
+        let found = |span: ByteSpan, fix: (ByteSpan, &str)| {
+            (
+                Severity::Warning,
+                Class::Lint(Lint::ExplicitRuns),
+                Maybe::Present(Identifier::Lint(Lint::ExplicitRuns)),
+                Maybe::Present(span),
+                Some(String::from("runs by an inferred `run`")),
+                Maybe::Present(Fix {
+                    span: fix.0,
+                    replacement: String::from(fix.1),
+                }),
+            )
+        };
+        let asked = printed(
+            path,
+            SourceRoot::Strict,
+            SourceText::from(text),
+            Verb::Check(Goals::Gated),
+        );
+        assert_eq!(
+            asked.iter().map(finding).collect::<Vec<_>>(),
+            [found(inner, (before_inner, "run "))],
+            "the attribute asks for the run its declaration's body left out, and nowhere else"
+        );
+        assert_eq!(
+            asked
+                .first()
+                .map(|diagnostic| diagnostic.message.text.as_str()),
+            Some(
+                "this computation stands where a value is read; the checker infers `run`, which \
+                 the `explicit-runs` lint asks to be written"
+            )
+        );
+        let step = unsettled(path, SourceRoot::Strict, SourceText::from(text));
+        let everywhere: Vec<Diagnostic> = entries(&step, Verb::Check(Goals::Gated))
+            .linting(Lints::enabling([Lint::ExplicitRuns]))
+            .collect();
+        assert_eq!(
+            everywhere.iter().map(finding).collect::<Vec<_>>(),
+            [
+                found(inner, (before_inner, "run ")),
+                found(returned, (before_returned, "run ")),
+                found(leading, (leading, "(run id(n))")),
+                found(grouped, (grouped, "run (n + 1)")),
+            ],
+            "the lint enabled by the run finds every inferred run, each in source order; one \
+             that begins a block's tail is written parenthesised, where a bare `run` would begin \
+             a bind, and an operator call is grouped after `run`, which would otherwise run its \
+             first operand alone"
+        );
+        let mut fixed = String::from(text);
+        for diagnostic in everywhere.iter().rev() {
+            if let Maybe::Present(ref fix) = diagnostic.fix {
+                fixed.replace_range(
+                    usize::from(fix.span.start()) .. usize::from(fix.span.end()),
+                    &fix.replacement,
+                );
+            }
+        }
+        assert_eq!(
+            fixed,
+            "def id(n: Integer) -> -F Integer { n }\n@[ explicit_runs ]\ndef nested(n: Integer) \
+             -> -F Integer { id(run id(n)) }\ndef returned(n: Integer) -> -F Integer { return run \
+             id(n) }\ndef leading(n: Integer) -> -F Integer { (run id(n)) + 1 }\ndef grouped(n: \
+             Integer) -> -F Integer { return run (n + 1) }\n"
+        );
+        let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));
+        assert_eq!(
+            entries(&rechecked, Verb::Check(Goals::Gated))
+                .linting(Lints::enabling([Lint::ExplicitRuns]))
+                .collect::<Vec<_>>(),
+            [],
+            "the fixed source settles and the lint finds nothing in it"
+        );
+    }
+
+    #[test]
     fn refusals_of_one_class_label_what_their_locus_is()
     {
         let mismatch = only(Path::new("mismatch.gandr"), SourceText::from(MISMATCH));

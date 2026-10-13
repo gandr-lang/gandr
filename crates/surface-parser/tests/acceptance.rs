@@ -2177,3 +2177,42 @@ fn push_prefix<'pbg>(
     }
     state
 }
+
+/// `run` opens a bind statement where `<-` follows its pattern and an inline
+/// run everywhere else — at the top level, in a body, and in an argument list,
+/// where a declaration head would otherwise close the declaration around it.
+#[test]
+fn run_reads_as_a_bind_or_an_inline_run_by_what_follows() -> Result<(), Box<dyn Error>>
+{
+    let pbg = built();
+    for (src, inline) in [
+        ("run value <- action;", [false].as_slice()),
+        ("val v = run f(x);", &[true]),
+        (
+            "def g() -> -F Integer { run r <- f(run h(x)); pure g(run f(r), r) }",
+            &[false, true, true],
+        ),
+        ("def g() -> -F Nat { Succ(run plus(n, p)) }", &[true]),
+    ] {
+        let result = parse(pbg, SourceText::from(src))?;
+        assert!(
+            bool::from(result.is_clean()),
+            "{src:?} molds clean; obligations: {:?}",
+            result.obligations()
+        );
+        let tree = result.tree();
+        let read: Vec<bool> = (0 .. usize::from(tree.node_count()))
+            .map(NodeIndex::from)
+            .filter(|&node| text(tree, node) == "run")
+            .filter_map(|node| match label_of(tree, node) {
+                | Some(NodeLabel::Tile(mold)) => pbg
+                    .rule_of(mold)
+                    .ok()
+                    .map(|rule| rule.name == "run_expression"),
+                | _ => None,
+            })
+            .collect();
+        assert_eq!(read, inline, "{src:?} reads each `run` by what follows it");
+    }
+    Ok(())
+}

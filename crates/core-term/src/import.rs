@@ -177,7 +177,9 @@ impl Image
             | Self::Value(
                 Value::Primitive { ref mut body, .. }
                 | Value::Thunk(ref mut body)
-                | Value::Returned(ref mut body),
+                | Value::Returned(ref mut body)
+                | Value::Nested(ref mut body)
+                | Value::Run(ref mut body),
             )
             | Self::Computation(
                 Computation::Lambda(ref mut body)

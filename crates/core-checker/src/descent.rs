@@ -279,8 +279,8 @@ fn reference(
 /// - requires: `root` stands under `depth` binders counted from the fixpoint's
 ///   body, and `branch` names its field levels.
 /// - ensures: success exactly when every occurrence of the self variable is the
-///   head of a call whose argument is a field or a function field's result in
-///   scope.
+///   head of a call whose argument is a field, a function field's result in
+///   scope, or a call of a function field written in place, nested or run.
 /// - fails: the first unguarded or non-descending occurrence the walk meets.
 /// - panics: none.
 ///
@@ -293,9 +293,9 @@ fn reference(
 ///   arena is acyclic.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a call at a field, at a function field's result and under
-///   a nested binder replays; a call at the scrutinee itself and a bare forced
-///   self reference refuse.
+/// - hypothesis: L3 — a call at a field, at a function field's result, at a
+///   function field's call written in place and under a nested binder replays;
+///   a call at the scrutinee itself and a bare forced self reference refuse.
 /// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(DescentRefusal::UnguardedSelfReference | DescentRefusal::NonDescendingCall)))]
 fn walk(
@@ -391,7 +391,12 @@ fn walk(
                 | Some(&Value::StaticLambda(body)) => {
                     pending.push((AnyNode::Value(body), deeper, results));
                 },
-                | Some(&(Value::Thunk(body) | Value::Returned(body))) => {
+                | Some(
+                    &(Value::Thunk(body)
+                    | Value::Returned(body)
+                    | Value::Nested(body)
+                    | Value::Run(body)),
+                ) => {
                     pending.push((AnyNode::Computation(body), depth, results));
                 },
                 | Some(&Value::Quote(quoted)) => {
@@ -416,7 +421,16 @@ fn walk(
                     if call {
                         let descends = match variable_level(arena, argument, depth) {
                             | Maybe::Present(level) => branch.descent(level, results),
-                            | Maybe::Absent(_) => Descent::Unrelated,
+                            // A function field's result written in place
+                            // descends as the variable its elaborated bind
+                            // binds does.
+                            | Maybe::Absent(_) => match arena.value(argument) {
+                                | Some(&(Value::Nested(nested) | Value::Run(nested))) => {
+                                    pending.push((AnyNode::Computation(nested), depth, results));
+                                    forced_field(arena, branch, nested, depth, results)
+                                },
+                                | Some(_) | None => Descent::Unrelated,
+                            },
                         };
                         if descends == Descent::Unrelated {
                             return Err(DescentRefusal::NonDescendingCall);
