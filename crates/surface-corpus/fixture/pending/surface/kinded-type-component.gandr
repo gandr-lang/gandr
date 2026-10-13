@@ -1,3 +1,0 @@
-module Indexed : #{ type Hom : Integer -> Integer } { }
-
-module Manifest : #{ type Hom = Integer } { }

@@ -170,6 +170,9 @@ pub enum Recognized
     ModuleType,
     /// A top-level definition.
     Definition,
+    /// A functor: a template only a module binding applies, so no path reads
+    /// a member off it.
+    Functor,
 }
 
 /// Whether a namespace declines an unknown member rather than leaving it to a
@@ -185,9 +188,10 @@ impl Recognized
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: declines exactly for [`Self::BuiltinNamespace`] and
-    ///   [`Self::ModuleNamespace`]: a builtin namespace is not a record value,
-    ///   and a module's scope holds exactly its components.
+    /// - ensures: declines exactly for [`Self::BuiltinNamespace`],
+    ///   [`Self::ModuleNamespace`] and [`Self::Functor`]: a builtin namespace
+    ///   is not a record value, a module's scope holds exactly its components,
+    ///   and a functor's holds none until an application binds an instance.
     /// - provides: the governance test of [`Recognition::resolve_path`].
     /// - fails: never.
     /// - panics: none.
@@ -196,7 +200,7 @@ impl Recognized
     /// - hypothesis: L3 — the answer asserted for every variant.
     /// - witness: `recognition::recognition::only_governed_namespaces_decline_an_unknown_member`
     #[spec(
-        ensures: |ret| ret.0 == matches!(*self, Self::BuiltinNamespace(_) | Self::ModuleNamespace),
+        ensures: |ret| ret.0 == matches!(*self, Self::BuiltinNamespace(_) | Self::ModuleNamespace | Self::Functor),
     )]
     #[inline]
     #[must_use]
@@ -204,7 +208,7 @@ impl Recognized
     {
         Declines(matches!(
             *self,
-            Self::BuiltinNamespace(_) | Self::ModuleNamespace
+            Self::BuiltinNamespace(_) | Self::ModuleNamespace | Self::Functor
         ))
     }
 }
@@ -646,7 +650,8 @@ impl Recognition
                         | Recognized::ModuleNamespace
                         | Recognized::ModuleComponent
                         | Recognized::ModuleType
-                        | Recognized::Definition => return false,
+                        | Recognized::Definition
+                        | Recognized::Functor => return false,
                     };
                     if (position.table, position.entry) == (table, entry) {
                         distinct = distinct.saturating_add(1);

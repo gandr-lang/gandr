@@ -1,7 +1,8 @@
 //! Static normalization through the public surface: a defined operator at an
-//! instance reads back as the ground type it stands for, two reduction orders
-//! over generated well-kinded terms reach the readback's normal form, and a
-//! static term far deeper than a host stack normalizes inside a small one.
+//! instance reads back as the ground type it stands for, an undefined one
+//! stays the neutral application it was, two reduction orders over generated
+//! well-kinded terms reach the readback's normal form, and a static term far
+//! deeper than a host stack normalizes inside a small one.
 //!
 //! The static fragment is the simply kinded λ-calculus over codes, so every
 //! term has a normal form and every reduction order reaches it. The evaluator
@@ -71,6 +72,7 @@ mod static_normalization
     ///   reduction-order and deep rigid-spine witnesses distinguish missing
     ///   beta steps and a wrong rebuilt type.
     /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
+    /// - witness: `static_normalization::static_normalization::an_abstract_family_does_not_unfold`
     /// - witness: `static_normalization::static_normalization::a_static_redex_normalizes_to_its_ground_type`
     /// - witness: `static_normalization::static_normalization::a_deep_static_term_normalizes_inside_a_small_stack`
     #[spec(
@@ -839,6 +841,71 @@ mod static_normalization
                 | _ => panic!("the two walks stay in step"),
             }
         }
+    }
+
+    #[test]
+    fn an_abstract_family_does_not_unfold()
+    {
+        // `Hom ⌜Integer⌝ ⌜Integer⌝`, with `Hom` undefined and then defined as
+        // `λa. λb. ⌜El a × El b⌝`.
+        let mut core = CoreArena::new();
+        let hom = ConstantIndex::from(0_usize);
+        let integer = core.value_type_base(BaseType::Integer);
+        let code = core.value_quote(integer);
+        let head = core.value_constant(hom);
+        let partial = core.value_static_application(head, code);
+        let applied = core.value_static_application(partial, code);
+        let first = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let second = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let left = core.value_type_element(first, Level::zero());
+        let right = core.value_type_element(second, Level::zero());
+        let product = core.value_type_product(&[left, right]);
+        let quote = core.value_quote(product);
+        let inner = core.value_static_lambda(quote);
+        let body = core.value_static_lambda(inner);
+
+        let held = normal_form(&mut core, &LoweredChain::new(), applied);
+        let Some(&Value::StaticApplication(read_partial, read_second)) = core.value(held)
+        else {
+            panic!("the undefined family applied reads back as its application");
+        };
+        let Some(&Value::StaticApplication(read_head, read_first)) = core.value(read_partial)
+        else {
+            panic!("to both arguments");
+        };
+        assert_eq!(
+            core.value(read_head),
+            Some(&Value::Constant(hom)),
+            "headed by the family itself, which does not unfold"
+        );
+        for argument in [read_first, read_second] {
+            assert!(
+                matches!(core.value(argument), Some(&Value::Quote(argument))
+                    if core.value_type(argument) == Some(&ValueType::Base(BaseType::Integer))),
+                "each argument stays the code it was"
+            );
+        }
+
+        let mut definitions = DefinitionChain::new();
+        let defined =
+            definitions.define(hom, GlobalIndex::from(0_u32), Transparency::Manifest, &[]);
+        assert!(defined.is_ok());
+        let chain = LoweredChain::lower(definitions, |_| Ok::<_, core::convert::Infallible>(body))
+            .unwrap_or_else(|never| match never {});
+        let unfolded = normal_form(&mut core, &chain, applied);
+        let Some(&Value::Quote(read)) = core.value(unfolded)
+        else {
+            panic!("the defined family unfolds to the code of its body");
+        };
+        assert!(
+            matches!(core.value_type(read), Some(ValueType::Product(parts))
+            if parts.len() == 2_usize
+                && parts.iter().all(|&part| {
+                    core.value_type(part) == Some(&ValueType::Base(BaseType::Integer))
+                })),
+            "at both arguments: {:?}",
+            core.value_type(read)
+        );
     }
 
     #[test]

@@ -49,6 +49,8 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use super::Collector;
@@ -145,6 +147,27 @@ impl From<FamilyIndex> for usize
     }
 }
 
+/// A parameterized component's place in the collection's parameter lists.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ParameterList(pub usize);
+
+impl From<ParameterList> for usize
+{
+    /// The place as a count of the lists before it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: ParameterList) -> Self
+    {
+        index.0
+    }
+}
+
 /// One component of a derived model signature: the model and the
 /// component's place in it.
 ///
@@ -166,7 +189,9 @@ pub struct ModelPart
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FamilyForm
 {
-    /// The kind written for it, `(a : A, …) => U`.
+    /// The kind written for it: a telescope Π into a universe, `(a : A, …)
+    /// => U`, or an arrow spine into one, `A -> … -> U`, which states its
+    /// indices without binding them.
     Written(Placed),
     /// The indices its module's model signature derives at the component's
     /// place.
@@ -230,6 +255,70 @@ pub struct FamilyCheck
 
 impl<'source> Collector<'_, 'source>
 {
+    /// File the manifest family component `component`, `type F(a : A, …) =
+    /// τ`, of the module `container`, whose parameters are the list at
+    /// `parameters`.
+    ///
+    /// # Specification
+    /// - requires: `parameters` is a list [`Self::signature`] filed, matched
+    ///   once.
+    /// - ensures: a held slot under the component's name owns each parameter's
+    ///   type and `τ`, each read under the components before it; the family is
+    ///   filed with its parameters and pushed onto `types` as the component's
+    ///   meaning, so a later component or a client applying it expands it over
+    ///   its arguments.
+    /// - provides: the manifest-family half of [`Self::match_signature`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-parameter manifest family beside a value
+    ///   component lowers, and one applied to no arguments is refused.
+    /// - witness: `modules::modules::a_manifest_family_component_binds_two_parameters`
+    /// - witness: `modules::modules::a_type_component_arity_mismatch_is_refused_by_name`
+    #[spec(
+        captures: before = (types.len(), self.collected.families.len()),
+        ensures: types.len() == before.0.saturating_add(1)
+            && self.collected.families.len() == before.1.saturating_add(1),
+    )]
+    pub(super) fn manifest_family(
+        &mut self,
+        container: Container,
+        component: Component<'source>,
+        parameters: ParameterList,
+        defined: Placed,
+        scope: ComponentScope,
+        types: &mut Vec<TypeComponent<'source>>,
+    )
+    {
+        let held = self.held(container, component.name, component.named, component.named);
+        let parameters = self
+            .collected
+            .parameter_lists
+            .get_mut(parameters.0)
+            .map(core::mem::take)
+            .unwrap_or_default();
+        self.collected.own(defined.node, held);
+        self.collected.scopes.push((defined.node, scope));
+        for parameter in &parameters {
+            self.collected.own(parameter.classifier.node, held);
+            self.collected
+                .scopes
+                .push((parameter.classifier.node, scope));
+        }
+        let family = FamilyIndex(self.collected.families.len());
+        self.collected.families.push(FamilyMember {
+            held,
+            parameters,
+            defined,
+        });
+        types.push(TypeComponent {
+            name: component.name,
+            meaning: TypeMeaning::Family(family),
+            held,
+        });
+    }
+
     /// Read a model signature, `Model(S)`, after its `:` or `:>`.
     ///
     /// # Specification
@@ -403,30 +492,39 @@ impl<'source> Collector<'_, 'source>
         }
     }
 
-    /// How many indices the written kind `kind`, `(a : A, …) => U`, states.
+    /// How many indices the written kind `kind`, `(a : A, …) => U` or `A -> …
+    /// -> U`, states.
     ///
     /// # Specification
-    /// - requires: `kind` is a value function space.
-    /// - ensures: the number of entries its parenthesised domain lists, or one
-    ///   for a domain written bare; none for a kind without a domain.
-    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+    /// - requires: `kind` is a value function space or a static arrow.
+    /// - ensures: for a static arrow, one per arrow along its spine; otherwise
+    ///   the number of entries its parenthesised domain lists, or one for a
+    ///   domain written bare; none for a kind without a domain.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold, and the
+    ///   spine's refusal.
     /// - panics: none.
     /// - executable: none — the count is the pieces' reading, which the
     ///   postcondition could only restate by reading them again.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnknownMold`].
+    /// [`LoweringRefusal`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a two-index kind against a one-parameter member is
-    ///   refused naming both counts.
+    ///   refused naming both counts, whether written as a telescope or a spine.
     /// - witness: `modules::modules::models::a_family_of_the_wrong_telescope_is_refused`
     /// - witness: `modules::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `modules::modules::a_kinded_type_component_spine_declares_its_arity`
     fn kind_arity(
         &self,
         kind: Placed,
     ) -> Result<OperandCount, LoweringRefusal<'source>>
     {
+        if self.kind_form(kind) == Ok(super::KindForm::Arrow) {
+            return Ok(OperandCount::from(
+                spine_domains(self.pbg, self.tree, kind)?.len(),
+            ));
+        }
         let mut pieces = Pieces::new();
         read_pieces(self.pbg, self.tree, kind.node, &mut pieces)?;
         let Some(domain) = pieces.pieces.iter().find_map(|piece| match *piece {
@@ -553,7 +651,9 @@ impl<'source> Collector<'_, 'source>
         };
         let family = match member.meaning {
             | TypeMeaning::Family(family) => Some(family),
-            | TypeMeaning::Manifest(_) | TypeMeaning::Sealed => None,
+            | TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => {
+                None
+            },
         };
         let written = OperandCount::from(family.map_or(0_usize, |family| {
             self.collected
@@ -582,6 +682,7 @@ impl<'source> Collector<'_, 'source>
         });
         let check = match form {
             | FamilyForm::Written(kind) => {
+                let (expectation, attributes) = self.member_expectation(member.held);
                 let witness = SlotIndex(self.collected.slots.len());
                 self.collected.slots.push(DeclarationSlot {
                     name: component.name,
@@ -590,9 +691,9 @@ impl<'source> Collector<'_, 'source>
                     constant: ConstantIndex::from(witness.0),
                     introduced_by: component.named,
                     named: component.named,
-                    signature: Maybe::Absent(declaration_half::Absent::Unwritten),
+                    signature: expectation,
                     definition: Maybe::Absent(declaration_half::Absent::Unwritten),
-                    attributes: Vec::new(),
+                    attributes,
                     docs: Vec::new(),
                     refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
                 });
@@ -738,5 +839,71 @@ impl<'source> Collector<'_, 'source>
         );
 
         undeclared
+    }
+}
+
+/// The domains of the arrow spine `kind`, `A -> … -> U`, outermost first.
+///
+/// The spine is the codomain chain: `A -> B -> U` and `A -> (B -> U)` each
+/// state two domains, and `(A -> B) -> U` states one, an operator's kind. A
+/// kind that is no arrow states none.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one domain per arrow walked from `kind` down its codomains,
+///   through any parentheses around a codomain, outermost first.
+/// - provides: the arity and the indices of a kind written as a static arrow.
+/// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold, and the hole's
+///   refusal for an arrow whose domain or codomain is not one operand.
+/// - panics: none.
+///
+/// # Errors
+/// [`LoweringRefusal`].
+///
+/// # Termination
+/// - reason: each step moves to a child of the node before it, not recursion.
+/// - measure: the depth of the kind's subtree below the current node.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Type -> Type -> Type` states two domains and a member
+///   binding one parameter against it is refused naming both counts.
+/// - witness: `modules::modules::a_kinded_type_component_spine_declares_its_arity`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |domains| domains.iter().all(|domain| domain.span.start() >= kind.span.start())))]
+pub fn spine_domains<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    kind: Placed,
+) -> Result<Vec<Placed>, LoweringRefusal<'source>>
+{
+    let mut domains = Vec::new();
+    let mut position = kind;
+    loop {
+        let Some(node) = tree.node(position.node)
+        else {
+            return Ok(domains);
+        };
+        let former = match shape_of(pbg, node)? {
+            | Shape::Form { former, .. } => former,
+            | Shape::Root | Shape::Repair(_) | Shape::Layout => return Ok(domains),
+        };
+        let mut pieces = Pieces::new();
+        read_pieces(pbg, tree, position.node, &mut pieces)?;
+        let mut cursor = Cursor::new(&pieces.pieces, position.span);
+        position = match former {
+            | Former::ArrowType => {
+                domains.push(one_in(FormName::MODULE, cursor.operands())?);
+                if let Maybe::Absent(_) = cursor.tile(TileName::ARROW) {
+                    return Err(misplaced_in(FormName::MODULE, cursor.here()));
+                }
+                one_in(FormName::MODULE, cursor.operands())?
+            },
+            | Former::ParenthesizedType if !domains.is_empty() => {
+                if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
+                    return Err(misplaced_in(FormName::MODULE, cursor.here()));
+                }
+                one_in(FormName::MODULE, cursor.operands())?
+            },
+            | _ => return Ok(domains),
+        };
     }
 }

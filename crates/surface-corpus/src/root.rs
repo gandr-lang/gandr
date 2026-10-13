@@ -128,7 +128,11 @@
 //! `pathological/modules/module-abstract-type-component` write a value
 //! component and an abstract type component the body supplies no member for,
 //! each refused at the component, which declares nothing. A refusal at the
-//! declaration form itself has no half to carry an expectation.
+//! declaration form itself has no half to carry an expectation. A type
+//! component whose body supplies the member does: the check of the member at
+//! the component's kind reads its expectation off the attributes written
+//! before the member, `@[ refuses("…") ] type T = τ ;`, so
+//! `surface/kinded-type-component` states its refusal and settles.
 //!
 //! The alternatives were leaving these sources out, which loses them, and
 //! stating each one's refusal in an attribute, which the lowering cannot read

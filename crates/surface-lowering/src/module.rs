@@ -271,18 +271,35 @@ use crate::origin::Provenance;
 use crate::resolve::SurfaceName;
 
 mod data;
+
+mod functor;
+
 mod model;
+
 mod sealing;
 
 pub use self::data::Constructor;
 pub use self::data::DataForm;
+use self::functor::Applied;
+pub use self::functor::Functor;
+pub use self::functor::FunctorIndex;
+pub use self::functor::Instance;
+pub use self::functor::InstanceIndex;
+pub use self::functor::Matched;
+pub use self::functor::ParameterForm;
+pub use self::functor::Stratum;
+use self::functor::WrittenParameter;
+pub use self::functor::parameter;
 pub use self::model::FamilyCheck;
 pub use self::model::FamilyForm;
 pub use self::model::FamilyIndex;
 pub use self::model::FamilyMember;
+pub use self::model::FamilyParameter;
 pub use self::model::ModelIndex;
 pub use self::model::ModelPart;
+pub use self::model::ParameterList;
 pub use self::model::derived;
+pub use self::model::spine_domains;
 pub use self::sealing::AbstractSlot;
 pub use self::sealing::ComponentPlace;
 use self::sealing::KindForm;
@@ -335,6 +352,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The node is the root, layout, or not under a filed declaration.
             Unowned,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a module form's tail reads no functor application.
+    pub mod application {
+        /// The tail is out of shape.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A tile of `F(P(.p)*) ;` is missing or out of place.
+            Misplaced,
         }
     }
 }
@@ -583,6 +612,10 @@ pub enum Role
     /// entered in no name table, and named through the namespace as the atom
     /// it mints.
     Abstract,
+    /// A component of a functor's parameter: the template's stand-in for the
+    /// argument's component, which each application renames and which
+    /// declares nothing.
+    Parameter,
 }
 
 /// One member of a module's body, or one component it exports.
@@ -631,7 +664,8 @@ pub enum Member
 /// # Adequacy
 /// - hypothesis: L3 — manifest, abstract, universe-kinded, family-kinded and
 ///   derived components have distinct outcomes.
-/// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
+/// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
+/// - witness: `modules::modules::a_manifest_family_component_binds_two_parameters`
 /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
 /// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
 /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
@@ -646,10 +680,20 @@ pub enum ComponentForm
     /// written for it: its meaning is the body's type member of its name,
     /// sealed by an opaque ascription and strengthened by a transparent one.
     Abstract(Maybe<Placed, component_kind::Absent>),
-    /// A type family component `type F : (a : A, …) => Type`, or an indexed
-    /// sort a model signature derives: its meaning is the body's family
-    /// member of its name.
+    /// A type family component `type F : (a : A, …) => Type` or `type F : A ->
+    /// … -> Type`, or an indexed sort a model signature derives: its meaning
+    /// is the body's family member of its name.
     Family(FamilyForm),
+    /// A manifest family component `type F(a : A, …) = τ`: its parameters'
+    /// place among the collection's parameter lists, and the type it names
+    /// over them.
+    Parameterized
+    {
+        /// The parameters' place.
+        parameters: ParameterList,
+        /// The type the family names.
+        defined: Placed,
+    },
     /// A value component a model signature derives at the component's own
     /// place: an operation, a law, or a member the derivation cannot state.
     Derived,
@@ -829,6 +873,9 @@ pub struct Structure<'source>
     pub exported_as: BTreeMap<SlotIndex, SlotIndex>,
     /// Whether matching coerced the body.
     pub coerced: Coerced,
+    /// What the module is in the stratum: a module, a functor's body or
+    /// parameter, or an application's instance.
+    pub stratum: Stratum,
 }
 
 /// What one half of a declared name lowers from.
@@ -1170,14 +1217,23 @@ pub struct Collected<'source>
     pub abstracts: BTreeMap<SlotIndex, AbstractSlot>,
     /// Every top-level module an attribute block decorates, in source order.
     pub decorated: Vec<DecoratedModule<'source>>,
-    /// The type family members, `type F(a : A, …) = τ ;`, in source order.
+    /// The type family members, `type F(a : A, …) = τ ;`, and the manifest
+    /// family components signatures state, in the order they are matched.
     pub families: Vec<FamilyMember>,
+    /// The parameters of each manifest family component a signature writes,
+    /// `type F(a : A, …) = τ`, in reading order.
+    pub parameter_lists: Vec<Vec<FamilyParameter>>,
     /// The model signatures ascriptions derive, in the order their modules
     /// open.
     pub models: Vec<crate::model::ModelSignature>,
     /// Each family component's check slot — the witness checking a written
     /// kind, or the held slot of a derived sort — with what it compares.
     pub family_checks: BTreeMap<SlotIndex, FamilyCheck>,
+    /// The functors, in source order: each a template its applications
+    /// rename.
+    pub functors: Vec<Functor<'source>>,
+    /// The applications, in source order: each an instance of a functor.
+    pub instances: Vec<Instance<'source>>,
 }
 
 /// A top-level module an attribute block decorates, with the slots of the
@@ -1438,6 +1494,63 @@ impl<'source> Collected<'source>
         path.reverse();
 
         path
+    }
+
+    /// What the module a declaration in `container` belongs to is in the
+    /// stratum: the innermost enclosing functor's body or parameter, or
+    /// application's instance, a plain module otherwise.
+    ///
+    /// # Specification
+    /// - requires: `container` is a container of this collection.
+    /// - ensures: walking out from `container` by an explicit loop, the first
+    ///   module whose stratum is not [`Stratum::Module`] gives its stratum; the
+    ///   top level, or a module index the collection does not hold, ends the
+    ///   walk at [`Stratum::Module`].
+    /// - provides: the template and instance test [`crate::lower`] reads for
+    ///   every slot.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member of a functor's body, of a module nested in
+    ///   it, of its parameter, and of an application's instance each read their
+    ///   own stratum, and a top-level declaration reads a module.
+    /// - witness: `modules::modules::functors::a_functor_body_never_reaches_the_kernel`
+    /// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
+    #[spec(
+        ensures: |ret| {
+            let mut current = container;
+            let mut walked = 0_usize;
+            while let Container::Module(index) = current
+                && let Some(module) = self.structures.get(index.0)
+                && walked <= self.structures.len()
+            {
+                if module.stratum != Stratum::Module {
+                    return ret == module.stratum;
+                }
+                walked = walked.saturating_add(1);
+                current = module.container;
+            }
+            ret == Stratum::Module
+        },
+    )]
+    #[must_use]
+    pub fn stratum_of(
+        &self,
+        container: Container,
+    ) -> Stratum
+    {
+        let mut at = container;
+        while let Container::Module(index) = at
+            && let Some(structure) = self.structures.get(index.0)
+        {
+            if structure.stratum != Stratum::Module {
+                return structure.stratum;
+            }
+            at = structure.container;
+        }
+
+        Stratum::Module
     }
 }
 
@@ -1706,8 +1819,11 @@ pub fn collect<'source>(
             abstracts: BTreeMap::new(),
             decorated: Vec::new(),
             families: Vec::new(),
+            parameter_lists: Vec::new(),
             models: Vec::new(),
             family_checks: BTreeMap::new(),
+            functors: Vec::new(),
+            instances: Vec::new(),
         },
         pieces: Pieces::new(),
     };
@@ -1768,6 +1884,7 @@ pub fn collect<'source>(
     if let Some(&stray) = decorations.first() {
         collector.module_child(stray)?;
     }
+    collector.stray_expectations();
 
     Ok(collector.collected)
 }
@@ -3151,6 +3268,8 @@ struct Opened<'source>
     sealed: Sealed,
     /// The body's member forms, in source order.
     members: Vec<Placed>,
+    /// The functor parameter, when the form declares a functor.
+    parameter: Maybe<WrittenParameter<'source>, parameter::Absent>,
 }
 
 /// What reading a module form's header found.
@@ -3180,6 +3299,8 @@ enum Header<'source>
 {
     /// A module whose body is read.
     Opened(Opened<'source>),
+    /// A functor application binding its instance.
+    Applied(Applied<'source>),
     /// A named module refused as a whole, its body unread.
     Refused
     {
@@ -3405,8 +3526,13 @@ impl<'source> Collector<'_, 'source>
         let mut pieces = Pieces::new();
         read_pieces(self.pbg, self.tree, module.node, &mut pieces)?;
         let mut stack = Vec::new();
+        let opened_at = StructureIndex(self.collected.structures.len());
         match self.header(module, &pieces, Container::TopLevel)? {
             | Header::Opened(opened) => self.open(Container::TopLevel, module, opened, &mut stack),
+            | Header::Applied(applied) => {
+                self.apply(module, &applied);
+                return Ok(());
+            },
             | Header::Refused {
                 name,
                 named,
@@ -3432,22 +3558,25 @@ impl<'source> Collector<'_, 'source>
             self.pieces = read;
             outcome?;
         }
+        self.close_functor(opened_at);
 
         Ok(())
     }
 
     /// Read a module form's header: its name, its signature and its body's
-    /// member forms.
+    /// member forms, or the functor application it binds.
     ///
     /// # Specification
     /// - requires: `pieces` is the reading of the module form `form`, declared
     ///   in `container`.
-    /// - ensures: the opened module when its tiles read `module Name ((: | :>)
-    ///   (#{ … } | Model(S)))? { members }`, a top-level name taking the
-    ///   uppercase spelling and a nested one either, sealed exactly when the
-    ///   ascription is `:>`, carrying the model signature `Model(S)` derives; a
-    ///   top-level module named in lowercase, a repair no operand carries, or a
-    ///   signature or body out of shape refuses the module under its name; a
+    /// - ensures: the opened module when its tiles read `module Name ((X : #{ …
+    ///   }))? ((: | :>) (#{ … } | Model(S)))? { members }`, a top-level name
+    ///   taking the uppercase spelling and a nested one either, sealed exactly
+    ///   when the ascription is `:>`, carrying the model signature `Model(S)`
+    ///   derives and the functor parameter when one is written; the application
+    ///   when they read `module Name = F(P(.p)*) ;`; a top-level module named
+    ///   in lowercase, a repair no operand carries, or a parameter, signature,
+    ///   application or body out of shape refuses the module under its name; a
     ///   form with no name is unnamed.
     /// - provides: the per-module reading of [`Self::module`] and
     ///   [`Self::member`].
@@ -3473,6 +3602,10 @@ impl<'source> Collector<'_, 'source>
             ret.as_ref().map_or_else(
                 |refusal| matches!(*refusal, LoweringRefusal::UnknownMold { .. }),
                 |header| match *header {
+                    | Header::Applied(ref applied) => core::ptr::eq(
+                        core::ptr::from_ref::<str>(applied.name.as_ref()),
+                        core::ptr::from_ref::<str>(self.name_of(applied.named).as_ref()),
+                    ) && !applied.argument.is_empty(),
                     | Header::Opened(ref opened) => {
                         core::ptr::eq(
                             core::ptr::from_ref::<str>(opened.name.as_ref()),
@@ -3493,7 +3626,7 @@ impl<'source> Collector<'_, 'source>
         },
     )]
     fn header(
-        &self,
+        &mut self,
         form: Placed,
         pieces: &Pieces,
         container: Container,
@@ -3540,6 +3673,41 @@ impl<'source> Collector<'_, 'source>
         {
             return refused(repaired.refusal(FormName::MODULE));
         }
+        if let Maybe::Present(_) = cursor.tile(TileName::EQUALS) {
+            return match Self::application(&mut cursor) {
+                | Maybe::Present((functor, argument)) => Ok(Header::Applied(Applied {
+                    name,
+                    named,
+                    functor,
+                    argument,
+                })),
+                | Maybe::Absent(_) => refused(misplaced_in(FormName::MODULE, cursor.here())),
+            };
+        }
+        let parameter = if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
+            let Maybe::Present(parameter_named) = cursor.tile(TileName::TYPE_IDENTIFIER)
+            else {
+                return refused(misplaced_in(FormName::MODULE, cursor.here()));
+            };
+            if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
+                return refused(misplaced_in(FormName::MODULE, cursor.here()));
+            }
+            let components = match self.signature(&mut cursor) {
+                | Ok(components) => components,
+                | Err(refusal) => return refused(refusal),
+            };
+            if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
+                return refused(misplaced_in(FormName::MODULE, cursor.here()));
+            }
+            Maybe::Present(WrittenParameter {
+                name: self.name_of(parameter_named),
+                named: parameter_named,
+                components,
+            })
+        }
+        else {
+            Maybe::Absent(parameter::Absent::Unparameterized)
+        };
         let sealed = Sealed(matches!(cursor.tile(TileName::SEAL), Maybe::Present(_)));
         let mut model = Maybe::Absent(derived::Absent::Written);
         let ascription = if sealed.0 || matches!(cursor.tile(TileName::COLON), Maybe::Present(_)) {
@@ -3581,7 +3749,65 @@ impl<'source> Collector<'_, 'source>
             model,
             sealed,
             members,
+            parameter,
         }))
+    }
+
+    /// Read a functor application's tail past its `=`: `F(P(.p)*) ;`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the binding's `=`.
+    /// - ensures: the functor's name tile and the argument path's segment
+    ///   tiles, at least one, when the tail reads `F(P(.p)*) ;` and nothing
+    ///   follows it; absent, the cursor at the first tile out of place,
+    ///   otherwise.
+    /// - provides: the application half of [`Self::header`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a one-segment and a dotted argument are read, and a
+    ///   tail out of shape is refused under the binding's name.
+    /// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `modules::modules::functors::an_application_is_bound_before_anything_projects_from_it`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present((_, ref argument)) => !argument.is_empty(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn application(cursor: &mut Cursor<'_>) -> Maybe<(Placed, Vec<Placed>), application::Absent>
+    {
+        let misplaced = Maybe::Absent(application::Absent::Misplaced);
+        let Maybe::Present(functor) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        else {
+            return misplaced;
+        };
+        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
+            return misplaced;
+        }
+        let Maybe::Present(head) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        else {
+            return misplaced;
+        };
+        let mut argument = Vec::from([head]);
+        while let Maybe::Present(_) = cursor.tile(TileName::DOT) {
+            let segment = match cursor.tile(TileName::TYPE_IDENTIFIER) {
+                | Maybe::Present(segment) => segment,
+                | Maybe::Absent(_) => match cursor.tile(TileName::IDENTIFIER) {
+                    | Maybe::Present(segment) => segment,
+                    | Maybe::Absent(_) => return misplaced,
+                },
+            };
+            argument.push(segment);
+        }
+        if let (Maybe::Present(_), Maybe::Present(_), Maybe::Absent(_)) = (
+            cursor.tile(TileName::PAREN_CLOSE),
+            cursor.tile(TileName::SEMICOLON),
+            cursor.peek(),
+        ) {
+            return Maybe::Present((functor, argument));
+        }
+
+        misplaced
     }
 
     /// Whether an operand of a module form carries a repair of its own: the
@@ -3647,9 +3873,11 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `cursor` stands just past the ascription's `:` or `:>`.
     /// - ensures: every component in signature order, the cursor past the
     ///   closing `}`: `x : T` a value component; `type T = τ` a manifest one;
-    ///   `type T` and `type T : κ` an abstract one, but for a kind written as
-    ///   an arrow, which declares a family; that and a type component binding
-    ///   parameters each kept as a form the fragment does not read.
+    ///   `type F(a : A, …) = τ` a manifest family, its parameters filed among
+    ///   the collection's parameter lists; `type T` and `type T : κ` an
+    ///   abstract one, but for a kind written as a telescope, which declares a
+    ///   family; a parameter list before anything but `= τ` kept as a form the
+    ///   fragment does not read.
     /// - provides: the signature half of [`Self::header`].
     /// - fails: yields a misplaced-tile refusal for a signature out of shape
     ///   and the hole's refusal for a type not written as one form.
@@ -3665,7 +3893,8 @@ impl<'source> Collector<'_, 'source>
     ///   length.
     /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
-    /// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
+    /// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
+    /// - witness: `modules::modules::a_manifest_family_component_binds_two_parameters`
     /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
     /// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
     #[spec(
@@ -3683,7 +3912,7 @@ impl<'source> Collector<'_, 'source>
         },
     )]
     fn signature(
-        &self,
+        &mut self,
         cursor: &mut Cursor<'_>,
     ) -> Result<Vec<Component<'source>>, LoweringRefusal<'source>>
     {
@@ -3711,14 +3940,26 @@ impl<'source> Collector<'_, 'source>
                     return Err(misplaced_in(FormName::MODULE, cursor.here()));
                 };
                 let form = match type_component(cursor)? {
-                    | ComponentForm::Abstract(Maybe::Present(kind)) => {
+                    | WrittenType::Formed(ComponentForm::Abstract(Maybe::Present(kind))) => {
                         match self.kind_form(kind)? {
-                            | KindForm::Universe => ComponentForm::Abstract(Maybe::Present(kind)),
+                            | KindForm::Universe | KindForm::Arrow => {
+                                ComponentForm::Abstract(Maybe::Present(kind))
+                            },
                             | KindForm::Family => ComponentForm::Family(FamilyForm::Written(kind)),
-                            | KindForm::Arrow => ComponentForm::Unread(AscriptionForm::Kinded),
                         }
                     },
-                    | form => form,
+                    | WrittenType::Formed(form) => form,
+                    | WrittenType::Family {
+                        parameters,
+                        defined,
+                    } => {
+                        let list = ParameterList(self.collected.parameter_lists.len());
+                        self.collected.parameter_lists.push(parameters);
+                        ComponentForm::Parameterized {
+                            parameters: list,
+                            defined,
+                        }
+                    },
                 };
                 Component {
                     name: self.name_of(named),
@@ -3746,20 +3987,23 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: a module name already declared in `container` files a held
     ///   slot carrying the duplicate refusal and leaves the body unread;
     ///   otherwise the module takes the next pre-order position, joins its
-    ///   enclosing module's members, declares one abstract type per abstract
-    ///   component when it is sealed, and its body is pushed.
+    ///   enclosing module's members, a functor's parameter takes the position
+    ///   after it, the module declares one abstract type per abstract component
+    ///   when it is sealed, and its body is pushed.
     /// - provides: the recording half of [`Self::module`].
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — nested module headers are admitted before their
-    ///   bodies and duplicate names refuse without replacing the first module.
+    ///   bodies, duplicate names refuse without replacing the first module, and
+    ///   a functor's body is admitted before its parameter.
     /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
     /// - witness: `modules::modules::module_members_admit_in_source_order`
     /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
     /// - witness: `modules::modules::duplicate_module_member_definition_is_rejected`
     /// - witness: `modules::modules::opaque_ascription_seals`
+    /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
     #[spec(
         captures: before = (
             self.collected.structures.len(),
@@ -3773,6 +4017,7 @@ impl<'source> Collector<'_, 'source>
                 .get(&(container, opened.name))
                 .copied(),
             opened.sealed,
+            usize::from(matches!(opened.parameter, Maybe::Present(_))),
         ),
         ensures: |_| match before.6 {
             | Some(first) => {
@@ -3784,8 +4029,9 @@ impl<'source> Collector<'_, 'source>
             | None => {
                 self.collected.modules.get(&(container, before.3))
                     == Some(&StructureIndex(before.0))
-                    && self.collected.structures.len() == before.0.saturating_add(1)
-                    && self.collected.structures.last().is_some_and(|entry| {
+                    && self.collected.structures.len()
+                        == before.0.saturating_add(1).saturating_add(before.8)
+                    && self.collected.structures.get(before.0).is_some_and(|entry| {
                         entry.name == before.3
                             && entry.container == container
                             && entry.named == before.4
@@ -3849,12 +4095,16 @@ impl<'source> Collector<'_, 'source>
             type_members: Vec::new(),
             exported_as: BTreeMap::new(),
             coerced: Coerced(false),
+            stratum: Stratum::Module,
         });
         self.collected.modules.insert(key, structure);
         if let Container::Module(parent) = container
             && let Some(entry) = self.collected.structures.get_mut(parent.0)
         {
             entry.members.push(Member::Module(structure));
+        }
+        if let Maybe::Present(parameter) = opened.parameter {
+            self.declare_parameter(structure, parameter);
         }
         self.declare_abstracts(structure);
         stack.push(Open {
@@ -3966,6 +4216,9 @@ impl<'source> Collector<'_, 'source>
         }
         match self.header(member, pieces, container)? {
             | Header::Opened(opened) => self.open(container, member, opened, stack),
+            | Header::Applied(applied) => {
+                self.fault_at(structure, member, misplaced_in(form, applied.named.span));
+            },
             | Header::Refused {
                 name,
                 named,
@@ -4364,7 +4617,8 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
     /// - witness: `modules::modules::a_missing_signature_component_is_rejected_at_the_signature`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
-    /// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
+    /// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
+    /// - witness: `modules::modules::a_manifest_family_component_binds_two_parameters`
     /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
     /// - witness: `modules::modules::opaque_ascription_seals`
     /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
@@ -4409,6 +4663,7 @@ impl<'source> Collector<'_, 'source>
                                         | ComponentForm::Value(_)
                                         | ComponentForm::Abstract(_)
                                         | ComponentForm::Family(_)
+                                        | ComponentForm::Parameterized { .. }
                                         | ComponentForm::Derived
                                         | ComponentForm::Unread(_) => None,
                                     })
@@ -4433,7 +4688,7 @@ impl<'source> Collector<'_, 'source>
         else {
             return Ok(());
         };
-        let module = entry.name;
+        let (module, sealed) = (entry.name, entry.sealed);
         let Maybe::Present(components) = entry.ascription.clone()
         else {
             let exports = entry
@@ -4474,6 +4729,28 @@ impl<'source> Collector<'_, 'source>
                         meaning: TypeMeaning::Manifest(defined),
                         held,
                     });
+                    continue;
+                },
+                | ComponentForm::Parameterized {
+                    parameters,
+                    defined,
+                } => {
+                    self.manifest_family(
+                        container, component, parameters, defined, scope, &mut types,
+                    );
+                    continue;
+                },
+                | ComponentForm::Abstract(Maybe::Present(kind))
+                    if !sealed.0 && matches!(self.kind_form(kind), Ok(KindForm::Arrow)) =>
+                {
+                    self.family_component(
+                        structure,
+                        ComponentPlace(ordinal),
+                        component,
+                        FamilyForm::Written(kind),
+                        scope,
+                        &mut types,
+                    );
                     continue;
                 },
                 | ComponentForm::Abstract(kind) => {
@@ -5148,70 +5425,83 @@ impl<'source> Collector<'_, 'source>
     }
 }
 
+/// A type component as its signature writes it, before a manifest family's
+/// parameters are filed with the collection.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum WrittenType
+{
+    /// Any form but a manifest family.
+    Formed(ComponentForm),
+    /// A manifest family `type F(a : A, …) = τ`.
+    Family
+    {
+        /// The parameters, in source order.
+        parameters: Vec<FamilyParameter>,
+        /// The type the family names.
+        defined: Placed,
+    },
+}
+
 /// What a type component written `type T` states after its name.
 ///
 /// # Specification
 /// - requires: `cursor` stands just past the component's name.
 /// - ensures: `= τ` a manifest component; `: κ` an abstract one of kind `κ`; a
-///   parameter list, skipped to its closing `)`, a parameterized one whatever
-///   follows; nothing an abstract one of no written kind. The cursor stands
-///   past the component.
+///   parameter list followed by `= τ` a manifest family over the parameters,
+///   and followed by anything else a parameterized form the fragment does not
+///   read, since a kind written as an arrow states an operator's parameters;
+///   nothing an abstract one of no written kind. The cursor stands past the
+///   component.
 /// - provides: the type-component half of a module signature.
-/// - fails: yields a misplaced-tile refusal for a parameter list that does not
-///   close, and the hole's refusal for a type not written as one form.
+/// - fails: yields the parameter list's refusal for a list out of shape, and
+///   the hole's refusal for a type not written as one form.
 /// - panics: none.
 ///
 /// # Errors
-/// [`LoweringRefusal::MalformedForm`] naming the module form.
+/// [`LoweringRefusal::MalformedForm`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 — manifest, kinded and bare components are distinct, and a
-///   bare one keeps its later siblings.
+/// - hypothesis: L3 — manifest, manifest family, kinded and bare components are
+///   distinct, and a bare one keeps its later siblings.
 /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
-/// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
+/// - witness: `modules::modules::a_manifest_family_component_binds_two_parameters`
+/// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
 /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
 /// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
 #[spec(
     captures: first = cursor.peek(),
     ensures: |ret| {
-        ret.as_ref().map_or(true, |form| match first {
+        ret.as_ref().map_or(true, |written| match first {
             | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN => {
-                *form == ComponentForm::Unread(AscriptionForm::Parameterized)
+                matches!(*written, WrittenType::Family { .. })
+                    || *written == WrittenType::Formed(ComponentForm::Unread(AscriptionForm::Parameterized))
             },
             | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::EQUALS => {
-                matches!(*form, ComponentForm::Manifest(_))
+                matches!(*written, WrittenType::Formed(ComponentForm::Manifest(_)))
             },
             | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::COLON => {
-                matches!(*form, ComponentForm::Abstract(Maybe::Present(_)))
+                matches!(*written, WrittenType::Formed(ComponentForm::Abstract(Maybe::Present(_))))
             },
-            | _ => matches!(*form, ComponentForm::Abstract(Maybe::Absent(_))),
+            | _ => matches!(*written, WrittenType::Formed(ComponentForm::Abstract(Maybe::Absent(_)))),
         })
     },
 )]
-fn type_component<'source>(
-    cursor: &mut Cursor<'_>
-) -> Result<ComponentForm, LoweringRefusal<'source>>
+fn type_component<'source>(cursor: &mut Cursor<'_>)
+-> Result<WrittenType, LoweringRefusal<'source>>
 {
-    let parameterized = cursor.tile(TileName::PAREN_OPEN);
-    if let Maybe::Present(_) = parameterized {
-        let mut depth = 1_usize;
-        while depth > 0_usize {
-            depth = match cursor.read() {
-                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN => {
-                    depth.saturating_add(1_usize)
-                },
-                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => {
-                    depth.saturating_sub(1_usize)
-                },
-                | Maybe::Present(_) => depth,
-                | Maybe::Absent(_) => {
-                    return Err(misplaced_in(FormName::MODULE, cursor.here()));
-                },
-            };
-        }
-    }
+    let parameterized = matches!(cursor.at(TileName::PAREN_OPEN), Maybe::Present(_));
+    let parameters = Collector::family_parameters(cursor)?;
     let form = if let Maybe::Present(_) = cursor.tile(TileName::EQUALS) {
         let defined = one_in(FormName::MODULE, cursor.operands())?;
+        if parameterized {
+            return Ok(WrittenType::Family {
+                parameters,
+                defined,
+            });
+        }
         ComponentForm::Manifest(defined)
     }
     else if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
@@ -5222,10 +5512,12 @@ fn type_component<'source>(
         ComponentForm::Abstract(Maybe::Absent(component_kind::Absent::Unkinded))
     };
 
-    Ok(match parameterized {
-        | Maybe::Present(_) => ComponentForm::Unread(AscriptionForm::Parameterized),
-        | Maybe::Absent(_) => form,
-    })
+    Ok(WrittenType::Formed(if parameterized {
+        ComponentForm::Unread(AscriptionForm::Parameterized)
+    }
+    else {
+        form
+    }))
 }
 
 /// The operand a one-operand hole of `form` holds, or the fault its run
@@ -5874,8 +6166,8 @@ pub struct ManifestComponent<'source>
 /// - requires: nothing to construct this data; its producers and consumers
 ///   state coordinate preconditions separately.
 /// - ensures: The lowered metadata keeps the full module path, source span,
-///   selected value and nested-module exports, manifest types, sealed types and
-///   coercion flag as separate fields.
+///   selected value and nested-module exports, manifest types, sealed types,
+///   coercion flag and stratum as separate fields.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -5909,6 +6201,9 @@ pub struct LoweredStructure<'source>
     sealed: Vec<SealedComponent<'source>>,
     /// Whether matching against a signature coerced the body.
     coerced: Coerced,
+    /// What the module is in the stratum: a functor's body and parameter
+    /// export nothing a declaration reads, an application's instance does.
+    stratum: Stratum,
 }
 
 impl<'source> LoweredStructure<'source>
@@ -5919,6 +6214,10 @@ impl<'source> LoweredStructure<'source>
     /// trivial.
     #[inline]
     #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one argument per field of the stratum item, each read independently"
+    )]
     pub const fn new(
         path: Vec<SurfaceName<'source>>,
         span: ByteSpan,
@@ -5927,6 +6226,7 @@ impl<'source> LoweredStructure<'source>
         types: Vec<ManifestComponent<'source>>,
         sealed: Vec<SealedComponent<'source>>,
         coerced: Coerced,
+        stratum: Stratum,
     ) -> Self
     {
         Self {
@@ -5937,6 +6237,7 @@ impl<'source> LoweredStructure<'source>
             types,
             sealed,
             coerced,
+            stratum,
         }
     }
 
@@ -6016,6 +6317,17 @@ impl<'source> LoweredStructure<'source>
     pub const fn coerced(&self) -> Coerced
     {
         self.coerced
+    }
+
+    /// What the module is in the stratum.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn stratum(&self) -> Stratum
+    {
+        self.stratum
     }
 }
 

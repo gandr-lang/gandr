@@ -1,0 +1,27 @@
+module Seed :> #{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) } {
+  type T = Integer;
+  @[ runs("0") ]
+  def zero = 0;
+  @[ runs("<fun>") ]
+  def next(n : T) -> -F T { become n + 1 }
+  @[ runs("<fun>") ]
+  def read(n : T) -> -F Integer { return n }
+}
+
+module MkCounter(S : #{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) }) :> #{ type T, seed : T, step : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) } {
+  type T = S.T;
+  def seed = S.zero;
+  def step = S.next;
+  def read = S.read;
+}
+
+module A = MkCounter(Seed) ;
+module B = MkCounter(Seed) ;
+
+@[ runs("1") ]
+def a_once : +U (-F A.T) ;
+def a_once = thunk { become A.step(A.seed) } ;
+
+@[ runs("2") ]
+def b_twice : +U (-F Integer) ;
+def b_twice = thunk { run one <- B.step(B.seed) ; run two <- B.step(one) ; become B.read(two) } ;

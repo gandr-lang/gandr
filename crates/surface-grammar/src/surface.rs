@@ -105,9 +105,9 @@
 //! every attributed definition would run lookahead windows past its block.
 //!
 //! A module member keeps its blocks inside its form,
-//! `attributed_module_definition_member`: nothing else at the module-member
-//! sort opens with `@[`, so no tie arises there, and its identity covers its
-//! attributes.
+//! `attributed_module_member`, a definition or a type member after its blocks:
+//! nothing else at the module-member sort opens with `@[`, so no tie arises
+//! there, and its identity covers its attributes.
 //!
 //! - Alternatives: the definition's inline block, with the lookahead window
 //!   extended past a long block's closer, which runs windows on every
@@ -197,8 +197,11 @@ use crate::model::Rule;
 use crate::model::Sort;
 
 mod circuit;
+
 mod frozen;
+
 mod term;
+
 mod type_shell;
 
 /// The named precedence groups, in dense id order.

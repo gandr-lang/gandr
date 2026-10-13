@@ -342,12 +342,13 @@ impl fmt::Display for FormFault
     }
 }
 
-/// A module ascription form the fragment does not read yet.
+/// A module ascription form the fragment does not read.
 ///
 /// # Specification
 /// - requires: a producer selects the ascription form actually written.
-/// - ensures: kinded-family and parameterized type reports do not become an
-///   abstract or manifest interpretation.
+/// - ensures: an opaque family or operator, a kinded or parameterized component
+///   of a functor's parameter, and a parameter list before a kind do not become
+///   an abstract or manifest interpretation.
 /// - provides: which unread ascription obligation prevented admission.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -355,17 +356,20 @@ impl fmt::Display for FormFault
 ///   components, so it cannot validate the producer's classification.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a family-kinded component is asserted as a typed refusal;
-///   a manifest component is admitted instead of conflated with it. These
-///   fixtures do not establish every parameterized form.
-/// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
+/// - hypothesis: L3 — an opaque operator component is asserted as a typed
+///   refusal; a transparent one and a manifest component are admitted instead
+///   of conflated with it.
+/// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AscriptionForm
 {
-    /// A type component whose kind is an arrow, `type T : κ -> κ'`,
-    /// declaring a type family.
+    /// A type component whose kind is a family's or an operator's, `type T :
+    /// (a : A) => U` or `type T : A -> U`, where its meaning would be an
+    /// abstract family: under an opaque ascription, or in a functor's
+    /// parameter.
     Kinded,
-    /// A type component binding parameters, `type T(a : A) …`.
+    /// A type component binding parameters, `type T(a : A) …`, before a kind
+    /// or in a functor's parameter.
     Parameterized,
 }
 
@@ -681,6 +685,27 @@ pub enum LoweringRefusal<'source>
         member: SurfaceName<'source>,
     },
 
+    /// A module binding `module A = F(X) ;` whose `F` names no functor
+    /// declared before it.
+    NotAFunctor
+    {
+        /// The bytes of the name applied.
+        span: ByteSpan,
+        /// The name as the binding wrote it.
+        name: SurfaceName<'source>,
+    },
+
+    /// A path projected from a functor application, `F(X).T` or `F(X).x`: an
+    /// application names its instance only once a module binding binds it,
+    /// `module A = F(X) ;`, so `A.T` is the spelling.
+    ProjectionFromApplication
+    {
+        /// The bytes of the application projected from.
+        span: ByteSpan,
+        /// The functor applied.
+        functor: SurfaceName<'source>,
+    },
+
     /// A module ascription form the fragment does not read yet.
     UnreadAscription
     {
@@ -880,6 +905,16 @@ impl fmt::Display for LoweringRefusal<'_>
             | Self::UnknownMember { module, member, .. } => {
                 write!(f, "the module `{module}` exports no member `{member}`")
             },
+            | Self::NotAFunctor { name, .. } => write!(
+                f,
+                "`{name}` is applied as a functor, and no functor `{name}` is declared before \
+                 the binding"
+            ),
+            | Self::ProjectionFromApplication { functor, .. } => write!(
+                f,
+                "a path is read off an application of `{functor}`; bind the application first, \
+                 `module A = {functor}(…) ;`, and read the path off `A`"
+            ),
             | Self::UnreadAscription { name, form, .. } => {
                 write!(f, "`{name}` {form}; the fragment does not read it yet")
             },
@@ -984,6 +1019,8 @@ impl LoweringRefusal<'_>
             | Self::IllTypedPayload { span, .. }
             | Self::ForwardMemberReference { span, .. }
             | Self::UnknownMember { span, .. }
+            | Self::NotAFunctor { span, .. }
+            | Self::ProjectionFromApplication { span, .. }
             | Self::UnreadAscription { span, .. }
             | Self::UnstatedComponent { span, .. }
             | Self::FamilyTelescope { span, .. }
@@ -1031,7 +1068,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the current 27-variant fixture has no repeated variant tag;
+    /// - ensures: the current 29-variant fixture has no repeated variant tag;
     ///   source-bearing variants carry separately observable rejected spans.
     /// - provides: a finite domain for the exact span projection witness.
     /// - fails: never.
@@ -1052,7 +1089,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 27_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 29_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1185,6 +1222,14 @@ mod tests
                     written: OperandCount::from(1_usize),
                 },
             },
+            LoweringRefusal::NotAFunctor {
+                span: s(51_usize, 52_usize),
+                name: SurfaceName::from("MkTally"),
+            },
+            LoweringRefusal::ProjectionFromApplication {
+                span: s(53_usize, 54_usize),
+                functor: SurfaceName::from("MkCounter"),
+            },
         ]
     }
 
@@ -1223,6 +1268,8 @@ mod tests
             s(45_usize, 46_usize),
             s(47_usize, 48_usize),
             s(49_usize, 50_usize),
+            s(51_usize, 52_usize),
+            s(53_usize, 54_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

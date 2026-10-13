@@ -296,6 +296,14 @@ fn lowered(
         | LoweringRefusal::UnknownMember { module, member, .. } => {
             write!(f, "the module `{module}` has no member `{member}`")
         },
+        | LoweringRefusal::NotAFunctor { name, .. } => {
+            write!(f, "`{name}` is not a functor declared before this binding")
+        },
+        | LoweringRefusal::ProjectionFromApplication { functor, .. } => write!(
+            f,
+            "an application of `{functor}` is read before it is bound; bind it with `module A = \
+             {functor}(…) ;` and read `A`"
+        ),
         | LoweringRefusal::UnreadAscription { name, form, .. } => {
             write!(f, "`{name}` {form}, which is not supported yet")
         },
@@ -797,6 +805,11 @@ mod tests
                 span,
                 module: name,
                 member: name,
+            },
+            LoweringRefusal::NotAFunctor { span, name },
+            LoweringRefusal::ProjectionFromApplication {
+                span,
+                functor: name,
             },
             LoweringRefusal::UnreadAscription {
                 span,

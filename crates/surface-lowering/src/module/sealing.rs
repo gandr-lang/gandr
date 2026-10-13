@@ -66,9 +66,11 @@
 //!
 //! A kind written as a telescope Π into a universe, `type Hom : (a : Ob, b :
 //! Ob) => Type`, declares a type family, matched against a family member
-//! (`super::model`); a kind written as a computation arrow, `Ob -> Ob ->
-//! Type`, stays
-//! [`AscriptionForm::Kinded`](crate::error::AscriptionForm::Kinded).
+//! (`super::model`); a kind written as an arrow, `Ob -> Ob -> Type`, declares
+//! the same family under a transparent ascription, its member checked at the
+//! arrow as an operator over codes, and is refused under `:>` as
+//! [`AscriptionForm::Kinded`]: an opaque operator would be an atom at a kind
+//! no universe is.
 //!
 //! # References
 //!
@@ -95,15 +97,19 @@ use super::Collector;
 use super::Component;
 use super::Container;
 use super::DeclarationSlot;
+use super::Half;
+use super::Operand;
 use super::Role;
 use super::SlotIndex;
 use super::StructureIndex;
 use super::TypeComponent;
+use super::WrittenAttribute;
 use super::component_kind;
 use super::declaration_half;
 use super::misplaced_in;
 use super::one_in;
 use super::slot_refusal;
+use crate::error::AscriptionForm;
 use crate::error::LoweringRefusal;
 use crate::error::TelescopeFault;
 use crate::form::Cursor;
@@ -170,6 +176,15 @@ pub enum TypeMeaning
     /// The type family member at this place of the collection's family list,
     /// expanded at each application.
     Family(super::FamilyIndex),
+    /// The type a functor's body writes at `defined`, read in the application
+    /// `instance`: the template's type, renamed by that application.
+    Instantiated
+    {
+        /// The type the functor's body writes.
+        defined: Placed,
+        /// The application whose instance reads it.
+        instance: super::InstanceIndex,
+    },
 }
 
 /// The body member an abstract component reads, once matched.
@@ -339,8 +354,10 @@ pub(super) enum KindForm
     Universe,
     /// A value function space `(a : A, …) => U`: a type family.
     Family,
-    /// A computation arrow `A -> … -> U`, which the fragment does not read
-    /// as a kind.
+    /// A static arrow `A -> … -> U`: the kind of a type operator, formed at
+    /// its classifier. A transparent ascription reads it against a family
+    /// member of the spine's arity; an opaque one declares an abstract type
+    /// at it, which the checker refuses unless the kind is a universe.
     Arrow,
 }
 
@@ -360,8 +377,8 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a telescope kind, an arrow kind and a universe kind
-    ///   separate a family, an unread form and an abstract type.
-    /// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
+    ///   separate a family, an operator's kind and an abstract type.
+    /// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
     /// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
     /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
     #[spec(
@@ -495,26 +512,36 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// Read the type member `member`, `type T = τ ;` or the family `type T(a :
-    /// A, …) = τ ;`, of the module at `structure`.
+    /// A, …) = τ ;`, of the module at `structure`, after the attribute blocks
+    /// written before it.
+    ///
+    /// The attributes are kept on the member's held slot, decorating the
+    /// member's form: the member declares nothing, so they state the verdict
+    /// of the check a signature component reads the member through — a
+    /// component's witness carries the member's form as its expectation half.
     ///
     /// # Specification
     /// - requires: `pieces` is the reading of `member`, a member form of the
-    ///   module at `structure` whose first tile is `type`.
+    ///   module at `structure` whose first tile past its attribute blocks is
+    ///   `type`.
     /// - ensures: a member reading `type T = τ ;` is filed among the module's
-    ///   type members with a fresh held slot owning `τ`; one binding parameters
-    ///   is filed as a family, its slot owning the parameters' types too; a
-    ///   second member of an earlier one's name is refused naming the first; a
-    ///   member out of shape is refused under the module's name at the member.
+    ///   type members with a fresh held slot owning `τ` and carrying the
+    ///   member's attributes; one binding parameters is filed as a family, its
+    ///   slot owning the parameters' types too; a second member of an earlier
+    ///   one's name is refused naming the first; a member out of shape, or with
+    ///   an attribute block out of shape, is refused under the module's name at
+    ///   the member.
     /// - provides: the type-member half of [`Self::member`].
     /// - fails: never; a fault is filed rather than raised.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a read member, a repeated one and a repaired one take
-    ///   their distinct outcomes.
+    ///   their distinct outcomes, and an attributed one keeps its attributes.
     /// - witness: `modules::modules::opaque_ascription_seals`
     /// - witness: `modules::modules::a_repeated_type_member_is_refused_naming_the_first`
     /// - witness: `modules::modules::an_unread_member_keeps_its_own_report`
+    /// - witness: `modules::modules::a_component_check_carries_its_members_expectation`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -538,7 +565,27 @@ impl<'source> Collector<'_, 'source>
             self.fault_at(structure, member, repaired.refusal(FormName::MODULE));
             return;
         }
-        let mut cursor = Cursor::new(&pieces.pieces, member.span);
+        let keyword = pieces
+            .pieces
+            .iter()
+            .position(
+                |piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::TYPE),
+            )
+            .unwrap_or(0_usize);
+        let (blocks, form) = pieces
+            .pieces
+            .split_at_checked(keyword)
+            .unwrap_or((&[], &pieces.pieces));
+        let mut attributes = Vec::new();
+        if let Err(refusal) = self.read_attributes(
+            Cursor::new(blocks, member.span),
+            member.node,
+            &mut attributes,
+        ) {
+            self.fault_at(structure, member, refusal);
+            return;
+        }
+        let mut cursor = Cursor::new(form, member.span);
         let _keyword = cursor.tile(TileName::TYPE);
         let Maybe::Present(named) = cursor.tile(TileName::TYPE_IDENTIFIER)
         else {
@@ -603,6 +650,9 @@ impl<'source> Collector<'_, 'source>
             return;
         }
         let held = self.held(container, name, member, named);
+        if let Some(slot) = self.collected.slots.get_mut(held.0) {
+            slot.attributes = attributes;
+        }
         self.collected.own(defined.node, held);
         for parameter in &parameters {
             self.collected.own(parameter.classifier.node, held);
@@ -643,18 +693,22 @@ impl<'source> Collector<'_, 'source>
     ///   to check. A component no member supplies, or a family member supplies,
     ///   files its refusal on the abstract slot, so a later component and a
     ///   client reading it inherit the refusal, or on a held slot under a
-    ///   transparent ascription.
+    ///   transparent ascription. An opaque ascription's component at a static
+    ///   arrow refuses its abstract slot as a kinded form whatever the member:
+    ///   an abstract operator is an atom at a kind no universe is, which the
+    ///   kernel does not admit.
     /// - provides: the abstract-component half of [`Self::match_signature`].
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a sealed component, a strengthened one, and a
-    ///   component no member supplies, each asserted as the exact slot and
-    ///   reading.
+    /// - hypothesis: L3 — a sealed component, a strengthened one, a component
+    ///   no member supplies and a sealed operator, each asserted as the exact
+    ///   slot and reading.
     /// - witness: `modules::modules::opaque_ascription_seals`
     /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
     /// - witness: `modules::modules::an_abstract_component_with_no_type_member_is_refused_by_name`
+    /// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
     #[spec(
         captures: before = types.len(),
         ensures: |_| types.len() <= before.saturating_add(1),
@@ -684,7 +738,9 @@ impl<'source> Collector<'_, 'source>
                 defined,
                 held: member.held,
             }),
-            | super::TypeMeaning::Sealed | super::TypeMeaning::Family(_) => None,
+            | super::TypeMeaning::Sealed
+            | super::TypeMeaning::Family(_)
+            | super::TypeMeaning::Instantiated { .. } => None,
         });
         let unmatched = match member {
             | Some(TypeComponent {
@@ -726,15 +782,26 @@ impl<'source> Collector<'_, 'source>
             else {
                 return;
             };
+            let operator = matches!(kind, Maybe::Present(written) if matches!(self.kind_form(written), Ok(KindForm::Arrow)));
             match represented {
-                | Some(represented) => {
+                | Some(represented) if !operator => {
                     if let Some(recorded) = self.collected.abstracts.get_mut(&atom) {
                         recorded.representation = Maybe::Present(represented);
                     }
                 },
-                | None => {
+                | Some(_) | None => {
+                    let refusal = if operator {
+                        LoweringRefusal::UnreadAscription {
+                            span: component.named.span,
+                            name: component.name,
+                            form: AscriptionForm::Kinded,
+                        }
+                    }
+                    else {
+                        unmatched
+                    };
                     if let Some(slot) = self.collected.slots.get_mut(atom.0) {
-                        slot.refuse(component.named.node, unmatched);
+                        slot.refuse(component.named.node, refusal);
                     }
                 },
             }
@@ -764,6 +831,7 @@ impl<'source> Collector<'_, 'source>
         if kind == Maybe::Absent(component_kind::Absent::Derived) {
             return;
         }
+        let (expectation, attributes) = self.member_expectation(represented.held);
         let witness = SlotIndex(self.collected.slots.len());
         self.collected.slots.push(DeclarationSlot {
             name: component.name,
@@ -772,9 +840,9 @@ impl<'source> Collector<'_, 'source>
             constant: ConstantIndex::from(witness.0),
             introduced_by: component.named,
             named: component.named,
-            signature: Maybe::Absent(declaration_half::Absent::Unwritten),
+            signature: expectation,
             definition: Maybe::Absent(declaration_half::Absent::Unwritten),
-            attributes: Vec::new(),
+            attributes,
             docs: Vec::new(),
             refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
         });
@@ -838,23 +906,142 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: affirmative exactly when the reading opens on `type`.
+    /// - ensures: affirmative exactly when the reading's first tile outside its
+    ///   leading attribute blocks, `@[ … ]`, is `type`.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a type member and a definition member are told apart
-    ///   by their first tile.
+    ///   by their first tile, an attribute block before either kept apart.
     /// - witness: `modules::modules::opaque_ascription_seals`
+    /// - witness: `modules::modules::a_component_check_carries_its_members_expectation`
     #[spec(
-        ensures: |ret| ret.0 == matches!(pieces.pieces.first(), Some(&Piece::Tile { label, .. }) if label == TileName::TYPE),
+        ensures: |ret| !ret.0 || pieces.pieces.iter().any(|piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::TYPE)),
     )]
     pub(super) fn opens_type_member(pieces: &Pieces) -> TypeMemberForm
     {
-        TypeMemberForm(matches!(
-            pieces.pieces.first(),
-            Some(&Piece::Tile { label, .. }) if label == TileName::TYPE
-        ))
+        let mut block = false;
+        for piece in &pieces.pieces {
+            match *piece {
+                | Piece::Tile { label, .. } if block => block = label != TileName::BRACKET_CLOSE,
+                | Piece::Operand(_) if block => {},
+                | Piece::Tile { label, .. } if label == TileName::ATTRIBUTES => block = true,
+                | Piece::Tile { label, .. } => return TypeMemberForm(label == TileName::TYPE),
+                | Piece::Operand(_) => return TypeMemberForm(false),
+            }
+        }
+
+        TypeMemberForm(false)
+    }
+
+    /// The expectation a component's check reads off the type member at
+    /// `held`: the member's form as the check's half, under which the
+    /// member's attributes are filed, and those attributes, taken off the
+    /// member.
+    ///
+    /// A member declares nothing, and the witness that checks the member's
+    /// code at the component's kind is filed by no form of its own, so without
+    /// this half the verdict of the check has no attribute to state it. The
+    /// alternative, an expectation written on the module, would state every
+    /// component's check at once; the component's own form sits in the
+    /// signature, where no declaration is written to carry attributes. The
+    /// half lowers to nothing: the witness's outcome is its check's.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the member's form as a [`Operand::Signature`] half and the
+    ///   member's attributes, which the member no longer holds, when `held`
+    ///   names a slot; nothing otherwise.
+    /// - provides: the expectation of the witness [`Self::abstract_component`]
+    ///   and [`Self::family_component`] file.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a transparent component's witness and a family
+    ///   component's witness each read the expectation on their member.
+    /// - witness: `modules::modules::a_component_check_carries_its_members_expectation`
+    #[spec(
+        captures: before = self.collected.slots.get(held.0).map(|member| (member.introduced_by, member.attributes.clone())),
+        ensures: |ret| match before {
+            | Some((form, ref attributes)) => ret.0 == Maybe::Present(Half { declaration: form, operand: Operand::Signature })
+                && ret.1 == *attributes
+                && self.collected.slots.get(held.0).is_some_and(|member| member.attributes.is_empty()),
+            | None => matches!(ret.0, Maybe::Absent(_)) && ret.1.is_empty(),
+        },
+    )]
+    pub(super) fn member_expectation(
+        &mut self,
+        held: SlotIndex,
+    ) -> (
+        Maybe<Half, declaration_half::Absent>,
+        Vec<WrittenAttribute<'source>>,
+    )
+    {
+        match self.collected.slots.get_mut(held.0) {
+            | Some(member) => (
+                Maybe::Present(Half {
+                    declaration: member.introduced_by,
+                    operand: Operand::Signature,
+                }),
+                core::mem::take(&mut member.attributes),
+            ),
+            | None => (
+                Maybe::Absent(declaration_half::Absent::Unwritten),
+                Vec::new(),
+            ),
+        }
+    }
+
+    /// Refuse every attribute a type member still holds once every module is
+    /// matched: no component's check read it, so it states nothing.
+    ///
+    /// # Specification
+    /// - requires: every module is closed.
+    /// - ensures: each type member left holding attributes holds none, and its
+    ///   module is refused with a misplaced tile at the first of them, as an
+    ///   attribute block before a form that declares nothing is.
+    /// - provides: the refusal of an expectation with no verdict to state.
+    /// - fails: never; a fault is filed rather than raised.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an attributed member with no component reading it
+    ///   refuses its module, and one a component reads does not.
+    /// - witness: `modules::modules::a_component_check_carries_its_members_expectation`
+    #[spec(
+        ensures: |_| self.collected.structures.iter().flat_map(|entry| entry.type_members.iter()).all(|member| {
+            self.collected.slots.get(member.held.0).is_none_or(|slot| slot.attributes.is_empty())
+        }),
+    )]
+    pub(super) fn stray_expectations(&mut self)
+    {
+        let members: Vec<(StructureIndex, SlotIndex)> = self
+            .collected
+            .structures
+            .iter()
+            .enumerate()
+            .flat_map(|(index, entry)| {
+                entry
+                    .type_members
+                    .iter()
+                    .map(move |member| (StructureIndex(index), member.held))
+            })
+            .collect();
+        for (structure, held) in members {
+            let Some(member) = self.collected.slots.get_mut(held.0)
+            else {
+                continue;
+            };
+            let Some(first) = member.attributes.first().map(|written| written.span)
+            else {
+                continue;
+            };
+            member.attributes.clear();
+            let form = member.introduced_by;
+            self.fault_at(structure, form, misplaced_in(FormName::MODULE, first));
+        }
     }
 }
 

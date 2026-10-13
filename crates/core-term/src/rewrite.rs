@@ -43,6 +43,12 @@
 //! it, which is how a suspended body is read back in the context it is
 //! displayed in.
 //!
+//! A renaming is the rewrite an instantiation needs. It names no binder: it
+//! replaces a constant by another and an atom by a type, wherever either
+//! stands, so a body written against one set of declarations reads against
+//! another. Constants and the types replacing atoms are closed, so a renaming
+//! carries nothing under the binders it crosses.
+//!
 //! # Elaborating nested computations
 //!
 //! A computation written where a value is read stands in the core as
@@ -86,6 +92,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_arith::arith;
 use quenchant_shape::shape::Maybe;
@@ -226,6 +233,18 @@ impl From<Binders> for u32
     }
 }
 
+/// Why a renaming leaves a node as it stands.
+mod renamed
+{
+    /// The single reason a node is not one a renaming names.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub(super) enum Absent
+    {
+        /// The node is not a constant or an atom the renaming names.
+        Unnamed,
+    }
+}
+
 /// Why a strengthening answered nothing.
 pub mod strengthening
 {
@@ -276,6 +295,9 @@ enum Rewrite
     /// one the checker decided to thunk, and run the rest before their
     /// regions.
     Elaborate,
+    /// Replace every constant and every atom the engine's renaming names by
+    /// what it names for it.
+    Rename,
     /// Raise every free index by the count, as a shift does, and answer each
     /// run the engine's slots name by the variable of the bind its region
     /// mints for it.
@@ -344,6 +366,8 @@ struct Engine<'arena>
     slots: BTreeMap<ValueId, Binders>,
     /// Each run beside the bind minted for it.
     binds: Vec<(ValueId, ComputationId)>,
+    /// The constants and atoms a renaming replaces; nothing outside one.
+    renaming: &'arena Renaming,
 }
 
 impl<'arena> Engine<'arena>
@@ -366,6 +390,7 @@ impl<'arena> Engine<'arena>
             regions: BTreeMap::new(),
             slots: BTreeMap::new(),
             binds: Vec::new(),
+            renaming: &NOTHING_RENAMED,
         }
     }
 
@@ -506,6 +531,13 @@ impl<'arena> Engine<'arena>
             self.results.push(filling);
             return;
         }
+        if rewrite == Rewrite::Rename
+            && let Maybe::Present(renamed) = self.renamed(node)
+        {
+            let _previous = self.memo.insert((node, depth, rewrite), renamed);
+            self.results.push(renamed);
+            return;
+        }
         if let Node::Value(id) = node
             && let Some(&Value::Variable {
                 zone: Zone::Intuitionistic,
@@ -531,6 +563,52 @@ impl<'arena> Engine<'arena>
         }
         self.tasks.push(Task::Close(node, depth, rewrite));
         self.push_children(node, depth, rewrite);
+    }
+
+    /// What a renaming answers for `node` when `node` is a leaf it names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a constant the renaming names, a constant node at the
+    ///   position it names for it; for an atom it names, the type it names for
+    ///   it; absent for every other node, a constant or atom it does not name
+    ///   among them.
+    /// - provides: the one point a renaming differs from a congruence.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a renamed constant, a renamed atom, a constant and an
+    ///   atom the renaming does not name, and each under a binder, separate the
+    ///   two leaf rules from identity.
+    /// - witness: `rewrite::tests::a_renaming_replaces_exactly_the_named_constants_and_atoms`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(renamed) => core::mem::discriminant(&renamed) == core::mem::discriminant(&node),
+        | Maybe::Absent(renamed::Absent::Unnamed) => true,
+    })]
+    fn renamed(
+        &mut self,
+        node: Node,
+    ) -> Maybe<Node, renamed::Absent>
+    {
+        match node {
+            | Node::Value(id) => {
+                if let Some(&Value::Constant(constant)) = self.arena.value(id)
+                    && let Some(&target) = self.renaming.constants.get(&constant)
+                {
+                    return Maybe::Present(Node::Value(self.arena.value_constant(target)));
+                }
+            },
+            | Node::ValueType(id) => {
+                if let Some(&ValueType::Abstract(atom)) = self.arena.value_type(id)
+                    && let Some(&target) = self.renaming.atoms.get(&atom)
+                {
+                    return Maybe::Present(Node::ValueType(target));
+                }
+            },
+            | Node::Computation(_) | Node::CompType(_) => {},
+        }
+        Maybe::Absent(renamed::Absent::Unnamed)
     }
 
     /// The mark a wrap puts around `node`'s rewritten form, if its sites name
@@ -637,7 +715,8 @@ impl<'arena> Engine<'arena>
             | Rewrite::Lower
             | Rewrite::Fill(..)
             | Rewrite::Wrap
-            | Rewrite::Environment => Maybe::Absent(()),
+            | Rewrite::Environment
+            | Rewrite::Rename => Maybe::Absent(()),
         }
     }
 
@@ -786,8 +865,8 @@ impl<'arena> Engine<'arena>
     /// depth names and lowers every one past it; a lowering does the same with
     /// no replacement, recording that the named index occurred; an environment
     /// substitution replaces every index past the depth by the entry it counts
-    /// to, and lowers one past the environment by its length. A fill, a wrap
-    /// and an elaboration leave every occurrence as it stands.
+    /// to, and lowers one past the environment by its length. A fill, a wrap,
+    /// an elaboration and a renaming leave every occurrence as it stands.
     ///
     /// # Specification
     /// - requires: `depth` is the number of binders crossed to reach the
@@ -834,7 +913,9 @@ impl<'arena> Engine<'arena>
                         Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
                             if u32::from(*actual).checked_add(1) == Some(u32::from(index)))),
             },
-            | Rewrite::Fill(..) | Rewrite::Wrap | Rewrite::Elaborate => self.mention == mentioned && ret == Occurrence::Answered(id),
+            | Rewrite::Fill(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename => {
+                self.mention == mentioned && ret == Occurrence::Answered(id)
+            },
             | Rewrite::Environment => self.mention == mentioned
                 && (u32::from(index) >= depth.0 || ret == Occurrence::Answered(id)),
         },
@@ -881,7 +962,9 @@ impl<'arena> Engine<'arena>
                 },
                 | core::cmp::Ordering::Greater => Occurrence::Answered(self.lowered(position)),
             },
-            | Rewrite::Fill(..) | Rewrite::Wrap | Rewrite::Elaborate => Occurrence::Answered(id),
+            | Rewrite::Fill(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename => {
+                Occurrence::Answered(id)
+            },
             | Rewrite::Environment => {
                 if position < depth {
                     return Occurrence::Answered(id);
@@ -3684,6 +3767,159 @@ pub fn substitute_environment_traced(
     node_term(substituted, subject)
 }
 
+/// The constants and atoms one instantiation replaces: each constant by
+/// another, each atom by a type.
+///
+/// # Specification
+/// - requires: nothing to construct this data; a replacing type is a closed
+///   type of the arena the renaming is applied in.
+/// - ensures: a later entry for a name replaces an earlier one, so the renaming
+///   is a function on constants and a function on atoms.
+/// - provides: what [`rename_value_traced`] and [`rename_value_type_traced`]
+///   read.
+/// - fails: not applicable to the data item.
+/// - panics: not applicable to the data item.
+/// - executable: none — the maps are private; the renaming functions state what
+///   they replace.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`rename_value_traced`].
+/// - witness: `rewrite::tests::a_renaming_replaces_exactly_the_named_constants_and_atoms`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Renaming
+{
+    /// Each constant replaced, with the constant replacing it.
+    constants: BTreeMap<ConstantIndex, ConstantIndex>,
+    /// Each atom replaced, with the type replacing it.
+    atoms: BTreeMap<ConstantIndex, ValueTypeId>,
+}
+
+impl Renaming
+{
+    /// The renaming that replaces nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new() -> Self
+    {
+        Self {
+            constants: BTreeMap::new(),
+            atoms: BTreeMap::new(),
+        }
+    }
+
+    /// Replace the constant `from` by the constant `to`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn constant(
+        &mut self,
+        from: ConstantIndex,
+        to: ConstantIndex,
+    )
+    {
+        let _replaced = self.constants.insert(from, to);
+    }
+
+    /// Replace the atom `from` by the type `to`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn atom(
+        &mut self,
+        from: ConstantIndex,
+        to: ValueTypeId,
+    )
+    {
+        let _replaced = self.atoms.insert(from, to);
+    }
+}
+
+/// The renaming every rewrite but a renaming carries: it names nothing.
+static NOTHING_RENAMED: Renaming = Renaming::new();
+
+/// Rename the constants and atoms of the value `subject` by `renaming`,
+/// reporting every node it rewrote beside the node it rewrote it from.
+///
+/// # Specification
+/// - requires: `subject` is live in `arena`; every type `renaming` replaces an
+///   atom by is a closed type of `arena`.
+/// - ensures: `subject` with every constant the renaming names replaced by the
+///   constant it names for it and every atom it names by the type it names for
+///   it, at every depth and in every family the walk reaches — a quoted type's
+///   atoms and a decode's constant among them; every other node kept, and a
+///   node none of whose descendants changed is `subject`'s own; `carried` gains
+///   one pair per node the renaming changed, as
+///   [`substitute_environment_traced`] reports them.
+/// - provides: instantiating a body written against one set of declarations at
+///   another, for a caller that keeps a table beside the arena.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda whose body pairs a renamed constant, a kept
+///   constant and a quoted renamed atom renames exactly the two named leaves,
+///   keeps the bound variable, and reports the rewritten nodes; an atom kept by
+///   the renaming stands.
+/// - witness: `rewrite::tests::a_renaming_replaces_exactly_the_named_constants_and_atoms`
+#[spec(captures: before = carried.len(), ensures: |ret| carried.len() >= before && (ret == subject || arena.value(ret).is_some()))]
+#[inline]
+#[must_use]
+pub fn rename_value_traced(
+    arena: &mut CoreArena,
+    subject: ValueId,
+    renaming: &Renaming,
+    carried: &mut Vec<Carried>,
+) -> ValueId
+{
+    let mut engine = Engine::new(arena);
+    engine.renaming = renaming;
+    let renamed = engine.run(Node::Value(subject), Binders::NONE, Rewrite::Rename);
+    report(&engine.memo, carried);
+    match renamed {
+        | Node::Value(id) => id,
+        | Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => subject,
+    }
+}
+
+/// Rename the constants and atoms of the value type `subject` by `renaming`,
+/// reporting every node it rewrote beside the node it rewrote it from.
+///
+/// # Specification
+/// - requires: as [`rename_value_traced`].
+/// - ensures: as [`rename_value_traced`], for a value type: an atom the
+///   renaming names standing as the whole subject is the type it names for it.
+/// - provides: instantiating a declared type, a kind or a representation.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`rename_value_traced`].
+/// - witness: `rewrite::tests::a_renaming_replaces_exactly_the_named_constants_and_atoms`
+#[spec(captures: before = carried.len(), ensures: |ret| carried.len() >= before && (ret == subject || arena.value_type(ret).is_some()))]
+#[inline]
+#[must_use]
+pub fn rename_value_type_traced(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+    renaming: &Renaming,
+    carried: &mut Vec<Carried>,
+) -> ValueTypeId
+{
+    let mut engine = Engine::new(arena);
+    engine.renaming = renaming;
+    let renamed = engine.run(Node::ValueType(subject), Binders::NONE, Rewrite::Rename);
+    report(&engine.memo, carried);
+    match renamed {
+        | Node::ValueType(id) => id,
+        | Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
+    }
+}
+
 /// Raise every free intuitionistic index of `subject` past its innermost
 /// `scope` binders by `amount`, reporting every node it rewrote beside the
 /// node it rewrote it from.
@@ -3848,11 +4084,14 @@ mod tests
     use super::Binders;
     use super::Carried;
     use super::Nesting;
+    use super::Renaming;
     use super::Unenclosed;
     use super::elaborate_nested_traced;
     use super::fill_hole;
     use super::instantiate_comp_type;
     use super::instantiate_value;
+    use super::rename_value_traced;
+    use super::rename_value_type_traced;
     use super::shift_comp_type;
     use super::shift_value_type;
     use super::strengthen_comp_type;
@@ -6022,6 +6261,95 @@ mod tests
             none.is_empty() && mark == arena.watermark(),
             "an empty environment mints and reports nothing"
         );
+    }
+
+    #[test]
+    fn a_renaming_replaces_exactly_the_named_constants_and_atoms()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let renamed_atom = arena.value_type_abstract(ConstantIndex::from(0_usize));
+        let kept_atom = arena.value_type_abstract(ConstantIndex::from(1_usize));
+        let renamed_constant = arena.value_constant(ConstantIndex::from(2_usize));
+        let kept_constant = arena.value_constant(ConstantIndex::from(3_usize));
+        let bound = variable(&mut arena, DeBruijnIndex::from(0_u32));
+        let quoted = arena.value_quote(renamed_atom);
+        let kept_quote = arena.value_quote(kept_atom);
+        let tuple =
+            arena.value_tuple(&[bound, renamed_constant, kept_constant, quoted, kept_quote]);
+        let returned = arena.computation_return(tuple);
+        let lambda = arena.computation_lambda(returned);
+        let thunk = arena.value_thunk(lambda);
+        let mut renaming = Renaming::new();
+        renaming.constant(ConstantIndex::from(2_usize), ConstantIndex::from(7_usize));
+        renaming.atom(ConstantIndex::from(0_usize), integer);
+        let mut carried = Vec::new();
+        let renamed = rename_value_traced(&mut arena, thunk, &renaming, &mut carried);
+        let Some(&Value::Thunk(body)) = arena.value(renamed)
+        else {
+            panic!("a renamed thunk");
+        };
+        let Some(&Computation::Lambda(inner)) = arena.computation(body)
+        else {
+            panic!("a renamed lambda");
+        };
+        let Some(&Computation::Return(value)) = arena.computation(inner)
+        else {
+            panic!("a renamed return");
+        };
+        let Some(&[variable_kept, constant, other, code, other_code]) =
+            arena.value(value).and_then(Value::components)
+        else {
+            panic!("a renamed tuple");
+        };
+        assert_eq!(variable_kept, bound, "a bound variable is no constant");
+        assert_eq!(
+            arena.value(constant),
+            Some(&Value::Constant(ConstantIndex::from(7_usize))),
+            "the named constant is replaced at every depth"
+        );
+        assert_eq!(
+            other, kept_constant,
+            "a constant the renaming does not name stands"
+        );
+        assert_eq!(
+            arena.value(code),
+            Some(&Value::Quote(integer)),
+            "a quoted atom reads as the type it is renamed to"
+        );
+        assert_eq!(
+            other_code, kept_quote,
+            "an atom the renaming does not name stands"
+        );
+        carried.sort_unstable();
+        let mut expected = vec![
+            Carried::Value(renamed_constant, constant),
+            Carried::ValueType(renamed_atom, integer),
+            Carried::Value(quoted, code),
+            Carried::Value(tuple, value),
+            Carried::Computation(returned, inner),
+            Carried::Computation(lambda, body),
+            Carried::Value(thunk, renamed),
+        ];
+        expected.sort_unstable();
+        assert_eq!(
+            carried, expected,
+            "every rewritten node is reported, and no kept one"
+        );
+        let mut type_carried = Vec::new();
+        assert_eq!(
+            rename_value_type_traced(&mut arena, renamed_atom, &renaming, &mut type_carried),
+            integer,
+            "an atom standing alone is the type it is renamed to"
+        );
+        assert_eq!(
+            rename_value_type_traced(&mut arena, kept_atom, &renaming, &mut type_carried),
+            kept_atom
+        );
+        assert_eq!(type_carried, vec![Carried::ValueType(
+            renamed_atom,
+            integer
+        )]);
     }
 
     #[test]
