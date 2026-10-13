@@ -3,7 +3,10 @@
 
 # The wall. Every `check:*` task is one gate; `check` fans out to all of them.
 # A gate enters this file when a weed appears that it would have caught, with
-# the reason beside it, and never pre-emptively.
+# the reason beside it, and never pre-emptively. A `check:*` task is a gate
+# every contributor runs locally, idempotent and cheap relative to what it
+# guards; reports and uploads (coverage, mutants, benches) live under `ci:` and
+# are never globbed into `check`.
 
 [check]
 description = "Every gate"
@@ -254,62 +257,3 @@ run = [
   "aube run bundle",
   "aube run package",
 ]
-
-# The enforcing suite, instrumented into target/coverage so it never shares
-# the cached enforcing state. The plain-only parser witness is
-# cfg(not(anodized_panic)), so it is a second instrumented run; a line is
-# covered when either run executed it. llvm-tools already supplies llvm-cov.
-["check:coverage"]
-description = "Enforcing line coverage, with the plain-only parser witness merged in, as coverage.lcov"
-run = '''
-#!/usr/bin/env bash
-set -euo pipefail
-root="{{ config_root }}"
-export NEXTEST_PROFILE=ci-enforcing
-RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR="$root/target/coverage" \
-  cargo llvm-cov nextest --workspace --locked --lcov --output-path "$root/coverage.lcov"
-CARGO_TARGET_DIR="$root/target/coverage-plain" \
-  cargo llvm-cov nextest --locked --no-report \
-  -p gandr-surface-parser --test tests \
-  -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)'
-CARGO_TARGET_DIR="$root/target/coverage-plain" \
-  cargo llvm-cov report --lcov --output-path "$root/coverage-plain.lcov"
-awk '
-  /^SF:/ {
-    file = substr($0, 4)
-    if (!(file in seen)) { seen[file] = ++nfiles; files[nfiles] = file }
-  }
-  /^DA:/ {
-    split(substr($0, 4), parts, ",")
-    key = file SUBSEP parts[1]
-    if (!(key in hits) || parts[2]+0 > hits[key]) hits[key] = parts[2]+0
-    if (!(key in listed)) { listed[key] = 1; seq[file] = seq[file] parts[1] "\n" }
-  }
-  END {
-    for (i = 1; i <= nfiles; i++) {
-      file = files[i]
-      print "SF:" file
-      n = split(seq[file], nums, "\n")
-      for (a = 1; a < n; a++)
-        for (b = a + 1; b <= n; b++)
-          if (nums[a] != "" && nums[b] != "" && nums[b]+0 < nums[a]+0) {
-            tmp = nums[a]; nums[a] = nums[b]; nums[b] = tmp
-          }
-      covered = 0
-      total = 0
-      for (a = 1; a <= n; a++) {
-        if (nums[a] == "") continue
-        hit = hits[file SUBSEP nums[a]]
-        print "DA:" nums[a] "," hit
-        total++
-        if (hit+0 > 0) covered++
-      }
-      print "LH:" covered
-      print "LF:" total
-      print "end_of_record"
-    }
-  }
-' "$root/coverage.lcov" "$root/coverage-plain.lcov" > "$root/coverage.merged.lcov"
-mv "$root/coverage.merged.lcov" "$root/coverage.lcov"
-rm -f "$root/coverage-plain.lcov"
-'''
