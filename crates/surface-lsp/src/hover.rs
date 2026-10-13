@@ -3,10 +3,11 @@
 //!
 //! # A hover answers the innermost node
 //!
-//! A hover reads what [`hovering`] builds once per revision of the copy and
-//! keeps until the copy changes — the document's type table (`TypeTable`) and
-//! the declarations the outline reads off the tree, each with its declaring
-//! form's key — and answers, in order:
+//! A hover reads the declarations the text's [`Reading`] holds — those the
+//! outline reads off the tree, each with its declaring form's key — and the
+//! document's type table (`TypeTable`), which [`hovering`] builds once per
+//! revision of the copy and the copy keeps until it changes. It answers, in
+//! order:
 //!
 //! - **A declaration's name** — from its first character to just past its last
 //!   — with a fenced `gandr` block holding the name and, when the table types
@@ -30,12 +31,11 @@
 //! 80 columns.
 //!
 //! The alternative was to look the name under the cursor up among the
-//! session's items by its occurrence among the document's declarations, as
-//! this hover did before the table existed: it answers declaration names only,
-//! and counts a signature and its definition as two occurrences of one item.
-//! The choice reverses when the session keeps the typed run's table itself,
-//! and the hover then reads it there rather than judging the copy's text
-//! again.
+//! session's items by its occurrence among the document's declarations: it
+//! answers declaration names only, and counts a signature and its definition
+//! as two occurrences of one item. The choice reverses when the session keeps
+//! the typed run's table itself, and the hover then reads it there rather than
+//! judging the copy's text again.
 
 use alloc::format;
 use alloc::string::String;
@@ -45,25 +45,22 @@ use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::Subject;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::TypedSpan;
-use gandr_surface_parser::parse;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_render_remote::ByteOffset as RenderOffset;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::Session;
 use gandr_surface_syntax::ByteOffset;
-use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-use crate::outline::declarations;
 use crate::position::Position;
 use crate::position::Range;
-use crate::protocol::DocumentSymbol;
 use crate::protocol::Hover;
 use crate::protocol::MarkupContent;
 use crate::protocol::SymbolKind;
+use crate::reading::Declaration;
+use crate::reading::Reading;
 use crate::recheck::grammar;
-use crate::recheck::roles;
 
 /// The page width a hover lays a type out at.
 const HOVER_WIDTH: u32 = 80;
@@ -85,89 +82,52 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// A declaration of the document as a hover reads it: its outline symbol and
-/// its declaring form's key.
-#[derive(Clone, Debug)]
-struct Declaration
-{
-    /// The key of the form declaring it; none for a form the tree keys not.
-    key: Option<NodeKey>,
-    /// Its symbol, as the outline reads it.
-    symbol: DocumentSymbol,
-}
-
 /// What a document copy keeps for its hovers until its text changes: the type
-/// table, and the declarations the outline reads off the tree.
+/// table of its text.
 #[derive(Clone, Debug)]
+#[repr(transparent)]
 pub struct Hovering
 {
     /// The type of every node of the text, and of every declaration.
     table: TypeTable,
-    /// The declarations in source order, each with its declaring form's key;
-    /// absent when the grammar did not build or the text did not parse.
-    declarations: Maybe<Vec<Declaration>, hovered::Absent>,
 }
 
 /// What the hovers of `text` read, built under the process's grammar: one
-/// parse and one typed run per text, rather than one per hover.
+/// typed run per text, rather than one per hover.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: [`TypeTable::of`] over `text`, the empty table when the grammar
-///   did not build or the text did not parse; and the declarations the outline
-///   reads off the text's tree with their forms' keys, absent as
-///   [`hovered::Absent::Unparsed`] when the grammar or the parse failed.
+///   did not build or the text did not parse.
 /// - provides: what a document copy keeps for its hovers.
-/// - fails: never; a refusal answers the empty table and no declarations.
+/// - fails: never; a refusal answers the empty table.
 /// - panics: none.
+/// - executable: none — the table is the dispatcher's typed run, whose own
+///   specification states what it holds; restating it here would run the typed
+///   run again.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a hover over every kind of position reads what this
-///   builds, and a parsed text's declarations answer their names.
+///   builds, so a table of another text, or an empty one, changes a typed
+///   answer.
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
-#[spec(ensures: |ret| matches!(ret.declarations,
-    Maybe::Present(_) | Maybe::Absent(hovered::Absent::Unparsed)))]
 #[must_use]
 pub fn hovering(text: SourceText<'_>) -> Hovering
 {
-    let unparsed = Maybe::Absent(hovered::Absent::Unparsed);
-    let (Ok(grammar), Ok(roles)) = (grammar(), roles())
-    else {
-        return Hovering {
-            table: TypeTable::default(),
-            declarations: unparsed,
-        };
+    let table = match grammar() {
+        | Ok(grammar) => TypeTable::of(grammar, text).unwrap_or_default(),
+        | Err(_) => TypeTable::default(),
     };
-    let table = TypeTable::of(grammar, text).unwrap_or_default();
-    let Ok(parsed) = parse(grammar, text)
-    else {
-        return Hovering {
-            table,
-            declarations: unparsed,
-        };
-    };
-    let tree = parsed.into_tree();
-    let index = LineIndex::new(<&str>::from(text).into());
-    let found = declarations(grammar, roles, &tree, &index)
-        .into_iter()
-        .map(|(form, symbol)| Declaration {
-            key: tree.key(form),
-            symbol,
-        })
-        .collect();
-    Hovering {
-        table,
-        declarations: Maybe::Present(found),
-    }
+    Hovering { table }
 }
 
-/// What a hover at `position` of `text` shows, read against `hovering` and
-/// `session`.
+/// What a hover at `position` of `text` shows, read against the text's
+/// `reading`, its `hovering` and `session`.
 ///
 /// # Specification
-/// - requires: `hovering` was built from `text`, and `session` last checked
-///   `text`, as the server's synchronisation leaves them; a stale session
-///   answers the documentation it last accepted.
+/// - requires: `reading` and `hovering` were read off `text`, and `session`
+///   last checked `text`, as the server's synchronisation leaves them; a stale
+///   session answers the documentation it last accepted.
 /// - ensures: on a declaration's name — from its first character to just past
 ///   its last — a fenced `gandr` block holding the name and, when the table
 ///   types the declaration by its form's key, ` : ` and its type, or, when the
@@ -203,11 +163,12 @@ pub fn hovering(text: SourceText<'_>) -> Hovering
 pub fn hover<Store, Blocks>(
     text: SourceText<'_>,
     session: &Session<Store, Blocks>,
+    reading: &Reading,
     hovering: &Hovering,
     position: Position,
 ) -> Maybe<Hover, hovered::Absent>
 {
-    let Maybe::Present(ref found) = hovering.declarations
+    let Maybe::Present(found) = reading.declarations()
     else {
         return Maybe::Absent(hovered::Absent::Unparsed);
     };
@@ -376,6 +337,7 @@ mod tests
     use crate::position::Character;
     use crate::position::Line;
     use crate::position::Position;
+    use crate::reading::Reading;
     use crate::recheck::grammar;
 
     /// A session that has checked `text`.
@@ -417,7 +379,13 @@ mod tests
     ) -> Result<String, hovered::Absent>
     {
         let session = checked(text);
-        match hover(text, &session, &hovering(text), position) {
+        match hover(
+            text,
+            &session,
+            &Reading::of(text),
+            &hovering(text),
+            position,
+        ) {
             | Maybe::Present(shown) => Ok(shown.contents.value),
             | Maybe::Absent(reason) => Err(reason),
         }

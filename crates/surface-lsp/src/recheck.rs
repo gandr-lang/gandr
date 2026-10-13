@@ -1,7 +1,5 @@
-//! The document recheck: every open document holds a session, each
-//! synchronisation judges the document's text in it and then admits it, and
-//! every token request highlights the text from scratch through the grammar's
-//! role table.
+//! The document recheck: every open document holds a session, and each
+//! synchronisation judges the document's text in it and then admits it.
 //!
 //! The grammar and its role table are built once per process and shared. A
 //! document's session keeps its forms between synchronisations, so a change
@@ -25,8 +23,9 @@
 //! admission the judgement left, so the client reads the reports before the
 //! kernel has re-derived the revision's acceptances. A disagreement the
 //! admission finds is published at the document's version in place of the
-//! reports, as one error at the origin naming the fault. A token request parses
-//! the whole text again.
+//! reports, as one error at the origin naming the fault. A token request reads
+//! the text's one [`Reading`](crate::reading::Reading), which parses it again
+//! once per change.
 //!
 //! **The log.** Each synchronisation writes one line to the log `serve` is
 //! given — `<uri> at version <n>: <molded>/<forms> forms molded,
@@ -160,9 +159,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::built_in;
-use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset;
-use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::CandidateIndex;
 use gandr_surface_session::FormCensus;
@@ -736,53 +733,6 @@ fn diagnostics_of(
         .collect()
 }
 
-/// The highlighter's spans over `text`.
-///
-/// # Specification
-/// - requires: nothing; any text is admissible input.
-/// - ensures: the spans the grammar's role table classifies the parsed text
-///   into, sorted and pairwise disjoint; none when the grammar did not build or
-///   the parser could not commit a tree, faults the document's diagnostics
-///   name.
-/// - provides: the spans every token request encodes.
-/// - fails: never.
-/// - panics: none.
-/// - intension: one parse per call.
-///
-/// # Adequacy
-/// - hypothesis: L2 — a definition has a pinned semantic-token stream; over
-///   every corpus source, encoded coverage agrees with the highlighter. Runtime
-///   checks distinguish out-of-text, split-character, unsorted and overlapping
-///   spans without reparsing the source.
-/// - witness: `recheck::tests::a_definition_produces_semantic_tokens`
-/// - witness: `session::session::corpus_tokens_cover_the_highlighted_bytes`
-#[spec(ensures: |ret| ret.iter().all(|span|
-    usize::from(span.range.end()) <= text.as_ref().len()
-        && text.as_ref().is_char_boundary(usize::from(span.range.start()))
-        && text.as_ref().is_char_boundary(usize::from(span.range.end())))
-    && ret.iter().zip(ret.iter().skip(1)).all(|(first, second)| first.range.end() <= second.range.start()))]
-#[inline]
-#[must_use]
-pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
-{
-    let Ok(toolkit) = toolkit()
-    else {
-        return Vec::new();
-    };
-    // economy: a token request parses the document again rather than keep the
-    // tree its last synchronisation composed; the composition consumes the
-    // tree, and keeping both would hold every open document's tree for the
-    // one request that may never come.
-    let Ok(parsed) = parse(&toolkit.grammar, text)
-    else {
-        return Vec::new();
-    };
-    toolkit
-        .roles
-        .highlight(&parsed.into_tree())
-        .unwrap_or_default()
-}
-
 /// The editor diagnostic `found` is published as at `verbosity`.
 ///
 /// # Specification
@@ -919,7 +869,6 @@ mod tests
     use super::admit;
     use super::admitted;
     use super::grammar;
-    use super::highlight;
     use super::open;
     use super::recheck;
     use super::toolkit;
@@ -932,6 +881,7 @@ mod tests
     use crate::protocol::DocumentUri;
     use crate::protocol::Location;
     use crate::protocol::Severity;
+    use crate::reading::Reading;
     use crate::tokens::TokenStream;
     use crate::tokens::encode;
 
@@ -988,10 +938,11 @@ mod tests
     fn a_definition_produces_semantic_tokens()
     {
         let text = "def f = 42 ;\n";
-        let spans = highlight(SourceText::from(text));
+        let reading = Reading::of(SourceText::from(text));
+        let spans = reading.spans();
         let index = gandr_surface_render_remote::LineIndex::new(text.into());
         assert_eq!(
-            encode(&index, &spans),
+            encode(&index, spans),
             TokenStream::from(vec![0, 0, 3, 0, 0, 0, 4, 1, 2, 1, 0, 4, 2, 9, 0]),
             "`def` a keyword, `f` a declared function, `42` a number"
         );

@@ -277,6 +277,7 @@ mod outline;
 mod position;
 mod proposal;
 mod protocol;
+mod reading;
 mod recheck;
 mod rpc;
 mod server;

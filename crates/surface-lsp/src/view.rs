@@ -17,16 +17,16 @@ use gandr_surface_syntax::SourceText;
 use crate::position::Range;
 use crate::protocol::Diagnostic;
 use crate::protocol::Severity;
-use crate::recheck::highlight;
+use crate::reading::Reading;
 
-/// The report the render bus carries for `text`, whose last synchronisation
-/// published `published`.
+/// The report the render bus carries for `text`, read as `reading`, whose last
+/// synchronisation published `published`.
 ///
 /// # Specification
-/// - requires: `published` was published for `text`.
-/// - ensures: the report carries `text` whole and the highlighter's spans over
-///   it. Each error and warning becomes one diagnostic card, in the order
-///   published: its code the registry's when the diagnostic's code is a
+/// - requires: `reading` read `text`, and `published` was published for it.
+/// - ensures: the report carries `text` whole and the reading's highlighter
+///   spans over it. Each error and warning becomes one diagnostic card, in the
+///   order published: its code the registry's when the diagnostic's code is a
 ///   registry spelling and `Other` otherwise, its message the diagnostic's,
 ///   after the code in brackets when that is not a registry spelling, its span
 ///   the diagnostic's range in bytes — absent for one at the origin, where an
@@ -52,6 +52,7 @@ use crate::recheck::highlight;
 #[must_use]
 pub fn report(
     text: SourceText<'_>,
+    reading: &Reading,
     published: &[Diagnostic],
 ) -> ReportView
 {
@@ -64,7 +65,7 @@ pub fn report(
     };
     let mut view = ReportView {
         source: String::from(text.as_ref()),
-        highlights: highlight(text),
+        highlights: reading.spans().to_vec(),
         ..ReportView::default()
     };
     for diagnostic in published {
@@ -130,6 +131,7 @@ mod tests
     use crate::protocol::Diagnostic;
     use crate::protocol::DocumentUri;
     use crate::protocol::Severity;
+    use crate::reading::Reading;
     use crate::recheck::open;
     use crate::recheck::recheck;
 
@@ -171,7 +173,11 @@ mod tests
             Severity::INFORMATION,
             String::from("goal ?gap : Integer"),
         ));
-        let view = report(SourceText::from(text), &published);
+        let view = report(
+            SourceText::from(text),
+            &Reading::of(SourceText::from(text)),
+            &published,
+        );
         assert_eq!(view.source, text, "the text travels whole");
         assert!(!view.highlights.is_empty(), "the text is highlighted");
         let refusal = text.find("\"one\"").expect("the refused literal");
@@ -203,9 +209,11 @@ mod tests
             [(MarkKind::Error, refusal), (MarkKind::EmptyHole, hole)],
             "the refusal is underlined and the hole tinted"
         );
-        let faulted = report(SourceText::from(text), &[Diagnostic::at_origin(
-            String::from("the session faulted"),
-        )]);
+        let faulted = report(
+            SourceText::from(text),
+            &Reading::of(SourceText::from(text)),
+            &[Diagnostic::at_origin(String::from("the session faulted"))],
+        );
         assert_eq!(
             faulted
                 .diagnostics

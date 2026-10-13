@@ -2,15 +2,15 @@
 //! symbols, the lines its forms and documentation span as folding ranges, and
 //! the forms around a position as nested selection ranges.
 //!
-//! Each answer parses the document again under the process's grammar, as a
-//! token request does, and reads nothing the checker decides: a declaration
-//! is a form of the grammar's item or module-member sort, and its name is
-//! the first tile the highlighter classifies as a definition or a type.
+//! Each is read once per held text, off the tree of its one
+//! [`Reading`](crate::reading::Reading), under the process's grammar, and reads
+//! nothing the checker decides: a declaration is a form of the grammar's item
+//! or module-member sort, and its name is the first tile the highlighter
+//! classifies as a definition or a type.
 //!
 //! # The outline is read off the tree
 //!
-//! The three outline requests parse the held text under the process's grammar,
-//! as a token request does, and read the molded tree alone; nothing the checker
+//! The three outline answers read the molded tree alone; nothing the checker
 //! decides reaches them, so an outline is answered for a document that does not
 //! check.
 //!
@@ -51,7 +51,6 @@ use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::Sort;
-use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::LineIndex;
@@ -60,18 +59,14 @@ use gandr_surface_syntax::Node;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
-use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 
 use crate::position::Position;
 use crate::position::Range;
 use crate::protocol::DocumentSymbol;
-use crate::protocol::DocumentSymbols;
 use crate::protocol::FoldingRange;
 use crate::protocol::SelectionRange;
 use crate::protocol::SymbolKind;
-use crate::recheck::grammar;
-use crate::recheck::roles;
 
 /// The kind a folding range of documentation or a block comment carries.
 const COMMENT: &str = "comment";
@@ -83,11 +78,12 @@ const ATTRIBUTE_BLOCK: &str = "attribute_block";
 /// The opening of a block comment.
 const BLOCK_COMMENT: &str = "/*";
 
-/// The declarations of `text`, each holding the declarations written inside
-/// it.
+/// The declarations of `tree`, each beside the form declaring it and holding
+/// the declarations written inside it.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: `tree` was parsed under `grammar`, and `index` built over its
+///   text.
 /// - ensures: one symbol per form of the [`Sort::Item`] or
 ///   [`Sort::ModuleMember`] sort that has a name: its first direct tile the
 ///   highlighter classifies as [`HlRole::FunctionDef`], [`HlRole::VariableDef`]
@@ -96,12 +92,12 @@ const BLOCK_COMMENT: &str = "/*";
 ///   name's, and its kind a function, a value, or by the form's first keyword a
 ///   module, a data declaration, a codata declaration or a signature. Symbols
 ///   are in source order, each after the declaration holding it, which it names
-///   by position; a top-level one names none. Empty when the grammar does not
-///   build or the text does not parse.
-/// - provides: the answer to `textDocument/documentSymbol`.
+///   by position; a top-level one names none. Each is beside the node of the
+///   form that declares it.
+/// - provides: the declarations the document symbols and a hover read.
 /// - fails: never.
 /// - panics: none.
-/// - intension: one parse and one walk of the tree with an explicit stack.
+/// - intension: one walk of the tree with an explicit stack.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a function, a value, a data declaration, a module with a
@@ -109,48 +105,12 @@ const BLOCK_COMMENT: &str = "/*";
 ///   a data declaration are asserted at the exact symbol tree. Taking a
 ///   declaration's range from its name or its form alone, dropping a nested
 ///   member, reversing source order or reading an attribute name as the
-///   declared one changes it.
-/// - witness: `outline::tests::declarations_nest_as_symbols`
-#[spec(ensures: |ret| ret.0.iter().enumerate().all(|(position, symbol)|
-    !symbol.name.is_empty() && symbol.holder.is_none_or(|holder| holder < position)))]
-pub fn symbols(text: SourceText<'_>) -> DocumentSymbols
-{
-    let (Ok(grammar), Ok(roles)) = (grammar(), roles())
-    else {
-        return DocumentSymbols::default();
-    };
-    let Ok(parsed) = parse(grammar, text)
-    else {
-        return DocumentSymbols::default();
-    };
-    let tree = parsed.into_tree();
-    let index = LineIndex::new(<&str>::from(text).into());
-    DocumentSymbols(
-        declarations(grammar, roles, &tree, &index)
-            .into_iter()
-            .map(|(_, symbol)| symbol)
-            .collect(),
-    )
-}
-
-/// The declarations of `tree`, each beside the form declaring it.
-///
-/// # Specification
-/// - requires: `tree` was parsed under `grammar`, and `index` built over its
-///   text.
-/// - ensures: the symbols [`symbols`] answers, in its order, each beside the
-///   node of the form that declares it.
-/// - provides: the declarations both the outline and a hover read.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`symbols`], and a hover finds each declaration's
-///   documentation under its own form.
+///   declared one changes it; a hover finds each declaration's documentation
+///   under its own form.
 /// - witness: `outline::tests::declarations_nest_as_symbols`
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
 #[spec(ensures: |ret| ret.iter().enumerate().all(|(position, found)|
-    found.1.holder.is_none_or(|holder| holder < position)))]
+    !found.1.name.is_empty() && found.1.holder.is_none_or(|holder| holder < position)))]
 pub fn declarations(
     grammar: &Pbg,
     roles: &RoleTable,
@@ -275,15 +235,15 @@ fn kind_of(
     }
 }
 
-/// The runs of lines of `text` a client can fold.
+/// The runs of lines of `tree`'s text a client can fold.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: `index` was built over `tree`'s text.
 /// - ensures: one range per line at which a form, a documentation node or a
 ///   block comment starts that ends on a later line, from its first line to its
 ///   last; at a line where several start, the outermost. Documentation and
 ///   block comments carry the `comment` kind, forms none. Ascending by first
-///   line. Empty when the grammar does not build or the text does not parse.
+///   line.
 /// - provides: the answer to `textDocument/foldingRange`.
 /// - fails: never.
 /// - panics: none.
@@ -296,18 +256,11 @@ fn kind_of(
 /// - witness: `outline::tests::multi_line_forms_and_documentation_fold`
 #[spec(ensures: |ret| ret.iter().all(|fold| fold.start_line < fold.end_line)
     && ret.windows(2).all(|pair| matches!(pair, [first, second] if first.start_line < second.start_line)))]
-pub fn folds(text: SourceText<'_>) -> Vec<FoldingRange>
+pub fn folds(
+    tree: &SyntaxTree<'_>,
+    index: &LineIndex<'_>,
+) -> Vec<FoldingRange>
 {
-    let Ok(grammar) = grammar()
-    else {
-        return Vec::new();
-    };
-    let Ok(parsed) = parse(grammar, text)
-    else {
-        return Vec::new();
-    };
-    let tree = parsed.into_tree();
-    let index = LineIndex::new(<&str>::from(text).into());
     let mut folds: Vec<FoldingRange> = Vec::new();
     // Level order visits a form before every form inside it.
     for position in tree.positions() {
@@ -331,7 +284,7 @@ pub fn folds(text: SourceText<'_>) -> Vec<FoldingRange>
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. } => continue,
         };
-        let Some(range) = range_of(&index, node.span())
+        let Some(range) = range_of(index, node.span())
         else {
             continue;
         };
@@ -348,99 +301,127 @@ pub fn folds(text: SourceText<'_>) -> Vec<FoldingRange>
     folds
 }
 
-/// For each of `positions`, the nodes of `text` around it, innermost first.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: one answer per position, in order. Each is the chain of nodes
-///   whose span holds the position — a child preferred when the position falls
-///   inside it, else one that ends at the position — from the innermost out to
-///   the whole document, whitespace and layout skipped, a span its child
-///   repeats given once. A position in a document that does not parse answers
-///   the empty range at itself.
-/// - provides: the answer to `textDocument/selectionRange`.
-/// - fails: never.
-/// - panics: none.
-/// - intension: one parse; each position walks down from the root, never back
-///   up.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a position inside a name, at a name's end and inside an
-///   operand are asserted at their exact chains. Preferring the node ending at
-///   the position over the one holding it, repeating a span, or stopping short
-///   of the document changes them.
-/// - witness: `outline::tests::a_selection_grows_from_the_innermost_form`
-#[spec(ensures: |ret| ret.len() == positions.len())]
-pub fn selections(
-    text: SourceText<'_>,
-    positions: &[Position],
-) -> Vec<SelectionRange>
+/// One node a selection can stop at: its span, and the positions of its
+/// selectable children in source order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Bone
 {
-    let index = LineIndex::new(<&str>::from(text).into());
-    let unparsed = |position: Position| SelectionRange {
-        ranges: Vec::from([Range {
-            start: position,
-            end: position,
-        }]),
-    };
-    let tree = grammar()
-        .ok()
-        .and_then(|grammar| parse(grammar, text).ok())
-        .map(gandr_surface_parser::ParseResult::into_tree);
-    positions
-        .iter()
-        .map(|&position| match tree {
-            | Some(ref tree) => {
-                enclosing(tree, &index, position).unwrap_or_else(|| unparsed(position))
-            },
-            | None => unparsed(position),
-        })
-        .collect()
+    /// The node's span.
+    span: ByteSpan,
+    /// The positions in the skeleton of its children that are neither layout
+    /// nor empty, in source order.
+    children: Vec<usize>,
 }
 
-/// The chain of nodes of `tree` around `position`, innermost first.
-///
-/// # Specification
-/// trivial.
-fn enclosing(
-    tree: &SyntaxTree<'_>,
-    index: &LineIndex<'_>,
-    position: Position,
-) -> Option<SelectionRange>
+/// The nodes of a tree a selection walks, owned apart from the tree's text:
+/// the root first, then every node that is neither layout nor empty.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct Skeleton(Vec<Bone>);
+
+impl Skeleton
 {
-    let at = gandr_surface_syntax::ByteOffset::from(usize::from(position.byte(index)));
-    let mut chain: Vec<ByteSpan> = Vec::new();
-    let mut current = Some(tree.root());
-    while let Some(here) = current {
-        let span = tree.node(here)?.span();
-        if chain.last() != Some(&span) {
-            chain.push(span);
-        }
-        let selectable = |child: &NodeIndex| {
-            tree.node(*child).filter(|node| {
-                !matches!(node.label(), NodeLabel::Space) && node.span().start() < node.span().end()
-            })
+    /// The skeleton of `tree`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a bone for the root, at position zero, and one for every node
+    ///   below it that is neither layout nor empty, each beside the positions
+    ///   of such children of its node, in source order; nothing for an empty
+    ///   tree.
+    /// - provides: what a selection walks once the tree is let go.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one walk of the tree with an explicit stack.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the selection witness walks a skeleton down to a
+    ///   number inside a call and to a name; a skipped child, a layout bone or
+    ///   a reordered child changes the chains it asserts.
+    /// - witness: `outline::tests::a_selection_grows_from_the_innermost_form`
+    #[spec(ensures: |ret| ret.0.iter().all(|bone| bone.children.iter().all(|&child| child < ret.0.len())))]
+    #[must_use]
+    pub fn of(tree: &SyntaxTree<'_>) -> Self
+    {
+        let Some(root) = tree.node(tree.root())
+        else {
+            return Self::default();
         };
-        let children: Vec<NodeIndex> = tree.children(here).collect();
-        current = children
-            .iter()
-            .find(|child| {
-                selectable(child)
-                    .is_some_and(|node| node.span().start() <= at && at < node.span().end())
-            })
-            .or_else(|| {
-                children
-                    .iter()
-                    .find(|child| selectable(child).is_some_and(|node| node.span().end() == at))
-            })
-            .copied();
+        let mut bones = Vec::from([Bone {
+            span: root.span(),
+            children: Vec::new(),
+        }]);
+        let mut pending: Vec<(NodeIndex, usize)> = Vec::from([(tree.root(), 0_usize)]);
+        while let Some((at, holder)) = pending.pop() {
+            for child in tree.children(at) {
+                let Some(node) = tree
+                    .node(child)
+                    .filter(|node| !matches!(node.label(), NodeLabel::Space))
+                    .filter(|node| node.span().start() < node.span().end())
+                else {
+                    continue;
+                };
+                let position = bones.len();
+                bones.push(Bone {
+                    span: node.span(),
+                    children: Vec::new(),
+                });
+                if let Some(bone) = bones.get_mut(holder) {
+                    bone.children.push(position);
+                }
+                pending.push((child, position));
+            }
+        }
+        Self(bones)
     }
-    let ranges: Vec<Range> = chain
-        .into_iter()
-        .rev()
-        .filter_map(|span| range_of(index, span))
-        .collect();
-    (!ranges.is_empty()).then_some(SelectionRange { ranges })
+
+    /// The chain of nodes around `position`, innermost first, ranged through
+    /// `index`.
+    ///
+    /// # Specification
+    /// - requires: `index` was built over the text the skeleton's tree read.
+    /// - ensures: the chain of nodes whose span holds the position — a child
+    ///   preferred when the position falls inside it, else one that ends at the
+    ///   position — from the innermost out to the whole document, a span its
+    ///   child repeats given once; nothing when no node's range projects.
+    /// - provides: one position's `textDocument/selectionRange` answer.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one walk down from the root, never back up.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a position inside a name, at a name's end and inside
+    ///   an operand are asserted at their exact chains. Preferring the node
+    ///   ending at the position over the one holding it, repeating a span, or
+    ///   stopping short of the document changes them.
+    /// - witness: `outline::tests::a_selection_grows_from_the_innermost_form`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|selection| !selection.ranges.is_empty()))]
+    #[must_use]
+    pub fn around(
+        &self,
+        index: &LineIndex<'_>,
+        position: Position,
+    ) -> Option<SelectionRange>
+    {
+        let at = gandr_surface_syntax::ByteOffset::from(usize::from(position.byte(index)));
+        let mut chain: Vec<ByteSpan> = Vec::new();
+        let mut current = self.0.first();
+        while let Some(bone) = current {
+            if chain.last() != Some(&bone.span) {
+                chain.push(bone.span);
+            }
+            let children = || bone.children.iter().filter_map(|&child| self.0.get(child));
+            current = children()
+                .find(|child| child.span.start() <= at && at < child.span.end())
+                .or_else(|| children().find(|child| child.span.end() == at));
+        }
+        let ranges: Vec<Range> = chain
+            .into_iter()
+            .rev()
+            .filter_map(|span| range_of(index, span))
+            .collect();
+        (!ranges.is_empty()).then_some(SelectionRange { ranges })
+    }
 }
 
 /// The range `span` covers in the text `index` was built from.
@@ -463,18 +444,17 @@ fn range_of(
 #[cfg(test)]
 mod tests
 {
+    use gandr_surface_render_remote::LineIndex;
     use gandr_surface_syntax::SourceText;
     use serde_json::Value;
 
-    use super::folds;
-    use super::selections;
-    use super::symbols;
     use crate::position::Character;
     use crate::position::Line;
     use crate::position::Position;
     use crate::position::Range;
     use crate::protocol::DocumentSymbols;
     use crate::protocol::SelectionRange;
+    use crate::reading::Reading;
 
     /// `range` spelled `line:character-line:character`.
     ///
@@ -545,7 +525,7 @@ mod tests
                       def answer = 42 ;\n\
                       @[ checks ]\ndata Color : Type { Red : Color; }\n\
                       module Outer {\n  def inner = 1 ;\n  module Nested {\n    def deep = 2 ;\n  }\n}\n";
-        let answered = symbols(SourceText::from(source));
+        let answered = Reading::of(SourceText::from(source)).symbols();
         assert_eq!(outline(&answered), [
             "twice 12 1:0-4:1 at 2:4-2:9",
             "answer 12 5:0-5:17 at 5:4-5:10",
@@ -594,10 +574,11 @@ mod tests
     {
         let source = "/// One.\n/// Two.\ndef f(x: Integer) -> -F Integer {\n  return x\n}\n\
                       def g = 1 ;\n/* a\n   block */\ndef h = 2 ;\n";
-        let answered: Vec<(u64, u64, Option<&str>)> = folds(SourceText::from(source))
-            .into_iter()
+        let answered: Vec<(u64, u64, Option<&str>)> = Reading::of(SourceText::from(source))
+            .folds()
+            .iter()
             .map(|fold| {
-                let value = serde_json::to_value(&fold).expect("a fold encodes");
+                let value = serde_json::to_value(fold).expect("a fold encodes");
                 let line = |field| value.get(field).and_then(Value::as_u64).unwrap_or(u64::MAX);
                 (line("startLine"), line("endLine"), fold.kind)
             })
@@ -617,7 +598,7 @@ mod tests
     fn a_selection_grows_from_the_innermost_form()
     {
         let source = SourceText::from("def f = g(10) ;\n");
-        let answered = selections(source, &[
+        let answered = Reading::of(source).selections(&LineIndex::new(source.as_ref().into()), &[
             at(Line::from(0), Character::from(11)),
             at(Line::from(0), Character::from(5)),
         ]);
