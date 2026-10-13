@@ -540,6 +540,48 @@ fn multi_point_edit_localizes_to_the_common_ancestor()
     );
 }
 
+/// A step of the corpus typing of
+/// `pathological/identity/flow-forward-unsupported.gandr`: the typist's `"`
+/// (closed by the editor) turns the returned one-component tuple `#{age, }`
+/// into the two-component `#{age, ""}`. The tuples share their former; a walk
+/// that descended into them would pair the one component they share and drop
+/// the new one, leaving an empty script for unequal revisions — a breach of
+/// `diff`'s identity clause, `ret.0.is_empty() == (old.items == new.items)` —
+/// and an `apply` that loses the component.
+#[test]
+fn growing_a_tuple_replaces_it()
+{
+    let revision = |component: &str| {
+        snapshot(&format!(
+            "module Schema {{\n  type Old = #{{String, Integer}};\n  type New = #{{Integer, \
+             String}};\n  @[ checks ]\n  def anonymise(old : Old) -> -F New {{\n    case old \
+             {{\n      #{{name, age}} => return #{{age, {component}}}\n    }}\n  }}\n}}\n"
+        ))
+    };
+    let (base, edited) = (revision(""), revision("\"\""));
+    assert_ne!(base.items(), edited.items(), "the tuple gained a component");
+    let anonymise = base
+        .items()
+        .iter()
+        .position(|item| {
+            matches!(*item.reference(), Reference::Item { ref key, .. } if key.as_ref() == b"anonymise")
+        })
+        .map(ItemOrdinal::from)
+        .expect("the revision declares `anonymise`");
+    let script = diff_sound(&base, &edited);
+    // The body is `thunk λ. split old (return #{…})`: the tuple is the
+    // returned value of the split's continuation.
+    let tuple = CorePath::new(anonymise, slots![0, 0, 1, 0]);
+    assert!(
+        matches!(
+            script.actions(),
+            [Action::Replace { path, to }] if *path == tuple
+                && matches!(to.nodes().first(), Some(ContentNode::Tuple(components)) if components.len() == 2)
+        ),
+        "the whole tuple is replaced by the two-component one: {script:?}"
+    );
+}
+
 #[test]
 fn self_diff_is_empty_and_apply_is_identity()
 {

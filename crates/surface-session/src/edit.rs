@@ -1547,9 +1547,11 @@ impl EditScript
 ///   reinserted. A kept pair's differing signatures are one
 ///   [`Action::SetSignature`]; a body gained or lost is one
 ///   [`Action::FillHole`] or [`Action::EraseToHole`]; two bodies are descended
-///   together, a differing literal, variable or constant leaf becoming one
-///   in-place action and any other difference one [`Action::Replace`] of the
-///   old subtree. Equal revisions give the empty script.
+///   together, slot by slot through nodes of one former, payload and arity, a
+///   differing literal, variable or constant leaf becoming one in-place action
+///   and any other difference — a tuple gaining or losing a component among
+///   them — one [`Action::Replace`] of the old subtree. The script is empty
+///   exactly when the revisions are equal.
 /// - provides: the localized edit a consumer reads instead of a text diff.
 /// - panics: none.
 /// - intension: alignment in time `n log n` over items by patience sorting;
@@ -1572,6 +1574,7 @@ impl EditScript
 /// - witness: `tests::edit::comp_constructor_change_is_one_replace`
 /// - witness: `tests::edit::item_deletion_is_one_delete`
 /// - witness: `tests::edit::multi_point_edit_localizes_to_the_common_ancestor`
+/// - witness: `tests::edit::growing_a_tuple_replaces_it`
 #[spec(
     ensures: |ret| {
     ret.0.is_empty() == (old.items == new.items)
@@ -2372,12 +2375,12 @@ fn diff_trees(
     }
 }
 
-/// Whether two nodes share their former and payload.
+/// Whether two nodes share their former, payload and arity.
 ///
 /// # Specification
 /// - requires: nothing beyond the documented producer and consumer contracts.
-/// - ensures: Same means equal former and non-child payload, not equal
-///   descendants; A difference requires replacing a leaf or subtree.
+/// - ensures: Same means equal former, non-child payload and child count, not
+///   equal descendants; A difference requires replacing a leaf or subtree.
 /// - executable: none — The comparison operands are absent from this result
 ///   enum; agreement carries the executable equivalence and diff/replay
 ///   observes its consequences.
@@ -2393,27 +2396,34 @@ fn diff_trees(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Agreement
 {
-    /// One former, one payload: the walk descends into the children.
+    /// One former, one payload, one arity: the walk descends into the
+    /// children, pairing them slot by slot.
     Same,
-    /// The former or the payload differs: the walk emits an action.
+    /// The former, the payload or the arity differs: the walk emits an
+    /// action.
     Differs,
 }
 
-/// Whether `old` and `new` share their former and payload, children aside.
+/// Whether `old` and `new` share their former, payload and arity, children
+/// aside.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: agrees exactly on the former and non-child payload: leaf values,
-///   injection side, classifier targets, and path evidence matter; child
-///   indices do not.
+/// - ensures: agrees exactly on the former, the non-child payload and the
+///   number of children: leaf values, injection side, classifier targets, path
+///   evidence and a tuple's or product's component count matter; child indices
+///   do not. The walk pairs children by slot, so two nodes it descends into
+///   have every child paired.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — literal, variable, constant and constructor edits, plus
-///   payload-bearing node pairs whose children alone differ. Distinct actions
-///   and exact payloads distinguish ignoring semantic data or treating
+/// - hypothesis: L3 — literal, variable, constant and constructor edits, a
+///   tuple gaining a component, plus payload-bearing node pairs whose children
+///   alone differ. Distinct actions and exact payloads distinguish ignoring
+///   semantic data, ignoring a component the pairing would drop, or treating
 ///   renumbered children as a change. Independent source- and target-dialogue
 ///   edits retain their evidence even when every child is unchanged.
+/// - witness: `tests::edit::growing_a_tuple_replaces_it`
 /// - witness: `tests::edit::apply_of_diff_reproduces_new`
 /// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
 /// - witness: `edit::tests::effect_row_edits_preserve_names_and_rebuild_operation_types`
@@ -2424,6 +2434,7 @@ enum Agreement
     ensures: |ret| {
     (ret == Agreement::Same)
         == (mem::discriminant(old) == mem::discriminant(new)
+            && children(old).count() == children(new).count()
             && match *old {
                 ContentNode::Data {declaration:ref left,ref arguments} => matches!(*new,ContentNode::Data {declaration:ref right,arguments:ref other} if left == right && arguments.len() == other.len()),
                 ContentNode::Constructor {tag,ref fields,..} => matches!(*new,ContentNode::Constructor {tag:other,fields:ref theirs,..} if tag == other && fields.len() == theirs.len()),
@@ -2722,7 +2733,7 @@ fn agreement(
         | _ if children(old).next().is_none() => old == new,
         | _ => mem::discriminant(old) == mem::discriminant(new),
     };
-    if same {
+    if same && children(old).count() == children(new).count() {
         Agreement::Same
     }
     else {

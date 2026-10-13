@@ -34,6 +34,9 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::any::Any;
+use core::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
 use std::sync::LazyLock;
 
 use anodized::spec;
@@ -406,13 +409,12 @@ impl Session
         self.keystrokes = self.keystrokes.saturating_add(1);
         if !changes.is_empty() {
             self.version = self.version.saturating_add(1);
-            let messages = self.client.notify(
-                Method("textDocument/didChange"),
-                &json!({
-                    "textDocument": { "uri": self.uri, "version": self.version },
-                    "contentChanges": changes.iter().map(Change::json).collect::<Vec<_>>(),
-                }),
-            );
+            let change = json!({
+                "textDocument": { "uri": self.uri, "version": self.version },
+                "contentChanges": changes.iter().map(Change::json).collect::<Vec<_>>(),
+            });
+            let messages =
+                self.exchanging(|client| client.notify(Method("textDocument/didChange"), &change));
             self.published = self.publication(&messages);
         }
         let lines = changes
@@ -518,15 +520,13 @@ impl Session
             "positions": [self.buffer.position().json()],
         });
         let ghost = self
-            .client
-            .request(Method("textDocument/inlineCompletion"), &inline);
+            .exchanging(|client| client.request(Method("textDocument/inlineCompletion"), &inline));
         if cadence == Oracle::Line {
             return;
         }
-        let _hover = self.client.request(Method("textDocument/hover"), &at);
+        let _hover = self.exchanging(|client| client.request(Method("textDocument/hover"), &at));
         let ranges = self
-            .client
-            .request(Method("textDocument/selectionRange"), &selection);
+            .exchanging(|client| client.request(Method("textDocument/selectionRange"), &selection));
         let mut fresh = Client::initialized(Record::Dropped, Quiet::Unheld);
         let opened = fresh.notify(
             Method("textDocument/didOpen"),
@@ -550,7 +550,7 @@ impl Session
         for method in WHOLE {
             let params = json!({ "textDocument": document });
             assert_eq!(
-                self.client.request(method, &params),
+                self.exchanging(|client| client.request(method, &params)),
                 fresh.request(method, &params),
                 "{} answers as a fresh connection does{}",
                 method.0,
@@ -571,6 +571,22 @@ impl Session
         );
     }
 
+    /// Run `exchange` over the connection, a panic in it — the loop stopped
+    /// answering, or answered with an error — reported at the session's scene.
+    ///
+    /// # Specification
+    /// trivial.
+    fn exchanging<Answer>(
+        &mut self,
+        exchange: impl FnOnce(&mut Client) -> Answer,
+    ) -> Answer
+    {
+        match catch_unwind(AssertUnwindSafe(|| exchange(&mut self.client))) {
+            | Ok(answer) => answer,
+            | Err(payload) => panic!("{}{}", panic_message(&*payload).0, self.scene()),
+        }
+    }
+
     /// Where the session stands, for a failure message.
     ///
     /// # Specification
@@ -584,4 +600,19 @@ impl Session
             self.uri, self.keystrokes, self.version
         )
     }
+}
+
+/// The message a panic carried, when it carried text.
+///
+/// # Specification
+/// trivial.
+pub fn panic_message(payload: &(dyn Any + Send)) -> Text<'_>
+{
+    Text(
+        payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .unwrap_or("a panic without a message"),
+    )
 }
