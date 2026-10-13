@@ -982,6 +982,48 @@ where
     .computation_or(subject)
 }
 
+/// The value type `subject` with its second binder instantiated at
+/// `replacement`, its innermost binder kept.
+///
+/// # Specification
+/// - requires: `subject` stands under exactly two binders more than
+///   `replacement` does; memo entries belong to this arena.
+/// - ensures: index zero stays bound, index one becomes the replacement carried
+///   under the kept binder, and outer indices fall by one without variable
+///   capture.
+/// - provides: the first step of a two-entry telescope's instantiation; the
+///   second is [`substitute_value_type`] at the kept binder.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a telescope transport's motive instantiated at both
+///   endpoints separates the kept binder from the substituted one.
+/// - witness: `element_identity::tests::a_dependent_motive_replays_its_substitution_law`
+#[spec(ensures: |ret| arena.value_type(subject).map_or(ret == subject, |source|
+    matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+pub(crate) fn substitute_outer_value_type<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    subject: ValueTypeId,
+    replacement: ValueId,
+) -> ValueTypeId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Substitute { replacement },
+        AnyNode::ValueType(subject),
+        BinderDepth::from(1_u32),
+    )
+    .value_type_or(subject)
+}
+
 /// Drive one rewrite to completion over an explicit task stack and an explicit
 /// results stack.
 ///
@@ -1290,7 +1332,7 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 #[spec(captures: before = tasks.len(),
     ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
     AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::PathProduct(..) | Value::StaticApplication(..) => 2, _ => 1 }),
-    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, _ => 1 }),
+    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, _ => 1 }),
     AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } => 3, ValueType::PathUniverse(..) | ValueType::StaticPi { .. } => 2, _ => 1 }),
     AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, _ => 1 }),
 }
@@ -1488,6 +1530,20 @@ fn push_rewrite_children(
                     depth.deeper(),
                     rewrite,
                 ));
+            },
+            // The motive's own arrows bind the telescope; every other child
+            // stands outside it.
+            | Some(&Computation::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
+                value,
+            }) => {
+                for id in [value, over, start, path] {
+                    tasks.push(RewriteTask::Open(AnyNode::Value(id), depth, rewrite));
+                }
+                tasks.push(RewriteTask::Open(AnyNode::CompType(motive), depth, rewrite));
             },
             // The body binds both results and their identity.
             | Some(&Computation::RelatedApplication {
@@ -2202,7 +2258,7 @@ fn rewrite_variable(
 /// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
 #[spec(
     captures: [before = results.len(), arity = arena.computation(id).map_or(0, |matched_native_node| match *matched_native_node {
-Computation::ListFold { .. } | Computation::RelatedApplication { .. } => 5,
+Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } => 5,
 Computation::PathTransport { .. } => 3,
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
@@ -2318,6 +2374,32 @@ fn close_computation(
             }
             else {
                 arena.computation_path_transport(rewritten_motive, rewritten_path, rewritten_value)
+            }
+        },
+        | Computation::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        } => {
+            let new_value = popped(results, AnyNode::Value(value)).value_or(value);
+            let new_over = popped(results, AnyNode::Value(over)).value_or(over);
+            let new_start = popped(results, AnyNode::Value(start)).value_or(start);
+            let new_path = popped(results, AnyNode::Value(path)).value_or(path);
+            let new_motive = popped(results, AnyNode::CompType(motive)).comp_type_or(motive);
+            if new_value == value
+                && new_over == over
+                && new_start == start
+                && new_path == path
+                && new_motive == motive
+            {
+                id
+            }
+            else {
+                arena.computation_telescope_transport(
+                    new_motive, new_path, new_start, new_over, new_value,
+                )
             }
         },
         | Computation::RelatedApplication {

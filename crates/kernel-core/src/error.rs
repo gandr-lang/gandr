@@ -280,6 +280,9 @@ pub enum ExpectedComputationShape
     Returner,
     /// A lazy product, for a lazy pairing or a projection.
     With,
+    /// A dependent arrow whose codomain is a dependent arrow into a returner,
+    /// for a telescope transport's motive.
+    Telescope,
 }
 
 /// A checking-only form that appeared where a type had to be synthesized.
@@ -1037,6 +1040,10 @@ mod tests
             KernelError::Identity(IdentityError::EndpointsUnreplayed {
                 left: ContentDigest::default(),
                 right: ContentDigest::default(),
+            }),
+            KernelError::Identity(IdentityError::NotOver {
+                expected: unit,
+                actual: unit,
             }),
         ];
         let descriptions = cases.each_ref().map(ToString::to_string);

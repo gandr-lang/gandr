@@ -1527,6 +1527,39 @@ impl<'run> Walk<'run>
                     },
                 },
                 | (
+                    Elimination::TelescopeTransport {
+                        motive: left_motive,
+                        start: left_start,
+                        over: left_over,
+                        value: left_value,
+                    },
+                    Elimination::TelescopeTransport {
+                        motive: right_motive,
+                        start: right_start,
+                        over: right_over,
+                        value: right_value,
+                    },
+                ) => match crate::identity::motives(self.domain, left_motive, right_motive)
+                    .map_err(ConversionFault::Domain)?
+                {
+                    | crate::identity::Motives::Alike(bindings) => {
+                        let flexible = Context::Flexible(Deferral::Binder);
+                        queued.extend(
+                            bindings
+                                .into_iter()
+                                .map(|(one, other)| Goal::Values(one, other, flexible)),
+                        );
+                        queued.extend([
+                            Goal::Values(left_start, right_start, beneath),
+                            Goal::Values(left_over, right_over, beneath),
+                            Goal::Values(left_value, right_value, beneath),
+                        ]);
+                    },
+                    | crate::identity::Motives::Unlike => {
+                        return Ok(Local::Defer(Deferral::Binder));
+                    },
+                },
+                | (
                     Elimination::Transport(left_argument),
                     Elimination::Transport(right_argument),
                 )
@@ -1584,6 +1617,7 @@ impl<'run> Walk<'run>
                     | Elimination::Projection(_)
                     | Elimination::ProductTransport(_)
                     | Elimination::PathTransport { .. }
+                    | Elimination::TelescopeTransport { .. }
                     | Elimination::Apply(_)
                     | Elimination::Force
                     | Elimination::Bind(_)

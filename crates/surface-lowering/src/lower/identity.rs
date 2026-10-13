@@ -1,9 +1,10 @@
 //! Element identity in the lowering: the path type `Path(A, a, b)`, its
 //! reflexivity `here(a)`, function extensionality `funext(f, g)`, universe
-//! equivalence `equiv(f, g)`, transport `transport(\X. T, p, v)`, and `back`,
-//! `then` and `cong`, each unfolded to the transport it derives; and the native
-//! list's constructors `nil` and `cons(h, t)`, the recursive motive transport
-//! first moves along a universe path.
+//! equivalence `equiv(f, g)`, transport `transport(\X. T, p, v)` and its
+//! dependent form `transport(M, p, z₀, q, v)`, and `back`, `then` and `cong`,
+//! each unfolded to the transport it derives; and the native list's
+//! constructors `nil` and `cons(h, t)`, the recursive motive transport first
+//! moves along a universe path.
 //!
 //! # Endpoints are values, and a computation is the value it returns
 //!
@@ -68,6 +69,31 @@
 //! elaborates a derived operation against its expected type makes the
 //! written answer optional.
 //!
+//! # A dependent `transport` reads its motive as a thunked telescope
+//!
+//! Five operands, `transport(+U ((y : A) -> (z : B) -> -F C), p, z₀, q, v)`,
+//! spell the transport whose motive depends on the path's endpoint `y` and on
+//! an element `z` of the family over it (`gandr_core_term::identity`):
+//! `p : Path(A, a, b)`, `z₀ : B[a]`, `q` an identity over `p` from `z₀`
+//! transported along it to some `z₁ : B[b]`, and `v : C[a, z₀]`; it returns
+//! `C[b, z₁]`. The motive is read as a value type, the thunk of the
+//! computation type `Π (y : A). Π (z : B). -F C` that the telescope alias
+//! `(y : A, z : B) => C` abbreviates, and the transport takes the computation
+//! type under the thunk. The alias itself cannot stand as an argument, where
+//! the grammar reads `(` as a tuple or an annotation, so the motive is written
+//! in the spelling the alias stands for. An entry written as a plain arrow,
+//! `+U (A -> B -> -F C)`, is made dependent, its codomain moved under the
+//! binder it then stands under. Any other motive is minted as written, a value
+//! type other than a thunk as the returner over it, and the checker refuses
+//! its shape by name. The alternative, a binder form of its own for motives,
+//! would duplicate the telescope the dependent arrow already reads; the one
+//! binder transport's static abstraction, `\X. T`, binds a type, not a point
+//! and an element. Reversal: a type-level lambda in argument position would
+//! write the motive as the family it is. `J` is not a primitive: it is this
+//! transport in the singleton,
+//! `transport(+U ((y : A) -> (q : Path(A, a, y)) -> -F C), p, here(a),
+//! here(p), d)`, written as an ordinary definition.
+//!
 //! # Reflexivity is not a pattern
 //!
 //! A path is used by transport and by nothing else. `here` written as a
@@ -75,11 +101,13 @@
 //! are fixed against it is axiom K, which univalence refutes; it is refused
 //! as [`LoweringRefusal::WithoutK`]. Reversal: none in this vocabulary — `J`
 //! is derived as transport in the singleton, which is what a match on `here`
-//! with a free endpoint would mean.
+//! with a free endpoint would mean, and is written with `transport`.
 
 use anodized::spec;
 use gandr_core_term::Binders;
 use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueType;
 use gandr_kernel_strata::Level;
@@ -143,14 +171,16 @@ quenchant_shape::reason_enum! {
 /// An identity operation a call's head spells.
 ///
 /// # Specification
-/// - ensures: reflexivity, function and universe extensionality, transport, the
-///   two derived operations, and the native list cell, spelled as calls.
+/// - ensures: reflexivity, function and universe extensionality, transport in a
+///   one-binder motive or a telescope, the two derived operations, and the
+///   native list cell, spelled as calls.
 /// - executable: none — a tag holds no head to check its spelling against.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each spelling lowers to its own former.
 /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
 /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
+/// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) enum Operation
 {
@@ -185,6 +215,7 @@ pub(super) enum Operation
 /// - hypothesis: L3 — every row is spelled by a witness.
 /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
 /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
+/// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
 const SPELLED: [(&str, Operation); 7] = [
     (HERE, Operation::Here),
     ("funext", Operation::Funext),
@@ -251,6 +282,33 @@ pub(super) struct Derived
     /// The path type the position answers.
     answer: Answer,
     /// The frame the operation stands under.
+    frame: Frame,
+}
+
+/// A dependent transport's written operands and the frame it stands under.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: each operand is the syntax node it was written as.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each operand reaches its own slot of the transport.
+/// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Transported
+{
+    /// The motive, written as a telescope.
+    motive: NodeIndex,
+    /// The path transported along.
+    path: NodeIndex,
+    /// The family element at the path's source.
+    start: NodeIndex,
+    /// The identity over the path.
+    over: NodeIndex,
+    /// The value transported.
+    value: NodeIndex,
+    /// The frame the transport stands under.
     frame: Frame,
 }
 
@@ -387,14 +445,17 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: `here(a)` stands as a value reading its point as a value at
     ///   an endpoint; `funext(f, g)`, `equiv(f, g)` and `cons(h, t)` stand as
     ///   values reading both operands as values; `transport(\X. T, p, v)`
-    ///   stands as a computation reading its motive, path and value as values;
-    ///   `back(p)` and `cong(f, p)` stand as computations derived as
-    ///   [`Self::derive`] does. Every operand is read under the site's frame.
+    ///   stands as a computation reading its motive, path and value as values,
+    ///   and `transport(M, p, z₀, q, v)` as a computation reading its motive as
+    ///   a value type and the other four as values; `back(p)` and `cong(f, p)`
+    ///   stand as computations derived as [`Self::derive`] does. Every operand
+    ///   is read under the site's frame.
     /// - fails: the wrong-sort refusal where the operation's sort is not read;
     ///   the arity refusal for other than one argument to `here` or `back`, two
-    ///   to `funext`, `equiv`, `cons` or `cong`, and three to `transport`; the
-    ///   unannotated refusal for a transport whose motive is no static
-    ///   abstraction; [`Self::derive`]'s refusal; the argument list's fault.
+    ///   to `funext`, `equiv`, `cons` or `cong`, and three or five to
+    ///   `transport`; the unannotated refusal for a three-operand transport
+    ///   whose motive is no static abstraction; [`Self::derive`]'s refusal; the
+    ///   argument list's fault.
     /// - panics: none.
     ///
     /// # Errors
@@ -407,6 +468,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::funext_lowers_to_its_former`
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
+    /// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| {
@@ -417,7 +479,7 @@ impl<'source> Lowerer<'_, 'source>
                         | (Operation::Funext, Some(&Plan::Funext(..)))
                         | (Operation::Equiv, Some(&Plan::Equiv(..)))
                         | (Operation::Cons, Some(&Plan::ListCons(..)))
-                        | (Operation::Transport, Some(&Plan::Transport(..)))
+                        | (Operation::Transport, Some(&(Plan::Transport(..) | Plan::TelescopeTransport(_))))
                         | (Operation::Back | Operation::Cong, Some(&Plan::Derived(_))) => true,
                         | _ => false,
                     })
@@ -443,6 +505,10 @@ impl<'source> Lowerer<'_, 'source>
         let first = self.operands.get(start).copied();
         let second = self.operands.get(start.saturating_add(1_usize)).copied();
         let third = self.operands.get(start.saturating_add(2_usize)).copied();
+        let written = self
+            .operands
+            .get(start ..)
+            .and_then(|written| <[NodeIndex; 5]>::try_from(written).ok());
         self.operands.truncate(start);
         read?;
         match (operation, count, first, second, third) {
@@ -476,6 +542,27 @@ impl<'source> Lowerer<'_, 'source>
                 }
                 self.plan(site, Plan::Transport(motive, path, value));
                 Ok(())
+            },
+            | (Operation::Transport, 5_usize, ..) => match written {
+                | Some([motive, path, departure, over, value]) => {
+                    self.read(motive, Reading::ValueType(frame));
+                    for operand in [path, departure, over, value] {
+                        self.read(operand, Reading::Value(frame));
+                    }
+                    self.plan(
+                        site,
+                        Plan::TelescopeTransport(Transported {
+                            motive,
+                            path,
+                            start: departure,
+                            over,
+                            value,
+                            frame,
+                        }),
+                    );
+                    Ok(())
+                },
+                | None => Err(site.out(FragmentBoundary::Arity(OperandCount::from(count)))),
             },
             | (Operation::Back, 1_usize, Some(path), ..) => {
                 self.derive(site, frame, Derivation::Back { path })
@@ -828,4 +915,129 @@ impl<'source> Lowerer<'_, 'source>
 
         Maybe::Present(Lowered::Computation(root))
     }
+
+    /// Mint the dependent transport `transported`.
+    ///
+    /// # Specification
+    /// - requires: the operands are already minted or absent.
+    /// - ensures: the transport over the motive's computation type, its two
+    ///   entries made dependent by [`telescope`] and relocated to the
+    ///   transport's frame, and the four values in order. The transport carries
+    ///   the written origin and every other node minted for it the inserted
+    ///   identity origin. Nothing when an operand did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a motive whose body ignores its element and one that
+    ///   names both entries, each read back out of the arena.
+    /// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin)
+                && matches!(sink.arena.computation(id), Some(&gandr_core_term::Computation::TelescopeTransport { .. })),
+            | Maybe::Present(_) => false,
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    pub(super) fn mint_telescope_transport(
+        &self,
+        transported: Transported,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let motive = match self.value_type_at(transported.motive) {
+            | Maybe::Present(motive) => motive,
+            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let (path, start, over, value) = match (
+            self.value_at(transported.path),
+            self.value_at(transported.start),
+            self.value_at(transported.over),
+            self.value_at(transported.value),
+        ) {
+            | (
+                Maybe::Present(path),
+                Maybe::Present(start),
+                Maybe::Present(over),
+                Maybe::Present(value),
+            ) => (path, start, over, value),
+            | (Maybe::Absent(reason), ..)
+            | (_, Maybe::Absent(reason), ..)
+            | (_, _, Maybe::Absent(reason), _)
+            | (.., Maybe::Absent(reason)) => return Maybe::Absent(reason),
+        };
+        let mark = sink.arena.watermark();
+        let written = match sink.arena.value_type(motive) {
+            | Some(&ValueType::Thunk(computation)) => computation,
+            | _ => sink.arena.comp_type_returner(motive),
+        };
+        let dependent = telescope(sink.arena, written);
+        let carried = self.relocate(sink.arena, dependent, transported.frame, Binders::NONE);
+        let root = sink
+            .arena
+            .computation_telescope_transport(carried, path, start, over, value);
+        record_since(
+            sink,
+            mark,
+            origin.inserted(Insertion::Identity),
+            Maybe::Present((root, origin)),
+        );
+
+        Maybe::Present(Lowered::Computation(root))
+    }
+}
+
+/// `written`, a motive's computation type, with both entries of a two-entry
+/// telescope dependent.
+///
+/// # Specification
+/// - requires: `written` names a computation type of `arena`.
+/// - ensures: for `A ⋆ (B ⋆ C)`, each `⋆` an arrow or a dependent arrow, the
+///   two-entry telescope `Π (y : A). Π (z : B). C` with every arrow's codomain
+///   shifted under the binder it now stands under; `written` itself when both
+///   entries are already dependent or it is no two-entry telescope.
+/// - provides: the one reading of the telescope alias as a dependent
+///   transport's motive.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a motive whose body ignores its element and one that
+///   names both entries.
+/// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
+#[spec(ensures: |ret| ret == written || matches!(arena.comp_type(ret), Some(&CompType::Pi { .. })))]
+fn telescope(
+    arena: &mut CoreArena,
+    written: CompTypeId,
+) -> CompTypeId
+{
+    let (outer, rest, outer_arrow) = match arena.comp_type(written) {
+        | Some(&CompType::Pi { domain, codomain }) => (domain, codomain, false),
+        | Some(&CompType::Arrow { domain, codomain }) => (domain, codomain, true),
+        | _ => return written,
+    };
+    let rest = if outer_arrow {
+        gandr_core_term::shift_comp_type(arena, rest, Binders::ONE)
+    }
+    else {
+        rest
+    };
+    let (inner, body, inner_arrow) = match arena.comp_type(rest) {
+        | Some(&CompType::Pi { domain, codomain }) => (domain, codomain, false),
+        | Some(&CompType::Arrow { domain, codomain }) => (domain, codomain, true),
+        | _ => return written,
+    };
+    if !outer_arrow && !inner_arrow {
+        return written;
+    }
+    let body = if inner_arrow {
+        gandr_core_term::shift_comp_type(arena, body, Binders::ONE)
+    }
+    else {
+        body
+    };
+    let entry = arena.comp_type_pi(inner, body);
+    arena.comp_type_pi(outer, entry)
 }

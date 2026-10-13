@@ -59,7 +59,8 @@
 //! | `0x32` | Dependent transport, motive (value type under one binder), path and input children | Admitted |
 //! | `0x33` | Guarded higher field, inline depth and layers, one evidence child per guard | Admitted |
 //! | `0x34` | Returned endpoint, one computation child | Admitted |
-//! | `0x35–0x37` | Unassigned element-identity growth | Refused |
+//! | `0x35` | Telescope transport, motive (the dependent arrow over a two-entry telescope), path, source point, path over it and input children | Admitted |
+//! | `0x36–0x37` | Unassigned element-identity growth | Refused |
 //! | `0x38` | Higher evaluation, inline dialogues and three value children per component | Admitted |
 //! | `0x39` | Related-inputs application, path, two arguments, evidence and a body under three binders | Admitted |
 //! | `0x3A` | Reserved: quantified higher evaluation | Refused |
@@ -152,19 +153,23 @@
 //! | `0x32` | [`NODE_C_PATH_TRANSPORT`] | computation | the motive, a value type under one value binder; the path; the input value | none |
 //! | `0x33` | [`NODE_V_HIGHER`] | value | one evidence value per guard layer, in layer order | depth, root, layer count, layers |
 //! | `0x34` | [`NODE_V_RETURNED`] | value | the pure computation whose returned value the node stands for | none |
+//! | `0x35` | [`NODE_C_TELESCOPE_TRANSPORT`] | computation | the motive, a computation type `Π (y : A). Π (z : B). F C`; the path; the second entry's source point; the path over the first; the input value | none |
 //! | `0x38` | [`NODE_V_HIGHER_EVALUATION`] | value | per component: left returned value, right returned value, output evidence | component count, then per component the left and the right dialogue |
 //! | `0x39` | [`NODE_C_RELATED_APPLICATION`] | computation | the function path; left and right arguments; argument evidence; the body under three value binders | none |
 //!
 //! The two structural invariants the reader names rather than reporting as
 //! a bare polarity fault are an endpoint child of [`NODE_VT_PATH`] that is
-//! not a value, and a motive child of [`NODE_C_PATH_TRANSPORT`] that is not a
-//! value type: the motive is a type-level function, a value type scoped under
-//! the endpoint binder. A higher-field layer is [`HIGHER_GUARD`] followed by
-//! its tail position, or [`HIGHER_REDIRECT`] followed by its target position;
-//! positions, depth and counts are unsigned varints, and dialogues use the
-//! decision alphabet of [`NODE_V_PATH_EQUIV`]'s evidence. The child of
-//! [`NODE_V_RETURNED`] is a computation-family node, so a value or type
-//! child is refused as a polarity fault.
+//! not a value, and a motive child of either transport that is not of its
+//! family: the motive of [`NODE_C_PATH_TRANSPORT`] is a type-level function,
+//! a value type scoped under the endpoint binder, and the motive of
+//! [`NODE_C_TELESCOPE_TRANSPORT`] is a computation type, the dependent arrow
+//! whose binders are the telescope. A higher-field layer is
+//! [`HIGHER_GUARD`] followed by its tail position, or [`HIGHER_REDIRECT`]
+//! followed by its target position; positions, depth and counts are unsigned
+//! varints, and dialogues use the decision alphabet of
+//! [`NODE_V_PATH_EQUIV`]'s evidence. The child of [`NODE_V_RETURNED`] is a
+//! computation-family node, so a value or type child is refused as a
+//! polarity fault.
 //!
 //! [`NODE_V_QUANTIFIED_EVALUATION`] and [`NODE_V_DEPENDENT_EVALUATION`] name
 //! the next two function-identity introductions — a component whose body
@@ -554,6 +559,17 @@ pub const HIGHER_REDIRECT: WireTag = WireTag(1);
 /// producer computed.
 pub const NODE_V_RETURNED: WireTag = WireTag(0x34);
 
+/// Node tag: transport over a two-entry telescope, over the motive, the path,
+/// the second entry's source point, the path over the first, and the input
+/// value.
+///
+/// A byte apart from [`NODE_C_PATH_TRANSPORT`] rather than a flag on it: the
+/// motive here is a computation type, the dependent arrow `Π (y : A). Π (z :
+/// B). F C` whose two binders are the telescope, and two more value children
+/// carry the path's second coordinate, so a reader that predates the byte
+/// refuses it whole instead of misreading a shorter node.
+pub const NODE_C_TELESCOPE_TRANSPORT: WireTag = WireTag(0x35);
+
 /// Node tag: higher evaluation, the introduction of identity at a thunk code,
 /// with inline replay dialogues over three values per coverage component.
 ///
@@ -805,7 +821,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -857,7 +873,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -957,7 +973,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 59] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 60] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -1004,6 +1020,7 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 59] = [
     unbounded(NODE_C_PATH_TRANSPORT, ChildArity::Fixed(3)),
     unbounded(NODE_V_HIGHER, ChildArity::Counted(0)),
     unbounded(NODE_V_RETURNED, ChildArity::Fixed(1)),
+    unbounded(NODE_C_TELESCOPE_TRANSPORT, ChildArity::Fixed(5)),
     unbounded(NODE_V_HIGHER_EVALUATION, ChildArity::Counted(0)),
     unbounded(NODE_C_RELATED_APPLICATION, ChildArity::Fixed(5)),
     unbounded(NODE_VT_LIST, ChildArity::Fixed(1)),
@@ -1109,6 +1126,7 @@ mod tests
                         Some(&crate::Computation::Case { .. }) => row.tag == super::NODE_C_CASE,
                         Some(&crate::Computation::Transport(_, _)) => row.tag == super::NODE_C_TRANSPORT,
                         Some(&crate::Computation::PathTransport { .. }) => row.tag == super::NODE_C_PATH_TRANSPORT,
+                        Some(&crate::Computation::TelescopeTransport { .. }) => row.tag == super::NODE_C_TELESCOPE_TRANSPORT,
                         Some(&crate::Computation::RelatedApplication { .. }) => row.tag == super::NODE_C_RELATED_APPLICATION,
                         Some(&crate::Computation::ListFold { .. }) => row.tag == super::NODE_C_LIST_FOLD,
                         Some(&crate::Computation::With(_, _)) => row.tag == super::NODE_C_WITH,
@@ -1207,6 +1225,9 @@ mod tests
             alloc::boxed::Box::from([unit]),
         );
         let returned = arena.value_returned(ret);
+        let telescope = arena.comp_type_pi(unit_type, pi);
+        let telescope_transport =
+            arena.computation_telescope_transport(telescope, here, unit, returned, literal);
         let evaluation = arena.value_higher_evaluation(
             alloc::sync::Arc::from([crate::EvaluationDialogues::default()]),
             alloc::boxed::Box::from([crate::EvaluationComponent {
@@ -1286,6 +1307,7 @@ mod tests
             AnyNode::Computation(element_transport),
             AnyNode::Value(higher),
             AnyNode::Value(returned),
+            AnyNode::Computation(telescope_transport),
             AnyNode::Value(evaluation),
             AnyNode::Computation(related),
             AnyNode::ValueType(arena.value_type_list(unit_type)),
@@ -1393,13 +1415,13 @@ mod tests
                 !reserved.contains(&tag),
                 "an assigned former cannot consume a reserved sharing byte"
             );
-            let identity = matches!(tag, 0x30 ..= 0x34 | 0x38 | 0x39);
+            let identity = matches!(tag, 0x30 ..= 0x35 | 0x38 | 0x39);
             assert!(
                 identity || !(0x30_u8 .. 0x50).contains(&tag),
                 "only the assigned identity bytes leave the identity, funext and flow ranges"
             );
         }
-        for unassigned in (0x35_u8 ..= 0x37).chain(0x3A ..= 0x47).chain(0x48 ..= 0x4F) {
+        for unassigned in (0x36_u8 ..= 0x37).chain(0x3A ..= 0x47).chain(0x48 ..= 0x4F) {
             assert!(
                 !assigned[usize::from(unassigned)],
                 "the unassigned identity growth and the flow reservation name no former: {unassigned:#04x}"
@@ -1438,7 +1460,7 @@ mod tests
         let expected: Vec<_> = (0_u8 ..= 0x1f)
             .filter(|tag| !matches!(tag, 0x01 | 0x0B))
             .chain(0x2a ..= 0x2e)
-            .chain([0x30, 0x31, 0x32, 0x33, 0x34, 0x38, 0x39])
+            .chain([0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x38, 0x39])
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
             .chain(0x5d ..= 0x67)
             .collect();

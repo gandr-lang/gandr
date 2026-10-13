@@ -206,6 +206,7 @@ pub use crate::tags::NODE_C_PROJECT;
 pub use crate::tags::NODE_C_RECORD_PROJECTION;
 pub use crate::tags::NODE_C_RELATED_APPLICATION;
 pub use crate::tags::NODE_C_RETURN;
+pub use crate::tags::NODE_C_TELESCOPE_TRANSPORT;
 pub use crate::tags::NODE_C_TRANSPORT;
 pub use crate::tags::NODE_C_TUPLE_PROJECTION;
 pub use crate::tags::NODE_C_WITH;

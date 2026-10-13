@@ -165,6 +165,15 @@ pub enum FrameRole
     ElementTransportPath,
     /// A transport waits on its motive's formation.
     ElementTransportMotive,
+    /// A telescope transport waits on its path's type.
+    TelescopePath,
+    /// A telescope transport waits on its motive's formation.
+    TelescopeMotive,
+    /// A telescope transport's start is being checked against the family's
+    /// fibre over the source.
+    TelescopeStart,
+    /// A telescope transport waits on its identity over the path's type.
+    TelescopeOver,
     /// A case waits on its scrutinee's type.
     CaseScrutinee,
     /// A split waits on its scrutinee's type.
@@ -284,6 +293,10 @@ impl fmt::Display for FrameRole
             | Self::ReturnedEndpoint => "ReturnedEndpoint",
             | Self::ElementTransportPath => "ElementTransportPath",
             | Self::ElementTransportMotive => "ElementTransportMotive",
+            | Self::TelescopePath => "TelescopePath",
+            | Self::TelescopeMotive => "TelescopeMotive",
+            | Self::TelescopeStart => "TelescopeStart",
+            | Self::TelescopeOver => "TelescopeOver",
             | Self::CaseScrutinee => "CaseScrutinee",
             | Self::SplitScrutinee => "SplitScrutinee",
             | Self::SplitBody => "SplitBody",
@@ -672,6 +685,10 @@ mod tests
             FrameRole::ReturnedEndpoint,
             FrameRole::ElementTransportPath,
             FrameRole::ElementTransportMotive,
+            FrameRole::TelescopePath,
+            FrameRole::TelescopeMotive,
+            FrameRole::TelescopeStart,
+            FrameRole::TelescopeOver,
             FrameRole::CaseScrutinee,
             FrameRole::SplitScrutinee,
             FrameRole::SplitBody,

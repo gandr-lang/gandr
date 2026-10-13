@@ -633,6 +633,9 @@ enum Task
     /// Assemble element-path transport beneath a neutral path, from its
     /// motive and operand.
     PathTransport,
+    /// Assemble a telescope transport beneath a neutral path, from its motive,
+    /// start, identity over the path and operand.
+    TelescopeTransport,
     /// Assemble reflexivity over the value term on the stack.
     Here,
     /// Assemble a compound endpoint over the computation term on the stack.
@@ -2024,6 +2027,12 @@ fn run(
             && machine.comps.len() == entry_comps.saturating_add(1)
             && machine.comps.last().is_some_and(|&id| core.computation(id).is_some())
             && machine.comp_types.len() == entry_comp_types,
+        | Task::TelescopeTransport => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(4) == Some(machine.values.len())
+            && entry_comp_types.checked_sub(1) == Some(machine.comp_types.len())
+            && machine.comps.len() == entry_comps.saturating_add(1)
+            && machine.comps.last().is_some_and(|&id| core.computation(id).is_some())
+            && machine.value_types.len() == entry_value_types,
         | Task::Returned => machine.tasks.len() == entry_tasks
             && machine.values.len() == entry_values.saturating_add(1)
             && entry_comps.checked_sub(1) == Some(machine.comps.len())
@@ -2349,6 +2358,17 @@ fn step(
             machine
                 .comps
                 .push(core.computation_path_transport(motive, path, value));
+            Ok(())
+        },
+        | Task::TelescopeTransport => {
+            let value = machine.pop_value()?;
+            let over = machine.pop_value()?;
+            let start = machine.pop_value()?;
+            let path = machine.pop_value()?;
+            let motive = machine.pop_comp_type()?;
+            machine
+                .comps
+                .push(core.computation_telescope_transport(motive, path, start, over, value));
             Ok(())
         },
         | Task::Here => {
@@ -3634,6 +3654,7 @@ fn step_neutral(
                         | Elimination::Transport(_)
                         | Elimination::ProductTransport(_)
                         | Elimination::PathTransport { .. }
+                        | Elimination::TelescopeTransport { .. }
                         | Elimination::Apply(_)
                         | Elimination::Force
                         | Elimination::Bind(_)
@@ -4020,6 +4041,38 @@ fn step_spine(
                 quoted: family,
                 frame,
                 binders: deeper,
+            });
+            Ok(())
+        },
+        // The motive's arrows bind the telescope, so it is read back at the
+        // spine's own depth.
+        | Elimination::TelescopeTransport {
+            motive,
+            start,
+            over,
+            value,
+        } => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            let held = domain
+                .value_closure(motive)
+                .ok_or(ReadbackFault::Domain(DomainFault::Dangling))?;
+            let crate::ValueBody::CompType(telescope) = held.body()
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let frame = machine.hold_frame(held.environment().clone());
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::TelescopeTransport);
+            for operand in [value, over, start] {
+                machine.tasks.push(Task::Value {
+                    value: operand,
+                    binders,
+                });
+            }
+            machine.tasks.push(Task::QuotedCompType {
+                quoted: telescope,
+                frame,
+                binders,
             });
             Ok(())
         },

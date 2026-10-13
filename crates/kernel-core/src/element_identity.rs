@@ -105,10 +105,9 @@
 //! value binder. Transport's input checks at the motive instantiated at the
 //! source endpoint and its result is a returner of the motive at the target;
 //! instantiation is the rewrite machine's capture-avoiding substitution, so the
-//! substitution law holds of every motive. `J` is transport in the singleton
-//! family `x ↦ Path(A, a, x)`, so it needs no former of its own; its
-//! computation on `here` is the first row below and its unit law the last. The
-//! replay reduces:
+//! substitution law holds of every motive. Its last row below is the
+//! singleton's computation, transport in `x ↦ Path(A, a, x)` carrying
+//! `here(a)` to the path. The replay reduces:
 //!
 //! | path or motive                      | reduct                                     |
 //! | ----------------------------------- | ------------------------------------------ |
@@ -135,6 +134,33 @@
 //!   need a second universe walk for every reduction.
 //! - reversal: a trace decision that compares neutral transports would let the
 //!   replay certify them instead of refusing.
+//!
+//! **A dependent motive is a telescope over the path and an identity over
+//! it.** The telescope transport `tr₂(M, p, z₀, q, v)` takes the motive
+//! `Π (y : A). Π (z : B). F C`, read by [`telescope`] or refused as a
+//! computation-shape mismatch naming the telescope. `z₀` checks at `B[a]`; `q`
+//! must synthesize `Path(B[b], ⟨tr(y. B, p, z₀)⟩, z₁)` — the identity over the
+//! path from the start transported along it — or is refused as
+//! [`IdentityError::NotOver`]; `v` checks at `C[a, z₀]` and the result returns
+//! `C[b, z₁]`. Both instances are [`telescope_instance`]'s iterated single
+//! substitution, outer binder first, so the substitution law is the one-binder
+//! law twice and is replayed, never assumed. The replay reduces:
+//!
+//! | path and identity over it        | reduct                                       |
+//! | -------------------------------- | -------------------------------------------- |
+//! | both `here(_)`                   | `return v`                                   |
+//! | the path `here(c)`               | `tr(z. C[c, z], q, v)`, the one-binder rows  |
+//!
+//! Anything else stays neutral. `J` is this transport in the singleton,
+//! `tr₂(Π y. Π q : Path(A, a, y). F C, p, here(a), here(p), d)`: the identity
+//! over the path checks because the singleton row carries `here(a)` to `p`,
+//! and on `here(a)` it computes by the first row, so it needs no former of
+//! its own.
+//!
+//! - alternatives: a motive under two binders of the one-binder node, which
+//!   would change what a persisted node means; a primitive `J`.
+//! - reversal: Σ as kernel syntax makes this the one-binder transport over the
+//!   Σ of its two entries.
 //!
 //! **Higher fields replay to a finite depth.** `Higher` is a guarded program
 //! whose layers expose evidence or redirect. Its check walks the program from
@@ -169,6 +195,8 @@ use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AnyNode;
+use gandr_kernel_term::CompType;
+use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::EvaluationComponent;
@@ -181,6 +209,7 @@ use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
+use quenchant_shape::shape::Maybe;
 
 use crate::conv::Convertibility;
 use crate::conv::equal_values;
@@ -221,6 +250,7 @@ use crate::rewrite::RewriteSupport;
 use crate::rewrite::shift_value;
 use crate::rewrite::shift_value_type;
 use crate::rewrite::substitute_computation;
+use crate::rewrite::substitute_outer_value_type;
 use crate::rewrite::substitute_value;
 use crate::rewrite::substitute_value_type;
 use crate::support::LooseDepths;
@@ -299,6 +329,16 @@ pub enum IdentityError
     OpenFunctions,
     /// A returned endpoint's computation synthesizes no returner.
     ReturnedNonReturner(CompTypeWitness),
+    /// A telescope transport's second identity does not lie over its first:
+    /// it does not synthesize the identity, in the family's fibre at the
+    /// path's target, from the start transported along the path.
+    NotOver
+    {
+        /// The identity over the path the transport owes.
+        expected: ValueTypeWitness,
+        /// The identity the second component synthesizes.
+        actual: ValueTypeWitness,
+    },
 }
 
 impl fmt::Display for IdentityError
@@ -354,6 +394,7 @@ impl fmt::Display for IdentityError
             | Self::ReturnedNonReturner(_) => {
                 f.write_str("a returned endpoint over a non-returner")
             },
+            | Self::NotOver { .. } => f.write_str("an identity that does not lie over its path"),
         }
     }
 }
@@ -1099,6 +1140,197 @@ where
             )))
         },
         | _ => Ok(Reduction::Stuck),
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a computation type reads as no telescope motive.
+    mod telescope_motive {
+        /// The computation type is no telescope motive.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The type is not a dependent arrow whose codomain is a
+            /// dependent arrow into a returner.
+            Shape,
+        }
+    }
+}
+
+/// A telescope transport's motive, read as its three layers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Telescope
+{
+    /// The path's carrier, in the transport's context.
+    pub carrier: ValueTypeId,
+    /// The family over the carrier, under one value binder for its point.
+    pub family: ValueTypeId,
+    /// The returned type, under the point's binder and then the family
+    /// element's.
+    pub body: ValueTypeId,
+}
+
+/// Read a telescope transport's motive `Π (y : A). Π (z : B). F C`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the three layers of a motive of exactly that shape.
+/// - provides: [`telescope_motive::Absent::Shape`] for any other computation
+///   type: the checker refuses it, and the replay leaves its transport stuck.
+/// - fails: `ArenaFault` on an unreadable layer.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a two-arrow motive reads as its layers, and a one-arrow
+///   motive is refused by its shape.
+/// - witness: `element_identity::tests::a_dependent_motive_replays_its_substitution_law`
+/// - witness: `element_identity::tests::a_one_entry_telescope_motive_is_refused_by_its_shape`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |reading| match *reading {
+    Maybe::Present(Telescope { carrier, family, body }) => [carrier, family, body].iter().all(|&layer| arena.value_type(layer).is_some()),
+    Maybe::Absent(_) => true,
+}))]
+pub(crate) fn telescope(
+    arena: &TermArena,
+    motive: CompTypeId,
+) -> Result<Maybe<Telescope, telescope_motive::Absent>, KernelError>
+{
+    let (carrier, inner) = match arena.comp_type(motive) {
+        | Some(&CompType::Pi { domain, codomain }) => (domain, codomain),
+        | Some(_) => return Ok(Maybe::Absent(telescope_motive::Absent::Shape)),
+        | None => return Err(KernelError::ArenaFault),
+    };
+    let (family, innermost) = match arena.comp_type(inner) {
+        | Some(&CompType::Pi { domain, codomain }) => (domain, codomain),
+        | Some(_) => return Ok(Maybe::Absent(telescope_motive::Absent::Shape)),
+        | None => return Err(KernelError::ArenaFault),
+    };
+    let body = match arena.comp_type(innermost) {
+        | Some(&CompType::Returner(body)) => body,
+        | Some(_) => return Ok(Maybe::Absent(telescope_motive::Absent::Shape)),
+        | None => return Err(KernelError::ArenaFault),
+    };
+    if [carrier, family, body]
+        .iter()
+        .any(|&layer| arena.value_type(layer).is_none())
+    {
+        return Err(KernelError::ArenaFault);
+    }
+    Ok(Maybe::Present(Telescope {
+        carrier,
+        family,
+        body,
+    }))
+}
+
+/// A telescope's returned type instantiated at a point and an element of the
+/// family's fibre over it: `C[point, element]`.
+///
+/// # Specification
+/// - requires: `body` stands under two binders more than `point` and `element`,
+///   which share one context.
+/// - ensures: the point substituted at the outer binder, then the element at
+///   the kept inner one.
+/// - provides: the telescope's substitution law as iterated single
+///   substitution, shared by the check and its witnesses.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a body mentioning both binders instantiates each at its
+///   own endpoint.
+/// - witness: `element_identity::tests::a_dependent_motive_replays_its_substitution_law`
+#[spec(ensures: |ret| arena.value_type(body).is_none() || arena.value_type(ret).is_some())]
+pub(crate) fn telescope_instance<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    body: ValueTypeId,
+    (point, element): (ValueId, ValueId),
+) -> ValueTypeId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let fibre = substitute_outer_value_type(arena, table, memo, body, point);
+    substitute_value_type(arena, table, memo, fibre, element)
+}
+
+/// A telescope transport as the replay reads it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TelescopeStep
+{
+    /// The motive `Π (y : A). Π (z : B). F C`.
+    pub motive: CompTypeId,
+    /// The identity in the carrier.
+    pub path: ValueId,
+    /// The family element at the path's source.
+    pub start: ValueId,
+    /// The identity over the path, in the fibre at its target.
+    pub over: ValueId,
+    /// The value at the source.
+    pub value: ValueId,
+}
+
+/// One telescope transport step, by the first row of the module table that
+/// applies.
+///
+/// # Specification
+/// - requires: nothing; an ill-typed term reduces or sticks without panicking.
+/// - ensures: the value when both identities are `here`; when only the path is
+///   `here(c)`, the one-binder transport along the over identity in the fibre
+///   family `z. C[c, z]`; otherwise `Stuck`, as for a motive that is no
+///   telescope.
+/// - provides: the replay's telescope transport computation.
+/// - fails: `ArenaFault` on an unreadable motive layer, path or over identity.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `here` along both identities returns the value; `here`
+///   along the path transports in the fibre; a neutral path sticks.
+/// - witness: `element_identity::tests::telescope_transport_along_here_reduces`
+/// - witness: `element_identity::tests::j_derived_in_the_singleton_checks_and_computes`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |reduction| match *reduction {
+    Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
+    Reduction::Stuck => true,
+}))]
+pub(crate) fn telescope_beta<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    term: TelescopeStep,
+) -> Result<Reduction, KernelError>
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let TelescopeStep {
+        motive,
+        path,
+        over,
+        value,
+        ..
+    } = term;
+    let body = match telescope(arena, motive)? {
+        | Maybe::Present(Telescope { body, .. }) => body,
+        | Maybe::Absent(telescope_motive::Absent::Shape) => return Ok(Reduction::Stuck),
+    };
+    let point = match arena.value(path) {
+        | Some(&Value::Here(point)) => point,
+        | Some(_) => return Ok(Reduction::Stuck),
+        | None => return Err(KernelError::ArenaFault),
+    };
+    match arena.value(over) {
+        | Some(&Value::Here(_)) => Ok(Reduction::Reduced(arena.computation_return(value))),
+        | Some(_) => {
+            let fibre = substitute_outer_value_type(arena, table, memo, body, point);
+            Ok(Reduction::Reduced(
+                arena.computation_path_transport(fibre, over, value),
+            ))
+        },
+        | None => Err(KernelError::ArenaFault),
     }
 }
 

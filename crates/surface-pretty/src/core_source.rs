@@ -451,6 +451,7 @@ impl Source for CoreSource<'_>
                 | Some(
                     &(Computation::Transport(..)
                     | Computation::PathTransport { .. }
+                    | Computation::TelescopeTransport { .. }
                     | Computation::Primitive { .. }
                     | Computation::DataCase { .. }
                     | Computation::RecordProjection(..)

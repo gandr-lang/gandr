@@ -1142,6 +1142,30 @@ fn converge(
                         stack.push(ConversionGoal::Value(one_value, other_value));
                     },
                     | (
+                        &Computation::TelescopeTransport {
+                            motive: one_motive,
+                            path: one_path,
+                            start: one_start,
+                            over: one_over,
+                            value: one_value,
+                        },
+                        &Computation::TelescopeTransport {
+                            motive: other_motive,
+                            path: other_path,
+                            start: other_start,
+                            over: other_over,
+                            value: other_value,
+                        },
+                    ) => {
+                        stack.extend([
+                            ConversionGoal::CompType(one_motive, other_motive),
+                            ConversionGoal::Value(one_path, other_path),
+                            ConversionGoal::Value(one_start, other_start),
+                            ConversionGoal::Value(one_over, other_over),
+                            ConversionGoal::Value(one_value, other_value),
+                        ]);
+                    },
+                    | (
                         &Computation::RelatedApplication {
                             path: one_path,
                             left: one_left,
@@ -1230,6 +1254,7 @@ fn converge(
                         | &Computation::TupleProjection(..)
                         | &Computation::Transport(..)
                         | &Computation::PathTransport { .. }
+                        | &Computation::TelescopeTransport { .. }
                         | &Computation::RelatedApplication { .. }
                         | &Computation::Lambda(_)
                         | &Computation::Fixpoint { .. }

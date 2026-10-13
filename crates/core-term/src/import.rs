@@ -237,6 +237,19 @@ impl Image
                 ref mut path,
                 ref mut value,
             }) => [Some(VT(motive)), Some(V(path)), Some(V(value)), None, None],
+            | Self::Computation(Computation::TelescopeTransport {
+                ref mut motive,
+                ref mut path,
+                ref mut start,
+                ref mut over,
+                ref mut value,
+            }) => [
+                Some(CT(motive)),
+                Some(V(path)),
+                Some(V(start)),
+                Some(V(over)),
+                Some(V(value)),
+            ],
             | Self::ValueType(ValueType::Path {
                 ref mut carrier,
                 ref mut left,

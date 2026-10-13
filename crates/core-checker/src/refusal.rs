@@ -124,6 +124,9 @@ pub enum ExpectedShape
     List,
     /// A static Pi: what a static lambda is checked against.
     StaticPi,
+    /// A telescope transport's motive `Π (y : A). Π (z : B). F C`: what the
+    /// motive of a transport along a path and an identity over it must be.
+    Telescope,
 }
 
 /// A checking-only form, met where a type had to be synthesised.
@@ -453,6 +456,18 @@ pub enum CheckRefusal
         /// The `equiv`.
         at: ValueId,
     },
+    /// A telescope transport's second identity does not lie over its path: it
+    /// does not synthesise the identity, in the family's fibre at the path's
+    /// target, from the start transported along the path.
+    NotOver
+    {
+        /// The identity over the path.
+        at: ValueId,
+        /// The type it synthesised.
+        synthesised: ValueTypeId,
+        /// The identity over the path the transport owes.
+        expected: ValueTypeId,
+    },
     /// A synthesising term in checking position synthesised a type the expected
     /// type does not convert to.
     TypeMismatch(Mismatch),
@@ -698,7 +713,7 @@ impl CheckRefusal
         | Self::SealSiteRepeated(_)
         | Self::MachineInvariant
         | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
-        | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. }
+        | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. }
         | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
@@ -726,6 +741,7 @@ impl CheckRefusal
             | Self::CompoundEndpoint { .. }
             | Self::PointwiseDistinct { .. }
             | Self::RoundTripDistinct { .. }
+            | Self::NotOver { .. }
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
@@ -800,7 +816,8 @@ impl CheckRefusal
         | Self::TypeMismatch(Mismatch::Value { synthesised, expected, .. })
         | Self::SortMismatch { synthesised, expected, .. }
         | Self::LevelMismatch { synthesised, expected, .. }
-        | Self::FamilyArgumentClassifier { synthesised, expected, .. } =>
+        | Self::FamilyArgumentClassifier { synthesised, expected, .. }
+        | Self::NotOver { synthesised, expected, .. } =>
             ret == Compared { expected: Maybe::Present(TypeNode::Value(expected)), found: Maybe::Present(TypeNode::Value(synthesised)) },
         | Self::TypeMismatch(Mismatch::Computation { synthesised, expected, .. }) =>
             ret == Compared { expected: Maybe::Present(TypeNode::Computation(expected)), found: Maybe::Present(TypeNode::Computation(synthesised)) },
@@ -833,6 +850,11 @@ impl CheckRefusal
                 ..
             }
             | Self::FamilyArgumentClassifier {
+                synthesised,
+                expected,
+                ..
+            }
+            | Self::NotOver {
                 synthesised,
                 expected,
                 ..

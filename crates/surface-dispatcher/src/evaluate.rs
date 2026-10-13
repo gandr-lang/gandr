@@ -1129,7 +1129,7 @@ impl<'source> Program<'source>
             None => ret.0 == "<dangling>",
         },
         Some(&Computation::Primitive { .. } |
-&(Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Application(..) |
+&(Computation::Transport(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Application(..) |
 Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) |
 Computation::ListFold { .. } | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. }
 | Computation::Hole(_) | Computation::Mark { .. } | Computation::Fixpoint { .. })) |
@@ -1150,6 +1150,7 @@ None => ret.0 == "<computation>",
                 &Computation::Primitive { .. }
                 | &(Computation::Transport(..)
                 | Computation::PathTransport { .. }
+                | Computation::TelescopeTransport { .. }
                 | Computation::Application(..)
                 | Computation::Perform { .. }
                 | Computation::Handle { .. }
@@ -1510,6 +1511,15 @@ fn references(
                     | Computation::PathTransport { path, value, .. }),
                 ) => {
                     pending.extend([Node::Value(path), Node::Value(value)]);
+                },
+                | Some(&Computation::TelescopeTransport {
+                    path,
+                    start,
+                    over,
+                    value,
+                    ..
+                }) => {
+                    pending.extend([path, start, over, value].map(Node::Value));
                 },
                 | Some(&Computation::Lambda(inner)) => pending.push(Node::Computation(inner)),
                 | Some(&Computation::Application(head, argument)) => {

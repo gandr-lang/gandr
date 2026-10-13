@@ -2046,6 +2046,56 @@ enum Frame
         /// The path image.
         path: gandr_kernel_term::ValueId,
     },
+    /// Await the motive of a telescope transport.
+    TelescopeMotive
+    {
+        /// The transport.
+        at: ComputationId,
+    },
+    /// Await the path of a telescope transport.
+    TelescopePath
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The motive image.
+        motive: gandr_kernel_term::CompTypeId,
+    },
+    /// Await the start of a telescope transport.
+    TelescopeStart
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The motive image.
+        motive: gandr_kernel_term::CompTypeId,
+        /// The path image.
+        path: gandr_kernel_term::ValueId,
+    },
+    /// Await the identity over the path of a telescope transport.
+    TelescopeOver
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The motive image.
+        motive: gandr_kernel_term::CompTypeId,
+        /// The path image.
+        path: gandr_kernel_term::ValueId,
+        /// The start image.
+        start: gandr_kernel_term::ValueId,
+    },
+    /// Await the operand of a telescope transport.
+    TelescopeValue
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The motive image.
+        motive: gandr_kernel_term::CompTypeId,
+        /// The path image.
+        path: gandr_kernel_term::ValueId,
+        /// The start image.
+        start: gandr_kernel_term::ValueId,
+        /// The image of the identity over the path.
+        over: gandr_kernel_term::ValueId,
+    },
     /// Await a sum injection payload.
     Injection
     {
@@ -3700,6 +3750,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     .push(Frame::PathTransportMotive { at, path, value });
                 return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(motive))));
             },
+            | Computation::TelescopeTransport { motive, .. } => {
+                self.memo().computations.insert(at, Image::Open);
+                self.frames.push(Frame::TelescopeMotive { at });
+                return Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(motive))));
+            },
             | Computation::Lambda(body) => (Frame::Lambda { at }, TermNode::Computation(body)),
             | Computation::Fixpoint { body, evidence } => (
                 Frame::Fixpoint { at, evidence },
@@ -4380,6 +4435,74 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Ok(self
                     .erased_computation(at, target.computation_path_transport(motive, path, value)))
             },
+            | (Frame::TelescopeMotive { at }, AnyNode::CompType(motive)) => {
+                let Some(&Computation::TelescopeTransport { path, .. }) =
+                    self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::TelescopePath { at, motive });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Value(path))))
+            },
+            | (Frame::TelescopePath { at, motive }, AnyNode::Value(path)) => {
+                let Some(&Computation::TelescopeTransport { start, .. }) =
+                    self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::TelescopeStart { at, motive, path });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Value(start))))
+            },
+            | (Frame::TelescopeStart { at, motive, path }, AnyNode::Value(start)) => {
+                let Some(&Computation::TelescopeTransport { over, .. }) =
+                    self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::TelescopeOver {
+                    at,
+                    motive,
+                    path,
+                    start,
+                });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Value(over))))
+            },
+            | (
+                Frame::TelescopeOver {
+                    at,
+                    motive,
+                    path,
+                    start,
+                },
+                AnyNode::Value(over),
+            ) => {
+                let Some(&Computation::TelescopeTransport { value, .. }) =
+                    self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::TelescopeValue {
+                    at,
+                    motive,
+                    path,
+                    start,
+                    over,
+                });
+                self.argument(value)
+            },
+            | (
+                Frame::TelescopeValue {
+                    at,
+                    motive,
+                    path,
+                    start,
+                    over,
+                },
+                AnyNode::Value(value),
+            ) => Ok(self.erased_computation(
+                at,
+                target.computation_telescope_transport(motive, path, start, over, value),
+            )),
             | (Frame::Thunk { at }, AnyNode::Computation(body)) => {
                 Ok(self.erased_value(at, target.value_thunk(body)))
             },
@@ -4538,6 +4661,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::WithTypeFirst { .. }
                 | Frame::WithTypeSecond { .. }
                 | Frame::PiCodomain { .. }
+                | Frame::TelescopeMotive { .. }
                 | Frame::Decoded {
                     at: TypeNode::Computation(_),
                 },
@@ -4558,6 +4682,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::TransportValue { .. }
                 | Frame::PathTransportPath { .. }
                 | Frame::PathTransportValue { .. }
+                | Frame::TelescopePath { .. }
+                | Frame::TelescopeStart { .. }
+                | Frame::TelescopeOver { .. }
+                | Frame::TelescopeValue { .. }
                 | Frame::Injection { .. }
                 | Frame::ListHead { .. }
                 | Frame::ListTail { .. }

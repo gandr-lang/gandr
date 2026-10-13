@@ -219,6 +219,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         | CheckRefusal::EquivUnsupported { .. } => "translators outside the rule's fragment",
         | CheckRefusal::UncertifiedStratum { .. } => "a recursive type",
         | CheckRefusal::RoundTripDistinct { .. } => "translators that are not inverse",
+        | CheckRefusal::NotOver { .. } => "an identity not over the path",
         | CheckRefusal::TypeMismatch(Mismatch::Value { .. } | Mismatch::Computation { .. }) => {
             "its type does not convert"
         },

@@ -674,6 +674,18 @@ fn worst(
                     pending.push((AnyNode::Value(path), reach));
                     pending.push((AnyNode::Value(value), reach));
                 },
+                | Some(&Computation::TelescopeTransport {
+                    motive,
+                    path,
+                    start,
+                    over,
+                    value,
+                }) => {
+                    pending.push((AnyNode::CompType(motive), term(reach)));
+                    pending.extend(
+                        [path, start, over, value].map(|child| (AnyNode::Value(child), reach)),
+                    );
+                },
                 | Some(&Computation::Hole(_)) | None => {},
             },
         }

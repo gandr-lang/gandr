@@ -235,6 +235,7 @@ use alloc::collections::btree_map::Entry;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::CompType;
 use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
@@ -773,6 +774,9 @@ enum Task
     /// Transport the operand above the element path on the value stack in a
     /// motive.
     PathTransport(crate::arena::ValueClosureId),
+    /// Transport the operand above the identity over the path, the start and
+    /// the path on the value stack, along a two-entry telescope in a motive.
+    TelescopeTransport(crate::arena::ValueClosureId),
     /// Return the tuple of this many component transports, the computations
     /// on top of the computation stack in component order.
     TransportTuple(gandr_core_term::ComponentCount),
@@ -2236,7 +2240,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(
-        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
+        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::TelescopeTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32 && {
                 let mut tasks = ret.machine.tasks.iter().rev();
@@ -2251,6 +2255,9 @@ impl<'run> Evaluation<'run>
                         matches!(tasks.next(), Some(Task::ProductTransport(held)) if *held == path) },
                     Elimination::PathTransport { motive, value } => { answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::PathTransport(held)) if *held == motive) },
+                    Elimination::TelescopeTransport { motive, start, over, value } => { answer = Answer::Computation;
+                        matches!(tasks.next(), Some(Task::Supply(held)) if *held == start) && matches!(tasks.next(), Some(Task::Supply(held)) if *held == over)
+                        && matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::TelescopeTransport(held)) if *held == motive) },
                     Elimination::StaticApply(argument) => matches!(tasks.next(), Some(Task::Supply(value)) if *value == argument)
                         && matches!(tasks.next(), Some(Task::StaticApply)),
                     Elimination::Apply(argument) => {
@@ -2582,7 +2589,7 @@ fn run(
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
             | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) | Task::ListFold { .. }
-            | Task::PathTransport(_) | Task::TransportTuple(_) | Task::TransportInjection(_) | Task::TransportCons => machine.tasks.len() >= entry_tasks,
+            | Task::PathTransport(_) | Task::TelescopeTransport(_) | Task::TransportTuple(_) | Task::TransportInjection(_) | Task::TransportCons => machine.tasks.len() >= entry_tasks,
             Task::Here { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && machine.values.len() == entry_values
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)),
@@ -2774,6 +2781,9 @@ fn step(
             step_transport(core, domain, machine)
         },
         | Task::PathTransport(motive) => step_path_transport(core, domain, machine, motive),
+        | Task::TelescopeTransport(motive) => {
+            step_telescope_transport(core, domain, machine, motive)
+        },
         | Task::TransportTuple(count) => {
             let start = machine
                 .comps
@@ -3391,6 +3401,21 @@ fn step_comp(
             machine.tasks.push(Task::PathTransport(motive));
             machine.tasks.push(Task::Value { term: value, env });
             machine.tasks.push(Task::Value { term: path, env });
+            Ok(())
+        },
+        | Computation::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        } => {
+            let captured = machine.capture(env)?;
+            let motive = domain.value_closure_node(crate::ValueBody::CompType(motive), captured);
+            machine.tasks.push(Task::TelescopeTransport(motive));
+            for term in [value, over, start, path] {
+                machine.tasks.push(Task::Value { term, env });
+            }
             Ok(())
         },
         | Computation::Lambda(body) => {
@@ -4347,13 +4372,16 @@ fn step_transport(
 ///   the payload in its summand's motive and returns it injected; a list motive
 ///   returns `nil` unchanged and a cell as the cell of its head transported in
 ///   the element's motive and its tail in the list's; the decode of the
-///   motive's own binder hands a universe path to native transport; any other
+///   motive's own binder hands a universe path to native transport; the
+///   singleton `y. Path(D, l, y)`, its carrier and left endpoint closed over
+///   the binder, read against reflexivity returns the path itself; any other
 ///   configuration over a stuck path stacks the transport on the path's spine.
-/// - provides: transport's computation rules — identity on `here`, and through
-///   the motive's constructors — and its stuck form.
+/// - provides: transport's computation rules — identity on `here`, through the
+///   motive's constructors, and the singleton's — and its stuck form.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing operand or a motive
 ///   closure holding no type; [`EvalFault::TransportedNonPath`] for a path that
-///   is neither reflexivity nor stuck; domain faults for dangling nodes.
+///   is neither reflexivity nor stuck; domain faults for dangling nodes;
+///   [`EvalFault::DanglingTerm`] for a family naming no core node.
 /// - panics: none.
 ///
 /// # Errors
@@ -4361,12 +4389,15 @@ fn step_transport(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — reflexivity, a stuck path in a product motive over a
-///   tuple, a stuck path in a sum motive over an injection, and a stuck path in
-///   a base motive each reach their own arm; dropping the reflexivity rule,
-///   reordering components or losing the summand changes the read-back term.
+///   tuple, a stuck path in a sum motive over an injection, a stuck path in the
+///   singleton over reflexivity, and a stuck path in a base motive each reach
+///   their own arm; dropping the reflexivity rule, reordering components,
+///   losing the summand or computing a family whose left endpoint moves changes
+///   the read-back term.
 /// - witness: `identity::tests::transport_along_here_is_the_identity`
 /// - witness: `identity::tests::transport_through_a_product_is_componentwise`
 /// - witness: `identity::tests::transport_through_a_sum_keeps_the_summand`
+/// - witness: `identity::tests::transport_in_the_singleton_returns_the_path`
 /// - witness: `identity::tests::transport_along_a_stuck_path_is_stuck`
 /// - witness: `identity::tests::transport_moves_a_list_through_a_universe_path`
 #[spec(
@@ -4471,6 +4502,19 @@ fn step_path_transport(
             machine.tasks.push(Task::Supply(path));
             return Ok(());
         },
+        | (Some(&ValueType::Path { .. }), DomainValue::Here { .. }) => {
+            let read =
+                crate::identity::transport_family(core, family).map_err(|fault| match fault {
+                    | crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
+                    | crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
+                })?;
+            if read == crate::identity::TransportFamily::Singleton {
+                machine
+                    .comps
+                    .push(domain.comp_return(path, CompTermFace::Reduced));
+                return Ok(());
+            }
+        },
         | _ => {},
     }
     let DomainValue::Neutral { neutral, .. } = carried
@@ -4485,6 +4529,134 @@ fn step_path_transport(
         .comps
         .push(domain.comp_neutral(grown, CompTermFace::Reduced));
     Ok(())
+}
+
+/// Transport the operand above an identity over a path, a start and the path
+/// along a two-entry telescope, in a motive `Π (y : A). Π (z : B). F C`.
+///
+/// # Specification
+/// - requires: the path, the start, the identity over the path and the operand
+///   occupy the top of the value stack in that order; `motive` closes the
+///   motive's computation type over the environment the transport was read in.
+/// - ensures: when both identities are reflexivity the operand returns
+///   unchanged; when only the path is `here(c)` the operand transports along
+///   the identity over it in the fibre `z. C[c, z]`; over a stuck path the
+///   transport stacks on the path's spine.
+/// - provides: the telescope transport's computation rules, a subset of the
+///   kernel's, and its stuck form.
+/// - fails: [`EvalFault::MachineInvariant`] for a missing operand, or a motive
+///   closure holding no telescope where the fibre is read;
+///   [`EvalFault::TransportedNonPath`] for a path that is neither reflexivity
+///   nor stuck; domain faults for dangling nodes.
+/// - panics: none.
+///
+/// # Errors
+/// An `EvalFault`, as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `here` along both identities, `here` along the path with
+///   a stuck identity over it, and a stuck path each reach their own arm;
+///   dropping the fibre's point or the stuck form's start changes the read-back
+///   term.
+/// - witness: `identity::tests::telescope_transport_along_here_is_the_identity`
+/// - witness: `identity::tests::telescope_transport_along_here_replays_the_fibre`
+/// - witness: `identity::tests::telescope_transport_along_a_stuck_path_is_stuck`
+#[spec(
+    captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err() || (machine.values.len() == values.saturating_sub(4_usize)
+        && ((machine.comps.len() == comps.saturating_add(1_usize) && machine.tasks.len() == tasks)
+            || (machine.comps.len() == comps && machine.tasks.len() > tasks))),
+)]
+fn step_telescope_transport(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    motive: crate::arena::ValueClosureId,
+) -> Result<(), EvalFault>
+{
+    let value = machine.pop_value()?;
+    let over = machine.pop_value()?;
+    let start = machine.pop_value()?;
+    let path = machine.pop_value()?;
+    let dangling = EvalFault::Domain(DomainFault::Dangling);
+    match *domain.value(path).ok_or(dangling)? {
+        | DomainValue::Here { point, .. } => {
+            if let DomainValue::Here { .. } = *domain.value(over).ok_or(dangling)? {
+                machine
+                    .comps
+                    .push(domain.comp_return(value, CompTermFace::Reduced));
+                return Ok(());
+            }
+            let closure = domain.value_closure(motive).ok_or(dangling)?;
+            let crate::ValueBody::CompType(telescope) = closure.body()
+            else {
+                return Err(EvalFault::MachineInvariant);
+            };
+            let mut environment = closure.environment().clone();
+            let body = telescope_body(core, telescope)?;
+            environment.extend(Zone::Intuitionistic, point);
+            let fibre = domain.value_closure_node(crate::ValueBody::ValueType(body), environment);
+            machine.tasks.push(Task::PathTransport(fibre));
+            machine.tasks.push(Task::Supply(value));
+            machine.tasks.push(Task::Supply(over));
+            Ok(())
+        },
+        | DomainValue::Neutral { neutral, .. } => {
+            let grown = extend_spine(domain, neutral, Elimination::TelescopeTransport {
+                motive,
+                start,
+                over,
+                value,
+            })?;
+            machine
+                .comps
+                .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+            Ok(())
+        },
+        | _ => Err(EvalFault::TransportedNonPath),
+    }
+}
+
+/// The returned type `C` of a telescope motive `Π (y : A). Π (z : B). F C`,
+/// standing under both entries.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `C` exactly when the motive has that shape.
+/// - provides: the fibre read of [`step_telescope_transport`].
+/// - fails: [`EvalFault::MachineInvariant`] for any other shape, which the
+///   checker refuses before evaluation.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the fibre transport of a two-arrow motive reads its body.
+/// - witness: `identity::tests::telescope_transport_along_here_replays_the_fibre`
+#[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|body| core.value_type(body).is_some()))]
+fn telescope_body(
+    core: &CoreArena,
+    motive: gandr_core_term::CompTypeId,
+) -> Result<gandr_core_term::ValueTypeId, EvalFault>
+{
+    let Some(&CompType::Pi { codomain, .. }) = core.comp_type(motive)
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    let Some(&CompType::Pi {
+        codomain: innermost,
+        ..
+    }) = core.comp_type(codomain)
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    match core.comp_type(innermost) {
+        | Some(&CompType::Returner { result, .. }) if core.value_type(result).is_some() => {
+            Ok(result)
+        },
+        | _ => Err(EvalFault::MachineInvariant),
+    }
 }
 
 /// Queue the eliminations of `spine` over the value the machine produces next,
@@ -4561,6 +4733,18 @@ fn push_eliminations(
                 answer = Answer::Computation;
                 machine.tasks.push(Task::PathTransport(motive));
                 machine.tasks.push(Task::Supply(value));
+            },
+            | Elimination::TelescopeTransport {
+                motive,
+                start,
+                over,
+                value,
+            } => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::TelescopeTransport(motive));
+                for held in [value, over, start] {
+                    machine.tasks.push(Task::Supply(held));
+                }
             },
             | Elimination::StaticApply(argument) => {
                 machine.tasks.push(Task::StaticApply);

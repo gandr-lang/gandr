@@ -528,6 +528,25 @@ pub enum Computation
         /// left endpoint.
         value: ValueId,
     },
+    /// Transport over a two-entry telescope: given `p : Path(A, a, b)`, `z₀ :
+    /// B[a]`, `q : Path(B[b], ⟨tr(B, p, z₀)⟩, z₁)` and `x : C[a, z₀]`, it
+    /// returns `C[b, z₁]`. The motive is the dependent arrow `Π (y : A). Π (z
+    /// : B). F C`: the path moves the first entry and `q`, an identity over
+    /// it, the second.
+    TelescopeTransport
+    {
+        /// The motive, whose arrows bind the telescope's two entries.
+        motive: CompTypeId,
+        /// The identity in the carrier.
+        path: ValueId,
+        /// The family element at the path's source.
+        start: ValueId,
+        /// The identity over the path, in the fibre at its target.
+        over: ValueId,
+        /// The value transported, an inhabitant of the body at the source
+        /// pair.
+        value: ValueId,
+    },
     /// A lambda `λ. M`, binding one intuitionistic value variable; introduces
     /// `A → C`.
     Lambda(ComputationId),
@@ -1309,6 +1328,28 @@ fn equal_syntax(
                     ) => pending.extend([
                         VT(left_motive, right_motive),
                         V(left_path, right_path),
+                        V(left_value, right_value),
+                    ]),
+                    | (
+                        &Computation::TelescopeTransport {
+                            motive: left_motive,
+                            path: left_path,
+                            start: left_start,
+                            over: left_over,
+                            value: left_value,
+                        },
+                        &Computation::TelescopeTransport {
+                            motive: right_motive,
+                            path: right_path,
+                            start: right_start,
+                            over: right_over,
+                            value: right_value,
+                        },
+                    ) => pending.extend([
+                        CT(left_motive, right_motive),
+                        V(left_path, right_path),
+                        V(left_start, right_start),
+                        V(left_over, right_over),
                         V(left_value, right_value),
                     ]),
                     | (

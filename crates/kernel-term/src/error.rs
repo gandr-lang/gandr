@@ -281,6 +281,9 @@ pub enum MalformedSite
     /// A motive child of an element transport was not a value type, so it
     /// was not a type-level function of the endpoint.
     TransportMotive,
+    /// A motive child of a telescope transport was not a computation type, so
+    /// it was not the dependent arrow over the telescope.
+    TelescopeMotive,
     /// A higher-field program named a layer position it does not hold.
     HigherLayer,
     /// The magic did not match a gandr kernel export.
@@ -362,6 +365,7 @@ impl fmt::Display for MalformedSite
             | Self::PathEvidence => "a path dialogue word was invalid",
             | Self::PathEndpoint => "a path endpoint was not a value",
             | Self::TransportMotive => "a transport motive was not a value type",
+            | Self::TelescopeMotive => "a telescope transport motive was not a computation type",
             | Self::HigherLayer => "a higher-field layer position was out of range",
             | Self::Header => "the artifact magic did not match",
             | Self::Varint => "a varint was overlong or out of range",

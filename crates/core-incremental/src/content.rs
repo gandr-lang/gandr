@@ -37,9 +37,10 @@
 //!
 //! The content table preserves universe sorts and levels, quotes, static
 //! operators and native universe paths. Native path tags occupy `0x40–0x44` in
-//! this cache codec, and element identity `0x45–0x4A`: the path type, `here`,
+//! this cache codec, and element identity `0x45–0x4B`: the path type, `here`,
 //! element transport, a compound endpoint, `funext` over its two functions,
-//! and `equiv` over its two translators. None is a kernel artifact tag.
+//! `equiv` over its two translators, and the telescope transport. None is a
+//! kernel artifact tag.
 //! Candidate evidence is exact content, including ordered direction and
 //! dialogue boundaries, and never a cached admission receipt; a `funext` or an
 //! `equiv` is content by its functions alone, and the evaluations it was
@@ -437,6 +438,21 @@ pub enum ContentNode
         motive: NodeIndex,
         /// The path.
         path: NodeIndex,
+        /// The transported value.
+        value: NodeIndex,
+    },
+    /// Transport over a two-entry telescope, its motive a computation type
+    /// whose arrows bind the telescope.
+    TelescopeTransport
+    {
+        /// The motive.
+        motive: NodeIndex,
+        /// The path.
+        path: NodeIndex,
+        /// The family element at the path's source.
+        start: NodeIndex,
+        /// The identity over the path.
+        over: NodeIndex,
         /// The transported value.
         value: NodeIndex,
     },
@@ -857,6 +873,7 @@ impl ContentNode
         | Self::Project(..)
         | Self::Transport(..)
         | Self::ElementTransport { .. }
+        | Self::TelescopeTransport { .. }
         | Self::Primitive(..)
         | Self::Lambda(_)
         | Self::Application(..)
@@ -940,6 +957,7 @@ impl ContentNode
             | Self::Project(..)
             | Self::Transport(..)
             | Self::ElementTransport { .. }
+            | Self::TelescopeTransport { .. }
             | Self::Primitive(..)
             | Self::Lambda(_)
             | Self::Application(..)
@@ -1038,6 +1056,7 @@ impl ContentNode
             | Self::PathEquiv { path_type, forward, backward, .. } => actual == Some(&[(path_type, A), (forward, V), (backward, V)][..]),
             | Self::PathType { carrier, left, right } => actual == Some(&[(carrier, A), (left, V), (right, V)][..]),
             | Self::ElementTransport { motive, path, value } => actual == Some(&[(motive, A), (path, V), (value, V)][..]),
+            | Self::TelescopeTransport { motive, path, start, over, value } => actual == Some(&[(motive, C), (path, V), (start, V), (over, V), (value, V)][..]),
             | Self::Returned(a) => actual == Some(&[(a, M)][..]),
             | Self::PathRefl(a)
             | Self::Here(a)
@@ -1156,6 +1175,13 @@ impl ContentNode
                 path,
                 value,
             } => Children::of(&[(motive, A), (path, V), (value, V)]),
+            | Self::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
+                value,
+            } => Children::of(&[(motive, C), (path, V), (start, V), (over, V), (value, V)]),
             | Self::PrimitiveValue(_)
             | Self::Variable { .. }
             | Self::Constant(_)
@@ -1290,6 +1316,7 @@ impl ContentNode
             | Self::Returned(_)
             | Self::PathType { .. }
             | Self::ElementTransport { .. }
+            | Self::TelescopeTransport { .. }
             | Self::PathProduct(..)
             | Self::Funext(..)
             | Self::Equiv(..)
@@ -2505,6 +2532,19 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 path: self.discover(ArenaNode::Value(path)),
                 value: self.discover(ArenaNode::Value(value)),
             },
+            | Computation::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
+                value,
+            } => ContentNode::TelescopeTransport {
+                motive: self.discover(ArenaNode::CompType(motive)),
+                path: self.discover(ArenaNode::Value(path)),
+                start: self.discover(ArenaNode::Value(start)),
+                over: self.discover(ArenaNode::Value(over)),
+                value: self.discover(ArenaNode::Value(value)),
+            },
             | Computation::Lambda(body) => {
                 ContentNode::Lambda(self.discover(ArenaNode::Computation(body)))
             },
@@ -2951,6 +2991,19 @@ where
         } => ContentNode::ElementTransport {
             motive: image(motive),
             path: image(path),
+            value: image(value),
+        },
+        | ContentNode::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        } => ContentNode::TelescopeTransport {
+            motive: image(motive),
+            path: image(path),
+            start: image(start),
+            over: image(over),
             value: image(value),
         },
         | ContentNode::PathProduct(first, second) => {
@@ -3509,6 +3562,7 @@ fn mint_node(
         | ContentNode::Here(_)
         | ContentNode::Returned(_)
         | ContentNode::ElementTransport { .. }
+        | ContentNode::TelescopeTransport { .. }
         | ContentNode::Constructor { .. }
         | ContentNode::Record(_)
         | ContentNode::DataCase { .. }

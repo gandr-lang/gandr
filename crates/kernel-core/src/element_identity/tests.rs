@@ -39,9 +39,11 @@ use gandr_kernel_term::ValueTypeId;
 use super::ElementTransport;
 use super::IdentityError;
 use super::RelatedStep;
+use super::TelescopeStep;
 use super::evaluation_obligations;
 use super::higher_codata;
 use super::related_beta;
+use super::telescope_beta;
 use super::transport_beta;
 use crate::check::check_closed_value;
 use crate::check::synth_closed_value;
@@ -52,6 +54,7 @@ use crate::encoding::content_digest;
 use crate::env::CheckedId;
 use crate::env::Environment;
 use crate::env::StagedDeclaration;
+use crate::error::ExpectedComputationShape;
 use crate::error::ExpectedValueShape;
 use crate::error::KernelError;
 use crate::error::NonInferableForm;
@@ -1808,6 +1811,250 @@ fn a_returned_endpoint_replays_as_its_computation()
     );
     assert_ne!(
         computes(&mut arena, forced, on_false),
+        KernelVerdict::Convertible
+    );
+}
+
+/// A suspended function of dependent type: `body` under one lambda per
+/// domain, typed by the Pi chain over `domains`, the first outermost, each
+/// domain standing under the binders before it, returning `result`.
+///
+/// # Specification
+/// trivial.
+fn function(
+    arena: &mut TermArena,
+    domains: &[ValueTypeId],
+    result: ValueTypeId,
+    body: ComputationId,
+) -> (ValueId, ValueTypeId)
+{
+    let mut ty = arena.comp_type_returner(result);
+    let mut term = body;
+    for &domain in domains.iter().rev() {
+        ty = arena.comp_type_pi(domain, ty);
+        term = arena.computation_lambda(term);
+    }
+    (arena.value_thunk(term), arena.value_type_thunk(ty))
+}
+
+#[test]
+fn a_dependent_motive_replays_its_substitution_law()
+{
+    // λa b : Bool. λp : Path(Bool, a, b). λz₀ z₁ : Bool.
+    // λq : Path(Bool, z₀, z₁). λv : Path(Bool, a, z₀).
+    //   transport((y : Bool, z : Bool) => Path(Bool, y, z), p, z₀, q, v)
+    //   : F Path(Bool, b, z₁)
+    // The path's endpoints instantiate the outer entry and the identity
+    // over it the inner one, each by one substitution.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let var = |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+    let between = |arena: &mut TermArena, left: u32, right: u32| {
+        let left = var(arena, left);
+        let right = var(arena, right);
+        arena.value_type_path(boolean.ty, left, right)
+    };
+    let pointed = between(&mut arena, 1, 0);
+    let returns = arena.comp_type_returner(pointed);
+    let inner = arena.comp_type_pi(boolean.ty, returns);
+    let motive = arena.comp_type_pi(boolean.ty, inner);
+    let [path, start, over, value] = [4, 3, 1, 0].map(|index| var(&mut arena, index));
+    let transport = arena.computation_telescope_transport(motive, path, start, over, value);
+    let carrier = between(&mut arena, 1, 0);
+    let fibre = between(&mut arena, 1, 0);
+    let input = between(&mut arena, 5, 2);
+    let domains = [
+        boolean.ty, boolean.ty, carrier, boolean.ty, boolean.ty, fibre, input,
+    ];
+
+    let target = between(&mut arena, 5, 2);
+    let (term, declared) = function(&mut arena, &domains, target, transport);
+    check_closed_value(&mut arena, term, declared).expect("the body at the target pair");
+
+    // Neither the source pair nor the entries exchanged is the result type.
+    for (left, right) in [(6, 3), (2, 5)] {
+        let wrong = between(&mut arena, left, right);
+        let (term, declared) = function(&mut arena, &domains, wrong, transport);
+        assert!(matches!(
+            check_closed_value(&mut arena, term, declared),
+            Err(KernelError::ComputationTypeMismatch(_))
+        ));
+    }
+}
+
+#[test]
+fn a_one_entry_telescope_motive_is_refused_by_its_shape()
+{
+    // A motive with one entry is a one-binder transport's, not a telescope.
+    // λp : Path(Bool, T, T). transport(y : Bool => Bool, p, T, p, T)
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let returns = arena.comp_type_returner(boolean.ty);
+    let motive = arena.comp_type_pi(boolean.ty, returns);
+    let path = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let transport =
+        arena.computation_telescope_transport(motive, path, boolean.truth, path, boolean.truth);
+    let reflexive = arena.value_type_path(boolean.ty, boolean.truth, boolean.truth);
+    let (term, declared) = function(&mut arena, &[reflexive], boolean.ty, transport);
+    assert!(matches!(
+        check_closed_value(&mut arena, term, declared),
+        Err(KernelError::ComputationShapeMismatch {
+            expected: ExpectedComputationShape::Telescope,
+            ..
+        })
+    ));
+    let mut table = ContentTable::new();
+    let mut memo = gandr_kernel_check_memo::NullMemo;
+    let here = arena.value_here(boolean.truth);
+    assert_eq!(
+        telescope_beta(&mut arena, &mut table, &mut memo, TelescopeStep {
+            motive,
+            path: here,
+            start: boolean.truth,
+            over: here,
+            value: boolean.truth,
+        }),
+        Ok(Reduction::Stuck)
+    );
+}
+
+#[test]
+fn telescope_transport_along_here_reduces()
+{
+    // In `(y : Bool, z : Bool) => Path(Bool, y, z)`: `here` along both
+    // identities returns the value; `here` along the path alone transports
+    // in the fibre `z. Path(Bool, T, z)`; a neutral path sticks.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let outer = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let inner = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let pointed = arena.value_type_path(boolean.ty, outer, inner);
+    let returns = arena.comp_type_returner(pointed);
+    let entry = arena.comp_type_pi(boolean.ty, returns);
+    let motive = arena.comp_type_pi(boolean.ty, entry);
+    let here = arena.value_here(boolean.truth);
+    let step = |arena: &mut TermArena, path: ValueId, over: ValueId| {
+        let mut table = ContentTable::new();
+        let mut memo = gandr_kernel_check_memo::NullMemo;
+        telescope_beta(arena, &mut table, &mut memo, TelescopeStep {
+            motive,
+            path,
+            start: boolean.truth,
+            over,
+            value: here,
+        })
+    };
+
+    let along_here = arena.computation_telescope_transport(motive, here, boolean.truth, here, here);
+    let returned = arena.computation_return(here);
+    assert_eq!(
+        computes(&mut arena, along_here, returned),
+        KernelVerdict::Convertible
+    );
+    let other = arena.value_here(boolean.falsity);
+    let returned_other = arena.computation_return(other);
+    assert_ne!(
+        computes(&mut arena, along_here, returned_other),
+        KernelVerdict::Convertible
+    );
+    let Ok(Reduction::Reduced(reduct)) = step(&mut arena, here, here)
+    else {
+        panic!("transport along here reduces");
+    };
+    assert_eq!(arena.computation(reduct), Some(&Computation::Return(here)));
+
+    let neutral = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let Ok(Reduction::Reduced(reduct)) = step(&mut arena, here, neutral)
+    else {
+        panic!("transport along a here path reduces into its fibre");
+    };
+    let Some(&Computation::PathTransport {
+        motive: fibre,
+        path,
+        value,
+    }) = arena.computation(reduct)
+    else {
+        panic!("the fibre transport is a one-binder transport");
+    };
+    let expected = arena.value_type_path(boolean.ty, boolean.truth, inner);
+    assert_eq!(
+        crate::conv::convertible_value_types(&arena, fibre, expected),
+        Convertibility::Convertible
+    );
+    assert_eq!((path, value), (neutral, here));
+
+    assert_eq!(step(&mut arena, neutral, here), Ok(Reduction::Stuck));
+}
+
+#[test]
+fn j_derived_in_the_singleton_checks_and_computes()
+{
+    // J := λx : Bool. λp : Path(Bool, T, x). λd : C[T, here(T)].
+    //   transport((y : Bool, z : Path(Bool, T, y)) => C, p, here(T), here(p), d)
+    //   : F C[x, p]
+    // where C(y, z) = Path(Path(Bool, T, y), z, z) reads both entries.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let truth = boolean.truth;
+    let var = |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+    let singleton = |arena: &mut TermArena, end: u32| {
+        let end = var(arena, end);
+        arena.value_type_path(boolean.ty, truth, end)
+    };
+    let body_at = |arena: &mut TermArena, point: u32, element: u32| {
+        let fibre = singleton(arena, point);
+        let element = var(arena, element);
+        arena.value_type_path(fibre, element, element)
+    };
+    let family = singleton(&mut arena, 0);
+    let body = body_at(&mut arena, 1, 0);
+    let returns = arena.comp_type_returner(body);
+    let entry = arena.comp_type_pi(family, returns);
+    let motive = arena.comp_type_pi(boolean.ty, entry);
+    let start = arena.value_here(truth);
+    let reflexive = arena.value_type_path(boolean.ty, truth, truth);
+    let at_source = arena.value_type_path(reflexive, start, start);
+    let carrier = singleton(&mut arena, 0);
+    let result = body_at(&mut arena, 2, 1);
+    let derived = |arena: &mut TermArena, over: ValueId| {
+        let path = var(arena, 1);
+        let held = var(arena, 0);
+        let j = arena.computation_telescope_transport(motive, path, start, over, held);
+        function(arena, &[boolean.ty, carrier, at_source], result, j)
+    };
+
+    let path = var(&mut arena, 1);
+    let over = arena.value_here(path);
+    let (term, declared) = derived(&mut arena, over);
+    check_closed_value(&mut arena, term, declared).expect("J in the singleton family");
+
+    // `d` is an identity in the fibre over the source, from `here(T)` to
+    // itself, not one over `p`: the family's dependency on the path's
+    // endpoint is refused by name.
+    let held = var(&mut arena, 0);
+    let (term, declared) = derived(&mut arena, held);
+    let error = check_closed_value(&mut arena, term, declared)
+        .expect_err("an identity over the source is not over the path");
+    assert!(matches!(
+        error,
+        KernelError::Identity(IdentityError::NotOver { .. })
+    ));
+    assert_eq!(
+        error.to_string(),
+        "an identity that does not lie over its path"
+    );
+
+    // On `here(T)` J computes to its base case.
+    let base = arena.value_here(start);
+    let at_here = arena.computation_telescope_transport(motive, start, start, base, base);
+    let returned = arena.computation_return(base);
+    assert_eq!(
+        computes(&mut arena, at_here, returned),
+        KernelVerdict::Convertible
+    );
+    let returned_start = arena.computation_return(start);
+    assert_ne!(
+        computes(&mut arena, at_here, returned_start),
         KernelVerdict::Convertible
     );
 }

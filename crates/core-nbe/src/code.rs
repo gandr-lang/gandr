@@ -924,6 +924,7 @@ _ => ret == Ok(Atom::Other(node)),
                 | Elimination::Projection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::PathTransport { .. }
+                | Elimination::TelescopeTransport { .. }
                 | Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)

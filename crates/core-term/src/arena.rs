@@ -1873,6 +1873,30 @@ impl CoreArena
         })
     }
 
+    /// Mint transport over a two-entry telescope, the motive the dependent
+    /// arrow `Π (y : A). Π (z : B). F C`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_telescope_transport(
+        &mut self,
+        motive: CompTypeId,
+        path: ValueId,
+        start: ValueId,
+        over: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        })
+    }
+
     /// Mint a typed hole in value position.
     ///
     /// # Specification

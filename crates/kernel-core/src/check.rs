@@ -102,6 +102,7 @@
 //! | `synth_comp` Bind                      | `SynthComp(bound)`           | `SynthBind`, `ScopeExit`, then `Strengthen`         |
 //! | `synth_comp` Case                      | `SynthValue(scrutinee)`      | `SynthCaseScrutinee` / `AfterLeft` / `AfterRight`, `ScopeExit`, each branch strengthened |
 //! | `synth_comp` `PathTransport`           | `SynthValue(path)`           | `ElementTransport`, then `ProduceComp` at the target |
+//! | `synth_comp` `TelescopeTransport`      | `SynthValue(path)`           | `TelescopePath`, `TelescopeStart`, `TelescopeOver`, then `ProduceComp` at the target pair |
 //! | `synth_comp` `RelatedApplication`      | `SynthValue(path)`           | `RelatedPath`, `Pending`, `RelatedBody`, three `ScopeExit` and `Strengthen` |
 //! | `synth_comp` With                      | `SynthComp(left)`            | `SynthWithLeft`, then `SynthWithRight`              |
 //! | `synth_comp` Project                   | `SynthComp(pair)`            | `Project`, the side read off the lazy product       |
@@ -1497,6 +1498,25 @@ enum Frame
     },
     /// An element transport: its path's classifier is synthesized.
     ElementTransport(ComputationId),
+    /// A telescope transport: its path's classifier is synthesized.
+    TelescopePath(ComputationId),
+    /// A telescope transport: its start checked at the family's fibre over
+    /// the path's source; synthesize the identity over the path.
+    TelescopeStart
+    {
+        /// The transport.
+        transport: ComputationId,
+        /// The path's source and target.
+        ends: (ValueId, ValueId),
+    },
+    /// A telescope transport: the identity over the path is synthesized.
+    TelescopeOver
+    {
+        /// The transport.
+        transport: ComputationId,
+        /// The path's source and target.
+        ends: (ValueId, ValueId),
+    },
     /// A related application: its function identity's classifier is
     /// synthesized.
     RelatedPath(ComputationId),
@@ -2560,6 +2580,11 @@ where
                         goal = Goal::SynthValue(path);
                         continue 'expand;
                     },
+                    | Computation::TelescopeTransport { path, .. } => {
+                        frames.push(Frame::TelescopePath(id));
+                        goal = Goal::SynthValue(path);
+                        continue 'expand;
+                    },
                     | Computation::RelatedApplication { path, .. } => {
                         frames.push(Frame::RelatedPath(id));
                         goal = Goal::SynthValue(path);
@@ -2725,6 +2750,7 @@ where
                     | Computation::TupleProjection(..)
                     | Computation::Transport(..)
                     | Computation::PathTransport { .. }
+                    | Computation::TelescopeTransport { .. }
                     | Computation::RelatedApplication { .. }
                     | Computation::ListFold { .. }
                     | Computation::Application(..)
@@ -3068,6 +3094,138 @@ where
                     let (table, rewrites) = session.rewrite_parts();
                     let source = substitute_value_type(arena, table, rewrites, motive, left);
                     let target = substitute_value_type(arena, table, rewrites, motive, right);
+                    frames.push(Frame::ProduceComp(arena.comp_type_returner(target)));
+                    goal = Goal::CheckValue(value, source);
+                    continue 'expand;
+                },
+                // A telescope transport forms its motive, reads the path's
+                // carrier as the motive's first entry, and checks the start
+                // in the family's fibre over the path's source.
+                | Frame::TelescopePath(transport) => {
+                    let path_type = produced.value_type()?;
+                    let Some(&Computation::TelescopeTransport { motive, start, .. }) =
+                        arena.computation(transport)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let Maybe::Present(crate::element_identity::Telescope {
+                        carrier, family, ..
+                    }) = crate::element_identity::telescope(arena, motive)?
+                    else {
+                        return Err(comp_shape_mismatch(
+                            arena,
+                            ExpectedComputationShape::Telescope,
+                            motive,
+                        ));
+                    };
+                    let _level = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Comp(motive),
+                        context.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )?;
+                    let (domain, left, right) =
+                        crate::element_identity::path_parts(arena, path_type)?;
+                    if let Err(mismatch) = former::assignable(arena, carrier, domain)
+                        && read_returned(
+                            arena,
+                            judgement.entries,
+                            ConversionGoal::ValueType(carrier, domain),
+                        ) != EndpointReading::Converts
+                    {
+                        return Err(mismatch);
+                    }
+                    let (table, rewrites) = session.rewrite_parts();
+                    let source_fibre = substitute_value_type(arena, table, rewrites, family, left);
+                    frames.push(Frame::TelescopeStart {
+                        transport,
+                        ends: (left, right),
+                    });
+                    goal = Goal::CheckValue(start, source_fibre);
+                    continue 'expand;
+                },
+                | Frame::TelescopeStart { transport, ends } => {
+                    let Some(&Computation::TelescopeTransport { over, .. }) =
+                        arena.computation(transport)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    frames.push(Frame::TelescopeOver { transport, ends });
+                    goal = Goal::SynthValue(over);
+                    continue 'expand;
+                },
+                // **The dependency is respected or refused by name.** The
+                // second identity lies over the path: it relates, in the
+                // fibre at the path's target, the start transported along the
+                // path to some element. The value then checks at the body
+                // instantiated at the source pair and returns at the target
+                // pair, each by iterated single substitution.
+                | Frame::TelescopeOver {
+                    transport,
+                    ends: (left, right),
+                } => {
+                    let over_type = produced.value_type()?;
+                    let Some(&Computation::TelescopeTransport {
+                        motive,
+                        path,
+                        start,
+                        value,
+                        ..
+                    }) = arena.computation(transport)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let Maybe::Present(crate::element_identity::Telescope { family, body, .. }) =
+                        crate::element_identity::telescope(arena, motive)?
+                    else {
+                        return Err(comp_shape_mismatch(
+                            arena,
+                            ExpectedComputationShape::Telescope,
+                            motive,
+                        ));
+                    };
+                    let (_fibre, _lifted, finish) =
+                        crate::element_identity::path_parts(arena, over_type)?;
+                    let (table, rewrites) = session.rewrite_parts();
+                    let target_fibre = substitute_value_type(arena, table, rewrites, family, right);
+                    let carried = arena.computation_path_transport(family, path, start);
+                    let carried = arena.value_returned(carried);
+                    let lies_over = arena.value_type_path(target_fibre, carried, finish);
+                    if former::assignable(arena, lies_over, over_type).is_err()
+                        && read_returned(
+                            arena,
+                            judgement.entries,
+                            ConversionGoal::ValueType(lies_over, over_type),
+                        ) != EndpointReading::Converts
+                    {
+                        return Err(KernelError::Identity(
+                            crate::element_identity::IdentityError::NotOver {
+                                expected: value_type_witness(arena, lies_over),
+                                actual: value_type_witness(arena, over_type),
+                            },
+                        ));
+                    }
+                    let (table, rewrites) = session.rewrite_parts();
+                    let source = crate::element_identity::telescope_instance(
+                        arena,
+                        table,
+                        rewrites,
+                        body,
+                        (left, start),
+                    );
+                    let target = crate::element_identity::telescope_instance(
+                        arena,
+                        table,
+                        rewrites,
+                        body,
+                        (right, finish),
+                    );
                     frames.push(Frame::ProduceComp(arena.comp_type_returner(target)));
                     goal = Goal::CheckValue(value, source);
                     continue 'expand;

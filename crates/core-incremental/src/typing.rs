@@ -260,6 +260,16 @@ pub enum Refusal
     /// A universe equivalence one of whose round trips does not return its
     /// input at some covering pattern.
     RoundTripDistinct(Site),
+    /// A telescope transport's second identity does not lie over its path.
+    NotOver
+    {
+        /// The identity over the path.
+        at: Site,
+        /// The type it synthesised.
+        synthesised: TypeContent,
+        /// The identity over the path the transport owes.
+        expected: TypeContent,
+    },
     /// A synthesised type did not convert to the expected one.
     TypeMismatch
     {
@@ -712,6 +722,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::EquivUnsupported { at, .. } = matched_left_value && let Refusal::EquivUnsupported { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::UncertifiedStratum { at, .. } = matched_left_value && let Refusal::UncertifiedStratum { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let (CheckRefusal::RoundTripDistinct { at }, &Refusal::RoundTripDistinct(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::NotOver { at, synthesised, expected } = matched_left_value && let Refusal::NotOver { at: projected, synthesised: ref found, expected: ref wanted } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *found == self.value_type(synthesised) && *wanted == self.value_type(expected) }
  else if let CheckRefusal::TypeMismatch(Mismatch::Value { at, .. }) = matched_left_value && let Refusal::TypeMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::SortMismatch { at, .. } = matched_left_value && let Refusal::SortMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::LevelMismatch { at, .. } = matched_left_value && let Refusal::LevelMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
@@ -914,6 +925,15 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             },
             | CheckRefusal::RoundTripDistinct { at } => {
                 Refusal::RoundTripDistinct(self.site(ArenaNode::Value(at)))
+            },
+            | CheckRefusal::NotOver {
+                at,
+                synthesised,
+                expected,
+            } => Refusal::NotOver {
+                at: self.site(ArenaNode::Value(at)),
+                synthesised: self.value_type(synthesised),
+                expected: self.value_type(expected),
             },
             | CheckRefusal::TypeMismatch(Mismatch::Value {
                 at,

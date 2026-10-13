@@ -367,6 +367,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::Binders;
+use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
@@ -390,6 +391,7 @@ use gandr_core_term::hole::matched_with;
 use gandr_core_term::hole::matching;
 use gandr_core_term::instantiate_comp_type;
 use gandr_core_term::instantiate_value_type;
+use gandr_core_term::instantiate_value_type_under;
 use gandr_core_term::shift_comp_type;
 use gandr_core_term::shift_value_type;
 use gandr_core_term::strengthen_comp_type;
@@ -420,6 +422,7 @@ use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
 use crate::refusal::CoreNode;
 use crate::refusal::ExpectedShape;
+use crate::refusal::Mismatch;
 use crate::refusal::StaticArity;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
@@ -991,6 +994,47 @@ enum PathReading
     Unknown(ValueTypeId),
 }
 
+/// A telescope transport's motive `Π (y : A). Π (z : B). F C`, read as its
+/// three layers.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct TelescopeParts
+{
+    /// The path's carrier `A`, in the transport's context.
+    carrier: ValueTypeId,
+    /// The family `B`, under the point's binder.
+    family: ValueTypeId,
+    /// The body `C`, under the point's binder and then the family element's.
+    body: ValueTypeId,
+}
+
+/// A telescope body instantiated at a point and an element of the family's
+/// fibre over it: `C[point, element]`.
+///
+/// # Specification
+/// - requires: `body` stands under two binders more than `point` and `element`,
+///   which share one context.
+/// - ensures: the point substituted at the outer binder, past the kept inner
+///   one, then the element at the inner binder.
+/// - provides: the telescope's substitution law as iterated single
+///   substitution, the kernel's reading of the same rule.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a body reading both entries instantiates each at its own
+///   endpoint.
+/// - witness: `judgement::tests::a_telescope_transport_replays_its_substitution_law`
+#[spec(ensures: |ret| ret == body || arena.value_type(ret).is_some())]
+fn telescope_instance(
+    arena: &mut gandr_core_term::CoreArena,
+    body: ValueTypeId,
+    (point, element): (ValueId, ValueId),
+) -> ValueTypeId
+{
+    let fibre = instantiate_value_type_under(arena, body, point, Binders::from(1_u32));
+    instantiate_value_type(arena, fibre, element)
+}
+
 /// The completed premise of a native List fold rule.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum ListPhase
@@ -1314,6 +1358,42 @@ enum Frame
         /// The path's right endpoint.
         right: ValueId,
     },
+    /// Await the path classifier of the telescope transport `at`; its motive
+    /// then forms.
+    TelescopePath
+    {
+        /// The transport.
+        at: ComputationId,
+    },
+    /// Await the formation of the telescope transport's motive; the path's
+    /// carrier then meets the motive's first entry and the start checks in
+    /// the family's fibre over the source.
+    TelescopeMotive
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The path's carrier.
+        carrier: ValueTypeId,
+        /// The path's source and target.
+        ends: (ValueId, ValueId),
+    },
+    /// Await the start's check; the identity over the path then synthesises.
+    TelescopeStart
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The path's source and target.
+        ends: (ValueId, ValueId),
+    },
+    /// Await the classifier of the identity over the path, which must lie
+    /// over it; the operand then checks at the body's source instance.
+    TelescopeOver
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The path's source and target.
+        ends: (ValueId, ValueId),
+    },
     /// Await the sum scrutinee classifier of the case `at`.
     CaseScrutinee
     {
@@ -1598,6 +1678,10 @@ impl Frame
             | Self::ReturnedEndpoint { .. } => FrameRole::ReturnedEndpoint,
             | Self::ElementTransportPath { .. } => FrameRole::ElementTransportPath,
             | Self::ElementTransportMotive { .. } => FrameRole::ElementTransportMotive,
+            | Self::TelescopePath { .. } => FrameRole::TelescopePath,
+            | Self::TelescopeMotive { .. } => FrameRole::TelescopeMotive,
+            | Self::TelescopeStart { .. } => FrameRole::TelescopeStart,
+            | Self::TelescopeOver { .. } => FrameRole::TelescopeOver,
             | Self::CaseScrutinee { .. } => FrameRole::CaseScrutinee,
             | Self::SplitScrutinee { .. } => FrameRole::SplitScrutinee,
             | Self::SplitBody(_) => FrameRole::SplitBody,
@@ -1688,6 +1772,10 @@ impl Frame
             | Self::ReturnedEndpoint { .. }
             | Self::ElementTransportPath { .. }
             | Self::ElementTransportMotive { .. }
+            | Self::TelescopePath { .. }
+            | Self::TelescopeMotive { .. }
+            | Self::TelescopeStart { .. }
+            | Self::TelescopeOver { .. }
             | Self::CaseScrutinee { .. }
             | Self::SplitScrutinee { .. }
             | Self::CaseBranch { .. }
@@ -3449,6 +3537,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            | Computation::TelescopeTransport { path, .. } => {
+                self.wait(Frame::TelescopePath { at: term });
+                Ok(Step::Descend(Goal::Value {
+                    term: path,
+                    direction: Direction::Synthesise,
+                }))
+            },
             | Computation::Transport(path, value) => {
                 self.wait(Frame::TransportPath { path, value });
                 Ok(Step::Descend(Goal::Value {
@@ -3609,6 +3704,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::ListFold { .. }
             | Computation::Transport(..)
             | Computation::PathTransport { .. }
+            | Computation::TelescopeTransport { .. }
             | Computation::Force(_)
             | Computation::Application(..) => {
                 self.wait(Frame::CompBridge { at: term, expected });
@@ -4939,6 +5035,127 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(source),
                 }))
             },
+            | (Frame::TelescopePath { at }, Produced::ValueType(classifier)) => {
+                let PathReading::Known {
+                    carrier,
+                    left,
+                    right,
+                } = self.path_expected(TermNode::Computation(at), classifier)?
+                else {
+                    return Err(CheckRefusal::ShapeMismatch {
+                        at: TermNode::Computation(at),
+                        wanted: ExpectedShape::Path,
+                        found: TypeNode::Value(classifier),
+                    });
+                };
+                let (motive, _) = self.telescope(at)?;
+                self.wait(Frame::TelescopeMotive {
+                    at,
+                    carrier,
+                    ends: (left, right),
+                });
+                Ok(Step::Descend(Goal::Form(TypeNode::Computation(motive))))
+            },
+            | (
+                Frame::TelescopeMotive {
+                    at,
+                    carrier,
+                    ends: (left, right),
+                },
+                Produced::Checked,
+            ) => {
+                let Computation::TelescopeTransport { path, start, .. } = *self.computation(at)?
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let (_, parts) = self.telescope(at)?;
+                value_bridge(
+                    self.context,
+                    path,
+                    carrier,
+                    parts.carrier,
+                    &mut self.conversions,
+                )?;
+                let source = instantiate_value_type(self.context.arena_mut(), parts.family, left);
+                self.wait(Frame::TelescopeStart {
+                    at,
+                    ends: (left, right),
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: start,
+                    direction: Direction::Check(source),
+                }))
+            },
+            | (Frame::TelescopeStart { at, ends }, Produced::Checked) => {
+                let Computation::TelescopeTransport { over, .. } = *self.computation(at)?
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                self.wait(Frame::TelescopeOver { at, ends });
+                Ok(Step::Descend(Goal::Value {
+                    term: over,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | (
+                Frame::TelescopeOver {
+                    at,
+                    ends: (left, right),
+                },
+                Produced::ValueType(classifier),
+            ) => {
+                let Computation::TelescopeTransport {
+                    path,
+                    start,
+                    over,
+                    value,
+                    ..
+                } = *self.computation(at)?
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let (_, parts) = self.telescope(at)?;
+                let PathReading::Known { right: finish, .. } =
+                    self.path_expected(TermNode::Value(over), classifier)?
+                else {
+                    return Err(CheckRefusal::ShapeMismatch {
+                        at: TermNode::Value(over),
+                        wanted: ExpectedShape::Path,
+                        found: TypeNode::Value(classifier),
+                    });
+                };
+                let arena = self.context.arena_mut();
+                let fibre = instantiate_value_type(arena, parts.family, right);
+                let carried = arena.computation_path_transport(parts.family, path, start);
+                let carried = arena.value_returned(carried);
+                let lies_over = arena.value_type_path(fibre, carried, finish);
+                match value_bridge(
+                    self.context,
+                    over,
+                    classifier,
+                    lies_over,
+                    &mut self.conversions,
+                ) {
+                    | Ok(()) => {},
+                    | Err(CheckRefusal::TypeMismatch(Mismatch::Value { .. })) => {
+                        return Err(CheckRefusal::NotOver {
+                            at: over,
+                            synthesised: classifier,
+                            expected: lies_over,
+                        });
+                    },
+                    | Err(refusal) => return Err(refusal),
+                }
+                let arena = self.context.arena_mut();
+                let source = telescope_instance(arena, parts.body, (left, start));
+                let target = telescope_instance(arena, parts.body, (right, finish));
+                let result = arena.comp_type_returner(target);
+                self.wait(Frame::TransportOperand { result });
+                Ok(Step::Descend(Goal::Value {
+                    term: value,
+                    direction: Direction::Check(source),
+                }))
+            },
             | (
                 Frame::CaseScrutinee {
                     at,
@@ -5267,6 +5484,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::FunextLeft { .. }
                 | Frame::EquivForward { .. }
                 | Frame::ElementTransportPath { .. }
+                | Frame::TelescopePath { .. }
+                | Frame::TelescopeOver { .. }
                 | Frame::CaseScrutinee { .. }
                 | Frame::SplitScrutinee { .. }
                 | Frame::Force { .. }
@@ -5304,6 +5523,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::FunextRight { .. }
                 | Frame::EquivBackward { .. }
                 | Frame::ElementTransportMotive { .. }
+                | Frame::TelescopeMotive { .. }
+                | Frame::TelescopeStart { .. }
                 | Frame::CaseBranch { .. }
                 | Frame::SplitBody(_)
                 | Frame::ApplicationArgument { .. }
@@ -5489,6 +5710,72 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 found: TypeNode::Value(classifier),
             }),
         }
+    }
+
+    /// Read the motive of the telescope transport `at` as its three layers.
+    ///
+    /// # Specification
+    /// - requires: nothing; a motive of another shape is refused.
+    /// - ensures: the motive and its carrier `A`, family `B` and body `C`
+    ///   exactly when it is `Π (y : A). Π (z : B). F C`.
+    /// - provides: the one reading of a telescope motive the rule's frames
+    ///   share.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting a telescope,
+    ///   for any other motive; [`CheckRefusal::MachineInvariant`] when `at` is
+    ///   no telescope transport; [`CheckRefusal::DanglingNode`] for an
+    ///   unreadable node.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-arrow motive reads as its layers and a
+    ///   one-arrow motive is refused by its shape.
+    /// - witness: `judgement::tests::a_telescope_transport_replays_its_substitution_law`
+    /// - witness: `judgement::tests::a_one_entry_telescope_motive_is_a_shape_mismatch`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::ShapeMismatch { at: site, wanted, .. }) => site == TermNode::Computation(at) && wanted == ExpectedShape::Telescope,
+        | Ok(_) | Err(_) => true,
+    })]
+    fn telescope(
+        &self,
+        at: ComputationId,
+    ) -> Result<(CompTypeId, TelescopeParts), CheckRefusal>
+    {
+        let Computation::TelescopeTransport { motive, .. } = *self.computation(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let arena = self.context.arena();
+        let shape = CheckRefusal::ShapeMismatch {
+            at: TermNode::Computation(at),
+            wanted: ExpectedShape::Telescope,
+            found: TypeNode::Computation(motive),
+        };
+        let Some(&CompType::Pi {
+            domain: carrier,
+            codomain,
+        }) = arena.comp_type(motive)
+        else {
+            return Err(shape);
+        };
+        let Some(&CompType::Pi {
+            domain: family,
+            codomain: innermost,
+        }) = arena.comp_type(codomain)
+        else {
+            return Err(shape);
+        };
+        let Some(&CompType::Returner { result: body, .. }) = arena.comp_type(innermost)
+        else {
+            return Err(shape);
+        };
+        Ok((motive, TelescopeParts {
+            carrier,
+            family,
+            body,
+        }))
     }
 
     /// Meet reflexivity's point with both endpoints of the path type it is
@@ -8690,6 +8977,178 @@ mod tests
         );
     }
 
+    /// The constants a telescope transport test reads, admitted at positions
+    /// `0..7`: `a b : Integer`, `p : Path(Integer, a, b)`, the start
+    /// `z₀ : Path(Integer, a, a)`, the finish `z₁ : Path(Integer, a, b)`, the
+    /// identity over the path `q : Path(Path(Integer, a, b), ⟨tr(y.
+    /// Path(Integer, a, y), p, z₀)⟩, z₁)`, the operand `v :
+    /// Path(Path(Integer, a, a), z₀, z₀)`; and the motive `Π (y : Integer).
+    /// Π (z : Path(Integer, a, y)). F Path(Path(Integer, a, y), z, z)`.
+    struct TelescopeScene
+    {
+        /// The constants `[a, b, p, z₀, z₁, q, v]`.
+        constants: [ValueId; 7],
+        /// Their types, in order.
+        types: [ValueTypeId; 7],
+        /// The motive.
+        motive: CompTypeId,
+        /// `F C[b, z₁]`, the type the transport returns.
+        target: CompTypeId,
+        /// `F C[a, z₀]`, the type at the source.
+        source: CompTypeId,
+    }
+
+    /// [`TelescopeScene`], minted in `arena`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn telescope_scene(arena: &mut CoreArena) -> TelescopeScene
+    {
+        let integer_type = arena.value_type_base(BaseType::Integer);
+        let constants = [0_usize, 1, 2, 3, 4, 5, 6]
+            .map(|position| arena.value_constant(ConstantIndex::from(position)));
+        let [source_point, target_point, path, start, finish, _, _] = constants;
+        let variable = |arena: &mut CoreArena, index: u32| {
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        let path_type = arena.value_type_path(integer_type, source_point, target_point);
+        let loop_type = arena.value_type_path(integer_type, source_point, source_point);
+        let endpoint = variable(arena, 0_u32);
+        let family = arena.value_type_path(integer_type, source_point, endpoint);
+        let carried = arena.computation_path_transport(family, path, start);
+        let carried = arena.value_returned(carried);
+        let over_type = arena.value_type_path(path_type, carried, finish);
+        let operand_type = arena.value_type_path(loop_type, start, start);
+        let endpoint = variable(arena, 1_u32);
+        let element = variable(arena, 0_u32);
+        let fibre = arena.value_type_path(integer_type, source_point, endpoint);
+        let body = arena.value_type_path(fibre, element, element);
+        let returned = arena.comp_type_returner(body);
+        let entry = arena.comp_type_pi(family, returned);
+        let motive = arena.comp_type_pi(integer_type, entry);
+        let target_type = arena.value_type_path(path_type, finish, finish);
+        let target = arena.comp_type_returner(target_type);
+        let source = arena.comp_type_returner(operand_type);
+        TelescopeScene {
+            constants,
+            types: [
+                integer_type,
+                integer_type,
+                path_type,
+                loop_type,
+                path_type,
+                over_type,
+                operand_type,
+            ],
+            motive,
+            target,
+            source,
+        }
+    }
+
+    #[test]
+    fn a_telescope_transport_replays_its_substitution_law()
+    {
+        let mut arena = CoreArena::new();
+        let scene = telescope_scene(&mut arena);
+        let [_, _, p, start, _, over, operand] = scene.constants;
+        let transport =
+            arena.computation_telescope_transport(scene.motive, p, start, over, operand);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &scene.types);
+        let synthesised = synthesise_comp(&mut context, transport);
+        assert!(
+            synthesised.is_ok(),
+            "a transport over a two-entry telescope synthesises: {synthesised:?}"
+        );
+        let target = form_comp_type(&mut context, scene.target).unwrap();
+        let checked = check_comp(&mut context, transport, target);
+        assert!(
+            checked.is_ok(),
+            "the result is the motive at the path's target and the identity's finish, \
+             substituted outer binder first: {checked:?}"
+        );
+        let source = form_comp_type(&mut context, scene.source).unwrap();
+        assert!(
+            matches!(
+                check_comp(&mut context, transport, source),
+                Err(CheckRefusal::TypeMismatch(Mismatch::Computation { .. }))
+            ),
+            "the motive at the path's source is not the result"
+        );
+        let misplaced = context.arena_mut().computation_telescope_transport(
+            scene.motive,
+            p,
+            start,
+            over,
+            start,
+        );
+        assert!(
+            matches!(
+                synthesise_comp(&mut context, misplaced),
+                Err(CheckRefusal::TypeMismatch(Mismatch::Value { at, .. })) if at == start
+            ),
+            "the operand is checked at the motive over the source"
+        );
+    }
+
+    #[test]
+    fn a_one_entry_telescope_motive_is_a_shape_mismatch()
+    {
+        let mut arena = CoreArena::new();
+        let scene = telescope_scene(&mut arena);
+        let [_, _, p, start, _, over, operand] = scene.constants;
+        let [integer_type, ..] = scene.types;
+        let returns_integer = arena.comp_type_returner(integer_type);
+        let one_entry = arena.comp_type_pi(integer_type, returns_integer);
+        let transport = arena.computation_telescope_transport(one_entry, p, start, over, operand);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &scene.types);
+        assert!(
+            matches!(
+                synthesise_comp(&mut context, transport),
+                Err(CheckRefusal::ShapeMismatch {
+                    at: TermNode::Computation(at),
+                    wanted: ExpectedShape::Telescope,
+                    ..
+                }) if at == transport
+            ),
+            "a motive with one entry is refused by name"
+        );
+    }
+
+    #[test]
+    fn an_identity_not_over_the_path_is_refused()
+    {
+        let mut arena = CoreArena::new();
+        let scene = telescope_scene(&mut arena);
+        let [_, _, p, start, finish, _, operand] = scene.constants;
+        let [_, _, path_type, ..] = scene.types;
+        let stray_type = arena.value_type_path(path_type, finish, finish);
+        let stray = arena.value_constant(ConstantIndex::from(7_usize));
+        let transport =
+            arena.computation_telescope_transport(scene.motive, p, start, stray, operand);
+        let mut types = scene.types.to_vec();
+        types.push(stray_type);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &types);
+        let refused = synthesise_comp(&mut context, transport);
+        assert!(
+            matches!(
+                refused,
+                Err(CheckRefusal::NotOver { at, synthesised, .. })
+                    if at == stray && synthesised == stray_type
+            ),
+            "an identity that does not start at the transported start is refused by name: \
+             {refused:?}"
+        );
+        assert_eq!(
+            refused.map(|_| ()).map_err(|refusal| refusal.classify()),
+            Err(FailureClass::MalformedSource),
+            "an identity not over its path is the author's"
+        );
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(256))]
 
@@ -8796,7 +9255,7 @@ mod tests
                             "a synthesising computation checks exactly as it synthesises, then crosses the computation bridge"
                         );
                     },
-                    | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Bind(..) | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) => {
+                    | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Bind(..) | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) => {
                         prop_assert!(false, "the free recipe mints no bind or native eliminator");
                     },
                     | Computation::ListFold { .. } | Computation::Case { .. } | Computation::Split { .. }

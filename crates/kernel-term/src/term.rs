@@ -469,6 +469,24 @@ pub enum Computation
         /// The value at the source endpoint.
         value: ValueId,
     },
+    /// Transport over a two-entry telescope along a path in it: given the
+    /// motive `Π (y : A). Π (z : B). F C`, `path : Path(A, a, b)`, `start :
+    /// B[a]`, `over` a path from `start` carried along `path` in `B` to some
+    /// `end : B[b]`, and `value : C[a, start]`, computes `F C[b, end]`.
+    TelescopeTransport
+    {
+        /// The motive, the dependent arrow over the telescope `(y : A, z :
+        /// B)` returning the family `C`.
+        motive: CompTypeId,
+        /// The path in the telescope's first entry.
+        path: ValueId,
+        /// The second entry's source point, in `B[a]`.
+        start: ValueId,
+        /// The path over `path` in the second entry.
+        over: ValueId,
+        /// The value at the source point of the telescope.
+        value: ValueId,
+    },
     /// Application of a function identity at related inputs: evaluates both
     /// functions and continues with both results and their identity bound.
     RelatedApplication

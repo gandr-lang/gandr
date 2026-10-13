@@ -446,6 +446,44 @@ impl FreeIndices
             .ok_or(FreeFault::MachineInvariant)
     }
 
+    /// The free indices of the value type `ty` in `core`.
+    ///
+    /// # Specification
+    /// - requires: as [`FreeIndices::of`].
+    /// - ensures: on success, the indices of each zone that `ty` reads without
+    ///   binding, through the codes its decodes hold and the codomains its
+    ///   dependent arrows bind, counted from where `ty` stands; a base type
+    ///   reads none.
+    /// - provides: the reading the singleton transport tests its family's
+    ///   carrier against the family's binder with.
+    /// - fails: as [`FreeIndices::of`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`FreeIndices::of`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a carrier closed over the binder lets the singleton
+    ///   transport compute and a carrier that reads it keeps the transport
+    ///   stuck.
+    /// - witness: `identity::tests::transport_in_the_singleton_returns_the_path`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |free| !matches!(core.value_type(ty), Some(&ValueType::Base(_)))
+        || (free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty())))]
+    pub(crate) fn of_type(
+        &mut self,
+        core: &CoreArena,
+        ty: ValueTypeId,
+    ) -> Result<&Free, FreeFault>
+    {
+        let reached = Reached::ValueType(ty);
+        if !self.answered.contains_key(&reached) {
+            self.answer(core, reached)?;
+        }
+        self.answered
+            .get(&reached)
+            .ok_or(FreeFault::MachineInvariant)
+    }
+
     /// Answer `term` and everything beneath it not yet answered.
     ///
     /// # Specification
@@ -962,6 +1000,19 @@ Err(_) => false,
                         Some((value(operand), Lowering::NONE)),
                         None,
                         None,
+                    ],
+                    | Computation::TelescopeTransport {
+                        motive,
+                        path,
+                        start,
+                        over,
+                        value: operand,
+                    } => [
+                        Some((Reached::CompType(motive), Lowering::NONE)),
+                        Some((value(path), Lowering::NONE)),
+                        Some((value(start), Lowering::NONE)),
+                        Some((value(over), Lowering::NONE)),
+                        Some((value(operand), Lowering::NONE)),
                     ],
                     | Computation::Fixpoint { body, .. } => one(computation(body), Lowering::ONE),
                     | Computation::Application(head, argument) => {

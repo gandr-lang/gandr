@@ -362,7 +362,8 @@ fn add_type_rules(
     // telescope `(x : A, y : B(x)) => C`. One rule, so `(` keeps a single
     // type-sort mold; the binder's name is a type hole the `:` after it makes
     // a key, so `(a -> -F b)` still reads its `a` as a type. The lowering
-    // refuses a list, and a binder, anywhere but before `=>`.
+    // refuses a list anywhere but before `=>`, and a binder anywhere but
+    // before `=>` or, alone, before `->`, where it binds the dependent arrow.
     rules.push(rule(
         RuleName("parenthesized_type"),
         ty,

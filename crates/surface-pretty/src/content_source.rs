@@ -107,7 +107,7 @@ impl Source for ContentSource<'_>
 &ContentNode::PathType { .. } | &ContentNode::Returned(_)) | None, Former::Unreadable) |
 (Some(&ContentNode::Reify(_)), Former::Reify) |
 (Some(&ContentNode::DataCase { .. } | &ContentNode::RecordProjection(..) | &ContentNode::TupleProjection(..) |
-&ContentNode::Primitive(..) | &ContentNode::Transport(..) | &ContentNode::ElementTransport { .. } |
+&ContentNode::Primitive(..) | &ContentNode::Transport(..) | &ContentNode::ElementTransport { .. } | &ContentNode::TelescopeTransport { .. } |
 &ContentNode::Lambda(_) | &ContentNode::Application(..) |
 &ContentNode::Perform { .. } | &ContentNode::Handle { .. } | &ContentNode::Resume(..) | &ContentNode::Split(..) | &ContentNode::Reset(_) | &ContentNode::Shift(_) | &ContentNode::With(..) | &ContentNode::Project(..) | &ContentNode::ListFold { .. } |
 &ContentNode::Return(_) | &ContentNode::Bind(..) | &ContentNode::Force(_) |
@@ -196,6 +196,7 @@ impl Source for ContentSource<'_>
             | ContentNode::Project(..)
             | ContentNode::Transport(..)
             | ContentNode::ElementTransport { .. }
+            | ContentNode::TelescopeTransport { .. }
             | ContentNode::Lambda(_)
             | ContentNode::Application(..)
             | ContentNode::Return(_)

@@ -723,7 +723,7 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
         | Node::Computation(id) => self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.types().count()),
 Computation::Handle { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
-Computation::ListFold { .. } => 5,
+Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
 Computation::PathTransport { .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
@@ -964,6 +964,19 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     self.tasks.push(open(Node::Value(path), depth));
                     self.tasks
                         .push(open(Node::ValueType(motive), depth.deeper()));
+                },
+                // The motive's own arrows bind the telescope.
+                | Some(&Computation::TelescopeTransport {
+                    motive,
+                    path,
+                    start,
+                    over,
+                    value,
+                }) => {
+                    for child in [value, over, start, path] {
+                        self.tasks.push(open(Node::Value(child), depth));
+                    }
+                    self.tasks.push(open(Node::CompType(motive), depth));
                 },
                 | Some(
                     &(Computation::Lambda(body)
@@ -1625,7 +1638,7 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
         captures: [ready = self.results.len(), children = self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.types().count()),
 Computation::Handle { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
-Computation::ListFold { .. } => 5,
+Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
 Computation::PathTransport { .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
@@ -1886,6 +1899,29 @@ Computation::Hole(_) => 0_usize,
                         rewritten_motive,
                         rewritten_path,
                         rewritten_value,
+                    )
+                }
+            },
+            | Computation::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
+                value,
+            } => {
+                let new_value = Self::value(&mut self.results, value);
+                let new_over = Self::value(&mut self.results, over);
+                let new_start = Self::value(&mut self.results, start);
+                let new_path = Self::value(&mut self.results, path);
+                let new_motive = Self::comp_type(&mut self.results, motive);
+                if (new_motive, new_path, new_start, new_over, new_value)
+                    == (motive, path, start, over, value)
+                {
+                    id
+                }
+                else {
+                    self.arena.computation_telescope_transport(
+                        new_motive, new_path, new_start, new_over, new_value,
                     )
                 }
             },

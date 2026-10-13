@@ -4959,7 +4959,7 @@ mod tests
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(CoreTerm::Value(scrutinee)).chain(branches.iter().copied().map(CoreTerm::Computation))),
           Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [CoreTerm::Value(record)],
-          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } => false,
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } => false,
           Computation::ListFold { list,on_nil,on_cons,.. } => ret.as_slice() == [CoreTerm::Value(list),CoreTerm::Computation(on_nil),CoreTerm::Computation(on_cons)],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(CoreTerm::Value)),
           Computation::Transport(path, value) => ret.as_slice() == [CoreTerm::Value(path), CoreTerm::Value(value)],
@@ -5035,6 +5035,7 @@ mod tests
                         Vec::from([CoreTerm::Value(record)])
                     },
                     | Computation::PathTransport { .. }
+                    | Computation::TelescopeTransport { .. }
                     | Computation::Perform { .. }
                     | Computation::Handle { .. }
                     | Computation::Resume(..)
@@ -5261,6 +5262,7 @@ mod tests
                                     Computation::TupleProjection(value(tuple), component)
                                 },
                                 | Computation::PathTransport { .. }
+                                | Computation::TelescopeTransport { .. }
                                 | Computation::Perform { .. }
                                 | Computation::Handle { .. }
                                 | Computation::Resume(..)
@@ -5384,7 +5386,7 @@ mod tests
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(canon[&CoreTerm::Value(scrutinee)]).chain(branches.iter().map(|branch| canon[&CoreTerm::Computation(*branch)]))),
           Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [canon[&CoreTerm::Value(record)]],
-          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } => false,
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } => false,
           Computation::ListFold { list,on_nil,on_cons,.. } => ret.as_slice() == [canon[&CoreTerm::Value(list)],canon[&CoreTerm::Computation(on_nil)],canon[&CoreTerm::Computation(on_cons)]],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().map(|argument| canon[&CoreTerm::Value(*argument)])),
           Computation::Transport(path, value) => ret.as_slice() == [canon[&CoreTerm::Value(path)], canon[&CoreTerm::Value(value)]],
@@ -5677,6 +5679,7 @@ mod tests
                                     panic!("native eliminators are outside the duplication fixture")
                                 },
                                 | Computation::PathTransport { .. }
+                                | Computation::TelescopeTransport { .. }
                                 | Computation::Perform { .. }
                                 | Computation::Handle { .. }
                                 | Computation::Resume(..)
@@ -5990,7 +5993,7 @@ mod tests
              Node::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
               Computation::DataCase {scrutinee,motive,ref branches} => ret.iter().copied().eq([Node::Value(scrutinee),Node::CompType(motive)].into_iter().chain(branches.iter().copied().map(Node::Computation))),
               Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [Node::Value(record)],
-          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } => false,
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } => false,
               Computation::ListFold { element,result,list,on_nil,on_cons } => ret.as_slice() == [Node::ValueType(element),Node::ValueType(result),Node::Value(list),Node::Computation(on_nil),Node::Computation(on_cons)],
               Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               Computation::Transport(path, value) => ret.as_slice() == [Node::Value(path), Node::Value(value)],
@@ -6103,6 +6106,7 @@ mod tests
                             Vec::from([Node::Value(*record)])
                         },
                         | Computation::PathTransport { .. }
+                        | Computation::TelescopeTransport { .. }
                         | Computation::Perform { .. }
                         | Computation::Handle { .. }
                         | Computation::Resume(..)
@@ -6400,6 +6404,7 @@ mod tests
                             self.arena.computation_tuple_projection(tuple, component)
                         },
                         | Computation::PathTransport { .. }
+                        | Computation::TelescopeTransport { .. }
                         | Computation::Perform { .. }
                         | Computation::Handle { .. }
                         | Computation::Resume(..)

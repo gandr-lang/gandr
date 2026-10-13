@@ -156,6 +156,14 @@ pub fn sentence(role: FrameRole) -> Sentence
         | FrameRole::ElementTransportPath => "synthesising the path this element transport follows",
         | FrameRole::TransportOperand => "checking the operand of this transport",
         | FrameRole::ElementTransportMotive => "forming the motive of this transport",
+        | FrameRole::TelescopePath => "synthesising the path this dependent transport follows",
+        | FrameRole::TelescopeMotive => "forming the telescope motive of this transport",
+        | FrameRole::TelescopeStart => {
+            "checking the start of this transport against the family at the path's source"
+        },
+        | FrameRole::TelescopeOver => {
+            "synthesising the identity over the path this transport follows"
+        },
         | FrameRole::HereSynthesised => "synthesising the point of this reflexivity",
         | FrameRole::HereEndpoints => {
             "checking the point of this reflexivity against its endpoints"
@@ -415,6 +423,10 @@ mod tests
             FrameRole::ReturnedEndpoint,
             FrameRole::ElementTransportPath,
             FrameRole::ElementTransportMotive,
+            FrameRole::TelescopePath,
+            FrameRole::TelescopeMotive,
+            FrameRole::TelescopeStart,
+            FrameRole::TelescopeOver,
             FrameRole::CaseScrutinee,
             FrameRole::SplitScrutinee,
             FrameRole::SplitBody,

@@ -103,7 +103,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 | Shifting and substitution | [`src/rewrite.rs`](src/rewrite.rs) |
 | Universe paths | [`src/path_universe.rs`](src/path_universe.rs) |
 | Universe flows | [`src/flow_universe.rs`](src/flow_universe.rs) |
-| Element and function identity: formation, `here`, transport, higher fields and higher evaluation | [`src/element_identity.rs`](src/element_identity.rs) |
+| Element and function identity: formation, `here`, transport and its telescope over a dependent motive, higher fields and higher evaluation | [`src/element_identity.rs`](src/element_identity.rs) |
 | Identity and bridge recursion, function identity | [`src/identity_recursion.rs`](src/identity_recursion.rs), [`src/identity_recursion/recursive.rs`](src/identity_recursion/recursive.rs) |
 | Guarded higher fields | [`src/higher_field.rs`](src/higher_field.rs) |
 | Session codes and certificates | [`src/session.rs`](src/session.rs) |

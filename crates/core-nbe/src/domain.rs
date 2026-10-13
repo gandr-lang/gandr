@@ -296,6 +296,21 @@ pub enum Elimination
         /// The transported value.
         value: DomainValueId,
     },
+    /// Transport over a two-entry telescope along a neutral path: the motive,
+    /// a computation type whose own arrows bind the telescope, closed over the
+    /// environment it reads, and the start, the identity over the path and
+    /// the value transported.
+    TelescopeTransport
+    {
+        /// The motive, closed over its environment.
+        motive: ValueClosureId,
+        /// The family element at the path's source.
+        start: DomainValueId,
+        /// The identity over the path.
+        over: DomainValueId,
+        /// The transported value.
+        value: DomainValueId,
+    },
     /// `M v`: applied to a domain value argument.
     Apply(DomainValueId),
     /// `force v`: the forced thunk was itself stuck.

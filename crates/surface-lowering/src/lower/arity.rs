@@ -1685,6 +1685,97 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Planned(true))
     }
 
+    /// Classify a computation arrow whose domain names its binder: the
+    /// dependent arrow `(x : A) -> C`.
+    ///
+    /// # Specification
+    /// - requires: `domain` and `codomain` are the operands of the computation
+    ///   arrow at `site`, whose frame is `frame`.
+    /// - ensures: planned when `domain` is a parenthesised type holding exactly
+    ///   one entry, `k : T`: the binder extends `frame`, mentioned so its arrow
+    ///   is dependent, its type is read as a value type under `frame` and the
+    ///   codomain as a computation type under the binder; nothing is planned
+    ///   otherwise.
+    /// - fails: the binder policy's refusal; a misplaced key; a hole's own
+    ///   fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The arrow's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two dependent arrows nested to the right, each naming
+    ///   the binder before it, mint the same telescope the value-function alias
+    ///   spells.
+    /// - witness: `lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::DependentArrow(..))))]
+    pub(super) fn dependent_arrow(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        domain: Placed,
+        codomain: Placed,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let Some((name, Former::ParenthesizedType)) = self.form_at(domain)?
+        else {
+            return Ok(Planned(false));
+        };
+        let list = Site {
+            at: domain,
+            name,
+            reading: Reading::ValueType(frame),
+        };
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, domain.node, &mut scratch).and_then(|()| {
+            if let Maybe::Present(_) = scratch.repair {
+                return Ok(Vec::new());
+            }
+            let mut cursor = Cursor::new(&scratch.pieces, domain.span);
+            if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
+                return Ok(Vec::new());
+            }
+            self.type_entries(list, &mut cursor, TileName::PAREN_CLOSE)
+        });
+        self.scratch = scratch;
+        let entries = read?;
+        let &[
+            Entry {
+                key: Key::Label(bound, key),
+                held,
+            },
+        ] = entries.as_slice()
+        else {
+            return Ok(Planned(false));
+        };
+        let declared = held.at();
+        self.read(declared.node, Reading::ValueType(frame));
+        self.note_binder(key, bound)?;
+        let extended =
+            self.scope
+                .extend_typed(frame, bound, declared.node, Maybe::Present(key.span));
+        self.scope.mention(extended);
+        let start = self.parameters.len();
+        self.parameters.push(Parameter {
+            binder: key.node,
+            frame: extended,
+            declared: Maybe::Present(declared.node),
+        });
+        self.read(codomain.node, Reading::CompType(Frame::Inner(extended)));
+        self.plan(
+            site,
+            Plan::DependentArrow(
+                Stretch {
+                    start,
+                    end: self.parameters.len(),
+                },
+                codomain.node,
+            ),
+        );
+
+        Ok(Planned(true))
+    }
+
     /// Mint a record type over its fields.
     ///
     /// # Specification
@@ -1998,5 +2089,47 @@ impl<'source> Lowerer<'_, 'source>
         sink.origins.record_value_type(id, origin);
 
         Maybe::Present(Lowered::ValueType(id))
+    }
+
+    /// Mint a dependent arrow: the Π over its one binder's type into its
+    /// codomain.
+    ///
+    /// # Specification
+    /// - requires: the binder's type and the codomain are already minted or
+    ///   absent.
+    /// - ensures: `Π (x : A). C` with the written origin; nothing when a type
+    ///   did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::dependent_arrow`].
+    /// - witness: `lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
+    pub(super) fn mint_dependent_arrow(
+        &self,
+        entries: Stretch,
+        codomain: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let Some(&Parameter {
+            declared: Maybe::Present(declared),
+            ..
+        }) = stretch(&self.parameters, entries).first()
+        else {
+            return Maybe::Absent(lowered::Absent::Unstated);
+        };
+        let (domain, body) = match (self.value_type_at(declared), self.comp_type_at(codomain)) {
+            | (Maybe::Present(domain), Maybe::Present(body)) => (domain, body),
+            | (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
+                return Maybe::Absent(reason);
+            },
+        };
+        let id = sink.arena.comp_type_pi(domain, body);
+        sink.origins.record_comp_type(id, origin);
+
+        Maybe::Present(Lowered::CompType(id))
     }
 }

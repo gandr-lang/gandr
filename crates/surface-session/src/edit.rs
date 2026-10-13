@@ -3053,6 +3053,7 @@ where
                 Computation::Primitive { primitive, .. } => matches!(ret, ContentNode::Primitive(actual, _) if actual == primitive),
                 Computation::Transport(..) => matches!(ret, ContentNode::Transport(..)),
                 Computation::PathTransport { .. } => matches!(ret, ContentNode::ElementTransport { .. }),
+                Computation::TelescopeTransport { .. } => matches!(ret, ContentNode::TelescopeTransport { .. }),
                 Computation::Lambda(..) => matches!(ret, ContentNode::Lambda(..)),
                 Computation::Application(..) => {
                     matches!(ret, ContentNode::Application(..))
@@ -3201,6 +3202,25 @@ where
             ContentNode::ElementTransport {
                 motive,
                 path,
+                value: child(Root::Value(value)),
+            }
+        },
+        | Some(&Computation::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        }) => {
+            let motive = child(Root::CompType(motive));
+            let path = child(Root::Value(path));
+            let start = child(Root::Value(start));
+            let over = child(Root::Value(over));
+            ContentNode::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
                 value: child(Root::Value(value)),
             }
         },

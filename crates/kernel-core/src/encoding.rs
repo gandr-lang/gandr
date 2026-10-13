@@ -1074,6 +1074,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::ListFold { element, result, list, on_nil, on_cons } => [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].iter().all(|child| self.placed.contains_key(child)),
             Computation::Transport(path, value) => self.placed.contains_key(&AnyNode::Value(path)) && self.placed.contains_key(&AnyNode::Value(value)),
             Computation::PathTransport { motive, path, value } => self.placed.contains_key(&AnyNode::ValueType(motive)) && self.placed.contains_key(&AnyNode::Value(path)) && self.placed.contains_key(&AnyNode::Value(value)),
+            Computation::TelescopeTransport { motive, path, start, over, value } => [AnyNode::CompType(motive), AnyNode::Value(path), AnyNode::Value(start), AnyNode::Value(over), AnyNode::Value(value)].iter().all(|child| self.placed.contains_key(child)),
             Computation::RelatedApplication { path, left, right, evidence, body } => [AnyNode::Value(path), AnyNode::Value(left), AnyNode::Value(right), AnyNode::Value(evidence), AnyNode::Computation(body)].iter().all(|child| self.placed.contains_key(child)),
             Computation::Lambda(body) | Computation::Fixpoint { body, .. } => self.placed.contains_key(&AnyNode::Computation(body)),
             Computation::Application(head, argument) => self.placed.contains_key(&AnyNode::Computation(head))
@@ -1092,6 +1093,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::TupleProjection(..) => gandr_kernel_term::NODE_C_TUPLE_PROJECTION,
             Computation::Transport(..) => gandr_kernel_term::NODE_C_TRANSPORT,
             Computation::PathTransport { .. } => gandr_kernel_term::NODE_C_PATH_TRANSPORT,
+            Computation::TelescopeTransport { .. } => gandr_kernel_term::NODE_C_TELESCOPE_TRANSPORT,
             Computation::RelatedApplication { .. } => gandr_kernel_term::NODE_C_RELATED_APPLICATION,
             Computation::ListFold { .. } => gandr_kernel_term::NODE_C_LIST_FOLD,
             Computation::Lambda(..) => gandr_kernel_term::NODE_C_LAMBDA,
@@ -1167,6 +1169,24 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::ValueType(motive)));
                 record.put_content(self.content_of(AnyNode::Value(path)));
                 record.put_content(self.content_of(AnyNode::Value(value)));
+            },
+            | Computation::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
+                value,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_C_TELESCOPE_TRANSPORT);
+                for child in [
+                    AnyNode::CompType(motive),
+                    AnyNode::Value(path),
+                    AnyNode::Value(start),
+                    AnyNode::Value(over),
+                    AnyNode::Value(value),
+                ] {
+                    record.put_content(self.content_of(child));
+                }
             },
             | Computation::RelatedApplication {
                 path,
@@ -1533,6 +1553,7 @@ None => opened.eq((core::iter::empty()).map(Some)),
             None => opened.eq((core::iter::empty()).map(Some)),
             Some(&Computation::Transport(a,b)) => opened.eq(([AnyNode::Value(a),AnyNode::Value(b)].into_iter()).map(Some)),
             Some(&Computation::PathTransport { motive, path, value }) => opened.eq(([AnyNode::ValueType(motive), AnyNode::Value(path), AnyNode::Value(value)].into_iter()).map(Some)),
+            Some(&Computation::TelescopeTransport { motive, path, start, over, value }) => opened.eq(([AnyNode::CompType(motive), AnyNode::Value(path), AnyNode::Value(start), AnyNode::Value(over), AnyNode::Value(value)].into_iter()).map(Some)),
             Some(&Computation::RelatedApplication { path, left, right, evidence, body }) => opened.eq(([AnyNode::Value(path), AnyNode::Value(left), AnyNode::Value(right), AnyNode::Value(evidence), AnyNode::Computation(body)].into_iter()).map(Some)),
             Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => opened.eq((core::iter::once(AnyNode::Computation(body))).map(Some)),
             Some(&Computation::Application(head,argument)) => opened.eq(([AnyNode::Computation(head),AnyNode::Value(argument)].into_iter()).map(Some)),
@@ -1702,6 +1723,23 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(motive)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(path)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(value)));
+            },
+            | Some(&Computation::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
+                value,
+            }) => {
+                for child in [
+                    AnyNode::CompType(motive),
+                    AnyNode::Value(path),
+                    AnyNode::Value(start),
+                    AnyNode::Value(over),
+                    AnyNode::Value(value),
+                ] {
+                    tasks.push(EncodeTask::Open(child));
+                }
             },
             | Some(&Computation::RelatedApplication {
                 path,

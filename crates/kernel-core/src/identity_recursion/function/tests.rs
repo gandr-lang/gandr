@@ -196,6 +196,7 @@ fn children(
                 .collect(),
             | Computation::Transport(..)
             | Computation::PathTransport { .. }
+            | Computation::TelescopeTransport { .. }
             | Computation::RelatedApplication { .. } => panic!("no native transport in fixtures"),
             | Computation::DataCase { .. }
             | Computation::RecordProjection(..)
@@ -296,6 +297,7 @@ fn translate(
                     ),
                     | Computation::Transport(..)
                     | Computation::PathTransport { .. }
+                    | Computation::TelescopeTransport { .. }
                     | Computation::RelatedApplication { .. } => {
                         panic!("no native transport in fixtures")
                     },
