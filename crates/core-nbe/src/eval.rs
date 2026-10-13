@@ -3040,12 +3040,15 @@ fn step(
                     let face = composite_face(denotes(domain, evaluated, part), term);
                     domain.value_flow(former, [evaluated], face)
                 },
-                | Some(&(Value::Then(left, right) | Value::FunctionFlow(left, right))) => {
-                    let former = if matches!(core.value(term), Some(Value::Then(..))) {
-                        crate::domain::FlowFormer::Then
-                    }
-                    else {
-                        crate::domain::FlowFormer::Function
+                | Some(
+                    &(Value::Then(left, right)
+                    | Value::FunctionFlow(left, right)
+                    | Value::FlowProduct(left, right)),
+                ) => {
+                    let former = match core.value(term) {
+                        | Some(&Value::Then(..)) => crate::domain::FlowFormer::Then,
+                        | Some(&Value::FlowProduct(..)) => crate::domain::FlowFormer::Product,
+                        | _ => crate::domain::FlowFormer::Function,
                     };
                     let second = machine.pop_value()?;
                     let first = machine.pop_value()?;
@@ -3374,7 +3377,9 @@ fn step_value(
             machine.tasks.push(Task::Value { term: part, env });
             Ok(())
         },
-        | Value::Then(first, second) | Value::FunctionFlow(first, second) => {
+        | Value::Then(first, second)
+        | Value::FunctionFlow(first, second)
+        | Value::FlowProduct(first, second) => {
             machine.tasks.push(Task::Flow { term });
             machine.tasks.push(Task::Value { term: second, env });
             machine.tasks.push(Task::Value { term: first, env });
@@ -4902,6 +4907,7 @@ fn step_path_transport(
 ///   term.
 /// - witness: `identity::tests::rides_compute_by_the_kernels_rows`
 /// - witness: `identity::tests::a_function_flow_rides_in_variance_order`
+/// - witness: `identity::tests::a_flow_product_rides_a_pair_componentwise`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err() || (machine.comps.len() == comps.saturating_add(1_usize) && machine.tasks.len() == tasks && machine.values.len() == values.saturating_sub(2_usize))
@@ -5070,6 +5076,34 @@ fn step_ride(
                         .comps
                         .push(domain.comp_return(thunk, CompTermFace::Reduced));
                     return Ok(());
+                },
+                // A flow product rides a pair's components along its two
+                // flows, each at the decode of the binder, and pairs them.
+                | DomainValue::Flow {
+                    former: crate::domain::FlowFormer::Product,
+                    parts,
+                    ..
+                } => {
+                    let &[first, second] = domain.fields(parts).map_err(EvalFault::Domain)?
+                    else {
+                        return Err(EvalFault::MachineInvariant);
+                    };
+                    if let DomainValue::Tuple { fields, .. } =
+                        *domain.value(value).ok_or(dangling)?
+                    {
+                        let fields = domain.fields(fields).map_err(EvalFault::Domain)?.to_vec();
+                        if let [left, right] = fields[..] {
+                            machine
+                                .tasks
+                                .push(Task::TransportTuple(ComponentCount::from(2_usize)));
+                            for (component, flow) in [(right, second), (left, first)] {
+                                machine.tasks.push(Task::Ride(motive));
+                                machine.tasks.push(Task::Supply(component));
+                                machine.tasks.push(Task::Supply(flow));
+                            }
+                            return Ok(());
+                        }
+                    }
                 },
                 | _ => {},
             }

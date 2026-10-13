@@ -844,6 +844,7 @@ fn formers(
                         ..
                     }
                     | Value::Then(first, second)
+                    | Value::FlowProduct(first, second)
                     | Value::FunctionFlow(first, second)),
                 ) => {
                     worklist.push(Node::Value(first));

@@ -318,6 +318,9 @@ pub enum Value
         /// The requested wiring; only a sequence admits.
         seam: Seam,
     },
+    /// A componentwise flow between product codes: the first flow relates
+    /// the left components, the second the right, at the level-zero universe.
+    FlowProduct(ValueId, ValueId),
     /// Reflexivity at a quoted closed first-order or session code.
     PathRefl(ValueId),
     /// A componentwise path between product codes.

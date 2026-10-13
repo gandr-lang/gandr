@@ -1655,12 +1655,13 @@ impl<'run> Focusing<'run>
                 self.producers.push(identity);
                 return Ok(());
             },
-            | Value::Then(first, second) | Value::FunctionFlow(first, second) => {
-                let combinator = if matches!(*node, Value::Then(..)) {
-                    crate::flow::Combinator::Compose
-                }
-                else {
-                    crate::flow::Combinator::Wrap
+            | Value::Then(first, second)
+            | Value::FunctionFlow(first, second)
+            | Value::FlowProduct(first, second) => {
+                let combinator = match *node {
+                    | Value::Then(..) => crate::flow::Combinator::Compose,
+                    | Value::FlowProduct(..) => crate::flow::Combinator::Pair,
+                    | _ => crate::flow::Combinator::Wrap,
                 };
                 let return_point = self.innermost_covariable()?;
                 self.tasks.push(Task::Thunk);

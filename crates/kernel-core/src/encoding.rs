@@ -866,7 +866,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::PathEquiv { path_type, forward, backward, .. } => self.placed.contains_key(&AnyNode::ValueType(path_type)) && self.placed.contains_key(&AnyNode::Value(forward)) && self.placed.contains_key(&AnyNode::Value(backward)),
             Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => true,
             Value::Tuple(ref components) => components.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
-            Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::StaticApplication(first, second) | Value::Then { first, second, .. } => self.placed.contains_key(&AnyNode::Value(first))
+            Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::FlowProduct(first, second) | Value::StaticApplication(first, second) | Value::Then { first, second, .. } => self.placed.contains_key(&AnyNode::Value(first))
                             && self.placed.contains_key(&AnyNode::Value(second)),
             Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } | Value::Injection(_, body) | Value::Lift { body, .. } => self.placed.contains_key(&AnyNode::Value(body)),
             Value::ForwardFlow { flow_type, translator, ref outputs, .. } => self.placed.contains_key(&AnyNode::ValueType(flow_type)) && self.placed.contains_key(&AnyNode::Value(translator)) && outputs.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
@@ -892,6 +892,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::ForwardFlow { .. } => gandr_kernel_term::NODE_V_FORWARD_FLOW,
             Value::FunctionFlow { .. } => gandr_kernel_term::NODE_V_FUNCTION_FLOW,
             Value::Then { .. } => gandr_kernel_term::NODE_V_THEN,
+            Value::FlowProduct(..) => gandr_kernel_term::NODE_V_FLOW_PRODUCT,
             Value::Returned(_) => gandr_kernel_term::NODE_V_RETURNED,
             Value::Higher { .. } => gandr_kernel_term::NODE_V_HIGHER,
             Value::HigherEvaluation { .. } => gandr_kernel_term::NODE_V_HIGHER_EVALUATION,
@@ -1043,6 +1044,11 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     | gandr_kernel_term::Seam::Sequence => gandr_kernel_term::SEAM_SEQUENCE,
                     | gandr_kernel_term::Seam::Feedback => gandr_kernel_term::SEAM_FEEDBACK,
                 });
+                record.put_content(self.content_of(AnyNode::Value(first)));
+                record.put_content(self.content_of(AnyNode::Value(second)));
+            },
+            | Value::FlowProduct(first, second) => {
+                record.put_tag(gandr_kernel_term::NODE_V_FLOW_PRODUCT);
                 record.put_content(self.content_of(AnyNode::Value(first)));
                 record.put_content(self.content_of(AnyNode::Value(second)));
             },
@@ -1669,7 +1675,7 @@ Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 
 Value::Tuple(ref components) => opened.eq((components.iter().copied().map(AnyNode::Value)).map(Some)),
 Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => opened.eq(([AnyNode::ValueType(classifier), AnyNode::Value(payload_paths)].into_iter()).map(Some)),
 Value::PathEquiv { path_type, forward, backward, .. } => opened.eq(([AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)].into_iter()).map(Some)),
-Value::ListCons(a,b) | Value::PathProduct(a,b) | Value::StaticApplication(a,b) | Value::Then { first: a, second: b, .. } => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
+Value::ListCons(a,b) | Value::PathProduct(a,b) | Value::FlowProduct(a,b) | Value::StaticApplication(a,b) | Value::Then { first: a, second: b, .. } => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
 Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } | Value::Injection(_,body) | Value::Lift {body,..} => opened.eq((core::iter::once(AnyNode::Value(body))).map(Some)),
 Value::ForwardFlow { flow_type, translator, ref outputs, .. } => opened.eq(([AnyNode::ValueType(flow_type), AnyNode::Value(translator)].into_iter().chain(outputs.iter().copied().map(AnyNode::Value))).map(Some)),
 Value::FunctionFlow { flow_type, domain, codomain } => opened.eq(([AnyNode::ValueType(flow_type), AnyNode::Value(domain), AnyNode::Value(codomain)].into_iter()).map(Some)),
@@ -1838,6 +1844,7 @@ fn push_children(
             },
             | Some(
                 &Value::PathProduct(first, second)
+                | &Value::FlowProduct(first, second)
                 | &Value::ListCons(first, second)
                 | &Value::StaticApplication(first, second)
                 | &Value::Then { first, second, .. },

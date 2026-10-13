@@ -1515,6 +1515,10 @@ enum Frame
     PathProductFirst(ValueId),
     /// Combine the two decoded component endpoints.
     PathProductSecond(crate::path_universe::PathType),
+    /// Synthesize the second product-flow component after the first.
+    FlowProductFirst(ValueId),
+    /// Combine the two decoded component endpoints of a flow product.
+    FlowProductSecond(crate::flow_universe::FlowType),
     /// Check the backward map after the closed forward map.
     PathForward
     {
@@ -2374,6 +2378,11 @@ where
                         goal = Goal::SynthValue(first);
                         continue 'expand;
                     },
+                    | Value::FlowProduct(first, second) => {
+                        frames.push(Frame::FlowProductFirst(second));
+                        goal = Goal::SynthValue(first);
+                        continue 'expand;
+                    },
                     | Value::PathRefl(code) => {
                         let endpoint = crate::path_universe::code(
                             arena,
@@ -2809,6 +2818,7 @@ where
                     | Value::ForwardFlow { .. }
                     | Value::FunctionFlow { .. }
                     | Value::Then { .. }
+                    | Value::FlowProduct(..)
                     | Value::PathEquiv { .. }
                     | Value::Variable(_)
                     | Value::Constant(_)
@@ -3225,6 +3235,46 @@ where
                     let source = arena.value_quote(source);
                     let target = arena.value_quote(target);
                     produced = Produced::ValueType(arena.value_type_path_universe(source, target));
+                },
+                // **The flow product.** Each component reads as a universe
+                // flow, under either reading of the level-zero universe; the
+                // product relates the pairs of their endpoints, source to
+                // source and target to target, as the path product does. The
+                // pairs must themselves be codes of the `Flow_U` vocabulary,
+                // so a component at a function or session code is refused
+                // rather than minting a classifier no other rule reads.
+                | Frame::FlowProductFirst(second) => {
+                    let first_type = produced.value_type()?;
+                    let endpoints = crate::flow_universe::universe_reading(
+                        arena,
+                        first_type,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Flow)?;
+                    frames.push(Frame::FlowProductSecond(endpoints));
+                    goal = Goal::SynthValue(second);
+                    continue 'expand;
+                },
+                | Frame::FlowProductSecond(first) => {
+                    let second_type = produced.value_type()?;
+                    let second = crate::flow_universe::universe_reading(
+                        arena,
+                        second_type,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Flow)?;
+                    let source = arena.value_type_product(&[first.source, second.source]);
+                    let target = arena.value_type_product(&[first.target, second.target]);
+                    let source = arena.value_quote(source);
+                    let target = arena.value_quote(target);
+                    let classifier = arena.value_type_flow_universe(source, target);
+                    let _decoded = crate::flow_universe::endpoints(
+                        arena,
+                        classifier,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Flow)?;
+                    produced = Produced::ValueType(classifier);
                 },
                 | Frame::PathForward {
                     path,

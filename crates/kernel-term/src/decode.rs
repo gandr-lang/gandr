@@ -2115,6 +2115,12 @@ fn decode_entry(
             let id = table.arena.value_then(first, second, seam);
             (DecodedNode::Value(id), Family::Value)
         },
+        | tags::NODE_V_FLOW_PRODUCT => {
+            let first = read_value(reader, table, this, &mut children)?;
+            let second = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.value_flow_product(first, second);
+            (DecodedNode::Value(id), Family::Value)
+        },
         | tags::NODE_C_RIDE => {
             let motive = read_value_type(reader, table, this, &mut children)
                 .map_err(|error| named_polarity(error, MalformedSite::RideMotive))?;
@@ -5888,6 +5894,7 @@ mod tests
             (&[0x4D, 4, 5, 1], value_family, &[4, 5, 1]),
             (&[0x4E, 0, 5, 1], value_family, &[5, 1]),
             (&[0x4E, 1, 1, 5], value_family, &[1, 5]),
+            (&[0x69, 5, 1], value_family, &[5, 1]),
             (&[0x4F, 4, 5, 1], computation_family, &[4, 5, 1]),
             (&[0x68, 6, 5, 1, 5, 1], computation_family, &[6, 5, 1, 5, 1]),
         ];
@@ -5930,6 +5937,7 @@ mod tests
                 second: v1,
                 seam: Seam::Feedback,
             },
+            Value::FlowProduct(v1, v0),
         ];
         let expected_computations = [
             Computation::Ride {

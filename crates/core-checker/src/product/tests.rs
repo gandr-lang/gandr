@@ -83,6 +83,21 @@ fn identity(
     arena.value_type_path(universe, source, target)
 }
 
+/// `Flow(Type, ⌜source⌝, ⌜target⌝)`.
+///
+/// # Specification
+/// trivial.
+fn directed(
+    arena: &mut CoreArena,
+    (source, target): (ValueTypeId, ValueTypeId),
+) -> ValueTypeId
+{
+    let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let source = arena.value_quote(source);
+    let target = arena.value_quote(target);
+    arena.value_type_flow(universe, source, target)
+}
+
 /// The refusal of the declaration at `position`.
 ///
 /// # Specification
@@ -273,6 +288,132 @@ fn what_the_product_cannot_read_it_refuses_by_name()
                 if at == TermNode::Value(parameter)
         ),
         "a parameter is refused at the component: {report:?}"
+    );
+    let refused: Vec<usize> = report
+        .judged()
+        .iter()
+        .enumerate()
+        .filter(|&(_, judged)| matches!(judged.verdict(), Verdict::Refused(_)))
+        .map(|(position, _)| position)
+        .collect();
+    assert_eq!(refused, [1, 2, 3], "negation itself checks");
+}
+
+#[test]
+fn a_flow_product_synthesises_the_flow_between_its_pairs()
+{
+    let mut arena = CoreArena::new();
+    let functions = booleans(&mut arena);
+    let unit = arena.value_type_unit();
+    let negation = arena.value_constant(ConstantIndex::from(0_usize));
+    // def paired : Flow(Type, #{Unit, Bool}, #{Unit, Bool}) =
+    //   flowProduct(stay(Unit), forward(not)) ;
+    let unit_code = arena.value_quote(unit);
+    let stay = arena.value_stay(unit_code);
+    let forward = arena.value_forward(negation);
+    let paired = arena.value_flow_product(stay, forward);
+    let pair = arena.value_type_product(&[unit, functions.ty]);
+    let pairing = directed(&mut arena, (pair, pair));
+    // def nested : Flow(Type, #{Unit, #{Unit, Bool}}, …) =
+    //   flowProduct(stay(Unit), paired) ;
+    let nested = arena.value_flow_product(stay, paired);
+    let deep = arena.value_type_product(&[unit, pair]);
+    let deepening = directed(&mut arena, (deep, deep));
+    // λ p. return flowProduct(p, stay(Unit)) at U (Flow(Type, Bool, Bool) →
+    // F Flow(Type, #{Bool, Unit}, #{Bool, Unit})): a flow a parameter binds is
+    // a flow, unlike a path, which must name a certificate.
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let open = arena.value_flow_product(parameter, stay);
+    let returned = arena.computation_return(open);
+    let lambda = arena.computation_lambda(returned);
+    let thunk = arena.value_thunk(lambda);
+    let flipping = directed(&mut arena, (functions.ty, functions.ty));
+    let both = arena.value_type_product(&[functions.ty, unit]);
+    let doubled = directed(&mut arena, (both, both));
+    let result = arena.comp_type_returner(doubled);
+    let arrow = arena.comp_type_arrow(flipping, result);
+    let function = arena.value_type_thunk(arrow);
+    let module = [
+        declaration(At(0), functions.function, functions.not),
+        declaration(At(1), pairing, paired),
+        declaration(At(2), deepening, nested),
+        declaration(At(3), function, thunk),
+    ];
+    let (report, readmission) = judged(&mut arena, &module);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+        "a product of stay at the unit and a forward flow of Bool checks at the flow between \
+         their pairs, nested and over a parameter: {report:?}"
+    );
+    assert!(
+        report.natives().is_empty(),
+        "a flow product is the kernel's own former and elaborates to nothing"
+    );
+    assert!(
+        readmission
+            .readmitted()
+            .iter()
+            .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. })),
+        "the bridge erases each product componentwise and the kernel admits it: {:?}",
+        readmission.readmitted()
+    );
+}
+
+#[test]
+fn what_the_flow_product_cannot_read_it_refuses_by_name()
+{
+    let mut arena = CoreArena::new();
+    let functions = booleans(&mut arena);
+    let unit = arena.value_type_unit();
+    let negation = arena.value_constant(ConstantIndex::from(0_usize));
+    let unit_code = arena.value_quote(unit);
+    let stay = arena.value_stay(unit_code);
+    let forward = arena.value_forward(negation);
+    // flowProduct(stay(Unit), forward(not)) declared with the components'
+    // codes swapped: the product flows over `() × Bool`, not `Bool × ()`.
+    let swapped = arena.value_flow_product(stay, forward);
+    let crossed = arena.value_type_product(&[functions.ty, unit]);
+    let crossed = directed(&mut arena, (crossed, crossed));
+    // flowProduct(stay(0), stay(Unit)): a flow at Integer is no flow of the
+    // universe.
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let zero = arena.value_literal(crate::fixture::integer_literal());
+    let at_integer = arena.value_stay(zero);
+    let integral = arena.value_flow_product(at_integer, stay);
+    let pair = arena.value_type_product(&[integer, unit]);
+    let integral_type = directed(&mut arena, (pair, pair));
+    // flowProduct(stay(+U (Bool -> -F Bool)), stay(Unit)): a pair over a
+    // function code is no code of the universe's flows.
+    let function_code = arena.value_quote(functions.function);
+    let at_function = arena.value_stay(function_code);
+    let higher = arena.value_flow_product(at_function, stay);
+    let pair = arena.value_type_product(&[functions.function, unit]);
+    let higher_type = directed(&mut arena, (pair, pair));
+    let module = [
+        declaration(At(0), functions.function, functions.not),
+        declaration(At(1), crossed, swapped),
+        declaration(At(2), integral_type, integral),
+        declaration(At(3), higher_type, higher),
+    ];
+    let (report, _readmission) = judged(&mut arena, &module);
+    assert!(
+        matches!(refusal(&report, At(1)), CheckRefusal::TypeMismatch(_)),
+        "a flow product checked at another pairing is a mismatch: {report:?}"
+    );
+    assert!(
+        matches!(
+            refusal(&report, At(2)),
+            CheckRefusal::ShapeMismatch { at, wanted: ExpectedShape::Flow, .. }
+                if at == TermNode::Value(at_integer)
+        ),
+        "a flow at Integer is refused at the component: {report:?}"
+    );
+    assert!(
+        matches!(refusal(&report, At(3)), CheckRefusal::PathCode(code) if code == function_code),
+        "a function code is refused by name: {report:?}"
     );
     let refused: Vec<usize> = report
         .judged()

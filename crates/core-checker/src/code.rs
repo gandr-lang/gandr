@@ -774,6 +774,7 @@ impl CodeDefinitions
             | Value::Here(_)
             | Value::Stay(_)
             | Value::Then(..)
+            | Value::FlowProduct(..)
             | Value::Forward(_)
             | Value::FunctionFlow(..)
             | Value::SessionRelated { .. }
@@ -1669,6 +1670,7 @@ pub fn loose_reach(
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
                     | Value::Then(first, second)
+                    | Value::FlowProduct(first, second)
                     | Value::FunctionFlow(first, second)
                     | Value::SessionRelated {
                         source: first,

@@ -864,7 +864,7 @@ impl TermArena
         requires: match value {
             Value::Constructor { datatype, ref fields, .. } => self.value_type(datatype).is_some() && fields.iter().all(|field| self.value(*field).is_some()),
             Value::Record(ref fields) => fields.values().all(|field| self.value(*field).is_some()),
-            Value::ListCons(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) | Value::Then { first, second, .. } => self.value(first).is_some() && self.value(second).is_some(),
+            Value::ListCons(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) | Value::FlowProduct(first, second) | Value::Then { first, second, .. } => self.value(first).is_some() && self.value(second).is_some(),
             Value::Tuple(ref components) => components.iter().all(|component| self.value(*component).is_some()),
             Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } => self.value(body).is_some(),
             Value::ForwardFlow { flow_type, translator, ref outputs, .. } => self.value_type(flow_type).is_some() && self.value(translator).is_some() && outputs.iter().all(|output| self.value(*output).is_some()),
@@ -2656,6 +2656,21 @@ impl TermArena
         })
     }
 
+    /// Mint a componentwise product of universe flows, without claiming that
+    /// it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_flow_product(
+        &mut self,
+        first: ValueId,
+        second: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::FlowProduct(first, second))
+    }
+
     /// Mint the directed transport `ride` without claiming that it checks.
     ///
     /// # Specification
@@ -2884,7 +2899,7 @@ Value::FunctionFlow { flow_type, domain, codomain } => ret.as_slice() == [AnyNod
 Value::Higher { ref evidence, .. } => ret.iter().copied().eq(evidence.iter().copied().map(AnyNode::Value)),
 Value::HigherEvaluation { ref components, .. } => ret.iter().copied().eq(components.iter().flat_map(|component| [AnyNode::Value(component.left), AnyNode::Value(component.right), AnyNode::Value(component.evidence)])),
 Value::QuantifiedEvaluation { ref children, .. } => ret.iter().copied().eq(children.iter().copied().map(AnyNode::Value)),
-Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::StaticApplication(first, second) | Value::Then { first, second, .. } =>
+Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::FlowProduct(first, second) | Value::StaticApplication(first, second) | Value::Then { first, second, .. } =>
                 ret.as_slice() == [AnyNode::Value(first), AnyNode::Value(second)],
 Value::Injection(_, body) | Value::Lift { body, .. } =>
                 ret.as_slice() == [AnyNode::Value(body)],
@@ -3038,6 +3053,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 },
                 | Some(
                     &Value::PathProduct(first, second)
+                    | &Value::FlowProduct(first, second)
                     | &Value::ListCons(first, second)
                     | &Value::StaticApplication(first, second)
                     | &Value::Then { first, second, .. },

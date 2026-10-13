@@ -173,6 +173,7 @@
 //! | `0x68` | Run classifier |
 //! | `0x69` | Forward flow, `forward(f)` |
 //! | `0x6A` | Function flow, `arrow(d, c)` |
+//! | `0x6B` | Flow product, `flowProduct(p, q)` |
 //!
 //! A statement keeps its relation, so `bisim(a, b)` and `sim(a, b)` never
 //! share an address; the decided simulation is checker output and is not
@@ -565,6 +566,8 @@ pub enum ContentNode
     Forward(NodeIndex),
     /// The arrow's action on a domain and a codomain flow, `arrow(d, c)`.
     FunctionFlow(NodeIndex, NodeIndex),
+    /// The product of two universe flows, `flowProduct(p, q)`.
+    FlowProduct(NodeIndex, NodeIndex),
     /// A recorded run, its moves in order, each payload an edge.
     Recorded(alloc::sync::Arc<[gandr_core_term::session::RecordedMove<NodeIndex>]>),
     /// Transport of a value along a flow in a motive under one binder.
@@ -991,6 +994,7 @@ impl ContentNode
         | Self::Then(..)
         | Self::Forward(_)
         | Self::FunctionFlow(..)
+        | Self::FlowProduct(..)
         | Self::Recorded(_)
         | Self::PrimitiveValue(_)
         | Self::PathProduct(..)
@@ -1092,6 +1096,7 @@ impl ContentNode
             | Self::Then(..)
             | Self::Forward(_)
             | Self::FunctionFlow(..)
+            | Self::FlowProduct(..)
             | Self::Recorded(_)
             | Self::PrimitiveValue(_)
             | Self::PathProduct(..)
@@ -1232,7 +1237,7 @@ impl ContentNode
             | Self::UnknownComputationType => ret.count == 0,
             | Self::Tuple(ref components) => ret.iter().eq(components.iter().map(|&component| (component, V))),
             | Self::ListFold { element, result, list, on_nil, on_cons } => actual == Some(&[(element, A), (result, A), (list, V), (on_nil, M), (on_cons, M)][..]),
-            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Equiv(a, b) | Self::Ua { forward: a, backward: b, .. } | Self::Transport(a, b) | Self::SessionRelated { source: a, target: b, .. } | Self::Then(a, b) | Self::FunctionFlow(a, b) => {
+            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Equiv(a, b) | Self::Ua { forward: a, backward: b, .. } | Self::Transport(a, b) | Self::SessionRelated { source: a, target: b, .. } | Self::Then(a, b) | Self::FlowProduct(a, b) | Self::FunctionFlow(a, b) => {
                 actual == Some(&[(a, V), (b, V)][..])
             },
             | Self::PathEquiv { path_type, forward, backward, .. } => actual == Some(&[(path_type, A), (forward, V), (backward, V)][..]),
@@ -1446,6 +1451,7 @@ impl ContentNode
                 ..
             }
             | Self::Then(first, second)
+            | Self::FlowProduct(first, second)
             | Self::FunctionFlow(first, second)
             | Self::ListCons(first, second)
             | Self::StaticApplication(first, second) => Children::of(&[(first, V), (second, V)]),
@@ -1580,6 +1586,7 @@ impl ContentNode
             | Self::Then(..)
             | Self::Forward(_)
             | Self::FunctionFlow(..)
+            | Self::FlowProduct(..)
             | Self::Recorded(_)
             | Self::Ride { .. }
             | Self::ElementTransport { .. }
@@ -2594,6 +2601,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 let first = self.discover(ArenaNode::Value(first));
                 ContentNode::Then(first, self.discover(ArenaNode::Value(second)))
             },
+            | Value::FlowProduct(first, second) => {
+                let first = self.discover(ArenaNode::Value(first));
+                ContentNode::FlowProduct(first, self.discover(ArenaNode::Value(second)))
+            },
             | Value::Forward(translator) => {
                 ContentNode::Forward(self.discover(ArenaNode::Value(translator)))
             },
@@ -3478,6 +3489,10 @@ where
             let first = image(first);
             ContentNode::Then(first, image(second))
         },
+        | ContentNode::FlowProduct(first, second) => {
+            let first = image(first);
+            ContentNode::FlowProduct(first, image(second))
+        },
         | ContentNode::Forward(translator) => ContentNode::Forward(image(translator)),
         | ContentNode::FunctionFlow(domain, codomain) => {
             let domain = image(domain);
@@ -4135,6 +4150,7 @@ fn mint_node(
         | ContentNode::SessionRelated { .. }
         | ContentNode::Stay(_)
         | ContentNode::Then(..)
+        | ContentNode::FlowProduct(..)
         | ContentNode::Forward(_)
         | ContentNode::FunctionFlow(..)
         | ContentNode::Recorded(_)

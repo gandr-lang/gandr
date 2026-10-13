@@ -1845,4 +1845,50 @@ mod tests
             "swapping the boundaries is another function"
         );
     }
+
+    #[test]
+    fn a_flow_product_rides_a_pair_componentwise()
+    {
+        let mut core = CoreArena::new();
+        let five = literal(&mut core, Word::Five);
+        let six = literal(&mut core, Word::Six);
+        let unit = core.value_unit();
+        let identity = decoded(&mut core);
+        let pairing = translator(&mut core, paired);
+        let lefting = translator(&mut core, injected_left);
+        let first = core.value_forward(pairing);
+        let second = core.value_forward(lefting);
+        let pair = core.value_tuple(&[five, six]);
+        let product = core.value_flow_product(first, second);
+        let rode = core.computation_ride(identity, product, pair);
+        let left = core.value_tuple(&[five, unit]);
+        let right = core.value_injection(Side::Left.into(), six);
+        let image = core.value_tuple(&[left, right]);
+        let expected = core.computation_return(image);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "each component rides its own flow at the decode"
+        );
+        let swapped = core.value_flow_product(second, first);
+        let rode = core.computation_ride(identity, swapped, pair);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Different,
+            "the first flow moves the left component"
+        );
+        let flow = stuck(&mut core, ConstantIndex::from(0_usize));
+        let open = core.value_flow_product(flow, second);
+        let rode = core.computation_ride(identity, open, pair);
+        let moved = core.value_injection(Side::Left.into(), six);
+        let held = core.computation_ride(identity, flow, five);
+        let held = core.value_returned(held);
+        let both = core.value_tuple(&[held, moved]);
+        let expected = core.computation_return(both);
+        assert_eq!(
+            normalises_to(&mut core, rode, expected),
+            CertificateEquality::Equal,
+            "a component stuck on its flow stands for what it returns while the other rides"
+        );
+    }
 }

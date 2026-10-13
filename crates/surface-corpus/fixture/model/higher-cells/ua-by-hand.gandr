@@ -11,6 +11,11 @@ sign Magma {
 /// (`pathological/higher-cells/ua-by-hand-unnatural.gandr`), and from degree
 /// two (`ua-corolla-strata.gandr`) the Segal certification of the stages above
 /// the corollas.
+///
+/// The directed twin is a flow: `stay` at the unit, then one `forward` per
+/// corolla, nested by `flowProduct` in the same order. A term ridden along it
+/// moves forward as it moves along the path, and the ride that would reverse
+/// it is refused, as every symmetry of a flow is.
 module ByHand {
   type Tel = #{Unit, #{+{Unit}, Bool}};
 
@@ -45,4 +50,22 @@ module ByHand {
   @[ checks ]
   def alike : Path(Tel, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), transport(\X. X, opposite_by_hand, #{unit, #{+{.0 = unit}, +{.0 = unit}}})) ;
   def alike = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
+
+  @[ checks ]
+  def opposite_dir_by_hand : Flow(Type, Tel, Tel) ;
+  def opposite_dir_by_hand = flowProduct(stay(Unit), flowProduct(forward(keep), forward(exchange))) ;
+
+  @[ checks ]
+  def forth(t : Tel) -> -F Tel {
+    become ride(\X. X, opposite_dir_by_hand, t)
+  }
+
+  @[ runs("#{unit, #{+{.0 = unit}, +{.1 = unit}}}") ]
+  def ridden : +U (-F Tel) ;
+  def ridden = thunk { become forth(#{unit, #{+{.0 = unit}, +{.0 = unit}}}) } ;
+
+  @[ refuses("NonCovariantMotive") ]
+  def reversed() -> -F Flow(Type, Tel, Tel) {
+    become ride(\X. Flow(Type, X, Tel), opposite_dir_by_hand, stay(Tel))
+  }
 }

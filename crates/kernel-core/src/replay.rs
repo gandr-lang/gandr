@@ -1994,6 +1994,7 @@ where
                 | Value::ForwardFlow { .. }
                 | Value::FunctionFlow { .. }
                 | Value::Then { .. }
+                | Value::FlowProduct(..)
                 | Value::Higher { .. }
                 | Value::HigherEvaluation { .. }
                 | Value::QuantifiedEvaluation { .. }
@@ -2624,7 +2625,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             if a.keys().eq(b.keys()) { ret == Ok(Structure::of(a.values().zip(b.values()).map(|(a,b)| Premise::values(*a,*b)).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
         } }
  else if matched_left_value.is_none() || matched_right_value.is_none() || matches!(matched_left_value, Some(&Value::Returned(_))) || matches!(matched_right_value, Some(&Value::Returned(_))) { ret == Err(unreadable()) }
- else if let Some(matched_left_node) = matched_left_value && let ref one @ (Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. }) = *matched_left_node && let Some(other) = matched_right_value { matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
+ else if let Some(matched_left_node) = matched_left_value && let ref one @ (Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. }) = *matched_left_node && let Some(other) = matched_right_value { matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
                 && (core::mem::discriminant(one) == core::mem::discriminant(other) || verdict == Expect::NotConvertible)) }
  else if matches!((matched_left_value, matched_right_value), (Some(&Value::ListNil), Some(&Value::ListNil))) { ret == Ok(Structure::Leaf(Expect::Convertible)) }
  else if let (Some(one), Some(other)) = (matched_left_value.and_then(Value::components), matched_right_value.and_then(Value::components)) { if one.len() == other.len() { ret == Ok(Structure::of(one.iter().zip(other.iter()).map(|(&a, &b)| Premise::values(a, b)).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) } }
@@ -2718,6 +2719,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 | Value::ForwardFlow { .. }
                 | Value::FunctionFlow { .. }
                 | Value::Then { .. }
+                | Value::FlowProduct(..)
                 | Value::Higher { .. }
                 | Value::HigherEvaluation { .. }
                 | Value::QuantifiedEvaluation { .. }),
@@ -2899,7 +2901,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
     #[spec(ensures: |ret| match term {
         Term::Value(value) => match self.arena.value(value) {
-            Some(&(Value::Literal(_) | Value::Variable(_) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. })) => ret == Rigidity::Rigid,
+            Some(&(Value::Literal(_) | Value::Variable(_) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. })) => ret == Rigidity::Rigid,
             Some(held) if held.components() == Some(&[]) => ret == Rigidity::Rigid,
             Some(&Value::Constant(constant)) => (ret == Rigidity::Rigid) == (self.unfoldings.unfolding(constant) == Unfoldable::Opaque),
             Some(&(Value::Thunk(_) | Value::Returned(_))) | None => ret == Rigidity::Flexible,
@@ -2947,6 +2949,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Value::ForwardFlow { .. }
                         | Value::FunctionFlow { .. }
                         | Value::Then { .. }
+                        | Value::FlowProduct(..)
                         | Value::Higher { .. }
                         | Value::HigherEvaluation { .. }
                         | Value::QuantifiedEvaluation { .. }),
@@ -3207,6 +3210,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Value::ForwardFlow { .. }
                         | Value::FunctionFlow { .. }
                         | Value::Then { .. }
+                        | Value::FlowProduct(..)
                         | Value::Higher { .. }
                         | Value::HigherEvaluation { .. }
                         | Value::QuantifiedEvaluation { .. }),
@@ -3373,6 +3377,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 | Value::ForwardFlow { .. }
                 | Value::FunctionFlow { .. }
                 | Value::Then { .. }
+                | Value::FlowProduct(..)
                 | Value::Higher { .. }
                 | Value::HigherEvaluation { .. }
                 | Value::QuantifiedEvaluation { .. }

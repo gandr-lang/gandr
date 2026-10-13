@@ -569,6 +569,7 @@ pub fn lower_computation(
                     },
                     | Value::Stay(_)
                     | Value::Then(..)
+                    | Value::FlowProduct(..)
                     | Value::Forward(_)
                     | Value::FunctionFlow(..) => {
                         return Err(LowerError::OutsideSlice(Form::Flow));

@@ -2922,6 +2922,7 @@ fn read(
                 }
                 Value::Stay(_) => matches!(ret, ContentNode::Stay(_)),
                 Value::Then(..) => matches!(ret, ContentNode::Then(..)),
+                Value::FlowProduct(..) => matches!(ret, ContentNode::FlowProduct(..)),
                 Value::Forward(_) => matches!(ret, ContentNode::Forward(_)),
                 Value::FunctionFlow(..) => matches!(ret, ContentNode::FunctionFlow(..)),
                 Value::Recorded(ref moves) => {
@@ -3070,6 +3071,10 @@ where
         | Some(&Value::Then(first, second)) => {
             let first = child(Root::Value(first));
             ContentNode::Then(first, child(Root::Value(second)))
+        },
+        | Some(&Value::FlowProduct(first, second)) => {
+            let first = child(Root::Value(first));
+            ContentNode::FlowProduct(first, child(Root::Value(second)))
         },
         | Some(&Value::Forward(translator)) => ContentNode::Forward(child(Root::Value(translator))),
         | Some(&Value::FunctionFlow(domain, codomain)) => {

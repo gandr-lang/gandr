@@ -13,12 +13,16 @@
 //! | `stay(a)`, a session simulation | the identity thunk |
 //! | `p then q` | `thunk(force(compose) 𝓥⟦p⟧ 𝓥⟦q⟧)` |
 //! | `arrow(d, c)` | `thunk(force(wrap) 𝓥⟦d⟧ 𝓥⟦c⟧)` |
+//! | `flowProduct(p, q)` | `thunk(force(pair) 𝓥⟦p⟧ 𝓥⟦q⟧)` |
 //! | `ride(P, p, v)` | `force(act_P) 𝓥⟦p⟧ 𝓥⟦v⟧` |
 //!
 //! `compose` is `thunk(λp. λq. λx. y ← force p x; force q y)`, `wrap` is
 //! `thunk(λd. λc. λg. return thunk(λa'. a ← force d a'; b ← force g a; force
 //! c b))` — the kernel's function-flow row with the boundaries as functions —
-//! and `act_P` is `thunk(λt. λv. M_P)`, built over the motive's syntax by the
+//! `pair` is `thunk(λp. λq. λx. a ← x.0; b ← x.1; a' ← force p a; b' ← force
+//! q b; return (a', b'))` — the kernel's flow-product row, the components in
+//! order — and `act_P` is `thunk(λt. λv. M_P)`, built over the motive's
+//! syntax by the
 //! kernel's rows in their order: at the decode of the motive's own binder `M`
 //! is `force t v`; a product rides each component by its own action, a sum
 //! its payload under its summand, a list each element by a native fold; the
@@ -68,6 +72,9 @@ pub enum Combinator
     /// `thunk(λd. λc. λg. return thunk(λa'. a ← force d a'; b ← force g a;
     /// force c b))`: the arrow's action on its boundaries.
     Wrap,
+    /// `thunk(λp. λq. λx. a ← x.0; b ← x.1; a' ← force p a; b' ← force q b;
+    /// return (a', b'))`: the flow product's action, componentwise.
+    Pair,
     /// `thunk(λt. λv. M_P)`: the action of the ride motive `P`, a value type
     /// under one binder in the arena being focused.
     Act(ValueTypeId),
@@ -120,6 +127,7 @@ fn applied(
 ///   kernel's rows compute.
 /// - witness: `machine::tests::rides_run_by_the_motives_action`
 /// - witness: `machine::tests::a_function_flow_runs_in_variance_order`
+/// - witness: `machine::tests::a_flow_product_runs_componentwise`
 #[spec(ensures: |ret| match ret {
     | Ok(id) => matches!(scratch.value(id), Some(&Value::Thunk(_))),
     | Err(_) => true,
@@ -165,8 +173,53 @@ pub fn build(
             }
             Ok(scratch.value_thunk(outer))
         },
+        | Combinator::Pair => {
+            // Under λp. λq. λx: x = 0, q = 1, p = 2.
+            let whole = variable(scratch, DeBruijnIndex::from(0_u32));
+            let left = scratch
+                .computation_tuple_projection(whole, gandr_kernel_term::Component::from(0_usize));
+            // Under a: a = 0, x = 1.
+            let whole = variable(scratch, DeBruijnIndex::from(1_u32));
+            let right = scratch
+                .computation_tuple_projection(whole, gandr_kernel_term::Component::from(1_usize));
+            // Under b: b = 0, a = 1, x = 2, q = 3, p = 4.
+            let first = variable(scratch, DeBruijnIndex::from(4_u32));
+            let component = variable(scratch, DeBruijnIndex::from(1_u32));
+            let moved_left = applied_once(scratch, first, component);
+            // Under a': a' = 0, b = 1, a = 2, x = 3, q = 4.
+            let second = variable(scratch, DeBruijnIndex::from(4_u32));
+            let component = variable(scratch, DeBruijnIndex::from(1_u32));
+            let moved_right = applied_once(scratch, second, component);
+            // Under b': b' = 0, a' = 1.
+            let first = variable(scratch, DeBruijnIndex::from(1_u32));
+            let second = variable(scratch, DeBruijnIndex::from(0_u32));
+            let pair = scratch.value_tuple(&[first, second]);
+            let returned = scratch.computation_return(pair);
+            let tail = scratch.computation_bind(moved_right, returned);
+            let tail = scratch.computation_bind(moved_left, tail);
+            let tail = scratch.computation_bind(right, tail);
+            let mut body = scratch.computation_bind(left, tail);
+            for _ in 0_u8 .. 3_u8 {
+                body = scratch.computation_lambda(body);
+            }
+            Ok(scratch.value_thunk(body))
+        },
         | Combinator::Act(motive) => act(core, motive, scratch),
     }
+}
+
+/// `force(head) argument`.
+///
+/// # Specification
+/// trivial.
+fn applied_once(
+    scratch: &mut CoreArena,
+    head: ValueId,
+    argument: ValueId,
+) -> ComputationId
+{
+    let forced = scratch.computation_force(head);
+    scratch.computation_application(forced, argument)
 }
 
 /// `compose`, closed.

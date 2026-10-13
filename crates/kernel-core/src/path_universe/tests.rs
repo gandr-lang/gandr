@@ -139,6 +139,7 @@ fn children(
             | Value::ForwardFlow { .. }
             | Value::FunctionFlow { .. }
             | Value::Then { .. }
+            | Value::FlowProduct(..)
             | Value::Returned(_)
             | Value::Higher { .. }
             | Value::HigherEvaluation { .. }
@@ -451,6 +452,7 @@ fn translate(
                     | Value::ForwardFlow { .. }
                     | Value::FunctionFlow { .. }
                     | Value::Then { .. }
+                    | Value::FlowProduct(..)
                     | Value::Returned(_)
                     | Value::Higher { .. }
                     | Value::HigherEvaluation { .. }

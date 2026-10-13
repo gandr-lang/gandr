@@ -1,5 +1,6 @@
-//! The product of two universe paths in the core: `pathProduct(p, q)`, judged
-//! componentwise and elaborated to the kernel's native product.
+//! The products of two universe paths and of two universe flows in the core:
+//! `pathProduct(p, q)`, judged componentwise and elaborated to the kernel's
+//! native product, and its directed twin `flowProduct(p, q)`.
 //!
 //! # The rule
 //!
@@ -39,6 +40,26 @@
 //! The degree-one path `ua[1, k]` derives, written by hand, is such a product;
 //! [`crate::ua`] § The derivation states what the derived form carries beyond
 //! it.
+//!
+//! # The directed product
+//!
+//! `flowProduct(p, q)` synthesises from two components, each a flow of the
+//! universe `Flow(Type, ⌜A⌝, ⌜A′⌝)` at the value universe of level zero —
+//! what `stay(⌜A⌝)`, `forward(f)`, a composite and an inner flow product
+//! synthesise — between quoted closed first-order codes. From `p` relating
+//! `⌜A⌝` to `⌜A′⌝` and `q` relating `⌜B⌝` to `⌜B′⌝` the product flows from
+//! `⌜A × B⌝` to `⌜A′ × B′⌝`, nested to the right as the path product nests. A
+//! component at any other type is [`CheckRefusal::ShapeMismatch`] wanting a
+//! flow; an endpoint that is no closed first-order code is
+//! [`CheckRefusal::PathCode`]. No elaboration is needed: the surface's flows
+//! are the kernel's own introductions, so the bridge erases the product to the
+//! kernel's `FlowProduct` over its erased components, and the kernel reads each
+//! component under either reading of the universe. A ride along it at the
+//! decode of the binder moves a pair componentwise, the first flow on the left.
+//!
+//! The degree-one universe flow over a telescope, written by hand, is a nested
+//! flow product of `stay` at the unit and one forward flow per corolla — the
+//! shape a derived directed univalence at degree one would take.
 //!
 //! # Decisions
 //!
@@ -211,6 +232,94 @@ pub fn classifier(
         Level::zero(),
     );
     arena.value_type_path(universe, source, target)
+}
+
+/// The component `at` of a flow product, read off the type it synthesised:
+/// its source and target codes.
+///
+/// # Specification
+/// - requires: `classifier` is the type `at` synthesised.
+/// - ensures: the two decoded endpoint codes of `Flow(Type, ⌜A⌝, ⌜A′⌝)` at the
+///   value universe of level zero, source first.
+/// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting a flow, for any
+///   other classifier; [`CheckRefusal::PathCode`] for an endpoint that is no
+///   quoted closed first-order code; the unfolding's refusal.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `stay` at the unit and a forward flow of Bool read as
+///   universe flows, and a flow at Integer is refused by its shape.
+/// - witness: `product::tests::a_flow_product_synthesises_the_flow_between_its_pairs`
+/// - witness: `product::tests::what_the_flow_product_cannot_read_it_refuses_by_name`
+#[spec(ensures: |ret| match ret {
+    | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == TermNode::Value(at) && wanted == ExpectedShape::Flow && found == TypeNode::Value(classifier),
+    | Ok(_) | Err(_) => true,
+})]
+pub fn flow_component(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+    classifier: ValueTypeId,
+) -> Result<(ValueTypeId, ValueTypeId), CheckRefusal>
+{
+    let refused = CheckRefusal::ShapeMismatch {
+        at: TermNode::Value(at),
+        wanted: ExpectedShape::Flow,
+        found: TypeNode::Value(classifier),
+    };
+    let head = context.whnf_value_type(classifier)?;
+    let ValueTypeView::Flow {
+        carrier,
+        source,
+        target,
+    } = value_type_view(context.arena(), head)?
+    else {
+        return Err(refused);
+    };
+    let carrier = context.whnf_value_type(carrier)?;
+    match value_type_view(context.arena(), carrier)? {
+        | ValueTypeView::Universe {
+            sort: GroundSort::Value,
+            level,
+        } if *level == Level::zero() => {},
+        | _ => return Err(refused),
+    }
+    Ok((
+        crate::formation::path_code(context.arena(), source)?,
+        crate::formation::path_code(context.arena(), target)?,
+    ))
+}
+
+/// The flow type a flow product of `first` and `second` synthesises.
+///
+/// # Specification
+/// - ensures: `Flow(Type, ⌜A × B⌝, ⌜A′ × B′⌝)` at the value universe of level
+///   zero, from the components' sources `A`, `B` and targets `A′`, `B′`.
+/// - panics: none.
+/// - executable: none — the minted node is compared by the judgement that
+///   checks the product against its declared type.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a product of `stay` and a forward flow synthesises the
+///   flow between its pairs, and checks at the declared telescope.
+/// - witness: `product::tests::a_flow_product_synthesises_the_flow_between_its_pairs`
+pub fn flow_classifier(
+    arena: &mut CoreArena,
+    (first_source, first_target): (ValueTypeId, ValueTypeId),
+    (second_source, second_target): (ValueTypeId, ValueTypeId),
+) -> ValueTypeId
+{
+    let source = arena.value_type_product(&[first_source, second_source]);
+    let target = arena.value_type_product(&[first_target, second_target]);
+    let source = arena.value_quote(source);
+    let target = arena.value_quote(target);
+    let universe = arena.value_type_universe(
+        gandr_core_term::Sort::Ground(GroundSort::Value),
+        Level::zero(),
+    );
+    arena.value_type_flow(universe, source, target)
 }
 
 /// The native product the judged product at `at` stands for.

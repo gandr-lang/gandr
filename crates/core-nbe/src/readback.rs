@@ -2466,6 +2466,11 @@ fn step(
                     let domain = machine.pop_value()?;
                     core.value_function_flow(domain, codomain)
                 },
+                | crate::domain::FlowFormer::Product => {
+                    let second = machine.pop_value()?;
+                    let first = machine.pop_value()?;
+                    core.value_flow_product(first, second)
+                },
             };
             machine.values.push(flow);
             Ok(())

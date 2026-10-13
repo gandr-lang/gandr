@@ -806,6 +806,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Value::ForwardFlow { .. }) => tags::NODE_V_FORWARD_FLOW,
             Some(&Value::FunctionFlow { .. }) => tags::NODE_V_FUNCTION_FLOW,
             Some(&Value::Then { .. }) => tags::NODE_V_THEN,
+            Some(&Value::FlowProduct(..)) => tags::NODE_V_FLOW_PRODUCT,
             Some(&Value::PathRefl(_)) => tags::NODE_V_PATH_REFL,
             Some(&Value::PathProduct(..)) => tags::NODE_V_PATH_PRODUCT,
             Some(&Value::PathEquiv { .. }) => tags::NODE_V_PATH_EQUIV,
@@ -992,6 +993,7 @@ fn encode_entry(
                     out.put_tag(tags::NODE_V_THEN);
                     out.put_tag(seam_tag(seam));
                 },
+                | Value::FlowProduct(..) => out.put_tag(tags::NODE_V_FLOW_PRODUCT),
                 | Value::PathRefl(_) => out.put_tag(tags::NODE_V_PATH_REFL),
                 | Value::PathProduct(..) => out.put_tag(tags::NODE_V_PATH_PRODUCT),
                 | Value::PathEquiv { ref evidence, .. } => {

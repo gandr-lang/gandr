@@ -755,6 +755,7 @@ _ => ret == Ok(Atom::Other(node)),
                     | Value::Here(_)
                     | Value::Stay(_)
                     | Value::Then(..)
+                    | Value::FlowProduct(..)
                     | Value::Forward(_)
                     | Value::FunctionFlow(..)
                     | Value::SessionRelated { .. }
@@ -812,6 +813,7 @@ _ => ret == Ok(Atom::Other(node)),
                         | Value::Here(_)
                         | Value::Stay(_)
                         | Value::Then(..)
+                        | Value::FlowProduct(..)
                         | Value::Forward(_)
                         | Value::FunctionFlow(..)
                         | Value::SessionRelated { .. }

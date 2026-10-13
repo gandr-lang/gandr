@@ -291,11 +291,11 @@
 //! and the bridge erases to `PathEquiv` with the dialogues it recorded, and
 //! univalence at a stratum `ua[n, k](a, b, f, g)`, which [`crate::ua`]
 //! derives and the bridge erases to the path product of one `PathEquiv` per
-//! corolla. The directed family's statements — `sim`, `forward` and `arrow`
-//! at `Flow(Type, A, B)` — are the rules of [`crate::flow`] and
-//! [`crate::forward`]. The bridge mode, higher fields and guarded List
-//! inhabitants stay at their kernel rule-language boundaries; function
-//! extensionality is the element-identity rule below.
+//! corolla. The directed family's statements — `sim`, `forward`, `arrow` and
+//! `flowProduct` at `Flow(Type, A, B)` — are the rules of [`crate::flow`],
+//! [`crate::forward`] and [`crate::product`]. The bridge mode, higher fields
+//! and guarded List inhabitants stay at their kernel rule-language
+//! boundaries; function extensionality is the element-identity rule below.
 //!
 //! **Choice.** Preserve untrusted native evidence across the export boundary
 //! instead of treating successful frontend checking as certification.
@@ -1466,6 +1466,24 @@ enum Frame
         /// The first flow's type.
         first: ValueTypeId,
     },
+    /// Await the first component flow of a flow product.
+    FlowProductFirst
+    {
+        /// The product.
+        product: ValueId,
+        /// The first flow.
+        at: ValueId,
+        /// The second flow.
+        second: ValueId,
+    },
+    /// Await the second component flow of a flow product.
+    FlowProductSecond
+    {
+        /// The second flow.
+        at: ValueId,
+        /// The first flow's source and target codes.
+        first: (ValueTypeId, ValueTypeId),
+    },
     /// Await the flow a ride moves along; its motive then forms under a binder
     /// of the flow's carrier.
     RideFlow
@@ -1968,6 +1986,8 @@ impl Frame
             | Self::StaySynthesised { .. } => FrameRole::StaySynthesised,
             | Self::ThenFirst { .. } => FrameRole::ThenFirst,
             | Self::ThenSecond { .. } => FrameRole::ThenSecond,
+            | Self::FlowProductFirst { .. } => FrameRole::FlowProductFirst,
+            | Self::FlowProductSecond { .. } => FrameRole::FlowProductSecond,
             | Self::RideFlow { .. } => FrameRole::RideFlow,
             | Self::RideMotive { .. } => FrameRole::RideMotive,
             | Self::RideValue { .. } => FrameRole::RideValue,
@@ -2081,6 +2101,8 @@ impl Frame
             | Self::StaySynthesised { .. }
             | Self::ThenFirst { .. }
             | Self::ThenSecond { .. }
+            | Self::FlowProductFirst { .. }
+            | Self::FlowProductSecond { .. }
             | Self::RideFlow { .. }
             | Self::RideMotive { .. }
             | Self::RideValue { .. }
@@ -3673,6 +3695,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            | Value::FlowProduct(first, second) => {
+                self.wait(Frame::FlowProductFirst {
+                    product: term,
+                    at: first,
+                    second,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: first,
+                    direction: Direction::Synthesise,
+                }))
+            },
             | Value::Forward(translator) => {
                 self.wait(Frame::ForwardTranslator {
                     at: term,
@@ -3991,6 +4024,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::StaticApplication(..)
             | Value::SessionRelated { .. }
             | Value::Then(..)
+            | Value::FlowProduct(..)
             | Value::Forward(_) => {
                 self.wait(Frame::ValueBridge { at: term, expected });
                 Ok(Step::Descend(Goal::Value {
@@ -4206,6 +4240,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::SessionRelated { .. }
             | Value::Stay(_)
             | Value::Then(..)
+            | Value::FlowProduct(..)
             | Value::Forward(_)
             | Value::FunctionFlow(..)
             | Value::Recorded(_) => false,
@@ -6098,6 +6133,27 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .value_type_flow(carrier, source, end);
                 Ok(Step::Ascend(Produced::ValueType(composite)))
             },
+            | (
+                Frame::FlowProductFirst {
+                    product: _,
+                    at,
+                    second,
+                },
+                Produced::ValueType(classifier),
+            ) => {
+                let first = crate::product::flow_component(self.context, at, classifier)?;
+                self.wait(Frame::FlowProductSecond { at: second, first });
+                Ok(Step::Descend(Goal::Value {
+                    term: second,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | (Frame::FlowProductSecond { at, first }, Produced::ValueType(classifier)) => {
+                let second = crate::product::flow_component(self.context, at, classifier)?;
+                let product =
+                    crate::product::flow_classifier(self.context.arena_mut(), first, second);
+                Ok(Step::Ascend(Produced::ValueType(product)))
+            },
             | (Frame::RideFlow { at, motive, .. }, Produced::ValueType(flow)) => {
                 let (carrier, ..) =
                     crate::flow::endpoints(self.context, TermNode::Computation(at), flow)?;
@@ -6680,6 +6736,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::StaySynthesised { .. }
                 | Frame::ThenFirst { .. }
                 | Frame::ThenSecond { .. }
+                | Frame::FlowProductFirst { .. }
+                | Frame::FlowProductSecond { .. }
                 | Frame::RideFlow { .. }
                 | Frame::ForwardTranslator { .. }
                 | Frame::ArrowDomain { .. }
@@ -10433,7 +10491,7 @@ mod tests
                     | Value::StaticApplication(..)
                     | Value::Hole(_)
                     | Value::Mark { .. }
-                    | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) => {
+                    | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) => {
                         prop_assert!(false, "the recipe mints no pair, injection, lift, quote, static operator, hole or mark");
                     },
                 }

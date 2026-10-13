@@ -232,6 +232,7 @@ pub use crate::tags::NODE_TAG_TABLE;
 pub use crate::tags::NODE_V_CONSTANT;
 pub use crate::tags::NODE_V_CONSTRUCTOR;
 pub use crate::tags::NODE_V_DEPENDENT_EVALUATION;
+pub use crate::tags::NODE_V_FLOW_PRODUCT;
 pub use crate::tags::NODE_V_FORWARD_FLOW;
 pub use crate::tags::NODE_V_FUNCTION_FLOW;
 pub use crate::tags::NODE_V_HERE;

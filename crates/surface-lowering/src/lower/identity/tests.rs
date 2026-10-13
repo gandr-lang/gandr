@@ -468,6 +468,43 @@ fn a_path_product_lowers_to_its_former()
 }
 
 #[test]
+fn a_flow_product_lowers_to_its_former()
+{
+    let negation = "def not(b: Bool) -> -F Bool {\n  case b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\n";
+    let mut arena = CoreArena::new();
+    let source = format!("{negation}def paired = flowProduct(stay(Unit), forward(not));\n");
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let DeclarationOutcome::Bodied { body } = outcome_of(&module, "paired".into())
+    else {
+        panic!("the product lowers");
+    };
+    let Some(&Value::FlowProduct(first, second)) = arena.value(body)
+    else {
+        panic!("`flowProduct(p, q)` is the kernel's flow product");
+    };
+    assert!(
+        matches!(arena.value(first), Some(&Value::Stay(_)))
+            && matches!(arena.value(second), Some(&Value::Forward(_))),
+        "both flows are read as values, in order"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let source = format!("{negation}def half = flowProduct(forward(not));\n");
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            outcome_of(&module, "half".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(count),
+                ..
+            }) if count == OperandCount::from(1_usize)
+        ),
+        "a flow product takes two flows"
+    );
+}
+
+#[test]
 fn a_computation_endpoint_is_the_value_it_returns()
 {
     let mut arena = CoreArena::new();

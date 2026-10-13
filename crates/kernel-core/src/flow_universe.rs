@@ -26,6 +26,7 @@
 //! | `Value::ForwardFlow { flow_type, translator, outputs, dialogues }` | `0x4C` | `Flow_U(a, b)` at first-order codes | the closed translator checks; one image per source pattern, leaf-natural, its dialogue replayed |
 //! | `Value::FunctionFlow { flow_type, domain, codomain }` | `0x4D` | `Flow_U(f, g)` at function codes | each boundary flow runs the way its variance fixes |
 //! | `Value::Then { first, second, seam }` | `0x4E` | `Flow(A, x, z)`, or `Flow_U(x, z)` when either side is | the carriers agree, the seam's endpoints meet, the seam is a sequence |
+//! | `Value::FlowProduct(first, second)` | `0x69` | `Flow_U(⌜A × B⌝, ⌜A' × B'⌝)` | each component reads as a universe flow, `Flow_U(A, A')` then `Flow_U(B, B')`, under either reading; both pairs are codes of the vocabulary |
 //! | `Computation::Ride { motive, flow, value }` | `0x4F` | `F P[y]` | the motive passes [`check_motive`]; the value checks at `P[x]` |
 //! | `Computation::TelescopeRide { motive, flow, start, over, value }` | `0x68` | `F C[b, end]` | both entries pass the gate; `over` lies over `flow` |
 //!
@@ -41,8 +42,9 @@
 //! applies: `stay` returns the value; a sequential composition rides its first
 //! flow, then its second; a motive that ignores its binder returns the value;
 //! products, sums and lists ride constructorwise; at `El(x)` a forward flow
-//! applies its translator and a function flow wraps the function in its
-//! boundaries; at a singleton motive `Flow(D, l, x)` a `stay` value returns the
+//! applies its translator, a function flow wraps the function in its
+//! boundaries and a flow product rides a pair's components along its two
+//! flows; at a singleton motive `Flow(D, l, x)` a `stay` value returns the
 //! flow and any other value composes with it. A session simulation relates
 //! recorded runs, not endpoint values: a ride along one is stuck, and
 //! [`replay_ride`] refuses it as `RecordedRunRequired`. A telescope ride along
@@ -122,7 +124,7 @@
 //! # Decision
 //!
 //! **Choice.** The directed family is native kernel syntax at parity with the
-//! groupoidal one: two classifiers, five introductions and two eliminators,
+//! groupoidal one: two classifiers, six introductions and two eliminators,
 //! admitted by the ordinary checking machine and computed by the ordinary
 //! replay. Each certificate's obligation is the one the rule language decided:
 //! exhaustive symbolic images for a forward translator, the seam gate for
@@ -148,7 +150,13 @@
 //! became a declared `Flow_U` statement of the surface language (the
 //! classifier and the session simulation, `0x48` and `0x49`), and when the
 //! surface family's `Flow`, `stay`, `then` and `ride` became statements a
-//! declaration makes (`0x4A`–`0x4F` and `0x68`). The function clause is
+//! declaration makes (`0x4A`–`0x4F` and `0x68`). It fired a third time for the
+//! componentwise product, `0x69`, the directed twin of `Value::PathProduct`:
+//! a hand-written degree-one universe flow over a telescope is a nested
+//! product of `stay` and forward flows, as the groupoidal one is of
+//! reflexivity and equivalences. Its obligation is its components': each
+//! replays as itself, and the ride on a pair rides each component along its
+//! own flow, as transport along a path product does. The function clause is
 //! revisited when an argument code is itself a function or universe code,
 //! where an argument variable would occur at both variances, or when a
 //! translator at function codes that is not the arrow of two boundary flows

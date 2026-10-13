@@ -427,6 +427,8 @@ pub enum Former<'source, Node>
     Stay(Node),
     /// Directed composition `then(f, g)`.
     Then(Node, Node),
+    /// The product of two universe flows, `flowProduct(p, q)`.
+    FlowProduct(Node, Node),
     /// A forward flow `forward(f)` over its translator.
     Forward(Node),
     /// A function flow `arrow(d, c)` over its domain and codomain flows.
