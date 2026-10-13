@@ -3064,15 +3064,21 @@ fn member_sep() -> Regex
 ///
 /// Repeating a bare sort hole is safe here because **every member carries its
 /// own terminator**: a definition ends at `;` or at its body's closing brace,
-/// and a nested module ends at its closing brace. After a member the only
-/// admissible tiles are the next member's lead (`@[`, `def`, `module`) or the
-/// body's `}`, none of which competes with the hole's own content — the
-/// discrimination the member-list separator rule exists to protect.
+/// a type member at its `;`, and a nested module ends at its closing brace.
+/// After a member the only admissible tiles are the next member's lead (`@[`,
+/// `def`, `type`, `module`) or the body's `}`, none of which competes with the
+/// hole's own content — the discrimination the member-list separator rule
+/// exists to protect.
+///
+/// A type member `type T = τ ;` names a type inside the body: the
+/// representation a signature's abstract component `type T` seals. It leads
+/// with `type`, as a signature's type component does, and closes on `;`, so
+/// its type runs to the terminator however far it reaches.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: appends plain and attributed definitions followed by a nested
-///   module, all at the module-member sort with module provenance.
+/// - ensures: appends plain and attributed definitions, a type member and a
+///   nested module, all at the module-member sort with module provenance.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3083,7 +3089,7 @@ fn member_sep() -> Regex
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 3 && added.iter().zip(["module_definition_member", "attributed_module_definition_member", "nested_module_member"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::ModuleMember && rule.prec() == p && rule.provenance().0 == "module_declaration")))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 4 && added.iter().zip(["module_definition_member", "attributed_module_definition_member", "module_type_member", "nested_module_member"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::ModuleMember && rule.prec() == p && rule.provenance().0 == "module_declaration")))]
 fn module_members(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -3110,6 +3116,19 @@ fn module_members(
         s,
         p,
         module_definition_member(),
+    ));
+    out.push(r(
+        RuleName("module_type_member"),
+        Provenance("module_declaration"),
+        s,
+        p,
+        seq([
+            t(TileLabel("type")),
+            t(TileLabel("type_identifier")),
+            t(TileLabel("=")),
+            h(Sort::Type),
+            t(TileLabel(";")),
+        ]),
     ));
     out.push(r(
         RuleName("nested_module_member"),

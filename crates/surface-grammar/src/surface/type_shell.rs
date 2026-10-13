@@ -70,7 +70,7 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow", "item.singleton", "expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 50 && rules.iter().take(29).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(29).take(3).all(|rule| rule.sort() == Sort::Item) && rules.iter().skip(32).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow", "item.singleton", "expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 51 && rules.iter().take(30).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(30).take(3).all(|rule| rule.sort() == Sort::Item) && rules.iter().skip(33).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -100,7 +100,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 29 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "forall_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 30 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "forall_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -108,6 +108,7 @@ fn add_type_rules(
 {
     let ty = Sort::Type;
     let type_atom = precs.prec(PrecName("type.atom"))?;
+    let type_path = precs.prec(PrecName("type.path"))?;
     let type_application = precs.prec(PrecName("type.application"))?;
     let type_product = precs.prec(PrecName("type.product"))?;
     let type_sum = precs.prec(PrecName("type.sum"))?;
@@ -330,6 +331,30 @@ fn add_type_rules(
             tile(TileLabel("(")),
             comma1(Regex::sort(ty)),
             tile(TileLabel(")")),
+        ]),
+    ));
+    // A qualified type reference `M.T`: a type component of the module the
+    // operand names, read through the module namespace. The `.` is postfix,
+    // left-associative so `Outer.Inner.T` chains, and binds tighter than
+    // application so `-F M.T` and `M.T -> C` need no parentheses.
+    //
+    // A postfix `.` rather than a lead-tile path `T (. T)*` is what keeps a
+    // session payload unambiguous. In `!Seat.Report. end` the send's open `!`
+    // continues at the first `.`, so the bare spelling reads `Seat` alone as
+    // the payload and fails where the second `.` meets `end`;
+    // `!(Seat.Report). end` reads the path inside its parentheses, where no
+    // open form takes a `.`. A lead-tile path would claim that first `.`
+    // itself and read the bare spelling as a path payload, a second parse of
+    // the same text. The lowering refuses an operand that is not a module
+    // name or a path.
+    rules.push(rule(
+        RuleName("type_path"),
+        ty,
+        type_path,
+        Regex::seq([
+            Regex::sort(ty),
+            tile(TileLabel(".")),
+            tile(TileLabel("type_identifier")),
         ]),
     ));
     // A parenthesized type holds one type or, as the domain of the n-ary `=>`,

@@ -107,6 +107,7 @@ fn module_declarations_mold_zero_obligation() -> Result<(), Box<dyn Error>>
   def x = 1;
   def f(a: Integer) -> -F Integer { pure a }
 }"#,
+        "module Outer { module Inner { type T = Integer; } } def y : Outer.Inner.T -> -F Outer.Inner.T;",
     ];
     for src in cases {
         let result = parse(pbg, SourceText::from(src))?;
@@ -286,7 +287,7 @@ fn hole_tile_sorts(
 fn an_opaque_module_ascription_parses_cleanly() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let src = "module Counter :> #{ type T, zero : T } { def zero = 0; }";
+    let src = "module Counter :> #{ type T, zero : T } { type T = Integer; def zero = 0; }";
     let result = parse(pbg, SourceText::from(src))?;
     assert!(
         bool::from(result.is_clean()),
@@ -311,6 +312,67 @@ fn a_transparent_ascription_admits_the_same_signature() -> Result<(), Box<dyn Er
         "the same signature is admitted under transparent ascription"
     );
     Ok(())
+}
+
+/// A qualified type path stands as a session payload only between
+/// parentheses.
+///
+/// The path's `.` is postfix, and the send's own `.` continues the `!` still
+/// open before it. In `!(Seat.Report). end` the parentheses close over the
+/// path, so its `.` is the postfix one and the next is the send's; in the bare
+/// `!Seat.Report. end` the send claims the first `.` and reads `Seat` alone as
+/// the payload, and the second `.` meets `end` where a component name must
+/// follow. One text has one reading, and the bare one is a repair rather than
+/// a second parse.
+#[test]
+fn a_path_payload_parses_only_parenthesized() -> Result<(), Box<dyn Error>>
+{
+    let pbg = built();
+    let parenthesized = parse(pbg, SourceText::from("def s : !(Seat.Report). end = s;"))?;
+    assert!(
+        bool::from(parenthesized.is_clean()),
+        "the parenthesized path payload molds clean; obligations: {:?}",
+        parenthesized.obligations()
+    );
+    assert_eq!(
+        ["type_path", "send_session_type"],
+        dot_rules(pbg, parenthesized.tree())?.as_slice(),
+        "the first `.` is the path's and the second the send's"
+    );
+    let bare = parse(pbg, SourceText::from("def s : !Seat.Report. end = s;"))?;
+    assert!(
+        !bool::from(bare.is_clean()),
+        "the bare path payload is a repair, not a second reading"
+    );
+    assert_eq!(
+        Some(&"send_session_type"),
+        dot_rules(pbg, bare.tree())?.first(),
+        "the send claims the first `.`, so `Seat` alone is the payload and the path never forms"
+    );
+    Ok(())
+}
+
+/// The rule of every `.` tile in a committed tree, in source order.
+///
+/// # Specification
+/// # Errors
+/// The grammar's refusal of a mold id the tree carries.
+fn dot_rules(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+) -> Result<Vec<&'static str>, Box<dyn Error>>
+{
+    let mut rules = Vec::new();
+    let mut pending = vec![tree.root()];
+    while let Some(id) = pending.pop() {
+        if let Some(NodeLabel::Tile(mold)) = label_of(tree, id)
+            && text(tree, id) == "."
+        {
+            rules.push(pbg.rule_of(mold)?.name().0);
+        }
+        pending.extend(children(tree, id).into_iter().rev());
+    }
+    Ok(rules)
 }
 
 /// Module nesting is **unbounded in the clean grammar**, not merely deeper than
