@@ -74,15 +74,16 @@ crates/
 ├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
 ├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
 ├── theory-virtual-doctrines/      virtual double categories, reflected judgments and directed laws over replayable rewriting evidence
-├── workflow-spec-cost/            the `spec-cost` and `spec-cost-ratio` binaries: checks ranked by profiled time; each test's enforcing over plain time
-└── workflow-test-timing/          the `test-timing` binary: nextest priority levels proposed from recent merge-queue runs' JUnit reports
+├── workflow-build-state/          the `build-state` binary: build state kept to one build's units
+├── workflow-spec-cost/            the `spec-cost` and `spec-cost-ratio` binaries: what specifications cost the tests
+└── workflow-test-timing/          the `test-timing` binary: nextest priorities from merge-queue timings
 ```
 
 The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins. Its `specification_present` lint reports open specification debt as warnings (`check:dylint`); every other policy lint denies, `spec_clause_traversal` among them: a specification check costs no more than the function it checks, as [`theory-spec-combinators`](theory-spec-combinators/src/lib.rs) states with its combinators.
 
 ## Crate README shape
 
-A crate's `README.md` is its only document: an overview and conceptual entry that links into the crate's `src/lib.rs` `//!` docs and the owning module, where mechanism, invariants, decisions (choice, alternatives, reversal) and specification detail live and `check:doc` builds them. A crate carries no `docs/` directory and no changelog of its own. A behavioural floor or a deferred-row ledger is a tracking issue, linked from the README once; a measurement or a report belongs to neither. `check:markdown` refuses tracked markdown outside `README.md`, `CHANGELOG.md`, `crates/README.md`, `crates/*/README.md` and `contrib/*/README.md`, and a README over its budget: 12 KB for a crate, 6 KB at the root.
+A crate's `README.md` is its only document: an overview and conceptual entry that links into the crate's `src/lib.rs` `//!` docs and the owning module, where mechanism, invariants, decisions (choice, alternatives, reversal) and specification detail live and `check:doc` builds them. A crate carries no `docs/` directory and no changelog of its own. A behavioural floor or a deferred-row ledger is a tracking issue, linked from the README once; a measurement or a report belongs to neither. `check:markdown` refuses tracked markdown outside `README.md`, `CHANGELOG.md`, `crates/README.md`, `crates/*/README.md` and `contrib/*/README.md`, and a README over its budget in `sizelint.toml`.
 
 Every crate README follows one order. A section is present when the crate has content for it.
 
