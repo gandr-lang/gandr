@@ -500,4 +500,46 @@ proptest! {
         prop_assert_eq!(session.buffer().text(), Text(seed), "undoing every edit restores the text");
         prop_assert_eq!(session.published(), &opened, "and the diagnostics it opened with");
     }
+
+    #[test]
+    fn two_editors_on_one_buffer_each_keep_their_answers(
+        seed in select(SEEDS.as_slice()),
+        script in proptest::collection::vec(edit(), 1_usize .. 16_usize),
+    ) {
+        let mut first = Session::open(
+            String::from("file:///strict/shared.gandr"),
+            Text(seed),
+            Typing::Assisted,
+            Oracle::Keystroke,
+        );
+        let mut second = first.beside(Typing::Assisted);
+        for &step in &script {
+            apply(&mut first, step);
+            apply(&mut second, step);
+            prop_assert_eq!(first.buffer().text(), second.buffer().text(), "one buffer, two clients");
+        }
+        first.replays_over_streams();
+        second.replays_over_streams();
+    }
+
+    #[test]
+    fn two_editors_on_their_own_buffers_each_keep_their_answers(
+        seed in select(SEEDS.as_slice()),
+        script in proptest::collection::vec((any::<bool>(), edit()), 1_usize .. 16_usize),
+    ) {
+        let mut first = Session::open(
+            String::from("file:///strict/diverged.gandr"),
+            Text(seed),
+            Typing::Assisted,
+            Oracle::Keystroke,
+        );
+        let mut second = first.beside(Typing::Plain);
+        for &(in_first, step) in &script {
+            apply(if in_first { &mut first } else { &mut second }, step);
+            first.verify();
+            second.verify();
+        }
+        first.replays_over_streams();
+        second.replays_over_streams();
+    }
 }
