@@ -170,6 +170,7 @@ features = ["anodized"]
 # - storage-records
 # - storage-values
 # - surface-lsp
+# - surface-parser (dev)
 # - surface-syntax
 [workspace.dependencies.blake3]
 version = "1.8.7"

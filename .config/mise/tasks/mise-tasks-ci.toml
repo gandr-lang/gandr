@@ -192,9 +192,19 @@ flag "--top <top>" help="how many checks to list" default="30"
 '''
 run = "cargo run --locked --quiet --package gandr-workflow-spec-cost -- --tests {{usage.tests}} --runs {{usage.runs}} --frequency {{usage.frequency}} --top {{usage.top}}"
 
+# The one-token-drop recovery matrix in full: some forty thousand parses
+# against the per-source records under crates/surface-parser/tests/recovery,
+# where `check` samples every sixteenth token. UPDATE_EXPECT=1 re-records from
+# the full matrix; GANDR_RECOVERY_SOURCE=<path in the corpus> narrows either
+# run to one source.
+["ci:recovery"]
+description = "Every corpus source cut short and with each token dropped, against its recovery record"
+env.GANDR_RECOVERY_WHOLE = "1"
+run = "cargo nextest run --locked --package gandr-surface-parser --test tests --profile {{ env.NEXTEST_PROFILE | default(value='default') }} -E 'test(=acceptance::dropped_tokens_recover_no_worse_than_the_record)'"
+
 # The enforcing suite, instrumented into target/coverage so it never shares
-# the cached enforcing state. The plain-only parser witness is
-# cfg(not(anodized_panic)), so it is a second instrumented run; a line is
+# the cached enforcing state. The plain-only parser tests are
+# cfg(not(anodized_panic)), so they are a second instrumented run; a line is
 # covered when either run executed it. llvm-tools already supplies llvm-cov.
 ["ci:coverage"]
 description = "Enforcing line coverage, with the plain-only parser witness merged in, as coverage.lcov"
@@ -208,7 +218,7 @@ RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR="$root/target/coverage" \
 CARGO_TARGET_DIR="$root/target/coverage-plain" \
   cargo llvm-cov nextest --locked --no-report \
   -p gandr-surface-parser --test tests \
-  -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)'
+  -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget) or test(=acceptance::dropped_tokens_recover_no_worse_than_the_record)'
 CARGO_TARGET_DIR="$root/target/coverage-plain" \
   cargo llvm-cov report --lcov --output-path "$root/coverage-plain.lcov"
 awk '

@@ -2191,6 +2191,307 @@ fn push_prefix<'pbg>(
     state
 }
 
+/// Every corpus source, whole and cut short after each significant token,
+/// keeps its recorded tree, and dropping each significant token recovers no
+/// worse than the record.
+///
+/// Each source of the fixture and strict roots has a record under
+/// `tests/recovery/` at its path in the corpus, with the extension `recovery`.
+/// Its first row is the whole parse's obligation count, node count and
+/// fingerprint; then comes one row per significant token: the parse cut short
+/// after it (obligations, nodes and the fingerprint's first eight hex digits)
+/// and the parse with it dropped (obligations and nodes). A whole or cut-short
+/// row must match exactly. A dropped row is worse when either count grows; the
+/// failure names the worst. A source with no record, a record whose rows do not
+/// match its source's tokens and a record with no source are stale; the
+/// failure names each, with the command that re-records it.
+///
+/// The fingerprint hashes the tree's significant nodes in preorder, as the
+/// tree's own digest does, but names each mold by its rule, its label and its
+/// rank among that rule's molds of the label rather than by its [`MoldId`].
+/// The tree digest moves under any grammar change that renumbers molds; the
+/// fingerprint moves only where a tree does, so a grammar change re-records
+/// exactly the sources whose parses it changes.
+///
+/// A corpus change re-records the sources it touches:
+/// `UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<source> mise run ci:recovery`
+/// rewrites that source's record alone, `<source>` being its path in the
+/// corpus, and `UPDATE_EXPECT=1 mise run ci:recovery` rewrites every record and
+/// deletes those whose source is gone. The rewrite is a reviewed diff, never a
+/// blind re-pin: a dropped row whose counts grew is a recovery regression, and
+/// a whole or cut-short row that moved is a tree change, each answered by the
+/// change that causes it.
+///
+/// The whole matrix is some forty thousand parses, so `check` samples it: every
+/// source's whole row and the rows of every sixteenth significant token.
+/// `GANDR_RECOVERY_WHOLE=1` runs every row (`mise run ci:recovery`), and the
+/// rewrite always does.
+///
+/// This is a differential measurement over the corpus, not a clause witness:
+/// under `anodized_panic` every predicate runs inside each of the matrix's
+/// parses, which does not fit the test's kill. CI's plain lane runs it by name
+/// (`mise run check:tests-plain-only`).
+#[cfg(not(anodized_panic))]
+#[test]
+fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error>>
+{
+    use core::fmt::Write as _;
+
+    /// How many moved or worse rows a failure lists.
+    const LISTED: usize = 16;
+    /// The sampled run checks the token rows whose index this divides.
+    const SAMPLE_STRIDE: usize = 16;
+
+    let pbg = built();
+    let mut spellings: Vec<String> = Vec::new();
+    let mut ranks: Vec<(&str, &str, usize)> = Vec::new();
+    for (id, def) in pbg.iter_molds() {
+        let rule = pbg.rule_of(id)?.name;
+        let rank = match ranks
+            .iter_mut()
+            .find(|&&mut (name, label, _)| name == rule && label == def.label)
+        {
+            | Some(entry) => {
+                entry.2 = entry.2.saturating_add(1);
+                entry.2
+            },
+            | None => {
+                ranks.push((rule, def.label, 0));
+                0
+            },
+        };
+        let index = usize::try_from(u32::from(id))?;
+        if spellings.len() <= index {
+            spellings.resize(index.saturating_add(1), String::new());
+        }
+        if let Some(slot) = spellings.get_mut(index) {
+            *slot = format!("{rule} {} {rank}", def.label);
+        }
+    }
+    let fingerprint = |tree: &SyntaxTree<'_>| {
+        let spelled = |mold: MoldId| {
+            usize::try_from(u32::from(mold))
+                .ok()
+                .and_then(|index| spellings.get(index))
+                .map_or("", String::as_str)
+        };
+        let mut preimage: Vec<u8> = Vec::new();
+        let mut pending = vec![tree.root()];
+        while let Some(at) = pending.pop() {
+            let Some(node) = label_of(tree, at)
+            else {
+                continue;
+            };
+            let below: Vec<NodeIndex> = tree
+                .children(at)
+                .filter(|&child| {
+                    label_of(tree, child).is_some_and(|child| bool::from(child.significance()))
+                })
+                .collect();
+            let name = match node {
+                | NodeLabel::Tile(mold) => format!("tile {}", spelled(mold)),
+                | NodeLabel::Meld(mold) => format!("meld {}", spelled(mold)),
+                | other => format!("{other:?}"),
+            };
+            preimage.extend_from_slice(name.as_bytes());
+            preimage.push(0);
+            preimage
+                .extend_from_slice(&u64::try_from(below.len()).unwrap_or(u64::MAX).to_le_bytes());
+            if bool::from(node.carries_text()) {
+                let written = text(tree, at);
+                preimage.extend_from_slice(
+                    &u64::try_from(written.len())
+                        .unwrap_or(u64::MAX)
+                        .to_le_bytes(),
+                );
+                preimage.extend_from_slice(written.as_bytes());
+            }
+            pending.extend(below.into_iter().rev());
+        }
+        blake3::hash(&preimage).to_hex().to_string()
+    };
+    let root = corpus_root();
+    let records = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recovery");
+    let update = std::env::var_os("UPDATE_EXPECT").is_some();
+    let only = std::env::var("GANDR_RECOVERY_SOURCE").ok();
+    let stride = if update || std::env::var_os("GANDR_RECOVERY_WHOLE").is_some() {
+        1
+    }
+    else {
+        SAMPLE_STRIDE
+    };
+    let rerecord = |rel: &str| {
+        format!(
+            "re-record it with `UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE={rel} mise run ci:recovery`"
+        )
+    };
+    let mut sourced: Vec<PathBuf> = Vec::new();
+    let mut stale = Vec::new();
+    let mut moved = Vec::new();
+    let mut worse: Vec<(usize, usize, String)> = Vec::new();
+    for path in gandr_files(&root) {
+        let relative = path.strip_prefix(&root)?;
+        let rel = relative.to_string_lossy().replace('\\', "/");
+        if !(rel.starts_with("fixture/") || rel.starts_with("strict/")) {
+            continue;
+        }
+        let record = records.join(relative).with_extension("recovery");
+        sourced.push(record.clone());
+        if only.as_deref().is_some_and(|only| only != rel) {
+            continue;
+        }
+        let src = read_source(&path)?;
+        let whole = parse(pbg, SourceText::from(src.as_str()))?;
+        let digest = fingerprint(whole.tree());
+        let mut observed = String::new();
+        writeln!(
+            observed,
+            "W\t{}\t{}\t{digest}",
+            whole.obligations().len(),
+            whole.tree().positions().count()
+        )?;
+        let significant = label(SourceFragment::from(src.as_str()))
+            .into_iter()
+            .filter(|token| token.lexeme != Lexeme::Space);
+        for (index, token) in significant.enumerate() {
+            if !index.is_multiple_of(stride) {
+                writeln!(observed, "T")?;
+                continue;
+            }
+            let start = usize::try_from(token.start)?;
+            let end = usize::try_from(token.end)?;
+            let cut = parse(pbg, SourceText::from(src.get(.. end).unwrap_or_default()))?;
+            let cut_digest = fingerprint(cut.tree());
+            let mut dropped = String::with_capacity(src.len());
+            dropped.push_str(src.get(.. start).unwrap_or_default());
+            dropped.push_str(src.get(end ..).unwrap_or_default());
+            let variant = parse(pbg, SourceText::from(dropped.as_str()))?;
+            writeln!(
+                observed,
+                "T\t{}\t{}\t{}\t{}\t{}",
+                cut.obligations().len(),
+                cut.tree().positions().count(),
+                cut_digest.get(.. 8).unwrap_or_default(),
+                variant.obligations().len(),
+                variant.tree().positions().count()
+            )?;
+        }
+        if update {
+            if let Some(parent) = record.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&record, &observed)?;
+            continue;
+        }
+        let Ok(recorded) = std::fs::read_to_string(&record)
+        else {
+            stale.push(format!("{rel} has no record; {}", rerecord(&rel)));
+            continue;
+        };
+        let (rows, recorded_rows) = (observed.lines().count(), recorded.lines().count());
+        if rows != recorded_rows {
+            stale.push(format!(
+                "{rel} has {rows} rows and its record {recorded_rows}; {}",
+                rerecord(&rel)
+            ));
+            continue;
+        }
+        for (row, (got, want)) in observed.lines().zip(recorded.lines()).enumerate() {
+            let token = row.saturating_sub(1);
+            let fields: Vec<&str> = got.split('\t').collect();
+            let recorded_fields: Vec<&str> = want.split('\t').collect();
+            match (fields.as_slice(), recorded_fields.as_slice()) {
+                | (&["T"], &["T", ..]) => {},
+                | (&["W", ..], &["W", ..]) => {
+                    if got != want {
+                        moved.push(format!("{rel} whole"));
+                    }
+                },
+                | (
+                    &["T", ref cut @ .., obligations, nodes],
+                    &["T", ref recorded_cut @ .., old_obligations, old_nodes],
+                ) if cut.len() == 3 && recorded_cut.len() == 3 => {
+                    if cut != recorded_cut {
+                        moved.push(format!("{rel} cut after token {token}"));
+                    }
+                    let obligations: usize = obligations.parse()?;
+                    let nodes: usize = nodes.parse()?;
+                    let old_obligations: usize = old_obligations.parse()?;
+                    let old_nodes: usize = old_nodes.parse()?;
+                    if obligations > old_obligations || nodes > old_nodes {
+                        worse.push((
+                            obligations.saturating_sub(old_obligations),
+                            nodes.saturating_sub(old_nodes),
+                            format!(
+                                "{rel} drop {token}: obligations {old_obligations} -> {obligations}, nodes {old_nodes} -> {nodes}"
+                            ),
+                        ));
+                    }
+                },
+                | _ => {
+                    stale.push(format!("{rel} row {row} is malformed; {}", rerecord(&rel)));
+                    break;
+                },
+            }
+        }
+    }
+    let mut orphans = Vec::new();
+    if only.is_none() {
+        let mut pending = vec![records.clone()];
+        while let Some(dir) = pending.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir)
+            else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    pending.push(path);
+                }
+                else if !sourced.contains(&path) {
+                    orphans.push(path);
+                }
+            }
+        }
+        orphans.sort();
+    }
+    if update {
+        for orphan in &orphans {
+            std::fs::remove_file(orphan)?;
+        }
+        return Ok(());
+    }
+    let orphaned: Vec<&Path> = orphans
+        .iter()
+        .filter_map(|orphan| orphan.strip_prefix(&records).ok())
+        .collect();
+    assert!(
+        stale.is_empty() && orphans.is_empty(),
+        "stale recovery records: {stale:?}; records under tests/recovery with no corpus source, which `UPDATE_EXPECT=1 mise run ci:recovery` deletes: {orphaned:?}"
+    );
+    assert!(
+        moved.is_empty(),
+        "{} whole or cut-short trees moved from the record: {:?}",
+        moved.len(),
+        moved.iter().take(LISTED).collect::<Vec<_>>()
+    );
+    let worst = worse
+        .iter()
+        .max_by_key(|&&(obligations, nodes, _)| (obligations, nodes));
+    assert!(
+        worse.is_empty(),
+        "{} dropped tokens recover worse than the record; worst {:?}; first {:?}",
+        worse.len(),
+        worst.map(|entry| &entry.2),
+        worse
+            .iter()
+            .take(LISTED)
+            .map(|entry| &entry.2)
+            .collect::<Vec<_>>()
+    );
+    Ok(())
+}
+
 /// `run` opens a bind statement where `<-` follows its pattern and an inline
 /// run everywhere else — at the top level, in a body, and in an argument list,
 /// where a declaration head would otherwise close the declaration around it.
