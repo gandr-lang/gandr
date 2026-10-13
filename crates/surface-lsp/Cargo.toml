@@ -40,5 +40,10 @@ quenchant-shape.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+# The editor-simulation suite generates random edit scripts and shrinks a
+# failing one to its smallest keystroke sequence.
+[dev-dependencies]
+proptest.workspace = true
+
 [lints]
 workspace = true
