@@ -14,8 +14,9 @@ sign Magma {
 ///
 /// The directed twin is a flow: `stay` at the unit, then one `forward` per
 /// corolla, nested by `flowProduct` in the same order. A term ridden along it
-/// moves forward as it moves along the path, and the ride that would reverse
-/// it is refused, as every symmetry of a flow is.
+/// moves forward as it moves along the path: `rides` states it, as `moves`
+/// states the transport, and `ridden` runs it. The ride that would reverse it
+/// is refused, as every symmetry of a flow is.
 module ByHand {
   type Tel = #{Unit, #{+{Unit}, Bool}};
 
@@ -63,6 +64,10 @@ module ByHand {
   @[ runs("#{unit, #{+{.0 = unit}, +{.1 = unit}}}") ]
   def ridden : +U (-F Tel) ;
   def ridden = thunk { become forth(#{unit, #{+{.0 = unit}, +{.0 = unit}}}) } ;
+
+  @[ checks ]
+  def rides : Path(Tel, ride(\X. X, opposite_dir_by_hand, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
+  def rides = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
 
   @[ refuses("NonCovariantMotive") ]
   def reversed() -> -F Flow(Type, Tel, Tel) {

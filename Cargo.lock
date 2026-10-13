@@ -673,6 +673,8 @@ version = "0.0.0"
 dependencies = [
  "gandr-core-checker",
  "gandr-core-term",
+ "gandr-kernel-conversion-trace",
+ "gandr-kernel-core",
  "gandr-kernel-term",
  "gandr-storage-artifact",
  "gandr-storage-records",

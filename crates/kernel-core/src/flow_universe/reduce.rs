@@ -78,7 +78,9 @@ enum Head
 ///   other value composes with it. Otherwise `Stuck`: a session simulation, a
 ///   feedback seam, a neutral flow and a flow product at a value that is no
 ///   pair have no endpoint-value action.
-/// - provides: the replay's δ-free directed computation.
+/// - provides: the replay's δ-free directed computation: a named flow leaves
+///   the ride stuck at its head, and a named translator stands at the head of
+///   its row's bind, each for the recorded dialogue to unfold.
 /// - fails: `ArenaFault` on an unreadable flow, motive or component.
 /// - panics: none.
 ///

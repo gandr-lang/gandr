@@ -336,6 +336,7 @@ path = "crates/kernel-check-memo"
 # - core-nbe
 # - kernel-core
 # - kernel-term
+# - surface-corpus (dev)
 [workspace.dependencies.gandr-kernel-conversion-trace]
 path = "crates/kernel-conversion-trace"
 
@@ -346,6 +347,7 @@ path = "crates/kernel-conversion-trace"
 # - core-checker
 # - core-nbe (dev)
 # - core-session
+# - surface-corpus (dev)
 # - surface-lowering (dev)
 [workspace.dependencies.gandr-kernel-core]
 path = "crates/kernel-core"

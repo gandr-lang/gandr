@@ -369,6 +369,7 @@ pub use crate::closure::CompBody;
 pub use crate::closure::CompClosure;
 pub use crate::closure::Environment;
 pub use crate::closure::EnvironmentDepth;
+pub use crate::closure::Mover;
 pub use crate::closure::ValueBody;
 pub use crate::closure::ValueClosure;
 pub use crate::conv::ConversionFault;

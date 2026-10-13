@@ -7745,6 +7745,126 @@ mod tests
         ));
     }
 
+    /// `Flow(Type, ⌜Bool⌝, ⌜Bool⌝)`, `El(x)` and Bool's two constructors, over
+    /// [`crate::fixture::booleans`].
+    ///
+    /// # Specification
+    /// trivial.
+    fn flows_of_booleans(
+        arena: &mut CoreArena,
+        boolean: ValueTypeId,
+    ) -> (ValueTypeId, ValueTypeId, [ValueId; 2])
+    {
+        let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let code = arena.value_quote(boolean);
+        let flow_type = arena.value_type_flow(universe, code, code);
+        let decoded = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let element = arena.value_type_element(decoded, Level::zero());
+        let unit = arena.value_unit();
+        let constructors = [0_usize, 1].map(|summand| arena.value_injection(summand.into(), unit));
+        (flow_type, element, constructors)
+    }
+
+    /// Assert that every declaration of `report` checks and the kernel
+    /// readmits every one of them as a definition.
+    ///
+    /// # Specification
+    /// trivial.
+    fn checks_and_readmits(
+        report: &ModuleReport,
+        readmission: &Readmission,
+    )
+    {
+        assert!(
+            report
+                .judged()
+                .iter()
+                .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+            "every declaration checks: {report:?}"
+        );
+        assert!(
+            readmission
+                .readmitted()
+                .iter()
+                .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. })),
+            "the kernel replays every dialogue the checker recorded: {:?}",
+            readmission.readmitted()
+        );
+    }
+
+    #[test]
+    fn a_ride_along_a_named_flow_crosses_with_the_flows_unfolding()
+    {
+        // def not : U (Bool -> F Bool) = \b. case b of { .0 -> .1 ; .1 -> .0 } ;
+        // def flip : Flow(Type, Bool, Bool) = forward(not) ;
+        // def flipped : Path(Bool, ride(\X. X, flip, .0), .1) = here(.1) ;
+        // The ride is stuck on `flip` until `flip` unfolds: a step only the
+        // recorded dialogue names.
+        let mut arena = CoreArena::new();
+        let functions = crate::fixture::booleans(&mut arena);
+        let (flow_type, element, [truth, falsity]) = flows_of_booleans(&mut arena, functions.ty);
+        let [not, flip] = [0_usize, 1].map(|at| arena.value_constant(ConstantIndex::from(at)));
+        let forward = arena.value_forward(not);
+        let ride = arena.computation_ride(element, flip, truth);
+        let ridden = arena.value_returned(ride);
+        let path = arena.value_type_path(functions.ty, ridden, falsity);
+        let here = arena.value_here(falsity);
+        let (report, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(
+                At(0),
+                Maybe::Present(functions.function),
+                Maybe::Present(functions.not),
+            ),
+            declaration(At(1), Maybe::Present(flow_type), Maybe::Present(forward)),
+            declaration(At(2), Maybe::Present(path), Maybe::Present(here)),
+        ]);
+        // The checker relates the ride by unfolding `flip`, and the kernel
+        // replays that unfolding at the ride's flow.
+        checks_and_readmits(&report, &readmission);
+    }
+
+    #[test]
+    fn a_ride_through_named_translators_crosses_with_their_unfoldings()
+    {
+        // def not : U (Bool -> F Bool) = \b. case b of { .0 -> .1 ; .1 -> .0 } ;
+        // def both : Path(#{Bool, Bool},
+        //   ride(\X. X, flowProduct(forward(not), forward(not)), #{.0, .1}),
+        //   #{.1, .0}) = here(#{.1, .0}) ;
+        // def each : Path(#{Bool, Bool},
+        //   ride(\X. #{X, X}, forward(not), #{.0, .1}), #{.1, .0})
+        //   = here(#{.1, .0}) ;
+        // Each component's translator is the definition `not`, which unfolds
+        // only once the components before it have returned.
+        let mut arena = CoreArena::new();
+        let functions = crate::fixture::booleans(&mut arena);
+        let (_, element, [truth, falsity]) = flows_of_booleans(&mut arena, functions.ty);
+        let not = arena.value_constant(ConstantIndex::from(0_usize));
+        let forward = arena.value_forward(not);
+        let paired = arena.value_flow_product(forward, forward);
+        let pair = arena.value_type_product(&[functions.ty, functions.ty]);
+        let doubled = arena.value_type_product(&[element, element]);
+        let source = arena.value_tuple(&[truth, falsity]);
+        let target = arena.value_tuple(&[falsity, truth]);
+        let [both, each] = [(element, paired), (doubled, forward)].map(|(motive, flow)| {
+            let ride = arena.computation_ride(motive, flow, source);
+            let ridden = arena.value_returned(ride);
+            arena.value_type_path(pair, ridden, target)
+        });
+        let here = arena.value_here(target);
+        let (report, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(
+                At(0),
+                Maybe::Present(functions.function),
+                Maybe::Present(functions.not),
+            ),
+            declaration(At(1), Maybe::Present(both), Maybe::Present(here)),
+            declaration(At(2), Maybe::Present(each), Maybe::Present(here)),
+        ]);
+        // The checker unfolds `not` under each component's bind, in the order
+        // the kernel's reduct binds them.
+        checks_and_readmits(&report, &readmission);
+    }
+
     #[test]
     fn an_equiv_crosses_as_a_universe_path()
     {

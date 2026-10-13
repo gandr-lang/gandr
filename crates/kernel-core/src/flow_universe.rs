@@ -41,15 +41,29 @@
 //! The replay reads a ride by the first row of [`reduce`]'s table that
 //! applies: `stay` returns the value; a sequential composition rides its first
 //! flow, then its second; a motive that ignores its binder returns the value;
-//! products, sums and lists ride constructorwise; at `El(x)` a forward flow
-//! applies its translator, a function flow wraps the function in its
-//! boundaries and a flow product rides a pair's components along its two
-//! flows; at a singleton motive `Flow(D, l, x)` a `stay` value returns the
-//! flow and any other value composes with it. A session simulation relates
-//! recorded runs, not endpoint values: a ride along one is stuck, and
-//! [`replay_ride`] refuses it as `RecordedRunRequired`. A telescope ride along
-//! `stay` in its carrier rides in the fibre; along `stay` in both entries it
-//! returns the value. That row is directed J's computation rule.
+//! products, sums and lists ride constructorwise, each part's ride bound
+//! before the next and the constructor returned last; at `El(x)` a forward
+//! flow applies its translator, a function flow wraps the function in its
+//! boundaries and a flow product rides a pair's left component along its
+//! first flow, then its right along its second; at a singleton motive
+//! `Flow(D, l, x)` a `stay` value returns the flow and any other value
+//! composes with it. A session simulation relates recorded runs, not endpoint
+//! values: a ride along one is stuck, and [`replay_ride`] refuses it as
+//! `RecordedRunRequired`. A telescope ride along `stay` in its carrier rides
+//! in the fibre; along `stay` in both entries it returns the value. That row
+//! is directed J's computation rule.
+//!
+//! The table itself is δ-free: no row unfolds a definition. A ride met inside
+//! an endpoint dialogue is reduced by the table, and every definition it
+//! needs unfolds where the checker's recorded dialogue names it, never by
+//! search. A ride along a named flow is stuck on that flow, so the flow heads
+//! the ride and the dialogue's unfolding on its side reaches it; two rides
+//! stuck on one flow compare their motives, then their values. A translator
+//! named by a definition unfolds where the row's bind leaves its application
+//! at the head: under a flow product or a constructor motive, after every part
+//! bound before it. A telescope ride stays unreadable to the replay and its
+//! flows δ-free: the checker produces none, so no recorded dialogue runs
+//! through one.
 //!
 //! # Refusals
 //!
