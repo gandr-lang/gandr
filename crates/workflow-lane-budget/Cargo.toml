@@ -1,0 +1,29 @@
+[package]
+name = "gandr-workflow-lane-budget"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Each CI lane's median job time over recent merge-queue and pull-request runs, against its budget"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["budget", "ci", "gandr", "github-actions"]
+categories = ["development-tools"]
+publish.workspace = true
+
+[[bin]]
+name = "lane-budget"
+path = "src/main.rs"
+
+# The pinned anodized facade supplies the specification attribute; the shape
+# crate the `Maybe` a lane without a sample has for its median. serde reads
+# the issue listing `gh` prints.
+[dependencies]
+anodized.workspace = true
+clap.workspace = true
+quenchant-shape.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

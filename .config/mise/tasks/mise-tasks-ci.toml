@@ -293,6 +293,15 @@ env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 run = "cargo run --locked --quiet --profile test --package gandr-workflow-spec-cost --bin spec-cost-ratio --"
 
+# Each CI lane's median job time over the newest merge-queue and
+# pull-request runs against its budget, as Markdown; `--issue TITLE` keeps
+# one issue in step (crates/workflow-lane-budget/README.md). The nightly
+# workflow passes the budget table. Arguments pass through: `--budget
+# NAME=SECONDS` per lane, optionally `--runs` and `--issue`.
+["ci:lane-budget"]
+description = "Each CI lane's median job time over recent runs against its budget"
+run = "cargo run --locked --quiet --package gandr-workflow-lane-budget --"
+
 # The build state a test lane hands to the next landing holds what this run's
 # builds used: Cargo never deletes a unit a dependency, feature or lockfile
 # change superseded, so a state restored and saved on every landing grows

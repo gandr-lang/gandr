@@ -195,6 +195,24 @@ jobs:
             target/nextest/ci/junit.xml
             target/nextest/ci-enforcing/junit.xml
           if-no-files-found: ignore
+      # Each lane's summary names where its state came from and what each
+      # step took, so a slow run says where its time went; the nightly lane
+      # budget (`ci:lane-budget`) holds the medians to their budgets. The job
+      # finds itself by its runner. The jobs API at times lists a job without
+      # its steps; the summary then says so. Hosted only: act serves no jobs
+      # API.
+      - &lane-timing
+        name: summarize the lane's state and step times
+        if: ${{ always() && env.ACT != 'true' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_TEST_STATE: ${{ steps.test-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.test-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.download-build-state.outcome == 'success' && 'queue artifact' || steps.test-state-restore.outcome == 'success' && 'miss' || 'not used' }}
+          CI_POLICY_STATE: ${{ steps.policy-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.policy-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.policy-state-restore.outcome == 'success' && 'miss' || 'not used' }}
+        run: >-
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs"
+          --jq '.jobs[] | select(.runner_name == env.RUNNER_NAME) | [.steps[] | select(.completed_at != null and .conclusion != "skipped") | "| \(.name) | \((((.completed_at | fromdate) - (.started_at | fromdate)) / 6 | round) / 10) |"] as $rows | "### Lane timing\n\nTest state: \(env.CI_TEST_STATE). Policy state: \(env.CI_POLICY_STATE).\n\n" + if $rows == [] then "Step times unavailable: the jobs API listed no steps for this job." else "| step | minutes |\n| --- | ---: |\n" + ($rows | join("\n")) end'
+          >> "$GITHUB_STEP_SUMMARY"
       # Compute once, before any restored build directory can add manifests.
       # The fingerprint names one exact state; the generation is the toolchain
       # pin alone. A restore takes the newest state of its generation and
@@ -282,6 +300,7 @@ jobs:
       # state is never downloaded.
       - &download-build-state
         name: download reusable queue build state
+        id: download-build-state
         if: ${{ (github.event_name == 'push' && steps.test-state-restore.outputs.cache-hit != 'true' || github.event_name != 'push' && steps.test-state-restore.outputs.cache-matched-key == '') && contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), format('build-state-{0}--{1}', env.CI_BUILD_STATE, env.CI_BUILD_GENERATION)) }}
         uses: &download-artifact actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -508,6 +527,7 @@ jobs:
           name: spec-cost-ratio
           path: target/spec-cost-ratio.md
           if-no-files-found: error
+      - *lane-timing
 
   cargo-test-enforcing:
     name: test enforcing targets (linux)
@@ -599,7 +619,7 @@ jobs:
     needs: *rust-needs
     if: &light-rust-lane ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && github.event_name != 'push' }}
     runs-on: *linux
-    permissions: *image-read-permissions
+    permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
     steps:
       - *git-checkout
@@ -609,6 +629,7 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets -- --deny warnings
       - name: lint every target with specification enforcement
         run: mise run check:clippy-enforcing
+      - *lane-timing
   # The external plugin checks all local targets once per landing, beside the
   # build it would otherwise repeat on every pull request; the obligations lane
   # runs it on a pull request for its records. The image carries its driver;
@@ -621,7 +642,7 @@ jobs:
     needs: *rust-needs
     if: *heavy-lane
     runs-on: *linux
-    permissions: *image-read-permissions
+    permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
     steps:
       - *git-checkout
@@ -669,6 +690,7 @@ jobs:
           name: dylint-drivers
           if-no-files-found: error
           retention-days: 1
+      - *lane-timing
 
   # A change owes re-verification by every specification naming a changed
   # item (`evidence:obligations`). A pull request reruns only the obligated
@@ -713,7 +735,7 @@ jobs:
     needs: [changes, ci-image-ref, obligations-comment-read]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
-    permissions: *image-read-permissions
+    permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
     outputs:
@@ -763,6 +785,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
       - *upload-test-report
+      - *lane-timing
 
   # Posted whatever the witnesses' verdict, once the report exists: the prose
   # obligations stand either way.
