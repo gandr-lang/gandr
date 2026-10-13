@@ -128,9 +128,12 @@ impl<'source> Lowerer<'_, 'source>
             for parameter in &entry.parameters {
                 seeds.push((parameter.classifier.node, Reading::ValueType(frame)));
                 let name = self.name_at(parameter.named);
-                let extended = self
-                    .scope
-                    .extend_typed(frame, name, parameter.classifier.node);
+                let extended = self.scope.extend_typed(
+                    frame,
+                    name,
+                    parameter.classifier.node,
+                    Maybe::Present(parameter.named.span),
+                );
                 self.scope.mention(extended);
                 frame = Frame::Inner(extended);
             }

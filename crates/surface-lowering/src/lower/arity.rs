@@ -140,6 +140,7 @@ use crate::form::shape_of;
 use crate::origin::Origin;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
+use crate::resolve::binder_site;
 use crate::resolve::binder_type;
 
 #[cfg(test)]
@@ -1639,7 +1640,7 @@ impl<'source> Lowerer<'_, 'source>
         for entry in &entries {
             let declared = entry.held.at();
             self.read(declared.node, Reading::ValueType(inner));
-            let (binder, bound) = match entry.key {
+            let (binder, bound, written) = match entry.key {
                 | Key::Label(bound, key) => {
                     if let Some(&earlier) = seen.get(&bound) {
                         return Err(LoweringRefusal::DuplicateDefinition {
@@ -1650,11 +1651,17 @@ impl<'source> Lowerer<'_, 'source>
                     }
                     let _first = seen.insert(bound, key);
                     self.note_binder(key, bound)?;
-                    (key, bound)
+                    (key, bound, Maybe::Present(key.span))
                 },
-                | Key::Positional | Key::Index(..) => (declared, SurfaceName::from("")),
+                | Key::Positional | Key::Index(..) => (
+                    declared,
+                    SurfaceName::from(""),
+                    Maybe::Absent(binder_site::Absent::Unwritten),
+                ),
             };
-            let extended = self.scope.extend_typed(inner, bound, declared.node);
+            let extended = self
+                .scope
+                .extend_typed(inner, bound, declared.node, written);
             self.scope.mention(extended);
             self.parameters.push(Parameter {
                 binder: binder.node,

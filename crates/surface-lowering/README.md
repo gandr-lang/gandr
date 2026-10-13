@@ -28,7 +28,8 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `CaseOrigin`, `ArmOrigin`, `OriginTable::case` and `OriginTable::cases`: per match, the core pattern table its arms are written in and the syntax nodes of its scrutinee, patterns and bodies; a pattern hole's identity is its syntax node.
 - `def rec` and the descent claim `f[<]`: a recursive function lowered to one fixpoint over its last parameter, its evidence the claim the source writes, and `Insertion::Fixpoint` marking the inserted fixpoint.
 - `type_atom`, `type_former`, `TypeAtom`, `TypeFormer`, `HeadArity` and `OperandCount`: the type-head tables by arity.
-- `Scope`, `ScopeId`, `Frame`, `Bound`, `Mentioned` and `SurfaceName`: the flat binder chain names resolve through, each frame carrying the type its binder was written with and whether a type names it.
+- `Scope`, `ScopeId`, `Frame`, `Bound`, `Mentioned`, `SurfaceName` and `binder_site::Absent`: the flat binder chain names resolve through, each frame carrying the type its binder was written with, whether a type names it, and the span it was written at.
+- `OriginTable::binding` and `OriginTable::bindings`: the use-to-binder map, each core variable the lowering minted with the span of the binder it resolves to.
 - `former_of`, `Former`, `FormName` and `Repair`: the named-kind dispatch and the names a diagnostic writes forms as.
 - `LoweringRefusal`, `FragmentSort`, `FragmentBoundary` and `FormFault`: every refusal, located.
 - `LoweringRefusal::classify` and `FailureClass`, the latter re-exported from `gandr-core-term`, which every producer of refusals in the core pipeline classifies into: the classifier.

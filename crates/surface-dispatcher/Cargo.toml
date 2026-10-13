@@ -14,9 +14,11 @@ publish.workspace = true
 # lowering, the checker and the kernel bridge it carries, the settle
 # comparison the corpus library owns, and the run stage's focusing, machine
 # and readback. The diagnostics model spells the types a refusal names while
-# the arena is at hand, and builds what each step prints. The `stage` verb
-# builds the normaliser's staging observer programs and checks them through
-# the checker's program entry on a `rayon` pool of the driver's width.
+# the arena is at hand, and builds what each step prints; the type table
+# spells the type a face asks for through the presentation printer. The
+# `stage` verb builds the normaliser's staging observer programs and checks
+# them through the checker's program entry on a `rayon` pool of the driver's
+# width.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]
@@ -32,6 +34,7 @@ gandr-surface-format.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-surface-parser.workspace = true
+gandr-surface-pretty.workspace = true
 gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 rayon.workspace = true

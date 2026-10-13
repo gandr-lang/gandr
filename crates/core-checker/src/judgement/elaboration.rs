@@ -52,6 +52,22 @@
 //!
 //! A total run ends only at an engine fault or the allowance, so the failure
 //! it hands back is the strict run's: the frames pending at that fault.
+//!
+//! # A typed run keeps the type of every term it judged
+//!
+//! A typed run anchors and recovers as a total run does, and as each term
+//! judgement finishes it keeps the term with the type it was judged at: the
+//! type it was checked against, or the type it synthesised — the unknown type
+//! where its synthesis was marked. A term judged twice — checked, then
+//! synthesised to cross a bridge — is kept twice, the inner judgement first.
+//! These are what a face shows for a position inside the term: the editor's
+//! hover. No other run keeps them, so a strict or total judgement pays
+//! nothing for them; a face that wants them judges the declaration again in a
+//! typed run. The alternative was keeping the type of every term in every
+//! run's report, which charges each judgement of every revision for a table a
+//! face reads only at a hover. The choice reverses when a face reads the table
+//! on every revision, as an inlay of every binder's type would. Witness:
+//! `judgement::elaboration::tests::a_typed_run_keeps_the_type_of_every_term_it_judged`.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -79,6 +95,7 @@ use crate::formation::FormedCompType;
 use crate::formation::FormedValueType;
 use crate::refusal::CheckRefusal;
 use crate::refusal::TermNode;
+use crate::refusal::TypeNode;
 
 /// Whether a refusal ends a run or marks the term it stands at.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -88,6 +105,9 @@ pub(super) enum Marking
     Strict,
     /// A refusal other than an engine fault marks the term under judgement.
     Total,
+    /// A refusal marks as in a total run, and every term judgement keeps the
+    /// type it finished at.
+    Typed,
 }
 
 /// A term judgement under way in a total run, where a refusal is recovered.
@@ -136,6 +156,55 @@ impl MarkEntry
     pub const fn refusal(&self) -> CheckRefusal
     {
         self.refusal
+    }
+}
+
+/// A term judgement a typed run finished: the term and the type it was judged
+/// at.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Typing
+{
+    /// The term judged.
+    pub term: TermNode,
+    /// The type the term was checked against, or the type it synthesised.
+    pub ty: TypeNode,
+}
+
+/// A typed run's record: every term judgement it finished, with its type, and
+/// the refusals it marked.
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Typings
+{
+    /// The term judgements finished, in the order finished: a term after
+    /// every term inside it.
+    typings: Vec<Typing>,
+    /// The refusals marked, in the order met.
+    marks: Vec<MarkEntry>,
+}
+
+impl Typings
+{
+    /// The term judgements finished, in the order finished: a term after
+    /// every term inside it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn typings(&self) -> &[Typing]
+    {
+        &self.typings
+    }
+
+    /// The refusals marked, in the order met.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn marks(&self) -> &[MarkEntry]
+    {
+        &self.marks
     }
 }
 
@@ -347,6 +416,72 @@ pub fn elaborate_comp(
     })
 }
 
+/// Every term judgement the judgement of `value` in `direction` finishes, with
+/// the type it was judged at, and the refusals it marks.
+///
+/// # Specification
+/// - requires: `value` is closed over the context's binders, which are empty
+///   between judgements.
+/// - ensures: the binders stand where they stood; the run anchors and recovers
+///   as [`elaborate_value`]'s does, and keeps one entry each time a value or
+///   computation judgement finishes — recovered or not — in the order finished,
+///   with the type it was checked against or the type it synthesised; `value`'s
+///   own judgement is the last entry when the run reaches its end. The marks
+///   are the total run's. An engine fault ends the run with what it kept so
+///   far.
+/// - provides: the type of every term a declaration's body judges, for a face
+///   answering a position inside it.
+/// - fails: never; an engine fault cuts the record short.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an accepted application, a checked pair with an ill-typed
+///   component and a variable read under a binder separate the synthesised and
+///   checked types, the inner-first order, the recovered judgement and the type
+///   a variable occurrence reads.
+/// - witness: `judgement::elaboration::tests::a_typed_run_keeps_the_type_of_every_term_it_judged`
+#[spec(
+    captures: depth = context.depth(Zone::Intuitionistic),
+    ensures: |ret| context.depth(Zone::Intuitionistic) == depth
+        && ret.marks().iter().all(|mark| mark.refusal().classify() != FailureClass::EngineFault),
+)]
+#[inline]
+#[must_use]
+pub fn type_value(
+    context: &mut CheckingContext<'_>,
+    value: ValueId,
+    direction: Direction<FormedValueType>,
+) -> Typings
+{
+    let entry = context.binders().depth(Zone::Intuitionistic);
+    let remaining = usize::from(context.budget());
+    let goal = Goal::Value {
+        term: value,
+        direction: match direction {
+            | Direction::Synthesise => Direction::Synthesise,
+            | Direction::Check(expected) => Direction::Check(expected.id()),
+        },
+    };
+    let mut machine = Machine {
+        context,
+        frames: Vec::new(),
+        owner: goal,
+        native_types: Vec::new(),
+        conversions: ConversionCount::default(),
+        remaining,
+        marking: Marking::Typed,
+        anchors: Vec::new(),
+        marks: Vec::new(),
+        typings: Vec::new(),
+    };
+    let _outcome = machine.drive(goal);
+    machine.unwind(entry);
+    Typings {
+        typings: machine.typings,
+        marks: machine.marks,
+    }
+}
+
 /// Wrap every marked node beneath `root` in a mark naming its first entry.
 ///
 /// # Specification
@@ -391,9 +526,9 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: in a total run, a value or computation goal is pushed with
-    ///   the frame height, binder depth and field-type height it began at;
-    ///   nothing changes otherwise.
+    /// - ensures: in a total or typed run, a value or computation goal is
+    ///   pushed with the frame height, binder depth and field-type height it
+    ///   began at; nothing changes otherwise.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -405,7 +540,7 @@ impl Machine<'_, '_>
     #[spec(
         captures: before = self.anchors.len(),
         ensures: self.anchors.len() == before.saturating_add(usize::from(
-            self.marking == Marking::Total && !matches!(goal, Goal::Form(_) | Goal::Stack { .. }),
+            self.marking != Marking::Strict && !matches!(goal, Goal::Form(_) | Goal::Stack { .. }),
         )),
     )]
     pub(super) fn anchor(
@@ -414,7 +549,7 @@ impl Machine<'_, '_>
     )
     {
         match (self.marking, goal) {
-            | (Marking::Total, Goal::Value { .. } | Goal::Computation { .. }) => {
+            | (Marking::Total | Marking::Typed, Goal::Value { .. } | Goal::Computation { .. }) => {
                 let depth = self.context.depth(Zone::Intuitionistic);
                 self.anchors.push(Anchor {
                     goal,
@@ -423,15 +558,19 @@ impl Machine<'_, '_>
                     native: self.native_types.len(),
                 });
             },
-            | (Marking::Strict, _) | (Marking::Total, Goal::Form(_) | Goal::Stack { .. }) => {},
+            | (Marking::Strict, _)
+            | (Marking::Total | Marking::Typed, Goal::Form(_) | Goal::Stack { .. }) => {},
         }
     }
 
-    /// Retire the anchors of every goal the ascent finished.
+    /// Retire the anchors of every goal the ascent finished, `produced` the
+    /// result each finished with; a typed run keeps each one's type.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: every anchor left began below the current frame height.
+    /// - requires: `produced` is the result the ascent hands up.
+    /// - ensures: every anchor left began below the current frame height; in a
+    ///   typed run, each anchor retired is kept as [`Self::keep`] keeps it,
+    ///   innermost first.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -441,17 +580,108 @@ impl Machine<'_, '_>
     ///   heights rise toward the top of the stack and the predicate reads only
     ///   the top anchor.
     /// - witness: `judgement::elaboration::tests::the_strict_judgement_is_the_total_runs_oracle`
+    /// - witness: `judgement::elaboration::tests::a_typed_run_keeps_the_type_of_every_term_it_judged`
     #[spec(ensures: self.anchors.last().is_none_or(|anchor| anchor.frames < self.frames.len()))]
-    pub(super) fn settle(&mut self)
+    pub(super) fn settle(
+        &mut self,
+        produced: Produced,
+    )
     {
         let height = self.frames.len();
-        while self
-            .anchors
-            .last()
-            .is_some_and(|anchor| anchor.frames >= height)
-        {
+        while let Some(&anchor) = self.anchors.last().filter(|anchor| anchor.frames >= height) {
             self.anchors.pop();
+            self.keep(anchor.goal, produced);
         }
+    }
+
+    /// In a typed run, keep `goal`'s term with the type it finished at:
+    /// `produced` for a synthesis, the expected type for a check.
+    ///
+    /// # Specification
+    /// - requires: `produced` is what `goal`'s judgement finished with.
+    /// - ensures: in a typed run, a value or computation goal checked against a
+    ///   type is kept with that type, and one synthesised is kept with the type
+    ///   it produced in its own family; nothing is kept for any other goal or
+    ///   result, or in any other run.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a checked and a synthesised judgement, and a strict
+    ///   run of the same term, separate the expected side, the produced side
+    ///   and the empty record.
+    /// - witness: `judgement::elaboration::tests::a_typed_run_keeps_the_type_of_every_term_it_judged`
+    #[spec(
+        captures: before = self.typings.len(),
+        ensures: self.typings.len() <= before.saturating_add(1_usize)
+            && (self.marking == Marking::Typed || self.typings.len() == before),
+    )]
+    fn keep(
+        &mut self,
+        goal: Goal,
+        produced: Produced,
+    )
+    {
+        if self.marking != Marking::Typed {
+            return;
+        }
+        let typing = match (goal, produced) {
+            | (
+                Goal::Value {
+                    term,
+                    direction: Direction::Check(expected),
+                },
+                _,
+            ) => Typing {
+                term: TermNode::Value(term),
+                ty: TypeNode::Value(expected),
+            },
+            | (
+                Goal::Computation {
+                    term,
+                    direction: Direction::Check(expected),
+                },
+                _,
+            ) => Typing {
+                term: TermNode::Computation(term),
+                ty: TypeNode::Computation(expected),
+            },
+            | (
+                Goal::Value {
+                    term,
+                    direction: Direction::Synthesise,
+                },
+                Produced::ValueType(found),
+            ) => Typing {
+                term: TermNode::Value(term),
+                ty: TypeNode::Value(found),
+            },
+            | (
+                Goal::Computation {
+                    term,
+                    direction: Direction::Synthesise,
+                },
+                Produced::CompType(found),
+            ) => Typing {
+                term: TermNode::Computation(term),
+                ty: TypeNode::Computation(found),
+            },
+            | (
+                Goal::Value {
+                    direction: Direction::Synthesise,
+                    ..
+                },
+                Produced::CompType(_) | Produced::Checked,
+            )
+            | (
+                Goal::Computation {
+                    direction: Direction::Synthesise,
+                    ..
+                },
+                Produced::ValueType(_) | Produced::Checked,
+            )
+            | (Goal::Form(_) | Goal::Stack { .. }, _) => return,
+        };
+        self.typings.push(typing);
     }
 
     /// Answer a refusal: end a strict run, or mark the innermost term under
@@ -464,7 +694,8 @@ impl Machine<'_, '_>
     ///   retired, the frames, binders and field types fall back to where its
     ///   goal began, one mark is recorded at its term, the goal is the running
     ///   one again, and it is answered — checked, the unknown type, or, for a
-    ///   term that cannot synthesise, a check against the unknown type.
+    ///   term that cannot synthesise, a check against the unknown type. A typed
+    ///   run keeps an answered goal as [`Self::keep`] keeps it.
     /// - fails: `refusal` itself, as above.
     /// - panics: none.
     ///
@@ -478,6 +709,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::elaboration::tests::a_total_run_marks_where_a_strict_run_refuses`
     /// - witness: `judgement::elaboration::tests::a_term_that_cannot_synthesise_is_checked_against_the_unknown_type`
     /// - witness: `judgement::elaboration::tests::the_strict_judgement_is_the_total_runs_oracle`
+    /// - witness: `judgement::elaboration::tests::a_typed_run_keeps_the_type_of_every_term_it_judged`
     #[spec(
         captures: before = self.marks.len(),
         ensures: |ret| match ret {
@@ -491,9 +723,10 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         let recoverable = match (self.marking, refusal.classify()) {
-            | (Marking::Strict, _) | (Marking::Total, FailureClass::EngineFault) => false,
+            | (Marking::Strict, _)
+            | (Marking::Total | Marking::Typed, FailureClass::EngineFault) => false,
             | (
-                Marking::Total,
+                Marking::Total | Marking::Typed,
                 FailureClass::MalformedSource
                 | FailureClass::Unrepresentable
                 | FailureClass::UserAbsence,
@@ -519,7 +752,7 @@ impl Machine<'_, '_>
         };
         self.marks.push(MarkEntry { at, refusal });
         let unsynthesisable = matches!(refusal, CheckRefusal::NotSynthesisable { .. });
-        match anchor.goal {
+        let step = match anchor.goal {
             | Goal::Value {
                 direction: Direction::Check(_),
                 ..
@@ -561,7 +794,11 @@ impl Machine<'_, '_>
                 }
             },
             | Goal::Form(_) | Goal::Stack { .. } => Err(CheckRefusal::MachineInvariant),
+        };
+        if let Ok(Step::Ascend(produced)) = step {
+            self.keep(anchor.goal, produced);
         }
+        step
     }
 }
 
@@ -584,18 +821,22 @@ mod tests
     use gandr_core_term::FailureClass;
     use gandr_core_term::Value;
     use gandr_core_term::ValueType;
+    use gandr_core_term::Zone;
     use gandr_core_term::hole::HoleId;
     use gandr_core_term::hole::MarkIndex;
     use gandr_core_term::hole::TermId;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::DeBruijnIndex;
     use proptest::collection::vec;
     use proptest::prelude::*;
     use quenchant_shape::shape::Maybe;
 
     use super::MarkEntry;
+    use super::Typing;
     use super::elaborate_comp;
     use super::elaborate_value;
+    use super::type_value;
     use crate::CheckBudget;
     use crate::CheckingContext;
     use crate::Declaration;
@@ -614,6 +855,8 @@ mod tests
     use crate::judgement::synthesise_comp;
     use crate::judgement::synthesise_value;
     use crate::refusal::CheckRefusal;
+    use crate::refusal::TermNode;
+    use crate::refusal::TypeNode;
     use crate::signature;
 
     #[test]
@@ -662,6 +905,142 @@ mod tests
         assert!(
             check_value(&mut context, elaboration.root(), expected).is_ok(),
             "the marked term is well typed"
+        );
+    }
+
+    #[test]
+    fn a_typed_run_keeps_the_type_of_every_term_it_judged()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let product = arena.value_type_product(&[integer, integer]);
+        let zero = arena.value_literal(integer_literal());
+        let unit = arena.value_unit();
+        let pair = arena.value_tuple(&[zero, unit]);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returned = arena.computation_return(bound);
+        let lambda = arena.computation_lambda(returned);
+        let identity = arena.value_thunk(lambda);
+        let returns_integer = arena.comp_type_returner(integer);
+        let arrow = arena.comp_type_arrow(integer, returns_integer);
+        let thunk_arrow = arena.value_type_thunk(arrow);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let expected = form_value_type(&mut context, product).unwrap();
+        let formed_arrow = form_value_type(&mut context, thunk_arrow).unwrap();
+        let depth = context.depth(Zone::Intuitionistic);
+
+        let synthesised = type_value(&mut context, zero, Direction::Synthesise);
+        let &[only] = synthesised.typings()
+        else {
+            panic!("a literal is one judgement: {synthesised:?}");
+        };
+        assert_eq!(only.term, TermNode::Value(zero), "the literal is kept");
+        assert!(
+            matches!(only.ty, TypeNode::Value(found)
+                if context.arena().value_type(found) == Some(&ValueType::Base(BaseType::Integer))),
+            "a synthesis keeps the type it produced"
+        );
+        assert!(
+            synthesised.marks().is_empty(),
+            "an accepted run marks nothing"
+        );
+
+        let checked = type_value(&mut context, pair, Direction::Check(expected));
+        assert_eq!(
+            checked.typings().last(),
+            Some(&Typing {
+                term: TermNode::Value(pair),
+                ty: TypeNode::Value(expected.id()),
+            }),
+            "the pair finishes last, at the type it was checked against"
+        );
+        let typed = |term| {
+            checked
+                .typings()
+                .iter()
+                .filter(|typing| typing.term == TermNode::Value(term))
+                .map(|typing| typing.ty)
+                .collect::<Vec<_>>()
+        };
+        let [TypeNode::Value(found), TypeNode::Value(factor)] = typed(unit)[..]
+        else {
+            panic!("the mismatched component is kept as synthesised, then as checked: {checked:?}");
+        };
+        assert_eq!(
+            context.arena().value_type(found),
+            Some(&ValueType::unit()),
+            "the inner synthesis keeps the type the component has"
+        );
+        assert_eq!(
+            context.arena().value_type(factor),
+            Some(&ValueType::Base(BaseType::Integer)),
+            "the check keeps the factor it was recovered at"
+        );
+        assert!(!typed(zero).is_empty(), "the well-typed component is kept");
+        assert_eq!(
+            checked
+                .marks()
+                .iter()
+                .map(super::MarkEntry::at)
+                .collect::<Vec<_>>(),
+            [TermId::Value(unit)],
+            "the typed run marks what the total run marks"
+        );
+
+        let read = type_value(&mut context, identity, Direction::Check(formed_arrow));
+        assert!(
+            read.typings().iter().any(|typing| typing.term == TermNode::Value(bound)
+                && matches!(typing.ty, TypeNode::Value(found)
+                    if context.arena().value_type(found) == Some(&ValueType::Base(BaseType::Integer)))),
+            "the variable under the lambda is kept at its binder's type: {read:?}"
+        );
+        assert!(
+            read.typings()
+                .iter()
+                .any(|typing| typing.term == TermNode::Computation(lambda)
+                    && typing.ty == TypeNode::Computation(arrow)),
+            "the lambda is kept at the arrow it was checked against: {read:?}"
+        );
+        assert_eq!(
+            context.depth(Zone::Intuitionistic),
+            depth,
+            "the typed run leaves the binders as found"
+        );
+    }
+
+    #[test]
+    fn a_marked_bound_leaves_its_continuation_judged()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let zero = arena.value_literal(integer_literal());
+        let forced = arena.computation_force(zero);
+        let returned = arena.computation_return(zero);
+        let bind = arena.computation_bind(forced, returned);
+        let thunk = arena.value_thunk(bind);
+        let returns_integer = arena.comp_type_returner(integer);
+        let suspended = arena.value_type_thunk(returns_integer);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let expected = form_value_type(&mut context, suspended).unwrap();
+        let depth = context.depth(Zone::Intuitionistic);
+
+        let read = type_value(&mut context, thunk, Direction::Check(expected));
+        assert!(
+            read.marks()
+                .iter()
+                .all(|mark| mark.refusal != CheckRefusal::MachineInvariant),
+            "the bound's mark is no fault of the bind: {read:?}"
+        );
+        assert!(
+            read.typings()
+                .iter()
+                .any(|typing| typing.term == TermNode::Computation(returned)),
+            "the continuation past the marked bound is judged and kept: {read:?}"
+        );
+        assert_eq!(
+            context.depth(Zone::Intuitionistic),
+            depth,
+            "the typed run leaves the binders as found"
         );
     }
 
@@ -877,3 +1256,5 @@ mod tests
         }
     }
 }
+// weave: run 'weave explain crates/core-checker/src/judgement/elaboration.rs'
+// for per-hunk detail, 'weave check' to verify your resolution

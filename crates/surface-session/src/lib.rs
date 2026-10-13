@@ -188,5 +188,4 @@ pub use crate::session::import;
 pub use crate::session::reopened;
 pub use crate::session::resumed;
 pub use crate::typed::spelled;
-pub use crate::typed::type_at;
 pub use crate::typed::type_of;

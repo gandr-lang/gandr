@@ -1047,9 +1047,12 @@ impl<'source> Lowerer<'_, 'source>
             for parameter in &form.parameters {
                 seeds.push((parameter.classifier.node, Reading::ValueType(frame)));
                 let name = SurfaceName::from(self.text_at(parameter.named));
-                let bound = self
-                    .scope
-                    .extend_typed(frame, name, parameter.classifier.node);
+                let bound = self.scope.extend_typed(
+                    frame,
+                    name,
+                    parameter.classifier.node,
+                    Maybe::Present(parameter.named.span),
+                );
                 self.scope.mention(bound);
                 frame = Frame::Inner(bound);
             }
@@ -1553,7 +1556,7 @@ impl<'source> Lowerer<'_, 'source>
             for &binder in bound {
                 let name = SurfaceName::from(self.text_at(binder));
                 self.note_binder(binder, name)?;
-                inner = Frame::Inner(self.scope.extend(inner, name));
+                inner = Frame::Inner(self.scope.extend(inner, name, Maybe::Present(binder.span)));
             }
             self.read(body.node, Reading::Computation(inner));
             if let Maybe::Present(stated) = answer {
@@ -3727,7 +3730,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_last_parameter`
     /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
     /// - witness: `lower::native::tests::only_the_descent_claim_heads_a_recursive_call`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Variable(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Variable(..))))]
     pub(super) fn instantiation(
         &mut self,
         site: Site,
@@ -3819,7 +3822,7 @@ impl<'source> Lowerer<'_, 'source>
         if let Some(held) = self.recursions.get_mut(&bound.binder) {
             held.claimed = Claimed(true);
         }
-        self.plan(site, Plan::Variable(bound.index));
+        self.plan(site, Plan::Variable(bound.index, bound.binder));
 
         Ok(())
     }

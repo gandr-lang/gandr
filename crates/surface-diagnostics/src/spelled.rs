@@ -219,18 +219,7 @@ impl Spellings
         if named.is_empty() {
             return Self(spelled);
         }
-        let positions = module
-            .declarations()
-            .iter()
-            .map(|declaration| usize::from(declaration.constant()).saturating_add(1))
-            .max()
-            .unwrap_or_default();
-        let mut names = alloc::vec![Name::from(""); positions];
-        for declaration in module.declarations() {
-            if let Some(slot) = names.get_mut(usize::from(declaration.constant())) {
-                *slot = Name::from(<&str>::from(SourceFragment::from(declaration.name())));
-            }
-        }
+        let names = constant_names(module);
         let source = CoreSource::new(arena, &names);
         for node in named {
             if spelled.contains_key(&node) {
@@ -263,4 +252,41 @@ impl Spellings
             .get(&node)
             .map_or(Maybe::Absent(spelling::Absent::Unspelled), Maybe::Present)
     }
+}
+
+/// The name a printer writes for each constant of `module`, indexed by its
+/// admission position; a position no declaration holds is the empty name.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one name per position up to the highest declared one; each
+///   declared position holds its declaration's name.
+/// - provides: the constant names a [`CoreSource`] reads to spell a type that
+///   mentions a declaration.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a refusal comparing two declared types spells the names
+///   of the declarations it mentions.
+/// - witness: `diagnostics::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+#[spec(ensures: |ret| module.declarations().iter().all(|declaration|
+    ret.get(usize::from(declaration.constant())).is_some()))]
+#[inline]
+#[must_use]
+pub fn constant_names<'source>(module: &LoweredModule<'source>) -> Vec<Name<'source>>
+{
+    let positions = module
+        .declarations()
+        .iter()
+        .map(|declaration| usize::from(declaration.constant()).saturating_add(1))
+        .max()
+        .unwrap_or_default();
+    let mut names = alloc::vec![Name::from(""); positions];
+    for declaration in module.declarations() {
+        if let Some(slot) = names.get_mut(usize::from(declaration.constant())) {
+            *slot = Name::from(<&str>::from(SourceFragment::from(declaration.name())));
+        }
+    }
+    names
 }

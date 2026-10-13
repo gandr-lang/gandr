@@ -76,6 +76,15 @@
 //! pending. [`check_declaration`] runs the same judgement and hands back the
 //! verdict alone. Witness:
 //! `module::tests::a_refused_body_keeps_the_rules_it_was_refused_inside`.
+//!
+//! # A typed module keeps the type of every term each body judged
+//!
+//! [`type_module`] judges a module as [`check_module`] does and, for each
+//! declaration whose body was judged, runs the typed run over the body at the
+//! same point of the run — before the declaration's own type enters the table
+//! — so the types it keeps are the ones the judgement met. A face answering a
+//! position inside a declaration reads them; no other entry pays for them.
+//! Witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -98,8 +107,10 @@ use crate::funext::Funext;
 use crate::judgement::Checked;
 use crate::judgement::Direction;
 use crate::judgement::Synthesised;
+use crate::judgement::Typings;
 use crate::judgement::check_value_with_failure;
 use crate::judgement::synthesise_value_with_failure;
+use crate::judgement::type_value;
 use crate::ledger::Absence;
 use crate::ledger::ObligationEntry;
 use crate::ledger::ObligationLedger;
@@ -309,6 +320,31 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a declaration's judgement keeps no term types.
+    mod typed {
+        /// The reason no term types are kept.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The run was not asked to keep them.
+            Unasked,
+            /// The declaration has no body that was run.
+            Unrun,
+        }
+    }
+}
+
+/// Whether a declaration's judgement also keeps the type of every term its
+/// body judges.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Run
+{
+    /// The judgement alone.
+    Judged,
+    /// The judgement, and a typed run of its body at the same point.
+    Typed,
+}
+
 /// Judge one declaration in `context`.
 ///
 /// # Specification
@@ -363,16 +399,19 @@ pub fn check_declaration(
     declaration: &Declaration,
 ) -> Verdict
 {
-    decide(context, declaration).0
+    decide(context, declaration, Run::Judged).0
 }
 
-/// Judge one declaration in `context`, keeping a refused body's failure.
+/// Judge one declaration in `context`, keeping a refused body's failure and,
+/// when `run` asks, the type of every term its body judges.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the verdict [`check_declaration`] gives, with the same effect on
 ///   `context`; beside it, when the body was run and refused, the failure of
-///   that run, whose refusal is the verdict's.
+///   that run, whose refusal is the verdict's; and, when `run` is
+///   [`Run::Typed`] and the body was run, what [`type_value`] keeps for it,
+///   read before the declaration's own type entered the table.
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
 /// - panics: none.
 ///
@@ -381,21 +420,33 @@ pub fn check_declaration(
 ///   refused before its body, and an accepted body separate the kept, the unrun
 ///   and the accepted answers.
 /// - witness: `module::tests::a_refused_body_keeps_the_rules_it_was_refused_inside`
-#[spec(ensures: |ret| match (&ret.0, &ret.1) {
+/// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
+#[spec(ensures: |ret| (run == Run::Typed || matches!(ret.2, Maybe::Absent(typed::Absent::Unasked)))
+    && match (&ret.0, &ret.1) {
     | (&Verdict::Refused(refusal), &Maybe::Present(ref failure)) => failure.refusal() == refusal,
     | (&Verdict::Refused(_), &Maybe::Absent(kept::Absent::Unrun))
     | (&(Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_)), &Maybe::Absent(kept::Absent::Accepted)) => true,
-    | _ => false,
-})]
+        | _ => false,
+    })]
 fn decide(
     context: &mut CheckingContext<'_>,
     declaration: &Declaration,
-) -> (Verdict, Maybe<Failure, kept::Absent>)
+    run: Run,
+) -> (
+    Verdict,
+    Maybe<Failure, kept::Absent>,
+    Maybe<Typings, typed::Absent>,
+)
 {
+    let untyped = match run {
+        | Run::Judged => typed::Absent::Unasked,
+        | Run::Typed => typed::Absent::Unrun,
+    };
     let unrun = |refusal| {
         (
             Verdict::Refused(refusal),
             Maybe::Absent(kept::Absent::Unrun),
+            Maybe::Absent(untyped),
         )
     };
     let constant = declaration.constant();
@@ -407,7 +458,11 @@ fn decide(
             return match crate::former::form_signature(context, constant, signature) {
                 | Ok(()) => {
                     context.record_data(constant, alloc::sync::Arc::clone(signature));
-                    (Verdict::Data, Maybe::Absent(kept::Absent::Accepted))
+                    (
+                        Verdict::Data,
+                        Maybe::Absent(kept::Absent::Accepted),
+                        Maybe::Absent(untyped),
+                    )
                 },
                 | Err(refusal) => unrun(refusal),
             };
@@ -424,6 +479,7 @@ fn decide(
         },
         | Maybe::Absent(signature::Absent::Unsigned) => Direction::Synthesise,
     };
+    let mut typings = Maybe::Absent(untyped);
     let (verdict, failure) = match body {
         | Maybe::Present(body) => {
             let judged = match direction {
@@ -436,6 +492,9 @@ fn decide(
                         evidence,
                     }),
             };
+            if run == Run::Typed {
+                typings = Maybe::Present(type_value(context, body, direction));
+            }
             match judged {
                 | Ok(verdict) => (verdict, Maybe::Absent(kept::Absent::Accepted)),
                 | Err(failure) => (Verdict::Refused(failure.refusal()), Maybe::Present(failure)),
@@ -447,7 +506,10 @@ fn decide(
                     Verdict::Owed(ObligationEntry::from(absence)),
                     Maybe::Absent(kept::Absent::Accepted),
                 ),
-                | Err(refusal) => unrun(refusal),
+                | Err(refusal) => (
+                    Verdict::Refused(refusal),
+                    Maybe::Absent(kept::Absent::Unrun),
+                ),
             }
         },
     };
@@ -470,7 +532,7 @@ fn decide(
             Verdict::Data | Verdict::Checked { .. } | Verdict::Owed(_) | Verdict::Refused(_),
         ) => {},
     }
-    (verdict, failure)
+    (verdict, failure, typings)
 }
 
 /// Judge one declaration in `context`, and report the signature answers the
@@ -573,7 +635,7 @@ pub fn check_module(
     let mut ledger = ObligationLedger::new();
     let mut failures = BTreeMap::new();
     for declaration in declarations {
-        let (verdict, failure) = decide(context, declaration);
+        let (verdict, failure, _untyped) = decide(context, declaration, Run::Judged);
         if let Maybe::Present(failure) = failure {
             failures.insert(declaration.constant(), failure);
         }
@@ -595,6 +657,44 @@ pub fn check_module(
         data_signatures: context.data_signatures().clone(),
         failures,
     }
+}
+
+/// Judge `declarations` in order, as [`check_module`] does, keeping the type
+/// of every term each judged body judges.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `context` is left as [`check_module`] leaves it, every
+///   declaration judged in order; each declaration whose body was judged is
+///   keyed by its constant with what [`type_value`] keeps for its body, read
+///   before its own type entered the table; a declaration refused before its
+///   body, a data declaration and a hole are not keyed.
+/// - provides: the type of every term a module's bodies judge, for a face
+///   answering a position inside a declaration.
+/// - fails: never; a refusal is kept as the typed run's mark.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module of an accepted body, a refused body and a hole
+///   separates the keyed bodies from the unkeyed hole and the accepted body's
+///   own type from its parts'.
+/// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
+#[spec(ensures: |ret| ret.keys().all(|constant|
+    declarations.iter().any(|declaration| declaration.constant() == *constant)))]
+#[inline]
+#[must_use]
+pub fn type_module(
+    context: &mut CheckingContext<'_>,
+    declarations: &[Declaration],
+) -> BTreeMap<ConstantIndex, Typings>
+{
+    let mut typed = BTreeMap::new();
+    for declaration in declarations {
+        if let (_, _, Maybe::Present(typings)) = decide(context, declaration, Run::Typed) {
+            typed.insert(declaration.constant(), typings);
+        }
+    }
+    typed
 }
 
 /// The hole rule, in both directions.
@@ -649,6 +749,7 @@ mod tests
     use super::Verdict;
     use super::check_declaration;
     use super::check_module;
+    use super::type_module;
     use crate::context::Atom;
     use crate::context::CheckBudget;
     use crate::context::CheckingContext;
@@ -1194,6 +1295,56 @@ mod tests
                 Stage::Starting,
             ),
             "the thunk, which cannot synthesise, is the goal the refusal met"
+        );
+    }
+
+    #[test]
+    fn a_typed_module_keeps_each_judged_body_s_term_types()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let product = arena.value_type_product(&[integer, integer]);
+        let zero = arena.value_literal(integer_literal());
+        let text = arena.value_literal(text_literal());
+        let pair = arena.value_tuple(&[zero, text]);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let module = [
+            declaration(At(0), UNSIGNED, Maybe::Present(zero)),
+            declaration(At(1), Maybe::Present(product), Maybe::Present(pair)),
+            declaration(At(2), Maybe::Present(integer), HOLE),
+        ];
+        let typed = type_module(&mut context, &module);
+        assert_eq!(
+            typed.keys().copied().collect::<Vec<_>>(),
+            [ConstantIndex::from(0_usize), ConstantIndex::from(1_usize)],
+            "both judged bodies are typed; the hole is not"
+        );
+        let accepted = typed[&ConstantIndex::from(0_usize)].typings();
+        assert_eq!(
+            accepted
+                .iter()
+                .map(|typing| typing.term)
+                .collect::<Vec<_>>(),
+            [TermNode::Value(zero)],
+            "the literal body is its only term"
+        );
+        let refused = &typed[&ConstantIndex::from(1_usize)];
+        assert!(
+            refused
+                .typings()
+                .iter()
+                .any(|typing| typing.term == TermNode::Value(text)),
+            "the refused component is typed where it was recovered"
+        );
+        assert_eq!(
+            refused.typings().last().map(|typing| typing.term),
+            Some(TermNode::Value(pair)),
+            "the refused body itself finishes last"
+        );
+        assert_eq!(
+            refused.marks().len(),
+            1_usize,
+            "the text component is the one mark"
         );
     }
 

@@ -708,6 +708,7 @@ dependencies = [
  "gandr-surface-grammar",
  "gandr-surface-lowering",
  "gandr-surface-parser",
+ "gandr-surface-pretty",
  "gandr-surface-syntax",
  "quenchant-anodized",
  "quenchant-shape",

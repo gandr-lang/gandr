@@ -433,8 +433,11 @@ use self::elaboration::Anchor;
 pub use self::elaboration::Elaboration;
 pub use self::elaboration::MarkEntry;
 use self::elaboration::Marking;
+pub use self::elaboration::Typing;
+pub use self::elaboration::Typings;
 pub use self::elaboration::elaborate_comp;
 pub use self::elaboration::elaborate_value;
+pub use self::elaboration::type_value;
 
 /// The direction a judgement runs in.
 ///
@@ -1754,6 +1757,9 @@ struct Machine<'context, 'arena>
     anchors: Vec<Anchor>,
     /// The refusals a total run marked, in the order met.
     marks: Vec<MarkEntry>,
+    /// The term judgements a typed run finished, each with its type, in the
+    /// order finished; empty in every other run.
+    typings: Vec<Typing>,
 }
 
 impl<'context, 'arena> Machine<'context, 'arena>
@@ -2291,6 +2297,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             marking,
             anchors: Vec::new(),
             marks: Vec::new(),
+            typings: Vec::new(),
         };
         match machine.drive(goal) {
             | Ok(produced) => Ok((produced, machine.conversions, machine.marks)),
@@ -2431,7 +2438,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     (Control::Starting(goal), self.descend(goal))
                 },
                 | Step::Ascend(produced) => {
-                    self.settle();
+                    self.settle(produced);
                     match self.frames.pop() {
                         | Some(waiting) => {
                             self.owner = waiting.owner;
@@ -4117,8 +4124,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// Add the bound computation's demand to the continuation's ambient type.
     ///
     /// # Specification
-    /// - ensures: a pure bound leaves the continuation unchanged; otherwise
-    ///   both demands remain in the returner, with one definition per name.
+    /// - ensures: a pure bound, and one whose type is unknown because a total
+    ///   run marked it, leave the continuation unchanged; otherwise both
+    ///   demands remain in the returner, with one definition per name.
     /// - fails: a non-returner cannot carry a nonempty row; conflicting
     ///   definitions are refused rather than overwritten.
     ///
@@ -4128,6 +4136,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   replacement.
     /// - witness: `judgement::tests::bind_unions_effect_rows`
     /// - witness: `judgement::tests::check_mode_bind_subsumes_the_accumulated_row`
+    /// - witness: `judgement::elaboration::tests::a_marked_bound_leaves_its_continuation_judged`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -4137,6 +4146,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     )]
     #[spec(ensures: |ret| ret.is_err() || match comp_type_view(self.context.arena(), bound) {
         Ok(CompTypeView::Returner { effects, .. }) if effects.purity() == gandr_core_term::effect::Purity::Pure => ret == Ok(continued),
+        Ok(CompTypeView::Unknown) => ret == Ok(continued),
         Ok(CompTypeView::Returner { effects, .. }) => ret.is_ok_and(|actual| matches!(comp_type_view(self.context.arena(), actual), Ok(CompTypeView::Returner { effects: actual, .. }) if effects.is_subset(actual, self.context.arena()) == gandr_core_term::effect::RowInclusion::Included)),
         _ => false,
     })]
@@ -4147,7 +4157,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
         continued: CompTypeId,
     ) -> Result<CompTypeId, CheckRefusal>
     {
-        let CompTypeView::Returner { effects, .. } = comp_type_view(self.context.arena(), bound)?
+        let view = comp_type_view(self.context.arena(), bound)?;
+        if matches!(view, CompTypeView::Unknown) {
+            return Ok(continued);
+        }
+        let CompTypeView::Returner { effects, .. } = view
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
@@ -7880,6 +7894,7 @@ mod tests
             marking: Marking::Strict,
             anchors: Vec::new(),
             marks: Vec::new(),
+            typings: Vec::new(),
         };
         let refusal = machine
             .resume(Frame::LambdaBody, Produced::ValueType(unit_type))
@@ -7917,6 +7932,7 @@ mod tests
             marking: Marking::Strict,
             anchors: Vec::new(),
             marks: Vec::new(),
+            typings: Vec::new(),
         };
         assert_eq!(machine.charge(), Ok(()));
         assert_eq!(machine.remaining, 0);
@@ -8762,5 +8778,7 @@ mod tests
         }
     }
 }
+// weave: run 'weave explain crates/core-checker/src/judgement.rs' for per-hunk
+// detail, 'weave check' to verify your resolution
 // weave: run 'weave explain crates/core-checker/src/judgement.rs' for per-hunk
 // detail, 'weave check' to verify your resolution

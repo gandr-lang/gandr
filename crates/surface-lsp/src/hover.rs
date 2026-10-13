@@ -1,63 +1,64 @@
-//! What a hover shows over a declaration's name: the type the latest check
-//! gives it and the documentation written for it.
+//! What a hover shows: the type of whatever the cursor is in, and a
+//! declaration's documentation.
 //!
-//! The declaration is read off the parsed tree as the outline reads it; its
-//! type off the session's latest resume, by the occurrence of its name the
-//! declaration is; its documentation off the session's latest accepted
-//! lowering, under the declaring form's content identity, which its
-//! documentation does not reach.
+//! # A hover answers the innermost node
 //!
-//! # A hover reads the session
+//! A hover reads what [`hovering`] builds once per revision of the copy and
+//! keeps until the copy changes — the document's type table (`TypeTable`) and
+//! the declarations the outline reads off the tree, each with its declaring
+//! form's key — and answers, in order:
 //!
-//! A hover request finds the declaration whose name the cursor is on — from the
-//! name's first character to just past its last — among the declarations the
-//! outline reads off the tree, so a parameter, a use, a keyword or a word in a
-//! comment hovers nothing. It answers a fenced `gandr` block with the name and,
-//! when the document's session spells it, ` : ` and its type, then the
-//! declaration's documentation after a blank line, about the name's range:
+//! - **A declaration's name** — from its first character to just past its last
+//!   — with a fenced `gandr` block holding the name and, when the table types
+//!   the declaration, ` : ` and its type, then the documentation the session's
+//!   latest accepted lowering filed for the declaring form, after a blank line,
+//!   about the name's range. The table keys a declaration by each of its forms,
+//!   so a signature and the definition completing it both answer the one
+//!   declaration they make.
+//! - **The innermost typed node holding the cursor**, about its span: a term
+//!   with its type, and, when an outer judgement checked it against a type
+//!   spelled otherwise, that type after it; a binder with its name and the type
+//!   of its uses; a written type with its text and its universe. A keyword or a
+//!   delimiter inside a term answers that term, so `return` and `{` answer the
+//!   computation they open.
+//! - **The innermost declaration holding the cursor**, about its range, as for
+//!   its name: the keyword that introduces it, the colon of its signature, the
+//!   layout and documentation inside it.
 //!
-//! - **The type** is the one the session's latest resume gives the declaration,
-//!   spelled by the session's `type_at` at 80 columns: a signature, a
-//!   synthesised type or a data declaration's universe, in the one spelling
-//!   every face writes. The item is the occurrence of the declaration's name it
-//!   is among the document's earlier non-module declarations, so two modules'
-//!   members of one name each hover their own type
-//!   (`tests::each_member_hovers_its_own_type`).
-//! - **The documentation** is what the session's latest accepted lowering filed
-//!   for the declaring form, read under the form's content identity, which
-//!   documentation does not reach: `///` lines and a `doc("…")` entry read to
-//!   one text.
+//! A position in no declaration hovers nothing, and so does a document whose
+//! grammar did not build. Every type is spelled through the shared printer at
+//! 80 columns.
 //!
-//! A declaration the session knows neither a type nor documentation for hovers
-//! nothing, and so does a document whose grammar did not build.
-//!
-//! The alternative was to look the name under the cursor up as a word, wherever
-//! it stands, and answer the type of the last declaration it names, which
-//! hovers a parameter or a comment with an unrelated declaration's type; and to
-//! lower the document again per hover, which pays a lowering for what the
-//! session already holds. The occurrence counts the document's declarations as
-//! the tree orders them, which is the order the lowering admits them; a
-//! declaration the lowering refuses whole takes no item, so a later one of its
-//! name reads the next. The choice reverses when the session maps a declaring
-//! form to its item directly: the hover then asks for the form's item and stops
-//! counting.
+//! The alternative was to look the name under the cursor up among the
+//! session's items by its occurrence among the document's declarations, as
+//! this hover did before the table existed: it answers declaration names only,
+//! and counts a signature and its definition as two occurrences of one item.
+//! The choice reverses when the session keeps the typed run's table itself,
+//! and the hover then reads it there rather than judging the copy's text
+//! again.
 
 use alloc::format;
+use alloc::string::String;
 
 use anodized::spec;
-use gandr_core_incremental::ItemKey;
-use gandr_core_incremental::Occurrence;
-use gandr_core_incremental::Reference;
+use gandr_surface_dispatcher::Declared;
+use gandr_surface_dispatcher::Subject;
+use gandr_surface_dispatcher::TypeTable;
+use gandr_surface_dispatcher::TypedSpan;
 use gandr_surface_parser::parse;
 use gandr_surface_pretty::PageWidth;
+use gandr_surface_render_remote::ByteOffset as RenderOffset;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::Session;
-use gandr_surface_session::type_at;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::outline::declarations;
 use crate::position::Position;
+use crate::position::Range;
+use crate::protocol::DocumentSymbol;
 use crate::protocol::Hover;
 use crate::protocol::MarkupContent;
 use crate::protocol::SymbolKind;
@@ -75,8 +76,8 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The grammar did not build or the text did not parse.
             Unparsed,
-            /// The position is on no declaration's name.
-            Undeclared,
+            /// The position is in no typed node and no declaration.
+            Untyped,
             /// The session knows neither a type nor documentation for the
             /// declaration.
             Unknown,
@@ -84,31 +85,116 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// What a hover at `position` of `text` shows, read against `session`.
+/// A declaration of the document as a hover reads it: its outline symbol and
+/// its declaring form's key.
+#[derive(Clone, Debug)]
+struct Declaration
+{
+    /// The key of the form declaring it; none for a form the tree keys not.
+    key: Option<NodeKey>,
+    /// Its symbol, as the outline reads it.
+    symbol: DocumentSymbol,
+}
+
+/// What a document copy keeps for its hovers until its text changes: the type
+/// table, and the declarations the outline reads off the tree.
+#[derive(Clone, Debug)]
+pub struct Hovering
+{
+    /// The type of every node of the text, and of every declaration.
+    table: TypeTable,
+    /// The declarations in source order, each with its declaring form's key;
+    /// absent when the grammar did not build or the text did not parse.
+    declarations: Maybe<Vec<Declaration>, hovered::Absent>,
+}
+
+/// What the hovers of `text` read, built under the process's grammar: one
+/// parse and one typed run per text, rather than one per hover.
 ///
 /// # Specification
-/// - requires: `session` last checked `text`, as the server's synchronisation
-///   leaves it; a stale session answers what it last accepted.
-/// - ensures: on the name of a declaration — from its first character to just
-///   past its last — a fenced `gandr` block holding the name and, when the
-///   session's latest resume spells it, ` : ` and its type, followed by the
-///   documentation the latest accepted revision filed for the declaring form,
-///   after a blank line; the range is the name's. The type is the one of the
-///   occurrence of the name this declaration is among the document's non-module
-///   declarations. Absent elsewhere, and absent when neither a type nor
-///   documentation is known.
+/// - requires: nothing.
+/// - ensures: [`TypeTable::of`] over `text`, the empty table when the grammar
+///   did not build or the text did not parse; and the declarations the outline
+///   reads off the text's tree with their forms' keys, absent as
+///   [`hovered::Absent::Unparsed`] when the grammar or the parse failed.
+/// - provides: what a document copy keeps for its hovers.
+/// - fails: never; a refusal answers the empty table and no declarations.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a hover over every kind of position reads what this
+///   builds, and a parsed text's declarations answer their names.
+/// - witness: `hover::tests::each_marked_position_hovers_its_answer`
+#[spec(ensures: |ret| matches!(ret.declarations,
+    Maybe::Present(_) | Maybe::Absent(hovered::Absent::Unparsed)))]
+#[must_use]
+pub fn hovering(text: SourceText<'_>) -> Hovering
+{
+    let unparsed = Maybe::Absent(hovered::Absent::Unparsed);
+    let (Ok(grammar), Ok(roles)) = (grammar(), roles())
+    else {
+        return Hovering {
+            table: TypeTable::default(),
+            declarations: unparsed,
+        };
+    };
+    let table = TypeTable::of(grammar, text).unwrap_or_default();
+    let Ok(parsed) = parse(grammar, text)
+    else {
+        return Hovering {
+            table,
+            declarations: unparsed,
+        };
+    };
+    let tree = parsed.into_tree();
+    let index = LineIndex::new(<&str>::from(text).into());
+    let found = declarations(grammar, roles, &tree, &index)
+        .into_iter()
+        .map(|(form, symbol)| Declaration {
+            key: tree.key(form),
+            symbol,
+        })
+        .collect();
+    Hovering {
+        table,
+        declarations: Maybe::Present(found),
+    }
+}
+
+/// What a hover at `position` of `text` shows, read against `hovering` and
+/// `session`.
+///
+/// # Specification
+/// - requires: `hovering` was built from `text`, and `session` last checked
+///   `text`, as the server's synchronisation leaves them; a stale session
+///   answers the documentation it last accepted.
+/// - ensures: on a declaration's name — from its first character to just past
+///   its last — a fenced `gandr` block holding the name and, when the table
+///   types the declaration by its form's key, ` : ` and its type, or, when the
+///   table holds the lowering's refusal of it, that refusal after a blank line;
+///   then the documentation the session filed for the form after a blank line,
+///   about the name's range; else, on the innermost typed node holding the
+///   position, a fenced block of its type — a binder's name or a written type's
+///   text before ` : ` — and, for a term checked against a type spelled
+///   otherwise, that type in a second block, about the node's range; else,
+///   inside a non-module declaration, as on its name, about its range. Absent
+///   elsewhere, and absent for a declaration with neither a type, a refusal nor
+///   documentation.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a documented definition, an undocumented one, a member of
-///   a module sharing its name with another module's, a parameter, a word in a
-///   comment and the cursor at either edge of a name are asserted at their
-///   exact answers. Hovering a parameter as a definition, reading another
-///   occurrence's type or dropping the documentation changes them.
+///   a module sharing its name with another module's, a signature and its
+///   definition, a function and one the lowering refused, a binder, a use,
+///   written value and computation types, a mismatched term, a term past a
+///   refusal in its body, a keyword, layout inside a declaration, a word in a
+///   comment and a position past the last declaration are asserted at their
+///   exact answers.
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
-/// - witness: `hover::tests::only_a_declared_name_hovers`
+/// - witness: `hover::tests::each_marked_position_hovers_its_answer`
+/// - witness: `hover::tests::each_member_hovers_its_own_type`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref hover) => hover.contents.value.starts_with("```gandr\n")
         && hover.range.start <= position && position <= hover.range.end,
@@ -117,60 +203,104 @@ quenchant_shape::reason_enum! {
 pub fn hover<Store, Blocks>(
     text: SourceText<'_>,
     session: &Session<Store, Blocks>,
+    hovering: &Hovering,
     position: Position,
 ) -> Maybe<Hover, hovered::Absent>
 {
-    let (Ok(grammar), Ok(roles)) = (grammar(), roles())
+    let Maybe::Present(ref found) = hovering.declarations
     else {
         return Maybe::Absent(hovered::Absent::Unparsed);
     };
-    let Ok(parsed) = parse(grammar, text)
-    else {
-        return Maybe::Absent(hovered::Absent::Unparsed);
-    };
-    let tree = parsed.into_tree();
+    let table = &hovering.table;
     let index = LineIndex::new(<&str>::from(text).into());
-    let found = declarations(grammar, roles, &tree, &index);
-    let on_name = |found: &(_, crate::protocol::DocumentSymbol)| {
-        found.1.selection_range.start <= position && position <= found.1.selection_range.end
-    };
-    let Some(at) = found.iter().position(on_name)
-    else {
-        return Maybe::Absent(hovered::Absent::Undeclared);
-    };
-    let (earlier, rest) = found.split_at(at);
-    let Some(&(form, ref symbol)) = rest.first()
-    else {
-        return Maybe::Absent(hovered::Absent::Undeclared);
-    };
-    let typed = if symbol.kind == SymbolKind::MODULE {
-        None
+    if let Some(named) = found.iter().find(|found| {
+        found.symbol.selection_range.start <= position
+            && position <= found.symbol.selection_range.end
+    }) {
+        return declared(session, table, named, named.symbol.selection_range);
     }
-    else {
-        let occurrence = earlier
-            .iter()
-            .filter(|other| other.1.name == symbol.name && other.1.kind != SymbolKind::MODULE)
-            .count();
-        let reference = Reference::Item {
-            key: ItemKey::from(symbol.name.as_str()),
-            occurrence: Occurrence::from(occurrence),
-        };
-        match type_at(session.last(), &reference, PageWidth::from(HOVER_WIDTH)) {
-            | Maybe::Present(spelled) => Some(spelled),
-            | Maybe::Absent(_) => None,
-        }
-    };
-    let documented = tree
-        .key(form)
-        .and_then(|key| match session.documentation(key) {
-            | Maybe::Present(text) => Some(text),
-            | Maybe::Absent(_) => None,
+    let offset = ByteOffset::from(usize::from(position.byte(&index)));
+    if let Maybe::Present(entry) = table.at(offset, PageWidth::from(HOVER_WIDTH))
+        && let Ok(range) = Range::of_bytes(
+            &index,
+            RenderOffset::from(usize::from(entry.span().start())),
+            RenderOffset::from(usize::from(entry.span().end())),
+        )
+    {
+        return Maybe::Present(Hover {
+            contents: MarkupContent {
+                kind: "markdown",
+                value: typed(text, &entry),
+            },
+            range,
         });
-    if typed.is_none() && documented.is_none() {
+    }
+    let enclosing = found.iter().rfind(|found| {
+        found.symbol.kind != SymbolKind::MODULE
+            && found.symbol.range.start <= position
+            && position < found.symbol.range.end
+    });
+    match enclosing {
+        | Some(enclosing) => declared(session, table, enclosing, enclosing.symbol.range),
+        | None => Maybe::Absent(hovered::Absent::Untyped),
+    }
+}
+
+/// The hover of the declaration `declaration`, about `range`.
+///
+/// # Specification
+/// - requires: `range` holds the hovered position.
+/// - ensures: a fenced `gandr` block of the name and, when `table` types the
+///   declaration by its form's key and the symbol is no module, ` : ` and its
+///   type; when `table` holds the lowering's refusal of it instead, that
+///   refusal after a blank line; then the documentation `session` filed under
+///   the form's key after a blank line; absent when none is known.
+/// - provides: the declaration half of [`hover`].
+/// - fails: never; an absence names its reason.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`hover`]'s declaration rows.
+/// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
+/// - witness: `hover::tests::each_member_hovers_its_own_type`
+/// - witness: `hover::tests::each_marked_position_hovers_its_answer`
+#[spec(ensures: |ref ret| match *ret {
+    Maybe::Present(ref hover) => hover.range == range
+        && hover.contents.value.starts_with(&format!("```gandr\n{}", declaration.symbol.name)),
+    Maybe::Absent(reason) => reason == hovered::Absent::Unknown,
+})]
+fn declared<Store, Blocks>(
+    session: &Session<Store, Blocks>,
+    table: &TypeTable,
+    declaration: &Declaration,
+    range: Range,
+) -> Maybe<Hover, hovered::Absent>
+{
+    let symbol = &declaration.symbol;
+    let key = declaration.key;
+    let held = match key {
+        | Some(key) if symbol.kind != SymbolKind::MODULE => {
+            match table.declared(key, PageWidth::from(HOVER_WIDTH)) {
+                | Maybe::Present(held) => Some(held),
+                | Maybe::Absent(_) => None,
+            }
+        },
+        | Some(_) | None => None,
+    };
+    let documented = key.and_then(|key| match session.documentation(key) {
+        | Maybe::Present(text) => Some(text),
+        | Maybe::Absent(_) => None,
+    });
+    if held.is_none() && documented.is_none() {
         return Maybe::Absent(hovered::Absent::Unknown);
     }
-    let mut value = match typed {
-        | Some(spelled) => format!("```gandr\n{} : {spelled}\n```", symbol.name),
+    let mut value = match held {
+        | Some(Declared::Typed(spelled)) => {
+            format!("```gandr\n{} : {}\n```", symbol.name, spelled.as_ref())
+        },
+        | Some(Declared::Refused(refusal)) => {
+            format!("```gandr\n{}\n```\n\nrefused: {refusal}", symbol.name)
+        },
         | None => format!("```gandr\n{}\n```", symbol.name),
     };
     if let Some(text) = documented {
@@ -182,8 +312,49 @@ pub fn hover<Store, Blocks>(
             kind: "markdown",
             value,
         },
-        range: symbol.selection_range,
+        range,
     })
+}
+
+/// The hover text of the typed node `entry` of `text`.
+///
+/// # Specification
+/// - requires: `entry` was read from the table of `text`.
+/// - ensures: a fenced `gandr` block: a term's type alone; a binder's name and
+///   a written type's text, each when it is one line of the source, then ` : `
+///   and the entry's type; for a term checked against a type spelled otherwise,
+///   a second block of that type after a line saying so.
+/// - provides: the node half of [`hover`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a use, a binder, a written type and a mismatched term are
+///   asserted at their exact texts.
+/// - witness: `hover::tests::each_marked_position_hovers_its_answer`
+#[spec(ensures: |ret| ret.starts_with("```gandr\n") && ret.contains(entry.ty().as_ref()))]
+fn typed(
+    text: SourceText<'_>,
+    entry: &TypedSpan,
+) -> String
+{
+    let written = <&str>::from(text)
+        .get(usize::from(entry.span().start()) .. usize::from(entry.span().end()))
+        .filter(|written| !written.contains('\n'));
+    let mut value = match (entry.subject(), written) {
+        | (Subject::Binder | Subject::Type, Some(written)) => {
+            format!("```gandr\n{written} : {}\n```", entry.ty().as_ref())
+        },
+        | (Subject::Term, _) | (Subject::Binder | Subject::Type, None) => {
+            format!("```gandr\n{}\n```", entry.ty().as_ref())
+        },
+    };
+    if let Maybe::Present(expected) = entry.expected() {
+        value.push_str("\n\nchecked against\n\n```gandr\n");
+        value.push_str(expected.as_ref());
+        value.push_str("\n```");
+    }
+    value
 }
 
 #[cfg(test)]
@@ -193,12 +364,15 @@ mod tests
     use gandr_core_incremental::MemoryCheckpointStore;
     use gandr_storage_records::InMemoryBlockStore;
     use gandr_surface_dispatcher::SourceRoot;
+    use gandr_surface_render_remote::ByteOffset as RenderOffset;
+    use gandr_surface_render_remote::LineIndex;
     use gandr_surface_session::Session;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
     use super::hover;
     use super::hovered;
+    use super::hovering;
     use crate::position::Character;
     use crate::position::Line;
     use crate::position::Position;
@@ -230,10 +404,142 @@ mod tests
         (line, character): (Line, Character),
     ) -> Result<String, hovered::Absent>
     {
+        shown_at(text, Position { line, character })
+    }
+
+    /// What a hover at `position` of `text` shows, or why not.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shown_at(
+        text: SourceText<'_>,
+        position: Position,
+    ) -> Result<String, hovered::Absent>
+    {
         let session = checked(text);
-        match hover(text, &session, Position { line, character }) {
+        match hover(text, &session, &hovering(text), position) {
             | Maybe::Present(shown) => Ok(shown.contents.value),
             | Maybe::Absent(reason) => Err(reason),
+        }
+    }
+
+    /// The marker `$0`'s position in `fixture`, and the fixture without it;
+    /// panics when the marker is missing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn marker(fixture: SourceText<'_>) -> (String, Position)
+    {
+        let written = <&str>::from(fixture);
+        let at = written.find("$0").expect("the fixture is marked");
+        let text = written.replacen("$0", "", 1);
+        let index = LineIndex::new(text.as_str().into());
+        let position =
+            Position::of_byte(&index, RenderOffset::from(at)).expect("the marker is on a boundary");
+        (text, position)
+    }
+
+    /// A hover's text: one fenced block holding `block`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fenced(block: SourceText<'_>) -> String
+    {
+        format!("```gandr\n{}\n```", <&str>::from(block))
+    }
+
+    #[test]
+    fn each_marked_position_hovers_its_answer()
+    {
+        let rows: [(&str, &str, Result<String, hovered::Absent>); 15] = [
+            (
+                "a synthesised declaration's name",
+                "def ans$0wer = 42 ;\n",
+                Ok(fenced(SourceText::from("answer : Integer"))),
+            ),
+            (
+                "the definition half of a signed declaration",
+                "def answer : Integer ;\ndef ans$0wer = 42 ;\n",
+                Ok(fenced(SourceText::from("answer : Integer"))),
+            ),
+            (
+                "a function's name",
+                "def $0f(x: Integer) -> -F Integer { return x }\n",
+                Ok(fenced(SourceText::from("f : +U (Integer -> -F Integer)"))),
+            ),
+            (
+                "the name of a function the lowering refused",
+                "def $0f(x: Integer) -> -F Integer { pure x }\n",
+                Ok(String::from(
+                    "```gandr\nf\n```\n\nrefused: the body's path ends without an exit; a path \
+                     through a body ends in `return` or `become`",
+                )),
+            ),
+            (
+                "a binder",
+                "def f($0x: Integer) -> -F Integer { return x }\n",
+                Ok(fenced(SourceText::from("x : Integer"))),
+            ),
+            (
+                "a use",
+                "def f(x: Integer) -> -F Integer { return $0x }\n",
+                Ok(fenced(SourceText::from("Integer"))),
+            ),
+            (
+                "a written value type",
+                "def answer : Inte$0ger ;\n",
+                Ok(fenced(SourceText::from("Integer : Type"))),
+            ),
+            (
+                "a written computation type",
+                "def f(x: Integer) -> -$0F Integer { return x }\n",
+                Ok(fenced(SourceText::from("-F Integer : Type[-]"))),
+            ),
+            (
+                "a keyword opening a term",
+                "def f(x: Integer) -> -F Integer { ret$0urn x }\n",
+                Ok(fenced(SourceText::from("-F Integer"))),
+            ),
+            (
+                "the keyword introducing a declaration",
+                "d$0ef answer = 42 ;\n",
+                Ok(fenced(SourceText::from("answer : Integer"))),
+            ),
+            (
+                "layout inside a declaration",
+                "def answer =$0 42 ;\n",
+                Ok(fenced(SourceText::from("answer : Integer"))),
+            ),
+            (
+                "a mismatched term",
+                "def bad : Integer ;\ndef bad = u$0nit ;\n",
+                Ok(String::from(
+                    "```gandr\nUnit\n```\n\nchecked against\n\n```gandr\nInteger\n```",
+                )),
+            ),
+            (
+                "a term past a refusal in its body",
+                "def g(x: Integer) -> -F Integer { run y <- force 1 ; return $0x }\n",
+                Ok(fenced(SourceText::from("Integer"))),
+            ),
+            (
+                "a comment between declarations",
+                "def a = 1 ;\n// a $0word\ndef b = 2 ;\n",
+                Err(hovered::Absent::Untyped),
+            ),
+            (
+                "past the last declaration",
+                "def later : Integer ;\n$0",
+                Err(hovered::Absent::Untyped),
+            ),
+        ];
+        for (position, fixture, expected) in rows {
+            let (text, at) = marker(SourceText::from(fixture));
+            assert_eq!(
+                shown_at(SourceText::from(text.as_str()), at),
+                expected,
+                "{position}"
+            );
         }
     }
 
@@ -253,41 +559,12 @@ mod tests
             shown(text, (2.into(), 4.into())),
             Ok(String::from("```gandr\nplain : String\n```"))
         );
-    }
-
-    #[test]
-    fn only_a_declared_name_hovers()
-    {
-        let text =
-            SourceText::from("def x = 1 ;\n// x\ndef f(x: String) -> -F String { return x }\n");
-        assert!(
-            shown(text, (0.into(), 4.into())).is_ok(),
-            "the name's first character hovers"
-        );
-        assert!(
-            shown(text, (0.into(), 5.into())).is_ok(),
-            "just past the name hovers"
-        );
         assert_eq!(
-            shown(text, (0.into(), 6.into())),
-            Err(hovered::Absent::Undeclared)
-        );
-        assert_eq!(
-            shown(text, (1.into(), 3.into())),
-            Err(hovered::Absent::Undeclared),
-            "a word in a comment is no declaration"
-        );
-        assert_eq!(
-            shown(text, (2.into(), 6.into())),
-            Err(hovered::Absent::Undeclared),
-            "a parameter is no declaration"
-        );
-        assert_eq!(
-            shown(
-                SourceText::from("def later : Integer ;\n"),
-                (1.into(), 0.into())
-            ),
-            Err(hovered::Absent::Undeclared)
+            shown(text, (1.into(), 0.into())),
+            Ok(String::from(
+                "```gandr\nanswer : Integer\n```\n\nThe answer, said once."
+            )),
+            "the keyword answers the declaration it introduces"
         );
     }
 
