@@ -40,16 +40,16 @@
 //! by name. Each distinct node is erased once per declaration, so the kernel
 //! sees the sharing the producer built and no more.
 //!
-//! Element identity erases one for one: the core's path type, reflexivity and
-//! element transport mirror the kernel's identity nodes, so each mints the
-//! kernel node of the same former over its children's images, and the kernel
-//! re-derives formation at a closed carrier, endpoint conversion and transport
-//! in its motive itself. The alternative, erasing reflexivity to its point and
-//! a path type to the fibre the recursion classifies, has the kernel re-derive
-//! a program other than the one the judgement accepted. A compound endpoint
-//! has no kernel node: it is [`Refusal::CompoundEndpoint`], located at the
-//! endpoint, and its declaration stays on the checker's side. The choice
-//! reverses when the kernel reads a returned value as the value it returns.
+//! Element identity erases one for one: the core's path type, reflexivity,
+//! returned endpoint and element transport mirror the kernel's identity
+//! nodes, so each mints the kernel node of the same former over its
+//! children's images, and the kernel re-derives formation at a closed
+//! carrier, endpoint conversion — reading a returned endpoint by its own
+//! reduction — and transport in its motive itself. The alternative, erasing
+//! reflexivity to its point and a path type to the fibre the recursion
+//! classifies, has the kernel re-derive a program other than the one the
+//! judgement accepted; erasing a returned endpoint to the value the
+//! normaliser computed for it makes that normaliser trusted.
 //!
 //! A function extensionality erases to the kernel's higher evaluation, which
 //! has no core counterpart: per input of the coverage the judgement recorded,
@@ -334,6 +334,7 @@ use gandr_kernel_core::AxiomReport;
 use gandr_kernel_core::CheckedId;
 use gandr_kernel_core::EngineClaim;
 use gandr_kernel_core::Environment;
+use gandr_kernel_core::IdentityError;
 use gandr_kernel_core::KernelError;
 use gandr_kernel_core::KernelVerdict;
 use gandr_kernel_core::ParameterCount;
@@ -524,14 +525,6 @@ pub enum Refusal
         /// The type's node.
         at: CoreNode,
     },
-    /// A compound endpoint: a computation standing where a path endpoint is
-    /// read, taken as the value it returns. The kernel's vocabulary has no
-    /// such node, so the declaration holding it does not cross.
-    CompoundEndpoint
-    {
-        /// The endpoint.
-        at: ValueId,
-    },
 }
 
 impl Refusal
@@ -543,12 +536,11 @@ impl Refusal
     /// - ensures: the class is a function of the variant alone. A withheld
     ///   constant is malformed source, since the declaration it names was
     ///   turned away for a reason its own entry reports; a former outside the
-    ///   fragment and a compound endpoint, which the kernel has no node for,
-    ///   are unrepresentable; a linear variable, a dangling id, a cyclic node,
-    ///   a declined certificate and a machine invariant are engine faults,
-    ///   because a judged term from the judged arena holds none of them and an
-    ///   unfolding holds by definition; a term hole and the unknown type are
-    ///   user absences.
+    ///   fragment is unrepresentable; a linear variable, a dangling id, a
+    ///   cyclic node, a declined certificate and a machine invariant are engine
+    ///   faults, because a judged term from the judged arena holds none of them
+    ///   and an unfolding holds by definition; a term hole and the unknown type
+    ///   are user absences.
     /// - provides: the fact a report groups by, in the same four classes the
     ///   judgement's refusals answer to.
     /// - fails: never.
@@ -563,7 +555,7 @@ impl Refusal
     /// - witness: `bridge::tests::a_hole_is_refused_where_it_stands_and_its_filling_is_admitted`
     #[spec(ensures: |ret| match *self {
         | Self::Withheld { .. } | Self::WithheldData { .. } => matches!(ret, FailureClass::MalformedSource),
-        | Self::OutOfFragment { .. } | Self::CompoundEndpoint { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::LinearVariable { .. } | Self::DanglingNode { .. } | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
         | Self::Hole { .. } | Self::Unknown { .. } => matches!(ret, FailureClass::UserAbsence),
@@ -574,9 +566,7 @@ impl Refusal
     {
         match *self {
             | Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. } | Self::CompoundEndpoint { .. } => {
-                FailureClass::Unrepresentable
-            },
+            | Self::OutOfFragment { .. } => FailureClass::Unrepresentable,
             | Self::LinearVariable { .. }
             | Self::DanglingNode { .. }
             | Self::Cyclic { .. }
@@ -657,6 +647,11 @@ pub enum Outcome
     /// The kernel rejected the erased declaration: the judgement accepted what
     /// the kernel does not, the disagreement the oracle exists to report.
     Rejected(KernelError),
+    /// The kernel declined the erased declaration: a reflexivity relates its
+    /// endpoints only by unfolding a definition under a thunk, which the kernel
+    /// relates from a replayed engine trace alone. Always
+    /// [`IdentityError::EndpointsUnreplayed`]; a decline, not a disagreement.
+    Declined(KernelError),
 }
 
 /// One certificate the kernel replayed for a declaration: what its step
@@ -1009,14 +1004,15 @@ impl Readmission
 ///   [`Outcome::Marked`] with its refusal, and the kernel is offered nothing
 ///   for it. An offer whose erasure refuses, or one of whose certificates the
 ///   kernel does not replay to convertible, is [`Outcome::Refused`], one the
-///   kernel rejects [`Outcome::Rejected`], and either leaves the environment as
-///   it was. A constant naming a declaration that crossed is erased to the
-///   kernel position that declaration took; a code recorded with a lift is
-///   erased to the kernel's lift of its decode; a decode of a constant that
-///   crossed as a definition is erased as the decode of its body; a static
-///   application at a saturated instance of a static definition or at a static
-///   lambda is erased as its reduct, minted into `arena`, until none remains —
-///   each step certified and replayed once per distinct instance.
+///   kernel rejects [`Outcome::Rejected`], one whose reflexivity the kernel
+///   declines [`Outcome::Declined`], and each leaves the environment as it was.
+///   A constant naming a declaration that crossed is erased to the kernel
+///   position that declaration took; a code recorded with a lift is erased to
+///   the kernel's lift of its decode; a decode of a constant that crossed as a
+///   definition is erased as the decode of its body; a static application at a
+///   saturated instance of a static definition or at a static lambda is erased
+///   as its reduct, minted into `arena`, until none remains — each step
+///   certified and replayed once per distinct instance.
 /// - provides: the declarations that crossed, the native signatures present in
 ///   the arena, and an audit exposing every source-hole or native assumption on
 ///   which an admitted source declaration depends.
@@ -1276,8 +1272,9 @@ enum Erased
 ///   certificate discards the session and a rejection is truncated by the
 ///   kernel, so the environment is as it was on every outcome but an admission.
 ///   The replayed verdicts are returned beside the outcome.
-/// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
-///   [`Outcome::Rejected`].
+/// - fails: never; a refusal is [`Outcome::Refused`], a rejection
+///   [`Outcome::Rejected`] and the kernel's reflexivity decline
+///   [`Outcome::Declined`].
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1298,9 +1295,11 @@ enum Erased
             && positions.admitted.get(&constant) == Some(&admitted.position())
             && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
             && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible),
-        | Outcome::Refused(_) | Outcome::Rejected(_) => environment.entries().len() == entries
+        | Outcome::Refused(_) | Outcome::Rejected(_)
+        | Outcome::Declined(KernelError::Identity(IdentityError::EndpointsUnreplayed { .. })) =>
+            environment.entries().len() == entries
             && positions.exports.len() == exports && positions.admitted.len() == crossed,
-        | Outcome::Marked(_) | Outcome::Static => false,
+        | Outcome::Marked(_) | Outcome::Static | Outcome::Declined(_) => false,
     },
 )]
 fn cross<Vouch>(
@@ -1362,6 +1361,9 @@ where
     let staged_as = staged.declaration().clone();
     let admitted = match environment.add_decl(staged) {
         | Ok(admitted) => admitted,
+        | Err(error @ KernelError::Identity(IdentityError::EndpointsUnreplayed { .. })) => {
+            return (Outcome::Declined(error), replayed);
+        },
         | Err(error) => return (Outcome::Rejected(error), replayed),
     };
     positions.exports.push(staged_as);
@@ -1916,6 +1918,12 @@ enum Frame
     Thunk
     {
         /// The thunk.
+        at: ValueId,
+    },
+    /// A returned endpoint, awaiting its computation.
+    Returned
+    {
+        /// The returned endpoint.
         at: ValueId,
     },
     /// A quote, awaiting its value type.
@@ -3003,20 +3011,19 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - ensures: as [`Self::descend`]: a code with a recorded lift opens its
     ///   frame and decodes at its own level; otherwise an intuitionistic
     ///   variable, a constant that crossed, the unit value and an integer or
-    ///   string literal are minted, and a thunk, a quote and a pair open their
-    ///   frames. A static application at a reducible head, read normalizing,
-    ///   takes its certified step and opens the frame awaiting its reduct; any
-    ///   other opens the frames of a kernel static application. Read verbatim,
-    ///   a constant naming a static definition and a closed static lambda are
-    ///   minted as the static operators they are numbered at. On success the
-    ///   current mode's memo holds `at`.
+    ///   string literal are minted, and a thunk, a returned endpoint, a quote
+    ///   and a pair open their frames. A static application at a reducible
+    ///   head, read normalizing, takes its certified step and opens the frame
+    ///   awaiting its reduct; any other opens the frames of a kernel static
+    ///   application. Read verbatim, a constant naming a static definition and
+    ///   a closed static lambda are minted as the static operators they are
+    ///   numbered at. On success the current mode's memo holds `at`.
     /// - fails: [`Refusal::Cyclic`] for an open value;
     ///   [`Refusal::DanglingNode`]; [`Refusal::LinearVariable`];
     ///   [`Refusal::Withheld`]; [`Refusal::CertificateDeclined`] for a step the
     ///   normaliser does not certify; [`Refusal::OutOfFragment`] for a numeric
     ///   literal, an injection, a value lift, and a static lambda read
-    ///   normalizing or open; [`Refusal::CompoundEndpoint`] for a compound
-    ///   endpoint.
+    ///   normalizing or open.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3136,7 +3143,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Value::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
             | Value::Here(point) => (Frame::Here { at }, CoreNode::Term(TermNode::Value(point))),
             | Value::Funext(..) => return self.funext(target, at),
-            | Value::Returned(_) => return Err(Refusal::CompoundEndpoint { at }),
+            | Value::Returned(computation) => (
+                Frame::Returned { at },
+                CoreNode::Term(TermNode::Computation(computation)),
+            ),
             | Value::Mark { body, .. } => (
                 Frame::UnmarkedValue { at },
                 CoreNode::Term(TermNode::Value(body)),
@@ -4189,6 +4199,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (Frame::Thunk { at }, AnyNode::Computation(body)) => {
                 Ok(self.erased_value(at, target.value_thunk(body)))
             },
+            | (Frame::Returned { at }, AnyNode::Computation(computation)) => {
+                Ok(self.erased_value(at, target.value_returned(computation)))
+            },
             | (Frame::Quote { at } | Frame::LiftedCode { at }, AnyNode::ValueType(quoted)) => {
                 Ok(self.erased_value(at, target.value_quote(quoted)))
             },
@@ -4321,6 +4334,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::ListNil { .. }
                 | Frame::ListCons { .. }
                 | Frame::Thunk { .. }
+                | Frame::Returned { .. }
                 | Frame::ApplicationHead { .. }
                 | Frame::Lambda { .. }
                 | Frame::Fixpoint { .. }
@@ -4923,7 +4937,11 @@ mod tests
             | Outcome::Defined { admitted, .. }
             | Outcome::Assumed { admitted, .. }
             | Outcome::Data { admitted, .. } => admitted.position(),
-            | Outcome::Marked(_) | Outcome::Static | Outcome::Refused(_) | Outcome::Rejected(_) => {
+            | Outcome::Marked(_)
+            | Outcome::Static
+            | Outcome::Refused(_)
+            | Outcome::Rejected(_)
+            | Outcome::Declined(_) => {
                 panic!("the declaration at this position crosses")
             },
         }
@@ -6100,7 +6118,7 @@ mod tests
     }
 
     #[test]
-    fn element_identity_is_readmitted_and_a_compound_endpoint_is_refused_by_name()
+    fn element_identity_and_a_compound_endpoint_are_readmitted()
     {
         // def id        : U (Integer -> F Integer) = thunk { \x. return x } ;
         // def same      : Path(Integer, 0, 0) = here(0) ;
@@ -6147,7 +6165,7 @@ mod tests
                 .all(|verdict| matches!(verdict, Verdict::Checked { .. })),
             "the judgement accepts all four: {verdicts:?}"
         );
-        let [_, ref same, ref transported, ref refused] = *readmission.readmitted()
+        let [_, ref same, ref transported, ref compounded] = *readmission.readmitted()
         else {
             panic!("one outcome per declaration");
         };
@@ -6162,28 +6180,46 @@ mod tests
              {:?}",
             transported.outcome()
         );
-        assert_eq!(
-            refused.outcome(),
-            &Outcome::Refused(Refusal::CompoundEndpoint { at: compound }),
-            "a compound endpoint is refused by name, at the endpoint"
-        );
-        assert_eq!(
-            Refusal::CompoundEndpoint { at: compound }.classify(),
-            FailureClass::Unrepresentable,
-            "the kernel has no node for a returned value"
+        assert!(
+            matches!(*compounded.outcome(), Outcome::Defined { .. }),
+            "a compound endpoint crosses, and the kernel reads it through `id`: {:?}",
+            compounded.outcome()
         );
         assert_eq!(
             [
                 crossed_at(&readmission, At(0)),
                 crossed_at(&readmission, At(1)),
                 crossed_at(&readmission, At(2)),
+                crossed_at(&readmission, At(3)),
             ],
             [
                 ConstantIndex::from(0_usize),
                 ConstantIndex::from(1_usize),
                 ConstantIndex::from(2_usize),
+                ConstantIndex::from(3_usize),
             ],
-            "the definition and both identity declarations enter in declaration order"
+            "the definition and the three identity declarations enter in declaration order"
+        );
+        let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+        let declared = artifact
+            .declarations()
+            .last()
+            .map(|marked| marked.declaration().declared_id())
+            .unwrap();
+        let Some(&KernelValueType::Path { left, .. }) = artifact.arena().value_type(declared)
+        else {
+            panic!("the compound declaration crosses at a path type");
+        };
+        let Some(&KernelValue::Returned(applied)) = artifact.arena().value(left)
+        else {
+            panic!("its source endpoint crosses as the kernel's returned endpoint");
+        };
+        assert!(
+            matches!(
+                artifact.arena().computation(applied),
+                Some(&gandr_kernel_term::Computation::Application(..))
+            ),
+            "over the application it erases, not the value it returns"
         );
     }
 
@@ -6493,7 +6529,8 @@ mod tests
                 | Outcome::Marked(_)
                 | Outcome::Static
                 | Outcome::Refused(_)
-                | Outcome::Rejected(_) => {
+                | Outcome::Rejected(_)
+                | Outcome::Declined(_) => {
                     panic!("every declaration crosses")
                 },
             })

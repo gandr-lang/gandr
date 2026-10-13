@@ -544,6 +544,9 @@ impl fmt::Display for ComposeFault<'_>
                     | bridge::Outcome::Rejected(ref error) => {
                         write!(f, "the kernel rejected it: {error}")
                     },
+                    | bridge::Outcome::Declined(ref error) => {
+                        write!(f, "the kernel declined it: {error}")
+                    },
                     | bridge::Outcome::Refused(refusal) => {
                         write!(f, "the bridge refused to offer it ({})", refusal.classify())
                     },
@@ -1193,14 +1196,13 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 ///   static definition; a refused declaration crosses as its mark, a
 ///   declaration withheld because it names a refused one carries that one's
 ///   reason, a declaration holding a term hole or the unknown type stays behind
-///   as the user absence it is, and a declaration holding a compound endpoint
-///   stays behind on the checker's side until the kernel reads a returned
-///   value, so none of these is a disagreement.
+///   as the user absence it is, and a reflexivity the kernel declines, owing a
+///   replayed engine trace, stays behind as that decline, so none of these is a
+///   disagreement.
 /// - provides: the kernel's repetition of every acceptance a run reports, and
 ///   the environment the run's kernel artifact is exported from.
 /// - fails: the readmission of the first declaration the kernel rejected or the
-///   bridge refused for any reason but a withheld constant, a user absence or a
-///   compound endpoint.
+///   bridge refused for any reason but a withheld constant or a user absence.
 /// - panics: none.
 ///
 /// # Errors
@@ -1220,10 +1222,9 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
             crossed.constant() == judged.constant() && matches!(*crossed.outcome(),
                 bridge::Outcome::Defined { .. } | bridge::Outcome::Assumed { .. }
                     | bridge::Outcome::Data { .. }
-                    | bridge::Outcome::Marked(_) | bridge::Outcome::Static
+                    | bridge::Outcome::Marked(_) | bridge::Outcome::Static | bridge::Outcome::Declined(_)
                     | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. } | bridge::Refusal::WithheldData { .. }
-                        | bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }
-                        | bridge::Refusal::CompoundEndpoint { .. }))),
+                        | bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }))),
     Err(ref fault) =>
         verdicts.judged().iter().any(|judged| judged.constant() == fault.constant())
             && matches!(*fault.outcome(), bridge::Outcome::Rejected(_)
@@ -1245,12 +1246,12 @@ fn readmitted(
             | bridge::Outcome::Assumed { .. }
             | bridge::Outcome::Marked(_)
             | bridge::Outcome::Static
+            | bridge::Outcome::Declined(_)
             | bridge::Outcome::Refused(
                 bridge::Refusal::Withheld { .. }
                 | bridge::Refusal::WithheldData { .. }
                 | bridge::Refusal::Hole { .. }
-                | bridge::Refusal::Unknown { .. }
-                | bridge::Refusal::CompoundEndpoint { .. },
+                | bridge::Refusal::Unknown { .. },
             ) => {},
             | bridge::Outcome::Refused(
                 bridge::Refusal::OutOfFragment { .. }

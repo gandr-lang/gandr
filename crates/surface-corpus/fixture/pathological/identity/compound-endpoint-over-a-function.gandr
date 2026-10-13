@@ -1,0 +1,9 @@
+@[ checks ]
+def constantly(x: Integer) -> Integer -> -F Integer {
+  fn (y) { return x }
+}
+
+@[ refuses("CompoundEndpoint") ]
+def refuted(x: Integer) -> -F Path(Integer, constantly(x), x) {
+  return here(x)
+}
