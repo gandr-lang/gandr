@@ -15,16 +15,17 @@
 //! molded, the items the incremental checker judged, and the wall. A token
 //! request highlights the document whole through the grammar's role table,
 //! the same classification a terminal face styles. An inline-completion
-//! request molds the form the cursor ends and answers, as a snippet, the
-//! material the parser expects to close it. An outline request reads the
-//! document's declarations, its multi-line forms or the forms around a
-//! position off its parsed tree. A hover answers the innermost node under the
-//! cursor with its type: a declaration's name its declared type and
-//! documentation, a binder the type its uses were judged at, a term its type
-//! (and the type it was checked against when the two differ), a written type
-//! its universe, and any other position inside a declaration that
-//! declaration. The types come from a typed run over the document's text,
-//! built at the first hover after an edit and kept until the next.
+//! request molds the form the cursor is in up to the cursor and answers, as
+//! ranked snippets, the ways the parser's completion query offers to go on
+//! from there, less what is already written after the cursor. An outline
+//! request reads the document's declarations, its multi-line forms or the
+//! forms around a position off its parsed tree. A hover answers the innermost
+//! node under the cursor with its type: a declaration's name its declared
+//! type and documentation, a binder the type its uses were judged at, a term
+//! its type (and the type it was checked against when the two differ), a
+//! written type its universe, and any other position inside a declaration
+//! that declaration. The types come from a typed run over the document's
+//! text, built at the first hover after an edit and kept until the next.
 //! A formatting request lays the document out through `gandr-surface-format`
 //! and answers the edits that turn the held text into that layout: one
 //! trimmed edit for the whole document, or one per top-level form a range
