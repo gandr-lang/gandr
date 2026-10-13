@@ -113,15 +113,20 @@
 //! A circuit algebra substitutes disconnected graphs, so an image may be
 //! disconnected, and a restriction map needs no convex rewrite site.
 //!
-//! # The corolla stratum
+//! # The strata
 //!
-//! [`CorollaStratum`] certifies the shapes of degree at most one, and the
-//! species over it: generators at each profile, their elements at the
-//! corollas, the labellings of every shape, and an [`Equivalence`] of species
-//! generated on its corollas, with its extension to the free algebras and the
-//! corolla restriction [`restrict`] that reflects a natural isomorphism back.
-//! The `stratum` module states the alphabet and the range each statement
-//! fixes.
+//! [`SegalStratum`] certifies the shapes of degree at most `n`: the corollas
+//! through the corolla condition, and each shape of degree two to `n` as the
+//! colimit of its corollas along its grafting pushouts through the [`segal`]
+//! condition, over the families of maps out of the corollas whose images are
+//! disjoint. Over it: graphical species with generators at each profile,
+//! their elements at the corollas, the labellings of every shape, and an
+//! [`Equivalence`] of species generated on its corollas, with its extension
+//! to the free algebras and the corolla restriction [`restrict`] that
+//! reflects a natural isomorphism back. The `segal` and `stratum` modules
+//! state the alphabet and the range each statement fixes.
+//!
+//! [`segal`]: crate::segal()
 //!
 //! # Boundary wrappers
 //!
@@ -217,6 +222,7 @@ mod map;
 mod negatives;
 mod outcome;
 mod point_count;
+mod segal;
 mod shape;
 mod stratum;
 mod units;
@@ -267,6 +273,14 @@ pub use outcome::Verdict;
 pub use outcome::outcome_witness;
 pub use point_count::core_decomposition;
 pub use point_count::grounded_stratum;
+pub use segal::Cocone;
+pub use segal::Cocones;
+pub use segal::Graft;
+pub use segal::Inclusion;
+pub use segal::Leg;
+pub use segal::SegalDefect;
+pub use segal::SegalFailure;
+pub use segal::segal;
 pub use shape::End;
 pub use shape::Ends;
 pub use shape::PointCount;
@@ -279,7 +293,6 @@ pub use shape::WireKind;
 pub use shape::shapes_up_to;
 pub use stratum::Bijection;
 pub use stratum::Corolla;
-pub use stratum::CorollaStratum;
 pub use stratum::Defect;
 pub use stratum::Element;
 pub use stratum::ElementIndex;
@@ -291,6 +304,7 @@ pub use stratum::Natural;
 pub use stratum::Port;
 pub use stratum::PortCount;
 pub use stratum::Profile;
+pub use stratum::SegalStratum;
 pub use stratum::Species;
 pub use stratum::Table;
 pub use stratum::Uncertified;

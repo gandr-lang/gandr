@@ -1,4 +1,4 @@
-//! `ua_n` at the corolla stratum, derived from code univalence.
+//! `ua_n` at every certified stratum, derived from code univalence.
 //!
 //! An equivalence of graphical species, given by its translators at each
 //! corolla, is a path of the certificate universe between the two species'
@@ -6,15 +6,19 @@
 //!
 //! # The statement
 //!
-//! Fix a catalogue whose corolla stratum `gandr-theory-sites` certifies at
-//! degree one. The quantifier range is every corolla of that catalogue; the
-//! alphabet is the corollas' automorphisms. For two species `a` and `b` and an
-//! equivalence `e : Equiv a b` given, at each corolla `C` the species inhabit,
-//! by a pair of closed translators between the codes `⌜a(C)⌝` and `⌜b(C)⌝`,
-//! [`derive()`] returns a value of `Path_U(⌜Tel a⌝, ⌜Tel b⌝)` whose every
-//! component the kernel replays. A stratum the site does not certify has no
-//! [`CorollaStratum`] to pass, so `ua_n` there is refused before it is asked:
-//! [`gandr_theory_sites::Uncertified`] names the degree or the failing shape.
+//! Fix a catalogue and a degree `n ≥ 1` whose stratum `gandr-theory-sites`
+//! certifies: the corolla condition, and the Segal condition at every shape
+//! of degree two to `n`. The quantifier range is every shape of degree at
+//! most `n` in that catalogue; the alphabet is the stratum's probes, the
+//! raising maps out of its shapes that send each vertex to one vertex. For two
+//! species `a` and `b` and an equivalence `e : Equiv a b` given, at each
+//! corolla `C` the species inhabit, by a pair of closed translators between the
+//! codes `⌜a(C)⌝` and `⌜b(C)⌝`, [`derive()`] returns a value of
+//! `Path_U(⌜Telₙ a⌝, ⌜Telₙ b⌝)` whose every component the kernel replays. A
+//! stratum the site does not certify has no [`SegalStratum`] to pass, so
+//! `ua_n` there is refused before it is asked:
+//! [`gandr_theory_sites::Uncertified`] names the degree, or the failing shape
+//! and the degree whose condition it fails.
 //!
 //! The target is the certificate universe, never the ambient identity type.
 //! Over decidable codes Hedberg's theorem makes the ambient identity a
@@ -33,9 +37,14 @@
 //! Degree zero holds the empty shape, whose value the strict Segal condition
 //! fixes as the unit; each corolla's matching object is that unit, so degree
 //! one is a plain product over the corollas the species inhabit, in catalogue
-//! order. `⌜Tel a⌝` is `() × (⌜a(C₁)⌝ × (… × ⌜a(Cₖ)⌝))`, nested to the right as
-//! the kernel's binary path product nests; one corolla gives `() × ⌜a(C₁)⌝`,
-//! none gives `()`.
+//! order. At each degree `d` from two to `n` every shape is the colimit of its
+//! corollas, which the stratum certifies, so a free algebra's value there is
+//! the product of its corolla values: the stage adds no data over the stages
+//! below, and its type is the unit. `⌜Telₙ a⌝` is
+//! `() × (⌜a(C₁)⌝ × (… × (⌜a(Cₖ)⌝ × (() × … ()))))`, the `n − 1` units of
+//! degrees two to `n` last, nested to the right as the kernel's binary path
+//! product nests; at degree one with one corolla it is `() × ⌜a(C₁)⌝`, and
+//! with none `()`.
 //!
 //! # The derivation
 //!
@@ -46,32 +55,51 @@
 //! univalence by [`crate::equiv::decide`], the round trips by computation and
 //! their traces the evidence the kernel replays. The path is reflexivity at
 //! the unit for degree zero, the universe certificate over each corolla's two
-//! codes with the given translators, and the native path product over them.
-//! Declared at its classifier and checked, it crosses the bridge as the
-//! kernel's native path, and admission replays every corolla's round trips.
+//! codes with the given translators, reflexivity at the unit for each degree
+//! from two to `n`, and the native path product over them. Declared at its
+//! classifier and checked, it crosses the bridge as the kernel's native path,
+//! and admission replays every corolla's round trips.
 //!
 //! # Obligations
 //!
 //! - **The corolla restriction.** `ua-desc : Terms a ≅ Terms b → a ≅ b` is not
 //!   full faithfulness alone: an isomorphism of the free algebras is reflected
 //!   to the generating species by restricting it to the corollas. That lemma is
-//!   `gandr_theory_sites::restrict`, with its own witness; it is why an
-//!   equivalence given at the corollas is the whole of `Equiv a b` at this
-//!   stratum, and why [`derive()`] reads nothing past them.
+//!   `gandr_theory_sites::restrict`, with its own witness, at every certified
+//!   stratum; it is why an equivalence given at the corollas is the whole of
+//!   `Equiv a b` there, and why [`derive()`] reads nothing past them.
 //! - **The two-cell coherence.** A univalence map must be a typoid function
 //!   (Petrakis): equivalent equivalences go to identified paths. Two
 //!   equivalences whose translators agree pointwise give certificates the
 //!   kernel's structural conversion keeps apart, so the identification is not
 //!   conversion; it is the identity record of the two certificates at each
-//!   corolla. Its translator fields are function extensionalities the judgement
-//!   decides and the kernel replays as higher evaluations: that much is
-//!   witnessed here, at the binary corolla. Its round-trip coherence fields
-//!   relate two reflected round trips at a sum of units, where identity of
-//!   elements is decidable; the kernel's record view of two certificates
-//!   observes all four fields by replay, and its witness runs negation against
-//!   a case-inlined triple negation at Bool, the binary corolla's code.
-//!   Equivalent equivalences are related by those fields; distinct ones are
-//!   refused at the first corolla whose translators differ at an element.
+//!   corolla, and reflexivity at each unit stage. Its translator fields are
+//!   function extensionalities the judgement decides and the kernel replays as
+//!   higher evaluations: that much is witnessed here, at the binary corolla.
+//!   Its round-trip coherence fields relate two reflected round trips at a sum
+//!   of units, where identity of elements is decidable; the kernel's record
+//!   view of two certificates observes all four fields by replay, and its
+//!   witness runs negation against a case-inlined triple negation at Bool, the
+//!   binary corolla's code. Equivalent equivalences are related by those
+//!   fields; distinct ones are refused at the first corolla whose translators
+//!   differ at an element.
+//! - **The pasting coherence.** The pasting-side analogue holds at every
+//!   certified stratum by the same identity record. An automorphism `σ` of a
+//!   corolla is a two-cell between the corolla's inclusion `ι` and `ι ∘ σ`; it
+//!   acts on a certificate by conjugating its translators with `σ`'s action on
+//!   the two codes, and the conjugate is identified with the certificate
+//!   through translator fields that are the equivalence's naturality equations
+//!   at `σ`, replayed as higher evaluations. The unit stages carry reflexivity,
+//!   so the stages above degree one add no field. Witnessed at degree two: at
+//!   the binary corolla's code the swap's certificate is identified with its
+//!   conjugate by the input swap; on two binary generators the exchange's
+//!   conjugate computes the exchange and is a certificate beside it, while the
+//!   crossed exchange, which the stratum refuses, computes another table under
+//!   conjugation. Function extensionality decides binary sums, so at a code of
+//!   more than two elements the translator field is refused by name,
+//!   `FunextUnsupported`, and the identification there is stated, not replayed.
+//!   The substitutions that send a vertex to a sub-graph stay outside the
+//!   alphabet, so their two-cells are not stated.
 //! - **The target discipline.** As above: `Path_U`, never the ambient identity
 //!   type.
 //!
@@ -91,6 +119,14 @@
 //!   telescope of a species with no generators is the unit and its path
 //!   reflexivity. Reversal: a stratum whose empty shape holds more than one
 //!   value.
+//! - **One unit stage per degree above one.** A degree's stage is the product
+//!   of its shapes' fibres over the stages below, each the unit at a certified
+//!   stratum, so the stage is one unit whatever the degree's shape count, and
+//!   the classifier names the degree it was derived at. The alternative, a unit
+//!   per shape, grows the telescope with the catalogue and carries no more;
+//!   omitting the stages makes `ua_n` one path at every degree, and the
+//!   classifier forgets which Segal condition stood behind it. Reversal: a
+//!   stratum certified by a weak Segal condition, whose fibres carry data.
 //!
 //! # References
 //!
@@ -117,12 +153,12 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_theory_sites::Bijection;
-use gandr_theory_sites::CorollaStratum;
 use gandr_theory_sites::Defect;
 use gandr_theory_sites::Element;
 use gandr_theory_sites::ElementIndex;
 use gandr_theory_sites::Equivalence;
 use gandr_theory_sites::Profile;
+use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::Species;
 use gandr_theory_sites::Table;
@@ -188,7 +224,8 @@ pub struct Universal
 impl Universal
 {
     /// The native path: reflexivity at the unit, then each corolla's universe
-    /// certificate, under native path products.
+    /// certificate, then reflexivity at the unit for each degree from two to
+    /// the stratum's, under native path products.
     ///
     /// # Specification
     /// trivial.
@@ -199,7 +236,7 @@ impl Universal
         self.path
     }
 
-    /// The classifier `Path_U(⌜Tel a⌝, ⌜Tel b⌝)` the path is checked at.
+    /// The classifier `Path_U(⌜Telₙ a⌝, ⌜Telₙ b⌝)` the path is checked at.
     ///
     /// # Specification
     /// trivial.
@@ -357,7 +394,8 @@ fn tabulated(
     Ok(Table::new(images))
 }
 
-/// One corolla's part of the telescope: its two codes and its path.
+/// One part of the telescope: a corolla's two codes and its path, or a
+/// degree's unit and its reflexivity.
 #[derive(Clone, Copy, Debug)]
 struct Stage
 {
@@ -369,18 +407,19 @@ struct Stage
     path: ValueId,
 }
 
-/// `ua_n` at the corolla stratum: the path of the certificate universe the
+/// `ua_n` at a certified stratum: the path of the certificate universe the
 /// equivalence `translators` give is.
 ///
 /// # Specification
 /// - requires: every translator is closed and checked at the function type
 ///   between its corolla's two [`code`]s.
-/// - ensures: on success, the path's classifier is `Path_U(⌜Tel a⌝, ⌜Tel b⌝)`
+/// - ensures: on success, the path's classifier is `Path_U(⌜Telₙ a⌝, ⌜Telₙ b⌝)`
 ///   over the degree telescope of the corollas the species inhabit, in
-///   catalogue order; each corolla's component is the universe certificate over
-///   its two codes with the given translators and the round-trip traces code
-///   univalence recorded; and the translators' tables are an equivalence of the
-///   species at the stratum.
+///   catalogue order, and one unit per degree from two to the stratum's `n`;
+///   each corolla's component is the universe certificate over its two codes
+///   with the given translators and the round-trip traces code univalence
+///   recorded, and each unit's is reflexivity; and the translators' tables are
+///   an equivalence of the species at the stratum.
 /// - fails: [`UaRefusal::Species`] with [`Defect::Tables`] for translators at a
 ///   shape that is no corolla of the stratum; [`UaRefusal::Stuck`] for a
 ///   translator that does not compute an element; [`UaRefusal::Species`] with
@@ -394,13 +433,18 @@ struct Stage
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the swap of a binary generator beside a constant is
-///   admitted by the kernel at its telescope; equivalent translators give paths
-///   the kernel keeps apart and identifies through the extensionality of each
-///   corolla's translators; crossed generators, a non-inverse pair, a stuck
-///   translator and a missing one are refused by name, the crossed pair passing
-///   code univalence alone.
+///   admitted by the kernel at its telescope, at degree one and at degree two
+///   with its unit stage; equivalent translators give paths the kernel keeps
+///   apart and identifies through the extensionality of each corolla's
+///   translators; at degree two the swap is identified with its conjugate by
+///   the input swap, the exchange of two binary generators computes its
+///   conjugate's table and the crossed exchange does not; crossed generators, a
+///   non-inverse pair, a stuck translator and a missing one are refused by
+///   name, the crossed pair passing code univalence alone.
 /// - witness: `ua::tests::the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe`
+/// - witness: `ua::tests::the_swap_at_degree_two_is_a_path_over_its_segal_telescope`
 /// - witness: `ua::tests::equivalent_equivalences_go_to_identified_paths`
+/// - witness: `ua::tests::a_corolla_automorphism_acts_on_a_certificate_by_conjugation`
 /// - witness: `ua::tests::what_the_stratum_does_not_admit_it_refuses_by_name`
 #[inline]
 #[spec(ensures: |ret| match ret {
@@ -410,7 +454,7 @@ struct Stage
 })]
 pub fn derive(
     context: &mut CheckingContext<'_>,
-    stratum: &CorollaStratum<'_>,
+    stratum: &SegalStratum<'_>,
     sides: (&Species, &Species),
     translators: &BTreeMap<ShapeIndex, Translators>,
 ) -> Result<Universal, UaRefusal>
@@ -492,11 +536,14 @@ pub fn derive(
     let unit = arena.value_type_unit();
     let quoted = arena.value_quote(unit);
     let reflexivity = arena.value_path_refl(quoted);
-    let mut telescope = Stage {
+    let matched = Stage {
         source: unit,
         target: unit,
         path: reflexivity,
     };
+    let above = usize::from(stratum.degree()).saturating_sub(1);
+    stages.extend(core::iter::repeat_n(matched, above));
+    let mut telescope = matched;
     if let Some((last, earlier)) = stages.split_last() {
         let mut rest = *last;
         for stage in earlier.iter().rev() {

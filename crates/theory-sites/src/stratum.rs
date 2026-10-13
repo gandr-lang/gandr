@@ -1,20 +1,24 @@
-//! The corolla stratum: graphical species over the site, their terms at the
+//! The strata: graphical species over the site, their terms at the
 //! catalogue's shapes, and an equivalence of species as the finite certificate
-//! it is.
+//! it is, at every degree whose Segal condition is certified.
 //!
-//! # The stratum
+//! # The strata
 //!
-//! The shapes of degree at most one are the empty shape and the corollas: one
-//! vertex, its legs and no inner wire, the point `•` among them. A corolla's
-//! [`Profile`] is its input and output leg counts. [`CorollaStratum::certify`]
-//! admits a catalogue's corolla stratum when the [`corolla`] condition holds
-//! over the catalogue's site: the point is a shape, its only raising
-//! endomorphism is its identity, and each point of every shape is reached by
-//! one inclusion of the point. A catalogue the condition fails on is refused
-//! as [`Uncertified::Condition`] with the failing shape. A stratum of any
-//! other degree is refused as [`Uncertified::Degree`]: the strata above the
-//! corollas hold each shape as the colimit of its corollas along its grafting
-//! pushouts, and that Segal condition is not checked here.
+//! Stratum `n` is the shapes of degree at most `n`. The shapes of degree at
+//! most one are the empty shape and the corollas: one vertex, its legs and no
+//! inner wire, the point `•` among them. A corolla's [`Profile`] is its input
+//! and output leg counts. [`SegalStratum::certify`] admits a catalogue's
+//! stratum of degree `n` when the [`corolla`] condition holds over the
+//! catalogue's site — the point is a shape, its only raising endomorphism is
+//! its identity, and each point of every shape is reached by one inclusion of
+//! the point — and, above degree one, when every shape of degree two to `n` is
+//! the colimit of its corollas along its grafting pushouts, the [`segal`]
+//! condition over the [`Cocones::Admitted`] families. The stratum holds each
+//! corolla with its automorphisms and each shape of degree two to `n` with its
+//! [`Cocone`]. A catalogue a condition fails on is refused as
+//! [`Uncertified::Condition`] with the failing shape and the degree of the
+//! condition that fails. Degree zero, and a degree above every shape of the
+//! catalogue, are refused as [`Uncertified::Degree`].
 //!
 //! # Species and their terms
 //!
@@ -33,20 +37,24 @@
 //! vertex's legs read in the shape's wire order. They are the product of the
 //! elements at the vertices' corollas — the strict Segal condition, which the
 //! free algebra on a species satisfies by construction — enumerated with the
-//! first vertex most significant. Restriction along a map out of a corolla
-//! whose image is one vertex reads that vertex's label back through the map's
-//! wire images.
+//! first vertex most significant. Restriction along a map whose every vertex
+//! image is one vertex reads each vertex's label back from its image through
+//! the map's wire images.
 //!
 //! # Equivalence, and its two readings
 //!
 //! Every statement here fixes its alphabet and its quantifier range. The
-//! alphabet is the maps out of corollas whose image is one vertex: the
-//! corolla's automorphisms and its inclusions at the vertices of larger
-//! shapes. The range is the shapes of the stratum's catalogue, so a statement
-//! proved here holds of every shape at the catalogue's bound and says nothing
-//! past it. The substitutions that send a vertex to a sub-graph are outside the
-//! alphabet: along them a label becomes a composite operation, which the
-//! species does not hold and the corolla stratum does not see.
+//! range is the shapes of the stratum's catalogue, so a statement proved here
+//! holds of every shape at the catalogue's bound and says nothing past it. The
+//! alphabet at degree `n` is the stratum's probes: the raising maps out of its
+//! corollas and its shapes of degree two to `n` that send each vertex to one
+//! vertex, into any shape of the catalogue. At degree one they are the
+//! corollas' automorphisms and their inclusions at the vertices of larger
+//! shapes; above it, the stratum's shapes' automorphisms, their inclusions
+//! into larger shapes and the contractions that fuse their legs. The
+//! substitutions that send a vertex to a sub-graph and the deletions are
+//! outside the alphabet: along them a label becomes a composite operation, or
+//! the empty diagram, which the species does not hold.
 //!
 //! An [`Equivalence`] is generated, not enumerated: at each corolla the
 //! species inhabit, a [`Bijection`] between the two sides' elements whose
@@ -57,24 +65,42 @@
 //!
 //! - [`Equivalence::extend`] is `ua : Equiv a b → Terms a ≅ Terms b`. At each
 //!   shape of the catalogue it is the product of the corolla tables over the
-//!   vertices: an equivalence of species is a natural isomorphism of the free
-//!   algebras.
+//!   vertices, natural along every probe of the stratum: an equivalence of
+//!   species is a natural isomorphism of the free algebras.
 //! - [`restrict`] is the corolla restriction of `ua-desc : Terms a ≅ Terms b →
 //!   a ≅ b`. It takes a [`Natural`] family of bijections at every shape of the
-//!   catalogue, checks naturality along the alphabet, and returns the family's
-//!   values at the corollas as an equivalence of species. Its postcondition is
-//!   the Segal half: the family is the extension of what it restricts to, so
-//!   the corolla values determine everything. A family that is a bijection at
-//!   every shape but not natural is refused at the first map and element it
-//!   fails at.
+//!   catalogue, checks naturality along the corollas' probes, and returns the
+//!   family's values at the corollas as an equivalence of species. Its
+//!   postcondition is the Segal half: the family is the extension of what it
+//!   restricts to and natural along every probe of the stratum, so the corolla
+//!   values determine everything. A family that is a bijection at every shape
+//!   but not natural is refused at the first map and element it fails at.
 //!
-//! The choice is the generated certificate: the stored object is one table
-//! pair per inhabited corolla, and naturality up to degree one is the
-//! automorphism condition alone. The alternative, a table at every shape with
-//! naturality checked everywhere, is what [`restrict`] accepts as input and
-//! reduces to the generated form. Reversal: a stratum whose shapes are not
-//! the products of their corollas, where the corolla values no longer
-//! determine a family.
+//! # Decisions
+//!
+//! - **The generated certificate.** The stored object is one table pair per
+//!   inhabited corolla, and naturality up to degree `n` is the automorphism
+//!   condition alone. The alternative, a table at every shape with naturality
+//!   checked everywhere, is what [`restrict`] accepts as input and reduces to
+//!   the generated form. Reversal: a stratum whose shapes are not the products
+//!   of their corollas, where the corolla values no longer determine a family.
+//! - **The corollas generate every certified stratum.** At a certified stratum
+//!   each shape of degree two to `n` is the colimit of its corollas, so its
+//!   probes add no condition the corollas' probes do not: [`restrict`] checks
+//!   the corollas' probes, and naturality along the rest is its postcondition.
+//!   The alternative holds a shape that is no colimit as a further generator,
+//!   with its own table in the certificate; the stratum refuses it instead.
+//!   Reversal: a site whose Segal condition fails at a shape a consumer needs.
+//! - **Degree zero is refused.** Below degree one the stratum holds no corolla,
+//!   so the only species at it has no generator and its one equivalence is
+//!   empty. The alternative certifies it with every corolla past it. Reversal:
+//!   a consumer that names the stratum of the empty shape.
+//! - **A degree past the catalogue is refused.** The catalogue at size `b`
+//!   holds a shape of every degree to `b`, the `b` points, and none above, so a
+//!   stratum named by a higher degree would claim a Segal condition at no shape
+//!   the bound enumerates. Reversal: none at a finite bound.
+//!
+//! [`segal`]: crate::segal()
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -94,6 +120,10 @@ use crate::degree::Degree;
 use crate::map::Membership;
 use crate::map::SiteMap;
 use crate::outcome::Outcome;
+use crate::outcome::Verdict;
+use crate::segal::Cocone;
+use crate::segal::Cocones;
+use crate::segal::walk;
 use crate::shape::End;
 use crate::shape::Shape;
 
@@ -153,7 +183,7 @@ pub struct Profile
 /// The wires a vertex consumes and the wires it produces, each in the shape's
 /// wire order.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct Legs
+pub struct Legs
 {
     /// The wires the vertex consumes.
     inputs: Vec<Wire>,
@@ -174,11 +204,11 @@ impl Legs
     /// - hypothesis: L3 — the binary corolla's two inputs and one output, and
     ///   the graft's inner wire read as an output of its constant and an input
     ///   of its operation, each fix the element counts asserted.
-    /// - witness: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one_alone`
+    /// - witness: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one`
     /// - witness: `tests::stratum::restriction_reflects_a_natural_isomorphism_to_its_species`
     #[spec(ensures: |ref legs| legs.inputs.iter().all(|wire| shape.ends().get(usize::from(*wire)).is_some_and(|ends| ends.consumer() == End::Vertex(vertex)))
         && legs.outputs.iter().all(|wire| shape.ends().get(usize::from(*wire)).is_some_and(|ends| ends.producer() == End::Vertex(vertex))))]
-    fn of(
+    pub fn of(
         shape: &Shape,
         vertex: Edge,
     ) -> Self
@@ -199,7 +229,7 @@ impl Legs
     ///
     /// # Specification
     /// trivial.
-    fn profile(&self) -> Profile
+    pub fn profile(&self) -> Profile
     {
         Profile {
             inputs: PortCount(self.inputs.len()),
@@ -208,9 +238,9 @@ impl Legs
     }
 }
 
-/// How a map out of a corolla reads the legs of the vertex it includes the
-/// corolla at: for each input leg of the corolla, in wire order, the position
-/// of its image among that vertex's input legs, and likewise for the outputs.
+/// How a map that sends a vertex to one vertex reads the legs of its image:
+/// for each input leg of the vertex, in wire order, the position of its image
+/// among the image vertex's input legs, and likewise for the outputs.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Relabelling
 {
@@ -222,12 +252,13 @@ struct Relabelling
 
 impl Relabelling
 {
-    /// How `map`, out of a corolla whose legs are `legs`, reads its image
-    /// vertex's legs.
+    /// How `map`, sending a vertex whose legs are `legs` to one vertex, reads
+    /// that vertex's legs.
     ///
     /// # Specification
-    /// - requires: `map` is a map of the class out of the corolla, its one
-    ///   vertex sent to one vertex, so its wire images are that vertex's legs.
+    /// - requires: `map` is a map of the class sending the vertex to one
+    ///   vertex, so its wire images of the vertex's legs are that vertex's
+    ///   legs.
     /// - ensures: each leg's position is the number of the same side's images
     ///   below its own: its rank among the image vertex's legs in wire order.
     /// - panics: none.
@@ -391,7 +422,7 @@ impl Labelling
 /// # Adequacy
 /// - hypothesis: L3 — the binary corolla holds two elements per generator, the
 ///   identity attachment first.
-/// - witness: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one_alone`
+/// - witness: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one`
 #[spec(ensures: |ref all| all.iter().zip(all.iter().skip(1)).all(|(first, second)| first < second)
     && all.iter().all(|permutation| permutation.len() == usize::from(count)))]
 fn permutations(count: PortCount) -> Vec<Box<[Port]>>
@@ -481,7 +512,7 @@ impl Species
     /// # Adequacy
     /// - hypothesis: L3 — one binary generator holds two elements at its
     ///   corolla and a constant one; two binary generators hold four.
-    /// - witness: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one_alone`
+    /// - witness: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one`
     /// - witness: `tests::stratum::an_equivalence_commutes_with_the_corolla_automorphisms`
     #[inline]
     #[must_use]
@@ -660,17 +691,23 @@ impl Bijection
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Uncertified
 {
-    /// The stratum asked for is not the corolla stratum.
+    /// The degree asked for is zero, below the corollas, or above every shape
+    /// of the catalogue.
     Degree
     {
         /// The degree asked for.
         degree: Degree,
     },
-    /// The corolla condition fails over the catalogue's site.
+    /// A condition the stratum rests on fails over the catalogue: the corolla
+    /// condition, at degree one, or the Segal condition at a shape of degree
+    /// two or more.
     Condition
     {
         /// The first shape it fails at.
         witness: Shape,
+        /// The degree whose condition fails: one for the corolla condition,
+        /// the witness's own for the Segal condition.
+        degree: Degree,
     },
 }
 
@@ -769,8 +806,8 @@ impl Corolla
     }
 }
 
-/// Whether `map`, out of a corolla, is in the alphabet: raising, its vertex
-/// sent to one vertex.
+/// Whether `map` is in the alphabet: raising, every vertex sent to one
+/// vertex.
 ///
 /// # Specification
 /// trivial.
@@ -788,59 +825,101 @@ fn included(map: &SiteMap) -> Membership
     }
 }
 
-/// The corolla stratum of a catalogue whose site passes the corolla condition.
+/// The stratum of a degree over a catalogue whose site passes the corolla
+/// condition and, above degree one, the Segal condition to that degree.
 #[derive(Clone, Debug)]
-pub struct CorollaStratum<'catalogue>
+pub struct SegalStratum<'catalogue>
 {
     /// The catalogue.
     catalogue: &'catalogue Catalogue,
+    /// The degree.
+    degree: Degree,
     /// Its corollas, in catalogue order.
     corollas: Vec<Corolla>,
+    /// Its shapes of degree two to its degree, each with its cocone, in
+    /// catalogue order.
+    cocones: Vec<Cocone>,
 }
 
-impl<'catalogue> CorollaStratum<'catalogue>
+impl<'catalogue> SegalStratum<'catalogue>
 {
     /// The stratum of `degree` over `catalogue`, when it is certified.
     ///
     /// # Specification
     /// - ensures: on success, every shape of degree one in the catalogue, in
-    ///   catalogue order, with its automorphisms.
-    /// - fails: [`Uncertified::Degree`] for any degree but one;
-    ///   [`Uncertified::Condition`] with the first failing shape when the
-    ///   [`corolla`] condition fails over the catalogue's site.
+    ///   catalogue order, with its automorphisms, and every shape of degree two
+    ///   to `degree`, in catalogue order, with its [`Cocone`].
+    /// - fails: [`Uncertified::Degree`] for degree zero;
+    ///   [`Uncertified::Condition`] with the first failing shape and degree one
+    ///   when the [`corolla`] condition fails over the catalogue's site;
+    ///   [`Uncertified::Degree`] for a degree above every shape of the
+    ///   catalogue; [`Uncertified::Condition`] with the first failing shape and
+    ///   its degree when the [`segal`] condition over [`Cocones::Admitted`]
+    ///   fails to `degree`.
     /// - panics: none.
+    /// - intension: the Segal condition reads, for each shape of degree two to
+    ///   `degree`, every hom set out of it and out of its corollas into the
+    ///   catalogue's shapes; at degree one only the site's corolla condition is
+    ///   read.
     ///
     /// # Errors
     /// - [`Uncertified`] — as above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — at size five the stratum is certified with its
-    ///   corollas pinned, the swap among the binary corolla's automorphisms;
-    ///   degree two is refused by its degree, and the catalogue at size zero,
-    ///   which lacks the point, by the empty shape.
-    /// - witness: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one_alone`
+    /// - hypothesis: L3 — at size five the corolla stratum is certified with
+    ///   its corollas pinned, the swap among the binary corolla's
+    ///   automorphisms, and degree two with its nineteen shapes' cocones; at
+    ///   size four degree three holds the closed chain's one graft; degree zero
+    ///   and a degree past the catalogue are refused by their degree, and the
+    ///   catalogue at size zero, which lacks the point, by the empty shape at
+    ///   degree one.
+    /// - witness: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one`
+    /// - witness: `tests::stratum::a_shape_of_degree_two_is_the_colimit_of_its_corollas`
+    ///
+    /// [`segal`]: crate::segal()
     #[inline]
     #[spec(ensures: |ref ret| match *ret {
-        | Ok(ref stratum) => degree == Degree::from(1_usize) && stratum.corollas.iter().all(|corolla| {
+        | Ok(ref stratum) => stratum.degree == degree && stratum.corollas.iter().all(|corolla| {
             matches!(catalogue.shape(corolla.index), Maybe::Present(shape) if Degree::of(shape) == Degree::from(1_usize))
+        }) && stratum.cocones.iter().all(|cocone| {
+            matches!(catalogue.shape(cocone.shape()), Maybe::Present(shape) if Degree::of(shape) > Degree::from(1_usize) && Degree::of(shape) <= degree)
         }),
-        | Err(Uncertified::Degree { degree: refused }) => refused == degree && degree != Degree::from(1_usize),
-        | Err(Uncertified::Condition { .. }) => degree == Degree::from(1_usize),
+        | Err(Uncertified::Degree { degree: refused }) => refused == degree && (degree == Degree::default() || catalogue.shapes().iter().all(|shape| Degree::of(shape) < degree)),
+        | Err(Uncertified::Condition { ref witness, degree: failing }) => failing <= degree
+            && (failing == Degree::from(1_usize) || Degree::of(witness) == failing),
     })]
     pub fn certify(
         catalogue: &'catalogue Catalogue,
         degree: Degree,
     ) -> Result<Self, Uncertified>
     {
-        if degree != Degree::from(1_usize) {
+        let one = Degree::from(1_usize);
+        if degree < one {
             return Err(Uncertified::Degree { degree });
         }
         if let Outcome::Fails { witness, .. } = corolla(&Site::new(catalogue)) {
-            return Err(Uncertified::Condition { witness });
+            return Err(Uncertified::Condition {
+                witness,
+                degree: one,
+            });
+        }
+        if catalogue
+            .shapes()
+            .iter()
+            .all(|shape| Degree::of(shape) < degree)
+        {
+            return Err(Uncertified::Degree { degree });
+        }
+        let (outcome, cocones) = walk(catalogue, degree, Cocones::Admitted);
+        if let Outcome::Fails { witness, .. } = outcome {
+            return Err(Uncertified::Condition {
+                degree: Degree::of(&witness.shape),
+                witness: witness.shape,
+            });
         }
         let mut corollas = Vec::new();
         for (index, shape) in catalogue.entries() {
-            if Degree::of(shape) != Degree::from(1_usize) {
+            if Degree::of(shape) != one {
                 continue;
             }
             let automorphisms = match catalogue.maps(index, index) {
@@ -859,8 +938,33 @@ impl<'catalogue> CorollaStratum<'catalogue>
         }
         Ok(Self {
             catalogue,
+            degree,
             corollas,
+            cocones,
         })
+    }
+
+    /// The degree.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn degree(&self) -> Degree
+    {
+        self.degree
+    }
+
+    /// The shapes of degree two to the stratum's degree, each with its
+    /// cocone, in catalogue order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn cocones(&self) -> &[Cocone]
+    {
+        &self.cocones
     }
 
     /// The catalogue.
@@ -918,7 +1022,7 @@ struct Sides<'data>
     bijection: &'data Bijection,
 }
 
-/// An equivalence of species at a certified corolla stratum, generated on its
+/// An equivalence of species at a certified stratum, generated on its
 /// inhabited corollas.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -967,7 +1071,7 @@ impl Equivalence
         | Err(_) => true,
     })]
     pub fn check(
-        stratum: &CorollaStratum<'_>,
+        stratum: &SegalStratum<'_>,
         sides: (&Species, &Species),
         mut components: BTreeMap<ShapeIndex, Bijection>,
     ) -> Result<Self, Defect>
@@ -1039,20 +1143,25 @@ impl Equivalence
     ///   at a shape, each labelling goes to the labelling whose label at every
     ///   vertex is that vertex's label under the corolla table of its profile,
     ///   the vertex's legs read in wire order onto the corolla's. Naturality
-    ///   makes the reading independent of which inclusion identifies them.
+    ///   makes the reading independent of which inclusion identifies them, and
+    ///   the family is natural along every probe of the stratum.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the input swap extends at the graft of a constant
     ///   into a binary operation to the swap of the operation's label, and
-    ///   [`restrict`] returns the equivalence from its extension.
+    ///   [`restrict`] returns the equivalence from its extension; at degree two
+    ///   the extension commutes with the contraction of two disjoint corollas
+    ///   into their graft.
     /// - witness: `tests::stratum::restriction_reflects_a_natural_isomorphism_to_its_species`
+    /// - witness: `tests::stratum::a_shape_of_degree_two_is_the_colimit_of_its_corollas`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ref natural| natural.components.len() == stratum.catalogue.shapes().len())]
+    #[spec(ensures: |ref natural| natural.components.len() == stratum.catalogue.shapes().len()
+        && probed(stratum, sides, natural) == Verdict::Holds)]
     pub fn extend(
         &self,
-        stratum: &CorollaStratum<'_>,
+        stratum: &SegalStratum<'_>,
         sides: (&Species, &Species),
     ) -> Natural
     {
@@ -1188,6 +1297,95 @@ impl Natural
     }
 }
 
+/// Whether `natural` commutes with restriction along every probe of
+/// `stratum`: each raising map out of one of its corollas or its shapes of
+/// degree two to its degree that sends every vertex to one vertex, into any
+/// shape of the catalogue.
+///
+/// # Specification
+/// - ensures: [`Verdict::Holds`] exactly when, for every probe `f : P → K` and
+///   every labelling of `K` on the source side, the forward table at `P` sends
+///   its restriction along `f` to the restriction along `f` of its image under
+///   the forward table at `K`; [`Verdict::Fails`] at a missing table or an
+///   image past its labellings.
+/// - panics: none.
+/// - executable: none — it is the predicate the postconditions of
+///   [`Equivalence::extend`] and [`restrict`] evaluate, and a clause on it
+///   would restate its body.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the swap's extension at degree two commutes with the
+///   contraction of two disjoint corollas into their graft, and the family with
+///   the identity at the graft does not.
+/// - witness: `tests::stratum::a_shape_of_degree_two_is_the_colimit_of_its_corollas`
+fn probed(
+    stratum: &SegalStratum<'_>,
+    sides: (&Species, &Species),
+    natural: &Natural,
+) -> Verdict
+{
+    let catalogue = stratum.catalogue;
+    let sources = stratum
+        .corollas
+        .iter()
+        .map(Corolla::index)
+        .chain(stratum.cocones.iter().map(Cocone::shape));
+    for source in sources {
+        let (Maybe::Present(form), Some(at_source)) = (
+            catalogue.shape(source),
+            natural.components.get(usize::from(source)),
+        )
+        else {
+            return Verdict::Fails;
+        };
+        let legs: Vec<Legs> = form
+            .vertices()
+            .map(|vertex| Legs::of(form, vertex))
+            .collect();
+        let read = (sides.0.labellings(form), sides.1.labellings(form));
+        for (target, shape) in catalogue.entries() {
+            let (Maybe::Present(maps), Some(at_target)) = (
+                catalogue.maps(source, target),
+                natural.components.get(usize::from(target)),
+            )
+            else {
+                return Verdict::Fails;
+            };
+            let onto = (sides.0.labellings(shape), sides.1.labellings(shape));
+            for map in maps
+                .iter()
+                .filter(|map| included(map) == Membership::Inside)
+            {
+                let restricted = |labelling: &Labelling, terms: &[Labelling]| {
+                    let mut labels = Vec::with_capacity(legs.len());
+                    for (vertex, legs) in form.vertices().zip(&legs) {
+                        let image = map.image(vertex).members().next()?;
+                        let label = labelling.0.get(usize::from(image))?;
+                        labels.push(label.restricted(&Relabelling::of(map, legs)));
+                    }
+                    terms
+                        .binary_search(&Labelling(labels.into_boxed_slice()))
+                        .ok()
+                        .map(ElementIndex)
+                };
+                for (position, labelling) in onto.0.iter().enumerate() {
+                    let left = restricted(labelling, &read.0)
+                        .and_then(|element| at_source.forward.image(element));
+                    let right = at_target
+                        .forward
+                        .image(ElementIndex(position))
+                        .and_then(|image| onto.1.get(image.0))
+                        .and_then(|image| restricted(image, &read.1));
+                    if left.is_none() || left != right {
+                        return Verdict::Fails;
+                    }
+                }
+            }
+        }
+    }
+    Verdict::Holds
+}
+
 /// `ua-desc`'s corolla restriction: the equivalence of species a natural
 /// isomorphism of the free algebras restricts to.
 ///
@@ -1195,13 +1393,15 @@ impl Natural
 /// - requires: nothing; every failure is a refusal.
 /// - ensures: on success, the family's bijections at the corollas the species
 ///   inhabit, checked as an [`Equivalence`], and the family is that
-///   equivalence's [`Equivalence::extend`]: the corolla values determine the
-///   family at every shape of the catalogue.
+///   equivalence's [`Equivalence::extend`], natural along every probe of the
+///   stratum: the corolla values determine the family at every shape of the
+///   catalogue, and the Segal condition the stratum certifies is why the probes
+///   of its shapes of degree two or more add no check.
 /// - fails: [`Defect::Tables`] at the first shape with no bijection, or past
 ///   the last shape when the family has more; then, shape by shape in catalogue
 ///   order, [`Defect::Cardinality`] and [`Defect::NotInverse`]; then, corolla
-///   by corolla and shape by shape, [`Defect::NotNatural`] at the first map of
-///   the alphabet and labelling where the family's forward tables do not
+///   by corolla and shape by shape, [`Defect::NotNatural`] at the first probe
+///   out of a corolla and labelling where the family's forward tables do not
 ///   commute with restriction; and [`Equivalence::check`]'s refusals.
 /// - panics: none.
 ///
@@ -1211,15 +1411,17 @@ impl Natural
 /// # Adequacy
 /// - hypothesis: L3 — the extension of the input swap restricts to the swap;
 ///   the same family with the identity at the graft, a bijection at every
-///   shape, is refused at the inclusion of the binary corolla into the graft.
+///   shape, is refused at the inclusion of the binary corolla into the graft,
+///   at degree one and at degree two alike.
 /// - witness: `tests::stratum::restriction_reflects_a_natural_isomorphism_to_its_species`
+/// - witness: `tests::stratum::a_shape_of_degree_two_is_the_colimit_of_its_corollas`
 #[inline]
 #[spec(ensures: |ref ret| match *ret {
-    | Ok(ref equivalence) => equivalence.extend(stratum, sides) == *natural,
+    | Ok(ref equivalence) => equivalence.extend(stratum, sides) == *natural && probed(stratum, sides, natural) == Verdict::Holds,
     | Err(_) => true,
 })]
 pub fn restrict(
-    stratum: &CorollaStratum<'_>,
+    stratum: &SegalStratum<'_>,
     sides: (&Species, &Species),
     natural: &Natural,
 ) -> Result<Equivalence, Defect>
