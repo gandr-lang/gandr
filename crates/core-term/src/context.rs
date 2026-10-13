@@ -634,6 +634,9 @@ impl Context
     /// - ensures: on success the slot's declared type is `continuation`, its
     ///   use is still available, every other slot and both depths are
     ///   unchanged, and the slot's previous declared type is returned.
+    /// - provides: the session rule's typestate move. The predicate observes
+    ///   the selected slot, exact refusal and both depths; neighbouring slots
+    ///   and the whole context after a refusal are compared by the witness.
     /// - fails: [`ContextError::UnboundIndex`] when the index names no linear
     ///   binder; [`ContextError::LinearSlotConsumed`] when its use is spent. A
     ///   refusal changes nothing.
@@ -650,16 +653,17 @@ impl Context
     ///   after each refusal asserted equal to the one before.
     /// - witness: `context::tests::advancing_rebinds_one_available_slot`
     #[spec(
-        captures: [before = self.clone(), declared = self.declared(Zone::Linear, index), use_state = self.linear_use(index)],
-        ensures: |ret| match (declared, use_state) {
-            | (Ok(previous), Ok(LinearUse::Available)) => ret == Ok(previous)
-                && self.declared(Zone::Linear, index) == Ok(continuation)
-                && self.linear_use(index) == Ok(LinearUse::Available)
-                && self.linear.len() == before.linear.len()
-                && self.intuitionistic == before.intuitionistic,
-            | (Ok(_), Ok(LinearUse::Consumed)) => ret == Err(ContextError::LinearSlotConsumed { index }) && *self == before,
-            | (Err(error), _) | (_, Err(error)) => ret == Err(error) && *self == before,
-        },
+        captures: [declared = self.declared(Zone::Linear, index), use_state = self.linear_use(index),
+            structural = self.intuitionistic.len(), linear = self.linear.len()],
+        ensures: |ret| self.intuitionistic.len() == structural && self.linear.len() == linear
+            && match (declared, use_state) {
+                | (Ok(previous), Ok(LinearUse::Available)) => ret == Ok(previous)
+                    && self.declared(Zone::Linear, index) == Ok(continuation)
+                    && self.linear_use(index) == Ok(LinearUse::Available),
+                | (Ok(_), Ok(LinearUse::Consumed)) => ret == Err(ContextError::LinearSlotConsumed { index })
+                    && self.declared(Zone::Linear, index) == declared && self.linear_use(index) == use_state,
+                | (Err(error), _) | (_, Err(error)) => ret == Err(error),
+            },
     )]
     #[inline]
     pub fn advance(
@@ -716,16 +720,25 @@ impl Context
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the linear zone equals `zone` slot for slot and the
-    ///   intuitionistic zone is unchanged.
+    ///   intuitionistic zone is unchanged. The predicate compares the restored
+    ///   zone, which the body copies, and the intuitionistic depth; the witness
+    ///   reads the intuitionistic zone after a restore.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a slot consumed and a slot advanced after the
     ///   snapshot both read as recorded once it is restored.
     /// - witness: `context::tests::a_restored_snapshot_undoes_uses_and_advances`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every slot of `zone` once; the check compares each once"
+        )
+    )]
     #[spec(
-        captures: [structural = self.intuitionistic.clone()],
-        ensures: self.linear == zone.0 && self.intuitionistic == structural,
+        captures: [structural = self.intuitionistic.len()],
+        ensures: self.linear == zone.0 && self.intuitionistic.len() == structural,
     )]
     #[inline]
     pub fn restore_linear(
@@ -742,7 +755,9 @@ impl Context
     /// # Specification
     /// - requires: nothing — a depth at or above the zone's is admissible.
     /// - ensures: the zone holds the lesser of its depth and `depth` binders,
-    ///   the outermost kept unchanged; the other zone is unchanged.
+    ///   the outermost kept unchanged; the other zone is unchanged. The
+    ///   predicate observes both depths; the witness reads the kept slot and
+    ///   the other zone.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -751,12 +766,10 @@ impl Context
     ///   changes nothing.
     /// - witness: `context::tests::truncating_drops_unspent_slots_without_refusal`
     #[spec(
-        captures: [before = self.clone()],
+        captures: [structural = self.intuitionistic.len(), linear = self.linear.len()],
         ensures: match zone {
-            | Zone::Intuitionistic => self.intuitionistic.len() == before.intuitionistic.len().min(depth.0)
-                && before.intuitionistic.starts_with(&self.intuitionistic) && self.linear == before.linear,
-            | Zone::Linear => self.linear.len() == before.linear.len().min(depth.0)
-                && before.linear.starts_with(&self.linear) && self.intuitionistic == before.intuitionistic,
+            | Zone::Intuitionistic => self.intuitionistic.len() == structural.min(depth.0) && self.linear.len() == linear,
+            | Zone::Linear => self.linear.len() == linear.min(depth.0) && self.intuitionistic.len() == structural,
         },
     )]
     #[inline]

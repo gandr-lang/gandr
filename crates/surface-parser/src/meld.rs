@@ -1778,6 +1778,13 @@ impl<'pbg> MeldState<'pbg>
     ///   successors, which the differential witness reads as a window verdict
     ///   the dry runs do not reach.
     /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: when the body answers yes it has walked the open frontiers from the nearest to one at or above `floor`; the check walks the same frontiers to the same one"
+        )
+    )]
     #[spec(ensures: |ret| !bool::from(ret) || self.frontiers.iter().rev().skip(1).any(|&index| index >= floor.0))]
     pub(crate) fn settles_into(
         &self,

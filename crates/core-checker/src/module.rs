@@ -482,7 +482,9 @@ enum Run
 ///   computation written where a value is read, minted after it — and defines
 ///   the constant as that body. A formed signature enters the signature table
 ///   after the body is judged, whatever the body's verdict; a synthesised type
-///   enters it after synthesis; a refused body alone enters nothing.
+///   enters it after synthesis; a refused body alone enters nothing. An
+///   abstract type's retention is checked where the context retains it, by
+///   `CheckingContext::seal_abstract`.
 /// - provides: the one obligation a declaration can owe, carried in its
 ///   verdict, so a caller judging a single declaration needs no ledger.
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
@@ -505,7 +507,7 @@ enum Run
     ensures: |ret| context.depth(gandr_core_term::Zone::Intuitionistic) == depth && match ret {
         | Verdict::Data => match *declaration.content() {
             | crate::DeclarationContent::Data(ref signature) => context.data_signatures().get(&declaration.constant()) == Some(signature),
-            | crate::DeclarationContent::Abstract(_) => context.abstract_types().any(|(constant, _)| constant == declaration.constant()),
+            | crate::DeclarationContent::Abstract(_) => true,
             | crate::DeclarationContent::Value { .. } => false,
         },
         | Verdict::Checked { declared, body, .. } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(ty), body: Maybe::Present(value) } if *ty == declared.id() && *value <= body)

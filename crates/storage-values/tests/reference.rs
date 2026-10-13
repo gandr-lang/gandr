@@ -2,6 +2,13 @@
 //! languages alone: a record reader, the cut rule recomputed over a flat form,
 //! a chunk DAG read back into one record stream, and a store that lists what
 //! it holds. None of it calls the crate's reader, scanner or traversal.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "test fixture: the references' invariants walk a whole spliced stream or store, which these suites keep small; an expectation on a type does not reach the impl its invariant expands to"
+    )
+)]
 
 use alloc::collections::BTreeSet;
 

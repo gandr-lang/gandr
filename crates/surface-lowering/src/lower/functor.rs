@@ -72,6 +72,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   functor are each refused by name, and a path off a call of a function
     ///   is not.
     /// - witness: `modules::modules::functors::an_application_is_bound_before_anything_projects_from_it`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans the functors for the head's name once; the check scans them once more when it refuses"
+        )
+    )]
     #[spec(ensures: |ret| match ret {
         | Err(LoweringRefusal::ProjectionFromApplication { span, functor }) => span == target.span && self.collected.functors.iter().any(|found| found.name == functor),
         | Err(_) | Ok(()) => true,
@@ -112,11 +119,18 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: walking out from the container of the declaration owning
     ///   `site` by an explicit loop, the first functor's body or parameter met
     ///   answers with its parameter when the parameter is named `head`; absent
-    ///   otherwise, and for a site no declaration owns.
+    ///   otherwise, and for a site no declaration owns. An answer is the
+    ///   parameter structure of a functor whose parameter is named `head`.
     /// - provides: the scope a functor's body reads its parameter's components
     ///   through, ahead of the outermost scope.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: walks out only the modules enclosing the declaration that owns
+    ///   `site`, its module nesting depth rather than the program's size, and
+    ///   reads one functor; checking its own clause reads one structure and one
+    ///   functor more.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a body reads its parameter's type and value by path,
@@ -124,7 +138,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `modules::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
-        | Maybe::Present(parameter) => self.collected.functors.iter().any(|functor| functor.parameter == parameter && functor.parameter_name == head),
+        | Maybe::Present(parameter) => self.collected.structures.get(usize::from(parameter)).is_some_and(|structure| matches!(structure.stratum,
+            Stratum::Parameter(functor) if self.collected.functors.get(usize::from(functor))
+                .is_some_and(|found| found.parameter == parameter && found.parameter_name == head))),
         | Maybe::Absent(_) => true,
     })]
     fn parameter_named(

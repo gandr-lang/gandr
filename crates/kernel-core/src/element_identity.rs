@@ -1643,6 +1643,13 @@ enum BinderUse
 /// - hypothesis: L3 — a Bool motive and one over an outer variable are
 ///   constant; `El(x)` reads its binder.
 /// - witness: `element_identity::tests::transport_computes_through_the_fold_clauses`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body computes the family's reach from a fresh table first; the capture walks the same family once"
+    )
+)]
 #[spec(captures: closed = match family {
         Family::Type(ty) => u32::from(LooseDepths::new().value_type_reach(arena, ty)) == 0,
         Family::Value(value) => u32::from(LooseDepths::new().value_reach(arena, value)) == 0,

@@ -760,6 +760,10 @@ path = "crates/theory-sites"
 # - none: core-only checks.
 # consumers:
 # - core-nbe
+# - storage-artifact
+# - storage-records
+# - storage-values
+# - surface-lowering
 # - surface-parser
 # - theory-cell-complexes
 # - theory-circuit-algebras

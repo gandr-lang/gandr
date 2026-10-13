@@ -1,4 +1,11 @@
 //! The fixture value, its codec, and the helpers the area suites share.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "test fixture: the fixture types' invariants walk a whole fixture, which these suites keep small; an expectation on a type does not reach the impl its invariant expands to"
+    )
+)]
 
 use anodized::spec;
 use gandr_storage_chunker::Kappa;

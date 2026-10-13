@@ -477,6 +477,13 @@ impl TypeTable
     ///   the innermost entry, the enclosing one, the expected type and none.
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans every entry for the spans holding the offset once; the check scans them once more"
+        )
+    )]
     #[spec(ensures: |ret| {
         let holding = |entry: &&Entry| entry.span.start() <= offset && offset < entry.span.end();
         let width = |span: ByteSpan| usize::from(span.end()).saturating_sub(usize::from(span.start()));

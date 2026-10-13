@@ -257,6 +257,13 @@ impl EffectRow
     ///   an atom of another interface, an atom whose reply type differs, and
     ///   the empty authority, each asserted exactly.
     /// - witness: `effect::capability::tests::attenuation_is_inclusion_on_grant_atoms`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body looks every operation this row restricts up in the authority and compares its two types once; the check makes the same lookups and comparisons once more"
+        )
+    )]
     #[spec(ensures: |ret| (ret == RowInclusion::Included) == self.signatures().all(|restricted| restricted.operations().all(|operation| matches!(authority.granted(restricted.name(), &operation.name), Maybe::Present(held) if crate::syntax::equal_type_syntax(arena, held.payload, operation.payload) == crate::CertificateEquality::Equal && crate::syntax::equal_type_syntax(arena, held.reply, operation.reply) == crate::CertificateEquality::Equal))))]
     #[inline]
     #[must_use]

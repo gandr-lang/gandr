@@ -875,6 +875,13 @@ impl<'source> Collector<'_, 'source>
     ///   witnesses its signature filed, and a declaration after the module
     ///   reads the atom outside.
     /// - witness: `modules::modules::opaque_ascription_seals`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every abstract slot once to fix the module's extents; the check reads each once more"
+        )
+    )]
     #[spec(
         captures: last = self.collected.slots.len().saturating_sub(1),
         ensures: |_| self.collected.abstracts.iter().all(|(&slot, recorded)| {
@@ -1010,6 +1017,13 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — an attributed member with no component reading it
     ///   refuses its module, and one a component reads does not.
     /// - witness: `modules::modules::a_component_check_carries_its_members_expectation`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every structure's type members once; the check reads each once more"
+        )
+    )]
     #[spec(
         ensures: |_| self.collected.structures.iter().flat_map(|entry| entry.type_members.iter()).all(|member| {
             self.collected.slots.get(member.held.0).is_none_or(|slot| slot.attributes.is_empty())

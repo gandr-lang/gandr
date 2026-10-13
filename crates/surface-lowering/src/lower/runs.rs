@@ -255,6 +255,8 @@ impl Lowerer<'_, '_>
     ///   `explicit_runs` spells its one option.
     /// - ensures: each of `slots` is asked at least what `entry` asks for, and
     ///   keeps a wider ask it already held; any other attribute marks nothing.
+    ///   The predicate observes the table's size, which only an `explicit_runs`
+    ///   attribute grows; the witness reads each slot's ask.
     /// - provides: the filing half of the module's switch.
     /// - fails: never.
     /// - panics: none.
@@ -264,9 +266,9 @@ impl Lowerer<'_, '_>
     ///   the effectful ones by itself keeps every run.
     /// - witness: `lower::runs::tests::an_explicit_runs_attribute_asks_within_its_form`
     #[spec(
-        captures: before = self.asked_runs.clone(),
-        ensures: before.iter().all(|(slot, &held)| self.asked_runs.get(slot).is_some_and(|&now| now >= held))
-            && (entry.name() == RegisteredAttribute::EXPLICIT_RUNS || self.asked_runs == before),
+        captures: before = self.asked_runs.len(),
+        ensures: self.asked_runs.len() >= before
+            && (entry.name() == RegisteredAttribute::EXPLICIT_RUNS || self.asked_runs.len() == before),
     )]
     pub(super) fn ask_runs<Slots>(
         &mut self,

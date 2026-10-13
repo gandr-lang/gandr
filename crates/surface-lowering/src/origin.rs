@@ -827,7 +827,8 @@ impl OriginTable
     /// # Specification
     /// - requires: nothing — an unrecorded id is admissible input.
     /// - ensures: the binder span recorded under an equal id, or the unrecorded
-    ///   absence.
+    ///   absence; the check finds the id's place among the ascending ids
+    ///   [`Self::record_binding`] keeps by one lower-bound search.
     /// - provides: the use-to-binder lookup.
     /// - fails: never.
     /// - panics: none.
@@ -836,7 +837,8 @@ impl OriginTable
     /// - hypothesis: L3 — a recorded variable and a node the lowering did not
     ///   mint as a written variable answer their exact binders.
     /// - witness: `lower::tests::a_variable_keeps_its_binder`
-    #[spec(ensures: |ret| ret == self.bindings.iter().find(|&&(held, _)| held == id)
+    #[spec(ensures: |ret| ret == self.bindings.get(self.bindings.partition_point(|&(held, _)| held < id))
+        .filter(|&&(held, _)| held == id)
         .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, binder)| Maybe::Present(binder)))]
     #[inline]
     pub fn binding(

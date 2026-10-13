@@ -10468,6 +10468,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the checker accepts and the machine runs.
     /// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
     /// - witness: `operation::tests::a_call_reaches_the_operation_before_a_builtin_of_its_name`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body mints every planned operation once; the check looks up each minted slot once"
+        )
+    )]
     #[spec(ensures: self.operated.keys().all(|slot| self.collected.operations.contains_key(slot)))]
     fn mint_operations(
         &mut self,

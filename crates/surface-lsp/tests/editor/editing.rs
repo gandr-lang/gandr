@@ -141,6 +141,13 @@ impl Session
     ///   here; a second open that disturbed the first's document shows at the
     ///   first's next keystroke.
     /// - witness: `editor::editor::scenarios::two_editors_on_one_buffer_each_keep_their_answers`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body hands the whole text to the second connection, which publishes on it; the check compares it once"
+        )
+    )]
     #[spec(ensures: |ret| ret.uri == self.uri && ret.buffer.text() == self.buffer.text())]
     pub fn beside(
         &self,

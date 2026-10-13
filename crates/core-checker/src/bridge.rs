@@ -1267,6 +1267,13 @@ struct OpenSeal
 /// - hypothesis: L3 — a sealed module's export replays with the atom closed
 ///   over its members, and a client past the seal reads the atom rigid.
 /// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body partitions every open seal once; the check reads each it kept once"
+    )
+)]
 #[spec(ensures: positions.open.iter().all(|seal| seal.end > reached))]
 fn close_seals(
     environment: &mut Environment,

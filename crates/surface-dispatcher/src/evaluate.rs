@@ -543,7 +543,7 @@ impl<'source> Program<'source>
     ///   earlier name among them, and a source of none.
     /// - witness: `evaluate::tests::the_run_target_is_the_last_name_declared`
     #[spec(ensures: |ret| match ret {
-        Maybe::Present(last) => self.declarations.keys().next_back() == Some(&last),
+        Maybe::Present(last) => self.declarations.last_key_value().is_some_and(|(&held, _)| held == last),
         Maybe::Absent(run_target::Absent::NoDeclaration) => self.declarations.is_empty(),
     })]
     #[inline]

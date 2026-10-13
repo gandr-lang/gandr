@@ -56,6 +56,7 @@ use gandr_storage_chunker::BoundaryResidue;
 use gandr_storage_chunker::CutDecision;
 use gandr_storage_chunker::TokenCount;
 use gandr_storage_chunker::TypedChunker;
+use gandr_theory_spec_combinators::Holds;
 
 use crate::chunk::ChunkStore;
 use crate::chunk::frame_chunk;
@@ -143,11 +144,7 @@ struct OpenFrame
 ///   damaged domain. These separate unbound cached positions and lost records;
 ///   store correctness remains the store implementation's contract.
 /// - witness: `commit::tests::open_frames_bind_live_body_and_residue_marks`
-#[spec(maintains: self.open.iter().all(|frame|
-    matches!(split_record(self.body.since(frame.body_start)),
-        Ok(BodyFront::Record(Record::Open(_tag), _rest)))
-    && self.preimage.get(frame.preimage_start.0 ..)
-        .is_some_and(|suffix| suffix.starts_with(RESIDUE_DOMAIN))))]
+#[spec(maintains: bool::from(self.well_formed()))]
 struct CommitSink<'store, Store>
 where
     Store: ChunkStore + ?Sized,
@@ -193,6 +190,43 @@ where
             since_event: TokenCount::ZERO,
             delivered: TokenCount::ZERO,
         }
+    }
+
+    /// Whether every open frame still addresses its open record and its
+    /// residue domain.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: holds exactly when, for each open frame, the body from the
+    ///   frame's body mark starts with an open record and the preimage from its
+    ///   preimage mark starts with [`RESIDUE_DOMAIN`].
+    /// - provides: the sink's invariant, which a clause reads through this
+    ///   bound.
+    /// - panics: none.
+    /// - executable: none — this is the invariant's predicate; a postcondition
+    ///   could only repeat its reads.
+    ///
+    /// # Clause cost
+    /// - bound: one record split and one domain-prefix comparison per open
+    ///   constructor. No function's clause reads the sink's invariant; only its
+    ///   witness does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two nested open constructors hold before and after a
+    ///   close; a displaced body mark, a displaced preimage mark and a damaged
+    ///   residue domain each fail.
+    /// - witness: `commit::tests::open_frames_bind_live_body_and_residue_marks`
+    fn well_formed(&self) -> Holds
+    {
+        Holds::from(self.open.iter().all(|frame| {
+            matches!(
+                split_record(self.body.since(frame.body_start)),
+                Ok(BodyFront::Record(Record::Open(_), _))
+            ) && self
+                .preimage
+                .get(frame.preimage_start.0 ..)
+                .is_some_and(|suffix| suffix.starts_with(RESIDUE_DOMAIN))
+        }))
     }
 
     /// Appends one record the value emitted, to the body and to the innermost

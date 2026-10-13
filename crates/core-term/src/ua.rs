@@ -212,6 +212,9 @@ impl Description
     ///
     /// # Specification
     /// - ensures: the count at each profile is the number of generators at it.
+    ///   The predicate observes that every generator's profile is counted and
+    ///   that the counts sum to the generators; the witness separates a count
+    ///   per profile from a count per description.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -220,7 +223,15 @@ impl Description
     /// - witness: `ua::tests::a_sign_reads_as_its_generators_in_written_order`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ref species| self.generators.iter().all(|generator| usize::from(species.count(generator.profile)) == self.generators.iter().filter(|other| other.profile == generator.profile).count()))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body counts every generator once; the check looks each generator's profile up once"
+        )
+    )]
+    #[spec(ensures: |ref species| self.generators.iter().all(|generator| usize::from(species.count(generator.profile)) != 0)
+        && species.profiles().map(|(_, count)| usize::from(count)).sum::<usize>() == self.generators.len())]
     pub fn species(&self) -> Species
     {
         let mut counts: BTreeMap<Profile, usize> = BTreeMap::new();
@@ -248,6 +259,13 @@ impl Description
     ///   from a constant answer.
     /// - witness: `ua::tests::a_sign_reads_as_its_generators_in_written_order`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans the generators for the label once; the check scans them once more when none carries it"
+        )
+    )]
     #[spec(ensures: |ret| match ret { Maybe::Present(generator) => generator.label == *label, Maybe::Absent(_) => self.generators.iter().all(|generator| generator.label != *label) })]
     pub fn generator(
         &self,

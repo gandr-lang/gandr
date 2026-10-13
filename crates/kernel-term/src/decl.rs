@@ -746,7 +746,9 @@ impl Declaration
     /// - ensures: an abstract type comes back with its scope
     ///   `SealScope::Closed(extent)`; any other declaration, which has no
     ///   minting admission to close, comes back unchanged. Levels, provenance
-    ///   and name are untouched either way.
+    ///   and name are untouched either way. The predicate observes an abstract
+    ///   type's fields and any other declaration's variant, so it copies no
+    ///   telescope; the witness compares a definition passed through whole.
     /// - provides: the record a producer writes once its environment has closed
     ///   the atom's admission, so the artifact carries the boundary the
     ///   environment drew.
@@ -758,12 +760,15 @@ impl Declaration
     ///   that extent, and a definition passed through is unchanged.
     /// - witness: `decl::tests::closing_a_scope_touches_only_an_abstract_type`
     #[spec(
-        captures: entry = (self.content.clone(), self.provenance.len(), self.name.0.len()),
-        ensures: |ret| ret.provenance.len() == entry.1 && ret.name.0.len() == entry.2
+        captures: entry = (match self.content {
+            DeclarationContent::AbstractType { kind, representation, .. } => Some((kind, representation)),
+            DeclarationContent::Data { .. } | DeclarationContent::Def { .. } | DeclarationContent::Axiom { .. } => None,
+        }, core::mem::discriminant(&self.content), self.provenance.len(), self.name.0.len()),
+        ensures: |ret| ret.provenance.len() == entry.2 && ret.name.0.len() == entry.3
             && match entry.0 {
-                DeclarationContent::AbstractType { kind, representation, .. } => ret.content
+                Some((kind, representation)) => ret.content
                     == DeclarationContent::AbstractType { kind, representation, scope: SealScope::Closed(extent) },
-                ref other => ret.content == *other,
+                None => core::mem::discriminant(&ret.content) == entry.1,
             },
     )]
     #[inline]

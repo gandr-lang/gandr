@@ -78,7 +78,7 @@ crates/
 └── workflow-test-timing/          the `test-timing` binary: nextest priority levels proposed from recent merge-queue runs' JUnit reports
 ```
 
-The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins. Its `specification_present` lint reports open specification debt as warnings (`check:dylint`); every other policy lint denies.
+The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins. Its `specification_present` lint reports open specification debt as warnings (`check:dylint`); every other policy lint denies, `spec_clause_traversal` among them: a specification check costs no more than the function it checks, as [`theory-spec-combinators`](theory-spec-combinators/src/lib.rs) states with its combinators.
 
 ## Crate README shape
 

@@ -89,6 +89,7 @@ use gandr_kernel_term::decode;
 use gandr_storage_records::Record;
 use gandr_storage_records::RecordIndex;
 use gandr_storage_records::RecordRef;
+use gandr_theory_spec_combinators::Holds;
 
 use crate::error::ArtifactError;
 
@@ -340,14 +341,7 @@ impl ArtifactRecord
 ///   duplicate positions before sorting.
 /// - witness: `record::tests::record_refinements_bind_keys_and_sorted_unique_sets`
 /// - witness: `record::tests::a_duplicate_admission_key_is_rejected`
-#[spec(maintains: {
-    let mut previous = None;
-    self.records.iter().all(|record| {
-        let ordered = previous.is_none_or(|key| key < record.key);
-        previous = Some(record.key);
-        ordered && anodized::types::Spec::predicate(record)
-    })
-})]
+#[spec(maintains: bool::from(self.well_formed()))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactRecordSet
 {
@@ -359,6 +353,35 @@ pub struct ArtifactRecordSet
 
 impl ArtifactRecordSet
 {
+    /// Whether the records strictly ascend by key, each bound to its index.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: holds exactly when each record's key sorts strictly before
+    ///   the next record's and each record satisfies its own invariant.
+    /// - provides: the record set's invariant, which a clause reads through
+    ///   this bound.
+    /// - panics: none.
+    /// - executable: none — this is the invariant's predicate; a postcondition
+    ///   could only repeat its pass.
+    ///
+    /// # Clause cost
+    /// - bound: one key comparison and one eight-byte key check per record. No
+    ///   function's clause reads the set's invariant; only its witness does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and noncontiguous sets hold; a reversed set, a
+    ///   repeated record and a miskeyed record each fail.
+    /// - witness: `record::tests::record_refinements_bind_keys_and_sorted_unique_sets`
+    fn well_formed(&self) -> Holds
+    {
+        Holds::from(
+            self.records
+                .is_sorted_by(|lower, higher| lower.key < higher.key)
+                && self.records.iter().all(anodized::types::Spec::predicate),
+        )
+    }
+
     /// Cuts an artifact into its record set where the kernel's decoder finds
     /// its segments end.
     ///
