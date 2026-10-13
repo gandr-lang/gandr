@@ -1763,6 +1763,9 @@ mod tests
             | Typing::Refused(Refusal::CompoundEndpoint { .. }) => "compound-endpoint",
             | Typing::Refused(Refusal::FunextUnsupported { .. }) => "funext-unsupported",
             | Typing::Refused(Refusal::PointwiseDistinct(_)) => "pointwise-distinct",
+            | Typing::Refused(Refusal::EquivUnsupported { .. }) => "equiv-unsupported",
+            | Typing::Refused(Refusal::UncertifiedStratum { .. }) => "uncertified-stratum",
+            | Typing::Refused(Refusal::RoundTripDistinct(_)) => "round-trip-distinct",
             | Typing::Refused(Refusal::EffectSignatureConflict { .. }) => {
                 "effect-signature-conflict"
             },

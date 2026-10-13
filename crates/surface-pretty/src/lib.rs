@@ -23,14 +23,15 @@
 //! `Integer`, `String`, `Unit`, `#{A, B}`, `#{l : A, m : B}`, `+{A, B}`,
 //! `&{C, D}`, `+U C`, `-F A`, `A -> C`, `(x : A) -> C`, `Type`, `Type[-]`,
 //! `Type[+, l]`, `Type[-, l]`; `unit`, literals, `#{a, b}`, `#{.l = v}`,
-//! `+{.i = v}`, `here(a)`, `funext(f, g)`. Every braced former is written
-//! between its delimiters at any arity from one, its labels in their declared
-//! order; the binary sugar `A * B`, `A + B`, `C & D` and `(a, b)` parses and
-//! is never printed. A former the surface does not write — a lift, the
-//! numeric atom, a variable past every binder, the empty record — is written
-//! `?`. Effectful returners display their interface names as diagnostic
-//! notation. Both are [`Fidelity::Approximate`], not round-trippable source.
-//! A page the one-line spelling fits selects it unchanged.
+//! `+{.i = v}`, `here(a)`, `funext(f, g)`, `equiv(f, g)`. Every braced former
+//! is written between its delimiters at any arity from one, its labels in
+//! their declared order; the binary sugar `A * B`, `A + B`, `C & D` and
+//! `(a, b)` parses and is never printed. A former the surface does not write —
+//! a lift, the numeric atom, a variable past every binder, the empty record —
+//! is written `?`. Effectful returners display their interface names as
+//! diagnostic notation. Both are [`Fidelity::Approximate`], not
+//! round-trippable source. A page the one-line spelling fits selects it
+//! unchanged.
 //!
 //! Every former has exactly one spelling, the one the surface grammar parses,
 //! so a printed type reads back as the type it names: `Integer`, `String`,
@@ -39,19 +40,19 @@
 //! between value types, `Type`, `Type[-]`, `Type[+, l]`, `Type[-, l]`, an
 //! abstract type and a constant by name, and a decode as the code it reads;
 //! values are `unit`, literals with their canonical digits and escapes,
-//! `#{a, b, …}`, `#{.l = v, …}`, `+{.i = v}`, `here(a)`, `funext(f, g)`, the
-//! static abstraction `\a. v`, and a static application as its spine,
-//! `f(a, b)` for `f` applied to `a` and then to `b` (the type operators of
-//! `gandr-surface-grammar`). Binding strength follows the grammar's bands,
-//! tightest first: atoms, every braced former among them, then the bridges
-//! `+U` and `-F` (built-in spellings in `gandr-surface-grammar`), then arrow;
-//! an arrow's domain is bare up to a bridge and its codomain bare. A static
-//! abstraction binds as loosely as an arrow, its body running to the right,
-//! and an application is an atom whose operator is parenthesized unless it is
-//! one, so a redex reads `(\a. a)(Integer)`. The sugar `A * B`, `A + B`,
-//! `C & D`, `(a, b)` and the value-function alias `(A, B) => C` parse and are
-//! never printed: the printer writes what the core holds, the alias as
-//! `+U (A -> B -> -F C)`.
+//! `#{a, b, …}`, `#{.l = v, …}`, `+{.i = v}`, `here(a)`, `funext(f, g)`,
+//! `equiv(f, g)`, the static abstraction `\a. v`, and a static application as
+//! its spine, `f(a, b)` for `f` applied to `a` and then to `b` (the type
+//! operators of `gandr-surface-grammar`). Binding strength follows the
+//! grammar's bands, tightest first: atoms, every braced former among them,
+//! then the bridges `+U` and `-F` (built-in spellings in
+//! `gandr-surface-grammar`), then arrow; an arrow's domain is bare up to a
+//! bridge and its codomain bare. A static abstraction binds as loosely as an
+//! arrow, its body running to the right, and an application is an atom whose
+//! operator is parenthesized unless it is one, so a redex reads
+//! `(\a. a)(Integer)`. The sugar `A * B`, `A + B`, `C & D`, `(a, b)` and the
+//! value-function alias `(A, B) => C` parse and are never printed: the printer
+//! writes what the core holds, the alias as `+U (A -> B -> -F C)`.
 //!
 //! A node the surface has no spelling for — a lift, the numeric atom, a linear
 //! or unbound variable, a term where a type stands — is written `?`, and a
@@ -344,8 +345,8 @@ where
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: the root written as [`present_type`] writes a type, a value's
 ///   formers spelled `unit`, as their literal, `#{a, b}`, `#{.l = v}` in label
-///   order and `+{.i = v}` at any summand, `here(a)`, `funext(f, g)`, a
-///   constant by its name and the code of a type as the type; a thunk is
+///   order and `+{.i = v}` at any summand, `here(a)`, `funext(f, g)`, `equiv(f,
+///   g)`, a constant by its name and the code of a type as the type; a thunk is
 ///   written `<thunk>`, and a value [`DEPTH_LIMIT`] value formers deep is
 ///   written `<deep>` inside the formers around it, each making the
 ///   presentation approximate. Output has the same line-ending and width

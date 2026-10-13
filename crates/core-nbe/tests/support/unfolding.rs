@@ -126,7 +126,7 @@ pub struct Unfolded(pub u64);
                     Value::Reify(ref frames) => 1_u64.checked_add(u64::try_from(frames.iter().filter(|frame| !matches!(frame, gandr_core_term::control::StackFrame::Project(_))).count()).expect("walkable frame arity")).expect("walkable frame arity"),
                     Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 1,
                     Value::Tuple(ref components) => 1_u64.saturating_add(u64::try_from(components.len()).unwrap_or(u64::MAX)),
-                    Value::ListCons(..) | Value::PathProduct(..) | Value::Funext(..) | Value::StaticApplication(_, _) => 3,
+                    Value::ListCons(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::StaticApplication(_, _) => 3,
                     Value::PathEquiv { .. } => 4,
                     Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
                 }
@@ -240,6 +240,7 @@ pub fn unfolded(
                 },
                 | Value::PathProduct(first, second)
                 | Value::Funext(first, second)
+                | Value::Equiv(first, second)
                 | Value::ListCons(first, second)
                 | Value::StaticApplication(first, second) => {
                     pending.push(CoreNode::Value(first));

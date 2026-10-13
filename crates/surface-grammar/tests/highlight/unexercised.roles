@@ -798,8 +798,6 @@
 1088 Escape literal_pattern escape_sequence L["] R["]
 1089 StringLit literal_pattern string_fragment L["] R["]
 1090 StringLit literal_pattern " L[" escape_sequence string_fragment] R[]
-1091 Boolean literal_pattern true L[] R[]
-1092 Boolean literal_pattern false L[] R[]
 1096 Keyword as_pattern as L[<pattern>] R[identifier]
 1097 VariableDef as_pattern identifier L[as] R[]
 1111 Operator binary_expression != L[<expression>] R[<expression>]

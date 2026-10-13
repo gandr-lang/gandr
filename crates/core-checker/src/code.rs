@@ -76,6 +76,7 @@ use gandr_core_term::BinderDepth;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
 use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DefinitionalEnvironment;
 use gandr_core_term::Transparency;
@@ -124,6 +125,24 @@ quenchant_shape::reason_enum! {
         }
     }
 }
+
+quenchant_shape::reason_enum! {
+    /// Why a traced conversion gave no trace.
+    pub mod converted {
+        /// The reason the two computations were not shown convertible.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The machine refuted the pair or declined it: a variable, an
+            /// opaque constant or an effect stood where a value was owed.
+            Apart,
+        }
+    }
+}
+
+/// How many binders a claim stands under, each read as a rigid variable.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct OpenBinders(pub u32);
 
 /// The evaluation budget each side of a certified unfolding runs under.
 const CODE_FUEL: u32 = 4_096_u32;
@@ -622,6 +641,7 @@ impl CodeDefinitions
             | Value::PathRefl(_)
             | Value::Here(_)
             | Value::Funext(..)
+            | Value::Equiv(..)
             | Value::Returned(_)
             | Value::Constructor { .. }
             | Value::Record(_)
@@ -855,6 +875,106 @@ impl CodeDefinitions
         )
         .map(|report| report.verdict())
         .map_err(|_fault| undecided)
+    }
+
+    /// Decide that two computations standing under `open` binders convert,
+    /// each evaluated with those binders read as rigid variables and every
+    /// definition this table holds unfolding, and keep the machine's trace.
+    ///
+    /// # Specification
+    /// - requires: every body this table holds, and both computations, live in
+    ///   `core`; neither reaches past `open` binders.
+    /// - ensures: the machine's convertible trace from `left` to `right`, its
+    ///   anchors forgotten as the wire forgets them;
+    ///   [`converted::Absent::Apart`] when the machine refutes or declines the
+    ///   pair.
+    /// - provides: the dialogue a universe equivalence's round trip carries,
+    ///   which the kernel replays against the claim it regenerates.
+    /// - fails: [`CheckRefusal::Undecided`] at `at` when either side does not
+    ///   evaluate or the machine faults.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — as above.
+    ///
+    /// # Termination
+    /// - reason: the `for` loop binds one rigid variable per open binder, not
+    ///   recursion; the machine runs under its own fuel.
+    /// - measure: the binders left to bind.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — negation after negation returns its input at both
+    ///   injections and the trace replays in the kernel; the identity after
+    ///   negation is apart.
+    /// - witness: `equiv::tests::an_involution_is_its_own_inverse_by_computation`
+    /// - witness: `bridge::tests::an_equiv_crosses_as_a_universe_path`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at: found }) if found == at))]
+    #[inline]
+    pub fn trace_conversion(
+        &self,
+        core: &CoreArena,
+        at: ValueId,
+        (left, right): (ComputationId, ComputationId),
+        open: OpenBinders,
+    ) -> Result<Maybe<Vec<ConversionDecision<()>>, converted::Absent>, CheckRefusal>
+    {
+        let undecided = CheckRefusal::Undecided { at };
+        let definitions =
+            Definitions::new(&self.lowered, &self.environment, self.environment.root());
+        let mut domain = DomainArena::new();
+        let mut environment = Environment::new();
+        for level in 0 .. open.0 {
+            let neutral = domain
+                .neutral_node(
+                    NeutralHead::Variable {
+                        zone: Zone::Intuitionistic,
+                        level: BinderLevel::from(level),
+                    },
+                    Vec::new(),
+                    Unfolding::Rigid,
+                )
+                .map_err(|_fault| undecided)?;
+            let bound = domain
+                .value_neutral(neutral, TermFace::Reduced)
+                .map_err(|_fault| undecided)?;
+            environment.extend(Zone::Intuitionistic, bound);
+        }
+        let fuel = Fuel::from(CODE_FUEL);
+        let evaluate = |domain: &mut DomainArena, term: ComputationId| {
+            gandr_core_nbe::eval_comp_within(
+                core,
+                domain,
+                definitions,
+                fuel,
+                term,
+                environment.clone(),
+            )
+            .map(|(produced, _remaining)| produced)
+            .map_err(|_fault| undecided)
+        };
+        let one = evaluate(&mut domain, left)?;
+        let other = evaluate(&mut domain, right)?;
+        let mut log = TraceLog::new();
+        let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
+            core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::computations(one, other).under(BinderLevel::from(open.0)),
+            &mut log,
+        )
+        .map_err(|_fault| undecided)?;
+        Ok(match report.verdict() {
+            | MachineVerdict::Convertible => Maybe::Present(
+                log.decisions()
+                    .copied()
+                    .map(|decision| decision.map(|_anchor| ()))
+                    .collect(),
+            ),
+            | MachineVerdict::NotConvertible | MachineVerdict::Declined(_) => {
+                Maybe::Absent(converted::Absent::Apart)
+            },
+        })
     }
 
     /// Evaluate the closed claim `claim`, `thunk (λⁿ. M)`, to the value its
@@ -1091,6 +1211,7 @@ pub fn loose_reach(
                     ),
                     | Value::PathProduct(first, second)
                     | Value::Funext(first, second)
+                    | Value::Equiv(first, second)
                     | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second) => {
                         work.push((CoreNode::Term(TermNode::Value(first)), depth));

@@ -1201,7 +1201,7 @@ mod tests
     fn a_refusal_publishes_its_label_and_note()
     {
         let uri = DocumentUri::from("file:///strict/head.gandr");
-        let text = "def f(xs: List(Integer)) -> -F Integer {\n  pure 1\n}\n";
+        let text = "def f(xs: Vec(Integer)) -> -F Integer {\n  pure 1\n}\n";
         let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
@@ -1212,7 +1212,7 @@ mod tests
         else {
             panic!("a message, a label and a note: {:?}", diagnostic.message);
         };
-        assert!(message.contains("`List`"), "the message names the head");
+        assert!(message.contains("`Vec`"), "the message names the head");
         assert!(
             !message.contains(".."),
             "the range locates the head; the message repeats no byte range"
@@ -1231,7 +1231,7 @@ mod tests
     fn one_refusal_is_published_at_every_verbosity()
     {
         let uri = DocumentUri::from("file:///strict/head.gandr");
-        let text = SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  return 1\n}\n");
+        let text = SourceText::from("def f(xs: Vec(Integer)) -> -F Integer {\n  return 1\n}\n");
         let [user, detailed, debug, json] = [
             Verbosity::User,
             Verbosity::Detailed,
@@ -1277,7 +1277,7 @@ mod tests
         );
         assert_eq!(names(&detailed), ["class", "detail", "expression"]);
         assert!(
-            detailed.message.ends_with("expression: `List`"),
+            detailed.message.ends_with("expression: `Vec`"),
             "the detailed level quotes the offending source: {:?}",
             detailed.message
         );

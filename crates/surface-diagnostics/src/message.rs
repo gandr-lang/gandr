@@ -406,6 +406,16 @@ fn checked(
         | CheckRefusal::PointwiseDistinct { .. } => {
             f.write_str("`funext` needs both functions to return the same value at every input")
         },
+        | CheckRefusal::EquivUnsupported { .. } => f.write_str(
+            "`equiv` needs two closed pure translators between types built from units, \
+             integers, strings, tuples and sums",
+        ),
+        | CheckRefusal::UncertifiedStratum { .. } => {
+            f.write_str("`equiv` cannot certify a recursive type such as a list")
+        },
+        | CheckRefusal::RoundTripDistinct { .. } => {
+            f.write_str("`equiv` needs each round trip to return its input")
+        },
         | CheckRefusal::TypeMismatch(_) => f.write_str("mismatched types"),
         | CheckRefusal::ShapeMismatch { wanted, .. } => write!(f, "expected {}", Shape(wanted)),
         | CheckRefusal::NotSynthesisable { form } => write!(
@@ -799,6 +809,15 @@ mod tests
                 classifier: value_type,
             },
             CheckRefusal::PointwiseDistinct { at: value },
+            CheckRefusal::EquivUnsupported {
+                at: value,
+                classifier: value_type,
+            },
+            CheckRefusal::UncertifiedStratum {
+                at: value,
+                code: value_type,
+            },
+            CheckRefusal::RoundTripDistinct { at: value },
         ]
         .map(Refusal::Checking);
         let corpus = Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot {

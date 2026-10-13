@@ -33,7 +33,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `CodeDefinitions`, `Certificate`, `Unfolded`, `unfolding::Absent` and `Lift`: static definitions, certified reductions and recorded universe lifts.
 - `Declaration`, `DeclarationContent` and `OriginToken`: name-free value/data input. Values retain optional signature/body halves; data retain a `DataSignature`.
 - `check_declaration`, `check_module`, `Verdict`, `Judged` and `ModuleReport`: one verdict per declaration, retaining accepted value definitions, native data signatures and recorded lifts.
-- `Funext`, `FunextComponent`, `Evaluation`, `evaluated::Absent` and `ModuleReport::funexts`: function extensionality decided by computation, per covering input each side's returned value and trace.
+- `Funext`, `FunextComponent`, `Evaluation`, `evaluated::Absent` and `ModuleReport::funexts`: function extensionality decided by computation, per covering input each side's returned value and trace; `Equivalence` and `ModuleReport::equivalences` the same for `equiv(f, g)`.
 - `check_declaration_supported`, `Supported`, `Support`, `Consulted` and `CheckingContext::adopt`: query-specific value/data answers and adoption into the new prefix.
 - `CheckingContext`, `CheckBudget` and `signature_table::Absent`: context, admission tables and judgment allowance.
 - `Absence`, `ObligationEntry`, `ObligationLedger` and `ObligationCount`: the absence-only ledger.
@@ -115,7 +115,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Topic | Module |
 | ----- | ------ |
 | Modes, static operators, the dependent arrow and the bind, splits, holes in the faces, effects and control, native universe paths, element identity | [`judgement`](src/judgement.rs) |
-| Function extensionality | [`funext`](src/funext.rs) |
+| Function extensionality, universe equivalence | [`funext`](src/funext.rs), [`equiv`](src/equiv.rs) |
 | Total elaboration and the typed run | [`judgement::elaboration`](src/judgement/elaboration.rs) |
 | Records | [`judgement::native`](src/judgement/native.rs) |
 | The three bridges, consistency, smallness and variance | [`conversion`](src/conversion.rs) |

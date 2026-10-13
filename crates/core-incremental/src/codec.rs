@@ -1429,6 +1429,11 @@ where
             write_index(writer, left)?;
             write_index(writer, right)?;
         },
+        | ContentNode::Equiv(forward, backward) => {
+            writer.tag(Tag(0x4A));
+            write_index(writer, forward)?;
+            write_index(writer, backward)?;
+        },
         | ContentNode::Transport(path, value) => {
             writer.tag(Tag(0x44));
             write_index(writer, path)?;
@@ -2101,6 +2106,7 @@ fn read_effect_row(
                     | ContentNode::ElementTransport { .. } => tag == 0x47,
                     | ContentNode::Returned(_) => tag == 0x48,
                     | ContentNode::Funext(..) => tag == 0x49,
+                    | ContentNode::Equiv(..) => tag == 0x4A,
                     | ContentNode::Variable { .. } => tag == 0x01,
                     | ContentNode::Constant(_) => tag == 0x02,
                     | ContentNode::Literal(_) => tag == 0x04,
@@ -2526,6 +2532,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         },
         | 0x48 => ContentNode::Returned(read_index(reader)?),
         | 0x49 => ContentNode::Funext(read_index(reader)?, read_index(reader)?),
+        | 0x4A => ContentNode::Equiv(read_index(reader)?, read_index(reader)?),
         | _ => return Err(CodecError::Corrupt),
     };
     Ok(node)
@@ -3744,6 +3751,20 @@ where
             writer.tag(Tag(44));
             write_site(writer, site)?;
         },
+        | Refusal::EquivUnsupported { at, ref classifier } => {
+            writer.tag(Tag(45));
+            write_site(writer, at)?;
+            write_type(writer, classifier)?;
+        },
+        | Refusal::UncertifiedStratum { at, ref code } => {
+            writer.tag(Tag(46));
+            write_site(writer, at)?;
+            write_type(writer, code)?;
+        },
+        | Refusal::RoundTripDistinct(site) => {
+            writer.tag(Tag(47));
+            write_site(writer, site)?;
+        },
         | Refusal::TypeMismatch {
             at,
             ref synthesised,
@@ -4068,6 +4089,9 @@ where
                     | Refusal::CompoundEndpoint { .. } => 42,
                     | Refusal::FunextUnsupported { .. } => 43,
                     | Refusal::PointwiseDistinct(_) => 44,
+                    | Refusal::EquivUnsupported { .. } => 45,
+                    | Refusal::UncertifiedStratum { .. } => 46,
+                    | Refusal::RoundTripDistinct(_) => 47,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -4265,6 +4289,15 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             classifier: read_type(reader)?,
         },
         | 44 => Refusal::PointwiseDistinct(read_site(reader)?),
+        | 45 => Refusal::EquivUnsupported {
+            at: read_site(reader)?,
+            classifier: read_type(reader)?,
+        },
+        | 46 => Refusal::UncertifiedStratum {
+            at: read_site(reader)?,
+            code: read_type(reader)?,
+        },
+        | 47 => Refusal::RoundTripDistinct(read_site(reader)?),
         | 28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
         | 29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),
         | 30 => Refusal::IndexOccurrence(read_occurrence_site(reader)?),

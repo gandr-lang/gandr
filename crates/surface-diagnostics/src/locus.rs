@@ -609,7 +609,8 @@ impl Annotations
         CheckRefusal::TypeMismatch(_) | CheckRefusal::SortMismatch { .. }
             | CheckRefusal::LevelMismatch { .. } | CheckRefusal::FamilyArgumentClassifier { .. } =>
             role(&ret.context[0_usize], Label::Expected) && role(&ret.context[1_usize], Label::Synthesised),
-        CheckRefusal::DependentBind { .. } | CheckRefusal::CompoundEndpoint { .. } | CheckRefusal::FunextUnsupported { .. } => role(&ret.context[0_usize], Label::Synthesised)
+        CheckRefusal::DependentBind { .. } | CheckRefusal::CompoundEndpoint { .. } | CheckRefusal::FunextUnsupported { .. }
+            | CheckRefusal::EquivUnsupported { .. } | CheckRefusal::UncertifiedStratum { .. } => role(&ret.context[0_usize], Label::Synthesised)
             && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
         CheckRefusal::ShapeMismatch { wanted, .. } => role(&ret.context[0_usize], Label::Met(wanted))
             && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
@@ -658,7 +659,12 @@ fn checked(
             annotated(spanned(origins.value(left)), Label::Endpoint),
             annotated(spanned(origins.value(right)), Label::Endpoint),
         ]),
-        | CheckRefusal::FunextUnsupported { at, classifier } => (spanned(origins.value(at)), [
+        | CheckRefusal::FunextUnsupported { at, classifier }
+        | CheckRefusal::EquivUnsupported { at, classifier }
+        | CheckRefusal::UncertifiedStratum {
+            at,
+            code: classifier,
+        } => (spanned(origins.value(at)), [
             annotated(spanned(origins.value_type(classifier)), Label::Synthesised),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
@@ -721,7 +727,8 @@ fn checked(
         | CheckRefusal::Undecided { at }
         | CheckRefusal::FamilyArity { at, .. }
         | CheckRefusal::StaticLambdaArgument { at }
-        | CheckRefusal::PointwiseDistinct { at } => (spanned(origins.value(at)), UNNAMED),
+        | CheckRefusal::PointwiseDistinct { at }
+        | CheckRefusal::RoundTripDistinct { at } => (spanned(origins.value(at)), UNNAMED),
         | CheckRefusal::StaticClassifierExpected { found, .. } => {
             (spanned(origins.value_type(found)), UNNAMED)
         },
@@ -948,6 +955,9 @@ impl fmt::Display for Checked
             | CheckRefusal::CompoundEndpoint { .. } => f.write_str("a compound endpoint must return a value without effects"),
             | CheckRefusal::FunextUnsupported { .. } => f.write_str("function extensionality is decided for closed pure functions between first-order types"),
             | CheckRefusal::PointwiseDistinct { .. } => f.write_str("function extensionality requires both functions to return one value at every input"),
+            | CheckRefusal::EquivUnsupported { .. } => f.write_str("a universe equivalence is decided for closed pure translators between finite first-order types"),
+            | CheckRefusal::UncertifiedStratum { .. } => f.write_str("a universe equivalence over a recursive type has no finite coverage to certify its round trips"),
+            | CheckRefusal::RoundTripDistinct { .. } => f.write_str("a universe equivalence requires each round trip to return its input at every pattern"),
             | CheckRefusal::TypeMismatch(_) => f.write_str(
                 "the type this term synthesises does not convert to the type it is checked against",
             ),
@@ -1104,7 +1114,7 @@ impl fmt::Display for Shape
             | ExpectedShape::With => "a lazy pair of computation types",
             | ExpectedShape::PathUniverse => "a universe-path classifier `Path_U a b`",
             | ExpectedShape::Sum => "a sum type `A + B`",
-            | ExpectedShape::List => "a List type `List A`",
+            | ExpectedShape::List => "a List type `List(A)`",
             | ExpectedShape::Thunk => "a thunk type `+U C`",
             | ExpectedShape::Returner => "a returner `-F A`",
             | ExpectedShape::Arrow => "an arrow `A → C`",

@@ -4946,7 +4946,7 @@ mod tests
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().copied().map(CoreTerm::Value)),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(CoreTerm::Value)),
-          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Returned(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Returned(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [CoreTerm::Value(code)],
           Value::PathProduct(first, second) => ret.as_slice() == [CoreTerm::Value(first), CoreTerm::Value(second)],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [CoreTerm::Value(forward), CoreTerm::Value(backward)],
@@ -4985,7 +4985,11 @@ mod tests
                 | Value::Record(ref fields) => {
                     fields.values().copied().map(CoreTerm::Value).collect()
                 },
-                | Value::Here(_) | Value::Funext(..) | Value::Returned(_) | Value::Reify(_) => {
+                | Value::Here(_)
+                | Value::Funext(..)
+                | Value::Equiv(..)
+                | Value::Returned(_)
+                | Value::Reify(_) => {
                     panic!("the pure fixture language has no reified stacks")
                 },
                 | Value::Primitive { .. }
@@ -5171,6 +5175,7 @@ mod tests
                                     },
                                     | Value::Here(_)
                                     | Value::Funext(..)
+                                    | Value::Equiv(..)
                                     | Value::Returned(_)
                                     | Value::Reify(_) => {
                                         panic!("the pure fixture language has no reified stacks")
@@ -5366,7 +5371,7 @@ mod tests
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().map(|field| canon[&CoreTerm::Value(*field)])),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().map(|field| canon[&CoreTerm::Value(*field)])),
-          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Returned(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Returned(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [canon[&CoreTerm::Value(code)]],
           Value::PathProduct(first, second) => ret.as_slice() == [canon[&CoreTerm::Value(first)], canon[&CoreTerm::Value(second)]],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [canon[&CoreTerm::Value(forward)], canon[&CoreTerm::Value(backward)]],
@@ -5608,6 +5613,7 @@ mod tests
                             let graft = match *core.value(id).expect("a reached value resolves") {
                                 | Value::Here(_)
                                 | Value::Funext(..)
+                                | Value::Equiv(..)
                                 | Value::Returned(_)
                                 | Value::Reify(_) => {
                                     panic!("the pure fixture language has no reified stacks")
@@ -5969,7 +5975,7 @@ mod tests
              Node::Value(id) => core.value(id).is_some_and(|value| match *value {
               Value::Constructor {datatype,ref fields,..} => ret.iter().copied().eq(core::iter::once(Node::ValueType(datatype)).chain(fields.iter().copied().map(Node::Value))),
               Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::Value)),
-          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Returned(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Returned(_) => false,
               Value::PathRefl(code) => ret.as_slice() == [Node::Value(code)],
               Value::PathProduct(first, second) => ret.as_slice() == [Node::Value(first), Node::Value(second)],
               Value::PathEquiv { path_type, forward, backward, .. } => ret.as_slice() == [Node::ValueType(path_type), Node::Value(forward), Node::Value(backward)],
@@ -6040,6 +6046,7 @@ mod tests
                         },
                         | Value::Here(_)
                         | Value::Funext(..)
+                        | Value::Equiv(..)
                         | Value::Returned(_)
                         | Value::Reify(_) => {
                             panic!("the pure fixture language has no reified stacks")
@@ -6278,6 +6285,7 @@ mod tests
                         },
                         | Value::Here(_)
                         | Value::Funext(..)
+                        | Value::Equiv(..)
                         | Value::Returned(_)
                         | Value::Reify(_) => {
                             panic!("the pure fixture language has no reified stacks")

@@ -334,6 +334,8 @@ pub enum TypeFormer
     Thunk,
     /// `-F A`, the returner over a value type, which is a computation type.
     Returner,
+    /// `List(A)`, the native finite lists over a value type.
+    List,
 }
 
 /// The nullary type heads, with the spellings the surface writes them as.
@@ -374,8 +376,11 @@ const TYPE_ATOMS: [(&str, TypeAtom); 5_usize] = [
 ///   near spellings separating the absent branch.
 /// - witness: `resolve::tests::every_unary_type_head_answers_its_former`
 /// - witness: `resolve::tests::a_nullary_head_answers_no_former`
-const TYPE_FORMERS: [(&str, TypeFormer); 2_usize] =
-    [("+U", TypeFormer::Thunk), ("-F", TypeFormer::Returner)];
+const TYPE_FORMERS: [(&str, TypeFormer); 3_usize] = [
+    ("+U", TypeFormer::Thunk),
+    ("-F", TypeFormer::Returner),
+    ("List", TypeFormer::List),
+];
 
 /// The value-type atom `name` spells, when the nullary table answers it.
 ///
@@ -1374,7 +1379,11 @@ mod tests
     #[test]
     fn every_unary_type_head_answers_its_former()
     {
-        let expected = [("+U", TypeFormer::Thunk), ("-F", TypeFormer::Returner)];
+        let expected = [
+            ("+U", TypeFormer::Thunk),
+            ("-F", TypeFormer::Returner),
+            ("List", TypeFormer::List),
+        ];
 
         for (spelling, former) in expected {
             assert_eq!(

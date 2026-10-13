@@ -100,6 +100,7 @@ use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
 use crate::declaration::body;
 use crate::declaration::signature;
+use crate::equiv::Equivalence;
 use crate::failure::Failure;
 use crate::formation::FormedValueType;
 use crate::formation::form_value_type;
@@ -212,6 +213,8 @@ pub struct ModuleReport
     lifts: BTreeMap<ValueId, Lift>,
     /// The function extensionalities the run decided, by node.
     funexts: BTreeMap<ValueId, Funext>,
+    /// The universe equivalences the run decided, by node.
+    equivalences: BTreeMap<ValueId, Equivalence>,
     /// The body each accepted declaration defines its constant as, elaborated
     /// to the universe it was declared at, by position.
     definitions: BTreeMap<ConstantIndex, ValueId>,
@@ -278,6 +281,18 @@ impl ModuleReport
     pub const fn funexts(&self) -> &BTreeMap<ValueId, Funext>
     {
         &self.funexts
+    }
+
+    /// The universe equivalences the run decided, by node, with the evidence
+    /// each round trip replays.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn equivalences(&self) -> &BTreeMap<ValueId, Equivalence>
+    {
+        &self.equivalences
     }
 
     /// The body each accepted declaration defines its constant as: its body,
@@ -619,6 +634,7 @@ pub fn check_declaration_supported(
     }))
     && &ret.lifts == context.lifts()
     && &ret.funexts == context.funexts()
+    && &ret.equivalences == context.equivalences()
     && ret.definitions.iter().map(|(&constant, &body)| (constant, body))
         .eq(context.definitions().definitions())
     && ret.failures.iter().all(|(constant, failure)|
@@ -653,6 +669,7 @@ pub fn check_module(
         ledger,
         lifts: context.lifts().clone(),
         funexts: context.funexts().clone(),
+        equivalences: context.equivalences().clone(),
         definitions: context.definitions().definitions().collect(),
         data_signatures: context.data_signatures().clone(),
         failures,

@@ -1025,6 +1025,7 @@ fn convert(
                                         | Value::PathRefl(_)
                                         | Value::Here(_)
                                         | Value::Funext(..)
+                                        | Value::Equiv(..)
                                         | Value::Returned(_)
                                         | Value::Constructor { .. }
                                         | Value::Record(_)

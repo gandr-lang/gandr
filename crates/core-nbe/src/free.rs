@@ -858,6 +858,7 @@ Err(_) => false,
                     | Value::PathRefl(code) | Value::Here(code) => one(value(code), Lowering::NONE),
                     | Value::PathProduct(first, second)
                     | Value::Funext(first, second)
+                    | Value::Equiv(first, second)
                     | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second) => {
                         two(value(first), value(second), Lowering::NONE)

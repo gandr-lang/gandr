@@ -1,0 +1,41 @@
+@[ checks ]
+def not(b : Bool) -> -F Bool {
+  case b {
+    true => return +{.1 = unit},
+    false => return +{.0 = unit}
+  }
+}
+
+@[ checks ]
+def same(b : Bool) -> -F Bool {
+  return b
+}
+
+@[ checks ]
+def negation : Path(Type, Bool, Bool) ;
+def negation = equiv(not, not) ;
+
+@[ checks ]
+def moved(xs : List(Bool)) -> -F List(Bool) {
+  become transport(\X. List(X), negation, xs)
+}
+
+@[ runs("cons(inl(unit), cons(inr(unit), nil))") ]
+def both : List(Bool) ;
+def both = cons(+{.0 = unit}, cons(+{.1 = unit}, nil)) ;
+
+@[ checks ]
+def flipped : +U (-F List(Bool)) ;
+def flipped = thunk { become moved(both) } ;
+
+@[ refuses("RoundTripDistinct") ]
+def collapse : Path(Type, Bool, Bool) ;
+def collapse = equiv(not, same) ;
+
+@[ checks ]
+def keep(xs : List(Bool)) -> -F List(Bool) {
+  return xs
+}
+
+@[ refuses("UncertifiedStratum") ]
+def lists = equiv(keep, keep) ;

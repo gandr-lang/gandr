@@ -778,6 +778,9 @@ enum Task
     TransportTuple(gandr_core_term::ComponentCount),
     /// Return the injection of a component transport's value at a summand.
     TransportInjection(gandr_kernel_term::Summand),
+    /// Return the cell of a head's transport and its tail's, the two
+    /// computations on top of the computation stack, the head's first.
+    TransportCons,
     /// Assemble reflexivity from its evaluated point.
     Here
     {
@@ -2579,7 +2582,7 @@ fn run(
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
             | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) | Task::ListFold { .. }
-            | Task::PathTransport(_) | Task::TransportTuple(_) | Task::TransportInjection(_) => machine.tasks.len() >= entry_tasks,
+            | Task::PathTransport(_) | Task::TransportTuple(_) | Task::TransportInjection(_) | Task::TransportCons => machine.tasks.len() >= entry_tasks,
             Task::Here { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && machine.values.len() == entry_values
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)),
@@ -2795,6 +2798,17 @@ fn step(
             machine
                 .comps
                 .push(domain.comp_return(injected, CompTermFace::Reduced));
+            Ok(())
+        },
+        | Task::TransportCons => {
+            let tail = machine.pop_comp()?;
+            let head = machine.pop_comp()?;
+            let first = returned_value(domain, head)?;
+            let second = returned_value(domain, tail)?;
+            let cell = domain.value_list_cons(first, second, TermFace::Reduced);
+            machine
+                .comps
+                .push(domain.comp_return(cell, CompTermFace::Reduced));
             Ok(())
         },
         | Task::Here { term } => {
@@ -3046,9 +3060,10 @@ fn step_value(
             machine.tasks.push(Task::Value { term: first, env });
             Ok(())
         },
-        // A closed native path and a closed funext are inert certificates:
-        // nothing reduces them, and transport reads their syntax.
-        | Value::PathRefl(_) | Value::PathEquiv { .. } | Value::Funext(..) => {
+        // A closed native path, a closed funext and a closed equivalence are
+        // inert certificates: nothing reduces them, and transport reads their
+        // syntax.
+        | Value::PathRefl(_) | Value::PathEquiv { .. } | Value::Funext(..) | Value::Equiv(..) => {
             machine
                 .values
                 .push(domain.value_path_certificate(term, TermFace::Source(term)));
@@ -4215,9 +4230,9 @@ fn step_case_branches(
 ///
 /// # Specification
 /// - requires: nothing; missing operands are admitted as malformed spines.
-/// - ensures: reflexivity returns unchanged; equivalence invokes the forward
-///   map; product transport uses ordinary bind closures, including neutral
-///   cases.
+/// - ensures: reflexivity returns unchanged; an equivalence, native or written
+///   `equiv(f, g)`, invokes the forward map; product transport uses ordinary
+///   bind closures, including neutral cases.
 /// - provides: a returned value, a forward application or sequenced components,
 ///   never an evaluation of a certificate merely to compare it.
 /// - fails: missing operands are `MachineInvariant`; dangling nodes, non-path
@@ -4238,7 +4253,7 @@ fn step_case_branches(
     ensures: |ret| if values < 2 { ret == Err(EvalFault::MachineInvariant) && machine.values.is_empty() && machine.comps.len() == comps && machine.tasks.len() == tasks } else { ret.is_err() || match path.and_then(|id| domain.value(id)) {
         Some(&DomainValue::PathCertificate { certificate, .. }) => match core.value(certificate) {
             Some(&Value::PathRefl(_)) => machine.values.len() == values.saturating_sub(2) && machine.tasks.len() == tasks && machine.comps.len() == comps.saturating_add(1) && machine.comps.last().is_some_and(|&id| matches!(domain.computation(id), Some(&DomainComp::Return { value: returned, .. }) if Some(returned) == value)),
-            Some(&Value::PathEquiv { forward, .. }) => machine.values.len() == values.saturating_sub(1) && machine.values.last().copied() == value && machine.comps.len() == comps && matches!(machine.tasks.get(tasks..), Some(&[Task::Apply, Task::Force, Task::Value { term, .. }]) if term == forward),
+            Some(&(Value::PathEquiv { forward, .. } | Value::Equiv(forward, _))) => machine.values.len() == values.saturating_sub(1) && machine.values.last().copied() == value && machine.comps.len() == comps && matches!(machine.tasks.get(tasks..), Some(&[Task::Apply, Task::Force, Task::Value { term, .. }]) if term == forward),
             _ => false,
         },
         Some(&DomainValue::PathProduct { .. }) => (machine.values.len() == values && machine.tasks.len() == tasks.saturating_add(2) && machine.comps.len() == comps) || (machine.values.len() == values.saturating_sub(2) && machine.tasks.len() == tasks && machine.comps.len() == comps.saturating_add(1)),
@@ -4266,7 +4281,7 @@ fn step_transport(
                     .push(domain.comp_return(value, CompTermFace::Reduced));
                 Ok(())
             },
-            | Some(&Value::PathEquiv { forward, .. }) => {
+            | Some(&(Value::PathEquiv { forward, .. } | Value::Equiv(forward, _))) => {
                 machine.values.push(value);
                 machine.tasks.push(Task::Apply);
                 machine.tasks.push(Task::Force);
@@ -4329,7 +4344,10 @@ fn step_transport(
 /// - ensures: reflexivity returns the operand unchanged; a product motive read
 ///   against a tuple of its arity transports each component in its own motive
 ///   and returns their tuple; a sum motive read against an injection transports
-///   the payload in its summand's motive and returns it injected; any other
+///   the payload in its summand's motive and returns it injected; a list motive
+///   returns `nil` unchanged and a cell as the cell of its head transported in
+///   the element's motive and its tail in the list's; the decode of the
+///   motive's own binder hands a universe path to native transport; any other
 ///   configuration over a stuck path stacks the transport on the path's spine.
 /// - provides: transport's computation rules — identity on `here`, and through
 ///   the motive's constructors — and its stuck form.
@@ -4350,6 +4368,7 @@ fn step_transport(
 /// - witness: `identity::tests::transport_through_a_product_is_componentwise`
 /// - witness: `identity::tests::transport_through_a_sum_keeps_the_summand`
 /// - witness: `identity::tests::transport_along_a_stuck_path_is_stuck`
+/// - witness: `identity::tests::transport_moves_a_list_through_a_universe_path`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err() || (machine.values.len() == values.saturating_sub(2_usize)
@@ -4418,6 +4437,39 @@ fn step_path_transport(
                 machine.tasks.push(Task::Supply(path));
                 return Ok(());
             }
+        },
+        | (Some(&ValueType::List(_)), DomainValue::ListNil { .. }) => {
+            machine
+                .comps
+                .push(domain.comp_return(value, CompTermFace::Reduced));
+            return Ok(());
+        },
+        | (Some(&ValueType::List(element)), DomainValue::ListCons { first, second, .. }) => {
+            let head = domain.value_closure_node(crate::ValueBody::ValueType(element), environment);
+            machine.tasks.push(Task::TransportCons);
+            machine.tasks.push(Task::PathTransport(motive));
+            machine.tasks.push(Task::Supply(second));
+            machine.tasks.push(Task::Supply(path));
+            machine.tasks.push(Task::PathTransport(head));
+            machine.tasks.push(Task::Supply(first));
+            machine.tasks.push(Task::Supply(path));
+            return Ok(());
+        },
+        // The motive's own binder decoded: the universe path itself carries
+        // the operand, as native transport does.
+        | (Some(&ValueType::Element { code, .. }), _)
+            if matches!(
+                core.value(code),
+                Some(&Value::Variable { zone: gandr_core_term::Zone::Intuitionistic, index }) if u32::from(index) == 0
+            ) && matches!(
+                carried,
+                DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. }
+            ) =>
+        {
+            machine.tasks.push(Task::Transport);
+            machine.tasks.push(Task::Supply(value));
+            machine.tasks.push(Task::Supply(path));
+            return Ok(());
         },
         | _ => {},
     }
