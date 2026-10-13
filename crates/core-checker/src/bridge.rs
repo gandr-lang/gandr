@@ -1602,6 +1602,8 @@ impl Positions
             | (ConversionDecision::Force { thunk: a }, ConversionDecision::Force { thunk: b }) => mapped(a,b),
             | (ConversionDecision::Freeze { constant: a, side: x }, ConversionDecision::Freeze { constant: b, side: y })
             | (ConversionDecision::EtaExpand { side: x, variable: a }, ConversionDecision::EtaExpand { side: y, variable: b }) => x == y && mapped(a,b),
+            | (ConversionDecision::ReturnEta { side: x }, ConversionDecision::ReturnEta { side: y })
+            | (ConversionDecision::Reassociate { side: x }, ConversionDecision::Reassociate { side: y }) => x == y,
             | (ConversionDecision::ComparedShared { left: a, right: b }, ConversionDecision::ComparedShared { left: c, right: d }) => mapped(a,c) && mapped(b,d),
             | (ConversionDecision::NegativeSubgoal { position: a }, ConversionDecision::NegativeSubgoal { position: b }) => a == b,
             | (ConversionDecision::Decompose, ConversionDecision::Decompose) => true,
@@ -1648,6 +1650,8 @@ impl Positions
                 side,
                 variable: node(variable),
             },
+            | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
+            | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
             | ConversionDecision::Force { thunk } => {
                 ConversionDecision::Force { thunk: node(thunk) }
             },

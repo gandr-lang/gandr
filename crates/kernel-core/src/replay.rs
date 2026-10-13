@@ -46,7 +46,13 @@
 //! | a thunk against a thunk or a neutral value | two `Force`s |
 //! | a lambda against a neutral computation | `EtaExpand` on the neutral side |
 //! | a lazy pairing against a neutral computation | nothing for the η step: both projections of the neutral are compared with the components; under a refutation, `NegativeSubgoal` picks one |
+//! | two neutrals over one head whose binds differ | `Reassociate` on a side stacking two binds, else `ReturnEta` on the side one bind short |
 //! | anything else | a leaf decides it or a decomposition pushes its premises; under a refutation, `NegativeSubgoal` picks the one premise |
+//!
+//! The bind row comes before any decomposition of the pair, explicit or
+//! implicit: a pair still owing a commuting conversion of `F` is not in the
+//! form its positions compare in, so a `Decompose` there refuses, and a
+//! refutation through its positions is never reached.
 //!
 //! A rigid term is built only of formers, variables and constants without a
 //! body: nothing in it can reduce, so two α-distinct rigid terms never convert.
@@ -68,6 +74,15 @@
 //! would widen the vocabulary the engine and the kernel share by a step with
 //! no choice in it. **Reversal.** A second rule the same two shapes admit
 //! would make the step a choice, and the choice would take a decision.
+//!
+//! # The kernel's own conversion
+//!
+//! [`convert`] is the same loop with no trace: each rule the shapes force —
+//! weak head reduction, the two forces, both η laws, the two bind laws, a
+//! decomposition — fires unread, no constant unfolds and no refutation is
+//! certified. It is the equality a judgement the kernel decides alone reads,
+//! reflexivity's endpoints first, so the kernel admits what the engine's
+//! normalizer admits by the same laws without asking an engine for a trace.
 //!
 //! # Three verdicts
 //!
@@ -662,17 +677,13 @@ where
         | EngineClaim::NotConvertible => Expect::NotConvertible,
         | EngineClaim::Declined => return KernelVerdict::Declined(ReplayDecline::EngineDeclined),
     };
-    let (left, right) = match sides {
-        | ReplaySides::Values(left, right) => (Term::Value(left), Term::Value(right)),
-        | ReplaySides::Computations(left, right) => {
-            (Term::Computation(left), Term::Computation(right))
-        },
-    };
+    let (left, right) = terms(sides);
     let watermark = arena.watermark();
     let mut run = Replay {
         arena,
         unfoldings,
         trace: trace.into_iter().peekable(),
+        reading: Reading::Recorded,
         position: 0,
         spent: 0,
         budget: u64::from(budget),
@@ -681,6 +692,89 @@ where
     };
     let outcome = run.drive(Goal::premise(Premise { left, right }, expect));
     run.arena.truncate_to(watermark);
+    concluded(outcome, expect)
+}
+
+/// The kernel's own conversion of two terms: the replay with no trace, every
+/// rule the shapes force fired unread.
+///
+/// The rules that fire are the ones no choice stands behind: weak head
+/// reduction, forcing two thunks, η for a lambda against a neutral, the two
+/// commuting conversions of `F`, and every structural decomposition. No
+/// constant unfolds, so a constant is compared by name, and no refutation is
+/// certified: a pair this cannot relate declines rather than separating.
+///
+/// # Specification
+/// - requires: the two sides live in `arena`.
+/// - ensures: [`KernelVerdict::Convertible`] exactly when the forced rules
+///   derive the two sides convertible within `budget`; otherwise a
+///   [`KernelVerdict::Declined`], never [`KernelVerdict::NotConvertible`].
+///   `arena` holds what it held on entry.
+/// - provides: the conversion a judgement the kernel decides by itself reads,
+///   with no engine to supply a trace: reflexivity's endpoints first of all.
+/// - fails: never — a decline is a verdict.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an η-expanded pair, a reassociated pair and a pair apart
+///   in one continuation separate a conversion that fires the forced rules from
+///   one that compares syntax, and from one that relates everything.
+/// - witness: `replay::tests::the_kernel_converts_by_the_forced_rules_alone`
+/// - witness: `element_identity::tests::reflexivity_converts_its_endpoints_by_the_laws_of_bind`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| arena.watermark() == before && ret != KernelVerdict::NotConvertible,
+)]
+#[inline]
+#[must_use]
+pub fn convert(
+    arena: &mut TermArena,
+    sides: ReplaySides,
+    budget: ReplayBudget,
+) -> KernelVerdict
+{
+    let (left, right) = terms(sides);
+    let watermark = arena.watermark();
+    let none = Unfoldings::default();
+    let mut run = Replay {
+        arena,
+        unfoldings: &none,
+        trace: core::iter::empty().peekable(),
+        reading: Reading::Forced,
+        position: 0,
+        spent: 0,
+        budget: u64::from(budget),
+        table: ContentTable::new(),
+        memo: NullMemo,
+    };
+    let outcome = run.drive(Goal::premise(Premise { left, right }, Expect::Convertible));
+    run.arena.truncate_to(watermark);
+    concluded(outcome, Expect::Convertible)
+}
+
+/// The two sides as goal terms.
+///
+/// # Specification
+/// trivial.
+const fn terms(sides: ReplaySides) -> (Term, Term)
+{
+    match sides {
+        | ReplaySides::Values(left, right) => (Term::Value(left), Term::Value(right)),
+        | ReplaySides::Computations(left, right) => {
+            (Term::Computation(left), Term::Computation(right))
+        },
+    }
+}
+
+/// The verdict a finished run owes `expect`.
+///
+/// # Specification
+/// trivial.
+const fn concluded(
+    outcome: Result<(), Stop>,
+    expect: Expect,
+) -> KernelVerdict
+{
     match outcome {
         | Ok(()) => match expect {
             | Expect::Convertible => KernelVerdict::Convertible,
@@ -1104,6 +1198,45 @@ enum Frame
     Project(Side),
 }
 
+/// Where a goal's forced one-sided rewrites are read from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reading
+{
+    /// The trace names each one, and a missing or different name refuses.
+    Recorded,
+    /// Each fires where the shapes force it, reading nothing: the kernel's own
+    /// conversion, which has no trace.
+    Forced,
+}
+
+/// A one-sided rewrite the shapes force, as the trace names it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Forced
+{
+    /// One side of a thunk goal forced.
+    Force,
+    /// The neutral side of a lambda goal applied to a fresh variable.
+    Eta(ConversionSide),
+    /// The side read as its bind into `return`.
+    ReturnEta(ConversionSide),
+    /// The two binds nearest the side's head made one.
+    Reassociate(ConversionSide),
+}
+
+/// Which commuting conversion of `F` two neutral shapes over one head still
+/// owe before their spines decompose.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BindRule
+{
+    /// Neither spine stacks two binds in a row, and neither stops one bind
+    /// short of the other: the spines compare position by position.
+    Normal,
+    /// The side whose spine stacks two binds in a row, the left first.
+    Reassociate(ConversionSide),
+    /// The side whose spine stops one bind short of the other's.
+    ReturnEta(ConversionSide),
+}
+
 /// What stands at a fixpoint's unfolding gate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Gate
@@ -1171,6 +1304,8 @@ where
     unfoldings: &'run Unfoldings,
     /// The decisions still unread.
     trace: Peekable<I>,
+    /// Whether forced rewrites are read off the trace or fired unread.
+    reading: Reading,
     /// The position of the next unread decision.
     position: usize,
     /// The steps taken.
@@ -1294,8 +1429,11 @@ where
             {
                 return Err(self.refuse(next));
             }
+            let bind = bind_rule(&left_shape, &right_shape);
             if matches!(next, Next::Decision(ConversionDecision::Decompose)) {
-                if !matches!(rule(&left_shape, &right_shape), Rule::Structural) {
+                if !matches!(rule(&left_shape, &right_shape), Rule::Structural)
+                    || bind != BindRule::Normal
+                {
                     return Err(self.refuse(next));
                 }
                 return self.structural(&goal, &left_shape, &right_shape, goals);
@@ -1316,6 +1454,25 @@ where
                     },
                     | Compared::Open => {},
                 }
+            }
+            match bind {
+                | BindRule::Normal => {},
+                | BindRule::Reassociate(side) => {
+                    let held = match side {
+                        | ConversionSide::Left => &left_shape,
+                        | ConversionSide::Right => &right_shape,
+                    };
+                    let Shape::Neutral(_, ref spine) = *held
+                    else {
+                        return Err(unreadable());
+                    };
+                    self.reassociate(&mut goal, side, spine)?;
+                    continue;
+                },
+                | BindRule::ReturnEta(side) => {
+                    self.return_eta(&mut goal, side)?;
+                    continue;
+                },
             }
             match rule(&left_shape, &right_shape) {
                 | Rule::Constants => {
@@ -1502,6 +1659,8 @@ where
             | ConversionDecision::Postpone { .. }
             | ConversionDecision::Freeze { .. }
             | ConversionDecision::EtaExpand { .. }
+            | ConversionDecision::ReturnEta { .. }
+            | ConversionDecision::Reassociate { .. }
             | ConversionDecision::Force { .. }
             | ConversionDecision::ComparedShared { .. }
             | ConversionDecision::Decompose
@@ -1537,7 +1696,8 @@ where
                 },
                 _ => false,
             };
-            self.position == before.0.saturating_add(2) && agrees(before.1, goal.left) && agrees(before.2, goal.right)
+            self.position == before.0.saturating_add(match self.reading { Reading::Recorded => 2, Reading::Forced => 0 })
+                && agrees(before.1, goal.left) && agrees(before.2, goal.right)
         } else {
             goal.left == before.1 && goal.right == before.2
                 && self.position >= before.0 && self.position <= before.0.saturating_add(2)
@@ -1549,11 +1709,7 @@ where
     ) -> Result<(), Stop>
     {
         for _ in [ConversionSide::Left, ConversionSide::Right] {
-            let next = self.peek();
-            if !matches!(next, Next::Decision(ConversionDecision::Force { .. })) {
-                return Err(self.refuse(next));
-            }
-            self.take();
+            self.read(Forced::Force)?;
         }
         let left = self.forced(goal.left)?;
         let right = self.forced(goal.right)?;
@@ -1650,7 +1806,7 @@ where
     #[spec(
         captures: before = (self.position, goal.side(side), goal.side(opposite(side))),
         ensures: |ret| if ret.is_ok() {
-            self.position == before.0.saturating_add(1)
+            self.position == before.0.saturating_add(match self.reading { Reading::Recorded => 1, Reading::Forced => 0 })
                 && match (before.2, goal.side(opposite(side)), goal.side(side)) {
                     (Term::Computation(lambda), Term::Computation(body), Term::Computation(applied)) =>
                         self.arena.computation(lambda) == Some(&Computation::Lambda(body))
@@ -1668,11 +1824,6 @@ where
         side: ConversionSide,
     ) -> Result<(), Stop>
     {
-        let next = self.peek();
-        if !matches!(next, Next::Decision(ConversionDecision::EtaExpand { side: named, .. }) if named == side)
-        {
-            return Err(self.refuse(next));
-        }
         let (Term::Computation(neutral), Term::Computation(lambda)) =
             (goal.side(side), goal.side(opposite(side)))
         else {
@@ -1682,7 +1833,7 @@ where
         else {
             return Err(unreadable());
         };
-        self.take();
+        self.read(Forced::Eta(side))?;
         let shifted = shift_computation(
             self.arena,
             &mut self.table,
@@ -1765,6 +1916,217 @@ where
             ]),
         };
         self.schedule(goal.expect, premises, goals)
+    }
+
+    /// Read the decision naming `wanted` off the trace, or fire it unread.
+    ///
+    /// # Specification
+    /// - requires: the shapes force `wanted` at the current goal.
+    /// - ensures: under [`Reading::Recorded`], `Ok` after consuming exactly one
+    ///   decision when the next one names `wanted`, side and all; under
+    ///   [`Reading::Forced`], `Ok` without reading.
+    /// - provides: the one place a forced rewrite meets the trace.
+    /// - fails: a refusal when the trace names anything else or has ended.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a missing or wrong-side decision refuses where the
+    ///   recorded replay reads it, and the forced conversion relates the same
+    ///   pair with no trace at all.
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    /// - witness: `replay::tests::the_laws_of_bind_replay_by_name`
+    /// - witness: `replay::tests::the_kernel_converts_by_the_forced_rules_alone`
+    #[spec(
+        captures: before = self.position,
+        ensures: |ret| match (self.reading, ret) {
+            (Reading::Forced, Ok(())) | (Reading::Recorded, Err(_)) => self.position == before,
+            (Reading::Recorded, Ok(())) => self.position == before.saturating_add(1),
+            (Reading::Forced, Err(_)) => false,
+        },
+    )]
+    fn read(
+        &mut self,
+        wanted: Forced,
+    ) -> Result<(), Stop>
+    {
+        if self.reading == Reading::Forced {
+            return Ok(());
+        }
+        let next = self.peek();
+        let named = match (wanted, next) {
+            | (Forced::Force, Next::Decision(ConversionDecision::Force { .. })) => true,
+            | (
+                Forced::Eta(side),
+                Next::Decision(ConversionDecision::EtaExpand { side: named, .. }),
+            )
+            | (
+                Forced::ReturnEta(side),
+                Next::Decision(ConversionDecision::ReturnEta { side: named }),
+            )
+            | (
+                Forced::Reassociate(side),
+                Next::Decision(ConversionDecision::Reassociate { side: named }),
+            ) => named == side,
+            | (
+                Forced::Force | Forced::Eta(_) | Forced::ReturnEta(_) | Forced::Reassociate(_),
+                Next::Decision(_) | Next::End,
+            ) => false,
+        };
+        if !named {
+            return Err(self.refuse(next));
+        }
+        self.take();
+        Ok(())
+    }
+
+    /// Read the computation on `side` as its bind into `return`.
+    ///
+    /// # Specification
+    /// - requires: [`bind_rule`] answered [`BindRule::ReturnEta`] naming
+    ///   `side`.
+    /// - ensures: `side` becomes `M to x. return x` over the `M` it held, the
+    ///   other side unchanged.
+    /// - provides: the replay of the η-rule of `F`.
+    /// - fails: a refusal unless the trace names `ReturnEta` on `side`, or when
+    ///   the side is not a computation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a neutral against its own bind into `return` converts
+    ///   only through this rewrite, and the same trace naming the other side
+    ///   refuses.
+    /// - witness: `replay::tests::the_laws_of_bind_replay_by_name`
+    #[spec(
+        captures: before = (goal.side(side), goal.side(opposite(side))),
+        ensures: |ret| goal.side(opposite(side)) == before.1 && if ret.is_ok() {
+            matches!((before.0, goal.side(side)), (Term::Computation(held), Term::Computation(expanded))
+                if matches!(self.arena.computation(expanded), Some(&Computation::Bind(bound, returned))
+                    if bound == held && matches!(self.arena.computation(returned), Some(&Computation::Return(variable))
+                        if self.arena.value(variable) == Some(&Value::Variable(DeBruijnIndex::from(0))))))
+        } else {
+            goal.side(side) == before.0
+        },
+    )]
+    fn return_eta(
+        &mut self,
+        goal: &mut Goal,
+        side: ConversionSide,
+    ) -> Result<(), Stop>
+    {
+        let Term::Computation(held) = goal.side(side)
+        else {
+            return Err(unreadable());
+        };
+        self.read(Forced::ReturnEta(side))?;
+        let variable = self.arena.value_variable(DeBruijnIndex::from(0));
+        let returned = self.arena.computation_return(variable);
+        let expanded = self.arena.computation_bind(held, returned);
+        goal.set(side, Term::Computation(expanded));
+        Ok(())
+    }
+
+    /// Make the two binds nearest the head of `side` one.
+    ///
+    /// # Specification
+    /// - requires: [`bind_rule`] answered [`BindRule::Reassociate`] naming
+    ///   `side`, and `spine` is that side's spine.
+    /// - ensures: the node `(M to x. N) to y. P` that holds the pair becomes `M
+    ///   to x. (N to y. P')`, with `P'` the continuation shifted past the new
+    ///   binder, and every application, bind and projection above it is rebuilt
+    ///   unchanged; the other side is unchanged.
+    /// - provides: the replay of bind associativity.
+    /// - fails: a refusal unless the trace names `Reassociate` on `side`, or
+    ///   when the side's term does not hold the pair the spine says it does.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Termination
+    /// - reason: the `for` loops below walk a bounded count of frames, not
+    ///   recursion.
+    /// - measure: the frames between the root and the pair, fewer than the
+    ///   spine's length.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a left-nested pair of binds under an application
+    ///   converts to its right-nested twin only through this rewrite, and a
+    ///   continuation reading the outer binder separates a shift from none.
+    /// - witness: `replay::tests::the_laws_of_bind_replay_by_name`
+    #[spec(
+        captures: before = (goal.side(side), goal.side(opposite(side))),
+        ensures: |ret| goal.side(opposite(side)) == before.1
+            && (ret.is_ok() || goal.side(side) == before.0),
+    )]
+    fn reassociate(
+        &mut self,
+        goal: &mut Goal,
+        side: ConversionSide,
+        spine: &[Elimination],
+    ) -> Result<(), Stop>
+    {
+        let Term::Computation(root) = goal.side(side)
+        else {
+            return Err(unreadable());
+        };
+        let pair = spine
+            .windows(2)
+            .position(|pair| matches!(pair, &[Elimination::Bind(_), Elimination::Bind(_)]))
+            .ok_or_else(unreadable)?;
+        let above = spine
+            .len()
+            .checked_sub(pair)
+            .and_then(|rest| rest.checked_sub(2))
+            .ok_or_else(unreadable)?;
+        let mut frames = Vec::with_capacity(above);
+        let mut focus = root;
+        for _ in 0 .. above {
+            match self.arena.computation(focus) {
+                | Some(&Computation::Application(head, argument)) => {
+                    frames.push(Frame::Apply(argument));
+                    focus = head;
+                },
+                | Some(&Computation::Bind(bound, body)) => {
+                    frames.push(Frame::Bind(body));
+                    focus = bound;
+                },
+                | Some(&Computation::Project(projected, pair)) => {
+                    frames.push(Frame::Project(projected));
+                    focus = pair;
+                },
+                | Some(_) | None => return Err(unreadable()),
+            }
+        }
+        let Some(&Computation::Bind(inner, outer)) = self.arena.computation(focus)
+        else {
+            return Err(unreadable());
+        };
+        let Some(&Computation::Bind(head, first)) = self.arena.computation(inner)
+        else {
+            return Err(unreadable());
+        };
+        self.read(Forced::Reassociate(side))?;
+        let then = shift_computation(
+            self.arena,
+            &mut self.table,
+            &mut self.memo,
+            outer,
+            BinderDepth::from(1),
+            BinderDepth::from(1),
+        );
+        let fused = self.arena.computation_bind(first, then);
+        let mut rebuilt = self.arena.computation_bind(head, fused);
+        for &frame in frames.iter().rev() {
+            rebuilt = self.wrap(rebuilt, frame);
+        }
+        goal.set(side, Term::Computation(rebuilt));
+        Ok(())
     }
 
     /// Close or decompose a goal no decision is needed to rewrite.
@@ -3628,6 +3990,81 @@ fn rule(
     }
 }
 
+/// The commuting conversion of `F` two shapes still owe.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`BindRule::Normal`] unless both shapes are neutral over one head
+///   no δ-rule can unfold; otherwise [`BindRule::Reassociate`] naming the first
+///   side whose spine stacks two binds in a row, the left before the right;
+///   else [`BindRule::ReturnEta`] naming the side whose spine is one
+///   elimination shorter than the other's when the other's ends in a bind; else
+///   [`BindRule::Normal`].
+/// - provides: the order both the engine and the replay normalize a pair's
+///   binds in, so the trace names each rewrite where the replay meets it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3: a stacked pair on either side, a spine one bind short on
+///   either side, and a pair already normal each select a different rule;
+///   reading the right side first or expanding a spine more than one bind short
+///   changes the trace the engine's derivation must name.
+/// - witness: `replay::tests::the_laws_of_bind_replay_by_name`
+#[spec(ensures: |ret| {
+    let stacked = |spine: &[Elimination]| spine.windows(2).any(|pair| matches!(pair, &[Elimination::Bind(_), Elimination::Bind(_)]));
+    let ends = |spine: &[Elimination]| matches!(spine.last(), Some(&Elimination::Bind(_)));
+    match (left, right) {
+        (&Shape::Neutral(one, ref left_spine), &Shape::Neutral(other, ref right_spine))
+            if one == other && !matches!(one, Head::Constant(_, Status::Defined)) =>
+            ret == if stacked(left_spine) {
+                BindRule::Reassociate(ConversionSide::Left)
+            } else if stacked(right_spine) {
+                BindRule::Reassociate(ConversionSide::Right)
+            } else if left_spine.len().checked_add(1) == Some(right_spine.len()) && ends(right_spine) {
+                BindRule::ReturnEta(ConversionSide::Left)
+            } else if right_spine.len().checked_add(1) == Some(left_spine.len()) && ends(left_spine) {
+                BindRule::ReturnEta(ConversionSide::Right)
+            } else {
+                BindRule::Normal
+            },
+        _ => ret == BindRule::Normal,
+    }
+})]
+fn bind_rule(
+    left: &Shape,
+    right: &Shape,
+) -> BindRule
+{
+    let (&Shape::Neutral(one, ref left_spine), &Shape::Neutral(other, ref right_spine)) =
+        (left, right)
+    else {
+        return BindRule::Normal;
+    };
+    if one != other || matches!(one, Head::Constant(_, Status::Defined)) {
+        return BindRule::Normal;
+    }
+    let stacked = |spine: &[Elimination]| {
+        spine
+            .windows(2)
+            .any(|pair| matches!(pair, &[Elimination::Bind(_), Elimination::Bind(_)]))
+    };
+    let ends = |spine: &[Elimination]| matches!(spine.last(), Some(&Elimination::Bind(_)));
+    if stacked(left_spine) {
+        return BindRule::Reassociate(ConversionSide::Left);
+    }
+    if stacked(right_spine) {
+        return BindRule::Reassociate(ConversionSide::Right);
+    }
+    if left_spine.len().checked_add(1) == Some(right_spine.len()) && ends(right_spine) {
+        return BindRule::ReturnEta(ConversionSide::Left);
+    }
+    if right_spine.len().checked_add(1) == Some(left_spine.len()) && ends(left_spine) {
+        return BindRule::ReturnEta(ConversionSide::Right);
+    }
+    BindRule::Normal
+}
+
 /// The premises two spines decompose into, innermost elimination first.
 ///
 /// # Specification
@@ -3885,6 +4322,7 @@ mod tests
     use super::TracePosition;
     use super::Unfoldable;
     use super::Unfoldings;
+    use super::convert;
     use super::replay;
 
     /// Replay `trace` for `sides` under the default budget.
@@ -4518,6 +4956,189 @@ mod tests
     }
 
     #[test]
+    fn the_laws_of_bind_replay_by_name()
+    {
+        let mut arena = TermArena::new();
+        let none = Unfoldings::default();
+        let return_eta = |side| ConversionDecision::ReturnEta { side };
+        let reassociate = |side| ConversionDecision::Reassociate { side };
+        let negative = |position: u32| ConversionDecision::NegativeSubgoal {
+            position: SubgoalPosition::from(position),
+        };
+        let variable =
+            |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+
+        // F-η: `force f` against `force f to x. return x`, `f` free.
+        let function = variable(&mut arena, 0);
+        let held = arena.computation_force(function);
+        let bound = variable(&mut arena, 0);
+        let returned = arena.computation_return(bound);
+        let expanded = arena.computation_bind(held, returned);
+        let eta = ReplaySides::Computations(held, expanded);
+        let flipped = ReplaySides::Computations(expanded, held);
+        assert_eq!(
+            run(&mut arena, &none, eta, EngineClaim::Convertible, &[
+                return_eta(ConversionSide::Left)
+            ]),
+            KernelVerdict::Convertible
+        );
+        assert_eq!(
+            run(&mut arena, &none, flipped, EngineClaim::Convertible, &[
+                return_eta(ConversionSide::Right)
+            ]),
+            KernelVerdict::Convertible
+        );
+        assert_eq!(
+            run(&mut arena, &none, eta, EngineClaim::Convertible, &[]),
+            refused(ReplayRefusal::Exhausted)
+        );
+        for wrong in [
+            return_eta(ConversionSide::Right),
+            reassociate(ConversionSide::Left),
+            ConversionDecision::Decompose,
+        ] {
+            assert_eq!(
+                run(&mut arena, &none, eta, EngineClaim::Convertible, &[wrong]),
+                refused(ReplayRefusal::Inapplicable {
+                    at: TracePosition::from(0),
+                })
+            );
+        }
+
+        // Not pointwise: `force f` against `force f to x. return g`, `g`
+        // free. The refutation runs through the law, never past it.
+        let other = variable(&mut arena, 2);
+        let constant = arena.computation_return(other);
+        let apart = arena.computation_bind(held, constant);
+        let apart = ReplaySides::Computations(held, apart);
+        assert_eq!(
+            run(&mut arena, &none, apart, EngineClaim::NotConvertible, &[
+                return_eta(ConversionSide::Left),
+                negative(0),
+                negative(0)
+            ]),
+            KernelVerdict::NotConvertible
+        );
+        assert_eq!(
+            run(&mut arena, &none, apart, EngineClaim::NotConvertible, &[
+                negative(0),
+                negative(0)
+            ]),
+            refused(ReplayRefusal::Inapplicable {
+                at: TracePosition::from(0),
+            })
+        );
+
+        // Associativity: `(force f to x. g x) to y. g y` against
+        // `force f to x. (g x to y. g y)`, `f` and `g` free; the outer
+        // continuation's `g` moves past the new binder.
+        let applied = |arena: &mut TermArena, function: u32| {
+            let function = variable(arena, function);
+            let forced = arena.computation_force(function);
+            let argument = variable(arena, 0);
+            arena.computation_application(forced, argument)
+        };
+        let function = variable(&mut arena, 1);
+        let head = arena.computation_force(function);
+        let first = applied(&mut arena, 1);
+        let inner = arena.computation_bind(head, first);
+        let nested = arena.computation_bind(inner, first);
+        let shifted = applied(&mut arena, 2);
+        let fused = arena.computation_bind(first, shifted);
+        let reassociated = arena.computation_bind(head, fused);
+        let associativity = ReplaySides::Computations(nested, reassociated);
+        assert_eq!(
+            run(
+                &mut arena,
+                &none,
+                associativity,
+                EngineClaim::Convertible,
+                &[reassociate(ConversionSide::Left)]
+            ),
+            KernelVerdict::Convertible
+        );
+        assert_eq!(
+            run(
+                &mut arena,
+                &none,
+                ReplaySides::Computations(reassociated, nested),
+                EngineClaim::Convertible,
+                &[reassociate(ConversionSide::Right)]
+            ),
+            KernelVerdict::Convertible
+        );
+        assert_eq!(
+            run(
+                &mut arena,
+                &none,
+                associativity,
+                EngineClaim::Convertible,
+                &[reassociate(ConversionSide::Right)]
+            ),
+            refused(ReplayRefusal::Inapplicable {
+                at: TracePosition::from(0),
+            })
+        );
+
+        // Without the shift the outer continuation would read `x` for `g`:
+        // that twin is apart, and its refutation names the continuation.
+        let unshifted = arena.computation_bind(first, first);
+        let unshifted = arena.computation_bind(head, unshifted);
+        assert_eq!(
+            run(
+                &mut arena,
+                &none,
+                ReplaySides::Computations(nested, unshifted),
+                EngineClaim::NotConvertible,
+                &[reassociate(ConversionSide::Left), negative(0), negative(1)]
+            ),
+            KernelVerdict::NotConvertible
+        );
+    }
+
+    #[test]
+    fn the_kernel_converts_by_the_forced_rules_alone()
+    {
+        let mut arena = TermArena::new();
+        let variable =
+            |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+        let function = variable(&mut arena, 0);
+        let held = arena.computation_force(function);
+        let bound = variable(&mut arena, 0);
+        let returned = arena.computation_return(bound);
+        let expanded = arena.computation_bind(held, returned);
+        let other = variable(&mut arena, 2);
+        let constant = arena.computation_return(other);
+        let apart = arena.computation_bind(held, constant);
+        // The thunks of both, so the forces fire unread too.
+        let suspended = arena.value_thunk(held);
+        let suspended_expanded = arena.value_thunk(expanded);
+        let watermark = arena.watermark();
+
+        for sides in [
+            ReplaySides::Computations(held, expanded),
+            ReplaySides::Computations(expanded, held),
+            ReplaySides::Values(suspended, suspended_expanded),
+        ] {
+            assert_eq!(
+                convert(&mut arena, sides, ReplayBudget::default()),
+                KernelVerdict::Convertible
+            );
+        }
+        // A pair apart declines: the kernel's own conversion certifies no
+        // refutation, so an engine-free judgement never reads one.
+        assert!(matches!(
+            convert(
+                &mut arena,
+                ReplaySides::Computations(held, apart),
+                ReplayBudget::default()
+            ),
+            KernelVerdict::Declined(_)
+        ));
+        assert_eq!(arena.watermark(), watermark);
+    }
+
+    #[test]
     fn the_replay_refuses_a_trace_that_does_not_replay()
     {
         let mut arena = TermArena::new();
@@ -4641,6 +5262,7 @@ mod tests
                 arena: &mut arena,
                 unfoldings: &unfoldings,
                 trace: core::iter::empty().peekable(),
+                reading: super::Reading::Recorded,
                 position: 0,
                 spent,
                 budget: u64::from(ReplayBudget::from(budget)),
@@ -4664,6 +5286,7 @@ mod tests
                 arena: &mut arena,
                 unfoldings: &unfoldings,
                 trace: core::iter::once(SHARED).peekable(),
+                reading: super::Reading::Recorded,
                 position,
                 spent: 0,
                 budget: 1,
@@ -4699,6 +5322,7 @@ mod tests
             arena: &mut arena,
             unfoldings: &unfoldings,
             trace: core::iter::empty().peekable(),
+            reading: super::Reading::Recorded,
             position: 0,
             spent: 0,
             budget: 1,

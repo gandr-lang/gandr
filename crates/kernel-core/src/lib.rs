@@ -168,6 +168,28 @@
 //! fold's clauses. Each decision, with its alternatives and reversal, is stated
 //! in that module; the fold's bridge reading has no persisted node.
 //!
+//! # The trusted equality reflexivity reads
+//!
+//! Type conversion stays the structural comparison above. Term equality the
+//! kernel decides with no engine's trace, `here(c)` against `Path(A, a, b)`
+//! first of all, is `conv::convert_values`: α-equality, then
+//! [`replay::convert`], the replay's own loop run with no trace. That loop
+//! fires only the rules the shapes force — weak head reduction, forcing, the η
+//! laws, the two commuting conversions of `F` and decomposition — unfolds no
+//! constant and certifies no refutation, so `EndpointsDiffer` is reported only
+//! after it fails to relate the endpoints. A judgement that needs another term
+//! equality, the compound endpoint's among them, enters at the same function.
+//!
+//! **Choice.** One conversion, the replay's, so the kernel admits every
+//! reflexivity the engine's normalizer admits by those laws: the core admits
+//! ⇒ the kernel admits. **Alternatives.** Structural equality alone, which
+//! refuses `here(f)` at `Path(_, f to x. return x, f)` though the core admits
+//! it; a normalizing equality of the kernel's own, a second trusted conversion
+//! beside the replay's. **Reversal.** Endpoints related only through a
+//! constant's body take an engine trace through [`replay()`] rather than a δ
+//! rule in the forced loop. The witness is
+//! `element_identity::tests::reflexivity_converts_its_endpoints_by_the_laws_of_bind`.
+//!
 //! # Contract boundaries
 //!
 //! The source `# Specification` is authoritative; `#[spec(...)]` checks

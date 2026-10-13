@@ -118,6 +118,8 @@ fn erase(decision: ConversionDecision<ReplayNode>) -> ConversionDecision<()>
         | ConversionDecision::EtaExpand { side, .. } => {
             ConversionDecision::EtaExpand { side, variable: () }
         },
+        | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
+        | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
         | ConversionDecision::Force { .. } => ConversionDecision::Force { thunk: () },
         | ConversionDecision::ComparedShared { .. } => ConversionDecision::ComparedShared {
             left: (),
@@ -366,6 +368,75 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
     assert_eq!(
         arena.computation(reduct),
         Some(&Computation::Return(reflexive_y))
+    );
+}
+
+#[test]
+fn reflexivity_converts_its_endpoints_by_the_laws_of_bind()
+{
+    // Under `g : U (Bool → F Bool)`, `here(r)` at `Path(U (Bool → F Bool),
+    // l, r)` for three `l`s against `r = thunk (λ b. force g b)`.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let variable =
+        |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+    // `force g a` with `g` and `a` at the given indices.
+    let applied = |arena: &mut TermArena, function: u32, argument: u32| {
+        let function = variable(arena, function);
+        let forced = arena.computation_force(function);
+        let argument = variable(arena, argument);
+        arena.computation_application(forced, argument)
+    };
+    let suspended = |arena: &mut TermArena, body: ComputationId| {
+        let lambda = arena.computation_lambda(body);
+        arena.value_thunk(lambda)
+    };
+    let reflexive = |arena: &mut TermArena, left: ValueId, point: ValueId| {
+        let identity = arena.value_type_path(boolean.function, left, point);
+        let returner = arena.comp_type_returner(identity);
+        let pi = arena.comp_type_pi(boolean.function, returner);
+        let declared = arena.value_type_thunk(pi);
+        let here = arena.value_here(point);
+        let returned = arena.computation_return(here);
+        let lambda = arena.computation_lambda(returned);
+        let term = arena.value_thunk(lambda);
+        check_closed_value(arena, term, declared)
+    };
+    let direct = applied(&mut arena, 1, 0);
+    let point = suspended(&mut arena, direct);
+
+    // F-η: `λ b. force g b to x. return x` is `r`.
+    let bound = variable(&mut arena, 0);
+    let returned = arena.computation_return(bound);
+    let expanded = arena.computation_bind(direct, returned);
+    let expanded = suspended(&mut arena, expanded);
+    reflexive(&mut arena, expanded, point).expect("reflexivity across F-η");
+
+    // Associativity: `λ b. (force g b to x. force g x) to y. force g y`
+    // against `λ b. force g b to x. (force g x to y. force g y)`.
+    let once = applied(&mut arena, 2, 0);
+    let inner = arena.computation_bind(direct, once);
+    let nested = arena.computation_bind(inner, once);
+    let nested = suspended(&mut arena, nested);
+    let twice = applied(&mut arena, 3, 0);
+    let fused = arena.computation_bind(once, twice);
+    let reassociated = arena.computation_bind(direct, fused);
+    let reassociated = suspended(&mut arena, reassociated);
+    reflexive(&mut arena, nested, reassociated).expect("reflexivity across associativity");
+
+    // Not pointwise: `λ b. force g b to x. return true` is not `r`, and the
+    // refusal names both endpoints.
+    let constant = arena.computation_return(boolean.truth);
+    let apart = arena.computation_bind(direct, constant);
+    let apart = suspended(&mut arena, apart);
+    let left = content_digest(&arena, AnyNode::Value(apart));
+    let right = content_digest(&arena, AnyNode::Value(point));
+    assert_eq!(
+        reflexive(&mut arena, apart, point),
+        Err(KernelError::Identity(IdentityError::EndpointsDiffer {
+            left,
+            right
+        }))
     );
 }
 

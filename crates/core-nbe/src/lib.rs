@@ -121,6 +121,14 @@
 //!   `replay` to the machine's verdict, a trace claiming the other verdict or
 //!   naming the wrong side is refused, and a run an unlucky schedule declines
 //!   stays declined through the kernel.
+//! - The commuting conversions of `F` in `decide`: before two neutral
+//!   computations over one head decompose, the machine makes the first two
+//!   binds in a row on a side one (`Reassociate`), then binds a side one bind
+//!   short into `return` (`ReturnEta`), each a recorded decision in the order
+//!   the kernel's replay reads; the rewritten spine holds a native continuation
+//!   (`CompBody::Then`, `CompBody::Returned`) rather than source syntax, and
+//!   the structural steps defer such a pair rather than separate it. Witness:
+//!   `machine::tests::the_laws_of_bind_convert_by_their_decisions`.
 //! - `GoalSupport`, the key a goal started fresh is re-shared on — its
 //!   `SupportSides` and binder level, agreeing by identity, digested from
 //!   content on the one `ResharingPlane` — with `ResharingMemo` the engine

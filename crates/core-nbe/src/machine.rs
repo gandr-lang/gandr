@@ -97,7 +97,13 @@
 //! later unfolding of it happens in one branch only; a frozen branch can refute
 //! two convertible terms, which is why its refutation is never authoritative.
 //! Rigid heads decompose: one head over spines of one shape compares the
-//! arguments, and anything else refutes.
+//! arguments, and anything else refutes. Before they do, two computations over
+//! one head are brought to one bind normal form by the commuting conversions
+//! of `F`: the first two binds in a row on a side become one (`Reassociate`,
+//! the left side first), then a side one bind short of the other is bound into
+//! `return` (`ReturnEta`). Each rewrite is forced by the spines and recorded
+//! where the kernel's replay meets it, so a positional refutation is never
+//! read off a pair the laws still relate.
 //!
 //! η applies only in the two cases §6.2 shows safe and profitable. A lambda
 //! against a rigid or frozen neutral expands the neutral: `EtaExpand` names the
@@ -2429,6 +2435,14 @@ where
                 self.eta(id, goal, pair, side)?;
                 Ok(Turn::Again)
             },
+            | Plan::Step(Step::ReturnEta(side)) => {
+                self.return_eta(id, goal, pair, side)?;
+                Ok(Turn::Again)
+            },
+            | Plan::Step(Step::Reassociate(side)) => {
+                self.reassociate(id, goal, pair, side)?;
+                Ok(Turn::Again)
+            },
             | Plan::Choose(choice) => self.choose(id, goal, choice),
             | Plan::Decline(reason) => {
                 self.finish(id, Outcome::Declined(reason))?;
@@ -3240,6 +3254,127 @@ where
         Self::set_side(goal, lambda_side, Slot::Waiting(channel));
         self.depend(id, channel)?;
         goal.depth = opened_depth;
+        Ok(())
+    }
+
+    /// Bind the neutral on `side`, one bind short of the other, into `return`.
+    ///
+    /// # Specification
+    /// - requires: `side` holds a neutral computation whose spine is one
+    ///   elimination shorter than the other side's, which ends in a bind.
+    /// - ensures: the derivation records `ReturnEta` naming `side`, and that
+    ///   side becomes its neutral grown by a bind into the identity
+    ///   continuation; the other side and the depth are unchanged.
+    /// - provides: the η law of `F`, `M ≡ M to x. return x`.
+    /// - fails: every fault the domain raises, and
+    ///   [`ConversionFault::MachineInvariant`] when `side` is not a neutral.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Every fault the domain raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stuck computation against its own bind into
+    ///   `return`, on either side, converts only through this step, and the
+    ///   kernel replays the recorded side; growing the wrong side or recording
+    ///   none refuses there.
+    /// - witness: `machine::tests::the_laws_of_bind_convert_by_their_decisions`
+    #[spec(
+        captures: [depth = goal.depth, left = goal.left, right = goal.right],
+        ensures: |ret| ret.is_err() || (goal.depth == depth && match side {
+            ConversionSide::Left => goal.right == right && matches!(goal.left, Slot::Ready(Glued::Computation(_))),
+            ConversionSide::Right => goal.left == left && matches!(goal.right, Slot::Ready(Glued::Computation(_))),
+        }),
+    )]
+    fn return_eta(
+        &mut self,
+        id: ProcessId,
+        goal: &mut Goal,
+        pair: (Glued, Glued),
+        side: ConversionSide,
+    ) -> Result<(), ConversionFault>
+    {
+        self.derivations
+            .decide(id, ConversionDecision::ReturnEta { side })?;
+        let neutral = self.neutral_of(Self::side_of(pair, side))?;
+        let identity = self
+            .domain
+            .native_continuation(crate::closure::CompBody::Returned);
+        let grown = extend_spine(self.domain, neutral, Elimination::Bind(identity))
+            .map_err(ConversionFault::Evaluation)?;
+        let bound = self.domain.comp_neutral(grown, CompTermFace::Reduced);
+        Self::set_side(goal, side, Slot::Ready(Glued::Computation(bound)));
+        Ok(())
+    }
+
+    /// Make the two binds in a row nearest the head of `side` one.
+    ///
+    /// # Specification
+    /// - requires: `side` holds a neutral computation whose spine stacks two
+    ///   binds in a row.
+    /// - ensures: the derivation records `Reassociate` naming `side`, and the
+    ///   first such pair, `(M to x. N) to y. P`, becomes one bind into the
+    ///   continuation that enters `x. N` and binds its result into `y. P`, so
+    ///   `M to x. (N to y. P)`; every other elimination keeps its place, the
+    ///   other side and the depth are unchanged.
+    /// - provides: bind associativity.
+    /// - fails: every fault the domain raises, and
+    ///   [`ConversionFault::MachineInvariant`] when `side` is not a neutral or
+    ///   stacks no two binds.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Every fault the domain raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a left-nested pair of binds against its right-nested
+    ///   twin, on either side, converts only through this step, and an outer
+    ///   continuation reading the outer binder separates fusing the two
+    ///   closures from dropping either; the kernel replays the recorded side.
+    /// - witness: `machine::tests::the_laws_of_bind_convert_by_their_decisions`
+    #[spec(
+        captures: [depth = goal.depth, left = goal.left, right = goal.right],
+        ensures: |ret| ret.is_err() || (goal.depth == depth && match side {
+            ConversionSide::Left => goal.right == right && matches!(goal.left, Slot::Ready(Glued::Computation(_))),
+            ConversionSide::Right => goal.left == left && matches!(goal.right, Slot::Ready(Glued::Computation(_))),
+        }),
+    )]
+    fn reassociate(
+        &mut self,
+        id: ProcessId,
+        goal: &mut Goal,
+        pair: (Glued, Glued),
+        side: ConversionSide,
+    ) -> Result<(), ConversionFault>
+    {
+        let neutral = self.neutral_of(Self::side_of(pair, side))?;
+        let held = self
+            .domain
+            .neutral(neutral)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        let (head, unfolding) = (held.head(), held.unfolding());
+        let mut spine = Vec::from(held.spine());
+        let at = spine
+            .windows(2)
+            .position(|pair| matches!(pair, &[Elimination::Bind(_), Elimination::Bind(_)]))
+            .ok_or(ConversionFault::MachineInvariant)?;
+        let (Some(&Elimination::Bind(first)), Some(&Elimination::Bind(then))) =
+            (spine.get(at), spine.get(at.saturating_add(1)))
+        else {
+            return Err(ConversionFault::MachineInvariant);
+        };
+        self.derivations
+            .decide(id, ConversionDecision::Reassociate { side })?;
+        let fused = self
+            .domain
+            .native_continuation(crate::closure::CompBody::Then { first, then });
+        spine.splice(at ..= at.saturating_add(1), [Elimination::Bind(fused)]);
+        let rebuilt = self
+            .domain
+            .neutral_node(head, spine, unfolding)
+            .map_err(ConversionFault::Domain)?;
+        let bound = self.domain.comp_neutral(rebuilt, CompTermFace::Reduced);
+        Self::set_side(goal, side, Slot::Ready(Glued::Computation(bound)));
         Ok(())
     }
 
@@ -6482,6 +6617,8 @@ mod tests
          ConversionDecision::Postpone{constant} => ConversionDecision::Postpone{constant:node(constant)},
          ConversionDecision::Freeze{constant,side} => ConversionDecision::Freeze{constant:node(constant),side},
          ConversionDecision::EtaExpand{side,variable} => ConversionDecision::EtaExpand{side,variable:node(variable)},
+         ConversionDecision::ReturnEta{side} => ConversionDecision::ReturnEta{side},
+         ConversionDecision::Reassociate{side} => ConversionDecision::Reassociate{side},
          ConversionDecision::Force{thunk} => ConversionDecision::Force{thunk:node(thunk)},
          ConversionDecision::ComparedShared{left,right} => ConversionDecision::ComparedShared{left:node(left),right:node(right)},
          ConversionDecision::NegativeSubgoal{position} => ConversionDecision::NegativeSubgoal{position},
@@ -6518,6 +6655,8 @@ mod tests
                 side,
                 variable: node(variable),
             },
+            | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
+            | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
             | ConversionDecision::Force { thunk } => {
                 ConversionDecision::Force { thunk: node(thunk) }
             },
@@ -7082,6 +7221,90 @@ mod tests
             "a rigid head cannot unfold, so η is the one rule, and the expanded pair closes \
              structurally: {decisions:?}"
         );
+    }
+
+    #[test]
+    fn the_laws_of_bind_convert_by_their_decisions()
+    {
+        // A rigid `R`: `force R` against its bind into `return`, and under
+        // `λ a` the two nestings of `force R a to x. force R x to y. force R
+        // a`, whose outer continuation reads `a` past the binder it moves
+        // under.
+        let mut core = CoreArena::new();
+        let rigid = core.value_constant(Name::Rigid.constant());
+        let unit = core.value_unit();
+        let bound = innermost(&mut core);
+        let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let outermost = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let held = core.computation_force(rigid);
+        let returned = core.computation_return(bound);
+        let expanded = core.computation_bind(held, returned);
+        let constant = core.computation_return(unit);
+        let apart = core.computation_bind(held, constant);
+        let applied = call(&mut core, rigid, &[bound]);
+        let reading = call(&mut core, rigid, &[outer]);
+        let shifted = call(&mut core, rigid, &[outermost]);
+        let inner = core.computation_bind(applied, applied);
+        let nested = core.computation_bind(inner, reading);
+        let nested = core.computation_lambda(nested);
+        let fused = core.computation_bind(applied, shifted);
+        let reassociated = core.computation_bind(applied, fused);
+        let reassociated = core.computation_lambda(reassociated);
+        let misread = core.computation_bind(applied, reading);
+        let misread = core.computation_bind(applied, misread);
+        let misread = core.computation_lambda(misread);
+        let world = World::new(core, &[]);
+        let return_eta = |side| ConversionDecision::ReturnEta { side };
+        let reassociate = |side| ConversionDecision::Reassociate { side };
+
+        for (sides, expected, law) in [
+            (
+                Sides::Computations(held, expanded),
+                MachineVerdict::Convertible,
+                return_eta(ConversionSide::Left),
+            ),
+            (
+                Sides::Computations(expanded, held),
+                MachineVerdict::Convertible,
+                return_eta(ConversionSide::Right),
+            ),
+            (
+                Sides::Computations(nested, reassociated),
+                MachineVerdict::Convertible,
+                reassociate(ConversionSide::Left),
+            ),
+            (
+                Sides::Computations(reassociated, nested),
+                MachineVerdict::Convertible,
+                reassociate(ConversionSide::Right),
+            ),
+            (
+                Sides::Computations(held, apart),
+                MachineVerdict::NotConvertible,
+                return_eta(ConversionSide::Left),
+            ),
+            (
+                Sides::Computations(nested, misread),
+                MachineVerdict::NotConvertible,
+                reassociate(ConversionSide::Left),
+            ),
+        ] {
+            let (verdict, decisions) = world.traced(sides);
+            assert_eq!(
+                expected, verdict,
+                "a pair related by a law of bind converts, and one apart in a continuation \
+                 does not: {decisions:?}"
+            );
+            assert!(
+                decisions.contains(&law),
+                "the law is a recorded decision on the side that owes it: {decisions:?}"
+            );
+            assert_eq!(
+                certified(verdict),
+                world.replayed(sides, verdict, &decisions),
+                "and the kernel replays it by name: {decisions:?}"
+            );
+        }
     }
 
     #[test]

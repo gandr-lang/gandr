@@ -1373,6 +1373,8 @@ mod recursive_data
                 side,
                 variable: node(variable),
             },
+            | ConversionDecision::ReturnEta { side } => ConversionDecision::ReturnEta { side },
+            | ConversionDecision::Reassociate { side } => ConversionDecision::Reassociate { side },
             | ConversionDecision::Force { thunk } => {
                 ConversionDecision::Force { thunk: node(thunk) }
             },

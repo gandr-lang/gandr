@@ -1388,10 +1388,12 @@ impl<'run> Walk<'run>
     ///   and one elimination kind at every position — each operand pair then
     ///   queued beneath the head, flexible for unfolding when the head has a
     ///   body; two returned heads agree as heads with their stuck computations
-    ///   queued beneath; [`Local::Disagree`] when the guards separate the
-    ///   neutrals, or when rigid heads differ or a rigid head's spines disagree
-    ///   in shape; [`Local::Defer`] for unfolding when either head has a body
-    ///   and the heads or the spine shapes differ.
+    ///   queued beneath; [`Local::Defer`] for a binder when the heads agree and
+    ///   the spines owe a commuting conversion of `F` first
+    ///   ([`crate::rules::bind_step`]); [`Local::Disagree`] when the guards
+    ///   separate the neutrals, or when rigid heads differ or a rigid head's
+    ///   spines disagree in shape; [`Local::Defer`] for unfolding when either
+    ///   head has a body and the heads or the spine shapes differ.
     /// - provides: Courant–Leroy's `var-1`, `var-2`, `var-3` and `const` rules,
     ///   with `var-2` the head-mismatch fast-fail.
     /// - fails: [`ConversionFault::Domain`] for a neutral that does not
@@ -1407,6 +1409,7 @@ impl<'run> Walk<'run>
     ///   families, and identity is refused after truncation; skipping
     ///   validation or losing the flexible context changes the result.
     /// - witness: `conv::tests::a_mismatch_separates_only_beneath_a_rigid_head`
+    /// - witness: `machine::tests::the_laws_of_bind_convert_by_their_decisions`
     /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
     /// - witness: `conv::tests::identical_truncated_neutrals_and_closures_are_refused`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
@@ -1454,6 +1457,15 @@ impl<'run> Walk<'run>
         else {
             return Err(ConversionFault::Domain(DomainFault::Dangling));
         };
+        let one_head = matches!(
+            (one.head(), other.head()),
+            (NeutralHead::Returned(_), NeutralHead::Returned(_))
+        ) || one.head() == other.head();
+        if one_head
+            && crate::rules::bind_step(one.spine(), other.spine()) != crate::rules::BindStep::Normal
+        {
+            return Ok(Local::Defer(Deferral::Binder));
+        }
         if one.spine().len() != other.spine().len() {
             return Ok(mismatch);
         }

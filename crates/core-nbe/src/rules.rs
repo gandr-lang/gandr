@@ -229,6 +229,12 @@ pub enum Step
     /// Apply the neutral on this side to a fresh variable and open the lambda
     /// on the other under it: the safe and profitable η case.
     Eta(ConversionSide),
+    /// Bind the neutral on this side, one bind short of the other, into
+    /// `return`: the η law of `F`.
+    ReturnEta(ConversionSide),
+    /// Make the two binds in a row nearest the head on this side one: bind
+    /// associativity.
+    Reassociate(ConversionSide),
 }
 
 /// A choice point: the alternatives a goal runs as concurrent processes.
@@ -1080,9 +1086,11 @@ enum Lambda
 ///
 /// # Specification
 /// - requires: neither head is [`Head::Defined`].
-/// - ensures: [`Plan::Decompose`] over [`spine_subgoals`] when the heads are
-///   one head and the spines one shape — `var-1`; [`Plan::Leaf`] refuting
-///   otherwise — `var-2`.
+/// - ensures: when the heads are one head, the commuting conversion of `F`
+///   [`bind_step`] names first, as [`Step::Reassociate`] or
+///   [`Step::ReturnEta`]; else [`Plan::Decompose`] over [`spine_subgoals`] when
+///   the spines are one shape — `var-1`; [`Plan::Leaf`] refuting otherwise —
+///   `var-2`.
 /// - provides: the rigid-head arm of the table.
 /// - fails: [`ConversionFault::Domain`] when a neutral does not resolve.
 /// - panics: none.
@@ -1093,15 +1101,22 @@ enum Lambda
 /// # Adequacy
 /// - hypothesis: L3 — a differing argument refutes a rigid spine; native case
 ///   and projection comparisons preserve their operands and labels in
-///   independently replayable traces.
+///   independently replayable traces; a neutral against its bind into `return`
+///   and two binds against their reassociation convert only by the bind steps,
+///   never by a positional refutation.
 /// - witness: `machine::tests::native_records_cases_and_traces_agree`
 /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
+/// - witness: `machine::tests::the_laws_of_bind_convert_by_their_decisions`
 #[spec(ensures: |ret| match (domain.neutral(left),domain.neutral(right)) {
     (Some(one),Some(other)) if one.head() != other.head() => ret == Ok(Plan::Leaf(Settled::NotConvertible)),
-    (Some(_),Some(_)) => match spine_subgoals(core,domain,left,right) {
-        Ok(Spines::Agree(subgoals)) => ret == Ok(Plan::Decompose(subgoals)),
-        Ok(Spines::Disagree) => ret == Ok(Plan::Leaf(Settled::NotConvertible)),
-        Err(fault) => ret == Err(fault),
+    (Some(one),Some(other)) => match bind_step(one.spine(), other.spine()) {
+        BindStep::Reassociate(side) => ret == Ok(Plan::Step(Step::Reassociate(side))),
+        BindStep::ReturnEta(side) => ret == Ok(Plan::Step(Step::ReturnEta(side))),
+        BindStep::Normal => match spine_subgoals(core,domain,left,right) {
+            Ok(Spines::Agree(subgoals)) => ret == Ok(Plan::Decompose(subgoals)),
+            Ok(Spines::Disagree) => ret == Ok(Plan::Leaf(Settled::NotConvertible)),
+            Err(fault) => ret == Err(fault),
+        },
     },
     _ => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
 })]
@@ -1119,11 +1134,90 @@ fn plan_rigid(
     if one.head() != other.head() {
         return Ok(Plan::Leaf(Settled::NotConvertible));
     }
+    match bind_step(one.spine(), other.spine()) {
+        | BindStep::Reassociate(side) => return Ok(Plan::Step(Step::Reassociate(side))),
+        | BindStep::ReturnEta(side) => return Ok(Plan::Step(Step::ReturnEta(side))),
+        | BindStep::Normal => {},
+    }
     let spines = spine_subgoals(core, domain, left, right)?;
     Ok(match spines {
         | Spines::Agree(subgoals) => Plan::Decompose(subgoals),
         | Spines::Disagree => Plan::Leaf(Settled::NotConvertible),
     })
+}
+
+/// The commuting conversion of `F` two spines over one head owe before they
+/// compare position by position.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum BindStep
+{
+    /// Neither law applies: the spines compare position by position.
+    Normal,
+    /// The side stacks two binds in a row: make them one.
+    Reassociate(ConversionSide),
+    /// The side is one bind short of the other: bind it into `return`.
+    ReturnEta(ConversionSide),
+}
+
+/// The commuting conversion of `F` two spines over one head owe first.
+///
+/// # Specification
+/// - requires: the spines hang off one head.
+/// - ensures: [`BindStep::Reassociate`] naming the first side whose spine
+///   stacks two binds in a row, the left before the right; else
+///   [`BindStep::ReturnEta`] naming the side whose spine is one elimination
+///   shorter than the other's when the other's ends in a bind; else
+///   [`BindStep::Normal`].
+/// - provides: the order the engine normalizes a pair's binds in, which is the
+///   kernel replay's `bind_rule`, so every rewrite is recorded where the replay
+///   meets it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a stacked pair on either side, and a side one bind short
+///   on either side, each select their own step, and the kernel replays the
+///   engine's trace only when both read the same order.
+/// - witness: `machine::tests::the_laws_of_bind_convert_by_their_decisions`
+#[spec(ensures: |ret| {
+    let stacked = |spine: &[Elimination]| spine.windows(2).any(|pair| matches!(pair, &[Elimination::Bind(_), Elimination::Bind(_)]));
+    let ends = |spine: &[Elimination]| matches!(spine.last(), Some(&Elimination::Bind(_)));
+    ret == if stacked(left) {
+        BindStep::Reassociate(ConversionSide::Left)
+    } else if stacked(right) {
+        BindStep::Reassociate(ConversionSide::Right)
+    } else if left.len().checked_add(1) == Some(right.len()) && ends(right) {
+        BindStep::ReturnEta(ConversionSide::Left)
+    } else if right.len().checked_add(1) == Some(left.len()) && ends(left) {
+        BindStep::ReturnEta(ConversionSide::Right)
+    } else {
+        BindStep::Normal
+    }
+})]
+pub fn bind_step(
+    left: &[Elimination],
+    right: &[Elimination],
+) -> BindStep
+{
+    let stacked = |spine: &[Elimination]| {
+        spine
+            .windows(2)
+            .any(|pair| matches!(pair, &[Elimination::Bind(_), Elimination::Bind(_)]))
+    };
+    let ends = |spine: &[Elimination]| matches!(spine.last(), Some(&Elimination::Bind(_)));
+    if stacked(left) {
+        return BindStep::Reassociate(ConversionSide::Left);
+    }
+    if stacked(right) {
+        return BindStep::Reassociate(ConversionSide::Right);
+    }
+    if left.len().checked_add(1) == Some(right.len()) && ends(right) {
+        return BindStep::ReturnEta(ConversionSide::Left);
+    }
+    if right.len().checked_add(1) == Some(left.len()) && ends(left) {
+        return BindStep::ReturnEta(ConversionSide::Right);
+    }
+    BindStep::Normal
 }
 
 /// How a value side reads as a neutral.

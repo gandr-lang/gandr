@@ -65,6 +65,28 @@
 //! reinterpreting an existing decision. The consumer owns the replay budget;
 //! exhaustion is a decline, not an equality decision.
 //!
+//! # The commuting conversions of `F`
+//!
+//! Call-by-push-value equates `M` with `M to x. return x` and
+//! `(M to x. N) to y. P` with `M to x. (N to y. P)` (Levy,
+//! *Call-By-Push-Value*, the η-rule of `F` with the empty stack, and bind's
+//! associativity). Two neutral computations over one head that differ only so
+//! are convertible, and a refutation that ignored them would be unsound.
+//!
+//! **Choice.** Two one-sided decisions, `ReturnEta` and `Reassociate`, each a
+//! rewrite the shapes force: the engine applies them before it decomposes two
+//! spines over one head, the replay refuses a decomposition, or a refutation,
+//! of a pair they still apply to, and the kernel's own conversion fires them
+//! unread. **Alternatives.** Normalizing binds inside evaluation, which would
+//! make every stuck spine pay for a rewrite conversion alone needs; leaving
+//! the rules implicit in the replay, which hides a rewrite from the trace that
+//! certifies it; or the stack form of the η-rule, which also commutes an
+//! application or a projection past a bind and needs a decision per
+//! elimination kind. **Reversal.** A consumer that needs an elimination other
+//! than a bind to commute past a bind adds that instance of the stack rule as
+//! its own decision; a third bind law would mean the two here are the wrong
+//! grain.
+//!
 //! # Exhaustive matching
 //!
 //! No enum here is `#[non_exhaustive]`. The workspace does not publish, so the

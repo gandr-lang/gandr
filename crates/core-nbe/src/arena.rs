@@ -1096,27 +1096,31 @@ impl DomainArena
         id
     }
 
-    /// Hold a native transport continuation without manufacturing source
-    /// syntax.
+    /// Hold a native continuation without manufacturing source syntax.
     ///
     /// # Specification
-    /// - requires: nothing; referenced values are checked when the body runs.
+    /// - requires: nothing; referenced values and closures are checked when the
+    ///   body runs.
     /// - ensures: a fresh computation closure holds `body` with no bindings.
-    /// - provides: the continuation for ordered native product transport.
+    /// - provides: the continuations of ordered native product transport and of
+    ///   the commuting conversions of `F`.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — both product components can be stuck independently;
     ///   the captured continuation must retain the first result and transport
-    ///   the second component before pairing them in source order.
+    ///   the second component before pairing them in source order. The identity
+    ///   continuation must return what it binds, and a fused pair of
+    ///   continuations must run the inner before the outer.
     /// - witness: `eval::tests::native_transport_sequences_product_components`
+    /// - witness: `machine::tests::the_laws_of_bind_convert_by_their_decisions`
     #[inline]
     #[spec(captures: entry_length = self.comp_closures.len(), ensures: |ret|
         self.comp_closures.len().checked_sub(1) == Some(entry_length)
             && self.comp_closure(ret).is_some_and(|closure| closure.body() == body
                 && [gandr_core_term::Zone::Intuitionistic, gandr_core_term::Zone::Linear].iter().all(|&zone| closure.environment().bindings(zone).is_empty())))]
-    pub(crate) fn transport_continuation(
+    pub(crate) fn native_continuation(
         &mut self,
         body: crate::closure::CompBody,
     ) -> CompClosureId

@@ -18,11 +18,13 @@
 //! thunk code relates functions by related application. An introduction form
 //! other than `here` inhabits the identity when it inhabits that native fibre.
 //! `here(c)` is the one introduction the fold does not supply, and it checks by
-//! the kernel's own conversion: `c` must convert with both endpoints, and a
-//! refusal names both endpoints by content digest. An iterated identity reads
+//! the kernel's own term conversion: `c` must convert with both endpoints by
+//! α-equality or by the rules a conversion is forced to fire, the η laws and
+//! the two laws of bind among them (the crate's trusted-equality section), and
+//! a refusal names both endpoints by content digest. An iterated identity reads
 //! its inner identity's fibre first and treats a `here` endpoint as that
 //! fibre's diagonal evidence. A neutral, a variable or a constant, inhabits an
-//! identity by the type it synthesizes: conversion stays structural, so a
+//! identity by the type it synthesizes: type conversion stays structural, so a
 //! neutral of the fibre type does not inhabit the identity. `here(c)`
 //! synthesizes the diagonal at the type `c` synthesizes, so like every
 //! annotation-free introduction it is inferable only where its point is; an

@@ -273,6 +273,52 @@ pub(crate) fn equal_computations(
     converge(arena, ConversionGoal::Computation(left, right))
 }
 
+/// The kernel's term equality on two values: α-equality first, then the
+/// rules a conversion is forced to fire.
+///
+/// # Specification
+/// - requires: nothing — an unreadable id is admissible input and fails closed.
+/// - ensures: [`Convertibility::Convertible`] when [`equal_values`] answers it,
+///   or else when [`crate::replay::convert`] certifies the pair within
+///   [`crate::replay::ReplayBudget::DEFAULT`]; [`Convertibility::Distinct`]
+///   otherwise, which means not shown equal rather than shown apart. `arena`
+///   holds what it held on entry.
+/// - provides: the one equality a judgement the kernel decides without an
+///   engine's trace reads, reflexivity's endpoints first.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an η-expanded pair and a reassociated pair convert, a
+///   pair apart in one continuation does not, and an α-equal pair converts
+///   without the replay; comparing syntax alone or relating every neutral pair
+///   changes one of the three.
+/// - witness: `element_identity::tests::reflexivity_converts_its_endpoints_by_the_laws_of_bind`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| arena.watermark() == before
+        && (ret == Convertibility::Distinct || arena.value(left).is_some() && arena.value(right).is_some()),
+)]
+pub(crate) fn convert_values(
+    arena: &mut TermArena,
+    left: ValueId,
+    right: ValueId,
+) -> Convertibility
+{
+    if equal_values(arena, left, right) == Convertibility::Convertible {
+        return Convertibility::Convertible;
+    }
+    match crate::replay::convert(
+        arena,
+        crate::replay::ReplaySides::Values(left, right),
+        crate::replay::ReplayBudget::DEFAULT,
+    ) {
+        | crate::replay::KernelVerdict::Convertible => Convertibility::Convertible,
+        | crate::replay::KernelVerdict::NotConvertible
+        | crate::replay::KernelVerdict::Declined(_) => Convertibility::Distinct,
+    }
+}
+
 /// Convert a synthesized value type against an expected one, building the
 /// mismatch on divergence.
 ///
