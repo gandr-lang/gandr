@@ -6,6 +6,17 @@
 //! caller's explicit choice, and [`RenderStyle::for_terminal`] selects it for
 //! a terminal. Literal controls in caller-provided paths are preserved; style
 //! selection does not sanitize that content.
+//!
+//! `RenderStyle::Plain` adds no escape sequences. `RenderStyle::Styled` adds
+//! the backend's palette. `RenderStyle::for_terminal` maps the supplied
+//! terminal capability to a style; it reads no environment variable and probes
+//! no stream.
+//!
+//! Paths retain literal control characters in both styles. This preserves
+//! source identity without introducing a path-escaping policy; style selection
+//! offers no terminal-sanitization guarantee. An unlocated report whose path
+//! ends in a line feed or carriage return retains that final control. Witness:
+//! `report::tests::literal_path_controls_are_not_styling_or_framing`.
 
 use core::fmt;
 

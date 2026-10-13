@@ -22,6 +22,187 @@
 //! replayed into the `gandr-surface-syntax` [`TreeBuilder`] at `commit`; a
 //! [`Checkpoint`] records the log length and the (small, first-order) slope, so
 //! rollback is log truncation and checkpoints are cheap and serializable.
+//!
+//! # A closer with a required operand after it is a mid tile
+//!
+//! A tile with a same-form predecessor and no same-form successor ends its form
+//! in the paper's classification. The `]` of `+U[ω] C` and of `package [ T ] C`
+//! cannot: the grammar requires an operand after it. The melder classifies such
+//! a tile as a mid tile, so the form stays open until its operand arrives and
+//! closes around it; a closing bracket with nothing required after it, the `]`
+//! of `Type[+, 1]`, still ends its form. Read as an end, the bracket would
+//! close the bridge at its grade, and a parenthesised operand after it would
+//! become a juxtaposed sibling that the lowering refuses as a malformed form.
+//!
+//! The completion query and the molder follow. `finalize` charges no tile to a
+//! required-tail frontier whose operand is written or already opened, because
+//! the commit's force-close mints none there. The lookahead window settles and
+//! bounds each token at its declaration as the stream does, so a tied opener is
+//! judged on the frontier the stream would leave. Without them, the mid-tile
+//! bracket made `package [ T ] Integer;` followed by another declaration rank
+//! the package reading below an instantiation of a type variable named
+//! `package`.
+//!
+//! The alternative was a grammar change: spell the graded bridge as a prefix
+//! operator whose operand is its argument, keeping the three-way
+//! classification. It splits one form into two and moves the grade off the
+//! bridge's tile, and `package [ T ]` would need the same split. Reversal: if a
+//! grammar form ever needs a closing bracket that ends it while an operand
+//! still follows, the tail moves into an enclosing form and this case becomes a
+//! grammar check.
+//!
+//! # A required tail runs as far as its group yields
+//!
+//! A form whose last symbol is a required sort hole — `forall a . T`, `mu a .
+//! S`, the session types, the static abstraction `\A. T`, `+U[r] C`, `package [
+//! T ] C` — has no tile to end it, so the melder decides where its tail stops.
+//! It stops where a prefix operator at the form's own group would stop: the
+//! form closes once its tail is a whole operand run of the hole's sort, every
+//! operator in it holding the operands it wants, and the next tile does not
+//! continue that run. An infix or postfix operator, or a left-absorbing form
+//! start, of the hole's sort continues the run exactly when the form's group
+//! yields to it. So `forall a . a * b` quantifies the product, `\A. -F A` keeps
+//! the returner in the abstraction, `\A. A => B` keeps the arrow of its own
+//! right-associative group, and `+U[1] C * D` closes the bridge before the
+//! product, its group being tighter. The decision runs twice: before a token is
+//! gathered, against every mold its labels may take, so the frontier the molder
+//! ranks against is the one the stream will leave; and again as the chosen tile
+//! is pushed.
+//!
+//! The alternatives were closing the tail at its first operand, which reads
+//! `forall a . a * b` as a product of a quantifier and cannot read `forall a .
+//! -F a` at all, a prefix operator's operand being a run rather than one
+//! operand; and a closing tile for each binder form, `forall a . { T }`, which
+//! spends a bracket on every quantifier. Reversal: if a form needs a tail
+//! tighter than its own group, that tail gets its own group in the precedence
+//! table.
+//!
+//! # The tree the melder commits
+//!
+//! `commit` replays the emission log into a `gandr-surface-syntax`
+//! `TreeBuilder`. A completed form is a `NodeLabel::Meld` named by the mold of
+//! the tile that opened it; an operator form is named by its operator's mold; a
+//! written tile is a `NodeLabel::Tile` with its mold. A missing operand is
+//! convex grout of the slot's sort; a missing closer is a
+//! `NodeLabel::GhostClose` when the grammar says every completion of the form
+//! ends at one family of closer, and postfix grout otherwise. A token no
+//! candidate molds is convex `Item` grout covering that token's bytes, so the
+//! tree stays lossless and the bytes reach its form's digest. Layout is a
+//! `NodeLabel::Space` leaf. The form a node realises is the grammar's answer
+//! for its mold (`Pbg::named_kind`), so this crate restates no list of forms.
+//!
+//! ### A comment belongs to the node it describes
+//!
+//! The parser decides once which node owns each comment, and every reader
+//! inherits the decision from the tree: a formatter, a refactoring or a
+//! comment-aware check finds a comment among its owner's children instead of
+//! guessing ownership from positions. The rule is the fixed one Roslyn,
+//! rust-analyzer and Biome use, read against the innermost form whose span
+//! contains the comment (the root when none does) and that form's children on
+//! either side of it:
+//!
+//! | Comment position | Owner |
+//! | ---------------- | ----- |
+//! | Own line(s) directly above a node, no blank line between | that node, leading |
+//! | Same line, after a node | that node, trailing |
+//! | Inside an empty block or bracket | the block, dangling |
+//! | Separated by a blank line | the enclosing node, standalone |
+//!
+//! A leaf holds no children, so a comment written against an identifier, a
+//! number or one of a form's own tiles belongs to that form. Only `//` and `/*
+//! */` comments and documentation (§ Documentation is a node no digest reads)
+//! move; whitespace and a shebang stay root children. Nothing else changes: the
+//! content digest skips layout, so the root digest, every cache key and every
+//! identity are those the tree had with its comments at the root, and the
+//! leaves, read in offset order, still spell the source byte for byte. The
+//! commit stages every leaf first, since an owner can be reduced before a
+//! comment that trails it is pushed, then every interior whose children are all
+//! leaves, which a documentation node grouped at commit is, then the remaining
+//! interiors in emission order.
+//!
+//! The consumers that read a form's children were audited for forms holding
+//! layout. The lowering skips `NodeLabel::Space` wherever it reads a form's
+//! pieces, operands and repairs (`read_pieces`, `shape_of`, the repair and
+//! nesting walks); its ownership, scope and payload marks visit every child
+//! whatever its label, and its minting plans nothing for a layout leaf, so a
+//! comment inside a declaration is visited and left alone. The highlighter
+//! classifies every position whatever its parent and sorts its spans, so
+//! semantic tokens and the terminal face are unchanged. The session, the
+//! language server and the REPL reach the tree only through those two. No
+//! consumer assumed layout-free forms, so none needed a change.
+//!
+//! ### Documentation is a node no digest reads
+//!
+//! Documentation is written two ways, a run of `///` lines and a `doc("…")`
+//! attribute entry, and both become one `NodeLabel::Doc` interior holding the
+//! material it was written with. `Doc` is insignificant, like
+//! `NodeLabel::Space`: no digest reads it, so documenting a declaration,
+//! rewording its documentation or moving between the spellings re-keys nothing,
+//! and the leaves still spell the source.
+//!
+//! - **An entry.** When a form closes, each attribute entry that is exactly
+//!   `doc` with one string literal for its payload is grouped with its
+//!   separating comma into a `Doc`: an entry before the block's first other
+//!   entry takes the comma after it, a later one the comma before it. A block
+//!   holding only such entries is grouped whole, `@[` and `]` included, and
+//!   stands for its form as a `Doc`. An entry that becomes the block's first
+//!   takes the tile labels of the entry grouped away before it, since a tile's
+//!   mold depends on its position in the block, and a form whose first child
+//!   became a `Doc` is named by the mold of its first remaining tile. `doc`,
+//!   `doc()`, `doc(1)` and `doc("a", "b")` stay attributes, for the lowering to
+//!   refuse.
+//! - **A run.** At commit, `///` lines separated only by one line break each (a
+//!   `////` line is an ordinary comment) are grouped into a `Doc` with the
+//!   whitespace between them. A run documents the form below it, never the one
+//!   before it, even when it starts on that form's last line; a blank line
+//!   between a run and the form below leaves it at the root.
+//!
+//! The alternative was reading `///` and `doc` as ordinary attribute material,
+//! which keys the declaration by its prose: every documentation edit would
+//! re-key it and everything its digest addresses. Reversal: when documentation
+//! must be content-addressed, `Doc` becomes significant and its digest folds
+//! the text it spells.
+//!
+//! # Checkpoints
+//!
+//! A `Checkpoint` is the melder's whole state: the grammar fingerprint, the
+//! assembled source, the emission log, the slope, the buffered obligations and
+//! the layout tokens. `to_bytes` writes it little-endian with every
+//! variable-width field length-prefixed; a node label is written as its pinned
+//! digest tag and its payload, so the checkpoint and the digest share one
+//! numbering and reordering the label enum changes neither. A minted close's
+//! family byte is checked on read, and an unknown family is refused rather than
+//! defaulted, because pairing a ghost against the wrong family is worse than
+//! not pairing it. `resume` rebuilds the slope-head caches from the slope, and
+//! a resumed run equals the uninterrupted one, obligations and root digest
+//! included.
+//!
+//! A `Mark` is the cheap transaction beside it: the source, log, obligation and
+//! space lengths, and the length of a trail of slope edits — a push, an
+//! overwritten cell, a splice with the cells it removed — recorded only while a
+//! mark is live. `rollback_to` undoes the trail back to the mark, newest first,
+//! and rebuilds the head caches from the lowest position an edit touched, which
+//! is what the molder's per-candidate dry-run uses. Marks nest; the trail
+//! empties when the outermost rolls back.
+//!
+//! # Repair stops at the declaration boundary
+//!
+//! When a token's candidates include a declaration head, none of them continues
+//! the open form, and the innermost open form is not an item form — an unclosed
+//! `(` in a definition's value, say — the melder force-closes the open forms
+//! back to the nearest declaration before molding the head, so the repair's
+//! minted closes and obligations stay inside the damaged declaration and the
+//! next one parses whole. The boundary is any declaration head, not the `def`
+//! keyword alone.
+//!
+//! Known bound: a container whose own member carries the damage — `module M {
+//! def bad = ( 1 ; def good = 2; }` — force-closes the container too, so `good`
+//! becomes a sibling of `M` rather than its member. Telling a container apart
+//! from a declaration needs the rule a mold was numbered for, which the grammar
+//! reads back (`Pbg::rule_of`) and this repair does not consult. Both
+//! declarations survive as distinct items; what the repair does not preserve is
+//! which one owns the later declaration. Reversal: when a consumer needs the
+//! member kept in its container, the boundary consults the rule.
 
 use alloc::boxed::Box;
 use alloc::string::String;

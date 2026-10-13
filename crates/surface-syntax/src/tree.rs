@@ -43,6 +43,16 @@
 //! tree is laid out. A node inside a form is keyed by that digest and its
 //! preorder rank, and the whole tree's digest folds its forms'. A node below a
 //! form has no content identity of its own.
+//!
+//! # Level-order layout
+//!
+//! A node names its children as a contiguous range of strictly higher arena
+//! positions: two fields per node and no second vector. A post-order arena,
+//! which a bottom-up builder produces naturally, cannot give a node's children
+//! a contiguous range, because the second child's subtree sits between the
+//! first child and the second; level order can. The root is position zero,
+//! every child sits above its parent, so an ascending scan visits parents first
+//! and an index comparison decides ancestry direction.
 
 use alloc::vec::Vec;
 

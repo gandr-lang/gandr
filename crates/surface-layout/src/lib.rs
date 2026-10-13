@@ -51,6 +51,64 @@
 //! for its computation width is reported as width-tainted and is still
 //! rendered in full; taint marks a layout as outside the optimality theorem,
 //! never as a candidate to cut short.
+//!
+//! # Executable specifications
+//!
+//! Nontrivial items pair their specification clauses with `#[spec]` predicates
+//! and an adequacy argument naming concrete witnesses. Enforcing builds check
+//! arithmetic and refusal precedence, unchanged counters after refused charges,
+//! adopted allocation identities, handle namespaces, plan generations and
+//! ownership, taint contexts, resolver transitions, Pareto ordering and exact
+//! output accounting. Predicates use bounded snapshots or borrowed observations
+//! rather than cloning owned stores or replaying callbacks.
+//!
+//! Run the same witnesses with executable checks enabled:
+//!
+//! ```sh
+//! RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-surface-layout
+//! ```
+//!
+//! Each `executable: none` clause names an unavailable observation: data
+//! declarations have no call boundary, formatters expose write-only sinks, the
+//! small-stack witness consumes a one-shot callback, and opaque const
+//! projections lack const value observers. Their adequacy sections identify the
+//! runtime consumers that observe the obligation. Bounded exhaustive models are
+//! distinguished from selected graph fixtures; allocator exhaustion is not
+//! claimed as exercised.
+//!
+//! # Explicit stacks
+//!
+//! Nothing in the crate recurses. Finalization is one forward pass, because
+//! every edge names an earlier node; balanced concatenation builds explicit
+//! levels; resolution runs one work vector of evaluations and continuations;
+//! releasing a plan returns its children to the caller's stack; rendering walks
+//! plan identities on a heap stack. A deep document is ordinary input: the
+//! witnesses seal spines of two hundred thousand nodes and release a chain of a
+//! hundred thousand plan sequences on a 64 KiB native stack
+//! (`algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`,
+//! `plan::tests::plan_release_recycles_a_deep_sequence_iteratively`). The
+//! resolver's and the machine's stacks have their own ceilings
+//! (`algebra::tests::render_vm_stack_limit_is_checked_before_output`).
+//!
+//! # References
+//!
+//! - Sorawee Porncharoenwase, Justin Pombrio, and Emina Torlak. "A Pretty
+//!   Expressive Printer." _Proceedings of the ACM on Programming Languages_ 7,
+//!   OOPSLA2, October 2023.
+//!   [doi:10.1145/3622837](https://doi.org/10.1145/3622837),
+//!   [arXiv:2310.01530](https://arxiv.org/abs/2310.01530) — the optimality
+//!   theorem, the measure set and its dominance order, the computation width
+//!   and the taint state machine, in-context memoization, and the complexity
+//!   bounds this engine implements.
+//! - Jean-Philippe Bernardy. "A Pretty But Not Greedy Printer (Functional
+//!   Pearl)." _Proceedings of the ACM on Programming Languages_ 1, ICFP,
+//!   article 6, September 2017.
+//!   [doi:10.1145/3110250](https://doi.org/10.1145/3110250) — resolution as a
+//!   frontier of non-dominated measures rather than a greedy first fit.
+//! - Philip Wadler. "A Prettier Printer." In Jeremy Gibbons and Oege de Moor
+//!   (editors), _The Fun of Programming_, Palgrave Macmillan, 2003.
+//!   [prettier.pdf](https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf)
+//!   — the document algebra that this crate's choice and flattening generalize.
 
 #![no_std]
 

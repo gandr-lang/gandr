@@ -1,4 +1,32 @@
 //! The type, session-type, lexical and shell-context surface forms.
+//!
+//! # The bridges and the universe are built-in spellings
+//!
+//! The shifts between the value and the computation sorts, Levy's `U` and `F`,
+//! are spelled `+U` and `-F`: the sign names the sort the bridge produces, so
+//! the suspension `+U C` is a value type, positive, and the returner `-F A` a
+//! computation type, negative. Each is one compound tile, which the labeler
+//! forms only when the letter ends there: `+Unit` stays the sign before the
+//! word `Unit`, and `A + B` is the sum however it is spaced. A type has no
+//! unary sign, so the compound tile takes no reading from the sum; `A +U B`
+//! reads as a bridge after an operand, which the lowering refuses. The bare
+//! letters `U` and `F` are ordinary type names. The universe is the reserved
+//! word `Type`, with an optional bracket naming its sort by the same signs and,
+//! after a comma, its level: `Type`, `Type[-]`, `Type[+, 1]`. The rules keep
+//! the kinds `u_type` and `f_type`, the names the tree-sitter grammar gives the
+//! two formers, and `universe_type` joins the kinds only this grammar has.
+//!
+//! - Alternatives: keeping `U` and `F` as aliases beside the new spellings,
+//!   which reserves two capital letters from every program and leaves two
+//!   spellings for one former; a run-time notation through which a library
+//!   declares the spellings, which needs user-declared notation the surface
+//!   does not have.
+//! - Reversal: once user-declared notation is admitted, these spellings move
+//!   into the prelude that declares them.
+//!
+//! The respelling moved the pinned shape from 2364 molds and the fingerprint
+//! `0x6a74_f2ef_1d8a_5c07`: the two formers' keyword tiles became the compound
+//! tiles, and the universe rule added seven molds.
 
 use alloc::vec::Vec;
 

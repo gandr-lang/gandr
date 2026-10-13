@@ -48,6 +48,47 @@
 //! did not write. Everywhere else the mismatch stays a refusal: a lambda
 //! written where a value belongs is still the author's mistake to suspend.
 //!
+//! Five positions bridge the sorts instead of refusing a mismatch: a value
+//! standing as an application's head is forced, because a force is the only way
+//! from a value to a computation; a value type standing as a function's result
+//! gains a returner, so `-> Integer` and `-> -F Integer` mean the same and the
+//! returner is never doubled; a function's body, a computation where the
+//! declaration takes a value, is thunked; a type standing where a value is read
+//! is quoted into its code, a value type by `⌜A⌝` and a computation type by
+//! `⌜C⌝`, so `def t : Type ; def t = Integer ;` declares a code; and a name
+//! standing where a type is read, bound at a universe, is decoded out of it, as
+//! a value type when the universe is `Type[+, l]` and a computation type when
+//! it is `Type[-, l]`. Each bridge is decided by the position's sort and the
+//! written form's, both read off the syntax, so no type is consulted; the
+//! decode reads the universe its binder was written at, the binder's own
+//! syntax. The inserted node takes the origin of the syntax node that demanded
+//! it, marked `Provenance::Inserted` with its `Insertion`, so a reader can be
+//! shown the cast the author did not write; the checker judges it like any
+//! other node, and the kernel re-derives it on readmission.
+//!
+//! A type variable is a value variable: `a : Type` binds a value whose type is
+//! a universe, and `a` in type position is the decode of that value. The
+//! alternative was a separate type-variable binder, a second scope and a second
+//! index space; it was declined because the core has one context and dependency
+//! on values only, so a type variable would have to become a value variable at
+//! the lowering anyway. Reversal: a type-level binder the core gives its own
+//! context — a kind layer — moves type variables into it.
+//!
+//! An elaborator that reads the types in hand is the usual place for these
+//! insertions. This fragment has no elaborator, and its checker returns
+//! verdicts rather than terms, so an insertion there would need an elaborated
+//! body the readmission does not read; the lowering already knows every
+//! position's sort and every form's, so it writes them. The general rule thunks
+//! a computation in any value position; here only the function body is, and a
+//! lambda written where a value belongs stays the `WrongSort` refusal the
+//! fragment's suites pin, because the boundary this change moves is the
+//! function form's. Alternatives: type-directed insertion in the checker,
+//! returning the elaborated body; and inserting at every mismatched position.
+//! Reversal: a position whose sort is not read off the syntax — a head whose
+//! classifier only normalisation computes — moves the insertion into the
+//! checker; and the unit that moves the computation-in-value boundary thunks
+//! there too.
+//!
 //! # A parameter a type names binds a dependent arrow
 //!
 //! A function's declared type is a chain of arrows, one per parameter, and an
@@ -58,6 +99,24 @@
 //! A decode's code is the variable counted over the frames between it and its
 //! binder that bind in the type: every frame a lambda binds, and a typed
 //! parameter's only when its arrow is dependent.
+//!
+//! Each parameter's type is read under the parameters before it, and the result
+//! under all of them, so `def id(a : Type, x : a) -> -F a { return x }`
+//! declares `+U (Π (a : Type). a -> -F a)`: a parameter that a later
+//! parameter's type or the result names binds a dependent arrow, and every
+//! other parameter a plain one. The classification records the naming on the
+//! binder's frame as it reads each type, before anything is minted, so the
+//! arrow is chosen exactly where it is needed. A decoded name counts the
+//! binders between it and its own binder that bind in the type — a dependent
+//! arrow's, and every lambda's in a body — so `a` is index zero in both `x`'s
+//! type and the result, because `x`'s arrow binds nothing.
+//!
+//! The alternative was a dependent arrow for every parameter, which is one rule
+//! and is correct; it was declined because the core keeps the two arrows
+//! distinct nodes so that a codomain's scope is never a payload's question, and
+//! an arrow whose binder nothing names should say so. Reversal: a surface
+//! spelling of the dependent arrow, `(x : A) -> C` in type position, would make
+//! the choice the author's, and the lowering would read it as written.
 //!
 //! # One order of checks, the same at every form
 //!
@@ -76,6 +135,288 @@
 //! depth of a module nothing else bounds; with it the whole lowering is linear
 //! in the allowance, and running out is an engine fault rather than a wrong
 //! answer.
+//!
+//! # A form's sort is decided by its own form
+//!
+//! The sort a position demands flows down from its parent, and the sort a form
+//! produces is a function of the form alone: `+U C`, `Type[s, l]`, `A * B` and
+//! `(A1, …, An) => B` are value types, `-F A` is a computation type, `A -> C`
+//! is a computation type except where a value type is read, where it is a
+//! static Pi (§ Type operators are static functions over codes), a thunk, a
+//! name, a number, a string, `unit`, a tuple and a static abstraction `\A. T`
+//! are values, a returner, a force, a lambda, an application and a block are
+//! computations, a name in type position is the sort its binder's universe
+//! classifies, and a grouping is whatever it wraps. A mismatch is therefore
+//! refused where the form stands, carrying the sort its position demanded,
+//! except at the five positions the insertions (§ Five insertions, by the sort
+//! of the position) name.
+//!
+//! A form is checked in one order, and the first check it fails is its refusal:
+//! a kind the fragment has no reading for; a repair among its children; a term
+//! where a type belongs or the reverse; a reserved form; a former that does not
+//! produce the demanded sort; a variant the fragment does not admit, or an
+//! operand count it does not take; and last, the names and literals it holds.
+//!
+//! # A function tail is a thunked chain of lambdas
+//!
+//! `def f(x: A, y: B) -> R { … }` is one form that writes both halves of a
+//! declaration: the declared type `+U (A -> B -> R)` and the definition `thunk
+//! (λx. λy. …)`, the block lowered under one binder per parameter. An empty
+//! parameter list declares `+U R` and defines `thunk …`. The tail is signed
+//! when every parameter states its type and the tail states its result; a tail
+//! missing any of them writes its definition alone, so the declaration is a
+//! bodiless definition whose thunk the checker cannot synthesise, refused there
+//! as `NotSynthesisable` and never by the lowering. The declared `+U` takes the
+//! declaration's origin and each arrow its parameter's binder, all written;
+//! each lambda takes its binder too.
+//!
+//! A call `f(a, b)` is `f` applied to `a`, then to `b`, curried left to right
+//! at the call's origin; `f()` is its head alone. Since a signed tail files one
+//! form under both halves, its attributes are filed once, under that form's
+//! identity.
+//!
+//! The alternative was keeping the function tail out of the fragment until a
+//! desugaring pass rewrites it into a `def` with a thunk of lambdas, which
+//! would put a second tree between the grammar and the lowering. Reversal: when
+//! the tail grows a form whose meaning is not a chain of lambdas, that form is
+//! lowered by its own plan, and the chain stays the reading of the explicit
+//! parameters. A recursive tail is the first such form: one fixpoint over its
+//! last parameter (the `lower::native` module), the chain kept for the
+//! parameters before it.
+//!
+//! # A block binds each statement over the next
+//!
+//! A block is a sequence of `run x <- c;` and `c;` statements and a last
+//! computation. It lowers to a chain of binds, `c₁` bound over the rest of the
+//! block with `x` in scope, the last computation innermost, each bind at the
+//! origin of its `run` keyword. A discarded statement `c;` binds `c`'s value
+//! under a binder no name reaches and splits it with no components, `split u as
+//! () in rest`, at the origin of `c`: the split types the value as the unit, so
+//! the checker refuses a discarded result of any other type at the statement,
+//! and the lowering needs no annotation of its own. A block with no last
+//! computation is refused at the block as `Arity` with zero; every other
+//! statement — `val`, `unpack`, `leta`, `recv`, `acquire`, `release` and `fork`
+//! — is refused as `Unadmitted`, named by its form, at its keyword; and a `run`
+//! binder that is annotated or is a pattern other than a name is refused the
+//! same way, at the annotation or the pattern.
+//!
+//! The one expression statement admitted is an exit closing its block, `{ run m
+//! <- f(n); return m; }`: `return v;` or `become c;` written before the closing
+//! brace is the block's last computation, as if the semicolon were absent. Any
+//! other computation written there, `f(m);`, is still the refused expression
+//! statement: a discard closing a block would leave the block without its last
+//! computation, and so without an exit. The alternative was admitting every
+//! closing statement as the last computation, which would make `{ …; pure 1; }`
+//! silently return `1` where the author wrote a discard.
+//!
+//! The discard's alternatives were a checker-side typed bind, a bind whose
+//! binder is stated to be `Unit`, which needs a typed-binder node the core does
+//! not have; and admitting `c;` at any type, which drops a result the author
+//! may have meant to use. A value of any other type is discarded by the
+//! explicit spelling `run _ <- c;`: a wildcard binder binds the empty name,
+//! which no identifier resolves to, so the rest of the block reads every
+//! earlier name one index further out and no split is minted. Reversal: if a
+//! dedicated refusal for a non-unit `c;` is wanted, the checker's shape
+//! mismatch at the split is the place to name it.
+//!
+//! A block also stands wherever a computation is read: a match arm that
+//! sequences, `Succ(p) => { run r <- f[<](p); return Succ(r) }`, is a block
+//! lowered by the same chain, and a block where a value is read is refused as
+//! the wrong sort.
+//!
+//! The alternative was lowering `val x = v;` beside `run`, as the substitution
+//! of a value. It was declined because the core has no let and the substitution
+//! would duplicate `v` at each occurrence, which the fragment has no sharing to
+//! undo. Reversal: when the core gains a let, or the lowering gains sharing,
+//! `val` lowers to it.
+//!
+//! # A function exits where its body ends
+//!
+//! `return v` leaves the nearest enclosing function, lambda or thunk with `v`,
+//! and `become c` leaves it by running `c` in tail position, from wherever a
+//! path through that body passes: its last computation, and on a path the last
+//! computation of a block, every arm of a match, a grouping's operand, the
+//! computation of a `run` and `become`'s operand. Every path through a body
+//! ends in one. A lambda ending a body answers it through its own body's exits,
+//! and a hole passes it on. Any other form where a path ends — `pure v`, a
+//! call, a force — is refused as `MissingExit` at its bytes; an exit where no
+//! path passes — a call's head, a definition's value — as `OutOfFragment` with
+//! the `NotInTail` boundary; code after a statement every path of which leaves
+//! as `Unreachable`. How an exit lowers, and the alternatives that route was
+//! chosen over, are in the crate root's § Early exits leave by a direct cut.
+//!
+//! A `become` loop therefore runs in constant continuation however long its
+//! input, an early exit inside it included, where a recursion whose call is
+//! bound by `run` holds a frame per step: the dispatcher's
+//! `evaluate::tests::a_become_loop_runs_in_constant_continuation` compares the
+//! machine's peak frame height over a short and a long input.
+//!
+//! `pure v` is the computation that does nothing and produces `v`; it stands
+//! wherever a computation yields without leaving the function, such as an arm
+//! of a bound match. The alternative was the implicit exit the surface read
+//! before: a body's result was its last computation, so in an algorithm with
+//! nested conditionals each exit was wherever a branch happened to end. A
+//! required exit makes control flow readable at the exit, the way a descent
+//! claim makes recursion readable at the call.
+//!
+//! # Universes and the fuss-free default
+//!
+//! `Type[s, l]` lowers to the universe of sort `s` — `+` the value types, `-`
+//! the computation types — at level `l`. Whatever is left off is the fuss-free
+//! default: `Type` and `Type[+]` are `Type[+, 0]`, `Type[-]` is `Type[-, 0]`,
+//! and a binder bound at no universe at all decodes at level zero in the sort
+//! its position reads: `Type[-, 0]` where a computation type is read, `Type[+,
+//! 0]` everywhere else. The default is the value sort because a type variable
+//! most often stands for a value type, and level zero because a program that
+//! names no level should never have to; a larger universe admits a smaller type
+//! by the lift the checker writes, so the default costs nothing at a use that
+//! needs more. A level wider than a level constant is refused as `Unadmitted`
+//! at its numeral. In term position the grammar reads `Type` alone, never a
+//! bracketed universe, so a sorted or levelled universe is quoted only through
+//! a declaration's signature.
+//!
+//! The alternative was requiring the sort and level on every universe, which
+//! the grammar allows; it was declined because every program of this fragment
+//! lives at the bottom of the value tower, and a written level there is noise.
+//! Reversal: level polymorphism, when a declaration quantifies over a level,
+//! makes a bare `Type` in its signature a question the elaborator answers, not
+//! a default.
+//!
+//! # Type operators are static functions over codes
+//!
+//! `\A. T` lowers to a static lambda over the code of `T`: the body is read
+//! where a value is read, so a type written there is quoted, and `A` binds one
+//! more value variable, which a type in the body decodes. An arrow standing
+//! where a value type is read — a signature that classifies an operator, an
+//! operand of another such arrow — is the static Pi, both sides read as value
+//! types; `Type -> Type[-]` classifies the operators from value types to
+//! computation types, and a computation type as its codomain is refused as
+//! `WrongSort` where it stands, so `def a : Integer -> -F Integer ;` is refused
+//! at `-F Integer`. A head a binder or an earlier declaration answers, applied
+//! to arguments, is a static application, curried left to right, each argument
+//! read where a value is read: where a value is read the application stays one,
+//! and where a type is read it is decoded.
+//!
+//! The decode's universe is the one the operator's written type reaches after
+//! one arrow per argument: `raw_rel_monad : (Type -> Type[-]) -> Type -> Type
+//! -> Type` applied to three arguments decodes at `Type`, and a binder `t :
+//! Type -> Type[-]` applied to one decodes at `Type[-]`. An operator whose
+//! written type says nothing — the binder of `\A. T` — decodes at the default
+//! (§ Universes and the fuss-free default) its position reads. The binder of
+//! `\A. T` is written with no type: the declaration's signature classifies the
+//! abstraction, and the checker refuses an argument of the wrong sort or level
+//! as `SortMismatch`, naming both.
+//!
+//! The alternatives were a typed binder `\(A : K). T` and a decode always at
+//! the fuss-free default. The typed binder was declined because the operators
+//! the surface is designed for are each declared under a signature that already
+//! classifies them, and a second classifier is a second place to disagree; the
+//! fixed default was declined because a carrier `T(A)` with `T : Type ->
+//! Type[-]` stands where a computation type is read, which the default would
+//! misread as a value type. Reversal: an abstraction written where no signature
+//! classifies it takes a typed binder, and when the checker elaborates, the
+//! decode's universe is read from the operator's classifier instead of the
+//! lowering.
+//!
+//! A type application's head is a type name or a type variable. A declaration
+//! is named by an identifier, which is lowercase, and a lowercase name in type
+//! position is a type variable, so an operator one might spell `RawRelMonad` is
+//! declared and applied here as `raw_rel_monad`. The alternative was admitting
+//! capitalised declaration names, a change to every declaration form the
+//! surface has; it was declined because a name's case carries no meaning the
+//! core reads. Reversal: when the surface gains a type declaration with
+//! capitalised names, an operator declared there applies by that name.
+//!
+//! # Products, tuples and the value-function alias
+//!
+//! `A * B` is the eager product and `(a, b)` its tuple. An unparenthesized
+//! chain is one product: `A * B * C` is one product of three components, while
+//! `(A * B) * C` and `A * (B * C)` are products of two whose parenthesized
+//! component is a product of its own, as written. A tuple is one node of as
+//! many components as it writes, each member read where a value is read, so
+//! `(a, b, c)` inhabits `A * B * C` and not `(A * B) * C`. `(a,)` is the tuple
+//! of one component, a type distinct from the type of `a`; the one-component
+//! product type has no spelling yet. `(A1, …, An) => B` is exactly `+U (A1 -> …
+//! -> An -> -F B)`, every former at the alias's origin, so a program spelled
+//! with the alias and one spelled without it lower to one core term and one
+//! content digest; a parenthesised list of types anywhere but before `=>` is
+//! refused as `MisplacedTile` at its first comma. The lazy product `C & D`
+//! stays reserved (the `error` module's § Four ways out of the fragment), the
+//! unrepresentable class's inhabitant, until the core has a product of
+//! computations.
+//!
+//! The alternative was a core former for the alias, which would give one type
+//! two digests by its spelling. It was declined because `=>` is notation for
+//! the thunked arrow, and choosing a spelling is the printer's business, not
+//! the core's. Reversal: none planned; a printer that must restore the alias
+//! finds it through the origin.
+//!
+//! # A graded bridge is refused by name
+//!
+//! `+U[ω] C` is `+U C`: `ω`, the unrestricted grade, is the only one the core's
+//! thunk type carries. Any other grade, a numeral or a name, is `GradedBridge`,
+//! at the grade and naming it, classed unrepresentable. A grade on `-F` is
+//! `Unadmitted`, since the returner carries none in any design. The alternative
+//! was folding a graded bridge into `OutOfFragment` with the grade as its form;
+//! it was declined because the grade is the one bridge parameter a later unit
+//! gives meaning to, and naming it lets the corpus pin exactly the sources that
+//! unit will admit. Reversal: graded thunk types in the core, which make
+//! `+U[r]` lower to the graded former.
+//!
+//! # Literals mean their decoded value
+//!
+//! A number whose text is decimal digits lowers to its canonical non-negative
+//! magnitude, so `007` and `7` are one literal. A string lowers to the text
+//! between its quotes with its escapes decoded: `\n`, `\t`, `\r`, `\0`, `\\`,
+//! `\"` and `\'` to the character each names, a backslash before a line break
+//! elided together with the break, any other escaped character to itself, and a
+//! trailing lone backslash dropped. A literal whose text is not its form's
+//! lexeme is `MalformedLiteral`, which only a hand-built tree carries.
+//!
+//! Escape decoding preserves unescaped Unicode and drops a backslash-newline
+//! continuation as one unit, including CRLF. Unknown escapes retain their
+//! escaped character; an unfinished escape contributes nothing. A well-formed
+//! decimal fraction or exponent is recognized as an unsupported number,
+//! distinct from malformed numeric text. Boundary witnesses exercise these
+//! lexical decisions independently of the parser’s accepted corpus.
+//!
+//! The alternative was to lower a string to its bytes verbatim. It was dropped
+//! because the core literal is the string the source means: two spellings of
+//! one string must lower to one core value, so that content identity in the
+//! core follows meaning. Reversal: a consumer that needs the written spelling
+//! reads it through the literal's origin span.
+//!
+//! # Two sweeps, no recursion, one allowance
+//!
+//! The tree is laid out in level order, so ascending position order visits
+//! every parent before its children and descending order every child before its
+//! parent. The ascending sweep classifies and plans; the descending sweep
+//! mints, and can fail at nothing but the allowance, because every decision was
+//! made on the way down. It mints each manifest type component's form first, in
+//! signature order, so a type head standing for that component adopts a type
+//! already minted wherever the head sits. Each is a plain loop: no descent, no
+//! frame stack, no depth a module can overflow; nested modules are collected
+//! from an explicit stack. Every node visit, every binder frame walked, every
+//! module child and every attribute spends one step of the `LoweringBudget`;
+//! without it the binder walk would make lowering quadratic in a nesting depth
+//! nothing else bounds, and running out is an engine fault rather than a wrong
+//! answer.
+//!
+//! With specification enforcement enabled, predicates check phase-local
+//! ownership and scope inheritance, positional bridges, plan families, recorded
+//! ranges, minting origins and declaration assembly. The pure literal and
+//! cursor readers also check their lexical and consumption boundaries. Adequacy
+//! is bounded to the named semantic goldens and adversarial fixtures: it does
+//! not assert correctness for every program admitted by the full grammar.
+//! Contextual records retain coordinates, not certificates of arena or source
+//! ownership; their producers and consumers state the executable relations.
+//!
+//! # Source holes
+//!
+//! Source `?` and `?name` lower to core value or computation holes according to
+//! their term position. Occurrences have distinct `HoleId`s derived from their
+//! syntax nodes, and retain the usual written origins. Witness:
+//! `tests::source_holes_keep_their_families_and_distinct_occurrences`.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

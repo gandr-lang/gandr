@@ -8,6 +8,72 @@
 //! publication another connection's synchronisation made for a document it
 //! holds open. A relay is the client's end: it carries frames between an
 //! editor's standard streams and the hub's socket.
+//!
+//! # One hub serves a workspace's clients
+//!
+//! **Choice.** On Unix, `gandr lsp` is a relay: it connects to the engine hub
+//! listening on the current directory's workspace socket, starting `gandr
+//! serve` detached when nothing answers, and carries frames between its
+//! standard streams and the socket unchanged. The hub, `run_hub`, accepts every
+//! connection the socket takes and serves each with a reader thread and a
+//! writer thread over one `Workspace`: the open documents with their text and
+//! sessions, which connections hold each open, and each connection's outbox. A
+//! synchronisation publishes to the connection that sent it and to every other
+//! holder, so an edit through one editor is what a second client's hover reads
+//! at the same version, and an open of a document another connection holds
+//! takes the opener's text into the held session, which molds only what
+//! differs. A connection that ends, cleanly or killed, lets go of what it held;
+//! a document no connection holds is forgotten with its session. The hub
+//! removes its socket and exits once no client has connected for its linger, a
+//! minute unless `--linger-ms` names another.
+//!
+//! **Discovery.** The socket is `$XDG_RUNTIME_DIR/gandr/<digest>.sock`, or
+//! `<temporary directory>/gandr-$USER/<digest>.sock` without that variable,
+//! where the digest is the first sixteen hex digits of the canonical workspace
+//! path's BLAKE3 hash; the directory is created readable by its owner alone.
+//! Sixteen digits keep the path under the 104 bytes the smallest platform limit
+//! allows inside a long per-user temporary directory. `bind` answers `Served`
+//! when a hub accepts on the socket, and removes and rebinds a socket file
+//! nothing accepts on, so a hub that died leaves no lock behind. The socket
+//! file is the lock: no second file says who owns it.
+//!
+//! **Serialisation.** One mutex guards the workspace; a connection holds it
+//! while it handles a frame and runs the admission that frame left, and sends
+//! what it made to the outboxes inside it, so every client reads the
+//! publications for a document in the order the hub made them. The relay
+//! decides its exit code from the frames it carries: a `shutdown` request
+//! before `exit` is clean, anything else abrupt, a broken client stream a
+//! fault, as `serve` decides them.
+//!
+//! **A second face.** The hub reads each connection's first byte: a frame
+//! begins with its `Content-Length` header, so a connection beginning with `{`
+//! is handed to the `Face` `run_hub` was given, which serves it over the same
+//! locked workspace; the driver gives it the Model Context Protocol server.
+//! Each publication keeps its diagnostics beside the document and tells every
+//! watcher the document changed, so another face reads diagnostics without
+//! judging the text again. The face is a parameter so this crate does not
+//! depend on the protocols served beside it.
+//!
+//! **Alternatives.** A hub per document, or a session per connection with edits
+//! forwarded between them, would keep two judgements of one text that could
+//! disagree; one workspace per hub holds one. A lock file beside the socket
+//! would name the owner's process, at the cost of a second file whose staleness
+//! needs the same probe the socket answers directly. A hub that exits with its
+//! last client would cost the next editor start a cold session; the linger
+//! keeps a restart warm and returns the memory soon after. Per-document locks
+//! would let two clients' edits to different documents run at once; the one
+//! lock is simpler and no measurement shows contention. Making the relay read
+//! the hub's answers to learn whether `shutdown` succeeded would cost a parse
+//! per frame both ways for a case only a client that sends `shutdown` before
+//! `initialize` reaches. The read-evaluate loop as a client is not in this
+//! crate yet; a client speaking another protocol than the Language Server
+//! Protocol is a second face over the same `Workspace`.
+//!
+//! **Reversal.** Measured contention on the workspace lock moves it per
+//! document; a platform without Unix domain sockets gains a transport there,
+//! its clients serving standalone until it does; a client that needs the hub's
+//! own judgement of its session's ending replaces the relay's reading of its
+//! input with one of the hub's answers.
 
 use alloc::sync::Arc;
 use core::sync::atomic::AtomicU64;

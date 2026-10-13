@@ -3,6 +3,22 @@
 //! A code is an identity: allocated once, in its registry row, and never
 //! reused. A message is the code's template with its arguments filled; the
 //! arguments are the data, and the prose is a projection of them.
+//!
+//! # Stable diagnostic codes
+//!
+//! `DiagnosticCode` is a registry of twelve codes, each spelled by a severity
+//! letter — `E` for an error, `W` for a warning — and its allocation number,
+//! `E0001` to `W0012`, and each carrying one localizable `DiagnosticTemplate`
+//! with its arguments named in braces. A code's spelling and its template occur
+//! once, in its registry row; the spelling is the code's display, its parse and
+//! its wire image. A code is never reused: a code nothing raises keeps its row.
+//! `DiagnosticMessage` is one variant per code with the template's arguments as
+//! fields, and its display fills the template.
+//!
+//! The alternatives were the variant name as the wire image, which a rename
+//! breaks for every stored report, and free text, which a reworded message
+//! breaks for every reader matching it. The choice reverses if translations
+//! come to key on something other than the code.
 
 use alloc::string::String;
 use core::fmt;

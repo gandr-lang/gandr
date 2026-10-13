@@ -15,8 +15,78 @@
 //! - [`parse()`] runs the three over one source; [`FormSplit`] runs them over
 //!   one source's top-level forms apart and joins them into the same parse.
 //!
-//! The design is stated in this crate's `README.md`: its synopsis, and the
-//! decision sections that follow it.
+//! Each module's documentation states its part of the design, with the
+//! alternatives each decision was chosen over.
+//!
+//! # No recursion over input
+//!
+//! Every walk over caller-controlled input is a loop over an explicit worklist
+//! or the slope: collapse picks the highest reducible cell — an operator or an
+//! open form — until none remains above its floor, so a form's content is
+//! reduced before the form is force-closed, and closing a form wraps a
+//! contiguous run of cells. The `recursion_forbidden` lint holds the crate to
+//! it. Nested input therefore costs heap, never stack.
+//!
+//! # The corpus every molding is checked against
+//!
+//! The language's sources live in `gandr-surface-corpus`
+//! (`crates/surface-corpus/`), under its strict root and its fixture root.
+//! `tests::acceptance::corpus_molds_to_zero_obligations` reads every one of
+//! them and requires each to mold to zero obligations; the parse-totality,
+//! minimization and latency tests read the same set. No count is pinned: the
+//! corpus grows and shrinks with the language, and the corpus crate's runner
+//! reports how many sources each root holds. `tests/fixtures/` holds two
+//! incomplete sources that must carry obligations.
+//!
+//! # Grammar contracts witnessed by a parse
+//!
+//! Five of the grammar's contracts can only be witnessed by parsing: that each
+//! type operator the precedence table declares right-associative chains
+//! cleanly, the value function space `=>` among them, that every
+//! recursion-marker instantiation parses cleanly, that a chain mixing
+//! incomparable set operators is refused a clean reading, that every spelling
+//! of the universe reads cleanly wherever a type stands, and that every
+//! spelling of a type operator — the static abstraction, its application, the
+//! unary and n-ary `=>` — reads cleanly as a declared type, a definition's
+//! value and an operator's argument, beside a case arm's `=>`. They live here,
+//! in `tests::grammar`, because the dependency runs from this crate to the
+//! grammar; the grammar's own suite keeps the contracts it can state without a
+//! parser.
+//!
+//! # Specification evidence
+//!
+//! Executable predicates cover constant constructors and class rankings,
+//! scanner decisions, candidate ordering, slope and cache transitions,
+//! rollback, completion queries, source agreement and checkpoint fields. Each
+//! nontrivial item states its adequacy domain and names local witnesses. Closed
+//! wire-tag vocabularies and byte classes have exhaustive finite witnesses;
+//! scanner modes, precedence and repair transitions use discriminating
+//! examples; generated source and stream properties remain sampled evidence.
+//! Run the predicates with `RUSTFLAGS="--cfg anodized_panic" cargo test -p
+//! gandr-surface-parser --all-targets`.
+//!
+//! Grammar predicates preserve logarithmic successor and adjacency lookups:
+//! successor minimality is checked by edge membership and the immediately
+//! preceding adjacency. They do not scan the whole grammar on each speculative
+//! completion.
+//!
+//! The witnesses do not establish universal malformed-input totality. A
+//! trailing escape in a quoted shell assignment can advance past the source;
+//! batch parsing then refuses source agreement. Checkpoint counts also lack
+//! allocation bounds, so a maximal encoded count can panic before a typed
+//! decoder refusal. These are runtime limits, not exemptions from the intended
+//! losslessness and decoder contracts.
+//!
+//! # References
+//!
+//! - David Moon, Andrew Blinn, Thomas J. Porter and Cyrus Omar. "Syntactic
+//!   Completions with Material Obligations." _Proceedings of the ACM on
+//!   Programming Languages_ 9, OOPSLA2 (2025).
+//!   <https://doi.org/10.1145/3763182>, arXiv:2508.16848 — molds, grout, the
+//!   meld calculus and its push rules, the obligation-minimizing molder, and
+//!   the traces the contract suite replays.
+//! - tylr, the Hazel structure editor's parser. <https://github.com/hazelgrove/tylr>
+//!   — the obligation taxonomy and `Delta.compare`, whose order `Delta` ports.
 
 #![no_std]
 

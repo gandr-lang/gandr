@@ -12,6 +12,27 @@
 //! declarations, and their reserved members — are listed apart in
 //! [`PBG_ONLY_KINDS`](crate::PBG_ONLY_KINDS), so [`named_kind_parity`] never
 //! enumerates them. The two lists are disjoint.
+//!
+//! # Named-kind inventory
+//!
+//! `TREE_SITTER_NAMED_KINDS` lists, ascending, the 124 named node kinds of the
+//! surface's tree-sitter grammar; `PBG_ONLY_KINDS` lists the kinds only this
+//! grammar has, disjoint from them. `named_kind_parity` classifies every listed
+//! kind: `source_file` is the file root, realised by the item forms, and every
+//! other kind is realised by a rule's provenance or an adaptation's surface
+//! form. A kind is never grammar semantics: forms range over tiles and holes
+//! only, and the inventory is how coverage of the named kinds is checked.
+//!
+//! A molded syntax tree names each form and tile by its `MoldId`;
+//! `Pbg::named_kind` reads the kind back as the provenance of the rule the mold
+//! was numbered for. The table records each mold's rule as it numbers the
+//! molds, so the lookup is total over the table and refuses only an id past it,
+//! as `Pbg::mold` does. The record is not folded into the fingerprint, which
+//! keys the mold table a parser reads: two grammars with one mold table and
+//! different rule provenance share a fingerprint, so a consumer reads kinds
+//! from the grammar it holds, after checking the tree's fingerprint against it.
+//! Reversal: fold each mold's provenance into the fingerprint once a consumer
+//! keys stored kinds by fingerprint alone.
 
 use alloc::vec::Vec;
 

@@ -10,6 +10,20 @@
 //! refusals from a list kept beside the declarations could lose one recorded
 //! only with its declaration.
 //!
+//! `entries` reads the whole `Step` under its verb. A declaration and the
+//! refusal it produced are one `DeclarationReport`, so every refusal the walk
+//! carries reaches the renderer with its declaration; a face reading refusals
+//! from a list kept beside the declarations could drop one. The step carries
+//! the three things rendering needs and the composition already had: the
+//! source's text, borrowed; the lowering's origin table, moved out of the
+//! lowered module once checking is done; and the spellings of the types its
+//! checker refusals compare, made while the arena was at hand.
+//!
+//! Passing text separately while exposing the composed module would split one
+//! fact across calls that must agree. The choice reverses if a consumer needs
+//! to render a source it never walked; such a consumer needs a constructor
+//! taking text and origins together.
+//!
 //! # Every span is the producer's
 //!
 //! A lowering refusal and a corpus refusal carry their spans; a checker
@@ -19,11 +33,40 @@
 //! its source's path and claims no span. Nothing here searches the text for a
 //! plausible one.
 //!
+//! A lowering refusal and a corpus refusal carry their spans. A checker refusal
+//! names core nodes; the origin table maps each node the lowering minted back
+//! to the syntax it came from. A node the table records nothing for leaves its
+//! locus absent, and a report with no primary locus names its source's path and
+//! quotes no line. Each span is checked against the step's text before it is
+//! laid out: a span outside the text, or one splitting a character, is
+//! unlocated, never clamped. Nothing searches the text for a plausible locus,
+//! and nothing widens an absent one to the whole declaration: a guessed locus
+//! misleads where an honest absence only fails to help.
+//!
 //! # The backend stays behind the API
 //!
 //! `annotate-snippets` lays the snippet out. None of its types crosses this
 //! crate's API: a consumer reads [`Report`], [`Class`], [`RenderStyle`],
 //! [`Verbosity`] and [`Rendered`].
+//!
+//! The snippet layout is
+//! [`annotate-snippets`](https://docs.rs/annotate-snippets/0.12.16) 0.12.16,
+//! maintained by the Rust project and used by rustc and cargo, with default
+//! features off. It adds three crates to the graph — `annotate-snippets`,
+//! `anstyle`, which `clap` already brings, and `unicode-width` — and builds
+//! without `std`, so a rendering is a `String` and nothing else. None of its
+//! types crosses this crate's API.
+//!
+//! | Candidate | Why it lost |
+//! | --------- | ----------- |
+//! | [`codespan-reporting`](https://docs.rs/codespan-reporting/0.13.1) 0.13.1 | the closest second: two crates, but colour goes through `termcolor` or a hand-written style writer, and its file database answers lookups fallibly where the step already holds the text |
+//! | [`ariadne`](https://docs.rs/ariadne/0.6.0) 0.6.0 | one maintainer, its GitHub repository archived on a move to another host, and `yansi` always linked |
+//! | [`miette`](https://docs.rs/miette/7.6.0) 7.6.0 | the graphical handler needs `fancy-base`, about thirty crates including `syn`, and reports must implement its `Diagnostic` trait |
+//!
+//! The choice reverses on a security advisory or an unmaintained notice against
+//! `annotate-snippets`, on the Rust project ceasing to use it, or on a release
+//! that drops plain rendering or the `std`-free build; `codespan-reporting` is
+//! next.
 //!
 //! # Example
 //!
@@ -60,10 +103,25 @@
 //! ```
 //!
 //! Each decision, with the alternative it was chosen over and what would
-//! reverse it, is in this crate's `README.md`.
+//! reverse it, is in the module that owns it.
 //!
 //! [`Step`]: gandr_surface_dispatcher::Step
 //! [`DeclarationReport`]: gandr_surface_corpus::DeclarationReport
+//!
+//! # Specification discipline
+//!
+//! Nontrivial items carry executable predicates and bounded `# Adequacy`
+//! claims. Borrowed identity checks avoid copying or scanning source text.
+//! Enforcing tests exercise span validity and causal labels alongside iterator
+//! progress and numeric payload roles. The nontrivial `Display` methods state
+//! an exemption: `fmt::Formatter` exposes neither its output buffer nor an
+//! independent destination-failure observer.
+//!
+//! The finite witnesses include UTF-8 splits and end-of-file spans. Invalid
+//! primary and context loci retain their distinct absence reasons; no span is
+//! clamped. The rendering goldens are layout examples, not exhaustive backend
+//! coverage. Each item's Rustdoc states its domain and links its own-crate
+//! witnesses.
 
 mod culprit;
 mod entry;

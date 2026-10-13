@@ -12,6 +12,29 @@
 //! consumer re-derives when that form is lowered again. Layout and
 //! documentation take no rank, so reformatting or re-documenting a form moves
 //! no key.
+//!
+//! # Node keys
+//!
+//! A table that outlives one parse files a node under its `NodeKey`: the digest
+//! of the top-level form holding it — a significant child of the root — and its
+//! rank among that form's significant nodes in preorder, the form's own root
+//! ranked zero. Layout, documentation and what they hold take no rank and have
+//! no key, and neither does the root; the whole tree's identity is
+//! `SyntaxTree::digest`. An edit to another form, to layout or to documentation
+//! leaves a key alone; an edit inside the form changes the form's digest and so
+//! every key under it, which is the set a consumer derives again when that form
+//! is lowered again. `TreeBuilder::finish` ranks and digests the forms in one
+//! walk, so `SyntaxTree::key` answers without one.
+//!
+//! - Choice: the form's digest and a rank. Only top-level forms need an
+//!   identity at commit; a node inside one is found by its position in the
+//!   form.
+//! - Alternatives: the node's own digest, which needs a digest at every node
+//!   and cannot tell apart two equal nodes in one form; an arena position,
+//!   which an edit anywhere earlier in the file invalidates.
+//! - Reversal: a consumer that needs a node's identity apart from its form's —
+//!   reuse of a sub-form's work across a move — needs a digest of the node
+//!   itself.
 
 use crate::digest::NodeDigest;
 

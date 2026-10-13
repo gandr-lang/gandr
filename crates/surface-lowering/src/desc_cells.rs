@@ -1,5 +1,37 @@
 //! Description members elaborated into checked cells with source-local
 //! refusals.
+//!
+//! # Cells and circuit wiring
+//!
+//! `desc_cells::elaborate_desc_cells` turns each description into one
+//! declaration-local cell store, retaining operation frames, circuit composites
+//! and typed refusals. Ordinary `lower_module` collection executes this route
+//! and exposes the result through `LoweredModule::cells`; cell refusals become
+//! held declarations at their own operation or rule spans. A many-output
+//! operation elaborates to one frame with a return continuation per output
+//! port, and its rules elaborate over that frame; a rule returning a different
+//! number of results is refused at its own span. A face reads its left-hand
+//! side as a cut of a value against an operation frame, so a law whose
+//! left-hand side applies an operation where that value stands,
+//! `comp(id(a), f) ==> f`, is carried in the description and has no cell yet:
+//! it is refused at its span as a shape the elaboration does not read. A `data`
+//! operation whose rules compile runs as a declaration of the module, returning
+//! its results as one tuple (`operation`). Identical faces share one cell
+//! identity. Witnesses:
+//! `desc_cells::tests::ordinary_lowering_executes_the_cell_gate_and_preserves_later_values`,
+//! `desc_cells::tests::a_face_declared_twice_is_one_cell`,
+//! `desc_cells::tests::a_single_redex_block_reaches_the_cell_layer_behind_the_gate`,
+//! `desc_cells::tests::a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output`,
+//! `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`,
+//! `description::sign::tests::the_cat_shape_laws_are_written_faces`.
+//!
+//! `circuit::embed` reads literal port wiring into the circuit-algebra matcher.
+//! Equal spelling in different generator roles remains distinct, and an
+//! exhausted search budget is a refusal rather than an empty match set. This
+//! uses the shared diagram checker and embedding certificates instead of an
+//! independent adjacency matcher. Witnesses:
+//! `circuit::embed::tests::one_spelling_in_two_roles_is_two_boxes`,
+//! `circuit::embed::tests::an_exhausted_budget_declines_rather_than_reporting_no_match`.
 
 use alloc::vec::Vec;
 

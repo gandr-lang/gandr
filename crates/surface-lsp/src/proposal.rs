@@ -7,6 +7,38 @@
 //! kept proposals through four surfaces: ghost text at the cursor, a lens
 //! counting the checked fills of a range, an action applying one, and a hover
 //! carrying the model's explanation.
+//!
+//! # Model proposals reach the editor once they check
+//!
+//! **Choice.** The server never calls a model. A model hands a fill of a range
+//! to the hub (`Workspace::propose`, the Model Context Protocol server's
+//! `propose` tool), naming the version it read. The hub refuses a version the
+//! document has moved past, tries the document with the fill applied as a trial
+//! does, and keeps the fill beside the document only when it checks: the trial
+//! judged the filled document and it carries no error, or fewer errors than the
+//! document's published diagnostics. A kept proposal reaches the editor four
+//! ways — ghost text at a cursor inside its range, ahead of the parser's
+//! expected syntax; a code lens over its range counting the checked fills
+//! there; a quick-fix code action replacing the range; and, when the model
+//! explained it, a note under the hover. The document's next synchronisation,
+//! whatever it changes, withdraws every proposal kept for it. The document's
+//! text, session and published diagnostics are never touched by a proposal.
+//!
+//! **Alternatives.** Keeping a proposal whose fill leaves the document no worse
+//! would show fills that do nothing; requiring the filled document to carry no
+//! error at all would keep nothing in a document with an unrelated refusal
+//! elsewhere. Moving a kept proposal's range through an edit, rather than
+//! withdrawing it, would show a fill checked against a text that no longer
+//! exists. Pushing `workspace/codeLens/refresh` to the editors when a proposal
+//! is kept would show the lens at once, at the cost of a server-to-client
+//! request the relay and every client must answer; the editor asks for lenses
+//! again on its own triggers, and ghost text and actions are pulled at the
+//! cursor. Lenses run no command: applying a fill is the code action's, and a
+//! lens command would need a client command the extension registers.
+//!
+//! **Reversal.** A proposal that should survive an edit far from its range
+//! moves with the edit and is checked again; an editor measured to show stale
+//! lenses for long gets the refresh request.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;

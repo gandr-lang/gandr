@@ -1,6 +1,42 @@
 //! The hub's render-bus face: a renderer in another process attaches, hears
 //! the documents the hub holds, and receives each document's report every
 //! time a synchronisation publishes it.
+//!
+//! # The hub serves the render bus
+//!
+//! **Choice.** A connection to the hub whose first byte is `r` attaches to the
+//! render bus: it opens with the line `render-bus/1`, naming the bus and its
+//! wire schema version, and is then served newline-delimited
+//! `gandr-surface-render-remote` frames. The face greets it with every document
+//! the hub holds and sends each one's report, then a report for every document
+//! a synchronisation publishes, at the version published; a resync is answered
+//! with the document's current report, a detach with a detach and the end of
+//! the connection, and an attach naming another version with a detach at once.
+//! A report (`Workspace::rendered`) is read off what the editor shows, never
+//! judged again: the held text, the highlighter's spans over it, and one card
+//! per published error or warning — the registry code when the diagnostic's
+//! code is a registry spelling and `Other` with the vocabulary name leading the
+//! message otherwise, its span in bytes, absent for one published at the
+//! origin, and the related information as its derivation — with an error mark
+//! under each located error and a hole tint under each goal. The face is built
+//! in, where the Model Context Protocol face is a parameter, because its frames
+//! are this crate's own diagnostics and the seam is already a dependency.
+//!
+//! **Alternatives.** A report built from the judgement's reports rather than
+//! the published diagnostics would carry the typed arguments a card has room
+//! for, at the cost of keeping each document's reports beside its diagnostics,
+//! or judging again; the cards carry what the editor shows. Goal cards wait on
+//! goals whose types the checker spells: a goal travels as a tinted hole mark
+//! carrying its message until then. A forgotten document is not announced: the
+//! frame set has no closing body, and a view keeps the last report it was sent
+//! until another document is checked. Sending the text in every report costs
+//! its bytes per publication over a local socket; a renderer holding no buffer
+//! of its own cannot place a byte range without it.
+//!
+//! **Reversal.** A view that must show unsaved goals with their types reads
+//! goal cards once the checker spells them; a frame set that gains a closing
+//! body announces a forgotten document; a report measured as too large for a
+//! document's every edit sends only what changed.
 
 use alloc::string::String;
 use alloc::vec::Vec;

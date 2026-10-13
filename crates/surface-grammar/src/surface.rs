@@ -49,6 +49,135 @@
 //!
 //! The delimiters moved the pinned shape from 2490 molds and the fingerprint
 //! `0xcf11_4827_9fa4_5c8e`.
+//!
+//! # Built-in surface
+//!
+//! `built_in` is the gandr surface: 21 precedence groups and 19 tighter-than
+//! edges, then the term forms, the type-and-shell forms and the circuit forms.
+//! The groups form one expression chain, one pattern chain and one type chain
+//! whose union, intersection and lazy-product bands are mutually incomparable
+//! between the sum and arrow bands; the item group stands apart from all three.
+//! Its pinned shape is 2530 molds, 78 labels projected to more than one mold,
+//! and the fingerprint `0x0def_d4e9_fa69_917b`; a change to any form, group or
+//! edge moves the fingerprint, and the test pinning it states the change.
+//!
+//! ### Lists close on an optional separator
+//!
+//! Every comma-separated list of one or more elements — arguments, parameters,
+//! fields, type arguments, patterns, tuple and record elements, attribute
+//! blocks — may end with a comma before its closer, so a list spread one
+//! element per line reads the same whatever line is last. A parenthesised
+//! expression is not a list: `(a,)` is the one-element tuple, whose comma is
+//! its spelling rather than an optional tail, and a tuple of two or more
+//! elements may still close on a comma. A one-element tuple pattern and a
+//! one-element parenthesised type have no reading of their own: the one-element
+//! product, value and pattern are `#{A}`, `#{a}` and `#{x}`, one delimiter per
+//! arity-shaped former (`src/surface.rs`). A case or offer arm may open with
+//! `|`, so an or-pattern spread over lines can lead each line with its
+//! separator. A mold is one tile occurrence, and an occurrence a hole can
+//! follow admits an operand before any successor, so an optional bar after a
+//! shared `{` or `,` would let `{ A | B => …` read `A` before the arm's bar;
+//! the arm block instead spells its opener and its separator twice, once
+//! followed by a hole and once by the bar.
+//!
+//! - Alternatives: a leading bar as an optional prefix of the arm, which ties
+//!   every or-pattern with a bar-led arm; a trailing comma only on lists of two
+//!   or more, which leaves the one-element list the place a reordering breaks.
+//! - Reversal: a list whose trailing comma means something — a one-element
+//!   tuple — takes the comma out of that list's optional tail.
+//!
+//! The optional separators and the doubled arm block moved the pinned shape
+//! from 2378 molds and the fingerprint `0xf9c2_15a1_2bea_b69c`; the one-element
+//! tuple moved it from 2489 molds and `0x3930_dc67_fa9f_b403`.
+//!
+//! ### An attribute block is a form of its own
+//!
+//! A block of attributes before a top-level declaration is an `attribute_block`
+//! item form of its own, whatever follows it: a definition, a signature, a
+//! function or a data declaration. `def` opens the definition family with no
+//! prefix. Attributes ride a declaration as a leading block, carried in the
+//! tree as nodes at declaration sort and filed by the lowering under the
+//! declaration's content identity, which adding, editing or removing an
+//! attribute leaves unchanged. Standing outside the declaration's form, the
+//! blocks stay out of its digest. At the top level `@[` opens one reading; a
+//! block inside the definition's form would tie with the standalone one before
+//! a data declaration, and only the token after `]` would tell them apart, so
+//! every attributed definition would run lookahead windows past its block.
+//!
+//! A module member keeps its blocks inside its form,
+//! `attributed_module_definition_member`: nothing else at the module-member
+//! sort opens with `@[`, so no tie arises there, and its identity covers its
+//! attributes.
+//!
+//! - Alternatives: the definition's inline block, with the lookahead window
+//!   extended past a long block's closer, which runs windows on every
+//!   attributed definition and keys the definition by its attributes; a longer
+//!   fixed window, which moves the bound without removing it.
+//! - Reversal: a consumer that must key a module member by an identity its
+//!   attributes leave alone moves the member's blocks into a module-member form
+//!   of their own, as at the top level.
+//!
+//! ### A data member's `:` after a constructor name has one reading
+//!
+//! A `data` member led by a constructor name has two tails: the generator
+//! judgment `Ctor : Side (--> Result)?`, the one constructor form, and the
+//! declined Haskell-style `Ctor(fields) (: Result)?`, kept admissible so the
+//! elaborator's decline names the respelling. The declined tail annotates a
+//! result only after its field tuple. Were its fields optional on their own, a
+//! fieldless `None : Maybe(a)` would read its `:` two ways with the same tiles,
+//! and the parser's lookahead window would choose between them inconsistently:
+//! the generator for `None : Outer`, the declined tail for `Nil : List(a)`. The
+//! two lowerings read the member's tiles alike, so requiring the field tuple
+//! changes no lowered module.
+//!
+//! - Alternatives: a parser rule keeping the generator reading of the tie,
+//!   which leaves the grammar ambiguous for every other consumer of the mold
+//!   table; dropping the declined tail's result annotation altogether, which
+//!   loses the respelling hint for `Ctor(x : A) : T`.
+//! - Reversal: a stale spelling `Ctor : T` that must be told apart from the
+//!   generator, which needs a distinct lead rather than a second reading of the
+//!   same tiles.
+//!
+//! The change moved the fingerprint from `0x5984_1cfd_3dbe_9111`.
+//!
+//! # Frozen tables
+//!
+//! Building the built-in grammar is dominated by numbering and interning its
+//! molds, and every `gandr check` would pay it before the first source. The
+//! table is a function of the constant rules, so it is computed once, when the
+//! rules change, and committed: `src/surface/frozen.rs` holds each mold's
+//! label, context, rule, closing class, form-membership bits, successors and
+//! least interchangeable mold, each context's facing and step lists, the 233
+//! distinct step lists once each, and the digest of the rules it was built
+//! from. `built_in` assembles the rules, digests them, and thaws the table when
+//! the digest matches — the statics are read where the compiler placed them,
+//! and what is derived from them (bounds, the label index, the dense flags, the
+//! successor runs, the fingerprint) is recomputed as the gated build computes
+//! it. Rules that digest otherwise are built through every gate, so a stale
+//! file costs time, never a different grammar.
+//!
+//! The gates do not run on the thaw path: they proved these rules when the file
+//! was generated. `surface::tests::the_frozen_tables_are_the_built_ones` builds
+//! the rules through every gate, renders the table and compares the rendering
+//! with the committed file byte for byte, then compares the thawed grammar with
+//! the built one whole, fingerprint included. A change to any rule fails that
+//! test until `UPDATE_EXPECT=1` rewrites the file, and the rewrite is a
+//! reviewed diff of the table. The digest covers what the table reads of a rule
+//! — name, sort, group and form — and not its provenance or adaptation records,
+//! which the grammar reads from the rules themselves.
+//!
+//! - Alternatives: a build script running the gated build at every compile,
+//!   which builds the grammar crate twice and hides the table from review; a
+//!   serialized blob with its own decoder and refusals, where the statics need
+//!   neither; building the table in parallel at first use, which the per-rule
+//!   interning caps at a few times faster and which contends with the source
+//!   workers, where thawing is thirty times faster at every width; memoizing
+//!   the per-occurrence canonical forms, which removes about a quarter of the
+//!   build.
+//! - Reversal: a grammar assembled at run time from user-declared operators,
+//!   where the built-in table is not the table a source parses under; or a
+//!   gated build fast enough that a 290 KB generated file stops paying for
+//!   itself.
 
 use alloc::vec::Vec;
 

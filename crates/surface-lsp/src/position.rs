@@ -6,6 +6,20 @@
 //! A wire count past the platform's `usize` saturates, which the index then
 //! clamps as it clamps any position past the text, and an index count past
 //! `u32` saturates on the way out.
+//!
+//! # Positions count UTF-16 code units
+//!
+//! The server advertises `positionEncoding: "utf-16"` and counts every range,
+//! related location and token in UTF-16 code units through the renderer seam's
+//! `LineIndex`, whose rows end at `\n`, `\r\n` and a lone `\r` as the
+//! protocol's do. UTF-16 is the encoding every client must support, so it is
+//! the one encoding that needs no negotiation and no second projection. The
+//! alternative negotiates UTF-8 with a client that offers it: UTF-8 saves the
+//! conversion on an ASCII-heavy source, at the cost of a second projection and
+//! a negotiation, each to be tested apart, for a saving no measurement has
+//! shown matters beside a whole-document recheck. The choice reverses if a
+//! measurement shows the conversion costs a session more than a recheck does;
+//! the server then negotiates UTF-8 and the seam gains that column.
 
 use anodized::spec;
 use gandr_surface_render_remote::ByteOffset;

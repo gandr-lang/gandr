@@ -3,6 +3,44 @@
 //! The checkpoint retains the semantic value, including hole closures. Filling
 //! it resumes that value through the live evaluator. Coverage is a report from
 //! the checker, independent of the per-arm answers; it grants no admission.
+//!
+//! # Live match checkpoints
+//!
+//! `MatchCheckpoint::evaluate` retains a closed scrutinee's semantic value,
+//! including hole closures. `analyze` reports each arm's `Satisfied`,
+//! `Refuted`, or `Possibly` answer using the core live matcher. The first arm
+//! not refuted determines selection; a possible arm suspends the match even
+//! when a later arm is satisfied. `fill` resumes the retained value through the
+//! core live evaluator.
+//!
+//! `run` executes the selected arm under its pattern bindings without
+//! re-matching or re-evaluating the scrutinee. `MatchRun::Held` and
+//! `MatchRun::Uncovered` remain distinct and consume no evaluation fuel;
+//! `MatchRun::Evaluated` names the resulting computation in the checkpoint's
+//! domain. The analysis must belong to that checkpoint and precede any
+//! subsequent fill.
+//!
+//! Coverage comes from the checker's `cover` judgement and remains a separate
+//! report, including analysis refusals. It enforces no admission policy and
+//! makes no claim of index-sensitive exhaustiveness. Coverage enforcement
+//! belongs to the admission policy that consumes it. The lowering already
+//! refuses one shape of gap: a match that leaves a constructor without an arm
+//! and with no pattern hole to stand for it is `NonExhaustiveMatch`, because
+//! its decision tree has no leaf there. A hole lowers. Its match reports
+//! `Exhaustiveness::Possibly`, and a run reaching it is held.
+//!
+//! The checkpoint keeps a semantic domain rather than a source expression: a
+//! fill preserves completed reductions and captured environments. Re-evaluating
+//! the original source would duplicate completed work; a second matcher would
+//! duplicate core semantics. The representation changes when durable semantic
+//! checkpoints become available.
+//!
+//! A match written in source reaches the checkpoint unchanged. The lowering
+//! keeps each match's pattern table and its rows, one per or-pattern
+//! alternative, in `CaseOrigin`. A pattern hole is named by its syntax node, so
+//! the compiled tree stops at the same hole the row reports `Possibly` for. The
+//! suites read those rows, analyze them, and run the compiled tree through the
+//! live evaluator.
 
 use anodized::spec;
 use gandr_core_checker::CheckingContext;

@@ -15,6 +15,27 @@
 //! The import scope is settled by a policy that refuses every shadow, so two
 //! imports binding one alias refuse the module, naming both, rather than a
 //! later import silently hiding an earlier one.
+//!
+//! # Imports bind an alias and resolve nothing
+//!
+//! `import "URI" as name ;` is kept in source order as an `ImportDeclaration` —
+//! the address with its escapes decoded, the alias, the bytes — and its alias
+//! bound in the module's import scope: the import's one root binding, its
+//! position, run through `alias_as` (`renaming . name`) and imported, so the
+//! visible namespace answers each alias and the export stays empty. The import
+//! policy refuses every shadow, so a second import of one alias refuses the
+//! module as `DuplicateImportAlias`, naming the first; an import out of shape,
+//! a missing alias included, is `MalformedForm`. No address is resolved and an
+//! alias is not a term name. Reversal: when module resolution lands, the
+//! address resolves to an export namespace and the import runs its modifier
+//! over that instead of a root binding.
+//!
+//! The source reader refuses an import without an alias. Rebinding an alias is
+//! refused even when the URI is identical; refusal preserves the inventory and
+//! namespace and leaves the next import position available. Witnesses:
+//! `namespace::namespace::source_import_without_alias_becomes_a_refusal`,
+//! `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal` and
+//! `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`.
 
 use alloc::string::String;
 use alloc::vec::Vec;

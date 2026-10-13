@@ -19,6 +19,24 @@
 //! as a walk does, and reads, lays out and rewrites each source as the driver
 //! advances it with [`Formatting::step`].
 //!
+//! `dispatch` reads no file and writes nothing: it builds the grammar the walk
+//! parses with, which is computation, and returns. The walk's I/O — listing a
+//! directory, reading a source — happens as the driver calls `Walk::step` or
+//! `Walk::visit`. Stepped, the walk reads one source at a time, and the step
+//! borrows the source's text, so a run over a large tree holds one source in
+//! memory. Directories are walked depth-first in byte order of their entries'
+//! names. Discovered symbolic links are skipped; other non-directory `.gandr`
+//! entries are selected without a regular-file check. A path given explicitly
+//! is read as a source whatever its name, following symbolic links.
+//!
+//! The alternative was collecting every source before composing any, which
+//! holds the tree in memory and delays the first line of output to the last
+//! read. The stepped walk keeps that choice; a wider visit departs from it,
+//! below, because it must know every source's size before it can schedule the
+//! largest first. The choice reverses if a verb needs the whole set before
+//! judging any member, such as a cross-source import, which would collect the
+//! paths first and still read one source at a time.
+//!
 //! # Sources fork; judgement keeps walk order
 //!
 //! At a width above one, [`Walk::visit`] parses and lowers the sources on a
@@ -73,7 +91,21 @@
 //! A path under no root is strict.
 //!
 //! Each decision, with the alternative it was chosen over and what would
-//! reverse it, is in this crate's `README.md`.
+//! reverse it, is in the module that owns it.
+//!
+//! # Optional tracing
+//!
+//! Enable `tracing` for an INFO span around `dispatch`. It records no argument
+//! or outcome payload and installs no subscriber. The driver, `gandr-lang`,
+//! owns output; the evaluator, `gandr-core-nbe`, uses the same diagnostics
+//! interface independently. The dependency is optional and off by default, so
+//! ordinary routing has no instrumentation.
+//!
+//! The choice is caller-owned structured diagnostics. Printing from this
+//! library would seize an output destination; installing a global subscriber
+//! would seize process policy. Revisit only when a library-owned diagnostic
+//! destination becomes an explicit API requirement, rather than an incidental
+//! side effect of dispatch.
 
 extern crate alloc;
 

@@ -28,6 +28,72 @@
 //! nearest registered name within a fixed edit distance. The bound is what
 //! keeps the suggestion an aid rather than a guess: past it the nearest entry
 //! carries no information about what the author meant.
+//!
+//! # Attributes and documentation
+//!
+//! An attribute is resolved against a closed registry, with five diagnostics,
+//! and filed in a side table under the content identity of the declaration it
+//! decorates, whatever that declaration's outcome; at the top level an
+//! attribute block is a form of its own, so that identity excludes the
+//! attributes. A declaration's documentation, its `///` runs and `doc("…")`
+//! entries, is read into one text under the same identity, its links resolved
+//! as names.
+//!
+//! # Attributes: a closed registry and a side table
+//!
+//! The registry is closed: `checks` takes no payload, `owes` an integer,
+//! `refuses`, `runs` and `doc` a text. Five diagnostics cover what an attribute
+//! can get wrong, checked in this order: an unknown name, with the registered
+//! name within edit distance two when one exists; the same attribute written
+//! twice for one declared name, naming the first; a payload that is not a value
+//! at all, decided before the schema is consulted because being no value is a
+//! different fact from being the wrong one; a missing payload; and a payload of
+//! a form the schema does not admit, a payload on a marker included. A payload
+//! is read as a value under no binder, and the schema types it at the literal:
+//! an integer or a text. A well-formed `doc` entry never reaches the registry,
+//! because the parser reads it as documentation (the `doc` module); `doc` is
+//! registered so that a malformed one meets the payload diagnostics.
+//!
+//! Executable predicates preserve the registry inventory, exact lookup, the
+//! payload decision table, distance bounds and the borrowed identity of a filed
+//! entry list. Suggestions count Unicode scalar edits, include distance two and
+//! break equal-distance ties by registry order; boundary witnesses distinguish
+//! these choices without re-running an allocating distance algorithm in the
+//! suggestion predicate. Filing appends to one declaration key without
+//! replacing its earlier entries. An attribute record retains producer-supplied
+//! metadata; it does not itself authenticate a source span or validate a
+//! payload in an unheld value arena.
+//!
+//! An admitted attribute is filed under the content identity of the declaration
+//! form it decorates. At the top level every attribute block is a form of its
+//! own standing before that declaration, a decision of `gandr-surface-grammar`,
+//! and the collector carries the blocks it meets to the next declaration, a
+//! definition or a data declaration alike, so the identity excludes the
+//! attributes: adding, editing or removing one re-keys nothing. A block before
+//! no declaration — at the end of the module, or before an import or a module —
+//! refuses the module. A module member keeps its blocks inside its form, and
+//! its identity covers them.
+//!
+//! The alternative was folding a definition's blocks into its form, which keys
+//! the definition by its attributes and, with the standalone block a data
+//! declaration takes, ties the two readings of every `@[` until the token after
+//! `]`. Two top-level declarations written alike share an identity and so one
+//! entry list; both declare one name, so the second is refused as a duplicate.
+//! Reversal: when two declarations written alike must keep separate entries,
+//! the key gains the declaration's position.
+//!
+//! An attribute is filed whatever its declaration's outcome: a refused
+//! declaration still has its tree and its key, and an expectation about a
+//! refusal — `refuses` — can only be read off the declaration that refused. Its
+//! payload is minted for the same reason, the one part of a refused declaration
+//! that lowers. A declaration form whose own tiles fault records no half, and
+//! its attributes are not filed.
+//!
+//! The alternative was to file attributes for unrefused declarations only. It
+//! was declined because it leaves every lowering refusal unexpectable: a
+//! fixture stating the refusal it expects would be read as stating nothing.
+//! Reversal: none while an attribute can state an expectation about its
+//! declaration's refusal.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

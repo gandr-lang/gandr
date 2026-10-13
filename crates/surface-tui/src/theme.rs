@@ -1,4 +1,23 @@
 //! The face's styles: one per highlight role, one per transcript line kind.
+//!
+//! # The style maps
+//!
+//! `style_of` maps each of the 23 highlight roles to a style with a foreground,
+//! so no classified span takes the colour of the text around it;
+//! `HlRole::Other` maps to the terminal's default foreground on purpose, as
+//! plain variables do, rather than to no style. The roles the language server
+//! sends under one token type share a style — keywords and booleans, defined
+//! and called functions, defined and referenced variables, types and built-in
+//! types, the literal roles, holes and directives — and the map groups further
+//! where terminal colours run short. The map reads `HlRole` itself; the face
+//! does not depend on `gandr-surface-lsp` or its integer legend.
+//!
+//! `style_of_kind` maps each of the 8 line kinds the same way, applied when a
+//! frame is drawn, so the whole history restyles with the theme: the echo's
+//! mark bold, a type line green as types are, a goal magenta as holes are, a
+//! diagnostic red, blame bold red, a stuck evaluation yellow, a value at the
+//! default, a note dark grey. Both maps are exhaustive matches, so a role or a
+//! kind added to the renderer seam stops the build until it is styled.
 
 use anodized::spec;
 use gandr_surface_render_remote::HlRole;

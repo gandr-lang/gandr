@@ -7,25 +7,230 @@
 //!
 //! # Exit codes
 //!
-//! - `0`: every declaration settled, or a script's run returned a value, or
-//!   every staged certificate was readmitted, or every source was laid out;
-//!   also `--help`, `--version`, a bare invocation, `lsp --capabilities`, a
-//!   language-server session ended by `exit` after `shutdown`, an engine hub
-//!   that lingered out or found another serving its socket, a read-evaluate
-//!   loop that reached the end of its input or `:quit`, a terminal face the
-//!   user left, and `tui --smoke`.
-//! - `1`: at least one declaration is unsettled, or a source was not read as
-//!   its root expects; a script's run was blamed on a goal or stopped short of
-//!   a value; the kernel refused a staged certificate; `fmt --check` found a
-//!   source out of layout; also a language-server session ended before
-//!   `shutdown`.
-//! - `2`: an engine fault, an unreadable source or a path naming none, a
-//!   malformed invocation, output the driver could not write, a language-server
-//!   stream that failed, an engine hub that could not be reached, bound or
-//!   served, a read-evaluate loop or a terminal face stopped by a fault, a
-//!   terminal face asked for without a terminal, a script that never reached
-//!   the machine, a staged program that could not be checked, or a source the
-//!   formatter refused or could not write back.
+//! | Code | Meaning |
+//! | ---- | ------- |
+//! | `0` | every declaration settled, a script's run returned a value, every staged certificate was readmitted, or every source was laid out; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a Model Context Protocol session whose input ended, an engine hub that lingered out or found another serving its socket, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
+//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
+//! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, output the driver could not write, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back |
+//!
+//! A fault outranks an unsettled declaration: a run with both exits `2`. The
+//! walk continues past a faulted path, so every fault of a run is printed.
+//!
+//! # Verbs
+//!
+//! | Invocation | Prints | Fails on |
+//! | ---------- | ------ | -------- |
+//! | `gandr check <paths>` | each unsettled declaration, each source refused as a whole | any unsettled declaration |
+//! | `gandr check --goals <paths>` | as `check`, a declaration unsettled by its obligations alone marked `goal:` | any unsettled declaration but those |
+//! | `gandr check --jobs <threads> <paths>` | as `check`, its sources parsed and lowered on that many threads | as `check` |
+//! | `gandr check --verbosity <level> <paths>` | as `check`, each report at `user` (the default), `detailed` (adding its class, the producer's wording and the offending source text), `debug` (adding byte spans and the producer's refusal) or `json` (each report, ledger line and the run's summary as one line of JSON); `test` takes the flag too | as `check` |
+//! | `gandr test <paths>` | as `check`, plus every fixture, settled or not, and every pending source's refusal | as `check` |
+//! | `gandr run <file>` | the value, alone, on standard output; every report `check --goals` would print, and why a run stopped or never started, on standard error | a run blamed or stuck, or a source that never reached the machine |
+//! | `gandr stage <programs>` | a line per program — the certificates the kernel readmitted and its families by how they were admitted — then the run's digest and verdict | a certificate the kernel refused, a program that could not be checked, or a family admission that faulted |
+//! | `gandr stage --jobs <threads> <programs>` | as `stage`, each program's stages forked onto that many threads | as `stage` |
+//! | `gandr fmt <paths>` | the path of each source whose layout changed, written back over it | a path that cannot be read or written back, names no source, or holds a source the formatter refuses |
+//! | `gandr fmt --check <paths>` | the path of each source out of layout; nothing is written | as `fmt`, and any source out of layout |
+//! | `gandr fmt --width <columns> <paths>` | as `fmt`, laid out at that page width instead of 100 | as `fmt` |
+//! | `gandr fmt --jobs <threads> <paths>` | as `fmt`, its sources laid out on that many threads | as `fmt` |
+//! | `gandr lsp` | the language server's frames on standard output, until `exit`, served by the workspace's hub on Unix | a session ended before `shutdown` |
+//! | `gandr lsp --standalone` | as `lsp`, served in its own process | as `lsp` |
+//! | `gandr lsp --socket <path> --linger-ms <ms>` | as `lsp`, through the hub on that socket, a hub it starts lingering that long | as `lsp` |
+//! | `gandr lsp --capabilities` | the `initialize` result as one line of JSON | nothing |
+//! | `gandr mcp` | the Model Context Protocol server's lines on standard output, until standard input ends, served by the workspace's hub (Unix) | a stream that failed or a hub it could not reach |
+//! | `gandr mcp --socket <path> --linger-ms <ms>` | as `mcp`, through the hub on that socket, a hub it starts lingering that long | as `mcp` |
+//! | `gandr view` | the cards of the document the workspace's hub checked last, full-screen on a terminal; piped, each report's rows then a blank line (Unix) | a stream that failed, a line that is not a frame, or a hub it could not reach |
+//! | `gandr view --socket <path> --linger-ms <ms>` | as `view`, through the hub on that socket, a hub it starts lingering that long | as `view` |
+//! | `gandr serve` | each client's timing lines on standard error, until no client has connected for a minute | a socket it cannot bind or serve |
+//! | `gandr serve --socket <path> --linger-ms <ms>` | as `serve`, on that socket, lingering that long | as `serve` |
+//! | `gandr repl` | the line editor's prompt on a terminal; piped, each submission's echo and its lines, as a plain transcript | a fault that stops the loop |
+//! | `gandr repl --batch` | the plain transcript, even on a terminal | as `repl` |
+//! | `gandr tui` | the transcript, an input pane and a status line, full-screen on the terminal | a fault that stops the face, a terminal that fails, or no terminal |
+//! | `gandr tui --smoke` | `gandr tui: ready` | a fault that stops the face |
+//!
+//! A path is a source file of any name, or a directory searched for `.gandr`
+//! sources. The directories a source sits in decide its root — `strict`,
+//! `fixture`, or `fixture/pending` — and a source under none is strict
+//! (`gandr-surface-dispatcher`'s `root` module). A refusal, an unsettled
+//! declaration and a goal each print as a located source snippet — the class
+//! and message, the path with line and column, the lines the report covers with
+//! their marks — followed by a blank line (`gandr-surface-diagnostics`'s
+//! `report` module); a settled fixture, a pending source's refusal and a
+//! pending source the lowering reads each print one ledger line, `<path>:
+//! <report>`. The driver writes plain text, without colour. Each fault is
+//! `gandr: <path>: <fault>` on standard error. Every run closes standard output
+//! with the runner's report — the sources read by root, the lowerings, the
+//! goals, the exercised table, the ledger size, the declaration and fixture
+//! counts, the surviving obligations, the refusals by class, the run's
+//! settlement and its seal — and `verdict: settled`, `unsettled` or `faulted`.
+//!
+//! `check` and `test` parse and lower their sources on `--jobs` threads (`-j`),
+//! or `GANDR_JOBS` when the flag is absent, or else the host's physical
+//! performance cores; `1` reads, parses and judges one source at a time. Every
+//! byte either stream carries, and the exit, are the same at every count: the
+//! sources are judged and printed in walk order whatever thread lowered them
+//! (`gandr-surface-dispatcher`'s `walk` module). A count of `0` is a malformed
+//! invocation.
+//!
+//! `gandr run` takes exactly one path, `-` among them: there is no
+//! standard-input face for it to name. The source is composed under the root
+//! its path classifies as and runs only when no declaration of it was refused;
+//! its target is the last name it declares (`gandr-surface-dispatcher`'s
+//! `evaluate` module). A completed run writes its value as the one line of
+//! standard output, spelled as a `runs` expectation states it, so a caller
+//! reads the value without parsing anything else. A run blamed on a goal, stuck
+//! or unfinished is `` gandr: <path>: `<target>` <what it came to> `` on
+//! standard error; a source carrying a refusal is `gandr: <path>: refused;
+//! nothing ran` after its reports, and one declaring no name `gandr: <path>:
+//! declares no name to run`.
+//!
+//! `gandr stage` takes one or more programs, each spelled `pow:LO..HI` or
+//! `double:LO..HI` with both exponents inclusive: `pow` specializes the staged
+//! power at every exponent in the range against a quoted variable, `double` the
+//! doubled iterator at every exponent against the quoted inputs two and three.
+//! Each program is checked in order on `--jobs` threads (`-j`), or
+//! `GANDR_JOBS`, or the host's physical performance cores, on one work-stealing
+//! pool (`gandr-surface-dispatcher`'s `stage` module). Its line is `<spelling>:
+//! <r> of <n> certificates readmitted; <f> families:` and the count admitted,
+//! partial, plain, refused, over the work bound and faulted, or `<spelling>:
+//! <fault>` when it could not be checked. `digest:` and sixteen hexadecimal
+//! digits name the merged syntax, certificates, readmissions and family
+//! admissions of every program, so a reader compares runs without comparing
+//! arenas; `verdict:` is `readmitted`, `refused` or `faulted`. Every byte and
+//! the exit are the same at every count. A pool that does not start is `gandr:
+//! the worker pool did not start: <error>` on standard error.
+//!
+//! `gandr fmt` reaches its paths as `check` does and lays out each source
+//! through `gandr-surface-format`, which keeps every token and comment, copies
+//! strings, shell blocks, holes and repaired forms as written, and refuses any
+//! layout whose parse differs from the source's (`gandr-surface-format`). Its
+//! sources are laid out on `--jobs` threads as `check`'s are, and every byte
+//! either stream carries, every source rewritten and the exit are the same at
+//! every count (`gandr-surface-dispatcher`'s `format` module). A source already
+//! in layout is not touched; a source the formatter refuses stays as written
+//! and is `gandr: <path>: not formatted: <why>` on standard error, and the
+//! formatting continues past it. A fault outranks a source out of layout:
+//! `gandr fmt --check` over both exits `2`.
+//!
+//! `gandr lsp` reads frames from standard input and writes every answer and
+//! notification to standard output; it rechecks a document whole at every
+//! synchronisation and publishes the same reports `gandr check --goals` prints
+//! for it, under the root its path classifies as (`gandr-surface-lsp`). Every
+//! `gandr lsp` started in one directory reaches one hub, so two editors on a
+//! workspace share its open documents. A stream that fails is `gandr: the
+//! language server stopped: <fault>` on standard error; a hub that cannot be
+//! reached, bound or served is `gandr: the engine hub: <error>`.
+//!
+//! `gandr mcp` reads one JSON-RPC message per line from standard input and
+//! writes each answer and notification as a line to standard output, through
+//! the same hub: its tools and resources read the documents the workspace's
+//! editors hold open, at the version they last synchronised, so a model sees
+//! the diagnostics the editor shows (`gandr-surface-mcp`). A model host runs it
+//! as a stdio server in the workspace's directory.
+//!
+//! `gandr view` attaches to the same hub's render bus and follows the document
+//! it checked last: a heading naming the document, its version and how many
+//! diagnostics and holes it carries, then each diagnostic at its one-based row
+//! and column with its derivation, then each hole with its goal
+//! (`gandr-surface-tui`). On a terminal it takes the screen until `q`, Esc or
+//! Ctrl-C; piped, each report prints as its rows and a blank line. A view that
+//! cannot read the hub's frames ends with `gandr: the view: <cause>` on
+//! standard error.
+//!
+//! `gandr repl` reads declarations a line at a time and submits each buffer the
+//! parser reads as complete, judging it with every declaration kept before it,
+//! as `gandr check --goals` judges a strict source; a refused submission is
+//! shown and not kept. Each submission prints its echo after `▸`, a `name : T`
+//! line per declaration it checked followed by what running it came to — `=
+//! value`, `! blame`, or `·` and why it stopped or never ran — a `? name : T`
+//! line per goal, and each refusal as `gandr check` prints it — in colour only
+//! when the line editor runs and standard output is a terminal, plain
+//! otherwise. `:type <expression>`, `:load <file>`, `:reset`, `:help` and
+//! `:quit` speak to the loop (`gandr-surface-repl`). A fault that stops the
+//! loop is `gandr: <fault>` on standard error.
+//!
+//! `gandr tui` takes the terminal for the same loop: the transcript keeps the
+//! lines `gandr repl` prints, coloured by kind with the echo highlighted, above
+//! the line being edited; Enter submits, Ctrl-C drops the line and any waiting
+//! buffer, and Esc or `:quit` leaves and restores the terminal
+//! (`gandr-surface-tui`). Without a terminal on standard input and output it
+//! draws nothing and notes `gandr: the terminal face needs a terminal on
+//! standard input and output` on standard error; `gandr tui --smoke` needs
+//! none. A fault that stops the face is `gandr: <fault>`, and a terminal that
+//! fails `gandr: the terminal failed: <error>`, on standard error.
+//!
+//! # Output the driver cannot write is a fault
+//!
+//! `main` returns its exit code rather than a `Result`, so a write or flush
+//! that fails — a closed pipe, a full disk — is noted on standard error, when
+//! that is writable, and exits `2`, the code every fault shares. The runtime
+//! ignores `SIGPIPE`, so a reader that closed early surfaces as a failed write,
+//! not a signal. The alternative was returning the I/O error from `main`, whose
+//! runtime path exits `1` and would read as an unsettled run. The choice
+//! reverses if a fault class needs its own code, which would be a fourth row
+//! above.
+//!
+//! # Tests and their limits
+//!
+//! Driver routing, rendering and nontrivial test helpers carry executable
+//! predicates and bounded adequacy arguments. Exit-code domains are checked on
+//! each call; the width witness compares every byte of both streams, and the
+//! exit, of a run at several thread counts with the serial run's. The global
+//! allocator's items are the one executable exemption (the `allocator` module).
+//! The predicates do not observe opaque output streams: the CLI witnesses
+//! observe exit status, protocol framing, diagnostic identity and location,
+//! stream separation, and value multiplicity instead of incidental English
+//! wording or a copy of the producer's formatter.
+//!
+//! `scratch_ownership_keeps_simultaneous_cases_independent` runs two same-name
+//! sources in separate roots, removes one root and checks that the other still
+//! behaves independently. `a_failed_diagnostic_stream_stops_later_output`
+//! closes the diagnostic reader and verifies that neither a later summary nor a
+//! script value is emitted after that first write fails. Closed standard output
+//! covers status, check, run, help, capabilities, batch REPL and TUI smoke; a
+//! literal `-` is checked both absent and present in an owned directory.
+//!
+//! The native command smoke additionally compares independently decoded LSP
+//! initialization and capability JSON, exercises script and batch entry points,
+//! and submits a declaration on a terminal before quitting and comparing its
+//! terminal settings. These finite observations do not claim arbitrary editor
+//! timing, terminal backends, source programs or failing filesystem coverage.
+//!
+//! The exit-code witnesses are
+//! `cli::cli::a_script_that_returns_a_value_leaves_successfully` (exit `0`,
+//! `42` alone on standard output),
+//! `cli::cli::a_script_that_blames_leaves_with_a_failure_status` (exit `1`) and
+//! `cli::cli::an_ill_typed_script_is_refused_by_the_checker` (exit `2`);
+//! `cli::cli::the_value_of_a_run_is_printed_once` asserts the value is the
+//! whole of standard output.
+//!
+//! # Optional tracing
+//!
+//! Build with `cargo build -p gandr-lang --features tracing` to report driver
+//! and dispatcher diagnostics on stderr. The feature forwards to
+//! `gandr-surface-dispatcher`; this driver has no evaluator dependency and does
+//! not activate evaluator tracing. A default build carries no tracing
+//! instrumentation or dependency: `cargo tree -p gandr-lang -e normal,build`
+//! lists neither `tracing` nor `tracing-subscriber` until the feature is on.
+//!
+//! Argument parsing runs before subscriber installation, so help, version and
+//! argument errors retain their ordinary output. A scoped, thread-local
+//! subscriber reports dispatch-span completion and successful output flushing,
+//! then restores the prior subscriber when the invocation ends. Libraries
+//! install no subscriber. Standard-output write and flush errors remain faults
+//! rather than successful-completion events. Tracing diagnostics may precede a
+//! fault’s `gandr:` line on stderr; stdout and exit codes are unchanged.
+//!
+//! The output backend is
+//! [`tracing-subscriber`](https://docs.rs/tracing-subscriber/0.3.23/tracing_subscriber/fmt/index.html)
+//! 0.3.23 with only `fmt` and its required registry/std support. ANSI
+//! formatting, the log bridge, filter parsing, JSON and time integrations stay
+//! off. This release includes the [ANSI-input escaping
+//! fix](https://rustsec.org/advisories/RUSTSEC-2025-0055); the current events
+//! contain fixed messages and no user payloads. A global subscriber was
+//! rejected because the invocation need not own process-wide diagnostics; an
+//! environment filter adds parsing machinery for no current CLI option. Revisit
+//! those choices when the driver gains a consumer requiring them, or the
+//! selected version needs a security or maintenance replacement.
 
 use core::num::NonZeroUsize;
 use core::ops::ControlFlow;

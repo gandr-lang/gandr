@@ -3,12 +3,34 @@
 //! On macOS, with the `malloc-zone` feature (off by default), every Rust
 //! allocation is served by one private malloc zone, `zone::Zone`, instead of
 //! the default zone the system allocator calls `malloc` and `free` through.
-//! Both zones are the system's own xzone malloc with its hardening; the
-//! default zone alone runs its per-thread caches, which a fork that allocates
-//! on its workers and frees on the calling thread pays for on every block.
-//! Without the feature, and on every other target, the process keeps the
-//! system allocator. The choice, its alternatives and its reversal are in the
-//! crate's README.
+//! Both zones are the system's own xzone malloc with its hardening; the default
+//! zone alone runs its per-thread caches, which a fork that allocates on its
+//! workers and frees on the calling thread pays for on every block. Without the
+//! feature, and on every other target, the process keeps the system allocator.
+//! The choice, its alternatives and its reversal follow.
+//!
+//! # The global allocator
+//!
+//! `cargo build -p gandr-lang --features malloc-zone` installs, on macOS, a
+//! global allocator over one private malloc zone (`malloc_create_zone`) in
+//! place of the default zone; without the feature, and on every other target,
+//! the process keeps the system allocator. Both zones are the system's xzone
+//! malloc; the default zone alone runs per-thread caches, which `check`'s fork
+//! pays for on every block its workers allocate and the calling thread frees.
+//! The feature adds no dependency and about 1.2 KB of binary. Its module is the
+//! tree's one use of `unsafe`, and its items are the one executable exemption:
+//! a predicate evaluated inside the allocator could panic, and a panic must not
+//! unwind out of it. `allocator::tests` allocates, clears, grows and shrinks
+//! blocks at alignments from 1 byte to 16 KiB through it.
+//!
+//! The feature is off by default because it misses the kill line set before it
+//! was measured: `check` at the default width under 12 ms with the serial run
+//! within 3% and peak RSS within 10%. mimalloc, jemalloc and snmalloc were the
+//! alternatives: each reached a similar wall at 1.8–2.2× the peak RSS and a C
+//! or C++ build, and none moved the Linux wall. Turn the feature on by default
+//! when a measurement on a quiet host meets that line; take a crate instead if
+//! a Linux measurement shows the system allocator costing a wall a crate
+//! removes.
 
 /// The private malloc zone and the global allocator over it.
 #[cfg(all(feature = "malloc-zone", target_os = "macos"))]

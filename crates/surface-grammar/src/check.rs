@@ -1,5 +1,33 @@
 //! The three build-time gates: Operator Form, Unique Tiles and Assumption 3
 //! (Moon, Blinn, Porter and Omar 2025, § 3).
+//!
+//! # Gates
+//!
+//! Operator Form's contract excludes a form in which two sort holes can stand
+//! side by side on any path, nullable sequences included, so a hole's extent is
+//! delimited by a tile; the repetition limitation is described below. Unique
+//! Tiles refuses two occurrences of one label in one interned context, so a
+//! label and a context name exactly one mold. Assumption 3 refuses two distinct
+//! sorts `r` and `s` where a form of `r` can begin with `s` and a form of `s`
+//! can end with `r`, over every precedence of each. An adaptation records why a
+//! rule's shape departs from the named kind it realises; it never relaxes a
+//! gate. `Pbg::build` reports the first violation in a fixed order — headers
+//! rule by rule, Operator Form rule by rule, Unique Tiles, then Assumption 3 —
+//! so a grammar with several faults always names the same one.
+//!
+//! The Operator Form check does not inspect the backedge between repetitions:
+//! `repeat(sort(Expression))` is admitted although two iterations place holes
+//! together. Enforcing that boundary also rejects the built-in
+//! `module_declaration` and `nested_module_member` forms, which repeat
+//! self-delimited member holes. A structural repair must preserve the sibling
+//! and nesting ownership witnessed by
+//! `module_member_repetition_preserves_siblings_and_nesting` in the
+//! `tests/surface.rs` integration tests; neither a sort-name exception nor
+//! rejection of the built-in grammar establishes the gate's stated guarantee.
+//!
+//! `PbgError` keeps a precedence refusal in its own variant: `PrecedenceDag`
+//! carries the DAG's own refusal and `PrecedenceCycle` the cycle named group by
+//! group, and `InvalidSort` carries the `GroutSort` tag that failed to decode.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

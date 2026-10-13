@@ -27,6 +27,103 @@
 //! hole filled or erased, a subtree replaced or a leaf set — carries the
 //! item's old ordinal; an insertion has no old anchor and carries the new
 //! ordinal.
+//!
+//! # Edits are a diff of the lowered core
+//!
+//! Each accepted submission carries the `EditScript` from the latest accepted
+//! revision: the `diff` of their `Snapshot`s. A snapshot retains each item's
+//! `DeclarationTree`: value signature and body roots, or a complete native data
+//! signature. Each root reads out of the arena as a `Tree` of the incremental
+//! checker's `ContentNode`s, numbered breadth-first, each constant read as the
+//! `Reference` it resolves to, so two revisions lowered into two arenas compare
+//! node by node. Items align by reference — key and occurrence — keeping the
+//! largest set whose order both revisions share; each kept pair's bodies are
+//! walked together, a changed literal, variable or constant becoming one
+//! in-place action and any other change one `Replace` of the old subtree.
+//! `apply` of a diff to the old items reproduces the new ones exactly:
+//! soundness is total, localization is partial. A path names an item and the
+//! child slots from its body's root; an action anchored in the old revision
+//! carries the old ordinal, an insertion the new one.
+//!
+//! Over a named surface core the contract would carry actions for grades,
+//! injection sides, binder names and annotations, and align items by a longest
+//! common subsequence of their names in an `n·m` table. The core here carries
+//! none of those payloads — binders are de Bruijn indices, so renaming one
+//! reconstructs to no action — and its actions are the core's own leaves.
+//! Because references are unique within a revision, the longest common
+//! subsequence is the longest increasing run of matched old ordinals, which
+//! patience sorting finds in `n log n`. The alternatives were a text diff,
+//! which names bytes rather than terms, and a diff of content-addressed tables,
+//! which numbers nodes and loses the path a face surfaces. The choice reverses
+//! when the lowering emits structured edits itself; the session would then
+//! forward them.
+//!
+//! Effect and control edits use the portable child ordering of
+//! `gandr-core-incremental`'s `content` module. Interface and operation names,
+//! clause order, frame kind and projection side participate in payload
+//! agreement; operation types and binder-local bodies remain child content. A
+//! metadata-only change therefore replaces its node rather than disappearing
+//! from the edit script. Witness:
+//! `edit::tests::control_edits_preserve_names_scopes_and_frame_order`.
+//!
+//! # Native declaration snapshots
+//!
+//! `DeclarationTree::Value` and `DeclarationTree::Data` preserve distinct
+//! declaration categories. Data snapshots retain their kind, parameter
+//! telescope and every constructor field. A schema or category change replaces
+//! the item through delete/insert; native term children still receive localized
+//! edits. Record labels, constructor tags, nominal identities and all variadic
+//! children participate in agreement. The child reader is an unbounded borrowed
+//! iterator, not a fixed three-child buffer.
+//!
+//! `edit::native_snapshots_preserve_schema_and_fourth_children` checks literal
+//! edits beneath fourth nominal arguments, constructor fields, case branches
+//! and record fields, plus schema and category replacements; applying each diff
+//! reconstructs the exact new snapshot. Native declarations have no runtime
+//! body: evaluation returns `UnrunnableData`. No source notation or command-IL
+//! implementation is inferred from retaining this programmatic content.
+//!
+//! **Choice.** Extend the snapshot and diff contract rather than maintain a
+//! second nominal identity table. **Reversal.** A source reader or runtime
+//! consumer must add its own syntax and execution rules before these native
+//! items become runnable from the session.
+//!
+//! # Native universe-path content
+//!
+//! Edit snapshots retain native `Path_U` classifiers, reflexivity, equivalence
+//! maps and evidence, product paths, and transport operands as the incremental
+//! layer’s content nodes. Their child ordering is the ordinary constructor
+//! ordering. Both ordered dialogue lists participate in non-child payload
+//! agreement: an evidence-only change produces a replacement even when every
+//! child is unchanged. The witness
+//! `edit::tests::path_evidence_changes_are_reconstructed` observes source- and
+//! target-dialogue changes separately, exact reader child order, and replay of
+//! the new content. Evidence-insensitive certificate conversion is not content
+//! equality. No session revision becomes a certificate admission receipt by
+//! retaining this content.
+//!
+//! **Choice.** Extend the structural edit vocabulary rather than maintain a
+//! second path identity table. These forms are programmatic core content;
+//! source-level identity operations, bridge-mode observations, higher fields,
+//! funext, `Flow_U` and guarded List values are not introduced by this adapter.
+//! **Reversal.** An interactive identity consumer must define its own
+//! application and persistence boundary over the kernel APIs.
+//!
+//! # Localization descends extents
+//!
+//! `Snapshot::localize` returns the body node whose span encloses a range with
+//! the fewest bytes, the outermost of a shared span and the leftmost at one
+//! depth, so a contiguous edit's locus is the common ancestor of the changes it
+//! induces. Descending the nesting of the origin map does not work here, since
+//! a node's recorded origin need not enclose its children: a function's lambda
+//! records its parameter. A snapshot therefore spans each node by its extent,
+//! the hull of its own origin and its children's extents, which nests by
+//! construction. The descent examines the children of the enclosing nodes
+//! alone, level by level, so its work follows the locus's depth; it keeps every
+//! enclosing sibling rather than the first, which keeps it exact where a point
+//! touches two siblings. A linear scan of every node is its oracle. The extent
+//! step retires if the lowering's origins come to nest, when each extent equals
+//! its origin.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;

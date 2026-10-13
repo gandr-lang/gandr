@@ -8,6 +8,131 @@
 //! that, and `runs`, which asserts that and a run outcome besides. An `owes` or
 //! `refuses` attribute there could describe a red declaration as green, so it
 //! is refused as a source error instead of read.
+//!
+//! A source is a fixture or a gate by the root it sits under, never by what it
+//! says about itself. `CorpusRoot::Strict` is the gating root: every
+//! declaration is held to _checks, owing 0_, or to the stricter _runs to_ a
+//! spelling it states. `CorpusRoot::Fixture` is the root where the checker's
+//! refusals and obligations are asserted, and all four schemas are admitted
+//! there. Inside a root, a declaration carrying an expectation attribute is a
+//! fixture (`Membership::Fixture`) and gets its own line in the report; one
+//! carrying none is counted.
+//!
+//! The alternative was an attribute or a file header marking a source as a
+//! fixture, which hands the classification to the source being classified. The
+//! choice reverses only together with the guard below: if self-description were
+//! made safe some other way, membership could move into the source.
+//!
+//! # The corpus
+//!
+//! The language's sources live beside the library that settles them, under the
+//! two roots `settle` names. `gandr check crates/surface-corpus/strict` and
+//! `gandr test crates/surface-corpus/fixture` run them, and `mise run
+//! check:corpus` runs both as a gate; a red root fails it.
+//!
+//! | Directory | Holds | Expectations |
+//! | --------- | ----- | ------------ |
+//! | `strict/` | sources in the fragment: signatures and definitions, literals and the unit value, thunks, lambdas, returns, forces and applications; under `classifier/`, both universes, quotes, a code constant unfolding, a polymorphic function at several instances, and the relative-monad witness — a type operator over a computation-valued carrier, written with every universe spelled out and with the defaults left off, instantiated, and equated with its instance spelled by hand through `=>`; under `pathological/`, the dependent instantiations whose codomains could capture | none, or `runs` on each declaration the fragment runs: every declaration checks, owing nothing |
+//! | `fixture/fragment/` | one source per refusal the fragment's checker and lowering can raise at a declaration, one owed signature, and a run blamed on the goal it reaches; the reserved form's source sets an eager pair, which checks, beside the lazy product, which is refused | `refuses`, `checks`, `owes` or `runs` on each declaration |
+//! | `fixture/classifier/` | the universe families' refusals: a level too large, a sort mismatch, a graded bridge, and a bind whose body's type needs its binder; the relative-monad witness's sort errors beside the forms that repair them; a static abstraction at a static parameter, normalized away, and at a dynamic one, refused | `refuses` on each refused declaration, `checks` on each that forms, `runs` on each run |
+//! | `fixture/model/`, `fixture/pathological/`, `fixture/surface/` | the language's own surface programs whose declarations the lowering reads, each verdict stated | `refuses`, `checks` or `runs` on each declaration |
+//! | `fixture/pending/` | the language's own surface programs the fragment does not yet cover | none: membership by location (§ The pending set) |
+//!
+//! The language's own surface programs — the model programs, the pathological
+//! cases and the surface families — are kept in their own subdirectories with
+//! their commentary removed. The parser reads every source here as its
+//! zero-obligation gate, and the highlighter's role golden in
+//! `gandr-surface-grammar` mirrors every source: a source added, moved between
+//! roots or removed is followed by `UPDATE_EXPECT=1 cargo nextest run -p
+//! gandr-surface-grammar`, which rewrites the golden to match.
+//!
+//! No count is pinned. The runner's report says how many sources each root
+//! holds, how many declarations settled, the ledger size and the seal, and its
+//! tests assert that each root holds declarations and that every row of the
+//! fragment's exercised table is carried. Adding a source changes a count and
+//! reddens no root; a source that stops settling reddens its root.
+//!
+//! A bind written in a block is always checked, because a block stands only in
+//! a thunk, a lambda or a function's tail, and each of those is checked against
+//! its declared type. The expected type is read outside the binder, so a body
+//! whose type needs the binder fails to convert with it and the fixture states
+//! `TypeMismatch`; the checker's `DependentBind` names the same mistake only
+//! where a bind synthesises its type, which no surface form reaches yet. The
+//! alternative was spelling the fixture around a synthesising bind, which the
+//! surface has no form for. The fixture's expectation changes to
+//! `DependentBind` when an ascription or a synthesising block lets a bind's
+//! type come from its body.
+//!
+//! A `runs` outcome is written on every declaration the fragment runs to a
+//! value or to blame: the literals, copies, functions and applications of
+//! `strict/`, the classifier's values and polymorphic functions, the
+//! pathological compositions, the model's unit, every module member whose body
+//! checks, and the blamed run. A declaration the machine carries no image of —
+//! a code, or a value that reaches one — states no run, because nothing runs
+//! it; the run verb reports it as never reaching the machine.
+//!
+//! `pathological/module-forward-member-reference` names a later member inside
+//! `second + 1`. The fragment does not read the infix operator, and a form is
+//! refused before any name under it is read, so the fixture states
+//! `OutOfFragment`; the forward-member refusal itself is witnessed by
+//! `gandr-surface-lowering`'s module tests. The expectation becomes
+//! `ForwardMemberReference` when the fragment reads infix operators.
+//!
+//! # One walk registers every source
+//!
+//! A source is registered by where it sits: the dispatcher's one walk over
+//! `strict/` and `fixture/` reaches it, and nothing else decides what the
+//! corpus holds. The kernel export suite here lists the two roots by the walk's
+//! own rule — `.gandr` files, links not followed — because this crate does not
+//! depend on the dispatcher; it reads what the walk reaches and registers
+//! nothing of its own. An orphan is a `.gandr` file the walk does not reach —
+//! one outside both roots, or behind a symbolic link, which the walk does not
+//! follow — and the registration witness finds every such file by listing the
+//! crate's directories, links followed, and fails naming each one:
+//! `corpus::corpus::every_corpus_source_is_registered` in
+//! `gandr-surface-dispatcher`, its positive control
+//! `corpus::corpus::a_planted_orphan_is_not_registered`, which plants an orphan
+//! outside the roots and one behind a link and expects exactly those two. No
+//! count is pinned, so a source added where the walk reaches it moves a count
+//! and reddens nothing, and one added where it does not reddens the witness,
+//! which names the file.
+//!
+//! Two registration mechanisms would fail in opposite directions: a test file
+//! not named in the test target's module list is never compiled, silently, and
+//! a source added to the corpus moves a pinned count in a test the author has
+//! not opened. Neither is here: this crate's suite is its modules' own
+//! `cfg(test)` modules, compiled with the library, and the corpus has the one
+//! walk and no pinned count.
+//!
+//! # The pending set
+//!
+//! A source under `fixture/pending/` carries a refusal no expectation can
+//! state: the lowering refuses it as a whole — its root is not a list of
+//! declarations — or refuses one of its declarations at the declaration's own
+//! form, which files no half for an attribute to be read off. The runner counts
+//! such a source as pending and settles none of its declarations; `test` prints
+//! each such refusal, naming the form the fragment lacks — a call or an
+//! operator, a record, a data declaration, a module, an effect — which is the
+//! former the source waits for, and its run outcomes are written when it moves.
+//! A pending source that carries none — the fragment grew, and every
+//! expectation it needs can be stated — is unsettled, and moves to the fixture
+//! root with its expectations written.
+//!
+//! Three module sources stay pending for the second reason.
+//! `pathological/module-malformed-recovery` writes a member whose definition
+//! leaves its operand unwritten, refused at the member's own form;
+//! `pathological/modules/module-missing-component` and
+//! `pathological/modules/module-abstract-type-component` write a signature
+//! component the body does not supply and one only opaque ascription gives a
+//! meaning, each refused at the component, which declares nothing. A refusal at
+//! the declaration form itself has no half to carry an expectation.
+//!
+//! The alternatives were leaving these sources out, which loses them, and
+//! stating each one's refusal in an attribute, which the lowering cannot read
+//! for either kind of refusal. The choice reverses when the lowering files an
+//! attribute for a declaration refused at its form and a refusal of the whole
+//! module can carry an expectation; the pending set then empties into the
+//! fixture root.
 
 use core::fmt;
 

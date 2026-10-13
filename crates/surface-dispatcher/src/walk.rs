@@ -23,6 +23,59 @@
 //! source: a directory holding no `.gandr` file, which would otherwise pass
 //! as a settled run over nothing. The walk continues past a fault, so one run
 //! reports every path that faults.
+//!
+//! # Sources fork; judgement keeps walk order
+//!
+//! `Walk::visit` at a width above one reaches every path first, then forks by
+//! source: one job per source, its byte length the estimate, the jobs sorted
+//! largest first behind one atomic cursor that each thread — the calling thread
+//! among them — advances to take the next. A job classifies, reads, parses and
+//! lowers its source into an arena of its own, so no source's state is shared;
+//! the grammar is the one value every thread reads. The calling thread judges,
+//! readmits, settles and counts each source in walk order as its lowering
+//! arrives over a channel, holds a lowering that arrives early until its turn,
+//! and takes a job itself whenever the next source in walk order has not
+//! arrived. A visitor that stops the visit stops the cursor, so no thread
+//! starts another source. Every count, verdict and printed byte is the serial
+//! walk's: the walk tests compare rows and reports at widths one and three, the
+//! corpus suite compares every composition at two, seven and the host's width
+//! with the stepped walk's, and the driver's suite compares both streams and
+//! the exit at several widths, set by flag and by environment. `Width::SERIAL`
+//! is that stepped walk, and the reference every wider visit is tested against.
+//!
+//! **Largest first.** A source is the unit because its parse is one fold over
+//! its tokens, and the largest source bounds the tail: started first, it ends
+//! while the small ones fill the other threads, so the last thread to finish
+//! ends on a small source. The alternatives were the walk's own order, which
+//! can leave the largest source for last, and recursive halving of the source
+//! list, which balances counts rather than bytes. The estimate reverses to a
+//! measured cost per source if byte length stops predicting it.
+//!
+//! **Judgement stays in walk order.** The checker, the kernel's readmission and
+//! the settle comparison run on the calling thread, one source after another,
+//! while the pool lowers the sources after it. Each source is judged alone, so
+//! judging on the pool would give the same verdicts, but a checker that
+//! consults what earlier sources admitted needs that order, and judgement is
+//! under a twentieth of a corpus walk. The choice reverses if judgement grows
+//! into the tail of a wide visit, when the sources whose judgement depends on
+//! no other move onto the pool.
+//!
+//! **Scoped threads, not `rayon`.** The pool is `std::thread::scope` and the
+//! cursor. The alternative was `rayon`; on the corpus, with the same cursor and
+//! the same in-order consumer, it measures the same as scoped threads, since
+//! there is nothing for work stealing to steal from one shared cursor. The
+//! choice reverses when the dispatcher forks below the source, by form or
+//! declaration, where nested work wants a stealing pool, or when a long-lived
+//! process — the session, the language server — keeps a pool warm across runs.
+//! The stage verb (the `stage` module) meets the first condition and runs on
+//! `rayon`; the walk forks by source alone, so it keeps scoped threads.
+//!
+//! **Held until the visit ends.** A wider visit lists every directory before it
+//! reads a source, holds every source's text until the visit ends and each
+//! lowering until its source is handed over, where the stepped walk holds one
+//! source; the first line of output waits for the first source in walk order.
+//! The choice reverses for a tree whose text does not fit in memory, when the
+//! cursor gains a bound on how far it may run ahead of the visitor.
 
 use alloc::collections::BTreeMap;
 use core::cmp::Reverse;

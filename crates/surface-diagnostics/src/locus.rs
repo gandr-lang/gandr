@@ -25,6 +25,49 @@
 //! primary locus, or at bytes an outer reason already marks, says nothing the
 //! report does not, and is left out; a term with no origin is left out rather
 //! than located at a guess.
+//!
+//! A refused body's trail, kept by the dispatcher, is the value and computation
+//! judgements the refusal stood inside, outermost first. `Report::reasons`
+//! reads each one whose term the origin table locates as a `Reason`: the term's
+//! bytes and how it was judged — checked against a type, spelled where the
+//! dispatcher could spell it, or synthesised. The snippet marks each as a
+//! context locus labelled with a `while` clause, so a force of an integer
+//! inside a thunk renders as:
+//!
+//! ```text
+//! error[ShapeMismatch]: expected a thunk type `+U C`
+//!   ╭▸ force.gandr:2:30
+//!   │
+//! 2 │ def a = thunk { become force 1 } ;
+//!   │         ┬──────────────┬─────┯──
+//!   │         │              │     │
+//!   │         │              │     its type is not of the required shape: found `Integer`
+//!   │         │              while checking this against `-F Integer`
+//!   │         while checking this against `+U (-F Integer)`
+//!   │
+//!   ╰ note: unsettled `a` states checks owing 0
+//! ```
+//!
+//! A reason at the primary locus, or at bytes an outer reason already marks,
+//! says nothing the snippet does not, and is left out, so a body refused where
+//! it stands has none; a term with no origin is left out rather than located at
+//! a guess. The language server publishes the same reasons as related
+//! information.
+//!
+//! The alternatives were a `note: while …` line per reason after the snippet,
+//! which repeats the source position in prose where the snippet can point at
+//! it, and a reason per machine frame, which names the rule waiting on a
+//! subterm but not the subterm's own bytes. Reversal: a reason with no locus
+//! worth showing — a term only the lowering minted — becomes a note when a
+//! reader needs it.
+//!
+//! # Context is causal
+//!
+//! A report marks a second locus only when it is part of the cause: the earlier
+//! signature a duplicate repeats, the type a term is checked against, the type
+//! a term synthesises, the expected shape a former meets. Padding a snippet
+//! with every nearby node would make the cause harder to find, not easier. A
+//! context locus keeps its own span and its own label.
 
 use core::fmt;
 

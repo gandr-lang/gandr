@@ -1,4 +1,65 @@
 //! Declaration descriptions read from molded syntax, before core decoding.
+//!
+//! # Descriptions and native data
+//!
+//! `data`, `codata` and `sign` declarations are also read into checked
+//! descriptions, and their operation and rule members into cells. A `data` form
+//! keeps one producer of its signature, the native reading (the `lower::native`
+//! module); the description route owns its members and decodes every other
+//! described family.
+//!
+//! # Declarations read into descriptions
+//!
+//! `description::elaborate_descriptions` reads top-level `data`, `codata` and
+//! `sign` declarations into checked descriptions. Typed family parameters and
+//! classifiers are retained separately from the description code. Constructor
+//! results must name the declared family with the same parameter variables, in
+//! order; declared value-index positions stay expressions rather than being
+//! read as field types. A malformed member earns its own diagnostic without
+//! removing readable siblings. The report retains structured well-formedness
+//! diagnostics and their available source spans.
+//!
+//! # One producer for a data form
+//!
+//! A `data` form has one producer of its signature: the native reading (the
+//! `lower::native` module), which lowers it to `DeclarationOutcome::Data`,
+//! enters its constructors and compiles the matches over it. The description
+//! route reads the same form beside it and owns what the native reading passes
+//! over. Its `oper` and `rule` members become description and cell entries, and
+//! a refusal among them is a held declaration at the member's own span under
+//! the family's name. It neither replaces the family's native signature nor
+//! consumes the declarations after the block. Every other described family with
+//! a classifier — `codata` — is admitted at its own position and decoded from
+//! its description by `decode_signature`, under all family parameters, with
+//! later applications keeping the family's admission identity. The decoder's
+//! refusal, `CodataNu` for codata, refuses that family alone, at its span. An
+//! attribute block written before an admitted family decorates it, as one
+//! before a `data` family does, so a corpus fixture states the refusal it
+//! expects
+//! (`description::tests::an_attribute_block_decorates_the_codata_declaration_after_it`).
+//!
+//! **Choice.** One producer per declaration form. The description decoder could
+//! produce `data` signatures as well, but two producers for one form let a
+//! native signature and a decoded one disagree about the same family, and only
+//! the native reading enters constructors and compiles matches. The
+//! alternatives were the decoder as the sole producer, which must first
+//! reproduce native constructor entry and match compilation, and both producers
+//! behind an agreement check, which reads every data family twice. A nominal
+//! native family is preserved rather than replaced by a structural coproduct or
+//! an opaque value declaration, and descriptive polarity stays separate from
+//! core representability: a readable `codata` description is not silently
+//! reinterpreted as a positive record. **Reversal.** A decoder that agrees with
+//! the native reading on every data form, constructors and matches included,
+//! can replace it as the producer. Further core readings arrive only with their
+//! formation and checking rules.
+//!
+//! Witnesses:
+//! `description::tests::native_data_keeps_telescope_and_nominal_heads`,
+//! `description::tests::member_refusals_keep_their_spans_and_other_declarations`,
+//! `description::tests::codata_is_refused_by_the_decoder_and_data_beside_it_is_native`,
+//! `lower::native::tests::operation_and_rule_members_are_left_to_the_description_route`,
+//! and the description reader's declaration and refusal witnesses in
+//! `description::tests`.
 
 use alloc::vec;
 use alloc::vec::Vec;

@@ -5,6 +5,55 @@
 //! diagnostics are the ones last published to the editor, read without a
 //! recheck; the outline, the expected syntax and a declaration's type are the
 //! language server's own answers to the requests an editor sends for them.
+//!
+//! # Changes ride on every tool result
+//!
+//! **Choice.** Every tool result carries `changes`: the documents opened or
+//! changed since this connection's previous call, with their versions, and
+//! those closed. A host that never surfaces subscription notifications to its
+//! model still tells the model, on its next call, that an editor moved
+//! underneath it.
+//!
+//! **Alternatives.** Subscriptions alone reach a model only through a host that
+//! forwards them; a separate `changes` tool would have to be called to be
+//! useful, which a model does not know to do.
+//!
+//! **Reversal.** The field is dropped once the hosts in use forward resource
+//! updates to their models.
+//!
+//! # A trial splices each candidate into the held text
+//!
+//! **Choice.** The `trial` tool takes up to 32 candidate texts and an optional
+//! range. With a range — a hole, or a declaration's body — each candidate
+//! replaces it in the document's held text, as an editor's ranged change would;
+//! without one, each candidate is the whole text. The language server's
+//! `Workspace::trial` judges every candidate as a fresh session would, in
+//! parallel, and the results come back best first: those judged before those
+//! the lowering refused whole, then fewer refused and unsettled declarations,
+//! then the candidate's own position. Each result carries the diagnostics a
+//! synchronisation to that text would publish. The document, its session and
+//! what the editor shows are unchanged.
+//!
+//! **Alternatives.** Candidates as whole texts alone would make a model copy
+//! the document once per candidate for a fill of a few characters. A target
+//! named by a declaration rather than a range would need a resolution step from
+//! name to span that the editor's range already gives. No cap would let one
+//! call hold the hub's lock for as long as a model cares to send; 32 is past
+//! the batch the session's measurements were taken at (8 and 16), and a batch
+//! at 16 candidates across the performance cores already costs a fraction of a
+//! model turn.
+//!
+//! **Reversal.** A model host measured to send larger batches raises the cap,
+//! or moves the trial off the hub's lock onto a copy of the session; a face
+//! that names holes by their goal resolves the range from the goal.
+//!
+//! **Proposals.** `propose` is the trial of one fill that, when it checks, is
+//! kept beside the document for its editors (the language server's
+//! `Workspace::propose`). A fill that does not check is answered `kept: false`
+//! with its diagnostics rather than refused, so the model reads why in the same
+//! call; a stale version or a document the hub does not hold is a tool error,
+//! since there is nothing to show. The language server's README records what
+//! checking means and how the editor shows a kept fill.
 
 use alloc::string::String;
 use alloc::vec::Vec;

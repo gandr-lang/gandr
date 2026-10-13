@@ -7,6 +7,38 @@
 //! could not be carried through the pipeline or the engine refused a
 //! declaration for a fault of its own. `--goals` changes what a reported
 //! obligation does to the gate, never what settled means.
+//!
+//! # A fault outranks an unsettled declaration
+//!
+//! `RunReport::verdict` answers `Faulted` when any path faulted — unreadable,
+//! naming no `.gandr` source, a grammar that did not build, a tree the parser
+//! could not commit, a whole-module refusal of the engine-fault class, a settle
+//! comparison handed foreign verdicts, a kernel disagreement — or when any
+//! declaration produced an engine-fault refusal, whatever it states. Otherwise
+//! it answers `Unsettled` when a strict or fixture source was refused as a
+//! whole, a pending source is `Lowered`, or a declaration is unsettled;
+//! otherwise `Settled`. The walk continues past a fault, so one run reports
+//! every path that faults.
+//!
+//! A path that names no source faults rather than settling: a gate over an
+//! empty directory would pass vacuously. The alternative was stopping at the
+//! first fault, which hides every later one behind it. The choice reverses for
+//! a caller that wants fail-fast, which would stop advancing the walk rather
+//! than change it.
+//!
+//! # Goals are reported, never settled
+//!
+//! Under `check --goals` (`Goals::Reported`), a declaration unsettled by its
+//! obligations alone — it states and produces _checks_, owing different counts
+//! — is printed as a goal and does not fail the run; every other unsettled
+//! declaration still does. `shown` and `RunReport::verdict` read the same
+//! distinction; the settle comparison and the counts are unchanged, so the
+//! run's own settlement still reports the declaration unsettled.
+//!
+//! The alternative was settling an owed declaration under `--goals`, which
+//! would change what settled means per invocation. The choice reverses if goals
+//! need their own exit code, which would be a fourth `RunVerdict` rather than a
+//! change to settled.
 
 use core::fmt;
 

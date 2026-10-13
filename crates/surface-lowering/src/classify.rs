@@ -31,6 +31,17 @@
 //! grammar, or carrying a mold the grammar does not hold, says nothing about
 //! the source: the caller handed the lowering a tree and a grammar that do not
 //! belong together, which is a fault of the run, never of the text.
+//!
+//! # The failure classifier
+//!
+//! `LoweringRefusal::classify` is a `const`, wildcard-free match: adding a
+//! refusal variant fails to compile until its class is chosen.
+//! `MalformedSource` is the author's mistake; `Unrepresentable` is
+//! `OutOfFragment`, `GradedBridge` and `UnreadAscription`; `EngineFault` is the
+//! budget, the grammar mismatch and the unknown mold. `UserAbsence` — what the
+//! author has not yet supplied, the only class that may become an obligation —
+//! has no refusal in it: obligations come from declaration shape, an
+//! uncompleted signature, and never from a classified failure.
 
 use anodized::spec;
 pub use gandr_core_term::FailureClass;

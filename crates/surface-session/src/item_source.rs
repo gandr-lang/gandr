@@ -8,6 +8,17 @@
 //! source keys each of those by its declared name and leaves the refused ones
 //! out, so the program the incremental checker resumes over holds exactly the
 //! declarations the batch judgement checks, at the same admission positions.
+//!
+//! # The item source
+//!
+//! `program` keys each declaration the lowering did not refuse by its name as
+//! written and carries exactly the declaration the dispatcher's `adapt` gives
+//! the checker, in admission order; refused declarations are left out and the
+//! admission positions skip them. The incremental checker therefore resumes
+//! over the declarations the batch judgement checks and no other.
+//! `SurfaceItems` is the same lowering behind `gandr-core-incremental`'s
+//! `ItemSource`; because that seam's error cannot borrow the revision, a
+//! whole-revision refusal crosses it as its failure class and span.
 
 use core::fmt;
 

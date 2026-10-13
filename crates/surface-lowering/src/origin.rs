@@ -43,6 +43,25 @@
 //! verdicts. That is what keeps spans, syntax nodes and names out of the core
 //! lane entirely: the two sides agree on one small type rather than on a module
 //! representation.
+//!
+//! # Origins for terms and types
+//!
+//! Every minted core node records the syntax node that produced it — its arena
+//! position and its span — for values, computations, value types and
+//! computation types alike, so a later note about a type has a carrier already,
+//! and whether the author wrote it or the lowering inserted it. A grouping
+//! mints nothing and its content keeps its own origin. A declaration's origin
+//! travels as an opaque `OriginToken` that a checker echoes back, which keeps
+//! spans and names out of the core. An origin carries no cross-tree identity: a
+//! table keyed across runs reads the node's key from the tree it was lowered
+//! from (`SyntaxTree::key`).
+//!
+//! Lookup uses arena-local IDs and table-local indices, not ownership
+//! certificates. Equal IDs from separate arenas and equal tokens from separate
+//! tables resolve in the table queried; only a missing key or out-of-range
+//! token yields the unrecorded absence. Callers retain the associated arena and
+//! table. Authenticating minting context would require a different identifier
+//! model; revisit this choice if the side table becomes an ownership boundary.
 
 use alloc::vec::Vec;
 

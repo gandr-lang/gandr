@@ -8,6 +8,21 @@
 //! host's physical performance cores: efficiency cores and the second hardware
 //! thread of a core are left idle. The host is asked only when a walk has two
 //! sources or more to fork.
+//!
+//! **The width is the host's physical performance cores.** A source's parse
+//! gains little past one thread per performance core: efficiency cores add
+//! little to a corpus walk, and second hardware threads slow it. So the default
+//! is the performance cores, never more than `std` says the process may use,
+//! and the host is asked only when a walk has two sources or more. A visit of
+//! one source runs on the calling thread alone. The driver's `--jobs` and
+//! `GANDR_JOBS` override it. On macOS the count is `hw.perflevel0.physicalcpu`,
+//! read through the [`sysctl`](https://crates.io/crates/sysctl) crate, since
+//! `std` reports logical CPUs only; the alternatives were `sysctlbyname`
+//! through `libc` and `unsafe`, `num_cpus`, which counts efficiency cores, and
+//! spawning the `sysctl` command, which costs milliseconds a run. On Linux it
+//! is read from sysfs with `std` alone. The default reverses to count
+//! efficiency cores or second hardware threads where a wider default measures
+//! faster on the process wall, not only on the walk.
 
 #[cfg(any(target_os = "linux", test))]
 use alloc::collections::BTreeSet;

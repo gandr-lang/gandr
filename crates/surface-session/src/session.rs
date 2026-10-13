@@ -23,6 +23,46 @@
 //! afterwards is reported as the fault it is, the session holding the judged
 //! revision.
 //!
+//! **Choice.** A submission is two calls. `Session::judge` parses, lowers,
+//! judges and settles the revision and resumes the incremental checker over it:
+//! everything a face renders. `Session::admit` then offers the judged
+//! revision's accepted declarations to the kernel, exports the artifact of what
+//! crossed and commits it. A face renders between the two, so its diagnostics
+//! never wait on the kernel. A later `judge` drops an admission the earlier one
+//! left unrun, so a face that falls behind admits only the latest revision.
+//! `submit` is the two calls in order, and its submission equals the one-step
+//! composition, kernel artifact included.
+//!
+//! **Why the admission is the half that waits.** The admission re-derives every
+//! accepted declaration in a fresh kernel environment, and the export encodes
+//! every declaration that crossed. Both are linear in the module whatever the
+//! edit. The kernel's memo of acceptances has no authority and no persistence,
+//! so a key that carried acceptances from one revision to the next would be
+//! persistence under another name. The admission therefore stays whole, and
+//! leaves the interactive path instead. The settle comparison and the program a
+//! face evaluates on read only the judgement's verdicts, never what the
+//! admission mints, so a judgement settled before the admission settles to the
+//! same report. The dispatcher's `a_judged_module_renders_before_its_admission`
+//! checks that order against the one-step composition.
+//!
+//! **Disagreement.** A kernel that does not re-derive an acceptance is a fault,
+//! never a verdict. When the judgement's settle comparison refuses the
+//! verdicts, `judge` runs the admission there and reports a disagreement first,
+//! as the one-step composition does. When `admit` finds one later, it returns
+//! the fault, and the session holds the judged revision.
+//!
+//! **Alternatives.** The admission could stay inside `submit` and get cheaper.
+//! Skipping declarations an earlier revision admitted needs a cross-revision
+//! acceptance key, which is ruled out above. Splitting the export by
+//! declaration saves the encode but not the re-derivation. An admission on
+//! another thread, abandoned when a newer revision arrives, would also take it
+//! off the editor's next keystroke. It costs a session shared across threads,
+//! and nothing has measured that the admission's wall, after publication,
+//! blocks the next change.
+//!
+//! **Reversal.** If an editor's next change measurably waits on the admission,
+//! the admission moves to a worker that the next judgement cancels.
+//!
 //! # The parse's repairs ride beside the step
 //!
 //! The step a face renders carries the composition, which holds no trace of
@@ -30,6 +70,25 @@
 //! the parse's completion obligations, taken from the lowering before it is
 //! consumed, on every path, re-sorted from the parse's severity order into
 //! source order because a reader meets them in the text.
+//!
+//! `Submission::obligations` carries the completion obligations the parse
+//! recorded — each repair's class and the bytes held responsible — on both
+//! paths, a revision judged and one refused whole. The step a face renders
+//! holds the composition, which keeps no trace of the repairs, so the
+//! submission takes them from the lowering before consuming it. The parse
+//! orders them by severity, the order its minimization folds; the submission
+//! orders them by span, the order a reader meets them, equal spans keeping the
+//! parse's order. The rows are the revision's: a clean revision after a
+//! recovering one carries none.
+//!
+//! The rows are the parser's own `ObligationInstance`s, not source-ordered rows
+//! of a published vocabulary that a render bus turns into cards and a JSON
+//! report serializes, since no face reads a published vocabulary yet; the
+//! vocabulary, the cards and the codec arrive with the first face that consumes
+//! them. The alternative was to add the obligations to the dispatcher's step,
+//! which every batch verb would then carry unread. The choice reverses when the
+//! step itself carries the parse's obligations; the submission then forwards
+//! the step's.
 //!
 //! # The kernel checkpoint is records, trusted only through the decoder
 //!
@@ -41,6 +100,176 @@
 //! stored tree against the manifest and hands the bytes to the kernel's
 //! bounded decoder: a manifest whose identity matches never stands in for the
 //! decoder's admission.
+//!
+//! **Choice.** Every accepted submission commits the composition's kernel
+//! artifact into the session's block store through `gandr-storage-artifact`:
+//! one record per declaration segment, cut where the kernel's decoder ends
+//! each, under a manifest whose identity binds the record plane's boundary
+//! commitment, the record count, the root node and the kernel format version.
+//! The submission carries the manifest, and the caller keeps it as it keeps
+//! anything — `ArtifactManifest::encode` gives its bytes.
+//! `Session::read_kernel` is the one way back: it refuses a manifest of another
+//! profile or kernel format before loading anything, re-seals the stored tree
+//! against the manifest, checks every key and cut, and hands the bytes to the
+//! kernel's bounded decoder. A matching identity says which bytes these are,
+//! never that the kernel admits them, so a manifest minted over bytes the
+//! kernel refuses names a tree the store holds and seals, and is still refused.
+//!
+//! **Alternatives.** The encoded artifact as one opaque blob beside the
+//! checkpoints would leave no record grain, so a reader could not take one
+//! declaration's segment with its proof, and the blob would be trusted by its
+//! hash. Keying it into the `CheckpointStore` under the program's address would
+//! give that store a second kind of value its trait does not name. Restoring it
+//! in `Session::reopen` needs a manifest to read by, and the manifest is the
+//! caller's root of trust, not the session's.
+//!
+//! **Reversal.** A durable table of manifests by program address, owned by the
+//! session, lets `Session::reopen` restore the kernel checkpoint itself; and a
+//! face that never reads the kernel environment, measured paying for the
+//! commit, moves it behind a choice the caller makes.
+//!
+//! # A submission is a whole revision the caller owns
+//!
+//! `submit` takes the full text of a revision and returns a `Submission`
+//! borrowing it; the session keeps no text. A face that reads lines appends
+//! them to its own buffer and submits the buffer, so a later "line" is the
+//! earlier revision with the line added, and what carries across lines is what
+//! the session keeps: the resume it adopts from and the import scope.
+//!
+//! The alternative is appending each submission to a transcript the session
+//! owns. The lowering resolves a name only within its own module, so a line
+//! alone could not see the definitions before it, and a report borrowing a
+//! session-owned buffer would freeze the session until the report was dropped.
+//! The choice reverses when the lowering takes a seed of earlier declarations:
+//! the session then owns the line-append, and a submission is the line.
+//!
+//! # A trial judges candidates without submitting them
+//!
+//! **Choice.** `Session::trial` takes candidate revisions — whole texts of the
+//! source, as a submission does — and judges each without submitting it: parsed
+//! through the form store without changing it (`FormStore::parse_held`),
+//! lowered, and judged and settled by the dispatcher's `judge`. Each `Trial`
+//! carries the candidate's position and a `Submission` whose composition,
+//! standing and repairs are the ones `Session::judge` gives the text in a
+//! session that has accepted nothing; it resumes nothing and diffs nothing
+//! (`resumed::Absent::Tried`), and the kernel is offered nothing. The method
+//! takes `&self`, so the session — its form store, resume, snapshot, imports,
+//! documentation, lowering count and admission — is unchanged by construction.
+//! The candidates are judged on the session's width, each thread taking the
+//! next candidate, and ranked: compositions the lowering read before those it
+//! refused whole, both before a fault; then fewer refused declarations, so a
+//! wrong fill ranks below one that leaves a goal; then fewer unsettled
+//! declarations, fewer owed obligations and fewer parse repairs; then the
+//! candidates' own order.
+//!
+//! A batch on one thread costs what the candidates cost one at a time; across
+//! the performance cores it is six to seven times faster. Checking a candidate
+//! by submitting it and then restoring the base costs two judgements and two
+//! resumes per candidate, twice a trial's.
+//!
+//! **Alternatives.** A clone of the session per candidate would resume the
+//! incremental checker from the latest resume, but the report a face renders is
+//! the whole-module judgement, so the resume would cost a copy of the arena and
+//! the checkpoints and change no verdict. A target span and a fill spliced into
+//! the latest revision would need the session to hold its text, which it does
+//! not; the splice belongs to the face that knows the buffer and the hole.
+//! Molding a candidate through the store and then pruning the store back would
+//! leave the store's contents to a second pass's correctness; a parse that only
+//! reads the store cannot disturb it.
+//!
+//! **Reversal.** When a step can be assembled from adopted checkpoints (§ The
+//! report is the dispatcher's composition), a trial resumes from a clone of the
+//! latest resume and judges only the declarations the candidate changed. When
+//! candidates are measured to share most of their changed forms, the trial
+//! molds each distinct identity once across the batch.
+//!
+//! # The report is the dispatcher's composition
+//!
+//! The report a submission carries is the dispatcher's `judge`'s, the second
+//! half of the composition `gandr check` runs, over the module `lower_source`
+//! read — so a submission and a walk step agree by construction, and the corpus
+//! agreement suite checks it source by source. The resume runs beside it over a
+//! copy of the arena.
+//!
+//! The alternative was a report assembled from the resume's own verdicts. The
+//! incremental checker keeps typings, not the checker's verdicts, and a settle
+//! report is built from a judged module; assembling one from adopted
+//! checkpoints would be a second judgement to keep in agreement with the first.
+//! The cost of the choice is one arena copy and one whole-module judgement per
+//! accepted revision. It reverses when a step can be assembled from adopted
+//! checkpoints; the whole-module judgement and the copy retire then.
+//!
+//! # Refusals are the report
+//!
+//! A declaration the lowering refuses is reported as refused and offered to no
+//! one; a declaration the checker refuses is reported as refused and resumed as
+//! `Typing::Refused`. A whole-revision lowering refusal retains the accepted
+//! state while recording another lowering attempt. A fault — a tree the parser
+//! cannot commit, a lowering or kernel disagreement — is a `SessionFault`,
+//! never a verdict about the source. There is no unknown former that could turn
+//! an unlowerable term into an accepted one.
+//!
+//! # Checkpoints
+//!
+//! Every accepted submission attempts to persist its checkpoints under its
+//! program's content address. A failed write need not leave an external store
+//! unchanged. If the incremental session retains a resume, the submission
+//! reports `Persistence::Failed` and the next submission can adopt from it;
+//! otherwise the failure is `SessionFault::Store`. `Session::reopen` lowers its
+//! supplied revision and restores checkpoints for that program and backend. An
+//! absent or incompatible checkpoint set reopens fresh and says why. A restored
+//! set is not trusted: the next resume validates each checkpoint as it
+//! validates an in-memory one.
+//!
+//! # The import scope persists across submissions
+//!
+//! The session keeps the import rows and alias scope of the last revision the
+//! lowering read, owned so they outlive its text. A revision the lowering
+//! refuses — one that declares an alias twice among them — leaves the scope of
+//! the revision before it, so a face resolving `parse` keeps its answer while
+//! the author repairs the collision.
+//!
+//! # Diagnostics and goals are the renderer's
+//!
+//! A submission's diagnostics are the reports `gandr-surface-diagnostics`
+//! renders from its step under the verb a face runs: a refusal at its own
+//! locus, an unsettled declaration, and under `check --goals` a goal. A goal is
+//! a declaration owed its body — a signature with no definition — which the
+//! checker answers with the hole rule and the incremental checker marks as a
+//! hole in the item's footprint; the goals suite checks that the two predicates
+//! agree item by item.
+//!
+//! The surface has no hole term yet, so the goals here stand for whole bodies,
+//! and goals over sub-term holes, each with its expected type and local
+//! context, arrive with the hole surface; a malformed declaration is refused in
+//! place, its report the refusal at the responsible bytes, and the declarations
+//! after it lower intact. The lowering types an attribute payload against its
+//! schema where it reads it, and refuses a mismatch as `IllTypedPayload`, in
+//! the malformed-source class every type error takes.
+//!
+//! # A hole-free item is evaluated
+//!
+//! `Submission::evaluate` runs one declaration of the revision on the `Program`
+//! the dispatcher's composition built, the same run `gandr run` makes, and
+//! returns what it came to. The rule is `evaluate`, over a declaration and its
+//! program, so a face holding the submission's step applies it without the
+//! submission: a declaration the checker accepted — checked or synthesised —
+//! runs; one owed its body is a hole and declines with
+//! `evaluation::Absent::Holed`; one refused by the lowering, the checker or its
+//! root declines with `evaluation::Absent::Unaccepted`, as does a position
+//! holding no declaration and a revision refused whole. A declaration that runs
+//! into a goal elsewhere is not a hole of its own: it runs, and the run is
+//! blamed on the goal. Each evaluation is a fresh machine, so evaluating twice
+//! runs twice and nothing is cached between revisions. A native data
+//! declaration is not a runtime value and returns
+//! `evaluation::Absent::DataUnrunnable`.
+//!
+//! The fragment has no top-level expression, so the item evaluated is a
+//! declaration, and the loop prints a value line under each checked one. The
+//! alternative was evaluating nothing until expressions exist, which leaves the
+//! loop unable to show a value. The choice reverses when the surface gains a
+//! top-level expression: that item is the one evaluated, and a definition
+//! returns to its type line alone.
 
 use alloc::collections::BTreeMap;
 use core::fmt;

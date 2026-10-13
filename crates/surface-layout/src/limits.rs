@@ -28,6 +28,39 @@
 //! client that emits a document in segments reuses the same meter across every
 //! segment, which is what stops a long run from resetting its own accounting
 //! between pieces.
+//!
+//! # Limits and typed failures
+//!
+//! Every store checks its ceiling before it grows, every counter checks its
+//! arithmetic, and a refused charge leaves the counter unchanged
+//! (`algebra::tests::a_refused_charge_leaves_the_counter_unchanged`). The
+//! defaults:
+//!
+//! | Ceiling | Default |
+//! | ------- | ------- |
+//! | document nodes | 1,000,000 |
+//! | text bytes | 64 MiB |
+//! | verbatim lines | 1,000,000 |
+//! | build steps | 20,000,000 |
+//! | memo states | 1,000,000 |
+//! | frontier entries | 4,000,000 |
+//! | plan nodes created | 16,000,000 |
+//! | live plan nodes | 8,000,000 |
+//! | output bytes | 64 MiB |
+//! | layout steps, resolver work entries, machine steps | 100,000,000 each |
+//! | resolver stack, machine stack | 1,000,000 each |
+//!
+//! **Broken invariants are typed.** A machine state that the resolver or the
+//! render machine never produces — a stale plan identity, a continuation
+//! without its result, a root with no measure — returns
+//! `RenderError::Invariant` naming the invariant, never a panic and never an
+//! arithmetic error borrowed for the purpose.
+//!
+//! - **Alternatives.** A panic halts the face that printed, which a language
+//!   server must not do; reporting the state as an overflow names the wrong
+//!   cause.
+//! - **Reversal.** None planned: an invariant variant is cheap and each one
+//!   names a defect to fix.
 
 use anodized::spec;
 

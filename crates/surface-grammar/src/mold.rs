@@ -10,6 +10,99 @@
 //! rule's form left to right. Two occurrences that intern to the same label
 //! and context are redundant and refused as [`PbgError::DuplicateTile`];
 //! occurrences at structurally distinct positions receive distinct contexts.
+//!
+//! # Molds and contexts
+//!
+//! A mold is one tile occurrence: its label, its sort, its precedence group,
+//! and the interned context it stands in. Ids are assigned in rule order and
+//! left to right within a rule. A context records, per side, whether the form's
+//! edge faces a sort hole and the steps a zipper crosses to the next symbol;
+//! contexts are interned in a `BTreeMap`, so the table is `no_std` and the
+//! interning order fixed. A mold's bound on a side is its own group where a
+//! hole can face it there, and the root bound otherwise. `candidates` lists
+//! every mold of a label; `fresh_candidates` keeps those with no same-form
+//! predecessor and those that can open a form, the menu a parser offers where
+//! no form is open.
+//!
+//! - Alternatives: a hash-map interner needs `std` or a further dependency and
+//!   a fixed hasher for a stable order.
+//! - Reversal: a measured build in which interning dominates.
+//!
+//! ### A token's label and menus in one probe
+//!
+//! A parser resolves every token's spellings to declared labels and reads their
+//! menus: a keyword's own spelling, then the lexeme classes it falls back to.
+//! `Pbg::tile_label` resolves a `LabelText` to its `TileLabel`, and the table
+//! keeps both of a label's menus in one hash map keyed by the label, so the
+//! resolution and each menu read are one hash probe apiece rather than string
+//! comparisons down an ordered map, and a parser holds no label list of its
+//! own. Against those comparisons, parsing the corpus takes about a fifth less
+//! time and builds the same trees. Nothing iterates the map in an observable
+//! order: `candidate_counts` sorts what it lists, and the fingerprint and the
+//! frozen tables read the mold columns.
+//!
+//! The hasher is `foldhash`'s fixed-seed `fast` state over `hashbrown`, both
+//! with their default features off. Measured as this index, `rapidhash`,
+//! `rustc-hash`, `ahash`, `foldhash` and `xxhash-rust`'s `xxh3` came within one
+//! percent of each other except `xxh3`, four percent slower on these short
+//! keys; with no measurable difference the choice is the cheapest build, and
+//! the crate graph already compiles `hashbrown` 0.17 and `foldhash` 0.2 beneath
+//! `petgraph`. The keys are the grammar's own labels, so hash flooding is not a
+//! threat a seeded hasher would answer.
+//!
+//! - Alternatives: a sorted label list the parser binary-searches per token,
+//!   which costs string comparisons on every token; a perfect hash generated
+//!   with the frozen tables, which needs a build step for a cost a probe
+//!   already removes; `rapidhash`, the fastest measured by half a percent,
+//!   which adds a proc-macro dependency.
+//! - Reversal: `foldhash` unmaintained or dropped from the graph, or a grammar
+//!   whose labels come from untrusted input.
+//!
+//! ### Interchangeable molds
+//!
+//! Two molds of one rule can stand at one position of its form under different
+//! labels: a definition's parameter name is an `identifier` or a
+//! `type_variable` there, with the same neighbours on both sides. A parser that
+//! has pushed either reads the same things of it afterwards — the rule, the
+//! form's precedence and sort, the context's hole faces and step lists, the
+//! closing class, the form membership, the same-form successors and
+//! predecessors — so what follows molds alike after either.
+//! `Pbg::least_interchangeable` names, for each mold, the least mold that
+//! agrees with it on all of these; a parser weighing tied molds by what follows
+//! needs to weigh one per class. The answer is a column of the table: the gated
+//! build derives it by ordering the molds by those components, and the frozen
+//! table stores it beside each mold, so thawing reads it rather than deriving
+//! it.
+//!
+//! - Alternatives: deriving the column when the table is thawed, which costs a
+//!   third of a millisecond, more than half again the thaw; comparing two
+//!   molds' components whenever a parser asks, which has no index of a mold's
+//!   predecessors to compare by.
+//! - Reversal: a parser that reads a pushed tile's label after the push makes
+//!   the label a component, and the classes split.
+//!
+//! # Closing class
+//!
+//! A mold's closing class is the bracket family every completion of its form
+//! from that mold ends in: `Paren`, `Bracket` or `Brace`, the families
+//! `ClosingClass` names in `gandr-surface-syntax`. It is a property of the
+//! form, not of the tile, so the same label derives different classes in
+//! different rules: a module member's `=` reaches the module's `}`, a
+//! definition's `=` completes at `;` and derives nothing. A completion that
+//! ends at a tile closing nothing, at a closer of a family the rule never
+//! opens, or in disagreement with another completion gives no class.
+//!
+//! Each rule's tiles form a graph under adjacency. Every tile in one strongly
+//! connected component reaches the same endings, so the derivation condenses
+//! the graph once and folds the components sinks first; every occurrence reads
+//! its component's answer. The derivation is linear in the rule's tiles and
+//! adjacencies.
+//!
+//! - Alternatives: a per-tile memo with a visiting set records a tile inside a
+//!   repeat before the repeat's exit is known and answers wrongly for a repeat
+//!   with an exit; a search that rescans the rule's adjacency at every step is
+//!   cubic on the alternation-heavy rules.
+//! - Reversal: a rule shape whose condensation dominates the build.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

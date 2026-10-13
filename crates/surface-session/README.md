@@ -4,32 +4,10 @@ The interactive session: each revision of one source lowered, judged exactly as 
 
 <!-- toc -->
 - [Synopsis](#synopsis)
-- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [A crate of its own, above the dispatcher](#a-crate-of-its-own-above-the-dispatcher)
-- [A submission is a whole revision the caller owns](#a-submission-is-a-whole-revision-the-caller-owns)
-- [The form store parses only the forms an edit touched](#the-form-store-parses-only-the-forms-an-edit-touched)
-- [A trial judges candidates without submitting them](#a-trial-judges-candidates-without-submitting-them)
-- [The report is the dispatcher's composition](#the-report-is-the-dispatchers-composition)
-- [The kernel admission runs after the report](#the-kernel-admission-runs-after-the-report)
-- [Refusals are the report](#refusals-are-the-report)
-- [The item source](#the-item-source)
-- [Checkpoints](#checkpoints)
-- [The kernel checkpoint](#the-kernel-checkpoint)
-- [The import scope persists across submissions](#the-import-scope-persists-across-submissions)
-- [Edits are a diff of the lowered core](#edits-are-a-diff-of-the-lowered-core)
-- [Native declaration snapshots](#native-declaration-snapshots)
-- [Native universe-path content](#native-universe-path-content)
-- [Localization descends extents](#localization-descends-extents)
-- [The parse's repairs ride beside the step](#the-parses-repairs-ride-beside-the-step)
-- [Diagnostics and goals are the renderer's](#diagnostics-and-goals-are-the-renderers)
-- [A hole-free item is evaluated](#a-hole-free-item-is-evaluated)
-- [A declaration's type and documentation are read off the latest revision](#a-declarations-type-and-documentation-are-read-off-the-latest-revision)
-- [Live match checkpoints](#live-match-checkpoints)
-- [Contract evidence and its limits](#contract-evidence-and-its-limits)
-- [Deferred behavioral floor](#deferred-behavioral-floor)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 <!-- tocstop -->
 
@@ -41,27 +19,21 @@ The interactive session: each revision of one source lowered, judged exactly as 
 
 **How.** `judge` parses the revision through the session's form store, which molds only the top-level forms whose identity it does not hold, then calls the dispatcher's `lower_parsed`, then the dispatcher's `judge` for the report and `program` plus `IncrementalSession::submit` for the resume, over a copy of the lowered arena, and keeps the dispatcher's `Admission` for `admit`. A whole-revision refusal is `Composed::Refused`: it retains the accepted resume, imports, and snapshot but advances the lowering-attempt count. Checkpoints use `CheckpointStore`; a store failure becomes `Persistence::Failed` when a resume remains available, otherwise `SessionFault::Store`. A kernel block-store refusal is carried as `KernelCheckpoint::Failed` without discarding the accepted resume.
 
-## References
-
-- Microsoft. "Language Server Protocol Specification, version 3.17." 2022. <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/> — full-document synchronisation, the shape a submission takes: the client owns the buffer and sends it whole.
-- Porter et al. "Incremental Bidirectional Typing via Order Maintenance." arXiv:2504.08946, 2025. <https://arxiv.org/abs/2504.08946> — an incremental checker that consumes structured edit actions rather than text, the input edit reconstruction produces.
-- Hunt, J. W., and Szymanski, T. G. "A Fast Algorithm for Computing Longest Common Subsequences." Communications of the ACM 20(5), 1977. — the reduction of a longest common subsequence over distinct keys to a longest increasing subsequence, which item alignment uses.
-
 ## Provided features
 
-- **The session.** `Session`, `Session::new`, `Session::submit`, `Session::last`, `Session::stream`, `Session::lowerings`, `Session::into_store`; `Submission`, `Resumed`, `Persistence`, `resumed::Absent`, `SessionFault`. Witnesses: `tests::corpus::every_source_submits_as_the_walk_composes_it`, `tests::session::whole_file_submit_carries_definitions_forward`, `tests::session::successful_submissions_publish_whole_program_synthesis`, `tests::session::failed_submission_retains_latest_synthesis`.
-- **The judgement before the admission.** `Session::judge`, `Session::admit`, `Admitted`, `admitted::Absent`, `admission::Absent`: a revision's report and resume before its kernel admission, and the admission after. Witness: `tests::session::a_judged_revision_reports_before_its_admission`.
-- **The form store.** `Submission::forms`, `FormCensus`, `FormCount`, `Session::with_width`: each submission's forms and how many were molded rather than taken up. Witnesses: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`, `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it`, `tests::forms::a_one_form_edit_molds_only_the_forms_that_read_it`, `tests::forms::a_reopened_session_keeps_the_forms_it_parsed`, `tests::forms::every_corpus_edit_script_submits_as_the_walk_composes_it`, `forms::tests::every_width_molds_the_same_units`, `forms::tests::a_unit_of_another_grammar_is_molded_again`.
-- **Trials.** `Session::trial`, `Trial`, `CandidateIndex`, `resumed::Absent::Tried`, `FormStore::parse_held`: candidate revisions judged against the latest accepted state without submitting any, each as a fresh session judges it, ranked, the session unchanged. Witnesses: `tests::trial::each_candidate_is_judged_as_a_fresh_session_judges_it`, `tests::trial::a_trial_leaves_the_session_as_it_was`, `forms::tests::a_held_parse_keeps_the_store`.
-- **The step a face renders.** `Submission::into_step`: the submission as the dispatcher's `Step::Source`. Witnesses: `tests::corpus::every_source_submits_as_the_walk_composes_it`, and the diagnostic suites' stable refusal identifiers and exact source loci; English titles and rendered report layout are not contracts.
-- **The parser's repairs.** `Submission::obligations`: the parse's completion obligations, in source order. Witnesses: `tests::diag_obligations::lowered_carries_the_parse_obligations_verbatim`, `tests::diag_obligations::rows_are_in_source_order_not_severity_order`, `tests::diag_obligations::a_clean_source_reports_no_obligations`.
-- **Checkpoints across processes.** `Session::reopen`, `Reopened`, `reopened::Absent`. Witnesses: `tests::checkpoint::a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote`, `tests::checkpoint::a_store_holding_nothing_reopens_fresh`, `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`.
-- **The kernel checkpoint.** `KernelCheckpoint`, `Submission::kernel`, `Session::read_kernel`, `Session::blocks`. Witnesses: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`, `tests::checkpoint::a_matching_identity_over_bytes_the_kernel_refuses_is_refused`, `tests::corpus::every_source_submits_as_the_walk_composes_it`.
-- **The import scope.** `Session::resolve_import`, `ImportRow`, `import::Absent`. Witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`.
-- **The item source.** `program`, `SurfaceItems` (an `ItemSource`), `Revision`, `RevisionFault`, `fault_span::Absent`. Witnesses: `tests::items::each_unrefused_declaration_is_one_item_keyed_by_its_name`, `tests::items::the_item_source_offers_a_revision_or_names_its_fault`.
-- **Evaluation.** `Submission::evaluate`, `evaluate`, `evaluation::Absent`: a hole-free item run on the dispatcher's run stage. Witnesses: `tests::session::integer_literal_types_and_evaluates`, `tests::session::nullary_function_call_evaluates`, `tests::session::holes_decline_evaluation`.
-- **Types and documentation.** `type_of`, `type_at`, `spelled::Absent`, `Session::documentation`: a declaration's type spelled at a page width from the latest resume, by name or by item, and its documentation by its form's identity. Witnesses: `typed::tests::missing_and_refused_types_keep_their_absence_reasons`, `typed::tests::a_synthesised_type_is_spelled`, `typed::tests::each_occurrence_of_a_name_has_its_own_type`, `tests::session::documentation_is_kept_by_declaration_identity`.
-- **Edit-action reconstruction.** `Snapshot` (`of`, `items`, `node`, `span`, `localize`, `edit_locus`), `diff`, `apply`, `EditScript`, `Action`, `CorePath`, `ChildSlot`, `Tree`, `ItemTree`, `SourceEdit`, the reasons `addressed`, `spanned`, `located` and `body_path`; `Submission::edits`, `Session::snapshot`. Witnesses: `tests::edit::apply_of_diff_reproduces_new`, `tests::edit::literal_edit_is_one_set_int`, `tests::edit::multi_point_edit_localizes_to_the_common_ancestor`, `tests::edit::a_submission_carries_the_edits_from_the_last_accepted_revision`, `edit::tests::descent_agrees_with_the_linear_stab_oracle`.
+- **The session.** `Session`, `Session::new`, `Session::submit`, `Session::last`, `Session::stream`, `Session::lowerings`, `Session::into_store`; `Submission`, `Resumed`, `Persistence`, `resumed::Absent`, `SessionFault`.
+- **The judgement before the admission.** `Session::judge`, `Session::admit`, `Admitted`, `admitted::Absent`, `admission::Absent`: a revision's report and resume before its kernel admission, and the admission after.
+- **The form store.** `Submission::forms`, `FormCensus`, `FormCount`, `Session::with_width`: each submission's forms and how many were molded rather than taken up.
+- **Trials.** `Session::trial`, `Trial`, `CandidateIndex`, `resumed::Absent::Tried`, `FormStore::parse_held`: candidate revisions judged against the latest accepted state without submitting any, each as a fresh session judges it, ranked, the session unchanged.
+- **The step a face renders.** `Submission::into_step`: the submission as the dispatcher's `Step::Source`.
+- **The parser's repairs.** `Submission::obligations`: the parse's completion obligations, in source order.
+- **Checkpoints across processes.** `Session::reopen`, `Reopened`, `reopened::Absent`.
+- **The kernel checkpoint.** `KernelCheckpoint`, `Submission::kernel`, `Session::read_kernel`, `Session::blocks`.
+- **The import scope.** `Session::resolve_import`, `ImportRow`, `import::Absent`.
+- **The item source.** `program`, `SurfaceItems` (an `ItemSource`), `Revision`, `RevisionFault`, `fault_span::Absent`.
+- **Evaluation.** `Submission::evaluate`, `evaluate`, `evaluation::Absent`: a hole-free item run on the dispatcher's run stage.
+- **Types and documentation.** `type_of`, `type_at`, `spelled::Absent`, `Session::documentation`: a declaration's type spelled at a page width from the latest resume, by name or by item, and its documentation by its form's identity.
+- **Edit-action reconstruction.** `Snapshot` (`of`, `items`, `node`, `span`, `localize`, `edit_locus`), `diff`, `apply`, `EditScript`, `Action`, `CorePath`, `ChildSlot`, `Tree`, `ItemTree`, `SourceEdit`, the reasons `addressed`, `spanned`, `located` and `body_path`; `Submission::edits`, `Session::snapshot`.
 
 ## Expected features
 
@@ -99,324 +71,21 @@ let second = session.submit(SourceText::from("def x = 40 ;\ndef y = x ;"))?;
 
 The crate's tests run with `cargo nextest run -p gandr-surface-session`.
 
-## A crate of its own, above the dispatcher
-
-The session owns incremental state and checkpoints the batch pipeline has no use for, and three faces read it. It sits in `surface` after the dispatcher and the diagnostics renderer and depends on the dispatcher and below, never on a face.
-
-The alternatives were the dispatcher, which would carry state its `check` and `test` verbs never read, and the first face, which would leave the second to duplicate it. The choice reverses if one face remains the only reader; the session would then fold into it.
-
-## A submission is a whole revision the caller owns
-
-`submit` takes the full text of a revision and returns a `Submission` borrowing it; the session keeps no text. A face that reads lines appends them to its own buffer and submits the buffer, so a later "line" is the earlier revision with the line added, and what carries across lines is what the session keeps: the resume it adopts from and the import scope.
-
-The prior implementation appended each submission to a transcript the session owned. Here the lowering resolves a name only within its own module, so a line alone could not see the definitions before it, and a report borrowing a session-owned buffer would freeze the session until the report was dropped. The choice reverses when the lowering takes a seed of earlier declarations: the session then owns the line-append, and a submission is the line.
-
-## The form store parses only the forms an edit touched
-
-**Choice.** The session keeps every top-level form of the latest parsed revision, molded and parked by the parser (`FormUnit::park`), under the form's identity (`FormSplit::identity`), and the revision's text and labeling. A revision is relabeled from the latest one's labeling (`Labeling::relabel`), which scans only around the edit, and split at its predicted form boundaries; a form whose identity the store holds, molded under the session's grammar, is taken up from its parked unit (`FormUnit::resume`), and the rest are molded across the session's width (`Session::with_width`, the host's performance cores by default), largest first. The units are joined in source order and committed into the revision's tree, which digests each top-level form once as it is laid out. The store then holds exactly the revision's units, so its memory is one revision's forms whatever the history. `Submission::forms` counts the revision's forms and the ones molded.
-
-**Identity.** A form's identity is the exact spelling of everything its molding reads: whether it starts the source or follows a form boundary, its tokens' classes and relative ends, and the bytes from its first token through the eighth significant token past its end, the furthest the molder's lookahead reads. Two forms with one identity mold to one unit, so a taken-up unit is the unit molding would build. An edit therefore molds the forms it changed and the forms whose lookahead reaches into it — on the generated two-thousand-form module, one to eight. An edit that moves a boundary — a merge that drops a terminator, a split that adds one, an insertion or a deletion — changes the identities across it, and the join's seam checks re-mold any run whose predicted boundary was not real, so the parse equals the whole parse of the revision whatever the store held. A session whose grammar's fingerprint differs from the one a unit was molded under molds every form, which is the whole revision.
-
-**The equality.** The witnesses submit every edit class — a change, an insertion, a deletion, a move, a merge, a split, a top-level return the lowering refuses whole — over generated modules of both roots, whose forms include data declarations and cases over their constructors, at one thread and at three, and compare each submission with the walk's composition of the same text and with a fresh session's: the composition, the standing, the parse's repairs, the kernel checkpoint and the resume's typings. Edit scripts over every corpus source are compared the same way. Under enforced specifications, whose checks multiply a submission's cost about fortyfold, the scripts run over a thirty-two-form module, every sixth corpus source and fewer property cases.
-
-**Alternatives.** The recorded design identifies a form by its content across revisions, and a content digest is the usual key. A digest of the window costs a hash per form on every submission, measured on the edit path, and can collide; the exact spelling costs a copy of bytes the revision already holds and cannot. A store that kept units from every revision would serve an undo without molding, at memory growing with the history; keeping one revision bounds it. Re-parsing only the edited byte range would need the molder to restart mid-form, which its push machine does not offer; a form is the smallest unit it resumes from a checkpoint.
-
-**Reversal.** Identities persisted across processes, beside the session's checkpoints, need a fixed-width key: a digest of the spelling then becomes the stored key. A measured undo-heavy face would keep a bounded history of revisions.
-
-**What it does not cover.** On the generated two-thousand-form module, a one-form edit no longer labels or re-molds the revision: the store relabels it around the edit (`Labeling::relabel`), and the store looks each form up once and prunes itself in place. The commit hashes every form once, one call each, which costs less than the per-node digests the parked units once carried: a one-form change is judged in 31.5 ms rather than 32.5, and the parked units are 1.9× the lowered revision rather than 2.6×. What remains is linear in the module, and each stage names what removes it. The commit still stages every node into the level-order tree and the join copies every parked unit; a tree laid out by form, each form's subtree contiguous, would let the commit take an unchanged form up as a block. The lowering reads the whole tree, and its classification cannot be kept per form: it writes about twelve index spaces keyed by the tree's level-order positions — plans, readings, operand, statement and parameter stretches, binder scopes, case forms, answers, descents, hole identities, which are positions themselves — so a kept form needs every index remapped. One arena segment per form, over the same per-form layout, carries a form's identity through tree, arena and origins, hole and case origins included, and removes the lowering's whole-module pass with the commit's. The incremental checker's resume and the edit snapshot re-encode every item from the arena, and an item carried with its segment needs neither. The whole-module judgement retires when a report is assembled from adopted checkpoints. The readmission and the kernel export run after the report and are linear in the module. The measurement — `cargo run --release -p gandr-surface-session --example edit_loop` — prints each edit class's judged, admitted and whole submission walls at both roots and both widths, and the heap the form store and the session keep against the lowered revision.
-
-## A trial judges candidates without submitting them
-
-**Choice.** `Session::trial` takes candidate revisions — whole texts of the source, as a submission does — and judges each without submitting it: parsed through the form store without changing it (`FormStore::parse_held`), lowered, and judged and settled by the dispatcher's `judge`. Each `Trial` carries the candidate's position and a `Submission` whose composition, standing and repairs are the ones `Session::judge` gives the text in a session that has accepted nothing; it resumes nothing and diffs nothing (`resumed::Absent::Tried`), and the kernel is offered nothing. The method takes `&self`, so the session — its form store, resume, snapshot, imports, documentation, lowering count and admission — is unchanged by construction. The candidates are judged on the session's width, each thread taking the next candidate, and ranked: compositions the lowering read before those it refused whole, both before a fault; then fewer refused declarations, so a wrong fill ranks below one that leaves a goal; then fewer unsettled declarations, fewer owed obligations and fewer parse repairs; then the candidates' own order.
-
-**Measured.** Release build, a module of a chain of `d_i : Integer = d_(i-1)` definitions and one owed declaration, half the candidates filling it with a checking body and half with a refused one, five rounds averaged:
-
-| Module, candidates | Batch, one thread | Batch, performance cores | One trial per candidate | Submit, then resubmit the base |
-| ------------------ | ----------------- | ------------------------ | ----------------------- | ------------------------------ |
-| 200 definitions, 8 | 2.91 s | 409 ms | 2.92 s | 6.02 s |
-| 50 definitions, 16 | 805 ms | 127 ms | 809 ms | 1.65 s |
-
-A batch on one thread costs what the candidates cost one at a time; across the performance cores it is six to seven times faster. Checking a candidate by submitting it and then restoring the base costs two judgements and two resumes per candidate, twice a trial's.
-
-**Alternatives.** A clone of the session per candidate would resume the incremental checker from the latest resume, but the report a face renders is the whole-module judgement, so the resume would cost a copy of the arena and the checkpoints and change no verdict. A target span and a fill spliced into the latest revision would need the session to hold its text, which it does not; the splice belongs to the face that knows the buffer and the hole. Molding a candidate through the store and then pruning the store back would leave the store's contents to a second pass's correctness; a parse that only reads the store cannot disturb it.
-
-**Reversal.** When a step can be assembled from adopted checkpoints (the report section below), a trial resumes from a clone of the latest resume and judges only the declarations the candidate changed. When candidates are measured to share most of their changed forms, the trial molds each distinct identity once across the batch.
-
-## The report is the dispatcher's composition
-
-The report a submission carries is the dispatcher's `judge`'s, the second half of the composition `gandr check` runs, over the module `lower_source` read — so a submission and a walk step agree by construction, and the corpus agreement suite checks it source by source. The resume runs beside it over a copy of the arena.
-
-The alternative was a report assembled from the resume's own verdicts. The incremental checker keeps typings, not the checker's verdicts, and a settle report is built from a judged module; assembling one from adopted checkpoints would be a second judgement to keep in agreement with the first. The cost of the choice is one arena copy and one whole-module judgement per accepted revision. It reverses when a step can be assembled from adopted checkpoints; the whole-module judgement and the copy retire then.
-
-## The kernel admission runs after the report
-
-**Choice.** A submission is two calls. `Session::judge` parses, lowers, judges and settles the revision and resumes the incremental checker over it: everything a face renders. `Session::admit` then offers the judged revision's accepted declarations to the kernel, exports the artifact of what crossed and commits it. A face renders between the two, so its diagnostics never wait on the kernel. A later `judge` drops an admission the earlier one left unrun, so a face that falls behind admits only the latest revision. `submit` is the two calls in order, and its submission equals the one-step composition, kernel artifact included.
-
-**Why the admission is the half that waits.** The admission re-derives every accepted declaration in a fresh kernel environment, and the export encodes every declaration that crossed. Both are linear in the module whatever the edit, about 4.6 µs a declaration (14 ms at two thousand). The kernel's memo of acceptances has no authority and no persistence, so a key that carried acceptances from one revision to the next would be persistence under another name. The admission therefore stays whole, and leaves the interactive path instead. The settle comparison and the program a face evaluates on read only the judgement's verdicts, never what the admission mints, so a judgement settled before the admission settles to the same report. The dispatcher's `a_judged_module_renders_before_its_admission` checks that order against the one-step composition.
-
-**Disagreement.** A kernel that does not re-derive an acceptance is a fault, never a verdict. When the judgement's settle comparison refuses the verdicts, `judge` runs the admission there and reports a disagreement first, as the one-step composition does. When `admit` finds one later, it returns the fault, and the session holds the judged revision.
-
-**Alternatives.** The admission could stay inside `submit` and get cheaper. Skipping declarations an earlier revision admitted needs a cross-revision acceptance key, which is ruled out above. Splitting the export by declaration saves the encode but not the re-derivation. An admission on another thread, abandoned when a newer revision arrives, would also take it off the editor's next keystroke. It costs a session shared across threads, and nothing has measured that the admission's wall, after publication, blocks the next change.
-
-**Reversal.** If an editor's next change measurably waits on the admission, the admission moves to a worker that the next judgement cancels.
-
-## Refusals are the report
-
-A declaration the lowering refuses is reported as refused and offered to no one; a declaration the checker refuses is reported as refused and resumed as `Typing::Refused`. A whole-revision lowering refusal retains the accepted state while recording another lowering attempt. A fault — a tree the parser cannot commit, a lowering or kernel disagreement — is a `SessionFault`, never a verdict about the source. There is no unknown former that could turn an unlowerable term into an accepted one.
-
-## The item source
-
-`program` keys each declaration the lowering did not refuse by its name as written and carries exactly the declaration the dispatcher's `adapt` gives the checker, in admission order; refused declarations are left out and the admission positions skip them. The incremental checker therefore resumes over the declarations the batch judgement checks and no other. `SurfaceItems` is the same lowering behind `gandr-core-incremental`'s `ItemSource`; because that seam's error cannot borrow the revision, a whole-revision refusal crosses it as its failure class and span.
-
-## Checkpoints
-
-Every accepted submission attempts to persist its checkpoints under its program's content address. A failed write need not leave an external store unchanged. If the incremental session retains a resume, the submission reports `Persistence::Failed` and the next submission can adopt from it; otherwise the failure is `SessionFault::Store`. `Session::reopen` lowers its supplied revision and restores checkpoints for that program and backend. An absent or incompatible checkpoint set reopens fresh and says why. A restored set is not trusted: the next resume validates each checkpoint as it validates an in-memory one.
-
-## The kernel checkpoint
-
-**Choice.** Every accepted submission commits the composition's kernel artifact into the session's block store through `gandr-storage-artifact`: one record per declaration segment, cut where the kernel's decoder ends each, under a manifest whose identity binds the record plane's boundary commitment, the record count, the root node and the kernel format version. The submission carries the manifest, and the caller keeps it as it keeps anything — `ArtifactManifest::encode` gives its bytes. `Session::read_kernel` is the one way back: it refuses a manifest of another profile or kernel format before loading anything, re-seals the stored tree against the manifest, checks every key and cut, and hands the bytes to the kernel's bounded decoder. A matching identity says which bytes these are, never that the kernel admits them, so a manifest minted over bytes the kernel refuses names a tree the store holds and seals, and is still refused.
-
-**Alternatives.** The encoded artifact as one opaque blob beside the checkpoints would leave no record grain, so a reader could not take one declaration's segment with its proof, and the blob would be trusted by its hash. Keying it into the `CheckpointStore` under the program's address would give that store a second kind of value its trait does not name. Restoring it in `Session::reopen` needs a manifest to read by, and the manifest is the caller's root of trust, not the session's.
-
-**Reversal.** A durable table of manifests by program address, owned by the session, lets `Session::reopen` restore the kernel checkpoint itself; and a face that never reads the kernel environment, measured paying for the commit, moves it behind a choice the caller makes.
-
-## The import scope persists across submissions
-
-The session keeps the import rows and alias scope of the last revision the lowering read, owned so they outlive its text. A revision the lowering refuses — one that declares an alias twice among them — leaves the scope of the revision before it, so a face resolving `parse` keeps its answer while the author repairs the collision.
-
-## Edits are a diff of the lowered core
-
-Each accepted submission carries the `EditScript` from the latest accepted revision: the `diff` of their `Snapshot`s. A snapshot retains each item's `DeclarationTree`: value signature and body roots, or a complete native data signature. Each root reads out of the arena as a `Tree` of the incremental checker's `ContentNode`s, numbered breadth-first, each constant read as the `Reference` it resolves to, so two revisions lowered into two arenas compare node by node. Items align by reference — key and occurrence — keeping the largest set whose order both revisions share; each kept pair's bodies are walked together, a changed literal, variable or constant becoming one in-place action and any other change one `Replace` of the old subtree. `apply` of a diff to the old items reproduces the new ones exactly: soundness is total, localization is partial. A path names an item and the child slots from its body's root; an action anchored in the old revision carries the old ordinal, an insertion the new one.
-
-The recorded design is this contract over the prior implementation's named surface core, with actions for grades, injection sides, binder names and annotations, and items aligned by a longest common subsequence of their names in an `n·m` table. The core here carries none of those payloads — binders are de Bruijn indices, so renaming one reconstructs to no action — and its actions are the core's own leaves. Because references are unique within a revision, the longest common subsequence is the longest increasing run of matched old ordinals, which patience sorting finds in `n log n`. The alternatives were a text diff, which names bytes rather than terms, and a diff of content-addressed tables, which numbers nodes and loses the path a face surfaces. The choice reverses when the lowering emits structured edits itself; the session would then forward them.
-
-Effect and control edits use the [portable child ordering](../core-incremental/src/content.rs). Interface and operation names, clause order, frame kind and projection side participate in payload agreement; operation types and binder-local bodies remain child content. A metadata-only change therefore replaces its node rather than disappearing from the edit script. Witness: `edit::tests::control_edits_preserve_names_scopes_and_frame_order`.
-
-## Native declaration snapshots
-
-`DeclarationTree::Value` and `DeclarationTree::Data` preserve distinct declaration categories. Data snapshots retain their kind, parameter telescope and every constructor field. A schema or category change replaces the item through delete/insert; native term children still receive localized edits. Record labels, constructor tags, nominal identities and all variadic children participate in agreement. The child reader is an unbounded borrowed iterator, not a fixed three-child buffer.
-
-`edit::native_snapshots_preserve_schema_and_fourth_children` checks literal edits beneath fourth nominal arguments, constructor fields, case branches and record fields, plus schema and category replacements; applying each diff reconstructs the exact new snapshot. Native declarations have no runtime body: evaluation returns `UnrunnableData`. No source notation or command-IL implementation is inferred from retaining this programmatic content.
-
-**Choice.** Extend the existing snapshot and diff contract rather than maintain a second nominal identity table. **Reversal.** A source reader or runtime consumer must add its own syntax and execution rules before these native items become runnable from the session.
-
-## Native universe-path content
-
-Edit snapshots retain native `Path_U` classifiers, reflexivity, equivalence maps and evidence, product paths, and transport operands as the incremental layer’s content nodes. Their child ordering is the ordinary constructor ordering. Both ordered dialogue lists participate in non-child payload agreement: an evidence-only change produces a replacement even when every child is unchanged. The witness `edit::tests::path_evidence_changes_are_reconstructed` observes source- and target-dialogue changes separately, exact reader child order, and replay of the new content. Evidence-insensitive certificate conversion is not content equality. No session revision becomes a certificate admission receipt by retaining this content.
-
-**Choice.** Extend the existing structural edit vocabulary rather than maintain a second path identity table. These forms are programmatic core content; source-level identity operations, bridge-mode observations, higher fields, funext, `Flow_U` and guarded List values are not introduced by this adapter. **Reversal.** An interactive identity consumer must define its own application and persistence boundary over the kernel APIs.
-
-## Localization descends extents
-
-`Snapshot::localize` returns the body node whose span encloses a range with the fewest bytes, the outermost of a shared span and the leftmost at one depth — the prior implementation's rule, so a contiguous edit's locus is the common ancestor of the changes it induces. The prior implementation descended the nesting of its origin map. Here a node's recorded origin need not enclose its children: a function's lambda records its parameter. A snapshot therefore spans each node by its extent, the hull of its own origin and its children's extents, which nests by construction. The descent examines the children of the enclosing nodes alone, level by level, so its work follows the locus's depth; it keeps every enclosing sibling rather than the first, which keeps it exact where a point touches two siblings. A linear scan of every node is its oracle. The extent step retires if the lowering's origins come to nest, when each extent equals its origin.
-
-## The parse's repairs ride beside the step
-
-`Submission::obligations` carries the completion obligations the parse recorded — each repair's class and the bytes held responsible — on both paths, a revision judged and one refused whole. The step a face renders holds the composition, which keeps no trace of the repairs, so the submission takes them from the lowering before consuming it. The parse orders them by severity, the order its minimization folds; the submission orders them by span, the order a reader meets them, equal spans keeping the parse's order. The rows are the revision's: a clean revision after a recovering one carries none.
-
-The recorded design is the prior implementation's: the lowering carried the parse's buffer verbatim, and the report projected it into source-ordered rows of a published vocabulary, which a render bus turned into cards and a JSON report serialized. Here the rows are the parser's own `ObligationInstance`s, since no face reads a published vocabulary yet; the vocabulary, the cards and the codec arrive with the first face that consumes them. The alternative was to add the obligations to the dispatcher's step, which every batch verb would then carry unread. The choice reverses when the step itself carries the parse's obligations; the submission then forwards the step's.
-
-## Diagnostics and goals are the renderer's
-
-A submission's diagnostics are the reports `gandr-surface-diagnostics` renders from its step under the verb a face runs: a refusal at its own locus, an unsettled declaration, and under `check --goals` a goal. A goal is a declaration owed its body — a signature with no definition — which the checker answers with the hole rule and the incremental checker marks as a hole in the item's footprint; the goals suite checks that the two predicates agree item by item.
-
-The prior implementation's goals were holes inside bodies, each with its expected type and local context, and it recovered a malformed declaration as such a hole. The surface has no hole term yet, so the goals here stand for whole bodies and goals over sub-term holes arrive with the hole surface; a malformed declaration is refused in place, its report the refusal at the responsible bytes, and the declarations after it lower intact. The prior attribute pass reported an ill-typed payload as the checker's type error; here the lowering types a payload against its schema where it reads it, and refuses a mismatch as `IllTypedPayload`, in the malformed-source class every type error takes.
-
-## A hole-free item is evaluated
-
-`Submission::evaluate` runs one declaration of the revision on the `Program` the dispatcher's composition built, the same run `gandr run` makes, and returns what it came to. The rule is `evaluate`, over a declaration and its program, so a face holding the submission's step applies it without the submission: a declaration the checker accepted — checked or synthesised — runs; one owed its body is a hole and declines with `evaluation::Absent::Holed`; one refused by the lowering, the checker or its root declines with `evaluation::Absent::Unaccepted`, as does a position holding no declaration and a revision refused whole. A declaration that runs into a goal elsewhere is not a hole of its own: it runs, and the run is blamed on the goal. Each evaluation is a fresh machine, so evaluating twice runs twice and nothing is cached between revisions. A native data declaration is not a runtime value and returns `evaluation::Absent::DataUnrunnable`.
-
-The prior implementation evaluated a top-level expression and reported a definition with its type alone. The fragment has no top-level expression, so the item evaluated is a declaration, and the loop prints a value line under each checked one. The alternative was evaluating nothing until expressions exist, which leaves the loop unable to show a value. The choice reverses when the surface gains a top-level expression: that item is the one evaluated, and a definition returns to its type line alone.
-
-## A declaration's type and documentation are read off the latest revision
-
-**Choice.** `type_of` spells the type the latest resume gives the last item of a name, the lookup a transcript makes; `type_at` spells the type of the item a `Reference` names, key and occurrence, the lookup a hover makes over one of several declarations of a name. Both read the item's checkpoint: a checked or owed value by its signature, a synthesised value by its produced type, a native declaration by its universe, each laid out through the printer's `ContentSource` at the caller's page width, and an absence names why — no resume, no such item, a refused item, an unsigned one, a refused layout. `Session::documentation` answers the documentation text the latest accepted lowering filed under a declaring form's content identity, which documentation does not reach, so an edit to the documentation alone keeps the key; a revision refused whole keeps the accepted one's, as the import scope does. The session keeps the text owned, so it outlives the revision it was read from.
-
-**Alternatives.** The lookup lived in the REPL's encoder, the one face that spelled a checkpoint's type; a second face, the language server's hover, would otherwise copy it and the two could spell one type differently. Documentation could be read again from the face's own parse, at the cost of a second reading of `///` lines and `doc("…")` entries that could disagree with the lowering's.
-
-**Reversal.** A face that needs the type of a node inside a body, not a whole item, needs a per-node typing the resume does not keep; documentation that must survive a revision refused at the declaration, not whole, needs the lowering to file it for refused forms too.
-
-## Live match checkpoints
-
-`MatchCheckpoint::evaluate` retains a closed scrutinee's semantic value, including hole closures. `analyze` reports each arm's `Satisfied`, `Refuted`, or `Possibly` answer using the core live matcher. The first arm not refuted determines selection; a possible arm suspends the match even when a later arm is satisfied. `fill` resumes the retained value through the core live evaluator.
-
-`run` executes the selected arm under its pattern bindings without re-matching or re-evaluating the scrutinee. `MatchRun::Held` and `MatchRun::Uncovered` remain distinct and consume no evaluation fuel; `MatchRun::Evaluated` names the resulting computation in the checkpoint's domain. The analysis must belong to that checkpoint and precede any subsequent fill.
-
-Coverage comes from the checker's `cover` judgement and remains a separate report, including analysis refusals. It enforces no admission policy and makes no claim of index-sensitive exhaustiveness. Coverage enforcement belongs to the admission policy that consumes it. The lowering already refuses one shape of gap: a match that leaves a constructor without an arm and with no pattern hole to stand for it is `NonExhaustiveMatch`, because its decision tree has no leaf there. A hole lowers. Its match reports `Exhaustiveness::Possibly`, and a run reaching it is held.
-
-The checkpoint keeps a semantic domain rather than a source expression: a fill preserves completed reductions and captured environments. Re-evaluating the original source would duplicate completed work; a second matcher would duplicate core semantics. The representation changes when durable semantic checkpoints become available.
-
-A match written in source reaches the checkpoint unchanged. The lowering keeps each match's pattern table and its rows, one per or-pattern alternative, in `CaseOrigin`. A pattern hole is named by its syntax node, so the compiled tree stops at the same hole the row reports `Possibly` for. The suites read those rows, analyze them, and run the compiled tree through the live evaluator.
-
-The prior implementation's two suites are the floor: `live_match` (25) and `pattern_holes` (21).
-
-| Suite | Ported | Deferred on a former | Not ported |
-| ----- | -----: | -------------------: | ---------: |
-| `live_match` | 13 | 1 | 11 |
-| `pattern_holes` | 17 | 2 | 2 |
-
-`translation_covers_the_landed_pattern_grammar` reads every pattern form the lowering compiles:
-
-- wildcards, binders, holes and named holes;
-- constructors, nested;
-- integer and boolean literals;
-- or-patterns.
-
-Its string, tuple, record, list and as-pattern rows wait for those formers.
-
-| Witness | Status and reason |
-| ------- | ----------------- |
-| `an_as_pattern_entails_through_its_binder` | Deferred on as-patterns, which neither the core pattern table nor the lowering has |
-| `an_as_binder_over_a_hole_does_not_settle_it` | Deferred on as-patterns |
-| `the_list_eliminator_stops_at_an_indeterminate_arm` | Deferred on the native `List` former, which the effects lane adds |
-| `the_stream_publishes_per_branch_status` | Not ported: no submission records match liveness into the synthesis stream, though `gandr-core-incremental` carries `SynthesisEvent::Match` |
-| `the_submission_and_the_stream_agree_on_the_origin` | Not ported: as above |
-| `adoption_does_not_move_a_verdict` | Not ported: as above |
-| `a_prior_submissions_matches_survive_the_next_one` | Not ported: as above |
-| `one_source_item_lowering_to_several_core_items_keeps_one_entry` | Not ported: as above |
-| `a_resumed_session_matches_an_uninterrupted_one` | Not ported: as above |
-| `a_record_stripped_resume_reports_source_not_retained` | Not ported: as above |
-| `core_equal_programs_differ_in_liveness` | Not ported: as above |
-| `an_unreadable_row_leaves_a_missing_constructor_undecided` | Not ported: the lowering refuses a pattern it cannot compile, so no unreadable row reaches the matrix (`an_uncompiled_arm_is_declined_and_a_hole_is_not`) |
-| `a_readable_row_after_an_unreadable_twin_is_not_redundant` | Not ported: as above |
-| `an_exhaustive_match_stays_exhaustive_beside_an_unreadable_row` | Not ported: as above |
-| `filling_a_hole_in_a_live_session_evaluates_like_a_fresh_source` | Not ported: the session runs a declaration on the dispatcher's machine, which refuses to focus a hole |
-| `a_named_pattern_hole_carries_its_name` | Not ported: a pattern hole is named by its syntax node, and no report carries the `?name` spelling yet |
-
-## Contract evidence and its limits
-
-Nontrivial callable items carry executable `#[spec(...)]` predicates and bounded adequacy witnesses. The predicates observe existing state: ordered rows, preserved payloads, exact absence reasons, source bounds, canonical tree numbering, and session transitions. They do not repeat parsing, callback invocation, evaluation, or storage effects. The private child iterator exposes its borrowed position to its predicates; `DeclarationTree` makes native declaration categories explicit in the snapshot API.
-
-Declarations with no callable boundary, opaque strategy constructors, formatter sinks, best-effort cleanup, and the consumed-input differential helper state precise executable exemptions. Their observable obligations are exercised where the inputs and effects exist. Every exemption names that boundary rather than treating a non-const comparison as an exemption.
-
-| Decision surface | Evidence and bounded domain | Rung |
-| ---------------- | --------------------------- | ---- |
-| Incremental reuse | Literal adoption and retyping fixtures, plus 200 generated edit chains; complete typings compared with a fresh checker. | L2 |
-| Corpus composition | Every source from both configured corpus roots compared with the walk; both paths share parsing and judgement. | L3 |
-| Edit reconstruction | Literal actions, 200 generated revision pairs, and a hand-built dynamic tree; applying the diff reconstructs the new image. | L3 |
-| Item alignment | All subset/permutation pairs of three references compared with exhaustive reference subsequences. | L2 |
-| Localization | Descent compared with a linear span oracle on generated trees, including ties; visited-node bounds cover the measured shapes only. | L2 |
-| Arena and origin boundaries | Missing item/body/child, unrecorded spans, absent roots of each sort, descendant hulls, and callback-once fixtures. | L3 |
-| Session and evaluation | Exact report rows, import retention, attempt counts, missing/refused/holed eligibility, and concrete integer/thunk results. | L3 |
-| Persistence and formatting | Real file-store reopen/cleanup, kernel readback, refusing checkpoint/block stores, and refusing output sinks. External failure modes beyond those fixtures are not claimed. | L3 |
-
-Diagnostics assert stable refusal categories and exact primary/context spans, not title wording or golden report text. The obligation suites preserve repair classes, loci, multiplicities, and ordering; agreement with the same parser is transfer evidence, not an independent repair oracle. Goal flags are compared with the corresponding checkpoint footprints.
-
-The generated source domain uses the supported scalar, declaration, reference, and nullary-function forms. Hand-built arena fixtures cover core child ordering without pretending those effect formers have surface syntax. These finite witnesses do not establish universal diff soundness, typing correctness, storage atomicity, or behavior of surface forms the grammar cannot express.
-
-The choice is cheap executable boundary checks plus independent or literal consumer observations. Re-running the full parser, evaluator, or store in a postcondition would duplicate work and effects; opaque test strategies are not sampled a second time. An exemption can be removed when the relevant state has a non-consuming observer. Broader grammars or new decision branches require broader witnesses, not a stronger claim about the existing samples.
-
-## Deferred behavioral floor
-
-The named census contains **102 obligations: seven witnessed and 95 deferred**. Five are exercised here: four native-prelude witnesses enabled by [#71](https://github.com/gandr-lang/gandr/pull/71), and the dependent-signature witness enabled by [dependent lowering](https://github.com/gandr-lang/gandr/commit/1a07bbc4b487db0ad99cf61d0bacef942df94a92).
-
-- `a_dependent_signature_is_an_abstention_not_a_refusal`
-- `arithmetic_operators_type_check_and_evaluate`
-- `operator_definition_carries_across_lines`
-- `module_builtins_type_and_evaluate`
-- `comparison_operators_type_check_and_evaluate`
-
-`cards_preserve_the_report_rows` and `a_clean_source_produces_no_cards` are witnessed by `surface-repl::remote::tests` through [the repair-card reader](https://github.com/gandr-lang/gandr/commit/53a4804ddf4f23f1736f267e54ddb64843e387af), not duplicated here.
-
-Core Data and record constructors do not provide source readers. The native table provides arithmetic and comparison, but not Boolean literals, string/regex/container operations or gradual-hole blame. A row remains deferred until every part of its named obligation is expressible.
-
-| Deferred witness | Missing former or reader |
-| ---------------- | ------------------------ |
-| `a_definition_reaches_the_typing_context_chain` | Term-identity source reader; Path_U is a different former |
-| `a_law_over_a_definition_types_from_source` | Term-identity source reader; Path_U is a different former |
-| `a_law_over_a_definition_types_when_both_arrive_in_one_source` | Term-identity source reader; Path_U is a different former |
-| `a_law_over_a_definition_that_returns_otherwise_is_refused` | Term-identity source reader; Path_U is a different former |
-| `a_graded_bridge_signature_is_an_abstention_not_a_refusal` | Graded thunk types |
-| `one_part_case_bodied_function_checks_and_evaluates` | Sum types and `case` |
-| `erased_sum_definition_is_consumed_by_a_later_case` | Sum types and `case` |
-| `case_arm_rename_targets_the_right_slot` | Sum types and `case` |
-| `case_second_arm_rename_targets_the_snd_slot` | Sum types and `case` |
-| `case_both_arms_renamed_at_once` | Sum types and `case` |
-| `case_scrutinee_edit_descends_to_one_set_int` | Sum types and `case` |
-| `injection_side_flip_is_one_set_side` | Injections at the surface |
-| `split_first_binder_rename_targets_the_fst_slot` | Pair elimination |
-| `split_second_binder_rename_targets_the_snd_slot` | Pair elimination |
-| `split_both_binders_renamed_at_once` | Pair elimination |
-| `split_scrutinee_edit_descends_to_one_set_int` | Pair elimination |
-| `projection_side_flip_is_one_set_side` | Lazy products, their projections and computation holes |
-| `projection_target_edit_descends_to_one_set_int` | Lazy products, their projections and computation holes |
-| `with_field_edit_is_one_set_int` | Lazy products, their projections and computation holes |
-| `with_second_field_edit_is_one_set_int` | Lazy products, their projections and computation holes |
-| `a_vanishing_or_appearing_computation_hole_is_erase_or_fill` | Lazy products, their projections and computation holes |
-| `grade_bump_is_one_set_grade` | Grades |
-| `attribute_and_nested_child_edit_compose` | Grades |
-| `grade_op_value_edits_localize` | Grades |
-| `binder_rename_composes_rebind_and_setvar` | Named binders, which the core's de Bruijn indices do not keep |
-| `value_ascription_change_is_one_set_annotation` | Annotations |
-| `binder_annotation_added_is_one_set_annotation` | Annotations |
-| `binder_annotation_dropped_is_one_set_annotation` | Annotations |
-| `cross_sort_root_replace_is_reconstructed` | A computation-rooted declaration body |
-| `resume_computation_edit_localizes` | Effects, handlers and delimited control |
-| `reified_stack_is_opaque_but_sound` | Effects, handlers and delimited control |
-| `handle_scrutinee_edit_localizes` | Effects, handlers and delimited control |
-| `handle_return_body_edit_localizes` | Effects, handlers and delimited control |
-| `perform_op_change_is_replace` | Effects, handlers and delimited control |
-| `handle_skeleton_change_is_replace` | Effects, handlers and delimited control |
-| `shift_binder_rebind_and_body_edit_compose` | Effects, handlers and delimited control |
-| `handle_skeleton_dimensions_are_replace` | Effects, handlers and delimited control |
-| `handle_clause_body_edit_localizes` | Effects, handlers and delimited control |
-| `resume_stack_edit_localizes` | Effects, handlers and delimited control |
-| `cross_constructor_change_is_replace` | Effects, handlers and delimited control |
-| `perform_signature_change_is_replace` | Effects, handlers and delimited control |
-| `perform_payload_edit_localizes` | Effects, handlers and delimited control |
-| `reset_body_edit_localizes` | Effects, handlers and delimited control |
-| `handle_second_clause_body_edit_localizes` | Effects, handlers and delimited control |
-| `handle_body_edits_round_trip` | Effects, handlers and delimited control |
-| `effect_control_pairs_round_trip` | Effects, handlers and delimited control |
-| `computation_top_result_types_binds_and_applies` | The unknown type, absent by construction |
-| `value_unknown_ascription_types_and_evaluates` | The unknown type, absent by construction |
-| `boolean_operators_type_check_and_evaluate` | Boolean-literal lowering reader |
-| `string_builtin_type_and_evaluate` | String-operation primitives |
-| `string_contains_scans_conflict_marker_text` | String-operation primitives |
-| `rung07_builtins_type_check_and_evaluate` | Container, string and regex primitive signatures |
-| `rung07_builtin_failures_are_gradual_blame` | Gradual-hole native and unresolved-name reader |
-| `rung07_wrong_shape_calls_are_static_type_errors` | Container, string and regex primitive signatures |
-| `regex_builtin_type_and_evaluate` | Regex-operation primitives and gradual-hole failure reader |
-| `regex_extract_failures_are_gradual_blame` | Regex-operation primitives and gradual-hole failure reader |
-| `an_unknown_prelude_member_is_declined_as_a_hole` | Gradual-hole native and unresolved-name reader |
-| `list_concat_type_checks_and_evaluates` | List-literal lowering and the named list primitive |
-| `lists_need_an_annotation_then_evaluate` | List-literal and annotation lowering |
-| `list_each_maps_a_closure_over_a_list` | List-literal lowering and the named list primitive |
-| `list_reduce_folds_a_list` | List-literal lowering and the named list primitive |
-| `list_functional_update_builtins_evaluate` | List-literal lowering and the named list primitive |
-| `out_of_bounds_list_update_blames` | List-literal lowering and the named list primitive |
-| `list_any_and_sort_evaluate` | List-literal lowering and the named list primitive |
-| `list_where_filters_by_a_predicate` | List-literal lowering and the named list primitive |
-| `record_get_and_insert_evaluate` | Record-literal lowering and record-update primitives; native core records exist in #85 |
-| `record_update_rebuilds_a_fresh_record` | Record-literal lowering and record-update primitives; native core records exist in #85 |
-| `same_shape_containers_descend_and_apply_rebuilds_them` | List/record literal and list-case lowering readers |
-| `shape_changes_replace_wholesale_and_apply_installs_the_subtree` | List/record literal and list-case lowering readers |
-| `computation_ascription_types_and_evaluates_check_only_forms` | Computation ascription in expression position |
-| `extern_declaration_carries_across_lines_and_a_foreign_call_blames_without_a_handler` | Foreign declarations |
-| `a_hidden_or_absent_user_module_component_is_declined_as_a_hole` | Missing-component goal reader; module declarations alone do not provide it |
-| `a_whole_file_submission_reports_the_missing_module_component_goal` | Missing-component goal reader; module declarations alone do not provide it |
-| `filling_a_pattern_hole_resumes_to_the_written_source` | Typed holes in `case` patterns |
-| `opening_a_pattern_hole_resumes_to_the_unfinished_source` | Typed holes in `case` patterns |
-| `filling_a_hole_invalidates_only_the_item_holding_it` | Typed holes in `case` patterns |
-| `a_type_stable_fill_adopts_its_dependent` | Typed holes in `case` patterns |
-| `every_parser_class_maps_to_its_own_name_and_rank` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
-| `advertised_capabilities_match_the_live_path` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
-| `report_json_carries_the_rows_and_round_trips` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
-| `an_empty_row_set_serializes_as_an_empty_array` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
-| `a_render_frame_round_trips_the_produced_cards` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
-| `spans_are_in_source_and_schema_is_versioned` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
-| `reports_round_trip_through_json` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
-| `corpus_covers_each_reachable_mark_kind` | Semantic marks, the checker's pass marking each typed node |
-| `oracle_error_marks_iff_ill_typed` | Semantic marks, the checker's pass marking each typed node |
-| `is_error_classifies_empty_hole_only` | Semantic marks, the checker's pass marking each typed node |
-| `mark_spans_lie_in_source` | Semantic marks, the checker's pass marking each typed node |
-| `no_surface_source_yields_effect_or_other_mark` | Semantic marks, the checker's pass marking each typed node |
-| `surface_marks_are_never_dropped` | Semantic marks, the checker's pass marking each typed node |
-| `catch_all_and_effect_row_mark_shapes_round_trip` | Semantic marks, the checker's pass marking each typed node |
-| `each_checker_frame_localizes_its_nested_failure` | Checker failure frames, the structural context a nested refusal is reported within |
-| `binder_naming_frames_carry_their_binder` | Checker failure frames, the structural context a nested refusal is reported within |
-| `a_computation_signature_folds_into_its_def_and_yields_one_hole_goal` | A declaration of computation type, which the lowering refuses as out of fragment |
-| `a_computation_signature_on_a_hole_free_body_types_through_the_check_entry` | A declaration of computation type, which the lowering refuses as out of fragment |
+## Where the detail lives
+
+Mechanism, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:
+
+| Topic | Module |
+| ----- | ------ |
+| A crate of its own, contract evidence, references | [`src/lib.rs`](src/lib.rs) |
+| Submissions, trials, the report, the kernel admission, checkpoints, imports, repairs, diagnostics and goals, evaluation | [`session`](src/session.rs) |
+| The form store | [`forms`](src/forms.rs) |
+| The item source | [`item_source`](src/item_source.rs) |
+| Edits as a diff of the lowered core, native snapshots, localization | [`edit`](src/edit.rs) |
+| A declaration's type and documentation | [`typed`](src/typed.rs) |
+| Live match checkpoints | [`live_match`](src/live_match.rs) |
+
+The deferred behavioural floor — the named census and the live-match and pattern-hole suites — is tracked in [#211](https://github.com/gandr-lang/gandr/issues/211).
 
 ## License
 

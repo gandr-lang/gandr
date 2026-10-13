@@ -25,6 +25,35 @@
 //! Two bindings collide only when their whole paths are equal: the union walks
 //! the later namespace's nodes beside the earlier one's, so subtrees merge
 //! rather than shadow wholesale.
+//!
+//! # An arena trie and no recursion
+//!
+//! The trie is an arena: nodes in one vector, children sorted by segment, a
+//! freed node's slot reused, so detaching, grafting and merging a subtree cost
+//! its depth and size where a flat map keyed by whole paths scans every
+//! binding. A modifier is built only by its builders, into one post-order
+//! vector of constructors, so equality is structural and nothing is boxed. No
+//! walk recurses: insertion, lookup, iteration, equality, merging, detachment,
+//! scopes and sections, the interpreter and teardown run on heap worklists, and
+//! a chain one hundred thousand segments deep passes each inside a 64 KiB
+//! stack.
+//!
+//! Trie predicates check count conservation across moves, fresh versus repeated
+//! insertion, edge selection, vacant-slot transitions and yielded binding
+//! identity without cloning payloads. Exact-map witnesses cover reuse
+//! independently of arena layout and preserve non-unit tags through relocation
+//! and collision. Tags are opaque to binding operations but participate in
+//! equality and debugging. Governed lookup stops at the first unbound nonempty
+//! prefix: a binding at the root does not bridge a gap.
+//!
+//! Modifier predicates check operand relocation, the checked selection and
+//! renaming expansions, and a nonempty post-order arena at interpreter entry.
+//! Each step checks its continuation and namespace-count transition. These
+//! checks do not replay handlers or clone their payloads: hooks may replace a
+//! namespace arbitrarily, while nested event paths and branch isolation are
+//! observed by the interpreter witnesses. The alias builder remains a direct
+//! checked-renaming adapter; its witnesses exercise qualification and refusal
+//! rather than pinning the forwarding call.
 
 use alloc::vec::Vec;
 use core::fmt;

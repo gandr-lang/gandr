@@ -67,6 +67,20 @@
 //! image is therefore already computed — and balanced concatenation runs on
 //! explicit levels, because a deep document is ordinary input and a native
 //! stack is not a resource this crate is allowed to exhaust.
+//!
+//! # Ordered maps for the interner and the memo
+//!
+//! The flatten interner and the resolver memo are `BTreeMap`s: deterministic
+//! iteration and lookup with no hash seed, `no_std` through `alloc`, and no
+//! dependency. Their growth is bounded by the node ceiling and the memo-state
+//! ceiling, each charged before every insertion.
+//!
+//! - **Alternatives.** `hashbrown` with `foldhash` gives constant-time lookup,
+//!   a fixed seed for determinism and fallible reservation, so a failed growth
+//!   becomes a typed error; it adds two dependencies to a crate that has one.
+//! - **Reversal.** Profiling shows map lookups dominate resolution or
+//!   finalization, or a consumer needs the growth of these two tables to fail
+//!   as a typed error rather than through the allocator.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

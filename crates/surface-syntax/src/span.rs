@@ -11,6 +11,18 @@
 //! from a failure that a test could never trigger: a span either lies inside
 //! the source it is read against or it does not, and both answers are reachable
 //! from a two-byte fixture.
+//!
+//! # Source text and fragments
+//!
+//! A position is a byte offset, the unit the lexer has and an edit is expressed
+//! in; a diagnostic renderer converts to lines once, at display.
+//! `ByteSpan::new` refuses an inverted pair, and reading a span against a
+//! source refuses an endpoint past the end or inside a character. `SourceText`
+//! is the offset frame a span is measured against; `SourceFragment` is the
+//! bytes one span covers, with no frame of its own. A fragment has no `end` and
+//! no `fragment` and cannot seed a `TreeBuilder`, because each would
+//! reinterpret absolute offsets against a string that starts elsewhere; the
+//! type split makes each a compile error rather than a wrong answer.
 
 use core::fmt;
 

@@ -5,6 +5,43 @@
 //! `derive(Ord)` is the truth: tylr orders severity via its `all` list rather
 //! than its variant declaration order, and gandr fixes the order at the type
 //! level.
+//!
+//! # Completion obligations in place of error recovery
+//!
+//! The parser is total: every input yields a tree, and every place the source
+//! falls short of the grammar carries a completion obligation — a closed class,
+//! from `MissingMeld` (an operand absent) through `MissingTile`,
+//! `IncompleteTile`, `UnmoldedTok`, `InconMeld`, `ExtraMeld` and
+//! `ReservedKeyword` to `AmbiguousPrec` (two operators with no declared
+//! precedence between them), and the span it stands at. The classes are
+//! declared in severity order, so `derive(Ord)` is the ladder; `Delta` counts
+//! per class and compares from the most severe class down, net change before
+//! gross insertion, so the molder never chooses a reading that adds an
+//! ambiguity when one without exists. `ParseResult::obligations` lists them
+//! most severe first.
+//!
+//! The alternative was a parser that refuses: stop at the first ungrammatical
+//! token with a typed `ParseRefusal` naming it, as a minimal parse-and-check
+//! pipeline needs, with no operator handling and no completion. It is smaller,
+//! and it is all a batch checker reads. It was declined because a refusal is
+//! derivable from the obligations — the most severe one, with its span — while
+//! the obligations are not derivable from a refusal, and because the editor and
+//! the REPL need the tree past the first gap. Reversal: if a consumer needs
+//! refusal semantics that the obligation list cannot express, such as refusing
+//! on a class the parser would complete, that consumer maps obligations to its
+//! refusal; the parser keeps completing.
+//!
+//! # Completion obligations are not typing obligations
+//!
+//! Two different objects share the word. A completion obligation is produced
+//! here, by the parser, and says the source is missing material: a closer, an
+//! operand, a tile. A typing obligation is produced downstream, by elaboration,
+//! and says an artifact still owes a typing — a signature no definition
+//! completes. The taxonomy here is upstream of the typing-obligation ledger and
+//! does not feed it: a source with completion obligations is malformed or
+//! incomplete source, and nothing in this crate becomes a ledger entry.
+//! Reversal: none intended; a consumer that wants to show parse gaps beside
+//! typing goals maps them explicitly at its own boundary.
 
 use core::cmp::Ordering;
 

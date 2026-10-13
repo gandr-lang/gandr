@@ -20,6 +20,47 @@
 //! reproduce the source byte for byte. Layout is a node for that reason alone:
 //! a parent's digest does not fold it, so reformatting a declaration leaves its
 //! identity unchanged.
+//!
+//! # Molded labels
+//!
+//! A node carries its kind, and the kind is a mold. A `NodeLabel::Tile` is a
+//! written tile and a `NodeLabel::Meld` a completed form, each named by a
+//! `MoldId` — a form by the mold of the tile that opened it, the operator of a
+//! one-tile operator form, or its first tile otherwise. The grammar that
+//! numbered the molds resolves an id, as a total function over its mold table,
+//! to the rule the mold belongs to and the rule's named kind, so a lowering
+//! dispatches on kinds and has nothing to adapt. The forms the language admits
+//! are the grammar's to state, once; the tree names no form of its own.
+//!
+//! The alternative was a closed `NodeKind` enum in this crate, one variant per
+//! surface form, which a parser fills by mapping each completed form to a
+//! variant. It names forms without a grammar in hand, but restates the
+//! grammar's forms in a second place and needs a read adapter from molds to
+//! variants that grows with the grammar; a parser-owned second tree beside this
+//! one was the other alternative, and it would give every consumer two
+//! identities to reconcile. Reversal: if a consumer needs a form vocabulary the
+//! grammar's named kinds do not supply, a closed kind returns as that read
+//! adapter over the molded tree, and its cost — thousands of lines for this
+//! grammar's surface — is what this choice avoids.
+//!
+//! # Layout in the tree
+//!
+//! Every token the source wrote is a node, layout included, so the leaves read
+//! in source order reproduce the source byte for byte; grout the parser
+//! inserted covers no bytes, and grout standing over a token no grammar label
+//! molds covers exactly that token's. Every leaf label carries its own text
+//! into its form's digest — a tile, grout, a minted close and layout — so two
+//! unmolded tokens of different spellings are two identities; a form, the root
+//! and documentation carry only their children's. A form's digest reads a node
+//! only when the node and every node above it in the form are significant.
+//! `NodeLabel::Space` is not, so reformatting a declaration leaves its form's
+//! digest and the tree's unchanged while the layout stays in the tree for a
+//! re-renderer. `NodeLabel::Doc` is not either: it groups a run of `///` lines
+//! or one `doc("…")` attribute entry under the form it documents, so editing
+//! documentation, or moving it between the two spellings, leaves that form's
+//! identity alone. A missing closer is a `NodeLabel::GhostClose` naming its
+//! family, so a consumer can pair it against a closer written later; a missing
+//! closer of no single family is postfix grout.
 
 use anodized::spec;
 

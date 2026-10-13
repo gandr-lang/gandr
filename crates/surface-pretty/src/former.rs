@@ -6,6 +6,28 @@
 //! children; the printer walks those on its own stack. The core arena is one
 //! source ([`crate::CoreSource`]); a table of content nodes a checker hands
 //! back is another, implemented beside the face that holds it.
+//!
+//! # The input is a source
+//!
+//! The printer asks one question of its input, the former at a node, through
+//! the `Source` trait, and reads nothing else. `CoreSource` answers it over the
+//! core arena and `ContentSource` over the incremental checker's content
+//! tables, the form a checkpoint keeps a signature or a synthesised type in, so
+//! every face that reads checkpoints spells their types through one reading.
+//!
+//! - **Alternatives.** Taking the core arena alone would make a face holding
+//!   content tables mint a core arena first, duplicating the checker's own
+//!   minting. The content-table reading lived beside the REPL, the one face
+//!   that read checkpoints, which kept the incremental tier out of this crate's
+//!   dependencies; it moved here when the language server's hover became a
+//!   second reader, since a copy per face would let two faces spell one type
+//!   differently. The incremental tier is already in every build that prints a
+//!   checkpoint's type.
+//! - **Reversal.** A second reader needs more than the former per node — a
+//!   span, an origin for a binder name — at which point the question widens, or
+//!   the per-node dispatch shows in a profile. A build that prints core types
+//!   but never reads checkpoints, measured paying for the incremental tier,
+//!   moves `ContentSource` behind a feature.
 
 use core::borrow::Borrow;
 

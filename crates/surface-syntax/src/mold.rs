@@ -5,6 +5,20 @@
 //! The grammar owns the tables these values index; a tree stores only the
 //! compact references, so the vocabulary sits here, below both the grammar and
 //! the parser that reads it.
+//!
+//! # Grammar references
+//!
+//! The grammar owns its mold table; this crate defines only the references into
+//! it, below both the grammar and the parser that name them, so the grammar
+//! depends on no parser and the tree on no grammar. A `MoldId` is a 32-bit
+//! position in the table of the grammar a `GrammarFingerprint` names, and means
+//! nothing under another: a tree records its fingerprint, and a consumer
+//! holding ids from two grammars compares fingerprints, never ids. A
+//! `GroutSort` is a sort tag, decoded by the grammar that assigned it; a
+//! `GroutShape` says which sides a piece of grout faces, convex for a missing
+//! term and postfix for a missing closer. `ClosingClass` has three families —
+//! parentheses, brackets and braces, the record opener `#{` among the braces —
+//! and a closer answers its own family only.
 
 use core::num::TryFromIntError;
 

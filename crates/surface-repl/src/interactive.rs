@@ -1,4 +1,24 @@
 //! The terminal face: a line editor feeding the loop.
+//!
+//! # The line editor
+//!
+//! The terminal face edits lines with `rustyline` 18.0.1, defaults off. Off are
+//! `with-file-history`, which writes history in plain text, `with-dirs`, which
+//! only locates that file, and `custom-bindings`, a keymap the face does not
+//! use; history lives in memory for the run. On this workspace the editor adds
+//! six crates to a build — itself, `nix`, `cfg_aliases`, `log`,
+//! `unicode-segmentation` and `utf8parse` — beside `libc`, `bitflags`,
+//! `cfg-if`, `memchr` and `unicode-width`, which the build already carries, and
+//! compiles in about a second.
+//!
+//! The alternative, `reedline`, supplies menus, multiline editing and a painter
+//! this face does not use. A raw-mode loop over `crossterm` would hand-write
+//! line editing that `rustyline` provides. The choice reverses on a high-risk
+//! advisory or an unmaintained mark against `rustyline`, or when the face needs
+//! completion menus or whole-buffer editing.
+//!
+//! The face is always built: `gandr repl` on a terminal needs it, so a feature
+//! gate would only make the default binary unable to do what its verb says.
 
 use alloc::string::String;
 use std::io;

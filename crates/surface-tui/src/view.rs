@@ -1,4 +1,28 @@
 //! The frame: the transcript pane, the input pane and the status line.
+//!
+//! # The transcript pane
+//!
+//! The pane shows the newest rows of the transcript that fit; earlier rows
+//! scroll away. Each row follows the shared transcript layout of
+//! `gandr-surface-repl`. Highlight spans are clipped to each echo row. A
+//! clipped span splitting a character or starting before the last accepted span
+//! ends is ignored: earlier styling remains and uncovered bytes retain the
+//! terminal default. Rows are not wrapped, so diagnostic snippets retain their
+//! columns.
+//!
+//! Each frame counts the transcript's rows to find the newest that fit and
+//! paints only those. The cost of the count grows with the session; a running
+//! count beside the transcript replaces it if a long session lags.
+//!
+//! The input pane selects visible waiting rows before converting coordinates,
+//! clips them at the right edge, and reserves one editable cell for the cursor.
+//! The current line uses ratatui's right-aligned `Line` renderer when its tail
+//! must be clipped; widths remain machine-sized until cursor placement. This
+//! retains the actual tail beyond 65,535 cells without hand-written Unicode
+//! clipping or collecting off-screen waiting rows. An empty inner pane requests
+//! no cursor. Keeping a single scrolled paragraph is simpler but its bounded
+//! scroll coordinates lose the true tail; reconsider it only if it can express
+//! the required offsets and cursor ownership.
 
 use alloc::vec::Vec;
 

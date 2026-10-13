@@ -69,6 +69,144 @@
 //! declaration form itself, like a function tail. Its constructors go into one
 //! table by name, each with its family, tag and arity, so a term or a pattern
 //! naming one resolves it without searching the declarations.
+//!
+//! # A module is collected by name and resolved by position
+//!
+//! A signature pairs with its definition wherever the two sit in the module, so
+//! the signature-then-definition form stays spellable; a second signature or
+//! definition for one name is refused naming the first, except that a written
+//! signature beside a function tail, which derives one of its own, keeps the
+//! written one and checks the derived one as a witness (§ A module declaration
+//! flattens to named members). References resolve by admission position — the
+//! position of the declaration that introduced the name — so a declaration's
+//! own body and every later declaration are out of its scope, and
+//! self-reference and mutual reference are refused as unresolved names. A
+//! module whose own shape is wrong — a root that is not a module, a root child
+//! that is neither a declaration, a module declaration nor an import, a
+//! declaration with no name, an import out of shape, two imports of one alias,
+//! an attribute block decorating nothing — refuses the whole run, because
+//! nothing can be filed without the name.
+//!
+//! # One refusal per declaration
+//!
+//! Every refusal found inside a declaration is offered to the declaration that
+//! owns the refusing node, and the declaration keeps the refusal at the lowest
+//! arena position, so distinct positions have a traversal-independent winner.
+//! Refusals offered at the same position retain the first offer. The
+//! declaration form's own faults sit at the declaration node itself and
+//! therefore outrank anything in its operands, and an attribute's tiles precede
+//! the declaration's operands, so an attribute's refusal outranks a refusal in
+//! its signature or body. A refused declaration lowers nothing but its
+//! attribute payloads, and every other declaration lowers regardless. Engine
+//! faults — an exhausted allowance, a tree of another grammar, a mold outside
+//! the grammar's table — abort the whole run instead, because no declaration's
+//! verdict can be trusted past one.
+//!
+//! Before minting, manifest-type refusals propagate in signature order through
+//! later aliases and into the members whose types name them. The original
+//! refusal and its span are retained, but it competes at each referencing
+//! head’s position. This can outrank an independently refused member body
+//! without preventing a following declaration from lowering.
+//! `modules::modules::manifest_refusals_propagate_transitively_before_minting`
+//! exercises that chain and precedence together.
+//!
+//! The alternative was to collect every refusal of a declaration. It was
+//! declined because later refusals under a refused form are frequently
+//! consequences of the first. Reversal: when a consumer reports all independent
+//! faults at once, a slot keeps a list ordered by position.
+//!
+//! # A module declaration flattens to named members
+//!
+//! `module M { … }` declares no value of its own. Each member `def` is one
+//! declaration, admitted among every other declaration in source order — a
+//! nested module's members between the parent's members written before and
+//! after it — so `Config.limits.hard.detail.note` is one declaration at the
+//! position its place in the source gives it. Its structured name is the
+//! enclosing modules' names, outermost first, then its own:
+//! `LoweredModule::path_of` spells it, and `LoweredModule::structured_names`
+//! hands every declared name's segments to a checker's export, which writes
+//! them into the kernel declaration's name record. Every reference reads the
+//! admission position; no check reads a name. The alternatives were a module as
+//! a record value — a record type ascribed to a record of the members, a path
+//! as a record projection — which makes every member's check wait on the whole
+//! record and the namespace a value the fragment has to type, and one dotted
+//! string per declaration, which makes the namespace's spelling the identity.
+//! The choice reverses for modules passed as values, which need the record
+//! carrier beside the flat members.
+//!
+//! A member names the members before it in its own module, then those of each
+//! enclosing module outward, then the top-level declarations before it. A
+//! member of an enclosing module named at or after the referring declaration's
+//! position is `ForwardMemberReference`, carrying where the member is declared;
+//! a top-level name keeps the unresolved-name refusal. The alternative was
+//! refusing a later member as unresolved, which hides that the name exists one
+//! position too late. `def rec` does not reverse this: it binds its own name
+//! inside its own body, never a later declaration's. The choice reverses with
+//! mutual recursion, which the `rec { }` block reserves.
+//!
+//! Each top-level module declares one namespace in the outermost scope,
+//! governing exactly what it exports: a value component as a component and a
+//! nested module as a namespace of its own; a hidden member appears nowhere. A
+//! selection chain headed by a capitalised name is resolved as one path at the
+//! depth that binds it. A path complete at a component is the member's
+//! constant, under the same position rule; a path stopped at a governing module
+//! is `UnknownMember`, naming the module as the path spells it and the member;
+//! a path ending at a module is the wrong sort, because a module is not a
+//! value; and a selection no module governs is a record projection, unadmitted
+//! until the fragment has a record former. Paths name from the top level, so a
+//! nested module is reached through its top-level module. The alternative was
+//! resolving paths against the collected modules directly, which would leave
+//! the namespace engine registering names that nothing consults.
+//!
+//! An inline signature `module M : #{ x : A, type T = τ } { … }` is matched
+//! coercively. A value component's type becomes its member's signature when the
+//! member has none, or only the type a function tail derives; a member already
+//! signed is checked by a witness — a declaration at the component's type whose
+//! body is the member's constant — so the checker refuses a disagreement as a
+//! type mismatch at the witness. The exports are reordered to signature order
+//! and narrowed to the components: a member the signature omits is admitted and
+//! checked, but absent from the namespace and from the module's stratum item. A
+//! nested module component takes a record type `#{ … }` and is matched against
+//! the nested module's own exports the same way, as is a member signature `def
+//! inner : #{ … } ;` written beside `module inner`. A manifest type component
+//! `type T = τ` lowers `τ` once, and a later component naming `T` stands for
+//! that type; an earlier one cannot name it. The alternatives were checking the
+//! whole module against one record type, declined with the record carrier, and
+//! refusing a second stated type, which loses the agreement check. A witness
+//! becomes an annotation on the member's body when the core has an annotation
+//! former.
+//!
+//! A refusal that belongs to no member — a module ascribed opaquely with `:>`,
+//! a top-level module with a lowercase name, an unread module body, a missing
+//! component, and a type component that is abstract, kinded or binds parameters
+//! — is carried by a held declaration under the module's or the component's
+//! name. A held declaration owns nothing a checker reads, takes a position like
+//! any other, and yields a declaration only when it carries a refusal; one
+//! owning a manifest type's form yields none. Its refusal stands at a form with
+//! no half, so no expectation attribute reaches it. The opaque, abstract,
+//! kinded and parameterized forms are `UnreadAscription`, naming the form and
+//! what gives it meaning; the abstract component names `:>`. The alternatives
+//! were refusing the whole run, which loses every other module's members, and
+//! dropping the refusal, which reads the module as if it were whole. The choice
+//! reverses when a refusal at a declaration's own form can carry an
+//! expectation.
+//!
+//! `LoweredModule::structures` holds one `LoweredStructure` per module, in
+//! pre-order: its path, its bytes, the value components with their positions
+//! and the nested modules it exports, in export order, its manifest type
+//! components with the types they lowered to, and whether matching coerced its
+//! body.
+//!
+//! `LoweredModule::structured_names` exports declared positions only: witness
+//! and held slots take no entry, and any path containing the segment separator
+//! is omitted. Construction accepts supplied metadata, so positions need not be
+//! unique: the last eligible declaration at a repeated position wins, while an
+//! invalid later path leaves the earlier name intact. These boundaries are
+//! witnessed by
+//! `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`;
+//! arity and ownership routing are separated by
+//! `module::tests::signature_holes_distinguish_missing_single_and_extra_operands`
+//! and `module::tests::ownership_routes_refusals_without_touching_other_slots`.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;

@@ -52,6 +52,36 @@
 //! [`DocHandleStatus`] rather than a `bool`. Identity minting, verbatim
 //! scanning, and the flatten interner are private to [`crate::build`]; nothing
 //! here hands out a raw ordinal.
+//!
+//! # The document algebra
+//!
+//! A document is empty, text, verbatim text, a soft or hard line break, a
+//! concatenation, a nesting by a fixed amount, an alignment to the current
+//! column, a choice between two documents, or the flattening of one. `group(d)`
+//! is `choice(d, flatten(d))`, unflattened form on the left. Flattening turns a
+//! soft line into one space and leaves a hard line, verbatim bytes and
+//! indentation alone (`algebra::tests::flatten_turns_a_line_into_one_space`,
+//! `algebra::tests::flatten_leaves_a_hard_line_alone`).
+//!
+//! **Concatenation is unaligned.** The right operand starts at the column the
+//! left one ends at, and its lines indent by the enclosing nesting, not by that
+//! column
+//! (`algebra::tests::concat_resolves_the_right_at_the_left_ending_column`).
+//! Alignment is a separate constructor
+//! (`algebra::tests::align_sets_indentation_to_the_current_column`).
+//!
+//! - **Alternatives.** An aligned concatenation, the greedy printers' default,
+//!   cannot express a hanging layout whose continuation returns to the
+//!   enclosing indentation.
+//! - **Reversal.** None planned: alignment is available as its own node.
+//!
+//! **The arena is sealed and shared.** Naming a handle twice builds a shared
+//! subdocument, charged as an edge rather than a node
+//! (`algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_node`).
+//! `finish` computes every node's flattened image in one forward pass,
+//! interning each distinct image once and keeping the original identity when
+//! flattening changes nothing
+//! (`algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`).
 
 use alloc::string::String;
 use alloc::vec::Vec;

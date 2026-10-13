@@ -3,23 +3,12 @@
 The gandr terminal face: the read-evaluate loop's transcript, an input pane and a status line, painted full-screen; and the side view, which follows the engine hub's render bus beside an editor.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
-- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [A verb of the driver](#a-verb-of-the-driver)
-- [One loop, shared](#one-loop-shared)
-- [The renderer](#the-renderer)
-- [The style maps](#the-style-maps)
-- [The transcript pane](#the-transcript-pane)
-- [Keys](#keys)
-- [The smoke face](#the-smoke-face)
-- [The side view](#the-side-view)
-- [Specification and evidence](#specification-and-evidence)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -30,11 +19,6 @@ The gandr terminal face: the read-evaluate loop's transcript, an input pane and 
 
 **How.** `ratatui` lays out the three panes and diffs each frame onto the terminal through its `crossterm` backend, which also puts the terminal in raw mode on the alternate screen and reads its keys. The transcript pane counts the transcript's rows and paints the newest that fit: a row's lead in its kind's style, an echo row's text clipped against the block's highlight spans and painted by role, any other row's text in its kind's style. The loop renders refusals plainly, so the only styles in the pane are the face's own. The face parses, lowers, types and marks nothing.
 
-## References
-
-- The ratatui developers. `ratatui` 0.30.2. <https://docs.rs/ratatui/0.30.2/ratatui/> — the layout, styled text, widgets, the headless test backend and the terminal setup the face draws through.
-- Timon Post and the crossterm contributors. `crossterm` 0.29.0. <https://docs.rs/crossterm/0.29.0/crossterm/> — raw mode, the alternate screen and key events, reached through ratatui's re-export.
-
 ## Provided features
 
 | Surface | Contract and witnesses |
@@ -43,7 +27,7 @@ The gandr terminal face: the read-evaluate loop's transcript, an input pane and 
 | Painting | `draw` keeps the newest transcript rows and visible input tail; backend witnesses observe pane layout, roles, cursor geometry and malformed highlight boundaries. |
 | Styling | Both const style maps have executable predicates. Finite witnesses cover all 23 roles and eight line kinds, semantic contrast and emphasis. |
 | Event loop | `drive` draws before reading and stops on quit or failure. Scripted input, modifier boundaries and partial-write failure observe its transitions and error provenance. |
-| Side view | `Following` keeps the last report of each document the render bus sends and follows the one checked last; `Following::rows` lays out its heading, cards and holes; `drive_following` paints them and stops at `q`, Esc, Ctrl-C, a detach or the hub's end; `follow` runs it on the terminal and `follow_plain` prints each report to a pipe. Witnesses: `follow::tests::the_view_follows_the_document_checked_last`, `follow::tests::a_report_lays_out_its_cards_and_holes`, `follow::tests::the_view_paints_what_the_bus_sends`, `follow::tests::a_piped_view_prints_each_report`. |
+| Side view | `Following` keeps the last report of each document the render bus sends and follows the one checked last; `Following::rows` lays out its heading, cards and holes; `drive_following` paints them and stops at `q`, Esc, Ctrl-C, a detach or the hub's end; `follow` runs it on the terminal and `follow_plain` prints each report to a pipe. |
 
 ## Expected features
 
@@ -59,80 +43,17 @@ $ gandr tui
 
 `gandr tui` takes the terminal until Esc or `:quit`; each submission shows as `gandr repl` prints it, with the echo highlighted and each line coloured by its kind. The crate's tests run with `cargo nextest run -p gandr-surface-tui`.
 
-## A verb of the driver
+## Where the detail lives
 
-The face is reached as `gandr tui`, and its smoke face as `gandr tui --smoke`, verbs of the `gandr` binary beside `check`, `test`, `lsp` and `repl`; bare `gandr` keeps its status report. An explicit verb avoids interpreting a verb as source input. The alternative, making the bare command interactive, becomes appropriate only if the driver's command contract changes.
+Mechanism, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:
 
-## One loop, shared
-
-The face owns no part of the loop. Each Enter offers the edited line to `SessionLoop::offer` and acts on its `LoopEvent`: a block joins the transcript, a line the parser waits on stays visible in the input pane until the block arrives, and `:quit` leaves. The loop keeps the buffer and the accepted text, decides completeness, submits to the session, and encodes the block; the face keeps a copy of the waiting lines only to show them, and drops it with the loop's buffer on an interrupt. The layout of a block is the loop's `rows`, which `write_block` also prints, so the face draws the same marks and indents as a pipe.
-
-Each submitted line is unterminated, as `SessionLoop::offer` requires; `App::handle` states that precondition for Enter. The waiting lines are display state, not input to offer again. Buffering and resubmitting a whole accumulated source would duplicate pending text and decide completeness outside the shared loop. That alternative becomes appropriate only if the loop changes to accept whole buffers.
-
-## The renderer
-
-The face draws with `ratatui` 0.30.2, defaults off, with one feature: `crossterm`, the backend `gandr tui` draws through. Off are `all-widgets`, which adds the calendar widget and `time`; `layout-cache`, an LRU of solved layouts that the face's one three-pane layout does not need; `macros`, a crate of span and layout macros the face does not use; `underline-color`, a style the face does not paint; and the other backends, `serde`, `palette`, `portable-atomic`, `scrolling-regions` and the unstable features, which the face has no use for. `crossterm` 0.29.0 is reached through `ratatui::crossterm` rather than pinned beside it, so the graph holds the one crossterm the backend was built against: raw mode is enabled and restored through a single copy of crossterm's terminal state, and a second pin could not drift from the backend's.
-
-ratatui's crossterm backend takes crossterm with its default features and turns its own underline colour on, so crossterm's event reading, bracketed paste and its `derive_more` helpers build whatever the face asks; the feature set above is the smallest ratatui admits.
-
-The face costs the driver 48 crates: `cargo tree -p gandr-lang -e normal,build` grows from 72 packages to 121, the face itself the 49th. They are ratatui's four crates; crossterm with `mio`, `signal-hook` and `rustix`; `parking_lot`; `kasuari`, the layout solver; `lru`, `compact_str`, `itertools`, `strum` and `unicode-truncate`; and eight procedural macro crates — `instability` with `darling`, `strum_macros`, `thiserror-impl`, `derive_more-impl`, `document-features`, `indoc` and `rustversion`. `kasuari` pins a third `hashbrown` and ratatui's default `hashbrown` a second `foldhash`; the workspace's duplicate-crate allowance names both with their reversal. Measured as clean builds of `gandr-lang`, the trees before and after interleaved four times, medians: the debug build's wall time rises from 5.8 s to 6.4 s and the release build's from 6.6 s to 7.9 s; the added crates take 12.6 s of compile time summed over units in debug and 16.3 s in release, which parallelism mostly hides, the largest in release `ratatui-core`, `darling_core`, `ratatui-widgets` and `itertools` at about a second each; the release binary grows from 5.09 MB to 5.60 MB. The face is always built: `gandr tui` needs it, and a feature gate would only make the default binary unable to do what its verb says.
-
-The alternatives were `cursive`, which owns the event loop and its own view tree — the face's loop is `gandr-surface-repl`'s and must stay the driver of every submission — and has one maintainer and fewer than two hundred dependents; `termwiz`, the terminal layer of one terminal emulator, with one maintainer and a few dozen dependents; and `crossterm` alone, which would hand-write the layout, the styled text, the frame diffing and the headless backend ratatui provides. ratatui with crossterm is the pair the community's crate guides name for a terminal interface, ratatui maintained by a team and crossterm by some two hundred contributors, with no published advisory against either. The choice reverses on a high-risk advisory or an unmaintained mark against ratatui or crossterm, or when a face needs a backend ratatui does not carry.
-
-## The style maps
-
-`style_of` maps each of the 23 highlight roles to a style with a foreground, so no classified span takes the colour of the text around it; `HlRole::Other` maps to the terminal's default foreground on purpose, as plain variables do, rather than to no style. The roles the language server sends under one token type share a style — keywords and booleans, defined and called functions, defined and referenced variables, types and built-in types, the literal roles, holes and directives — and the map groups further where terminal colours run short. The map reads `HlRole` itself; the face does not depend on `gandr-surface-lsp` or its integer legend.
-
-`style_of_kind` maps each of the 8 line kinds the same way, applied when a frame is drawn, so the whole history restyles with the theme: the echo's mark bold, a type line green as types are, a goal magenta as holes are, a diagnostic red, blame bold red, a stuck evaluation yellow, a value at the default, a note dark grey. Both maps are exhaustive matches, so a role or a kind added to the renderer seam stops the build until it is styled.
-
-## The transcript pane
-
-The pane shows the newest rows of the transcript that fit; earlier rows scroll away. Each row follows [the shared transcript layout](../surface-repl/README.md#the-transcript). Highlight spans are clipped to each echo row. A clipped span splitting a character or starting before the last accepted span ends is ignored: earlier styling remains and uncovered bytes retain the terminal default. Rows are not wrapped, so diagnostic snippets retain their columns.
-
-Each frame counts the transcript's rows to find the newest that fit and paints only those. The cost of the count grows with the session; a running count beside the transcript replaces it if a long session lags.
-
-The input pane selects visible waiting rows before converting coordinates, clips them at the right edge, and reserves one editable cell for the cursor. The current line uses ratatui's right-aligned `Line` renderer when its tail must be clipped; widths remain machine-sized until cursor placement. This retains the actual tail beyond 65,535 cells without hand-written Unicode clipping or collecting off-screen waiting rows. An empty inner pane requests no cursor. Keeping a single scrolled paragraph is simpler but its bounded scroll coordinates lose the true tail; reconsider it only if it can express the required offsets and cursor ownership.
-
-## Keys
-
-| Key | Does |
-| --- | ---- |
-| a character | types it at the end of the line |
-| Backspace | removes the line's last character |
-| Enter | offers the line to the loop |
-| Ctrl-C | drops the line and the buffer the parser waits on |
-| Esc | leaves |
-
-The side view types nothing: `q`, Esc and Ctrl-C leave it, and every other key redraws.
-
-`:quit` and every other meta-command go to the loop as lines. The face keeps no history, offers no completion, and edits only at the end of the line.
-
-## The smoke face
-
-`run_smoke` drives the same event loop as `gandr tui` over ratatui's headless backend, 80 columns by 24 rows, with an input source that asks to leave at its first read, then prints `gandr tui: ready`. The gate exercises the grammar, the loop's construction, one full paint and the event loop without a terminal, and the driver's witness spawns it as a user would.
-
-## The side view
-
-**Choice.** `gandr view` attaches to the render bus of the workspace's hub and shows what an editor cannot: every diagnostic of the document the hub checked last, each at its one-based row and column with its further lines and its derivation, then each hole with its goal, under a heading naming the document, its version and the counts. The view follows whichever document's report arrived last, so it moves with the editor's focus without being told where the cursor is. It is a renderer and nothing more: the reports are the hub's, read off the diagnostics the editor already shows, and `Following::rows` is the one layout the terminal pane and a pipe print. On a terminal the frames are read on one thread and the keys on another, started once the terminal is raw, both into the one channel `drive_following` waits on, so a report paints while no key is pressed; `q`, Esc and Ctrl-C leave, and leaving sends the hub a detach. Piped, each report prints as its rows followed by a blank line, which is what the driver's witness reads.
-
-**Alternatives.** Following the cursor would need the editor to say where it is, a request the protocol does not carry to a second client; following the last check is what an author editing one document sees. Drawing the source with its highlights and marks beside the cards would repeat the editor's own pane; the report carries them for a renderer that has no editor. Polling the hub would show a check late or ask for reports nothing changed; the bus pushes each publication.
-
-**Reversal.** An editor extension that reports the focused document moves the view onto it; a renderer with no editor beside it paints the source the report carries.
-
-## Specification and evidence
-
-The crate specifies 32 nontrivial items: 23 executable predicates and 32 bounded adequacy arguments. Transparent accessors, the constant quit source and the side view's frame reader and detach remain trivial. Predicates cover editing transitions, style classifications, text conservation, coordinate saturation, key precedence, fault provenance, the side view's following and layout, and the test harness's transformations.
-
-Nine items need effect witnesses instead of predicates:
-
-- `draw`, `draw_transcript`, `draw_input` and `draw_following`: ratatui exposes the frame buffer only through a mutable borrow, which a predicate's `Fn` closure cannot take; frame cursor state has no getter. Tests observe the completed backend instead.
-- `InputSource::next`: the abstract source has no pending-input or read-state observer.
-- `drive` and `drive_following`: generic input and backend traits, and a channel, expose no immutable queue or painted-state observer, and supplied faults may be arbitrary.
-- `follow` and `follow_plain`: their effects are a terminal's, a socket's and a writer's, none read back.
-
-The 25 terminal-free tests cover application transitions, complete style classifications, Unicode and coordinate boundaries, malformed highlight precedence, modifier handling, independent frame layouts, transcript scrolling, failed-input termination, partial-write failure, and the side view's following, layout, paint and piped rows. A 26th test, `the_terminal_face_completes_and_restores_its_settings`, is opt-in because it needs an attached terminal: it reads real quit keys and compares terminal settings before and after. The two cursor/tail regression witnesses fail on the previous renderer and pass with the corrected clipping. Wording-only and implementation-copy checks are not evidence; the frame golden compares literal pane layout rather than rebuilding the painter's algorithm. The side view on a real terminal is exercised by `gandr view` beside an editor's session; the driver's witness runs it piped.
-
-`cargo nextest run -p gandr-surface-tui` runs the terminal-free witnesses. With `RUSTFLAGS='--cfg anodized_panic'`, it also executes their predicates. To exercise the native input and terminal predicates, build the `launch` test executable with that flag, then run it on a terminal with `--exact tests::the_terminal_face_completes_and_restores_its_settings --ignored --nocapture` and enter `:quit`. A public rendering probe covers empty panes, wide and combining characters, and a 65,537-character input; `gandr tui --smoke` exercises terminal-free launch. A real terminal session also discards an incomplete definition, evaluates and queries an accepted definition, quits through `:quit`, and restores terminal settings. Real terminal failure injection and font-dependent glyph appearance remain outside the deterministic test domain.
+| Topic | Module |
+| ----- | ------ |
+| A verb of the driver, one shared loop, the side view, specification and evidence, references | [`src/lib.rs`](src/lib.rs) |
+| The renderer and its dependency cost, the smoke face | [`run`](src/run.rs) |
+| The style maps | [`theme`](src/theme.rs) |
+| The transcript pane | [`view`](src/view.rs) |
+| Keys | [`app`](src/app.rs) |
 
 ## License
 

@@ -15,6 +15,38 @@
 //! [`serve`] logs the timing line carrying both walls: an editor reads the
 //! reports before the kernel has re-derived them, and a disagreement the
 //! admission finds is published in their place.
+//!
+//! # The lifecycle and its error codes
+//!
+//! | Phase | Request | Answer |
+//! | ----- | ------- | ------ |
+//! | before `initialize` | any but `initialize` | `-32002` server not initialized |
+//! | running | `initialize` again | `-32600` invalid request |
+//! | running | a method the server does not serve | `-32601` method not found |
+//! | running | a served method with parameters it cannot read | `-32602` invalid params |
+//! | running | a formatting request for a document the formatter refuses | `-32803` request failed, with the reason |
+//! | after `shutdown` | any | `-32600` invalid request |
+//! | any | a body outside the decoder-supported JSON fragment | `-32700` parse error, under a null id |
+//! | any | decoded JSON that is not a request, notification or response, a batch included | `-32600` invalid request |
+//!
+//! Before `initialize` every notification but `exit` is dropped. A notification
+//! is never answered: one whose parameters the server cannot read is dropped, a
+//! change to a document the server does not hold is dropped, and `$/`
+//! notifications and every other unknown one are ignored, as the protocol
+//! admits. A response from the client is read and discarded, since the server
+//! sends no request.
+//!
+//! # Document URIs
+//!
+//! A document's URI is kept as the client spelled it, as the key it is
+//! synchronised and published under. Its path, for the root classification
+//! alone, is the `file` URI's path percent-decoded by `percent-encoding` 2.3.2
+//! with `alloc` only, so `file:///x%C3%A9.gandr` names `/xé.gandr`. The
+//! alternatives were `fluent-uri` 0.4.1, a full RFC 3986 parser for one
+//! component, and `url` 2.5.8, whose `to_file_path` brings the WHATWG parser
+//! and internationalised domain names. The choice reverses when the server
+//! serves a workspace whose documents arrive under other schemes or remote
+//! authorities, which needs a parser.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

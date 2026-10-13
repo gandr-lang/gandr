@@ -6,6 +6,38 @@
 //! says about itself: a declaration under the strict root cannot describe its
 //! way out of the gate, because moving it is a change to its path that a
 //! reviewer sees. The innermost root directory a source sits under decides.
+//!
+//! `classify` decides a source's root from the directories containing it, never
+//! from its own name or text: the innermost directory named `strict` or
+//! `fixture` decides, a directory named `pending` directly inside a `fixture`
+//! directory marks the pending set, and a path under none of them is strict.
+//! The walk classifies each source by its canonical path, so a relative path
+//! and a symbolic link to the same directory classify alike. The strict root
+//! settles under `CorpusRoot::Strict`, where `owes` and `refuses` are
+//! themselves refusals; the fixture root and the pending set settle under
+//! `CorpusRoot::Fixture`.
+//!
+//! The alternative was a root named on the command line, which lets one
+//! invocation run a fixture source as strict. The choice reverses if a
+//! project's layout cannot use the directory names, at which point a configured
+//! mapping from directories to roots replaces the names, still by location.
+//!
+//! # The pending set
+//!
+//! A source under `fixture/pending/` carries a refusal no expectation can
+//! state: the lowering refused it as a whole, or refused one of its
+//! declarations at the declaration's own form, which files no half an attribute
+//! could be read off. `Composed::Settled` carries such refusals as
+//! `unstatable`. A pending source carrying either is `Standing::Pending`:
+//! counted, its declarations not settled, and printed by `test`. A pending
+//! source carrying neither is `Standing::Lowered` and unsettles the run,
+//! because every expectation it needs can be written and it belongs under the
+//! fixture root. `gandr-surface-corpus`'s `root` module describes the set it
+//! holds.
+//!
+//! The alternative was a `pending` attribute, which the lowering could not read
+//! for either kind of refusal. The choice reverses when every refusal can carry
+//! an expectation; the pending set then empties.
 
 use std::ffi::OsStr;
 use std::path::Path;

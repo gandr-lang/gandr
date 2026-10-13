@@ -7,12 +7,39 @@
 //! the rendered tally opens with the ledger size whether the run is settled
 //! or not. An assumption a report does not print is one nobody reviews.
 //!
+//! The rendered `Tally` opens with `ledger size: N`, whether the run is settled
+//! or not, then the declaration and fixture counts, the surviving obligations,
+//! the refusals by failure class, the run's settlement and its seal. The
+//! rendered `SettleReport` precedes it with one line for every fixture, settled
+//! or not, and for every unsettled declaration, fixture or not: the settlement,
+//! the name and its span, what it states, what it produced with the refusal's
+//! class, and the obligations that survive when any do. A settled declaration
+//! with no expectation — the strict root's ordinary case — is only counted.
+//!
+//! The alternative was a report of failures alone, a list of mismatches per
+//! fixture; it renders a run owing three holes exactly as one owing none, so an
+//! assumption could ship unreviewed. The counts the driver reads are the
+//! `Tally` accessors, never the rendered text. The choice reverses if a
+//! consumer needs the report in a machine format, which would be a second
+//! rendering of the same `Tally`, not a change to what it counts.
+//!
 //! # Every fixture has a line
 //!
 //! The rendered report gives a line to every fixture, settled or not, and to
 //! every unsettled declaration, fixture or not, before the tally. A settled
 //! declaration that carries no expectation is the strict root's ordinary case
 //! and is only counted.
+//!
+//! # Sealed is reported, never gated
+//!
+//! A run is `Seal::Sealed` when it is settled and its ledger is empty.
+//! `Tally::seal` reports it and nothing here makes it a condition: a settled
+//! run that owes is a successful run whose obligations are signed for. The
+//! alternative — failing a run that owes — makes every owed hole a failure,
+//! which is the strict root's job for unannotated holes and would forbid the
+//! annotated ones the fixture root exists to assert. The choice reverses for a
+//! release gate that requires an empty ledger, which would gate on the reported
+//! seal rather than change it.
 
 use alloc::vec::Vec;
 use core::fmt;

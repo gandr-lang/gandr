@@ -14,6 +14,91 @@
 //! re-mold any run whose boundary was not real, so the parse equals the whole
 //! parse of the revision whatever the store held. The store then holds
 //! exactly the revision's units and its labeling.
+//!
+//! # The form store parses only the forms an edit touched
+//!
+//! **Choice.** The session keeps every top-level form of the latest parsed
+//! revision, molded and parked by the parser (`FormUnit::park`), under the
+//! form's identity (`FormSplit::identity`), and the revision's text and
+//! labeling. A revision is relabeled from the latest one's labeling
+//! (`Labeling::relabel`), which scans only around the edit, and split at its
+//! predicted form boundaries; a form whose identity the store holds, molded
+//! under the session's grammar, is taken up from its parked unit
+//! (`FormUnit::resume`), and the rest are molded across the session's width
+//! (`Session::with_width`, the host's performance cores by default), largest
+//! first. The units are joined in source order and committed into the
+//! revision's tree, which digests each top-level form once as it is laid out.
+//! The store then holds exactly the revision's units, so its memory is one
+//! revision's forms whatever the history. `Submission::forms` counts the
+//! revision's forms and the ones molded.
+//!
+//! **Identity.** A form's identity is the exact spelling of everything its
+//! molding reads: whether it starts the source or follows a form boundary, its
+//! tokens' classes and relative ends, and the bytes from its first token
+//! through the eighth significant token past its end, the furthest the molder's
+//! lookahead reads. Two forms with one identity mold to one unit, so a taken-up
+//! unit is the unit molding would build. An edit therefore molds the forms it
+//! changed and the forms whose lookahead reaches into it — on the generated
+//! two-thousand-form module, one to eight. An edit that moves a boundary — a
+//! merge that drops a terminator, a split that adds one, an insertion or a
+//! deletion — changes the identities across it, and the join's seam checks
+//! re-mold any run whose predicted boundary was not real, so the parse equals
+//! the whole parse of the revision whatever the store held. A session whose
+//! grammar's fingerprint differs from the one a unit was molded under molds
+//! every form, which is the whole revision.
+//!
+//! **The equality.** The witnesses submit every edit class — a change, an
+//! insertion, a deletion, a move, a merge, a split, a top-level return the
+//! lowering refuses whole — over generated modules of both roots, whose forms
+//! include data declarations and cases over their constructors, at one thread
+//! and at three, and compare each submission with the walk's composition of the
+//! same text and with a fresh session's: the composition, the standing, the
+//! parse's repairs, the kernel checkpoint and the resume's typings. Edit
+//! scripts over every corpus source are compared the same way. Under enforced
+//! specifications, whose checks multiply a submission's cost about fortyfold,
+//! the scripts run over a thirty-two-form module, every sixth corpus source and
+//! fewer property cases.
+//!
+//! **Alternatives.** A form is identified by its content across revisions, and
+//! a content digest is the usual key. A digest of the window costs a hash per
+//! form on every submission, measured on the edit path, and can collide; the
+//! exact spelling costs a copy of bytes the revision already holds and cannot.
+//! A store that kept units from every revision would serve an undo without
+//! molding, at memory growing with the history; keeping one revision bounds it.
+//! Re-parsing only the edited byte range would need the molder to restart
+//! mid-form, which its push machine does not offer; a form is the smallest unit
+//! it resumes from a checkpoint.
+//!
+//! **Reversal.** Identities persisted across processes, beside the session's
+//! checkpoints, need a fixed-width key: a digest of the spelling then becomes
+//! the stored key. A measured undo-heavy face would keep a bounded history of
+//! revisions.
+//!
+//! **What it does not cover.** On the generated two-thousand-form module, a
+//! one-form edit does not label or re-mold the revision: the store relabels it
+//! around the edit (`Labeling::relabel`), and the store looks each form up once
+//! and prunes itself in place. The commit hashes every form once, one call
+//! each, which costs less than per-node digests in the parked units would. What
+//! remains is linear in the module, and each stage names what removes it. The
+//! commit still stages every node into the level-order tree and the join copies
+//! every parked unit; a tree laid out by form, each form's subtree contiguous,
+//! would let the commit take an unchanged form up as a block. The lowering
+//! reads the whole tree, and its classification cannot be kept per form: it
+//! writes about twelve index spaces keyed by the tree's level-order positions —
+//! plans, readings, operand, statement and parameter stretches, binder scopes,
+//! case forms, answers, descents, hole identities, which are positions
+//! themselves — so a kept form needs every index remapped. One arena segment
+//! per form, over the same per-form layout, carries a form's identity through
+//! tree, arena and origins, hole and case origins included, and removes the
+//! lowering's whole-module pass with the commit's. The incremental checker's
+//! resume and the edit snapshot re-encode every item from the arena, and an
+//! item carried with its segment needs neither. The whole-module judgement
+//! retires when a report is assembled from adopted checkpoints. The readmission
+//! and the kernel export run after the report and are linear in the module. The
+//! measurement — `cargo run --release -p gandr-surface-session --example
+//! edit_loop` — prints each edit class's judged, admitted and whole submission
+//! walls at both roots and both widths, and the heap the form store and the
+//! session keep against the lowered revision.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

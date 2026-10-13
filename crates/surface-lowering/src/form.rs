@@ -19,6 +19,38 @@
 //! form — the empty list `()` and the tuple into the parenthesised expression,
 //! the signature into the declaration — is told apart by its own tiles, and a
 //! diagnostic names it by the folded form's own kind.
+//!
+//! # Dispatch on the grammar's named kinds
+//!
+//! The lowering reads the molded tree directly. A node's form is the named kind
+//! the grammar resolves its mold to, and a fixed table (`former_of`) pairs the
+//! kinds the fragment reads with the former each is read as; every other kind
+//! is unadmitted. A form's own tiles are the child tiles whose mold belongs to
+//! the form's own grammar rule, matched by label, and every other written child
+//! is an operand. A variant the grammar folds into one form — the empty list
+//! `()`, a grouping, the pair and the annotation into the parenthesised
+//! expression; the signature, definition and function tails into the
+//! declaration; a block into the thunk, lambda or function tail that opens it,
+//! and each statement into its block by the keyword that opens it — is told
+//! apart by its own tiles and named in a diagnostic by its folded kind
+//! (`FormName`).
+//!
+//! `read_pieces` reuses a cleared buffer and keeps the first repair separately.
+//! If a mold lookup fails, the buffer contains only the newly read prefix,
+//! never the previous form. Cursors retain a borrowed suffix: a tile miss
+//! preserves it, and an operand run stops before the next tile. An initially
+//! empty cursor stands at the form's start; after consumption, its gap follows
+//! the last piece.
+//!
+//! The alternative was an adapter that rebuilds the molded tree into a tree of
+//! the lowering's own node kinds and lowers that. It was declined because the
+//! adapter is a second vocabulary of forms that drifts from the grammar, and
+//! because the grammar already names every form and every tile. Reversal: if
+//! one lowering must read trees from grammars whose named kinds differ, the
+//! dispatch table is chosen per grammar; an adapter tree still is not.
+//!
+//! Witness that every dispatched kind is pinned:
+//! `tests::every_dispatched_kind_is_pinned`.
 
 use alloc::vec::Vec;
 use core::fmt;

@@ -6,6 +6,43 @@
 //! token request does, and reads nothing the checker decides: a declaration
 //! is a form of the grammar's item or module-member sort, and its name is
 //! the first tile the highlighter classifies as a definition or a type.
+//!
+//! # The outline is read off the tree
+//!
+//! The three outline requests parse the held text under the process's grammar,
+//! as a token request does, and read the molded tree alone; nothing the checker
+//! decides reaches them, so an outline is answered for a document that does not
+//! check.
+//!
+//! - **Symbols.** A declaration is a form of the grammar's item or
+//!   module-member sort, and its name is its first tile the highlighter
+//!   classifies as a defined function, a defined value or a type. A declaration
+//!   written inside another is among its children, so a module's members nest
+//!   under it, a nested module's under that. A defined function is a `Function`
+//!   symbol and a defined value a `Variable`; a declaration named by a type is
+//!   a `Module`, an `Interface`, a `Struct` or an `Enum` by its keyword:
+//!   `module`, `sign`, `codata`, and `data` or anything else. A symbol's range
+//!   is its form's, widened over the attribute blocks standing directly before
+//!   it, and its selection range is the name's tile. An attribute block is a
+//!   form with no such tile, so it is no symbol.
+//! - **Folding.** Every form, documentation node and block comment that ends on
+//!   a later line than it starts folds from its first line to its last. Forms
+//!   often share a first line, a function and its block say, and the client
+//!   folds one range per line, so the outermost is answered. Documentation and
+//!   block comments carry the `comment` kind, which a client's
+//!   fold-all-comments reads.
+//! - **Selection.** For each position the server walks down from the root, into
+//!   the child holding the position, or, when none holds it, the child ending
+//!   there, so a cursor just past a name selects the name. Layout is skipped,
+//!   and a span its child repeats is given once. A document that does not parse
+//!   answers the empty range at each position.
+//!
+//! The alternatives were the lowered module, whose declarations carry names and
+//! spans but only for a document that lowers, and the highlighter's spans,
+//! which classify a name but say nothing of what encloses it. The choice
+//! reverses when a declaration's symbol must say what only lowering knows, its
+//! type in the symbol's detail say: the symbol then reads the session's lowered
+//! module, the tree still giving its ranges.
 
 use alloc::string::String;
 use alloc::vec::Vec;

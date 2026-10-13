@@ -2,20 +2,14 @@
 
 The document-layout engine every gandr printing face resolves through: a sealed document arena, Pareto resolution with width taint, and a first-order render machine.
 
+<!-- toc -->
 - [Synopsis](#synopsis)
-- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Executable specifications](#executable-specifications)
-- [The document algebra](#the-document-algebra)
-- [Resolution and the cost order](#resolution-and-the-cost-order)
-- [Width taint](#width-taint)
-- [Plans and the render machine](#plans-and-the-render-machine)
-- [Ordered maps for the interner and the memo](#ordered-maps-for-the-interner-and-the-memo)
-- [Explicit stacks](#explicit-stacks)
-- [Limits and typed failures](#limits-and-typed-failures)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
+<!-- tocstop -->
 
 ## Synopsis
 
@@ -24,12 +18,6 @@ The document-layout engine every gandr printing face resolves through: a sealed 
 **Why.** The presentation printer, a source formatter and a language-server face each print the same terms at different widths. One engine makes a layout decision in one place, so two faces never disagree about where a line breaks. The engine is more expressive than a greedy printer: it carries arbitrary choice and unaligned concatenation, which cannot be added to a greedy representation afterwards without rewriting every client document.
 
 **How.** `DocBuilder` is the only insertion path; it interns flattened images while sealing, so `group(d)` costs one choice node over two shared children. `resolve` walks the sealed DAG on one explicit work vector, memoizing each in-bound state — a node entered at a column under an indentation — as a Pareto frontier of measures ordered by squared overflow, then line count. A state beyond the computation width answers a deferred promise instead of a frontier. The winning measure names a plan in a generational, reference-counted plan arena, and `render` executes that plan on an explicit stack into a buffer reserved once at the exact output size.
-
-## References
-
-- Sorawee Porncharoenwase, Justin Pombrio, and Emina Torlak. "A Pretty Expressive Printer." _Proceedings of the ACM on Programming Languages_ 7, OOPSLA2, October 2023. [doi:10.1145/3622837](https://doi.org/10.1145/3622837), [arXiv:2310.01530](https://arxiv.org/abs/2310.01530) — the optimality theorem, the measure set and its dominance order, the computation width and the taint state machine, in-context memoization, and the complexity bounds this engine implements.
-- Jean-Philippe Bernardy. "A Pretty But Not Greedy Printer (Functional Pearl)." _Proceedings of the ACM on Programming Languages_ 1, ICFP, article 6, September 2017. [doi:10.1145/3110250](https://doi.org/10.1145/3110250) — resolution as a frontier of non-dominated measures rather than a greedy first fit.
-- Philip Wadler. "A Prettier Printer." In Jeremy Gibbons and Oege de Moor (editors), _The Fun of Programming_, Palgrave Macmillan, 2003. [prettier.pdf](https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf) — the document algebra that this crate's choice and flattening generalize.
 
 ## Provided features
 
@@ -98,81 +86,19 @@ Run the crate's tests from the repository root:
 cargo nextest run -p gandr-surface-layout
 ```
 
-## Executable specifications
+## Where the detail lives
 
-Nontrivial items pair their specification clauses with `#[spec]` predicates and an adequacy argument naming concrete witnesses. Enforcing builds check arithmetic and refusal precedence, unchanged counters after refused charges, adopted allocation identities, handle namespaces, plan generations and ownership, taint contexts, resolver transitions, Pareto ordering and exact output accounting. Predicates use bounded snapshots or borrowed observations rather than cloning owned stores or replaying callbacks.
+Mechanism, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:
 
-Run the same witnesses with executable checks enabled:
-
-```sh
-RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-surface-layout
-```
-
-Each `executable: none` clause names an unavailable observation: data declarations have no call boundary, formatters expose write-only sinks, the small-stack witness consumes a one-shot callback, and opaque const projections lack const value observers. Their adequacy sections identify the runtime consumers that observe the obligation. Bounded exhaustive models are distinguished from selected graph fixtures; allocator exhaustion is not claimed as exercised.
-
-## The document algebra
-
-A document is empty, text, verbatim text, a soft or hard line break, a concatenation, a nesting by a fixed amount, an alignment to the current column, a choice between two documents, or the flattening of one. `group(d)` is `choice(d, flatten(d))`, unflattened form on the left. Flattening turns a soft line into one space and leaves a hard line, verbatim bytes and indentation alone (`algebra::tests::flatten_turns_a_line_into_one_space`, `algebra::tests::flatten_leaves_a_hard_line_alone`).
-
-**Concatenation is unaligned.** The right operand starts at the column the left one ends at, and its lines indent by the enclosing nesting, not by that column (`algebra::tests::concat_resolves_the_right_at_the_left_ending_column`). Alignment is a separate constructor (`algebra::tests::align_sets_indentation_to_the_current_column`).
-
-- **Alternatives.** An aligned concatenation, the greedy printers' default, cannot express a hanging layout whose continuation returns to the enclosing indentation.
-- **Reversal.** None planned: alignment is available as its own node.
-
-**The arena is sealed and shared.** Naming a handle twice builds a shared subdocument, charged as an edge rather than a node (`algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_node`). `finish` computes every node's flattened image in one forward pass, interning each distinct image once and keeping the original identity when flattening changes nothing (`algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`).
-
-## Resolution and the cost order
-
-A layout's cost is the sum of squared overflow past the page width, then the number of line breaks, compared lexicographically (`algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`). A measure pairs a cost with the column the layout ends at and the plan that produces it. A state answers a frontier: measures sorted by cost, none dominated in both cost and ending column. A choice merges its branches' frontiers; a concatenation resolves its right operand at each of the left frontier's ending columns. Each in-bound state is resolved once and memoized for the rest of the resolution (`algebra::tests::shared_contexts_reuse_memo_states`).
-
-**Squared overflow, then line count.** Overflow dominates, so no layout trades a column past the page for fewer lines; squaring spreads overflow across lines rather than piling it on one.
-
-- **Alternatives.** Linear overflow prefers one very long line to two slightly long ones. Line count first prints everything on one line whenever any layout overflows.
-- **Reversal.** A client that needs another order; the order lives in `measure` and no client may replace it today.
-
-## Width taint
-
-A state whose column or indentation exceeds the computation width is outside the optimality theorem. Resolution does not enter it: it answers a deferred promise that carries the state's exact node, column and indentation, and forces that promise only when no in-bound measure competes. A merge prefers any frontier over a promise, and of two promises keeps the left one unforced, so a document too wide to lay out falls back to its vertical form (`taint::tests::merge_frontier_wins_over_ready_taint`, `algebra::tests::render_tainted_root_uses_complete_left_biased_output`). A tainted result is complete output; `Rendered::width_tainted` reports the taint and never a truncation (`algebra::tests::tainted_contexts_preserve_taint_and_output`).
-
-## Plans and the render machine
-
-A measure names its layout as a plan: a first-order tree of text, verbatim, newline-with-indentation and sequence nodes in a generational arena. A plan identity carries its slot's generation, so a recycled slot never answers an old identity (`plan::tests::plan_generation_rejects_recycled_identity`). Plans are reference-counted; a dominated measure releases its plan when the frontier drops it, so the live-plan ceiling bounds what resolution retains.
-
-Rendering checks the winning plan's exact byte count against the output ceiling, reserves the buffer once, and executes the plan on an explicit stack of identities. Indentation is emitted in runs of spaces from one static string. No document tree, candidate string or closure is materialized.
-
-## Ordered maps for the interner and the memo
-
-The flatten interner and the resolver memo are `BTreeMap`s: deterministic iteration and lookup with no hash seed, `no_std` through `alloc`, and no dependency. Their growth is bounded by the node ceiling and the memo-state ceiling, each charged before every insertion.
-
-- **Alternatives.** `hashbrown` with `foldhash` gives constant-time lookup, a fixed seed for determinism and fallible reservation, so a failed growth becomes a typed error; it adds two dependencies to a crate that has one.
-- **Reversal.** Profiling shows map lookups dominate resolution or finalization, or a consumer needs the growth of these two tables to fail as a typed error rather than through the allocator.
-
-## Explicit stacks
-
-Nothing in the crate recurses. Finalization is one forward pass, because every edge names an earlier node; balanced concatenation builds explicit levels; resolution runs one work vector of evaluations and continuations; releasing a plan returns its children to the caller's stack; rendering walks plan identities on a heap stack. A deep document is ordinary input: the witnesses seal spines of two hundred thousand nodes and release a chain of a hundred thousand plan sequences on a 64 KiB native stack (`algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`, `plan::tests::plan_release_recycles_a_deep_sequence_iteratively`). The resolver's and the machine's stacks have their own ceilings (`algebra::tests::render_vm_stack_limit_is_checked_before_output`).
-
-## Limits and typed failures
-
-Every store checks its ceiling before it grows, every counter checks its arithmetic, and a refused charge leaves the counter unchanged (`algebra::tests::a_refused_charge_leaves_the_counter_unchanged`). The defaults:
-
-| Ceiling | Default |
-| ------- | ------- |
-| document nodes | 1,000,000 |
-| text bytes | 64 MiB |
-| verbatim lines | 1,000,000 |
-| build steps | 20,000,000 |
-| memo states | 1,000,000 |
-| frontier entries | 4,000,000 |
-| plan nodes created | 16,000,000 |
-| live plan nodes | 8,000,000 |
-| output bytes | 64 MiB |
-| layout steps, resolver work entries, machine steps | 100,000,000 each |
-| resolver stack, machine stack | 1,000,000 each |
-
-**Broken invariants are typed.** A machine state that the resolver or the render machine never produces — a stale plan identity, a continuation without its result, a root with no measure — returns `RenderError::Invariant` naming the invariant, never a panic and never an arithmetic error borrowed for the purpose.
-
-- **Alternatives.** A panic halts the face that printed, which a language server must not do; reporting the state as an overflow names the wrong cause.
-- **Reversal.** None planned: an invariant variant is cheap and each one names a defect to fix.
+| Topic | Module |
+| ----- | ------ |
+| Executable specifications, explicit stacks, references | [`src/lib.rs`](src/lib.rs) |
+| The document algebra | [`arena`](src/arena.rs) |
+| Resolution and the cost order | [`resolve`](src/resolve.rs) |
+| Width taint | [`taint`](src/taint.rs) |
+| Plans and the render machine | [`plan`](src/plan.rs) |
+| Ordered maps for the interner and the memo | [`build`](src/build.rs) |
+| Limits and typed failures | [`limits`](src/limits.rs) |
 
 ## License
 

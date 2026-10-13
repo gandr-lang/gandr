@@ -1,4 +1,17 @@
 //! The session loop: lines in, transcript blocks out.
+//!
+//! # The loop reads declarations
+//!
+//! The fragment's source is declarations. A bare expression such as `42` is
+//! refused whole by the lowering, and the loop shows that refusal as the
+//! diagnostics renderer writes it; `:type <expression>` answers an expression's
+//! type by submitting the probe `def it = <expression> ;` — under the first of
+//! `it`, `it1`, … that no accepted declaration carries — and keeping nothing. A
+//! goal is a declaration owing its body: a signature with no definition,
+//! answered with a goal line `name : T`; a later definition of the same name
+//! settles it, and its line becomes a type line. A hole inside a body is
+//! outside the fragment, so goals over sub-term holes arrive with the hole
+//! surface.
 
 use alloc::format;
 use alloc::string::String;

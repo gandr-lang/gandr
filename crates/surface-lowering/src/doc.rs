@@ -20,6 +20,34 @@
 //! a code span are text. The lowering resolves every link against the names
 //! the module declares, so a rename or a deletion breaks the link at its own
 //! span rather than leaving stale prose.
+//!
+//! # Documentation: one text, its links checked
+//!
+//! A declaration's documentation is every `NodeLabel::Doc` the parser grouped
+//! inside the attribute blocks that decorate it or before its name: `///` runs
+//! and `doc("…")` entries alike, in source order. A run reads as its lines with
+//! the `///` and one following space removed, joined by line breaks; an entry
+//! reads as its string literal decoded; the pieces join by line breaks.
+//! `LoweredModule::documentation` answers it under the content identity of the
+//! declaration form, the key the attribute table uses, and the parser keeps
+//! documentation out of that identity, so documenting a declaration re-keys
+//! nothing. Documentation inside a body, before a constructor say, is not read.
+//!
+//! A link is a bracketed name, `[name]` or ``[`name`]``, a dotted path
+//! included, as an intra-doc link is in rustdoc: a bracket pair followed by
+//! `(`, `[` or `:` is a Markdown link or reference instead, and a bracket
+//! inside a code span is text. A link resolves as a name written in the source
+//! does, as a declared path, any declared name, a module or a constructor, and
+//! one nothing answers refuses its declaration as `UnresolvedDocLink` at the
+//! linked name, so renaming or deleting a declaration breaks the documentation
+//! that names it where the link is written.
+//!
+//! The alternative was storing documentation as an attribute entry with a text
+//! payload. It was declined because an entry's payload is minted into the core
+//! arena and the attribute table carries no source borrow, while a link names
+//! the source it was written in. A broken link refuses its declaration because
+//! the lowering has no warning severity; reversal: when diagnostics carry a
+//! severity, a broken link is a warning and the declaration lowers.
 
 use alloc::string::String;
 use alloc::vec::Vec;

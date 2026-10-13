@@ -8,6 +8,157 @@
 //! buffered obligations beside the tree so the obligation surface is never
 //! lost — a total function: any [`SourceText`] yields a well-formed
 //! [`ParseResult`], never a panic.
+//!
+//! # Label, mold, meld
+//!
+//! The labeler classifies lexemes and stops there. A lowercase word could be an
+//! identifier, a type variable or a keyword; an uppercase word a constructor, a
+//! type name or a primitive; `-` a prefix or an infix operator. Which one is
+//! decided by the molder, in context, never by the labeler — teaching the
+//! labeler grammar would duplicate the grammar and drift from it. Multi-byte
+//! operators munch longest first, so the shorter tiles `->`, `<-`, `==` and
+//! `<=` never shadow the circuit arrows `-->`, `<->`, `==>` and `<=>` that
+//! extend them. The bridges `+U` and `-F` are one tile each only where the
+//! letter ends, so `+Unit` stays a sign and a word and the sum keeps its
+//! spellings. A backslash in code is one tile, the static abstraction's lead,
+//! so `\A.` is the lead, the binder and the dot; an escape sequence exists only
+//! inside a string or a character, whose modes read it. Shell blocks, strings
+//! and interpolations switch the labeler into their own lexical modes.
+//!
+//! In a shell braced parameter, non-name scalars remain whole shell-word
+//! tokens. UTF-8 boundaries are preserved even when closing braces are missing,
+//! so batch and form-split parsing see the same source bytes.
+//!
+//! The molder's candidates for a token are the union of the grammar's molds for
+//! each label the token could carry, visited in ascending `MoldId` order. The
+//! pre-filter drops every candidate the slope head cannot admit — a closer with
+//! no matching open form, an operator with no left operand — and most tokens
+//! are left with one, taken without a dry-run. The survivors are dry-run in a
+//! `Mark` / `rollback_to` transaction and ranked by their obligation delta,
+//! then form continuation, then sort compatibility, then the completion cost
+//! `finalize` reports, then the smaller `MoldId`; a bounded lookahead settles
+//! the families whose openers tie and diverge only at a later tile. Nothing
+//! process-dependent reaches the choice, so molding is a function of the token
+//! stream.
+//!
+//! The melder follows the paper's push rules. Shift pushes a tile whose
+//! precedence the head yields to; Reduce closes the head operator or form when
+//! the incoming tile takes precedence; Degrout completes an incomparable pair
+//! with grout and an `AmbiguousPrec` obligation. Grout is comparable to
+//! everything and sits at the bottom of the precedence order, which is what
+//! makes every push conclude.
+//!
+//! ### An edit is relabeled around itself
+//!
+//! The labeler carries a little state between tokens — inside a string, a shell
+//! block, a shell quote or a parameter expansion, an interpolation — and the
+//! lexemes it scans read ahead of themselves: a word looks for a prime, a
+//! number for its suffix, a character literal for its closing quote, a shell
+//! start along its dialect word for the brace. `Labeling` keeps a source's
+//! tokens and the tokens before which the labeler stood within a mode, and
+//! `Labeling::relabel` labels an edit of the source from them. It restarts at
+//! the last token boundary at ground on an earlier line than the edit and at
+//! least 64 bytes before it: no scanner reads further past its token than eight
+//! bytes save along a dialect word, which stops at a line break, so every token
+//! before the restart is a token of the edited source. It stops at the first
+//! boundary inside the unedited suffix where it stands at ground over a
+//! boundary the old labeling stood at ground on: the labeler never reads behind
+//! its cursor, so from there it reads the same bytes in the same mode, and the
+//! old tokens are the new ones, shifted. An edit therefore scans from the
+//! earlier of the line break before it and the margin, through the edit, to the
+//! first common ground boundary in the suffix.
+//!
+//! - Alternatives: keeping the full mode at every token boundary would let the
+//!   scan restart at the edit itself, at a mode per token; restarting at a form
+//!   boundary would rest on the molder's prediction of where forms begin, which
+//!   a string or an interpolation can contradict; a scanner that recorded how
+//!   far each scan read would make the margin exact, at a write per byte read.
+//! - Reversal: a scanner that reads more than the margin past its token, or
+//!   past a line break, widens the margin or the restart rule with it, and the
+//!   exhaustive witness over every edit position of its source says which.
+//!
+//! # Commit reads the caller's source
+//!
+//! The melder assembles its own copy of the text from the tiles and layout
+//! pushed into it — it must, to stream — while a `gandr-surface-syntax` tree
+//! borrows the source it spans. `commit` therefore takes the caller's
+//! `SourceText`, checks that it is exactly the assembled text, and builds the
+//! tree over the caller's buffer; any other text is refused with
+//! `MeldError::SourceMismatch`, because it would mis-span every node.
+//!
+//! The alternatives were a tree owning a copy of the text, which costs a copy
+//! per parse and makes every tree a second owner of its source, and a commit
+//! returning the assembled buffer beside a tree borrowing it, which is a
+//! self-referential pair. Reversal: if a consumer needs a tree that outlives
+//! its source, the syntax crate gains an owning variant and commit hands it the
+//! assembled buffer.
+//!
+//! # Forms as units
+//!
+//! A long source parses faster in pieces only if each piece parses as it would
+//! have in place. The form boundary is that contract. At a top-level form
+//! boundary the whole parse's slope is a run of completed operands, and the
+//! next token can see nothing of them but the topmost: an item operand.
+//! `Checkpoint::form_boundary` is that view, a lone zero-width item operand
+//! standing in for every form before the boundary, and a `FormUnit` molds its
+//! run of tokens from it, reading lookahead past the run's end exactly as the
+//! whole parse does. Units depend on nothing but the source, so they mold in
+//! parallel, longest first.
+//!
+//! The join decides whether the boundary was real. `MeldState::join_unit`
+//! appends a unit's forms to the state the runs before it left when that
+//! state's slope holds no open form and no operator, its top is item-sorted,
+//! and the unit's fold never touched its stand-in — the melder records the
+//! lowest slope position any splice or frontier flip reaches, dry-runs
+//! included, so a unit that reached past its own forms says so. The stand-in is
+//! then dropped and the unit's ids and offsets shifted past the state's own.
+//! Any other seam is broken: the unit is discarded and its run molded onto the
+//! state in place, which is the whole parse's own step, so a wrong boundary
+//! costs time and never the parse. The melder reads nothing of a cell below the
+//! head but what a splice touches, and every obligation it flags is spanned by
+//! the incoming tile, a form tile or a splice, so a seam that holds commits the
+//! whole parse's tree and obligations.
+//! `parse::tests::form_split_parses_as_the_whole_source` checks it on every
+//! corpus source and its malformed variants, and
+//! `parse::tests::arbitrary_source_parses_by_form_as_whole` on generated ones.
+//!
+//! `Molder::form_runs` predicts the boundaries from tokens alone: before a
+//! token some fresh reading of which opens a declaration, after a `;` or a `}`,
+//! outside every bracket. It finds 490 of the corpus's 765 real boundaries — an
+//! attribute block and the declaration it decorates are separate forms, and the
+//! cut between them is not predicted, since the attribute's form is still open
+//! there, so a unit holds both — and the 4 it predicts that are not real each
+//! break their seam and are re-molded.
+//!
+//! - Alternatives: re-lexing and parsing each form's text alone reproduces the
+//!   whole tree on the corpus but makes the form boundary a fact about the
+//!   corpus, not the parser; resuming each unit from the real state before it
+//!   serializes the units.
+//! - Reversal: a grammar change that lets a declaration read the forms before
+//!   it — a form that continues across a `;` at the top level — breaks the
+//!   seams; the join still re-molds, and the split stops paying.
+//!
+//! ### A molded form outlives its revision
+//!
+//! A `FormUnit` borrows the split it was molded in. `FormUnit::park` keeps what
+//! the join reads of it — its base, whether its fold reached its stand-in, and
+//! its melder state as a `Checkpoint` — in a `ParkedUnit` that borrows nothing,
+//! and `FormUnit::resume` rebuilds the unit over a run of another revision.
+//! Resuming is sound exactly when molding that run would have built the same
+//! unit, and `FormSplit::identity` names when: a `FormIdentity` spells
+//! everything a molding reads — whether the run starts the source or follows a
+//! boundary, each token's class and end relative to the run's start, and the
+//! bytes from the run's first token through the eighth significant token past
+//! its end, the furthest the molder's lookahead reaches (`lookahead_reach`).
+//! Two runs with one identity mold to one unit, so a store keyed by identity
+//! serves a unit only where molding would rebuild it.
+//!
+//! - Alternatives: a digest of the same window is a fixed-width key at the cost
+//!   of a hash per form and a collision bound; keying by the run's text alone
+//!   would serve a unit whose lookahead reads different tokens after an edit.
+//! - Reversal: a molder whose lookahead grows past eight significant tokens
+//!   widens the window with it; a store persisted across processes keys by a
+//!   digest of the identity.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;

@@ -157,9 +157,6 @@ run = "typos"
 # one directory, which sizelint's patterns cannot express. The second holds
 # every tracked markdown file to its budget in `sizelint.toml`; treefmt's
 # sizelint pass leaves markdown to this gate.
-# Burn-down: the `:(exclude)` entries after the allowlist name the files
-# outside it when the gate landed. Entries only leave, as their prose moves
-# into rustdoc; an entry never enters.
 ["check:markdown"]
 description = "Tracked markdown on the README allowlist and within its budgets"
 run = [
@@ -169,12 +166,7 @@ outside=$(git ls-files -- '*.md' \
   ':(exclude,glob)CHANGELOG.md' \
   ':(exclude,glob)crates/README.md' \
   ':(exclude,glob)crates/*/README.md' \
-  ':(exclude,glob)contrib/*/README.md' \
-  ':(exclude)crates/surface-lowering/docs/attributes.md' \
-  ':(exclude)crates/surface-lowering/docs/descriptions.md' \
-  ':(exclude)crates/surface-lowering/docs/modules.md' \
-  ':(exclude)crates/surface-lowering/docs/namespace.md' \
-  ':(exclude)crates/surface-lowering/docs/native.md')
+  ':(exclude,glob)contrib/*/README.md')
 if [ -n "$outside" ]; then
   printf '%s\n' "$outside" >&2
   echo 'markdown check FAILED: tracked markdown outside the README allowlist; move its prose into rustdoc' >&2

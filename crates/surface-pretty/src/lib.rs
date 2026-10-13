@@ -28,12 +28,91 @@
 //! Both are [`Fidelity::Approximate`], not round-trippable source. A page the
 //! one-line spelling fits selects it unchanged.
 //!
+//! Every former has exactly one spelling, the one the surface grammar parses,
+//! so a printed type reads back as the type it names: `Integer`, `String`,
+//! `Unit`, `Void`, `Bool`, `A * B * …`, `A + B + …`, `+U C`, `-F A`, `A -> C`,
+//! `(x : A) -> C`, the static Pi `A -> B` between value types, `Type`,
+//! `Type[-]`, `Type[+, l]`, `Type[-, l]`, an abstract type and a constant by
+//! name, and a decode as the code it reads; values are `unit`, literals with
+//! their canonical digits and escapes, `(a,)`, `(a, b, …)`, `Inl(v)`, `Inr(v)`,
+//! the static abstraction `\a. v`, and a static application as its spine, `f(a,
+//! b)` for `f` applied to `a` and then to `b` (the type operators of
+//! `gandr-surface-grammar`). Binding strength follows the grammar's bands,
+//! tightest first: atoms, the bridges `+U` and `-F` (built-in spellings in
+//! `gandr-surface-grammar`), product, sum, arrow. A product or a sum is written
+//! as one chain of its components, and a component of equal strength on either
+//! side is parenthesized; an arrow's domain is bare up to a sum and its
+//! codomain bare. A static abstraction binds as loosely as an arrow, its body
+//! running to the right, and an application is an atom whose operator is
+//! parenthesized unless it is one, so a redex reads `(\a. a)(Integer)`. The
+//! value-function alias `(A, B) => C` is never printed: it lowers to `+U (A ->
+//! B -> -F C)`, and the printer writes what the core holds.
+//!
+//! A node the surface has no spelling for — a lift, the numeric atom, a linear
+//! or unbound variable, a term where a type stands — is written `?`, and a
+//! thunk value `<thunk>`; each makes the presentation approximate. Fidelity is
+//! recorded by the nodes the walk met, so a name that happens to contain `?`
+//! stays faithful.
+//!
+//! A right-nested arrow chain stays bare because the grammar parses it so. The
+//! REPL's corpus witness expects each signature's line to be its source's own
+//! text.
+//!
+//! - **Alternatives.** A notation independent of the grammar would print text
+//!   the surface cannot read back. Parenthesizing every compound operand is
+//!   simpler to state but lengthens every chain.
+//! - **Reversal.** A ruled change to the grammar's spellings or bands; this
+//!   crate follows it, never leads it.
+//!
 //! # Totality
 //!
 //! Nothing here panics or recurses. The walk drains an explicit task stack, a
 //! value deeper than [`DEPTH_LIMIT`] is written `<deep>`, a source that takes
 //! more node visits than one presentation makes — a cycle — is written `?`,
 //! and every layout failure is a [`PresentationError`].
+//!
+//! # Tests and their limits
+//!
+//! The golden fixtures cover exact grammar spellings and their narrow and wide
+//! layouts; the README's Provided features names their observers. Boundary
+//! witnesses cover truncation across all four core-node families,
+//! admission-table endpoints, depth saturation, candidate rounds, binder
+//! exhaustion, error causes and layout refusals.
+//!
+//! Run `RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p
+//! gandr-surface-pretty` to execute the predicates as well as the independent
+//! assertions. Adequacy blocks state the finite input domains and the mutations
+//! each witness distinguishes; they do not claim exhaustive coverage.
+//!
+//! Executable exemptions remain at opaque observation boundaries: the abstract
+//! source reader, child-handle provenance without its source, admission-table
+//! correspondence to declarations not held by the adapter, and formatting into
+//! an opaque destination. Their source contracts name the missing observer;
+//! concrete reader, borrowed-key and error-chain obligations retain executable
+//! predicates.
+//!
+//! # References
+//!
+//! - Sorawee Porncharoenwase, Justin Pombrio, and Emina Torlak. "A Pretty
+//!   Expressive Printer." _Proceedings of the ACM on Programming Languages_ 7,
+//!   OOPSLA2, October 2023.
+//!   [doi:10.1145/3622837](https://doi.org/10.1145/3622837),
+//!   [arXiv:2310.01530](https://arxiv.org/abs/2310.01530) — the cost order and
+//!   the computation width the documents here are resolved under.
+//! - Jean-Philippe Bernardy. "A Pretty But Not Greedy Printer (Functional
+//!   Pearl)." _Proceedings of the ACM on Programming Languages_ 1, ICFP,
+//!   article 6, September 2017.
+//!   [doi:10.1145/3110250](https://doi.org/10.1145/3110250) — choosing a layout
+//!   over all candidates rather than the first that fits, which lets each break
+//!   point be an independent choice.
+//! - Phillip M. Yelland. "A New Approach to Optimal Code Formatting." Technical
+//!   report, Google, 2016. [research.google](https://research.google/pubs/a-new-approach-to-optimal-code-formatting/)
+//!   — formatting as least cost over alternative layouts with an overflow
+//!   penalty, the tradition the break-point choices belong to.
+//! - Philip Wadler. "A Prettier Printer." In Jeremy Gibbons and Oege de Moor
+//!   (editors), _The Fun of Programming_, Palgrave Macmillan, 2003.
+//!   [prettier.pdf](https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf)
+//!   — the document algebra the documents are written in.
 
 #![no_std]
 

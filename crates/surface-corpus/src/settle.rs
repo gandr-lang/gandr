@@ -11,11 +11,54 @@
 //! module against another module's verdicts is a caller fault, never a
 //! verdict.
 //!
+//! The checker judges the declarations a driver hands it — every declaration
+//! the lowering did not refuse, in admission order — and returns one verdict
+//! for each, in the same order. `settle` walks the module's declarations in
+//! that order, pairs each unrefused declaration with the next verdict, and
+//! checks the pairing by admission position: a verdict missing, a verdict for
+//! another position, or a verdict left over is `SettleFault`, a caller fault
+//! rather than a verdict, as is a payload the arena given does not hold. A
+//! declaration's own obligations are read off its verdict — one for an owed
+//! verdict, none otherwise — because the checker records exactly one ledger
+//! entry per owed verdict; the run's ledger size is read off the ledger.
+//!
+//! The alternative was pairing by origin token, which the driver issues and
+//! could issue in any scheme; the admission position is the one index both the
+//! lowering and the checker define. The choice reverses if the checker ever
+//! returns verdicts out of admission order, at which point the pairing becomes
+//! a lookup by position.
+//!
 //! # A declaration's own obligations
 //!
 //! A declaration produces one obligation when its verdict is owed and none
 //! otherwise: the checker records exactly one ledger entry per owed verdict,
 //! so the count is read off the verdict, and the ledger size off the ledger.
+//!
+//! # One predicate: settled
+//!
+//! A declaration is settled when the verdict it produced equals the verdict it
+//! states. A verdict is one of three shapes: _checks, owing n_ — checked,
+//! synthesised, or owed, with n the obligations its verdict left in the ledger
+//! — _runs to_ a spelled value, or _refuses_ a named refusal. `checks` states
+//! _checks, owing 0_; `owes(n)` states _checks, owing n_; `runs("spelling")`
+//! states _runs to_ the spelling; `refuses("Name")` states the named refusal; a
+//! declaration carrying none of the four states _checks, owing 0_. A run is
+//! settled when every declaration in it is, which is the predicate a corpus run
+//! is gated on.
+//!
+//! An obligation survives when it is unsettled, in either direction: produced
+//! with nothing declaring it (an unannotated hole), or declared with nothing
+//! producing it (an `owes` on a declaration that completes). Each declaration
+//! reports both counts and the tally sums them. A wrong stated verdict
+//! therefore fails both ways: a refusal stated and not produced, a refusal
+//! produced and not stated, another refusal produced than the one stated, more
+//! obligations than stated and fewer.
+//!
+//! The alternative was a pass/fail bit per fixture with the obligation count as
+//! an informative extra; it lets an `owes(2)` over a single hole pass. The
+//! choice reverses if an expectation needs a looser relation than equality — an
+//! obligation count bounded rather than exact — which would arrive as a fifth
+//! schema rather than a change to this one.
 
 use alloc::vec::Vec;
 use core::error::Error;
