@@ -1162,6 +1162,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     #[spec(
         requires: match *computation {
             Computation::DataCase { scrutinee, motive, ref branches } => self.placed.contains_key(&AnyNode::Value(scrutinee)) && self.placed.contains_key(&AnyNode::CompType(motive)) && branches.iter().all(|id| self.placed.contains_key(&AnyNode::Computation(*id))),
+            Computation::SigmaSplit { scrutinee, motive, body } => [AnyNode::Value(scrutinee), AnyNode::CompType(motive), AnyNode::Computation(body)].iter().all(|child| self.placed.contains_key(child)),
             Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => self.placed.contains_key(&AnyNode::Value(record)),
             Computation::ListFold { element, result, list, on_nil, on_cons } => [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].iter().all(|child| self.placed.contains_key(child)),
             Computation::Transport(path, value) => self.placed.contains_key(&AnyNode::Value(path)) && self.placed.contains_key(&AnyNode::Value(value)),
@@ -1181,6 +1182,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         captures: entry_len = record.0.len(),
         ensures: record.0.get(entry_len) == Some(&u8::from(match *computation {
             Computation::DataCase { .. } => gandr_kernel_term::NODE_C_DATA_CASE,
+            Computation::SigmaSplit { .. } => gandr_kernel_term::NODE_C_SIGMA_SPLIT,
             Computation::RecordProjection(..) => gandr_kernel_term::NODE_C_RECORD_PROJECTION,
             Computation::TupleProjection(..) => gandr_kernel_term::NODE_C_TUPLE_PROJECTION,
             Computation::Transport(..) => gandr_kernel_term::NODE_C_TRANSPORT,
@@ -1219,6 +1221,20 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::CompType(motive)));
                 for branch in branches {
                     record.put_content(self.content_of(AnyNode::Computation(*branch)));
+                }
+            },
+            | Computation::SigmaSplit {
+                scrutinee,
+                motive,
+                body,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_C_SIGMA_SPLIT);
+                for child in [
+                    AnyNode::Value(scrutinee),
+                    AnyNode::CompType(motive),
+                    AnyNode::Computation(body),
+                ] {
+                    record.put_content(self.content_of(child));
                 }
             },
             | Computation::RecordProjection(value, ref label) => {
@@ -1417,7 +1433,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => self.placed.contains_key(&AnyNode::ValueType(domain)) && self.placed.contains_key(&AnyNode::Value(left)) && self.placed.contains_key(&AnyNode::Value(right)),
             ValueType::Base(_) | ValueType::Universe { sort: GroundSort::Value, .. } | ValueType::Universe { sort: GroundSort::Computation, .. } | ValueType::Abstract(_) => true,
             ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|id| self.placed.contains_key(&AnyNode::ValueType(*id))),
-            ValueType::StaticPi { domain: first, codomain: second } => self.placed.contains_key(&AnyNode::ValueType(first))
+            ValueType::StaticPi { domain: first, codomain: second } | ValueType::Sigma { first, second } => self.placed.contains_key(&AnyNode::ValueType(first))
                             && self.placed.contains_key(&AnyNode::ValueType(second)),
             ValueType::Thunk(body) => self.placed.contains_key(&AnyNode::CompType(body)),
             ValueType::Lift { inner, .. } | ValueType::List(inner) => self.placed.contains_key(&AnyNode::ValueType(inner)),
@@ -1443,6 +1459,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Element { .. } => gandr_kernel_term::NODE_VT_ELEMENT,
             ValueType::Abstract(..) => gandr_kernel_term::NODE_VT_ABSTRACT,
             ValueType::StaticPi { .. } => gandr_kernel_term::NODE_VT_STATIC_PI,
+            ValueType::Sigma { .. } => gandr_kernel_term::NODE_VT_SIGMA,
         }))
     )]
     fn put_value_type(
@@ -1563,6 +1580,11 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_tag(gandr_kernel_term::NODE_VT_STATIC_PI);
                 record.put_content(self.content_of(AnyNode::ValueType(domain)));
                 record.put_content(self.content_of(AnyNode::ValueType(codomain)));
+            },
+            | ValueType::Sigma { first, second } => {
+                record.put_tag(gandr_kernel_term::NODE_VT_SIGMA);
+                record.put_content(self.content_of(AnyNode::ValueType(first)));
+                record.put_content(self.content_of(AnyNode::ValueType(second)));
             },
         }
     }
@@ -1691,6 +1713,7 @@ None => opened.eq((core::iter::empty()).map(Some)),
         AnyNode::Computation(id) => match arena.computation(id) {
             Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => opened.eq([AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].into_iter().map(Some)),
             Some(&Computation::DataCase {scrutinee,motive,ref branches}) => opened.eq(([AnyNode::Value(scrutinee), AnyNode::CompType(motive)].into_iter().chain(branches.iter().copied().map(AnyNode::Computation))).map(Some)),
+            Some(&Computation::SigmaSplit {scrutinee,motive,body}) => opened.eq(([AnyNode::Value(scrutinee), AnyNode::CompType(motive), AnyNode::Computation(body)].into_iter()).map(Some)),
             Some(&(Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_))) => opened.eq((core::iter::once(AnyNode::Value(record))).map(Some)),
             None => opened.eq((core::iter::empty()).map(Some)),
             Some(&Computation::Transport(a,b)) => opened.eq(([AnyNode::Value(a),AnyNode::Value(b)].into_iter()).map(Some)),
@@ -1712,7 +1735,7 @@ ValueType::Session {payloads: inner,..} | ValueType::List(inner) | ValueType::Li
 ValueType::PathUniverse(a,b) | ValueType::FlowUniverse(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
 ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => opened.eq(([AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)].into_iter()).map(Some)),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => opened.eq((parts.iter().copied().map(AnyNode::ValueType)).map(Some)),
-ValueType::StaticPi {domain:a,codomain:b} => opened.eq(([AnyNode::ValueType(a),AnyNode::ValueType(b)].into_iter()).map(Some)),
+ValueType::StaticPi {domain:a,codomain:b} | ValueType::Sigma {first:a,second:b} => opened.eq(([AnyNode::ValueType(a),AnyNode::ValueType(b)].into_iter()).map(Some)),
 ValueType::Thunk(body) => opened.eq((core::iter::once(AnyNode::CompType(body))).map(Some)),
 ValueType::Element {code,..} => opened.eq((core::iter::once(AnyNode::Value(code))).map(Some)),
 },
@@ -1876,6 +1899,18 @@ fn push_children(
                     .chain(branches.iter().copied().map(AnyNode::Computation)))
                 .map(EncodeTask::Open),
             ),
+            | Some(&Computation::SigmaSplit {
+                scrutinee,
+                motive,
+                body,
+            }) => tasks.extend(
+                [
+                    AnyNode::Value(scrutinee),
+                    AnyNode::CompType(motive),
+                    AnyNode::Computation(body),
+                ]
+                .map(EncodeTask::Open),
+            ),
             | Some(
                 &(Computation::RecordProjection(record, _)
                 | Computation::TupleProjection(record, _)),
@@ -2012,10 +2047,13 @@ fn push_children(
                         .map(EncodeTask::Open),
                 );
             },
-            | Some(&ValueType::StaticPi {
-                domain: first,
-                codomain: second,
-            }) => {
+            | Some(
+                &ValueType::StaticPi {
+                    domain: first,
+                    codomain: second,
+                }
+                | &ValueType::Sigma { first, second },
+            ) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(first)));
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(second)));
             },

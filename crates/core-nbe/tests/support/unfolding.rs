@@ -157,7 +157,7 @@ pub struct Unfolded(pub u64);
                     ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 1,
                     ValueType::Session(ref session) => 1_u64.saturating_add(u64::try_from(session.payloads().len()).unwrap_or(u64::MAX)),
                     ValueType::Capability { ref authority, .. } => 1_u64.checked_add(u64::try_from(authority.types().count()).expect("walkable authority arity")).expect("walkable authority arity"),
-                    ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::StaticPi { .. } => 3,
+                    ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::StaticPi { .. } | ValueType::Sigma { .. } => 3,
                     ValueType::Path { .. } | ValueType::Flow { .. } => 4,
                     ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) => 2,
                 }
@@ -351,6 +351,16 @@ pub fn unfolded(
                                 .map(|clause| CoreNode::Computation(clause.body)),
                         );
                     },
+                    | Computation::Split {
+                        scrutinee,
+                        motive: gandr_core_term::SplitMotive::Scrutinee(motive),
+                        body,
+                        ..
+                    } => pending.extend([
+                        CoreNode::Value(scrutinee),
+                        CoreNode::CompType(motive),
+                        CoreNode::Computation(body),
+                    ]),
                     | Computation::Resume(stack, body)
                     | Computation::Split {
                         scrutinee: stack,
@@ -489,7 +499,8 @@ pub fn unfolded(
                     | ValueType::StaticPi {
                         domain: first,
                         codomain: second,
-                    } => {
+                    }
+                    | ValueType::Sigma { first, second } => {
                         pending.push(CoreNode::ValueType(first));
                         pending.push(CoreNode::ValueType(second));
                     },

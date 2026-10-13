@@ -307,6 +307,14 @@
 //! binds it judges itself. The choice reverses if the kernel gains a split of
 //! its own.
 //!
+//! A split under a motive does not cross as binds: the binds' body would
+//! answer the motive at the scrutinee, not at the pair of its components, so
+//! the projections would not type it. It crosses as the kernel's dependent
+//! split (`SigmaSplit`, tag `0x6B`), scrutinee, motive and body each erased in
+//! turn, and the kernel judges the motive at the scrutinee itself.
+//! `bridge::tests::a_dependent_pair_and_its_identity_are_readmitted` crosses
+//! one under a motive that reads its scrutinee's first projection.
+//!
 //! # The export carries the producer's names
 //!
 //! [`Readmission::export`] encodes the environment the kernel built: each
@@ -340,6 +348,7 @@ use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
+use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -2344,6 +2353,36 @@ enum Frame
         /// The split.
         at: ComputationId,
     },
+    /// A dependent split, awaiting its scrutinee's image.
+    SigmaSplitScrutinee
+    {
+        /// The split.
+        at: ComputationId,
+        /// Its motive, erased next.
+        motive: CompTypeId,
+        /// Its body, erased after the motive.
+        body: ComputationId,
+    },
+    /// A dependent split, awaiting its motive's image.
+    SigmaSplitMotive
+    {
+        /// The split.
+        at: ComputationId,
+        /// The scrutinee's image.
+        scrutinee: gandr_kernel_term::ValueId,
+        /// Its body, erased next.
+        body: ComputationId,
+    },
+    /// A dependent split, awaiting its body's image.
+    SigmaSplitBody
+    {
+        /// The split.
+        at: ComputationId,
+        /// The scrutinee's image.
+        scrutinee: gandr_kernel_term::ValueId,
+        /// The motive's image.
+        motive: gandr_kernel_term::CompTypeId,
+    },
     /// A force, awaiting its value.
     Force
     {
@@ -2543,6 +2582,22 @@ enum Frame
         at: ValueTypeId,
         /// The domain's image.
         domain: gandr_kernel_term::ValueTypeId,
+    },
+    /// A dependent pair, awaiting its first factor.
+    SigmaFirst
+    {
+        /// The dependent pair.
+        at: ValueTypeId,
+        /// The second factor, erased next.
+        second: ValueTypeId,
+    },
+    /// A dependent pair, awaiting its second factor.
+    SigmaSecond
+    {
+        /// The dependent pair.
+        at: ValueTypeId,
+        /// The first factor's image.
+        first: gandr_kernel_term::ValueTypeId,
     },
     /// A decode of a code that is a static application at a rigid head,
     /// awaiting the code's value.
@@ -4219,7 +4274,17 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Computation::Case { .. } => return self.prepare_native(target, node),
             | Computation::Split {
                 scrutinee,
+                motive: SplitMotive::Scrutinee(motive),
+                body,
+                ..
+            } => (
+                Frame::SigmaSplitScrutinee { at, motive, body },
+                TermNode::Value(scrutinee),
+            ),
+            | Computation::Split {
+                scrutinee,
                 arity,
+                motive: SplitMotive::Ambient,
                 body,
             } => (
                 Frame::SplitReduct { at },
@@ -4419,6 +4484,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | ValueTypeView::StaticPi { domain, codomain } => (
                 Frame::StaticPiDomain { at, codomain },
                 CoreNode::Type(TypeNode::Value(domain)),
+            ),
+            | ValueTypeView::Sigma { first, second } => (
+                Frame::SigmaFirst { at, second },
+                CoreNode::Type(TypeNode::Value(first)),
             ),
         };
         self.memo().value_types.insert(at, Image::Open);
@@ -5394,6 +5463,38 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::UnmarkedComputation { at } | Frame::SplitReduct { at },
                 AnyNode::Computation(image),
             ) => Ok(self.erased_computation(at, image)),
+            | (Frame::SigmaSplitScrutinee { at, motive, body }, AnyNode::Value(scrutinee)) => {
+                self.frames.push(Frame::SigmaSplitMotive {
+                    at,
+                    scrutinee,
+                    body,
+                });
+                Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(motive))))
+            },
+            | (
+                Frame::SigmaSplitMotive {
+                    at,
+                    scrutinee,
+                    body,
+                },
+                AnyNode::CompType(motive),
+            ) => {
+                self.frames.push(Frame::SigmaSplitBody {
+                    at,
+                    scrutinee,
+                    motive,
+                });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(body))))
+            },
+            | (
+                Frame::SigmaSplitBody {
+                    at,
+                    scrutinee,
+                    motive,
+                },
+                AnyNode::Computation(body),
+            ) => Ok(self
+                .erased_computation(at, target.computation_sigma_split(scrutinee, motive, body))),
             | (Frame::StaticHead { at, argument }, AnyNode::Value(head)) => {
                 self.frames.push(Frame::StaticArgument { at, head });
                 Ok(Step::Descend(CoreNode::Term(TermNode::Value(argument))))
@@ -5410,6 +5511,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             | (Frame::StaticPiCodomain { at, domain }, AnyNode::ValueType(codomain)) => {
                 Ok(self.erased_value_type(at, target.value_type_static_pi(domain, codomain)))
+            },
+            | (Frame::SigmaFirst { at, second }, AnyNode::ValueType(first)) => {
+                self.frames.push(Frame::SigmaSecond { at, first });
+                Ok(Step::Descend(CoreNode::Type(TypeNode::Value(second))))
+            },
+            | (Frame::SigmaSecond { at, first }, AnyNode::ValueType(second)) => {
+                Ok(self.erased_value_type(at, target.value_type_sigma(first, second)))
             },
             | (Frame::DecodeOf { level, sort }, AnyNode::Value(code)) => {
                 Ok(Step::Ascend(decoded(target, code, level, sort)))
@@ -5428,7 +5536,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::WithSecond { .. }
                 | Frame::Project { .. }
                 | Frame::UnmarkedComputation { .. }
-                | Frame::SplitReduct { .. },
+                | Frame::SplitReduct { .. }
+                | Frame::SigmaSplitBody { .. },
                 AnyNode::Value(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
             )
             | (
@@ -5438,6 +5547,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::WithTypeFirst { .. }
                 | Frame::WithTypeSecond { .. }
                 | Frame::PiCodomain { .. }
+                | Frame::SigmaSplitMotive { .. }
                 | Frame::TelescopeMotive { .. }
                 | Frame::Decoded {
                     at: TypeNode::Computation(_),
@@ -5485,7 +5595,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::ForwardTranslator { .. }
                 | Frame::ForwardImages(_)
                 | Frame::FunctionFlowDomain { .. }
-                | Frame::FunctionFlowCodomain { .. },
+                | Frame::FunctionFlowCodomain { .. }
+                | Frame::SigmaSplitScrutinee { .. },
                 AnyNode::Computation(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
             )
             | (
@@ -5505,6 +5616,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::PiDomain { .. }
                 | Frame::StaticPiDomain { .. }
                 | Frame::StaticPiCodomain { .. }
+                | Frame::SigmaFirst { .. }
+                | Frame::SigmaSecond { .. }
                 | Frame::ForwardType { .. }
                 | Frame::FunctionFlowType { .. }
                 | Frame::Decoded {
@@ -7423,6 +7536,100 @@ mod tests
                 Some(&gandr_kernel_term::Computation::Application(..))
             ),
             "over the application it erases, not the value it returns"
+        );
+    }
+
+    #[test]
+    fn a_dependent_pair_and_its_identity_are_readmitted()
+    {
+        // def ring   : Σ (n : Integer). Path(Integer, n, n) = #{0, here(0)} ;
+        // def lap    : U (Π (p : Σ…). F Path(Integer, ⟨p.0⟩, ⟨p.0⟩))
+        //            = thunk { \p. split p under F Path(…) as (m, w). return w } ;
+        // def second : U (Π (p : Σ…). F Path(Integer, ⟨p.0⟩, ⟨p.0⟩))
+        //            = thunk { \p. p.1 } ;
+        // def both   : Path(Σ…, #{0, here(0)}, #{0, here(0)})
+        //            = #{here(0), here(here(0))} ;
+        // def moved  : U (F Integer) = thunk { tr(s. Integer, both, 0) } ;
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let looped = arena.value_type_path(integer, bound, bound);
+        let sigma = arena.value_type_sigma(integer, looped);
+        let zero = arena.value_literal(integer_literal());
+        let here = arena.value_here(zero);
+        let pair = arena.value_tuple(&[zero, here]);
+        let projected =
+            arena.computation_tuple_projection(bound, gandr_kernel_term::Component::from(0_usize));
+        let projected = arena.value_returned(projected);
+        let at_first = arena.value_type_path(integer, projected, projected);
+        let answer = arena.comp_type_returner(at_first);
+        let dependent = arena.comp_type_pi(sigma, answer);
+        let suspended = arena.value_type_thunk(dependent);
+        let returns_second = arena.computation_return(bound);
+        let split = arena.computation_dependent_split(
+            bound,
+            gandr_core_term::ComponentCount::from(2_usize),
+            answer,
+            returns_second,
+        );
+        let split = arena.computation_lambda(split);
+        let split = arena.value_thunk(split);
+        let second =
+            arena.computation_tuple_projection(bound, gandr_kernel_term::Component::from(1_usize));
+        let second = arena.computation_lambda(second);
+        let second = arena.value_thunk(second);
+        let identity = arena.value_type_path(sigma, pair, pair);
+        let here_here = arena.value_here(here);
+        let paths = arena.value_tuple(&[here, here_here]);
+        let both = arena.value_constant(ConstantIndex::from(3_usize));
+        let constant = arena.value_type_base(BaseType::Integer);
+        let transport = arena.computation_path_transport(constant, both, zero);
+        let moved = arena.value_thunk(transport);
+        let returns_integer = arena.comp_type_returner(integer);
+        let suspended_integer = arena.value_type_thunk(returns_integer);
+        let module = [
+            declaration(At(0), Maybe::Present(sigma), Maybe::Present(pair)),
+            declaration(At(1), Maybe::Present(suspended), Maybe::Present(split)),
+            declaration(At(2), Maybe::Present(suspended), Maybe::Present(second)),
+            declaration(At(3), Maybe::Present(identity), Maybe::Present(paths)),
+            declaration(
+                At(4),
+                Maybe::Present(suspended_integer),
+                Maybe::Present(moved),
+            ),
+        ];
+        let (report, readmission) = judge_and_readmit(&mut arena, &module);
+        let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+        assert!(
+            verdicts
+                .iter()
+                .all(|verdict| matches!(verdict, Verdict::Checked { .. })),
+            "the judgement accepts the pair, the split, the projection, the path and the \
+             transport: {verdicts:?}"
+        );
+        let outcomes: Vec<_> = readmission
+            .readmitted()
+            .iter()
+            .map(|entry| entry.outcome().clone())
+            .collect();
+        assert!(
+            outcomes
+                .iter()
+                .all(|outcome| matches!(*outcome, Outcome::Defined { .. })),
+            "each crosses and the kernel re-derives it: {outcomes:?}"
+        );
+        let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+        let declared = artifact
+            .declarations()
+            .first()
+            .map(|marked| marked.declaration().declared_id())
+            .unwrap();
+        assert!(
+            matches!(
+                artifact.arena().value_type(declared),
+                Some(&KernelValueType::Sigma { .. })
+            ),
+            "the dependent pair crosses as the kernel's own former"
         );
     }
 

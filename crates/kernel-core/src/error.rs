@@ -59,6 +59,8 @@ pub enum ValueTypeHead
     Base,
     /// A product, the unit type among them.
     Product,
+    /// A dependent pair.
+    Sigma,
     /// A sum, the empty type among them.
     Sum,
     /// A strictly positive list fixed point.
@@ -99,6 +101,7 @@ impl ValueTypeHead
             | ValueType::Base(_) => Self::Base,
             | ValueType::Element { .. } => Self::Element,
             | ValueType::Product(..) => Self::Product,
+            | ValueType::Sigma { .. } => Self::Sigma,
             | ValueType::Sum(..) => Self::Sum,
             | ValueType::Session { .. } => Self::Session,
             | ValueType::List(_) => Self::List,
@@ -266,6 +269,8 @@ pub enum ExpectedValueShape
     Path,
     /// A product, for a pair.
     Product,
+    /// A dependent pair, for a dependent split's scrutinee.
+    Sigma,
     /// A sum, for an injection or a case scrutinee.
     Sum,
     /// A native list, for nil and cons.

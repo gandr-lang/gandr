@@ -49,6 +49,24 @@
 //! unannotated when its tree eliminates native data. Reversal: a checker that
 //! takes the motive from the checking direction makes the answer optional.
 //!
+//! A pattern at a scrutinee written with a dependent record (`lower::arity`)
+//! splits each link of its nesting: a link the type binds by a dependent
+//! split, whose motive is the answer with the split's scrutinee abstracted,
+//! and a product link by a split of two. The answers are read from the root
+//! down: a data case passes its answer to its branches under their fields,
+//! a dependent split's arm answers the motive at the pair of its two
+//! binders, and every other test passes its answer under the binders it
+//! opens. A scrutinee that is a variable is abstracted wherever the answer
+//! reads it, so an arm's answer reads the pair it matched; any other
+//! scrutinee gives the motive that ignores its binder. A match with a
+//! dependent split and no answer is refused as unannotated.
+//!
+//! - Alternatives: projections in place of the split, which leave the arm's
+//!   answer reading the scrutinee rather than its components; a motive left for
+//!   the checker to infer, which is higher-order unification.
+//! - Reversal: a checker that infers the motive from the checking direction
+//!   makes the abstraction here unnecessary.
+//!
 //! # The patterns are kept beside the tree
 //!
 //! The tree does not keep the patterns, so the origin table does: per match,
@@ -240,6 +258,7 @@ use gandr_core_term::ConstructorTag;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
 use gandr_core_term::Sort;
+use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
@@ -276,6 +295,7 @@ use super::Sink;
 use super::Site;
 use super::Stretch;
 use super::arity;
+use super::arity::Dependent;
 use super::closed;
 use super::exhausted;
 use super::exits;
@@ -599,6 +619,9 @@ enum Matcher
     {
         /// The component patterns, in the part store.
         fields: Stretch,
+        /// Whether its split reads the motive at the scrutinee: a link of a
+        /// dependent record whose label a later entry names.
+        dependent: Dependent,
     },
     /// A labelled telescope `#{.l = p, …}`: the fields it names.
     Record
@@ -729,6 +752,8 @@ enum Test
         depth: Depth,
         /// How many components it binds.
         arity: usize,
+        /// Whether the split reads its motive at the scrutinee.
+        dependent: Dependent,
         /// The child under them.
         child: TestAt,
     },
@@ -888,8 +913,8 @@ enum Head
     Boolean,
     /// This integer.
     Integer(Literal),
-    /// A tuple of this many components.
-    Tuple(usize),
+    /// A tuple of this many components, split dependently or not.
+    Tuple(usize, Dependent),
     /// A record.
     Record,
     /// An injection into a sum of this many summands.
@@ -1547,7 +1572,16 @@ impl<'source> Lowerer<'_, 'source>
             variables.push(bound);
         }
         let tests = self.compile(site, &patterns, rows)?;
-        let eliminates = tests.iter().any(|test| matches!(*test, Test::Data { .. }));
+        let eliminates = tests.iter().any(|test| {
+            matches!(
+                *test,
+                Test::Data { .. }
+                    | Test::Split {
+                        dependent: Dependent(true),
+                        ..
+                    }
+            )
+        });
         let answer = match written {
             | Maybe::Present(node) => Maybe::Present(Answer {
                 node: node.node,
@@ -1956,12 +1990,16 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `entries` are the entries of the pattern at `here`.
-    /// - ensures: positional entries, in index order, make a tuple; labelled
-    ///   ones a record of their labels; each component queued with the
-    ///   positional type of the same place, or the labelled type of the same
-    ///   label, of the telescope type `stated` writes, when it writes one.
+    /// - ensures: at a scrutinee written with a dependent record, labelled
+    ///   entries and positional ones of its arity are its nested pairs, as
+    ///   [`Self::dependent_components`] reads them; otherwise positional
+    ///   entries, in index order, make a tuple and labelled ones a record of
+    ///   their labels; each component queued with the positional type of the
+    ///   same place, or the labelled type of the same label, of the telescope
+    ///   type `stated` writes, when it writes one.
     /// - fails: the entries' arrangement refusals; the stated type's own
-    ///   malformation.
+    ///   malformation; the unresolved-name refusal for a label the dependent
+    ///   record lacks.
     /// - panics: none.
     ///
     /// # Errors
@@ -1969,8 +2007,9 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — positional, reordered and labelled telescope
-    ///   patterns, and a tuple pattern.
+    ///   patterns, a tuple pattern, and patterns at a dependent record.
     /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
+    /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |shape| matches!(*shape, Matcher::Tuple { .. } | Matcher::Record { .. })))]
     fn components(
         &mut self,
@@ -1981,12 +2020,27 @@ impl<'source> Lowerer<'_, 'source>
         work: &mut Vec<Queued>,
     ) -> Result<Matcher, LoweringRefusal<'source>>
     {
-        let typed = match stated {
+        let form = match stated {
             | Maybe::Present(node) => {
-                self.stated_entries(here, node, Former::TelescopeType, arity::Thunked(false))?
+                self.stated_form(here, node, Former::TelescopeType, arity::Thunked(false))?
             },
             | Maybe::Absent(_) => Maybe::Absent(arity::stated_labels::Absent::Otherwise),
         };
+        let arranged = arity::arrange(here, entries.to_vec())?;
+        let links = match form {
+            | Maybe::Present((_, ref typed)) => self.dependent_links(typed)?,
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        if let Maybe::Present((_, ref typed)) = form
+            && let Maybe::Present(ref links) = links
+            && match arranged {
+                | arity::Arranged::Positional(ref entries) => entries.len() == typed.len(),
+                | arity::Arranged::Labelled(_) => true,
+            }
+        {
+            return Self::dependent_components(here, typed, links, arranged, patterns, work);
+        }
+        let typed = form.map(|(_node, typed)| typed);
         let untyped = Maybe::Absent(binder_type::Absent::Untyped);
         let queue = |entry: &arity::Entry<'source>, stated| Queued {
             at: entry.held.at(),
@@ -1994,7 +2048,7 @@ impl<'source> Lowerer<'_, 'source>
             stated,
             punned: Punned(matches!(entry.held, arity::Held::Punned(_))),
         };
-        match arity::arrange(here, entries.to_vec())? {
+        match arranged {
             | arity::Arranged::Positional(entries) => {
                 let queued: Vec<Queued> = match typed {
                     | Maybe::Present(ref typed)
@@ -2017,6 +2071,7 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 Ok(Matcher::Tuple {
                     fields: allocated(patterns, work, &queued),
+                    dependent: Dependent(false),
                 })
             },
             | arity::Arranged::Labelled(entries) => {
@@ -2043,6 +2098,126 @@ impl<'source> Lowerer<'_, 'source>
                 })
             },
         }
+    }
+
+    /// The nested pairs a pattern at a dependent record matches: its
+    /// entries placed by the record's written order, the links nested to the
+    /// right.
+    ///
+    /// # Specification
+    /// - requires: `typed` are the entries of the dependent record the
+    ///   scrutinee's position states, `links` whether each but the last binds
+    ///   the ones after it, and `arranged` the pattern's entries: positional
+    ///   ones of the record's arity, or labelled ones.
+    /// - ensures: one tuple of two per link, the outermost returned and each
+    ///   inner one a part after its parent: the link's entry, then the next
+    ///   link or the last entry; a split of a link that binds is dependent; a
+    ///   place no entry names is a wildcard; each written entry queued with its
+    ///   place's type, in written order.
+    /// - fails: the unresolved-name refusal for a label the record lacks.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnresolvedName`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a positional and a labelled pattern at a dependent
+    ///   record of two, and a labelled one at a record of three naming two of
+    ///   its labels.
+    /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |shape| matches!(*shape, Matcher::Tuple { fields, .. } if fields.end.saturating_sub(fields.start) == 2_usize)))]
+    fn dependent_components(
+        here: Site,
+        typed: &[arity::Entry<'source>],
+        links: &[Dependent],
+        arranged: arity::Arranged<'source>,
+        patterns: &mut Written,
+        work: &mut Vec<Queued>,
+    ) -> Result<Matcher, LoweringRefusal<'source>>
+    {
+        let mut placed: Vec<Option<(usize, arity::Entry<'source>)>> =
+            alloc::vec![None; typed.len()];
+        match arranged {
+            | arity::Arranged::Positional(entries) => {
+                for (written, (slot, entry)) in placed.iter_mut().zip(entries).enumerate() {
+                    *slot = Some((written, entry));
+                }
+            },
+            | arity::Arranged::Labelled(entries) => {
+                for (written, entry) in entries.into_iter().enumerate() {
+                    let arity::Key::Label(name, key) = entry.key
+                    else {
+                        continue;
+                    };
+                    let (arity::Place(place), _) = Self::labelled_in(typed, name, key)?;
+                    if let Some(slot) = placed.get_mut(place) {
+                        *slot = Some((written, entry));
+                    }
+                }
+            },
+        }
+        let mut queued: Vec<(usize, Queued)> = Vec::with_capacity(typed.len());
+        let mut part = |patterns: &mut Written, place: usize| -> PatternAt {
+            let slot = PatternAt(patterns.shapes.len());
+            let entry = placed.get(place).copied().flatten();
+            patterns.shapes.push((
+                entry.map_or(here.at, |(_, entry)| entry.held.at()),
+                Matcher::Wild,
+            ));
+            if let Some((written, entry)) = entry {
+                queued.push((written, Queued {
+                    at: entry.held.at(),
+                    slot,
+                    stated: typed
+                        .get(place)
+                        .map_or(Maybe::Absent(binder_type::Absent::Untyped), |component| {
+                            Maybe::Present(component.held.at().node)
+                        }),
+                    punned: Punned(matches!(entry.held, arity::Held::Punned(_))),
+                }));
+            }
+            slot
+        };
+        let mut outer = None;
+        let mut pending: Option<PatternAt> = None;
+        for (link, &dependent) in links.iter().enumerate() {
+            let first = part(patterns, link);
+            let second = if link.saturating_add(2) >= typed.len() {
+                part(patterns, link.saturating_add(1))
+            }
+            else {
+                let slot = PatternAt(patterns.shapes.len());
+                patterns.shapes.push((here.at, Matcher::Wild));
+                slot
+            };
+            let start = patterns.parts.len();
+            patterns.parts.extend([first, second]);
+            let matcher = Matcher::Tuple {
+                fields: Stretch {
+                    start,
+                    end: patterns.parts.len(),
+                },
+                dependent,
+            };
+            match pending {
+                | Some(slot) => {
+                    if let Some(held) = patterns.shapes.get_mut(slot.0) {
+                        held.1 = matcher;
+                    }
+                },
+                | None => outer = Some(matcher),
+            }
+            pending = Some(second);
+        }
+        queued.sort_by_key(|&(written, _)| core::cmp::Reverse(written));
+        work.extend(queued.into_iter().map(|(_, each)| each));
+
+        outer.ok_or_else(|| LoweringRefusal::OutOfFragment {
+            span: here.at.span,
+            form: here.name,
+            sort: here.reading.sort(),
+            boundary: FragmentBoundary::WrongSort,
+        })
     }
 
     /// The injection shape of a sum pattern `+{ key = payload }` whose
@@ -2212,8 +2387,8 @@ impl<'source> Lowerer<'_, 'source>
                     | Matcher::Constructor { form, .. } => Head::Data(form),
                     | Matcher::Boolean(_) => Head::Boolean,
                     | Matcher::Integer(ref literal) => Head::Integer(literal.clone()),
-                    | Matcher::Tuple { fields } => {
-                        Head::Tuple(fields.end.saturating_sub(fields.start))
+                    | Matcher::Tuple { fields, dependent } => {
+                        Head::Tuple(fields.end.saturating_sub(fields.start), dependent)
                     },
                     | Matcher::Record { .. } => Head::Record,
                     | Matcher::Injection { arity, .. } => Head::Sum(arity),
@@ -2239,7 +2414,9 @@ impl<'source> Lowerer<'_, 'source>
             | Head::Data(form) => self.switch_data(patterns, item, switch, form, tree),
             | Head::Boolean => self.switch_boolean(patterns, item, switch, tree),
             | Head::Integer(literal) => self.switch_integer(patterns, item, switch, literal, tree),
-            | Head::Tuple(arity) => self.switch_tuple(patterns, item, switch, Width(arity), tree),
+            | Head::Tuple(arity, dependent) => {
+                self.switch_tuple(patterns, item, switch, Width(arity), dependent, tree)
+            },
             | Head::Record => self.switch_record(patterns, item, switch, tree),
             | Head::Sum(arity) => self.switch_sum(patterns, item, switch, Width(arity), tree),
         }
@@ -2476,11 +2653,11 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `switch`'s column holds a tuple of `arity` components in the
-    ///   item's first row.
-    /// - ensures: a split whose child holds every row, the column replaced by
-    ///   the components a tuple pattern writes or by wildcards for a pattern
-    ///   matching anything, under `arity` more binders, component zero
-    ///   outermost.
+    ///   item's first row, split dependently as `dependent` says.
+    /// - ensures: a split, dependent as the column's tuple is, whose child
+    ///   holds every row, the column replaced by the components a tuple pattern
+    ///   writes or by wildcards for a pattern matching anything, under `arity`
+    ///   more binders, component zero outermost.
     /// - fails: the switch's wrong-sort refusal for a row whose pattern in the
     ///   column is a tuple of another arity or of another kind;
     ///   [`LoweringRefusal::BudgetExceeded`].
@@ -2490,16 +2667,19 @@ impl<'source> Lowerer<'_, 'source>
     /// As stated.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a positional telescope pattern of three binders and a
-    ///   tuple pattern each reach their arm at the component's level.
+    /// - hypothesis: L3 — a positional telescope pattern of three binders, a
+    ///   tuple pattern and a pattern at a dependent record each reach their arm
+    ///   at the component's level.
     /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |test| matches!(*test, Test::Split { arity: held, .. } if held == width.0)))]
+    /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |test| matches!(*test, Test::Split { arity: held, dependent: split, .. } if held == width.0 && split == dependent)))]
     fn switch_tuple(
         &mut self,
         patterns: &Written,
         item: &Work,
         switch: Switch<'source>,
         width: Width,
+        dependent: Dependent,
         tree: &mut Compiling,
     ) -> Result<Test, LoweringRefusal<'source>>
     {
@@ -2510,7 +2690,9 @@ impl<'source> Lowerer<'_, 'source>
             let mut next = row.clone();
             let held = patterns.entry(row, switch.column);
             let replacement = match *held {
-                | Matcher::Tuple { fields } if fields.end.saturating_sub(fields.start) == arity => {
+                | Matcher::Tuple { fields, .. }
+                    if fields.end.saturating_sub(fields.start) == arity =>
+                {
                     patterns
                         .parts
                         .get(fields.start .. fields.end)
@@ -2541,6 +2723,7 @@ impl<'source> Lowerer<'_, 'source>
             level: switch.level,
             depth: item.depth,
             arity,
+            dependent,
             child,
         })
     }
@@ -2779,7 +2962,7 @@ impl<'source> Lowerer<'_, 'source>
                     tag: ConstructorTag::from(tag),
                     fields: parts(fields),
                 },
-                | Matcher::Tuple { fields } => match *parts(fields).as_slice() {
+                | Matcher::Tuple { fields, .. } => match *parts(fields).as_slice() {
                     | [] => Pattern::Unit,
                     | [first, second] => Pattern::Pair(first, second),
                     | ref several => Pattern::Constructor {
@@ -3184,6 +3367,19 @@ impl<'source> Lowerer<'_, 'source>
             scrutinee,
             outer: Depth(self.scope.telescope_binders(form.frame).count()),
         };
+        let tracked = match motive {
+            | Maybe::Present((base, gap))
+                if form.tests.iter().any(|test| {
+                    matches!(*test, Test::Split {
+                        dependent: Dependent(true),
+                        ..
+                    })
+                }) =>
+            {
+                tracked_motives(&form.tests, base, gap, scrutinised, sink.arena)
+            },
+            | Maybe::Present(_) | Maybe::Absent(_) => Vec::new(),
+        };
         let mut minted: Vec<Maybe<ComputationId, lowered::Absent>> = Vec::from_iter(
             form.tests
                 .iter()
@@ -3191,12 +3387,16 @@ impl<'source> Lowerer<'_, 'source>
         );
         let mut copies = Vec::new();
         for (position, test) in form.tests.iter().enumerate().rev() {
+            let read = tracked
+                .get(position)
+                .copied()
+                .unwrap_or(Maybe::Absent(lowered::Absent::Unminted));
             let id = mint_test(
                 test,
                 scrutinised,
                 &bodies,
                 &minted,
-                motive,
+                (motive, read),
                 sink,
                 &mut copies,
             );
@@ -3260,27 +3460,212 @@ struct Scrutinised
     outer: Depth,
 }
 
+/// The motive of every data case and dependent split of a tree with a
+/// dependent split, read from the root down.
+///
+/// # Specification
+/// - requires: `tests` is a compiled tree, every child after its parent; `base`
+///   is the answer in the term context of its own frame, `gap` the binders the
+///   case's frame adds to it.
+/// - ensures: one entry per node. The root answers `base` under `gap` more
+///   binders; a data case's motive is its answer under the scrutinee's binder
+///   and its branches answer it under their fields; a dependent split's motive
+///   is its answer with its scrutinee abstracted, as [`abstracted`] reads it,
+///   and its child answers that motive at the pair of its two components; every
+///   other node passes its answer to its children under the binders it opens.
+///   Nodes other than data cases and dependent splits answer nothing.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a split whose answer names its scrutinee reads it back at
+///   the pair of its components, and one whose answer does not keeps it.
+/// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
+#[spec(ensures: |ret| ret.len() == tests.len())]
+fn tracked_motives(
+    tests: &[Test],
+    base: CompTypeId,
+    gap: Depth,
+    scrutinised: Scrutinised,
+    arena: &mut CoreArena,
+) -> Vec<Maybe<CompTypeId, lowered::Absent>>
+{
+    let binders = |count: usize| Binders::from(u32::try_from(count).unwrap_or(u32::MAX));
+    let mut expected: Vec<Option<CompTypeId>> = alloc::vec![None; tests.len()];
+    let mut motives = alloc::vec![Maybe::Absent(lowered::Absent::Unminted); tests.len()];
+    if let Some(root) = expected.first_mut() {
+        *root = Some(gandr_core_term::shift_comp_type(
+            arena,
+            base,
+            binders(gap.0),
+        ));
+    }
+    for (position, test) in tests.iter().enumerate() {
+        let Some(here) = expected.get(position).copied().flatten()
+        else {
+            continue;
+        };
+        let mut answers: Vec<(TestAt, CompTypeId)> = Vec::new();
+        let mut under = |arena: &mut CoreArena, at: TestAt, count: usize| {
+            answers.push((
+                at,
+                gandr_core_term::shift_comp_type(arena, here, binders(count)),
+            ));
+        };
+        match *test {
+            | Test::Pending | Test::Stuck(_) | Test::Leaf { .. } => {},
+            | Test::Data { ref branches, .. } => {
+                if let Some(slot) = motives.get_mut(position) {
+                    *slot =
+                        Maybe::Present(gandr_core_term::shift_comp_type(arena, here, Binders::ONE));
+                }
+                for &(arity, at) in branches {
+                    under(arena, at, arity);
+                }
+            },
+            | Test::Boolean { yes, no, .. } => {
+                under(arena, yes, 1_usize);
+                under(arena, no, 1_usize);
+            },
+            | Test::Integer { yes, no, .. } => {
+                under(arena, yes, 2_usize);
+                under(arena, no, 2_usize);
+            },
+            | Test::Split {
+                arity,
+                dependent: Dependent(false),
+                child,
+                ..
+            } => under(arena, child, arity),
+            | Test::Split {
+                level,
+                depth,
+                dependent: Dependent(true),
+                child,
+                ..
+            } => {
+                let scrutinee = level_value(arena, scrutinised, depth, level);
+                let context = Depth(scrutinised.outer.0.saturating_add(depth.0));
+                let motive = abstracted(arena, here, scrutinee, context);
+                if let Some(slot) = motives.get_mut(position) {
+                    *slot = Maybe::Present(motive);
+                }
+                let lifted = gandr_core_term::shift_comp_type_under(
+                    arena,
+                    motive,
+                    Binders::ONE,
+                    binders(2_usize),
+                );
+                let first = variable(arena, Depth(1_usize));
+                let second = variable(arena, Depth::default());
+                let pair = arena.value_tuple(&[first, second]);
+                answers.push((
+                    child,
+                    gandr_core_term::instantiate_comp_type(arena, lifted, pair),
+                ));
+            },
+            | Test::Record {
+                ref labels, child, ..
+            } => under(arena, child, labels.len()),
+            | Test::Sum { ref branches, .. } => {
+                for &at in branches {
+                    under(arena, at, 1_usize);
+                }
+            },
+        }
+        for (at, answer) in answers {
+            if let Some(slot) = expected.get_mut(at.0) {
+                *slot = Some(answer);
+            }
+        }
+    }
+
+    motives
+}
+
+/// `ty`, read under `context` binders, with the value `scrutinee` abstracted
+/// as one binder more: the motive a dependent split reads.
+///
+/// # Specification
+/// - requires: `ty` and `scrutinee` are read under `context` binders.
+/// - ensures: for an intuitionistic variable `context` binders hold, `ty` under
+///   one binder more with that variable read as the new binder and every other
+///   index read one further out; for any other scrutinee, `ty` under one binder
+///   more, reading none of it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an answer naming the scrutinee parameter abstracts it,
+///   and one naming another parameter keeps it.
+/// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
+#[spec(ensures: |ret| arena.comp_type(ret).is_some())]
+fn abstracted(
+    arena: &mut CoreArena,
+    ty: CompTypeId,
+    scrutinee: ValueId,
+    context: Depth,
+) -> CompTypeId
+{
+    let held = match arena.value(scrutinee) {
+        | Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        }) => usize::try_from(u32::from(index)).unwrap_or(usize::MAX),
+        | _ => usize::MAX,
+    };
+    if held >= context.0 {
+        return gandr_core_term::shift_comp_type(arena, ty, Binders::ONE);
+    }
+    let environment: Vec<ValueId> = (0 .. context.0)
+        .map(|position| {
+            if position == held {
+                variable(arena, Depth::default())
+            }
+            else {
+                variable(arena, Depth(position.saturating_add(1)))
+            }
+        })
+        .collect();
+    let quoted = arena.value_quote_computation(ty);
+    match gandr_core_term::substitute_environment(arena, TermId::Value(quoted), &environment) {
+        | TermId::Value(substituted) => match arena.value(substituted) {
+            | Some(&Value::QuoteComputation(motive)) => motive,
+            | _ => gandr_core_term::shift_comp_type(arena, ty, Binders::ONE),
+        },
+        | TermId::Computation(_) => gandr_core_term::shift_comp_type(arena, ty, Binders::ONE),
+    }
+}
+
 /// Mint one node of a match's tree over its already minted children.
 ///
 /// # Specification
-/// - requires: every child of `test` is minted in `minted` or absent.
-/// - ensures: as [`Lowerer::mint_case`], for one node; nothing when a child,
-///   the arm's body or a needed motive is absent. A leaf's copy of an exit or
-///   of a bind whose rest is distributed is recorded as its original is, and
-///   every copy a leaf makes is reported in `copies` beside its original.
+/// - requires: every child of `test` is minted in `minted` or absent; the pair
+///   holds the answer relocated with its gap, and the motive
+///   [`tracked_motives`] read for this node in a tree with a dependent split.
+/// - ensures: as [`Lowerer::mint_case`], for one node; a data case reads the
+///   read motive when there is one, a dependent split always; nothing when a
+///   child, the arm's body or a needed motive is absent. A leaf's copy of an
+///   exit or of a bind whose rest is distributed is recorded as its original
+///   is, and every copy a leaf makes is reported in `copies` beside its
+///   original.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Lowerer::mint_case`].
 /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
+/// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
 #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
 fn mint_test(
     test: &Test,
     scrutinised: Scrutinised,
     bodies: &[Maybe<ComputationId, lowered::Absent>],
     minted: &[Maybe<ComputationId, lowered::Absent>],
-    motive: Maybe<(CompTypeId, Depth), lowered::Absent>,
+    (motive, read): (
+        Maybe<(CompTypeId, Depth), lowered::Absent>,
+        Maybe<CompTypeId, lowered::Absent>,
+    ),
     sink: &mut Sink<'_>,
     copies: &mut Vec<Carried>,
 ) -> Maybe<ComputationId, lowered::Absent>
@@ -3349,9 +3734,14 @@ fn mint_test(
                 }
                 lowered_branches.push(branch);
             }
-            let lift =
-                u32::try_from(gap.0.saturating_add(depth.0).saturating_add(1)).unwrap_or(u32::MAX);
-            let shifted = gandr_core_term::shift_comp_type(sink.arena, base, Binders::from(lift));
+            let shifted = match read {
+                | Maybe::Present(read) => read,
+                | Maybe::Absent(_) => {
+                    let lift = u32::try_from(gap.0.saturating_add(depth.0).saturating_add(1))
+                        .unwrap_or(u32::MAX);
+                    gandr_core_term::shift_comp_type(sink.arena, base, Binders::from(lift))
+                },
+            };
             let scrutinee = level_value(sink.arena, scrutinised, depth, level);
             Maybe::Present(
                 sink.arena
@@ -3400,6 +3790,7 @@ fn mint_test(
             level,
             depth,
             arity,
+            dependent,
             child: at,
         } => {
             let Maybe::Present(body) = child(at)
@@ -3407,6 +3798,18 @@ fn mint_test(
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
             let scrutinee = level_value(sink.arena, scrutinised, depth, level);
+            if dependent.0 {
+                let Maybe::Present(read) = read
+                else {
+                    return Maybe::Absent(lowered::Absent::Unminted);
+                };
+                return Maybe::Present(sink.arena.computation_dependent_split(
+                    scrutinee,
+                    ComponentCount::from(arity),
+                    read,
+                    body,
+                ));
+            }
             Maybe::Present(sink.arena.computation_split(
                 scrutinee,
                 ComponentCount::from(arity),
@@ -3748,8 +4151,80 @@ pub(super) fn record_since(
     record_copied_since(sink, mark, origin, root, &[]);
 }
 
+/// Record, for every copy a match's leaves made of a written variable, the
+/// binder the variable was written against.
+///
+/// A leaf places an arm's body under the binders its tests opened, so each
+/// written use in the body stands in the tree as the copy the substitution
+/// minted for it. The copy keeps the use's binder, which is what names the
+/// binders a split opens for its components: a type the copy's judgement
+/// spells, a dependent split's answer at its components say, reads them by
+/// the names the arm wrote. A pattern variable that binds the whole scrutinee
+/// stands for the scrutinee's own node, which the leaf did not mint; that
+/// node keeps the binding it was written with.
+///
+/// # Specification
+/// - requires: `carried` is what the rewrites since `floor` reported, and no
+///   variable the origin table records a binding for was minted after it.
+/// - ensures: every value minted after `floor` that `carried` maps a recorded
+///   use to holds that use's binder, recorded once, in ascending order of the
+///   copies; a value from before `floor` keeps what it held.
+/// - provides: what keeps a match leaf's copy of a use naming its binder.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a leaf's copy of an arm returning its two pattern
+///   variables swapped names each at the variable that binds it, and a variable
+///   binding the whole scrutinee leaves the scrutinee bound at its parameter; a
+///   copy left without its binding, bound at the other component, or a
+///   scrutinee rebound at the pattern fails the witness.
+/// - witness: `lower::native::tests::a_leaf_copy_keeps_each_use_naming_its_pattern_variable`
+#[spec(
+    requires: sink.arena.values_since(floor).next().is_none_or(|first| {
+        sink.origins.bindings().last().is_none_or(|&(held, _)| held < first)
+    }),
+    ensures: carried.iter().all(|pair| match *pair {
+        Carried::Value(held, written) => sink.arena.values_since(floor).next().is_none_or(|first| written < first)
+            || matches!(sink.origins.binding(held), Maybe::Absent(_))
+            || matches!(sink.origins.binding(written), Maybe::Present(_)),
+        _ => true,
+    }),
+)]
+fn carry_bindings(
+    sink: &mut Sink<'_>,
+    carried: &[Carried],
+    floor: gandr_core_term::ArenaWatermark,
+)
+{
+    let Some(first) = sink.arena.values_since(floor).next()
+    else {
+        return;
+    };
+    let mut copies: Vec<(ValueId, gandr_surface_syntax::ByteSpan)> = carried
+        .iter()
+        .filter_map(|pair| match *pair {
+            | Carried::Value(held, written) if first <= written => match sink.origins.binding(held)
+            {
+                | Maybe::Present(binder) => Some((written, binder)),
+                | Maybe::Absent(_) => None,
+            },
+            | Carried::Value(..)
+            | Carried::Computation(..)
+            | Carried::ValueType(..)
+            | Carried::CompType(..) => None,
+        })
+        .collect();
+    copies.sort_unstable_by_key(|&(written, _)| written);
+    copies.dedup_by_key(|&mut (written, _)| written);
+    for (written, binder) in copies {
+        sink.origins.record_binding(written, binder);
+    }
+}
+
 /// [`record_since`], each node `carried` reports as a copy at the origin of
-/// the node it was copied from.
+/// the node it was copied from, and each copy of a written use at the use's
+/// binder.
 ///
 /// # Specification
 /// - requires: nothing has been recorded for a node minted since `mark`, and
@@ -3758,7 +4233,9 @@ pub(super) fn record_since(
 ///   order in each family: the root its own; a node `carried` reports as a copy
 ///   the origin of the node it was copied from, a copy of a match's root that
 ///   match's record too; every other node `origin`. Each written variable the
-///   rewrite replaced by a node answering elsewhere is labelled with it.
+///   rewrite replaced by a node answering elsewhere is labelled with it, and a
+///   copy of a written use holds the use's binder, as [`carry_bindings`]
+///   states.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -3768,6 +4245,7 @@ pub(super) fn record_since(
 /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
 /// - witness: `lower::native::tests::a_leaf_keeps_its_arm_body_written`
 /// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
+/// - witness: `lower::native::tests::a_leaf_copy_keeps_each_use_naming_its_pattern_variable`
 #[spec(ensures: sink.arena.values_since(mark).all(|id| matches!(sink.origins.value(id), Maybe::Present(_)))
     && sink.arena.computations_since(mark).all(|id| match root {
         | Maybe::Present((held, written)) if held == id => sink.origins.computation(id) == Maybe::Present(written),
@@ -3807,6 +4285,7 @@ fn record_copied_since(
         sink.origins.record_comp_type(id, recorded);
     }
     exits::label_replaced(sink, carried);
+    carry_bindings(sink, carried, mark);
 }
 
 impl<'source> Lowerer<'_, 'source>

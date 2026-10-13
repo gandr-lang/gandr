@@ -123,6 +123,7 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
@@ -695,6 +696,9 @@ enum Task
     /// Assemble a split over the value term and the body binding this many
     /// components.
     Split(gandr_core_term::ComponentCount),
+    /// Assemble a dependent split over the value term, the motive and the body
+    /// binding this many components.
+    DependentSplit(gandr_core_term::ComponentCount),
     /// Assemble a constructor, including its normalized nominal classifier.
     Constructor
     {
@@ -800,6 +804,8 @@ enum Task
     Pi,
     /// Assemble a static Pi from the two value types on the stack.
     StaticPi,
+    /// Assemble a dependent pair from the two value types on the stack.
+    SigmaType,
     /// Read back the hole or the mark a neutral stands on.
     Suspended
     {
@@ -2101,6 +2107,11 @@ fn run(
             && machine.comps.len() == entry_comps
             && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(&Computation::Split { arity: actual, .. }) if actual == arity))
             && machine.value_types.len() == entry_value_types && machine.comp_types.len() == entry_comp_types,
+        | Task::DependentSplit(arity) => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(1) == Some(machine.values.len())
+            && machine.comps.len() == entry_comps
+            && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(&Computation::Split { arity: actual, motive: SplitMotive::Scrutinee(_), .. }) if actual == arity))
+            && machine.value_types.len() == entry_value_types && entry_comp_types.checked_sub(1) == Some(machine.comp_types.len()),
         | Task::ListFold => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(1) == Some(machine.values.len())
             && entry_comps.checked_sub(1) == Some(machine.comps.len())
@@ -2125,7 +2136,7 @@ fn run(
             && entry_value_types.checked_sub(parts.len()).and_then(|left| left.checked_add(1)) == Some(machine.value_types.len())
             && machine.comp_types.len() == entry_comp_types
             && machine.value_types.last().is_some_and(|&id| core.value_type(id).is_some_and(|held| matches!(*held, ValueType::Product(ref result) | ValueType::Sum(ref result) if result.len() == parts.len()))))),
-        | Task::StaticPi => machine.tasks.len() == entry_tasks
+        | Task::StaticPi | Task::SigmaType => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
             && entry_value_types.checked_sub(2_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len())
@@ -2609,6 +2620,15 @@ fn step(
                 .push(core.computation_split(scrutinee, arity, body));
             Ok(())
         },
+        | Task::DependentSplit(arity) => {
+            let body = machine.pop_comp()?;
+            let motive = machine.pop_comp_type()?;
+            let scrutinee = machine.pop_value()?;
+            machine
+                .comps
+                .push(core.computation_dependent_split(scrutinee, arity, motive, body));
+            Ok(())
+        },
         | Task::Case(count) => {
             let start = machine
                 .comps
@@ -2772,6 +2792,14 @@ fn step(
             machine
                 .value_types
                 .push(core.value_type_static_pi(domain_type, codomain));
+            Ok(())
+        },
+        | Task::SigmaType => {
+            let second = machine.pop_value_type()?;
+            let first = machine.pop_value_type()?;
+            machine
+                .value_types
+                .push(core.value_type_sigma(first, second));
             Ok(())
         },
         | Task::Suspended {
@@ -2945,29 +2973,36 @@ fn held_level(
 ///
 /// # Specification
 /// - requires: `frame` binds every variable `quoted` reads past its own
-///   dependent arrows, and `binders` counts the binders open where it stands.
+///   dependent arrows and dependent pairs, and `binders` counts the binders
+///   open where it stands.
 /// - ensures: a leaf pushes itself; a composite pushes its children's tasks and
-///   its own assembly frame; a decode pushes its code's evaluation.
+///   its own assembly frame, a dependent pair's second factor in a frame
+///   extended by a fresh variable at the level `binders` has open; a decode
+///   pushes its code's evaluation.
 /// - provides: the value-type half of reading a quote back.
-/// - fails: [`ReadbackFault::MachineInvariant`] when `quoted` does not resolve.
+/// - fails: [`ReadbackFault::MachineInvariant`] when `quoted` does not resolve,
+///   [`ReadbackFault::BinderCeiling`] at the level ceiling, and
+///   [`ReadbackFault::Domain`] when the fresh variable cannot be minted.
 /// - panics: none.
 ///
 /// # Errors
-/// - [`ReadbackFault::MachineInvariant`] — the type does not resolve.
+/// As above.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — one case per former, separated by a quote of a leaf, a
-///   quote whose decode unfolds, a quote over a dependent arrow, and a quoted
-///   static Pi.
+///   quote whose decode unfolds, a quote over a dependent arrow, a quoted
+///   static Pi and a quoted dependent pair whose second factor reads its
+///   binder.
 /// - witness: `readback::tests::a_quote_reads_back_through_its_environment`
 /// - witness: `readback::tests::a_quoted_decode_unfolds_to_the_quoted_type`
+/// - witness: `readback::tests::a_quoted_dependent_pair_reads_its_binder_as_an_index`
 /// - witness: `readback::tests::a_quoted_static_pi_reads_back_former_by_former`
 /// - witness: `readback::tests::quoted_formers_preserve_distinct_children_and_targets`
 #[spec(
     captures: [entry_tasks = machine.tasks.len(), entry_results = machine.value_types.len(), entry_fuel = machine.fuel],
     ensures: |ret| machine.fuel == entry_fuel && if core.value_type(quoted).is_none() {
         ret == Err(ReadbackFault::MachineInvariant) && machine.tasks.len() == entry_tasks && machine.value_types.len() == entry_results
-    } else { ret.is_ok() && machine.tasks.get(entry_tasks ..).is_some_and(|new_tasks| match core.value_type(quoted) { Some(matched_native_node) => match *matched_native_node {
+    } else { (ret.is_ok() || matches!(core.value_type(quoted), Some(&ValueType::Sigma { .. }))) && (ret.is_err() || machine.tasks.get(entry_tasks ..).is_some_and(|new_tasks| match core.value_type(quoted) { Some(matched_native_node) => match *matched_native_node {
         ValueType::Stack { input, output } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::StackType, Task::QuotedCompType { quoted: second, frame: second_frame, binders: second_binders }, Task::QuotedCompType { quoted: first, frame: first_frame, binders: first_binders }] if *first == input && *second == output && *first_frame == frame && *second_frame == frame && *first_binders == binders && *second_binders == binders),
         ValueType::List(element) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::ListType, Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *child == element && *child_frame == frame && *child_binders == binders),
 ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
@@ -2981,6 +3016,7 @@ ValueType::Product(ref parts) | ValueType::Sum(ref parts) => machine.value_types
             && new_tasks.len() == parts.len().saturating_add(1)
             && new_tasks.iter().skip(1).zip(parts.iter().rev()).all(|(task, part)| *task == Task::QuotedValueType { quoted: *part, frame, binders }),
 ValueType::StaticPi { domain: first, codomain: second } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::StaticPi, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
+ValueType::Sigma { first, second } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::SigmaType, Task::QuotedValueType { quoted: second_task, binders: deeper, .. }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && Some(*deeper) == binders.opened(Zone::Intuitionistic)),
 ValueType::Thunk(body) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::ThunkType, Task::QuotedCompType { quoted: child, frame: child_frame, binders: child_binders }] if *child == body && *child_frame == frame && *child_binders == binders),
 ValueType::Lift { inner, ref target } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::LiftType { target: held }, Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if domain.level(*held).is_some_and(|level| level.level() == target) && *child == inner && *child_frame == frame && *child_binders == binders),
 ValueType::Element { code, ref target } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Element { target: held }, Task::QuotedCode { code: child, frame: child_frame, binders: child_binders }] if domain.level(*held).is_some_and(|level| level.level() == target) && *child == code && *child_frame == frame && *child_binders == binders),
@@ -3006,7 +3042,7 @@ ValueType::Run(session) => machine.value_types.len() == entry_results
             && matches!(new_tasks, [Task::RunType, Task::QuotedCode { code: child, .. }] if *child == session),
 },
 None => false,
-}) },
+})) },
 )]
 fn step_quoted_value_type(
     core: &CoreArena,
@@ -3147,6 +3183,35 @@ fn step_quoted_value_type(
             machine.tasks.push(Task::StaticPi);
             machine.tasks.push(at(codomain));
             machine.tasks.push(at(from));
+        },
+        // The dependent pair opens a fresh variable for its second factor, as
+        // the dependent arrow does for its codomain.
+        | ValueType::Sigma { first, second } => {
+            let zone = Zone::Intuitionistic;
+            let Some(deeper) = binders.opened(zone)
+            else {
+                return Err(ReadbackFault::BinderCeiling { zone });
+            };
+            let level = binders.fresh(zone);
+            let minted = domain.neutral_node(
+                NeutralHead::Variable { zone, level },
+                Vec::new(),
+                Unfolding::Rigid,
+            );
+            let neutral = minted.map_err(ReadbackFault::Domain)?;
+            let bound = domain
+                .value_neutral(neutral, TermFace::Reduced)
+                .map_err(ReadbackFault::Domain)?;
+            let mut extended = machine.frame(frame)?.clone();
+            extended.extend(zone, bound);
+            let inside = machine.hold_frame(extended);
+            machine.tasks.push(Task::SigmaType);
+            machine.tasks.push(Task::QuotedValueType {
+                quoted: second,
+                frame: inside,
+                binders: deeper,
+            });
+            machine.tasks.push(at(first));
         },
         | ValueType::Thunk(body) => {
             machine.tasks.push(Task::ThunkType);
@@ -4121,19 +4186,59 @@ fn step_spine(
             else {
                 return Err(ReadbackFault::MachineInvariant);
             };
-            let Some(&Computation::Split { arity, body, .. }) = core.computation(source)
+            let Some(&Computation::Split {
+                arity,
+                motive,
+                body,
+                ..
+            }) = core.computation(source)
             else {
                 return Err(ReadbackFault::MachineInvariant);
             };
             let environment = held.environment().clone();
-            let body = domain.comp_closure_node(body, environment);
-            let (opened, deeper) = open_many(core, domain, machine, body, binders, arity)?;
+            let opened_body = domain.comp_closure_node(body, environment.clone());
+            let (opened, deeper) = open_many(core, domain, machine, opened_body, binders, arity)?;
             machine.tasks.push(onward);
-            machine.tasks.push(Task::Split(arity));
-            machine.tasks.push(Task::Comp {
+            let read_body = Task::Comp {
                 comp: opened,
                 binders: deeper,
-            });
+            };
+            match motive {
+                | SplitMotive::Ambient => machine.tasks.extend([Task::Split(arity), read_body]),
+                // A dependent split's motive reads back under one fresh
+                // variable standing for the scrutinee, as a data case's does.
+                | SplitMotive::Scrutinee(motive) => {
+                    let zone = Zone::Intuitionistic;
+                    let under = binders
+                        .opened(zone)
+                        .ok_or(ReadbackFault::BinderCeiling { zone })?;
+                    let fresh = domain
+                        .neutral_node(
+                            NeutralHead::Variable {
+                                zone,
+                                level: binders.fresh(zone),
+                            },
+                            Vec::new(),
+                            Unfolding::Rigid,
+                        )
+                        .map_err(ReadbackFault::Domain)?;
+                    let bound = domain
+                        .value_neutral(fresh, TermFace::Reduced)
+                        .map_err(ReadbackFault::Domain)?;
+                    let mut extended = environment;
+                    extended.extend(zone, bound);
+                    let frame = machine.hold_frame(extended);
+                    machine.tasks.extend([
+                        Task::DependentSplit(arity),
+                        read_body,
+                        Task::QuotedCompType {
+                            quoted: motive,
+                            frame,
+                            binders: under,
+                        },
+                    ]);
+                },
+            }
             Ok(())
         },
         | Elimination::ListFold {
@@ -5352,10 +5457,11 @@ mod tests
         let Some(&Computation::Split {
             scrutinee,
             arity,
+            motive: gandr_core_term::SplitMotive::Ambient,
             body,
         }) = core.computation(split)
         else {
-            panic!("the stuck split reads back as a split");
+            panic!("the stuck split reads back as an ambient split");
         };
         assert_eq!(arity, ComponentCount::from(2_usize));
         let index = |core: &CoreArena, value| match core.value(value) {
@@ -6410,6 +6516,98 @@ mod tests
             core.value(far_code),
             "and the lambda's binder is one further out, so the fresh variable the readback \
              opened for the arrow counts as a binder"
+        );
+    }
+
+    #[test]
+    fn a_quoted_dependent_pair_reads_its_binder_as_an_index()
+    {
+        // `λ. return ⌜Σ(_ : El(#0)). Product(El(#0), El(#1))⌝`, the second
+        // factor's `#1` naming the lambda's binder past the pair's.
+        let mut core = CoreArena::new();
+        let outer = core.value_variable(Zone::Intuitionistic, innermost());
+        let first = core.value_type_element(outer, Level::zero());
+        let bound = core.value_variable(Zone::Intuitionistic, innermost());
+        let near = core.value_type_element(bound, Level::zero());
+        let past = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let far = core.value_type_element(past, Level::zero());
+        let second = core.value_type_product(&[near, far]);
+        let sigma = core.value_type_sigma(first, second);
+        let quote = core.value_quote(sigma);
+        let returned = core.computation_return(quote);
+        let lambda = core.computation_lambda(returned);
+
+        let (chain, environment) = nothing_unfolds();
+        let scope = environment.root();
+        let definitions = Definitions::new(&chain, &environment, scope);
+        let mut domain = DomainArena::new();
+        let evaluated = eval_computation(&core, &mut domain, definitions, ample(), lambda)
+            .expect("a lambda is already a weak head");
+        let read = readback_computation(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the lambda reads back");
+
+        let Some(&Computation::Lambda(body)) = core.computation(read)
+        else {
+            panic!("a lambda");
+        };
+        let Some(&Computation::Return(value)) = core.computation(body)
+        else {
+            panic!("returning");
+        };
+        let Some(&Value::Quote(quoted)) = core.value(value)
+        else {
+            panic!("a quote");
+        };
+        let Some(&ValueType::Sigma {
+            first: read_first,
+            second: read_second,
+        }) = core.value_type(quoted)
+        else {
+            panic!("of a dependent pair");
+        };
+        let Some(read) = core.value_type(read_second)
+        else {
+            panic!("whose second factor is in the arena");
+        };
+        let ValueType::Product(ref parts) = *read
+        else {
+            panic!("whose second factor is a product");
+        };
+        let [read_near, read_far] = **parts
+        else {
+            panic!("of two parts");
+        };
+        let code_of = |core: &CoreArena, ty| match core.value_type(ty) {
+            | Some(&ValueType::Element { code, .. }) => core.value(code).cloned(),
+            | _ => None,
+        };
+        let variable = |index: u32| {
+            Some(Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(index),
+            })
+        };
+        assert_eq!(
+            variable(0_u32),
+            code_of(&core, read_first),
+            "outside the pair's binder, the lambda's is innermost"
+        );
+        assert_eq!(
+            variable(0_u32),
+            code_of(&core, read_near),
+            "inside it, the pair's own binder is innermost"
+        );
+        assert_eq!(
+            variable(1_u32),
+            code_of(&core, read_far),
+            "and the lambda's binder is one further out"
         );
     }
 

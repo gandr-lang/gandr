@@ -10,6 +10,7 @@ use crate::CompTypeId;
 use crate::Computation;
 use crate::ComputationId;
 use crate::CoreArena;
+use crate::SplitMotive;
 use crate::Value;
 use crate::ValueId;
 use crate::ValueType;
@@ -173,6 +174,18 @@ impl Image
                 | Computation::With(ref mut first, ref mut second)
                 | Computation::Bind(ref mut first, ref mut second),
             ) => [Some(C(first)), Some(C(second)), None, None, None],
+            | Self::Computation(Computation::Split {
+                ref mut scrutinee,
+                motive: SplitMotive::Scrutinee(ref mut motive),
+                ref mut body,
+                ..
+            }) => [
+                Some(V(scrutinee)),
+                Some(CT(motive)),
+                Some(C(body)),
+                None,
+                None,
+            ],
             | Self::Computation(
                 Computation::Resume(ref mut stack, ref mut body)
                 | Computation::Split {
@@ -346,10 +359,16 @@ impl Image
                 Some(C(on_nil)),
                 Some(C(on_cons)),
             ],
-            | Self::ValueType(ValueType::StaticPi {
-                domain: ref mut first,
-                codomain: ref mut second,
-            }) => [Some(VT(first)), Some(VT(second)), None, None, None],
+            | Self::ValueType(
+                ValueType::StaticPi {
+                    domain: ref mut first,
+                    codomain: ref mut second,
+                }
+                | ValueType::Sigma {
+                    ref mut first,
+                    ref mut second,
+                },
+            ) => [Some(VT(first)), Some(VT(second)), None, None, None],
             | Self::CompType(
                 CompType::Arrow {
                     ref mut domain,

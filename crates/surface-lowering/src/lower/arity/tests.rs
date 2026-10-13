@@ -35,7 +35,6 @@ use crate::module::LoweredModule;
 use crate::namespace::Recognition;
 use crate::origin::Label;
 use crate::origin::Labelled;
-use crate::resolve::HeadArity;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 
@@ -112,6 +111,19 @@ fn shown(
                         .map(|&field| Root::ValueType(field))
                         .collect(),
                 ),
+                | Some(&ValueType::Sigma { first, second }) => (String::from("S"), vec![
+                    Root::ValueType(first),
+                    Root::ValueType(second),
+                ]),
+                | Some(&ValueType::Path {
+                    carrier,
+                    left,
+                    right,
+                }) => (String::from("Path"), vec![
+                    Root::ValueType(carrier),
+                    Root::Value(left),
+                    Root::Value(right),
+                ]),
                 | Some(&ValueType::Thunk(inner)) => {
                     (String::from("U"), vec![Root::CompType(inner)])
                 },
@@ -154,6 +166,14 @@ fn shown(
                     ),
                     fields.values().map(|&field| Root::Value(field)).collect(),
                 ),
+                | Some(&Value::Returned(computation)) => {
+                    (String::from("returned"), vec![Root::Computation(
+                        computation,
+                    )])
+                },
+                | Some(&Value::Nested(computation)) => {
+                    (String::from("nested"), vec![Root::Computation(computation)])
+                },
                 | Some(&Value::Thunk(body)) => {
                     (String::from("thunk"), vec![Root::Computation(body)])
                 },
@@ -180,6 +200,11 @@ fn shown(
                     Root::Computation(first),
                     Root::Computation(second),
                 ]),
+                | Some(&Computation::TupleProjection(tuple, component)) => {
+                    (format!("component{}", usize::from(component)), vec![
+                        Root::Value(tuple),
+                    ])
+                },
                 | Some(&Computation::Project(side, body)) => {
                     (format!("project-{side:?}"), vec![Root::Computation(body)])
                 },
@@ -444,15 +469,93 @@ fn a_telescope_type_lowers_by_its_arity()
         ),
         "a key is a lowercase word, told from a type by its kind"
     );
-    let source = "def sigma : #{k : Integer, v : k} ;";
+}
+
+/// A later label naming an earlier one makes the type the right-nested
+/// dependent pairs of its entries, each link a `Σ` when a later entry names
+/// its label and a product of two otherwise, the variable read past the
+/// links that bind; a record naming none stays the record.
+#[test]
+fn a_later_label_reading_an_earlier_one_lowers_to_nested_pairs()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def two : #{n : Integer, v : Path(Integer, n, n)} ; def three : #{a : Integer, b : \
+         Integer, c : Path(Integer, a, a)} ; def late : #{a : Integer, b : Integer, c : \
+         Path(Integer, b, b)} ; def plain : #{n : Integer, s : String} ; def pair : #{n : \
+         Integer, v : Path(Integer, n, n)} ; def pair = #{2, here(2)} ;",
+        &mut arena,
+    );
+
     assert_eq!(
-        refused(source),
-        LoweringRefusal::UnresolvedTypeHead {
-            span: at(source, "k", 1_usize),
-            name: SurfaceName::from("k"),
-            arity: HeadArity::Nullary,
-        },
-        "a later entry does not see an earlier label: there is no core Σ yet"
+        declared(&arena, &module, "two"),
+        ["S", "Integer", "Path", "Integer", "#0", "#0"],
+        "the second entry reads the first as the pair's binder"
+    );
+    assert_eq!(
+        declared(&arena, &module, "three"),
+        [
+            "S", "Integer", "*2", "Integer", "Path", "Integer", "#0", "#0"
+        ],
+        "the first link binds, the second, which nothing later reads, is a product"
+    );
+    assert_eq!(
+        declared(&arena, &module, "late"),
+        [
+            "*2", "Integer", "S", "Integer", "Path", "Integer", "#0", "#0"
+        ],
+        "a label only the last entry reads binds at its own link"
+    );
+    assert_eq!(
+        declared(&arena, &module, "plain"),
+        ["#{n,s}", "Integer", "String"],
+        "labels nothing later names are a record's"
+    );
+    assert_eq!(
+        body(&arena, &module, "pair").first().map(String::as_str),
+        Some("tuple2"),
+        "the value is the pair of its entries"
+    );
+}
+
+/// A selection off a name written with a dependent record projects the
+/// entry its label names along the nesting, each inner link read as the
+/// value its projection returns; a label the type lacks is refused.
+#[test]
+fn a_selection_projects_a_dependent_record_along_its_nesting()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def first(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Integer { return p.n } \
+         def last(t : #{a : Integer, b : Integer, c : Path(Integer, a, a)}) -> -F \
+         Path(Integer, t.a, t.a) { return t.c }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "first"),
+        ["thunk", "lambda", "return", "nested", "component0", "#0"],
+        "the first entry is the pair's first component"
+    );
+    assert_eq!(
+        body(&arena, &module, "last"),
+        [
+            "thunk",
+            "lambda",
+            "return",
+            "nested",
+            "component1",
+            "returned",
+            "component1",
+            "#0"
+        ],
+        "the last of three is the second component of the second link"
+    );
+    let source = "def lacks(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Integer { return \
+                  p.w }";
+    assert!(
+        matches!(refused(source), LoweringRefusal::UnresolvedName { .. }),
+        "a label the type lacks names nothing"
     );
 }
 
@@ -934,7 +1037,8 @@ fn each_label_names_what_it_labels()
 {
     let mut arena = CoreArena::new();
     let source = "def point : #{n : Integer} ;\ndef pair = #{m = 3} ;\ndef pick : +U ((y : \
-                  Integer) -> -F Integer) ;\ndef dependent : (a : Type, x : a) => a ;";
+                  Integer) -> -F Integer) ;\ndef dependent : (a : Type, x : a) => a ;\ndef ring \
+                  : #{k : Integer, w : Path(Integer, k, k)} ;";
     let module = lowered(source, &mut arena);
     let written = |label: &Label| {
         source
@@ -981,5 +1085,19 @@ fn each_label_names_what_it_labels()
             .iter()
             .any(|&(label, _, ref context)| label == "x" && *context == ["a"]),
         "a telescope's binder under the binder before it: {types:?}"
+    );
+    assert!(
+        types.contains(&(
+            "k",
+            Some(ValueType::Base(gandr_kernel_term::BaseType::Integer)),
+            Vec::new()
+        )),
+        "a dependent record's first label at its closed type: {types:?}"
+    );
+    assert!(
+        types
+            .iter()
+            .any(|&(label, _, ref context)| label == "w" && *context == ["k"]),
+        "a dependent record's later label under the label it reads: {types:?}"
     );
 }

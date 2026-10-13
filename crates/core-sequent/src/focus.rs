@@ -1753,6 +1753,7 @@ impl<'run> Focusing<'run>
                 scrutinee,
                 arity,
                 body,
+                ..
             } => {
                 let inner = self.share_or_name(FocusOrigin::Case, continuation)?;
                 self.tasks

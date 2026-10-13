@@ -35,6 +35,28 @@
 //! `gandr-core-nbe`, which consumes this vocabulary. Each module's
 //! documentation states its mechanism and its decisions.
 //!
+//! # The dependent pair beside the product
+//!
+//! The dependent pair `Σ (x : A). B` is [`ValueType::Sigma`]: binary, its
+//! second factor under one binder of the first. The eager product stays its
+//! own former of any arity, and nothing converts between the two: a Σ whose
+//! second factor does not read its binder is still a Σ. The pair is
+//! [`Value::Tuple`] of two, which checks against a Σ and synthesises only a
+//! product. [`Computation::TupleProjection`] projects a Σ, the second
+//! projection's type reading the first projection; [`Computation::Split`]
+//! under [`SplitMotive::Scrutinee`] eliminates it into a motive that reads
+//! the scrutinee. A Σ has no η: a pair variable is not the pair of its
+//! projections.
+//!
+//! - Alternatives: the product read as the Σ that ignores its binder, nested
+//!   binary, which changes every product's arity, every tuple's shape and the
+//!   product's kernel node; a dependent record former keyed by labels, which
+//!   keeps the labels the surface erases at the cost of an eliminator beside
+//!   the split; a package-style existential, opaque in its first component,
+//!   which has no projections for a path at a Σ to read.
+//! - Reversal: an n-ary Σ telescope former subsumes the product; a former keyed
+//!   by labels carries the surface's labels into the core.
+//!
 //! # Specification attributes
 //!
 //! Nontrivial operations carry executable `#[spec(...)]` predicates and `#
@@ -174,6 +196,7 @@ pub use crate::rewrite::shift_comp_type_under_traced;
 pub use crate::rewrite::shift_computation_under_traced;
 pub use crate::rewrite::shift_value;
 pub use crate::rewrite::shift_value_type;
+pub use crate::rewrite::shift_value_type_under;
 pub use crate::rewrite::strengthen_comp_type;
 pub use crate::rewrite::strengthening;
 pub use crate::rewrite::substitute_environment;
@@ -184,6 +207,7 @@ pub use crate::syntax::CompType;
 pub use crate::syntax::ComponentCount;
 pub use crate::syntax::Computation;
 pub use crate::syntax::DataSignature;
+pub use crate::syntax::SplitMotive;
 pub use crate::syntax::Value;
 pub use crate::syntax::ValueType;
 pub use crate::syntax::Zone;

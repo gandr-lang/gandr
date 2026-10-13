@@ -5,10 +5,10 @@
 //! evaluation and related application.
 //!
 //! Every judgement here reads the one identity fold in
-//! [`crate::identity_recursion`]; this module adds no clause of its own. It
-//! computes the fibre a persisted identity denotes, turns the evidence a
-//! persisted node carries into goals for the checking machine, and supplies the
-//! replay's reductions.
+//! [`crate::identity_recursion`], beside one rule of its own, the identity at
+//! a dependent pair. It computes the fibre a persisted identity denotes,
+//! turns the evidence a persisted node carries into goals for the checking
+//! machine, and supplies the replay's reductions.
 //!
 //! # Decisions
 //!
@@ -42,6 +42,23 @@
 //!   coverage binds it, two functions and their identity, and the quantified
 //!   evaluation (`0x3A`) decides a body that applies it. The evidence tag
 //!   `0x3B` stays reserved for the dependent evaluation.
+//!
+//! **A path between dependent pairs is a pair of paths.** At `Σ (x : A). B`
+//! the identity between `l` and `r` is [`sigma_fibre`]'s `Σ (p : Path(A, l₀,
+//! r₀)). Path(B[r₀], ⟨tr(x. B, p, l₁)⟩, r₁)`, the components read from a
+//! written pair or as the projections `⟨l.0⟩`, `⟨l.1⟩` of any other
+//! endpoint. A pair checked at such an identity checks at that Σ, so the
+//! first path joins the first components and the second ends at the right
+//! second component over it. The rule reads only the Σ's factors, so an
+//! open Σ has the same fibre. Transport along it reduces by the first two
+//! rows of the table below and is neutral otherwise.
+//!
+//! - alternatives: a fold clause for the Σ, whose fibre graph would need a
+//!   coordinate typed by the transport of another; the identity at a Σ left
+//!   neutral, which makes a path between pairs unwritable but by `here`.
+//! - reversal: a fold clause that types a coordinate by a transport moves this
+//!   rule into the fold and lets transport along a non-reflexive path at a Σ
+//!   compute componentwise.
 //!
 //! **Identity at an open type is a neutral fibre.** A domain that mentions a
 //! bound variable or reaches a sealed atom has no fold clause: its fibre would
@@ -200,8 +217,8 @@
 //!
 //! - alternatives: a motive under two binders of the one-binder node, which
 //!   would change what a persisted node means; a primitive `J`.
-//! - reversal: Σ as kernel syntax makes this the one-binder transport over the
-//!   Σ of its two entries.
+//! - reversal: the one-binder transport in the Σ of the two entries replaces
+//!   this once transport along a path at a Σ computes when it is not `here`.
 //!
 //! **Higher fields replay to a finite depth.** `Higher` is a guarded program
 //! whose layers expose evidence or redirect. Its check walks the program from
@@ -747,6 +764,81 @@ pub(crate) fn fibre(
 ) -> Result<ValueTypeId, KernelError>
 {
     native_fibre(arena, domain, left, right).map(|(fibre, _fibers)| fibre)
+}
+
+/// The fibre of the identity at the dependent pair `Σ (x : first). second`
+/// between `left` and `right`.
+///
+/// # Specification
+/// - requires: `second` stands under one binder of `first`; both endpoints
+///   inhabit the pair. The checking machine discharges those goals itself.
+/// - ensures: `Σ (p : Path(first, l₀, r₀)). Path(second[r₀], ⟨tr(x. second, p,
+///   l₁)⟩, r₁)`, reading the components of a written pair and the two
+///   projections, each the value it returns, of any other endpoint. Nothing
+///   about the pair's factors is read beyond their place, so an open pair has
+///   the same fibre.
+/// - provides: the type the checking machine redirects a pair checked at an
+///   identity of a dependent pair to.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a pair of reflexivities inhabits the identity of a pair
+///   with itself, and one whose second path ends elsewhere is refused.
+/// - witness: `element_identity::tests::a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair`
+#[spec(ensures: |ret| arena.value_type(ret).is_some())]
+pub(crate) fn sigma_fibre<M>(
+    arena: &mut TermArena,
+    (table, memo): (&mut ContentTable, &mut M),
+    (first, second): (ValueTypeId, ValueTypeId),
+    (left, right): (ValueId, ValueId),
+) -> ValueTypeId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let [left_first, left_second] = pair_components(arena, left);
+    let [right_first, right_second] = pair_components(arena, right);
+    let paths = arena.value_type_path(first, left_first, right_first);
+    let past = BinderDepth::from(1_u32);
+    let at_right = substitute_value_type(arena, table, memo, second, right_first);
+    let at_right = shift_value_type(arena, table, memo, at_right, BinderDepth::NONE, past);
+    let motive = shift_value_type(arena, table, memo, second, past, past);
+    let path = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let moved = shift_value(arena, table, memo, left_second, BinderDepth::NONE, past);
+    let transport = arena.computation_path_transport(motive, path, moved);
+    let transported = arena.value_returned(transport);
+    let target = shift_value(arena, table, memo, right_second, BinderDepth::NONE, past);
+    let over = arena.value_type_path(at_right, transported, target);
+
+    arena.value_type_sigma(paths, over)
+}
+
+/// The two components of a dependent pair's inhabitant.
+///
+/// # Specification
+/// - requires: `pair` inhabits a dependent pair.
+/// - ensures: the components of a written pair of two; the projections
+///   `⟨pair.0⟩` and `⟨pair.1⟩`, each the value it returns, otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`sigma_fibre`].
+/// - witness: `element_identity::tests::a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair`
+#[spec(ensures: |ret| ret.iter().all(|&component| arena.value(component).is_some()))]
+fn pair_components(
+    arena: &mut TermArena,
+    pair: ValueId,
+) -> [ValueId; 2]
+{
+    if let Some(&[first, second]) = arena.value(pair).and_then(Value::components) {
+        return [first, second];
+    }
+    [0_usize, 1_usize].map(|index| {
+        let projected =
+            arena.computation_tuple_projection(pair, gandr_kernel_term::Component::from(index));
+        arena.value_returned(projected)
+    })
 }
 
 /// The native fibre and the fibre graph it was read from.

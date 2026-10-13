@@ -782,6 +782,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             },
             Some(&ValueType::Abstract(_)) => tags::NODE_VT_ABSTRACT,
             None | Some(&ValueType::Product(_)) => tags::NODE_VT_PRODUCT,
+            Some(&ValueType::Sigma { .. }) => tags::NODE_VT_SIGMA,
             Some(&ValueType::Sum(..)) => tags::NODE_VT_SUM,
             Some(&ValueType::Session { .. }) => tags::NODE_VT_SESSION,
             Some(&ValueType::List(_)) => tags::NODE_VT_LIST,
@@ -830,6 +831,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
         },
         AnyNode::Computation(id) => match arena.computation(id) {
             Some(&Computation::DataCase { .. }) => tags::NODE_C_DATA_CASE,
+            Some(&Computation::SigmaSplit { .. }) => tags::NODE_C_SIGMA_SPLIT,
             Some(&Computation::RecordProjection(..)) => tags::NODE_C_RECORD_PROJECTION,
             Some(&Computation::TupleProjection(..)) => tags::NODE_C_TUPLE_PROJECTION,
             Some(&Computation::Transport(..)) => tags::NODE_C_TRANSPORT,
@@ -909,6 +911,7 @@ fn encode_entry(
                     out.put_tag(tags::NODE_VT_PRODUCT);
                     out.put_uvarint(WireU64::from(WireUsize::from(components.len())));
                 },
+                | ValueType::Sigma { .. } => out.put_tag(tags::NODE_VT_SIGMA),
                 | ValueType::Sum(ref summands) => {
                     out.put_tag(tags::NODE_VT_SUM);
                     out.put_uvarint(WireU64::from(WireUsize::from(summands.len())));
@@ -1056,6 +1059,7 @@ fn encode_entry(
                 out.put_tag(tags::NODE_C_DATA_CASE);
                 out.put_uvarint(WireU64::from(WireUsize::from(branches.len())));
             },
+            | Some(&Computation::SigmaSplit { .. }) => out.put_tag(tags::NODE_C_SIGMA_SPLIT),
             | Some(&Computation::RecordProjection(_, ref label)) => {
                 out.put_tag(tags::NODE_C_RECORD_PROJECTION);
                 encode_text(&mut out, ArtifactText::from(label.as_ref()));

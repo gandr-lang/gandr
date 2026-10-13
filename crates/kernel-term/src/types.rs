@@ -346,6 +346,22 @@ pub enum ValueType
     /// type, inhabited by the empty [`crate::Value::Tuple`] alone, and
     /// `Product([A, B])` the pair type `A × B`.
     Product(alloc::boxed::Box<[ValueTypeId]>),
+    /// The dependent pair `Σ (x : A). B`, the second factor under one value
+    /// binder of the first: a positive type at the join of its factors'
+    /// levels. A [`crate::Value::Tuple`] of two components checks against it,
+    /// the second at `B` instantiated at the first, and never synthesizes it;
+    /// the dependent split and the positional projection eliminate it.
+    ///
+    /// It is a different node from the product of the same two children: the
+    /// scoping of the second child is the whole difference, as it is between
+    /// [`CompType::Pi`] and [`CompType::Arrow`].
+    Sigma
+    {
+        /// The first factor, in the ambient context.
+        first: ValueTypeId,
+        /// The second factor, under the first's binder.
+        second: ValueTypeId,
+    },
     /// The sum of its summands, in order: `Sum([])` is the empty type, with
     /// no introduction rule, and `Sum([A, B])` the binary sum `A + B`.
     Sum(alloc::boxed::Box<[ValueTypeId]>),

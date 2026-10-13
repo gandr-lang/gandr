@@ -129,6 +129,9 @@ pub enum ExpectedShape
     /// An eager product `A₀ × … × Aₙ`: what a tuple is checked against and
     /// what a tuple projection's operand must synthesise.
     Product,
+    /// A dependent pair `Σ (x : A). B`: what a dependent split's scrutinee
+    /// must synthesise, and what a pair of other than two components meets.
+    Sigma,
     /// A native List, required by nil and cons introductions.
     List,
     /// A static Pi: what a static lambda is checked against.

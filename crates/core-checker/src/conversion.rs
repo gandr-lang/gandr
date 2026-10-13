@@ -535,6 +535,7 @@ pub fn decode_bridge(
         | ValueTypeView::Lift { .. }
         | ValueTypeView::Element { .. }
         | ValueTypeView::Product(..)
+        | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Session(_)
         | ValueTypeView::StaticPi { .. } => Err(CheckRefusal::TypeMismatch(Mismatch::Value {
@@ -963,6 +964,22 @@ fn convert(
                         pending.push(values(right_first, left_first));
                         true
                     },
+                    // The second factors stand under one binder each, at the
+                    // same index, so they compare as they stand.
+                    | (
+                        ValueTypeView::Sigma {
+                            first: left_first,
+                            second: left_second,
+                        },
+                        ValueTypeView::Sigma {
+                            first: right_first,
+                            second: right_second,
+                        },
+                    ) => {
+                        pending.push(values(left_second, right_second));
+                        pending.push(values(left_first, right_first));
+                        true
+                    },
                     | (
                         ValueTypeView::PathUniverse(..)
                         | ValueTypeView::Path { .. }
@@ -981,6 +998,7 @@ fn convert(
                         | ValueTypeView::Lift { .. }
                         | ValueTypeView::Element { .. }
                         | ValueTypeView::Product(..)
+                        | ValueTypeView::Sigma { .. }
                         | ValueTypeView::Abstract(_)
                         | ValueTypeView::Session(_)
                         | ValueTypeView::StaticPi { .. }

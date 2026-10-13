@@ -1314,6 +1314,18 @@ where
             writer.count(Count(usize::from(arity)))?;
             write_index(writer, body)?;
         },
+        | ContentNode::DependentSplit {
+            scrutinee,
+            arity,
+            motive,
+            body,
+        } => {
+            writer.tag(Tag(0x5C));
+            write_index(writer, scrutinee)?;
+            writer.count(Count(usize::from(arity)))?;
+            write_index(writer, motive)?;
+            write_index(writer, body)?;
+        },
         | ContentNode::Reify(ref frames) => {
             writer.tag(Tag(0x71));
             writer.count(Count(frames.len()))?;
@@ -1848,6 +1860,11 @@ where
             writer.tag(Tag(0x2B));
             write_index(writer, domain)?;
             write_index(writer, codomain)?;
+        },
+        | ContentNode::Sigma { first, second } => {
+            writer.tag(Tag(0x2D));
+            write_index(writer, first)?;
+            write_index(writer, second)?;
         },
         | ContentNode::UnknownType => writer.tag(Tag(0x2C)),
         | ContentNode::Returner {
@@ -2953,6 +2970,7 @@ fn read_effect_row(
                     ContentNode::RecordProjection(..) => tag == 0x55,
                     ContentNode::TupleProjection(..) => tag == 0x5A,
                     ContentNode::Split(..) => tag == 0x5B,
+                    ContentNode::DependentSplit { .. } => tag == 0x5C,
                     | ContentNode::Reify(_) => tag == 0x71,
                     | ContentNode::Stack { .. } => tag == 0x72,
                     | ContentNode::WithType(..) => tag == 0x73,
@@ -3037,6 +3055,7 @@ fn read_effect_row(
                         ..
                     } => tag == 0x2A,
                     | ContentNode::StaticPi { .. } => tag == 0x2B,
+                    | ContentNode::Sigma { .. } => tag == 0x2D,
                     | ContentNode::UnknownType => tag == 0x2C,
                     | ContentNode::List(_) => tag == 0x56,
                     | ContentNode::ListNil => tag == 0x57,
@@ -3085,6 +3104,17 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let scrutinee = read_index(reader)?;
             let arity = gandr_core_term::ComponentCount::from(reader.count()?.0);
             ContentNode::Split(scrutinee, arity, read_index(reader)?)
+        },
+        | 0x5C => {
+            let scrutinee = read_index(reader)?;
+            let arity = gandr_core_term::ComponentCount::from(reader.count()?.0);
+            let motive = read_index(reader)?;
+            ContentNode::DependentSplit {
+                scrutinee,
+                arity,
+                motive,
+                body: read_index(reader)?,
+            }
         },
         | 0x71 => {
             let count = reader.count()?;
@@ -3425,6 +3455,11 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let domain = read_index(reader)?;
             let codomain = read_index(reader)?;
             ContentNode::StaticPi { domain, codomain }
+        },
+        | 0x2D => {
+            let first = read_index(reader)?;
+            let second = read_index(reader)?;
+            ContentNode::Sigma { first, second }
         },
         | 0x2C => ContentNode::UnknownType,
         | 0x56 => ContentNode::List(read_index(reader)?),
@@ -4429,7 +4464,7 @@ const FORMERS: [UnadmittedFormer; 21] = [
 ];
 
 /// The shapes a rule can require, in stable wire order.
-const SHAPES: [ExpectedShape; 16] = [
+const SHAPES: [ExpectedShape; 17] = [
     ExpectedShape::Thunk,
     ExpectedShape::Returner,
     ExpectedShape::Arrow,
@@ -4446,6 +4481,7 @@ const SHAPES: [ExpectedShape; 16] = [
     ExpectedShape::Capability,
     ExpectedShape::Flow,
     ExpectedShape::Run,
+    ExpectedShape::Sigma,
 ];
 
 /// The actions a session state admits, in stable wire order.

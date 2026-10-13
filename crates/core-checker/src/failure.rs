@@ -105,6 +105,10 @@ pub enum FrameRole
     NativeCase,
     /// A data case waits on its motive's formation.
     NativeMotive,
+    /// A dependent split waits on its scrutinee's type.
+    SigmaSplitScrutinee,
+    /// A dependent split waits on its motive's formation.
+    SigmaSplitMotive,
     /// A projection waits on its operand's type.
     NativeProjection,
     /// An operation request waits on its interface's formation.
@@ -219,6 +223,8 @@ pub enum FrameRole
     FormNext,
     /// A dependent arrow waits on its domain's formation.
     FormPi,
+    /// A dependent pair waits on its first factor's formation.
+    FormSigma,
     /// A type is being formed under the binder its former opened.
     FormBinder,
     /// A lift waits on its type's formation.
@@ -320,6 +326,8 @@ impl fmt::Display for FrameRole
             | Self::NativeRecord => "NativeRecord",
             | Self::NativeCase => "NativeCase",
             | Self::NativeMotive => "NativeMotive",
+            | Self::SigmaSplitScrutinee => "SigmaSplitScrutinee",
+            | Self::SigmaSplitMotive => "SigmaSplitMotive",
             | Self::NativeProjection => "NativeProjection",
             | Self::PerformPayload => "PerformPayload",
             | Self::Next => "Next",
@@ -374,6 +382,7 @@ impl fmt::Display for FrameRole
             | Self::Quote => "Quote",
             | Self::FormNext => "FormNext",
             | Self::FormPi => "FormPi",
+            | Self::FormSigma => "FormSigma",
             | Self::FormBinder => "FormBinder",
             | Self::FormLift => "FormLift",
             | Self::FormElement => "FormElement",
@@ -765,6 +774,8 @@ mod tests
             FrameRole::NativeRecord,
             FrameRole::NativeCase,
             FrameRole::NativeMotive,
+            FrameRole::SigmaSplitScrutinee,
+            FrameRole::SigmaSplitMotive,
             FrameRole::NativeProjection,
             FrameRole::PerformPayload,
             FrameRole::Next,
@@ -819,6 +830,7 @@ mod tests
             FrameRole::Quote,
             FrameRole::FormNext,
             FrameRole::FormPi,
+            FrameRole::FormSigma,
             FrameRole::FormBinder,
             FrameRole::FormLift,
             FrameRole::FormElement,

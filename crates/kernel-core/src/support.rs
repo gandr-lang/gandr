@@ -915,6 +915,17 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenCompType(motive));
                             tasks.extend(branches.iter().copied().map(ReachTask::OpenComp));
                         },
+                        | Computation::SigmaSplit {
+                            scrutinee,
+                            motive,
+                            body,
+                        } => {
+                            tasks.extend([
+                                ReachTask::OpenValue(scrutinee),
+                                ReachTask::OpenCompType(motive),
+                                ReachTask::OpenComp(body),
+                            ]);
+                        },
                         | Computation::RecordProjection(record, _)
                         | Computation::TupleProjection(record, _) => {
                             tasks.push(ReachTask::OpenValue(record));
@@ -1044,7 +1055,8 @@ impl LooseDepths
                         | ValueType::StaticPi {
                             domain: first,
                             codomain: second,
-                        } => {
+                        }
+                        | ValueType::Sigma { first, second } => {
                             tasks.push(ReachTask::OpenValueType(first));
                             tasks.push(ReachTask::OpenValueType(second));
                         },
@@ -1234,17 +1246,18 @@ impl LooseDepths
 
     /// Combine one value-type node's children's reaches into its own.
     ///
-    /// A type's whole reach comes from the codes it carries: no type former
-    /// binds on the positive side, so every arm is the join of its children.
+    /// A type's reach comes from the codes it carries, and the dependent pair
+    /// is the one binding former on the positive side: its second factor is
+    /// read one binder further out than it computed, and its first is not.
     ///
     /// # Specification
     /// - requires: this node's children already have their reaches cached,
     ///   which the task order establishes.
     /// - ensures: zero for a former carrying no code, the join of the
-    ///   children's reaches for a former carrying several, the code's own reach
-    ///   for a universe-decoding former, and the widest reach where the node
-    ///   could not be read — no positive former binds, so no arm steps out of a
-    ///   binder.
+    ///   children's reaches for a former carrying several, with the dependent
+    ///   pair's second factor read one binder further out than it computed, the
+    ///   code's own reach for a universe-decoding former, and the widest reach
+    ///   where the node could not be read.
     /// - provides: the value-type arm of the bottom-up reach recurrence.
     /// - fails: never.
     /// - panics: none.
@@ -1265,6 +1278,7 @@ ValueType::PathUniverse(a, b) | ValueType::FlowUniverse(a, b) => self.cached_val
 ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => self.cached_value_type(domain).join(self.cached_value(left)).join(self.cached_value(right)),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value_type(*id))),
 ValueType::StaticPi { domain: a, codomain: b } => self.cached_value_type(a).join(self.cached_value_type(b)),
+ValueType::Sigma { first, second } => self.cached_value_type(first).join(self.cached_value_type(second).under_binder()),
 ValueType::Session { payloads: inner, .. } | ValueType::Lift { inner, .. } | ValueType::List(inner) => self.cached_value_type(inner),
 ValueType::Thunk(body) => self.cached_comp_type(body),
 ValueType::Element { code, .. } => self.cached_value(code),
@@ -1318,6 +1332,9 @@ ValueType::Element { code, .. } => self.cached_value(code),
             } => self
                 .cached_value_type(first)
                 .join(self.cached_value_type(second)),
+            | ValueType::Sigma { first, second } => self
+                .cached_value_type(first)
+                .join(self.cached_value_type(second).under_binder()),
             | ValueType::Session {
                 payloads: inner, ..
             }
@@ -1537,18 +1554,20 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
 
     /// Combine one computation node's children's reaches into its own.
     ///
-    /// The three binding formers are the whole content: a lambda binds its
-    /// argument for the body, a bind binds its payload for the body only (not
-    /// for the bound computation), and a case binds each summand for its own
-    /// branch only (not for the scrutinee). Each bound position is therefore
-    /// read one binder further out than its child computed.
+    /// Every binding former is read here: a lambda binds its argument for the
+    /// body, a bind binds its payload for the body only (not for the bound
+    /// computation), a case binds each summand for its own branch only (not
+    /// for the scrutinee), and a dependent split binds the scrutinee for its
+    /// motive and both components for its body. Each bound position is
+    /// therefore read as many binders further out as its child stands under.
     ///
     /// # Specification
     /// - requires: this node's children already have their reaches cached.
     /// - ensures: the join of the children's reaches, with each bound position
-    ///   read one binder further out than its child computed — a lambda's body,
-    ///   a bind's body but not its bound computation, and each case branch but
-    ///   not the scrutinee; the widest reach where the node could not be read.
+    ///   read one binder further out per binder it stands under — a lambda's
+    ///   body, a bind's body but not its bound computation, each case branch
+    ///   but not the scrutinee, and a dependent split's motive and body but not
+    ///   its scrutinee; the widest reach where the node could not be read.
     /// - provides: the computation arm of the recurrence, where every binder of
     ///   the term language is accounted for.
     /// - fails: never.
@@ -1565,6 +1584,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
     #[spec(ensures: |ret| ret == match arena.computation(id) {
         Some(&Computation::DataCase { scrutinee, motive, ref branches }) => branches.iter().fold(self.cached_value(scrutinee).join(self.cached_comp_type(motive).under_binder()), |depth, id| depth.join(self.cached_comp(*id))),
+        Some(&Computation::SigmaSplit { scrutinee, motive, body }) => self.cached_value(scrutinee).join(self.cached_comp_type(motive).under_binder()).join(self.cached_comp(body).under_binder().under_binder()),
         Some(&(Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _))) => self.cached_value(record),
         None => LooseDepth::WIDEST,
         Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => self.cached_value_type(element).join(self.cached_value_type(result)).join(self.cached_value(list)).join(self.cached_comp(on_nil)).join(self.cached_comp(on_cons).under_binder().under_binder()),
@@ -1600,6 +1620,14 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                     .join(self.cached_comp_type(motive).under_binder()),
                 |depth, id| depth.join(self.cached_comp(*id)),
             ),
+            | Computation::SigmaSplit {
+                scrutinee,
+                motive,
+                body,
+            } => self
+                .cached_value(scrutinee)
+                .join(self.cached_comp_type(motive).under_binder())
+                .join(self.cached_comp(body).under_binder().under_binder()),
             | Computation::RecordProjection(record, _)
             | Computation::TupleProjection(record, _) => self.cached_value(record),
             | Computation::ListFold {

@@ -61,13 +61,18 @@
 //! above the universes, which ∂CBPV shows is unnecessary. The sort parameter
 //! reverses with prenex sort quantification.
 //!
-//! # Arrows, products and static Pis
+//! # Arrows, products, dependent pairs and static Pis
 //!
 //! A dependent arrow `Π(x : A). C` forms when its domain forms and its codomain
 //! forms under a binder of `A`; it is a computation type at the join of the two
 //! levels. An eager product `A × B` forms when both factors form, a value type
 //! at the join of their levels; its factors are value types, so a computation
-//! type stands in one only under a thunk. A static Pi `K ⇒ J` forms when both
+//! type stands in one only under a thunk. A dependent pair `Σ (x : A). B`
+//! forms as the dependent arrow does, its second factor under a binder of `A`,
+//! a value type at the join of the two levels; the product over the same
+//! factors leaves that binder unbound. Witness:
+//! `formation::tests::the_dependent_pair_forms_at_the_join_of_its_levels`.
+//! A static Pi `K ⇒ J` forms when both
 //! classifiers form and each, at its weak head, is a universe or a static Pi: a
 //! static operator ranges over codes and over operators on codes, and a static
 //! Pi over any other classifier is `StaticClassifierExpected`, naming the
@@ -346,10 +351,10 @@ enum Task
 ///   spelling it has; the successor of its level for a universe; its own level
 ///   for a lift and a decode; its kind's level for a sealed atom; its child's
 ///   level for a thunk type and a returner, and its carrier's for a path type;
-///   the join of its children's for an eager product, a static Pi, an arrow and
-///   a dependent arrow, whose codomain's level does not depend on the binder,
-///   and of its payloads' for a session type, and of its operations' payloads
-///   and replies for a capability.
+///   the join of its children's for an eager product, a static Pi, a dependent
+///   pair, an arrow and a dependent arrow, whose second factor's or codomain's
+///   level does not depend on the binder, and of its payloads' for a session
+///   type, and of its operations' payloads and replies for a capability.
 /// - provides: the level part of every classifier, and the level a code is
 ///   decoded at when the judgement unfolds a code constant.
 /// - fails: the view's refusal for a node outside the fragment or a dangling
@@ -482,7 +487,8 @@ pub fn level_of(
                 | ValueTypeView::StaticPi {
                     domain: first,
                     codomain: second,
-                } => {
+                }
+                | ValueTypeView::Sigma { first, second } => {
                     tasks.push(Task::Join);
                     tasks.push(Task::Enter(TypeNode::Value(second)));
                     tasks.push(Task::Enter(TypeNode::Value(first)));
@@ -947,27 +953,35 @@ mod tests
         );
     }
 
-    /// The core vocabulary has no dependent pair and no package; a sealed atom
-    /// no abstract type declares is refused by name, and the eager product a
-    /// dependent pair generalises and the dependent arrow, refused beside it
-    /// before, now form.
+    /// The dependent pair binds its first component over its second and forms
+    /// at the join of their levels, where the eager product over the same
+    /// factors mentions a variable nothing binds; a sealed atom no abstract
+    /// type declares is refused by name.
     #[test]
-    fn sigma_and_package_are_refused_by_name()
+    fn the_dependent_pair_forms_at_the_join_of_its_levels()
     {
         let mut arena = CoreArena::new();
-        let unit = arena.value_type_unit();
         let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
-        let product = arena.value_type_product(&[unit, unit]);
         let sealed = arena.value_type_abstract(ConstantIndex::from(0_usize));
         let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let decoded = arena.value_type_element(bound, Level::zero());
-        let returner = arena.comp_type_returner(decoded);
-        let pi = arena.comp_type_pi(small, returner);
+        let sigma = arena.value_type_sigma(small, decoded);
+        let product = arena.value_type_product(&[small, decoded]);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         assert_eq!(
-            form_value_type(&mut context, product).map(super::FormedValueType::id),
-            Ok(product),
-            "the eager product forms over formed factors"
+            classified(&mut context, sigma),
+            Ok(value_at(LevelConstant::from(1_u64))),
+            "the first factor is a universe at level one, the second a type at zero"
+        );
+        assert_eq!(
+            form_value_type(&mut context, product),
+            Err(CheckRefusal::UnboundIndex {
+                at: bound,
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0_u32),
+                depth: gandr_core_term::BinderDepth::from(0_usize),
+            }),
+            "the same factors without the binder mention a variable nothing binds"
         );
         assert_eq!(
             form_value_type(&mut context, sealed),
@@ -975,11 +989,6 @@ mod tests
                 0_usize
             ))),
             "an atom forms only once its abstract type is admitted"
-        );
-        assert_eq!(
-            form_comp_type(&mut context, pi).map(super::FormedCompType::id),
-            Ok(pi),
-            "the dependent arrow binds its argument over its result and forms"
         );
     }
 

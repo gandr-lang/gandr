@@ -171,6 +171,11 @@ fn children(
                 .into_iter()
                 .chain(branches.iter().copied().map(M))
                 .collect(),
+            | Computation::SigmaSplit {
+                scrutinee,
+                motive,
+                body,
+            } => vec![V(scrutinee), C(motive), M(body)],
             | Computation::RecordProjection(record, _)
             | Computation::TupleProjection(record, _) => {
                 vec![V(record)]
@@ -217,6 +222,10 @@ fn children(
             | ValueType::StaticPi {
                 domain: a,
                 codomain: b,
+            }
+            | ValueType::Sigma {
+                first: a,
+                second: b,
             } => vec![A(a), A(b)],
             | ValueType::Thunk(a) => vec![C(a)],
             | ValueType::Lift { inner: a, .. } => vec![A(a)],
@@ -511,6 +520,16 @@ fn translate(
                         comp_types[&motive],
                         branches.iter().map(|branch| computations[branch]).collect(),
                     ),
+                    | Computation::SigmaSplit {
+                        scrutinee,
+                        motive,
+                        body,
+                    } => core.computation_dependent_split(
+                        values[&scrutinee],
+                        gandr_core_term::ComponentCount::from(2_usize),
+                        comp_types[&motive],
+                        computations[&body],
+                    ),
                     | Computation::RecordProjection(record, ref label) => {
                         core.computation_record_projection(values[&record], label.clone())
                     },
@@ -605,6 +624,9 @@ fn translate(
                     | ValueType::Abstract(index) => core.value_type_abstract(index),
                     | ValueType::StaticPi { domain, codomain } => {
                         core.value_type_static_pi(types[&domain], types[&codomain])
+                    },
+                    | ValueType::Sigma { first, second } => {
+                        core.value_type_sigma(types[&first], types[&second])
                     },
                 };
                 types.insert(id, ty);

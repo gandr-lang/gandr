@@ -145,6 +145,7 @@ use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
+use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
@@ -3193,7 +3194,8 @@ where
                 Computation::Scope { ref signature, .. } => matches!(ret, ContentNode::Scope { signature: ref mapped, .. } if signature.name() == mapped.name()),
                 Computation::Exercise { ref operation, ref signature, .. } => matches!(ret, ContentNode::Exercise { operation: ref actual, signature: ref mapped, .. } if operation == actual && signature.name() == mapped.name()),
                 Computation::Resume(..) => matches!(ret, ContentNode::Resume(..)),
-                Computation::Split { arity, .. } => matches!(ret, ContentNode::Split(_, actual, _) if actual == arity),
+                Computation::Split { arity, motive: SplitMotive::Ambient, .. } => matches!(ret, ContentNode::Split(_, actual, _) if actual == arity),
+                Computation::Split { arity, motive: SplitMotive::Scrutinee(_), .. } => matches!(ret, ContentNode::DependentSplit { arity: actual, .. } if actual == arity),
                 Computation::Reset(_) => matches!(ret, ContentNode::Reset(_)),
                 Computation::Shift(_) => matches!(ret, ContentNode::Shift(_)),
                 Computation::With(..) => matches!(ret, ContentNode::With(..)),
@@ -3346,12 +3348,28 @@ where
         | Some(&Computation::Split {
             scrutinee,
             arity,
+            motive: SplitMotive::Ambient,
             body,
         }) => ContentNode::Split(
             child(Root::Value(scrutinee)),
             arity,
             child(Root::Computation(body)),
         ),
+        | Some(&Computation::Split {
+            scrutinee,
+            arity,
+            motive: SplitMotive::Scrutinee(motive),
+            body,
+        }) => {
+            let scrutinee = child(Root::Value(scrutinee));
+            let motive = child(Root::CompType(motive));
+            ContentNode::DependentSplit {
+                scrutinee,
+                arity,
+                motive,
+                body: child(Root::Computation(body)),
+            }
+        },
         | Some(&Computation::Reset(body)) => ContentNode::Reset(child(Root::Computation(body))),
         | Some(&Computation::Shift(body)) => ContentNode::Shift(child(Root::Computation(body))),
         | Some(&Computation::With(first, second)) => ContentNode::With(
@@ -3545,6 +3563,7 @@ where
                     )
                 }
                 ValueType::StaticPi { .. } => matches!(ret, ContentNode::StaticPi { .. }),
+                ValueType::Sigma { .. } => matches!(ret, ContentNode::Sigma { .. }),
                 ValueType::Session(ref session) => matches!(ret, ContentNode::SessionType(ref found)
                     if found.protocol() == session.protocol() && found.state() == session.state()
                         && found.payloads().len() == session.payloads().len()),
@@ -3657,6 +3676,13 @@ where
             ContentNode::StaticPi {
                 domain,
                 codomain: child(Root::ValueType(codomain)),
+            }
+        },
+        | Some(&ValueType::Sigma { first, second }) => {
+            let first = child(Root::ValueType(first));
+            ContentNode::Sigma {
+                first,
+                second: child(Root::ValueType(second)),
             }
         },
         | Some(&ValueType::Session(ref session)) => ContentNode::SessionType(

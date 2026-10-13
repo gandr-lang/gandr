@@ -380,6 +380,10 @@ fn worst(
                             .map(|&part| (AnyNode::ValueType(part), nest(reach))),
                     );
                 },
+                | Some(&ValueType::Sigma { first, second }) => {
+                    pending.push((AnyNode::ValueType(first), nest(reach)));
+                    pending.push((AnyNode::ValueType(second), nest(reach)));
+                },
                 | Some(&ValueType::Lift { inner, .. }) => {
                     pending.push((AnyNode::ValueType(inner), term(reach)));
                 },

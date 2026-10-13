@@ -1433,6 +1433,124 @@ fn telescope_patterns_split_and_project()
     );
 }
 
+/// A pattern at a scrutinee written with a dependent record splits it under
+/// the match's answer with the scrutinee abstracted, so a rebuilt pair
+/// answers the path at the scrutinee; a labelled pattern places its labels
+/// by the record's order, and a record of three nests its links.
+#[test]
+fn a_pattern_at_a_dependent_record_splits_it_under_its_motive()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def eta(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Path(#{n : Integer, v : Path(Integer, n, n)}, p, p) { case p { #{m, w} => return here(#{m, w}) } }\n",
+            "def rebuilt(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F #{n : Integer, v : Path(Integer, n, n)} { case p { #{.v = w, .n = m} => return #{m, w} } }\n",
+            "def last(t : #{a : Integer, b : Integer, c : Path(Integer, a, a)}) -> -F Path(Integer, t.a, t.a) { case t { #{.c = z} => return z } }\n",
+        )),
+        &mut arena,
+    );
+    let splits = |name: &str| -> Vec<(usize, bool)> {
+        reachable(
+            &arena,
+            tail_of(&arena, body_named(&module, SurfaceName::from(name))),
+        )
+        .into_iter()
+        .filter_map(|at| match arena.computation(at) {
+            | Some(&Computation::Split { arity, motive, .. }) => Some((
+                usize::from(arity),
+                matches!(motive, gandr_core_term::SplitMotive::Scrutinee(_)),
+            )),
+            | _ => None,
+        })
+        .collect()
+    };
+    assert_eq!(
+        splits("eta"),
+        [(2_usize, true)],
+        "the pair splits once, under a motive over the scrutinee"
+    );
+    assert_eq!(
+        splits("rebuilt"),
+        [(2_usize, true)],
+        "labels in another order split it the same"
+    );
+    assert_eq!(
+        splits("last"),
+        [(2_usize, true), (2_usize, false)],
+        "a record of three splits its first link dependently and its second, which nothing later reads, as a product"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+/// A leaf's copy of an arm keeps each written use naming the pattern variable
+/// that binds it, so a split's components are named where the arm reads them;
+/// the swapped pair tells a copy bound at the wrong component apart. A
+/// variable that binds the whole scrutinee stands for the scrutinee's own
+/// node, which stays bound at its parameter.
+#[test]
+fn a_leaf_copy_keeps_each_use_naming_its_pattern_variable()
+{
+    let source = concat!(
+        "def swap(p : #{Integer, Integer}) -> -F #{Integer, Integer} { case p { #{m, w} => return #{w, m} } }\n",
+        "def whole(p : #{Integer, Integer}) -> -F #{Integer, Integer} { case p { q => return q } }\n",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let written = |anchor: &str, name: &str| {
+        let at = source
+            .find(anchor)
+            .and_then(|from| {
+                source
+                    .get(from ..)
+                    .and_then(|rest| rest.find(name))
+                    .map(|offset| from.saturating_add(offset))
+            })
+            .expect("the anchor writes the name");
+        Maybe::Present(crate::fixture::span(
+            gandr_surface_syntax::ByteOffset::from(at),
+            gandr_surface_syntax::ByteOffset::from(at.saturating_add(name.len())),
+        ))
+    };
+    let returned = |name: &str| {
+        reachable(
+            &arena,
+            tail_of(&arena, body_named(&module, SurfaceName::from(name))),
+        )
+        .into_iter()
+        .find_map(|at| match arena.computation(at) {
+            | Some(&Computation::Return(value)) => Some(value),
+            | _ => None,
+        })
+        .expect("the arm's copy returns")
+    };
+    let swapped = arena
+        .value(returned("swap"))
+        .expect("the copy returns a value");
+    let Value::Tuple(ref answered) = *swapped
+    else {
+        panic!("the copy returns a pair: {swapped:?}");
+    };
+    let [first, second] = answered[..]
+    else {
+        panic!("the copy returns a pair: {answered:?}");
+    };
+    assert_eq!(
+        module.origins().binding(first),
+        written("#{m, w}", "w"),
+        "the copy's first component is the use of `w`"
+    );
+    assert_eq!(
+        module.origins().binding(second),
+        written("#{m, w}", "m"),
+        "the copy's second component is the use of `m`"
+    );
+    assert_eq!(
+        module.origins().binding(returned("whole")),
+        written("whole(", "p"),
+        "the scrutinee a whole-value pattern stands for stays bound at its parameter"
+    );
+}
+
 #[test]
 fn sum_patterns_case_on_the_stated_arity()
 {

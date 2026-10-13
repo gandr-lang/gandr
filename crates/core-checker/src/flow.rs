@@ -695,8 +695,8 @@ fn convertible(
 ///   beneath products, sums, records, lists, thunks, lifts, returners and lazy
 ///   pairs, an arrow's or a dependent arrow's codomain, a flow's target, a
 ///   run's protocol and a decode; a flow's source and a domain reverse the
-///   variance; a path, a data argument, a session payload, a capability, a
-///   stack and any compound value are invariant.
+///   variance; a path, a dependent pair, a data argument, a session payload, a
+///   capability, a stack and any compound value are invariant.
 /// - fails: [`CheckRefusal::RideUnsupported`] at `at` for a motive reading an
 ///   outer binder; [`CheckRefusal::NonCovariantMotive`] at `at` for an
 ///   occurrence elsewhere; a dangling node.
@@ -793,6 +793,7 @@ pub fn covariant(
                     work.push((Position::ValueType(codomain), polarity, depth));
                 },
                 | ValueType::Data { .. }
+                | ValueType::Sigma { .. }
                 | ValueType::PathUniverse(..)
                 | ValueType::Path { .. }
                 | ValueType::Base(_)

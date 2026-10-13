@@ -1169,6 +1169,10 @@ enum Elimination
 {
     /// Nominal elimination; the arena node retains its motive and branches.
     DataCase(ComputationId),
+    /// Dependent split; the arena node retains its motive and body. Only the
+    /// body is compared: the motive is a typing annotation that no reduction
+    /// reads.
+    SigmaSplit(ComputationId),
     /// Record projection; the arena node retains its exact label.
     RecordProjection(ComputationId),
     /// Tuple projection; the arena node retains its component.
@@ -2996,6 +3000,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Computation::TelescopeRide { .. }
                         | Computation::RelatedApplication { .. }
                         | Computation::DataCase { .. }
+                        | Computation::SigmaSplit { .. }
                         | Computation::RecordProjection(..)
                         | Computation::TupleProjection(..)
                         | Computation::Lambda(_)
@@ -3047,10 +3052,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             AnyNode::Value(right),
                         ]);
                     },
-                    | Some(&ValueType::StaticPi {
-                        domain: first,
-                        codomain: second,
-                    }) => {
+                    | Some(
+                        &ValueType::StaticPi {
+                            domain: first,
+                            codomain: second,
+                        }
+                        | &ValueType::Sigma { first, second },
+                    ) => {
                         work.extend([AnyNode::ValueType(first), AnyNode::ValueType(second)]);
                     },
                     | Some(&ValueType::Thunk(body)) => work.push(AnyNode::CompType(body)),
@@ -3152,6 +3160,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Computation::Ride { .. } => spine.as_slice() == [Elimination::Ride(computation)],
                     Computation::Case { .. } => spine.as_slice() == [Elimination::Case(computation)],
                     Computation::DataCase { .. } => spine.as_slice() == [Elimination::DataCase(computation)],
+                    Computation::SigmaSplit { .. } => spine.as_slice() == [Elimination::SigmaSplit(computation)],
                     Computation::RecordProjection(..) => spine.as_slice() == [Elimination::RecordProjection(computation)],
                     Computation::TupleProjection(..) => spine.as_slice() == [Elimination::TupleProjection(computation)],
                     Computation::Project(side, _) => spine.last() == Some(&Elimination::Project(side)),
@@ -3232,6 +3241,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             match self.arena.computation(focus) {
                 | Some(&Computation::DataCase { scrutinee, .. }) => {
                     spine.push(Elimination::DataCase(focus));
+                    break self.value_head(scrutinee, frozen, side)?;
+                },
+                | Some(&Computation::SigmaSplit { scrutinee, .. }) => {
+                    spine.push(Elimination::SigmaSplit(focus));
                     break self.value_head(scrutinee, frozen, side)?;
                 },
                 | Some(&Computation::RecordProjection(record, _)) => {
@@ -3544,6 +3557,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         .arena
                         .computation_data_case(body, motive, branches.clone());
                 },
+                | Some(&Computation::SigmaSplit {
+                    motive,
+                    body: split,
+                    ..
+                }) => {
+                    break self.arena.computation_sigma_split(body, motive, split);
+                },
                 | Some(&Computation::RecordProjection(_, ref label)) => {
                     break self
                         .arena
@@ -3791,6 +3811,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     scrutinee: inspected,
                     ..
                 }
+                | Computation::SigmaSplit {
+                    scrutinee: inspected,
+                    ..
+                }
                 | Computation::ListFold {
                     list: inspected, ..
                 }
@@ -3833,6 +3857,25 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     },
                     | Some(_) => break,
                     | None => return Err(unreadable()),
+                },
+                // A dependent split of a pair enters its body with the two
+                // components for its two binders, the outer binder first.
+                | Some(&Computation::SigmaSplit {
+                    scrutinee, body, ..
+                }) => match self.arena.value(scrutinee).map(Value::components) {
+                    | Some(Some(&[first, second])) => {
+                        let opened = crate::rewrite::substitute_fold_head(
+                            self.arena,
+                            &mut self.table,
+                            &mut self.memo,
+                            body,
+                            first,
+                        );
+                        focus = self.instantiate(opened, second);
+                        progress = Progress::Reduced;
+                    },
+                    | Some(None) => break,
+                    | Some(Some(_)) | None => return Err(unreadable()),
                 },
                 | Some(&Computation::RecordProjection(record, ref label)) => {
                     match self.arena.value(record) {
@@ -4168,9 +4211,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// bind running `returned` and eliminating what it returns.
     ///
     /// # Specification
-    /// - requires: `elimination` is a force, a case, a data case, a list fold
-    ///   or a projection, and `returned` the computation of the returned
-    ///   endpoint it inspects.
+    /// - requires: `elimination` is a force, a case, a data case, a dependent
+    ///   split, a list fold or a projection, and `returned` the computation of
+    ///   the returned endpoint it inspects.
     /// - ensures: `returned to x. E[x]`, where `E` is the elimination shifted
     ///   past the new binder and `x` stands where the endpoint stood.
     /// - provides: the elimination rule of a returned endpoint: a pure
@@ -4226,6 +4269,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             }) => {
                 let branches = branches.clone();
                 self.arena.computation_data_case(bound, motive, branches)
+            },
+            | Some(&Computation::SigmaSplit { motive, body, .. }) => {
+                self.arena.computation_sigma_split(bound, motive, body)
             },
             | Some(&Computation::ListFold {
                 element,
@@ -4666,11 +4712,11 @@ fn bind_rule(
 /// - requires: nothing.
 /// - ensures: a refuting leaf when the spines differ in length or in any
 ///   elimination's kind; else an application's or a static application's
-///   arguments, a bind's continuations and a sum case's two branches, in spine
-///   order. A native data case first compares its quoted motive, then its
-///   ordinary branch functions; a ride compares its quoted motive, then its
-///   value; a force, a matching record projection or a projection of one
-///   lazy-product side contributes none.
+///   arguments, a bind's continuations, a sum case's two branches and a
+///   dependent split's bodies, in spine order. A native data case first
+///   compares its quoted motive, then its ordinary branch functions; a ride
+///   compares its quoted motive, then its value; a force, a matching record
+///   projection or a projection of one lazy-product side contributes none.
 /// - provides: the decomposition of two neutrals over one head.
 /// - fails: unreadable native metadata when a retained source is missing or
 ///   malformed.
@@ -4726,6 +4772,7 @@ if let Some(matched_left_node) = matched_left_value && let Computation::DataCase
                 } else { false },
                 (Elimination::Transport(one), Elimination::Transport(other)) | (Elimination::ProductTransport(one), Elimination::ProductTransport(other)) | (Elimination::Apply(one), Elimination::Apply(other)) | (Elimination::StaticApply(one), Elimination::StaticApply(other)) => pending.next() == Some(&Premise::values(one, other)),
                 (Elimination::Bind(one), Elimination::Bind(other)) | (Elimination::Fixpoint(one), Elimination::Fixpoint(other)) => pending.next() == Some(&Premise::computations(one, other)),
+                (Elimination::SigmaSplit(a), Elimination::SigmaSplit(b)) => matches!((arena.computation(a), arena.computation(b)), (Some(&Computation::SigmaSplit { body: one, .. }), Some(&Computation::SigmaSplit { body: other, .. })) if pending.next() == Some(&Premise::computations(one, other))),
                 (Elimination::ListFold(one_left, one_right), Elimination::ListFold(other_left, other_right)) =>
                     pending.next() == Some(&Premise::computations(one_left, other_left)) && pending.next() == Some(&Premise::computations(one_right, other_right)),
                 _ => false,
@@ -4894,6 +4941,19 @@ fn spines(
             | (Elimination::ListFold(a, b), Elimination::ListFold(c, d)) => {
                 premises.extend([Premise::computations(a, c), Premise::computations(b, d)]);
             },
+            // Two dependent splits compare by their bodies under the two
+            // component binders; the motives are annotations no reduction
+            // reads.
+            | (Elimination::SigmaSplit(a), Elimination::SigmaSplit(b)) => {
+                let (
+                    Some(&Computation::SigmaSplit { body: one, .. }),
+                    Some(&Computation::SigmaSplit { body: other, .. }),
+                ) = (arena.computation(a), arena.computation(b))
+                else {
+                    return Err(unreadable());
+                };
+                premises.push(Premise::computations(one, other));
+            },
             // Two projections of one side add no premise; the two sides of
             // the lazy product are apart.
             | (Elimination::Project(a), Elimination::Project(b)) => {
@@ -4903,6 +4963,7 @@ fn spines(
             },
             | (
                 Elimination::DataCase(_)
+                | Elimination::SigmaSplit(_)
                 | Elimination::RecordProjection(_)
                 | Elimination::TupleProjection(_)
                 | Elimination::Project(_)

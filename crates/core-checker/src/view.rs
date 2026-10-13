@@ -33,14 +33,14 @@
 //!
 //! # The fragment
 //!
-//! The judgement admits integer and string atoms, unit, products, sums, native
-//! Lists, nominal data, sealed abstract types, structural records, thunks,
-//! effect-qualified returners, arrows, dependent arrows, static operators,
-//! universes, raising type lifts and decodes, and effects and control.
-//! Injection checks against its sum; case checks both payload-bound branches
-//! against one expected computation type. Numeric atoms and literals, value
-//! lifts, non-raising lifts, sort-parameter universes and top-level universes
-//! are named `OutOfFragment` refusals.
+//! The judgement admits integer and string atoms, unit, products, dependent
+//! pairs, sums, native Lists, nominal data, sealed abstract types, structural
+//! records, thunks, effect-qualified returners, arrows, dependent arrows,
+//! static operators, universes, raising type lifts and decodes, and effects
+//! and control. Injection checks against its sum; case checks both
+//! payload-bound branches against one expected computation type. Numeric atoms
+//! and literals, value lifts, non-raising lifts, sort-parameter universes and
+//! top-level universes are named `OutOfFragment` refusals.
 
 use anodized::spec;
 use gandr_core_term::CompType;
@@ -206,6 +206,15 @@ pub enum ValueTypeView<'arena>
         /// The classifier of what it builds.
         codomain: ValueTypeId,
     },
+    /// The dependent pair `Σ (x : A). B`: its second factor is scoped under one
+    /// binder of the first.
+    Sigma
+    {
+        /// The first factor `A`.
+        first: ValueTypeId,
+        /// The second factor `B`, under the binder.
+        second: ValueTypeId,
+    },
     /// A sealed abstract type: the atom declared at this admission position.
     Abstract(gandr_kernel_term::ConstantIndex),
     /// A capability `Cap E`: a hypothesis carrying the authority `E` for a
@@ -278,11 +287,11 @@ pub enum CompTypeView<'arena>
 ///   both admissible input and both refused.
 /// - ensures: the node's view when its former is the integer atom, the string
 ///   atom, the empty product (the unit type), a thunk type, a universe of a
-///   ground sort, a lift, a decode, a product of one or more components, a sum
-///   of any number of summands, a static Pi, a path type, a flow type, a run
-///   type, a sealed atom, a session type or a capability; the children are the
-///   node's own. The unknown type, and a decode whose code is a hole or a mark,
-///   view as [`ValueTypeView::Unknown`].
+///   ground sort, a lift, a decode, a product of one or more components, a
+///   dependent pair, a sum of any number of summands, a static Pi, a path type,
+///   a flow type, a run type, a sealed atom, a session type or a capability;
+///   the children are the node's own. The unknown type, and a decode whose code
+///   is a hole or a mark, view as [`ValueTypeView::Unknown`].
 /// - provides: the one decision of which value types the judgement and the
 ///   bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
@@ -326,6 +335,7 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Element { code, target }) => matches!(arena.value_type(value_type), Some(ValueType::Element { code: found, target: found_target }) if *found == code && found_target == target)
         && value_type_knowledge(arena, value_type) == Knowledge::Known,
     | Ok(ValueTypeView::StaticPi { domain, codomain }) => matches!(arena.value_type(value_type), Some(ValueType::StaticPi { domain: found_domain, codomain: found_codomain }) if *found_domain == domain && *found_codomain == codomain),
+    | Ok(ValueTypeView::Sigma { first, second }) => matches!(arena.value_type(value_type), Some(&ValueType::Sigma { first: found_first, second: found_second }) if found_first == first && found_second == second),
     | Ok(ValueTypeView::Abstract(atom)) => matches!(arena.value_type(value_type), Some(&ValueType::Abstract(found)) if found == atom),
     | Ok(ValueTypeView::Session(session)) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Session(ref found) if found == session)),
     | Ok(ValueTypeView::Capability { authority, grade, region }) => matches!(arena.value_type(value_type), Some(&ValueType::Capability { authority: ref found, grade: found_grade, region: found_region }) if found == authority && found_grade == grade && found_region == region),
@@ -409,6 +419,7 @@ pub fn value_type_view(
         | ValueType::StaticPi { domain, codomain } => {
             Ok(ValueTypeView::StaticPi { domain, codomain })
         },
+        | ValueType::Sigma { first, second } => Ok(ValueTypeView::Sigma { first, second }),
         | ValueType::Capability {
             ref authority,
             grade,

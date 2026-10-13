@@ -1310,8 +1310,10 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 ///
 /// **The binding positions are the whole content of this function.** A lambda
 /// binds for its body, a bind binds for its body and not for the bound
-/// computation, a case binds for each branch and not for the scrutinee, and the
-/// dependent arrow binds for its codomain and not for its domain.
+/// computation, a case binds for each branch and not for the scrutinee, the
+/// dependent arrow binds for its codomain and not for its domain, and the
+/// dependent pair for its second factor and not its first; the dependent split
+/// binds once for its motive and twice for its body, and not for its scrutinee.
 ///
 /// # Specification
 /// - requires: `depth` is the number of binders the walk has crossed to reach
@@ -1319,28 +1321,32 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 /// - ensures: pushes one open task per child, in reverse wire order so the
 ///   children close in wire order, and at the depth that child's position sits
 ///   at: one binder further in for a lambda's body, a bind's body but not its
-///   bound computation, each case branch but not the scrutinee, and a dependent
-///   arrow's codomain but not its domain. A node with no children, and one that
-///   cannot be read, push nothing.
+///   bound computation, each case branch but not the scrutinee, a dependent
+///   arrow's codomain but not its domain, and a dependent pair's second factor
+///   but not its first; one further for a dependent split's motive and two for
+///   its body. A node with no children, and one that cannot be read, push
+///   nothing.
 /// - provides: the scheduling half of the engine, and the only statement of
 ///   where the term language binds.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 on lambda, bind, case and dependent-code positions; exact
-///   rewritten free indices separate dropped children, reversed result order
-///   and closing a nonbinding position. The predicate observes appended task
-///   arity, rewrite and bounded depth, not the whole schedule.
+/// - hypothesis: L3 on lambda, bind, case, dependent-code and dependent-pair
+///   positions; exact rewritten free indices separate dropped children,
+///   reversed result order and closing a nonbinding position. The predicate
+///   observes appended task arity, rewrite and bounded depth, not the whole
+///   schedule.
 /// - witness: `rewrite::tests::a_binder_spares_what_it_binds`
 /// - witness: `rewrite::tests::bind_and_case_rewrites_distinguish_binding_positions`
+/// - witness: `rewrite::tests::a_dependent_pair_and_its_split_bind_where_they_scope`
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
 /// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(captures: before = tasks.len(),
     ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
     AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ForwardFlow { ref outputs, .. } => outputs.len().saturating_add(2), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } | Value::FunctionFlow { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::PathProduct(..) | Value::FlowProduct(..) | Value::StaticApplication(..) | Value::Then { .. } => 2, _ => 1 }),
-    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } | Computation::Ride { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, _ => 1 }),
-    AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } | ValueType::Flow { .. } => 3, ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::StaticPi { .. } => 2, _ => 1 }),
+    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::SigmaSplit { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, _ => 1 }),
+    AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } | ValueType::Flow { .. } => 3, ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::StaticPi { .. } | ValueType::Sigma { .. } => 2, _ => 1 }),
     AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, _ => 1 }),
 }
         && added.iter().all(|task| matches!(*task, RewriteTask::Open(_, child_depth, step)
@@ -1541,6 +1547,25 @@ fn push_rewrite_children(
                 ));
                 tasks.push(RewriteTask::Open(AnyNode::Value(scrutinee), depth, rewrite));
             },
+            // The motive binds the scrutinee and the body binds both
+            // components; the scrutinee stands outside either.
+            | Some(&Computation::SigmaSplit {
+                scrutinee,
+                motive,
+                body,
+            }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(body),
+                    depth.deeper().deeper(),
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::CompType(motive),
+                    depth.deeper(),
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(AnyNode::Value(scrutinee), depth, rewrite));
+            },
             | Some(
                 &(Computation::RecordProjection(record, _)
                 | Computation::TupleProjection(record, _)),
@@ -1732,6 +1757,16 @@ fn push_rewrite_children(
                 tasks.push(RewriteTask::Open(
                     AnyNode::ValueType(second),
                     depth,
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(AnyNode::ValueType(first), depth, rewrite));
+            },
+            // The dependent pair's second factor stands under the first's
+            // binder.
+            | Some(&ValueType::Sigma { first, second }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(second),
+                    depth.deeper(),
                     rewrite,
                 ));
                 tasks.push(RewriteTask::Open(AnyNode::ValueType(first), depth, rewrite));
@@ -2472,7 +2507,7 @@ fn rewrite_variable(
 #[spec(
     captures: [before = results.len(), arity = arena.computation(id).map_or(0, |matched_native_node| match *matched_native_node {
 Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5,
-Computation::PathTransport { .. } | Computation::Ride { .. } => 3,
+Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::SigmaSplit { .. } => 3,
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::With(..) => 2,
@@ -2519,6 +2554,25 @@ fn close_computation(
                     classifier,
                     rewritten.unwrap_or_else(|| branches.clone()),
                 )
+            }
+        },
+        | Computation::SigmaSplit {
+            scrutinee,
+            motive,
+            body,
+        } => {
+            let rewritten_body = popped(results, AnyNode::Computation(body)).computation_or(body);
+            let rewritten_motive = popped(results, AnyNode::CompType(motive)).comp_type_or(motive);
+            let rewritten_scrutinee =
+                popped(results, AnyNode::Value(scrutinee)).value_or(scrutinee);
+            if rewritten_body == body
+                && rewritten_motive == motive
+                && rewritten_scrutinee == scrutinee
+            {
+                id
+            }
+            else {
+                arena.computation_sigma_split(rewritten_scrutinee, rewritten_motive, rewritten_body)
             }
         },
         | Computation::RecordProjection(record, ref label) => {
@@ -2817,7 +2871,7 @@ ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(),
 ValueType::Path { .. } | ValueType::Flow { .. } => 3,
-ValueType::StaticPi { .. } | ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) => 2,
+ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) => 2,
 ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::List(_) | ValueType::Session { .. } => 1,
 _ => 0,
 }), element = match arena.value_type(id) { Some(&ValueType::Element { code, .. }) => Some(results.last().copied().map_or(code, |outcome| outcome.value_or(code))), _ => None }],
@@ -2991,6 +3045,17 @@ fn close_value_type(
             }
             else {
                 arena.value_type_static_pi(rewritten_domain, rewritten_codomain)
+            }
+        },
+        | ValueType::Sigma { first, second } => {
+            let rewritten_second =
+                popped(results, AnyNode::ValueType(second)).value_type_or(second);
+            let rewritten_first = popped(results, AnyNode::ValueType(first)).value_type_or(first);
+            if rewritten_first == first && rewritten_second == second {
+                id
+            }
+            else {
+                arena.value_type_sigma(rewritten_first, rewritten_second)
             }
         },
         | ValueType::Thunk(body) => {
@@ -4001,6 +4066,97 @@ mod tests
         assert_eq!(
             arena.value(raised),
             Some(&Value::Variable(DeBruijnIndex::from(4_u32)))
+        );
+    }
+
+    #[test]
+    fn a_dependent_pair_and_its_split_bind_where_they_scope()
+    {
+        let mut arena = TermArena::new();
+        let base = arena.value_type_base(BaseType::Integer);
+        let zero = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let one = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let two = arena.value_variable(DeBruijnIndex::from(2_u32));
+        let first = arena.value_type_path(base, zero, zero);
+        let second = arena.value_type_path(base, zero, one);
+        let sigma = arena.value_type_sigma(first, second);
+        let motive = arena.comp_type_returner(second);
+        let body = arena.computation_return(two);
+        let split = arena.computation_sigma_split(zero, motive, body);
+        let mut table = ContentTable::new();
+        let mut memo = RewriteMemo::new();
+        let three = BinderDepth::from(3_u32);
+        let variable = |at: u32| Value::Variable(DeBruijnIndex::from(at));
+        let shifted = shift_value_type(
+            &mut arena,
+            &mut table,
+            &mut memo,
+            sigma,
+            BinderDepth::NONE,
+            three,
+        );
+        let Some(&ValueType::Sigma {
+            first: moved_first,
+            second: moved_second,
+        }) = arena.value_type(shifted)
+        else {
+            panic!("expected a dependent pair");
+        };
+        let Some(&ValueType::Path { left, right, .. }) = arena.value_type(moved_first)
+        else {
+            panic!("expected the first factor's path");
+        };
+        assert_eq!(arena.value(left), Some(&variable(3)));
+        assert_eq!(arena.value(right), Some(&variable(3)));
+        let Some(&ValueType::Path { left, right, .. }) = arena.value_type(moved_second)
+        else {
+            panic!("expected the second factor's path");
+        };
+        assert_eq!(
+            arena.value(left),
+            Some(&variable(0)),
+            "the second factor's binder is spared"
+        );
+        assert_eq!(arena.value(right), Some(&variable(4)));
+        let shifted = shift_computation(
+            &mut arena,
+            &mut table,
+            &mut memo,
+            split,
+            BinderDepth::NONE,
+            three,
+        );
+        let Some(&Computation::SigmaSplit {
+            scrutinee,
+            motive: moved_motive,
+            body: moved_body,
+        }) = arena.computation(shifted)
+        else {
+            panic!("expected a dependent split");
+        };
+        assert_eq!(arena.value(scrutinee), Some(&variable(3)));
+        let Some(&CompType::Returner(answer)) = arena.comp_type(moved_motive)
+        else {
+            panic!("expected the motive's returner");
+        };
+        let Some(&ValueType::Path { left, right, .. }) = arena.value_type(answer)
+        else {
+            panic!("expected the motive's path");
+        };
+        assert_eq!(
+            arena.value(left),
+            Some(&variable(0)),
+            "the motive's binder is spared"
+        );
+        assert_eq!(arena.value(right), Some(&variable(4)));
+        let Some(&Computation::Return(answered)) = arena.computation(moved_body)
+        else {
+            panic!("expected the body's return");
+        };
+        assert_eq!(
+            arena.value(answered),
+            Some(&variable(5)),
+            "the body sits under both components"
         );
     }
 

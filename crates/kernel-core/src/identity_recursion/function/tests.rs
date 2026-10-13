@@ -201,6 +201,7 @@ fn children(
             | Computation::TelescopeRide { .. }
             | Computation::RelatedApplication { .. } => panic!("no native transport in fixtures"),
             | Computation::DataCase { .. }
+            | Computation::SigmaSplit { .. }
             | Computation::RecordProjection(..)
             | Computation::TupleProjection(..) => {
                 panic!("no nominal or record eliminator in this fixture")
@@ -306,6 +307,7 @@ fn translate(
                         panic!("no native transport in fixtures")
                     },
                     | Computation::DataCase { .. }
+                    | Computation::SigmaSplit { .. }
                     | Computation::RecordProjection(..)
                     | Computation::TupleProjection(..) => {
                         panic!("no nominal or record eliminator in this fixture")

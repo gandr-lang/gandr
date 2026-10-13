@@ -750,6 +750,9 @@ fn converge(
                                 .map(|(&one, &other)| ConversionGoal::ValueType(one, other)),
                         );
                     },
+                    // Two static Pis, and two dependent pairs, convert factor
+                    // by factor; a Σ's second factors stand under the same
+                    // binder on both sides.
                     | (
                         &ValueType::StaticPi {
                             domain: one_first,
@@ -758,6 +761,16 @@ fn converge(
                         &ValueType::StaticPi {
                             domain: other_first,
                             codomain: other_second,
+                        },
+                    )
+                    | (
+                        &ValueType::Sigma {
+                            first: one_first,
+                            second: one_second,
+                        },
+                        &ValueType::Sigma {
+                            first: other_first,
+                            second: other_second,
                         },
                     ) => {
                         stack.push(ConversionGoal::ValueType(one_first, other_first));
@@ -845,6 +858,7 @@ fn converge(
                         | &ValueType::Flow { .. }
                         | &ValueType::Base(_)
                         | &ValueType::Product(..)
+                        | &ValueType::Sigma { .. }
                         | &ValueType::Sum(..)
                         | &ValueType::Session { .. }
                         | &ValueType::List(_)
@@ -1190,6 +1204,22 @@ fn converge(
                         );
                     },
                     | (
+                        &Computation::SigmaSplit {
+                            scrutinee: one_scrutinee,
+                            motive: one_motive,
+                            body: one_body,
+                        },
+                        &Computation::SigmaSplit {
+                            scrutinee: other_scrutinee,
+                            motive: other_motive,
+                            body: other_body,
+                        },
+                    ) => {
+                        stack.push(ConversionGoal::Value(one_scrutinee, other_scrutinee));
+                        stack.push(ConversionGoal::CompType(one_motive, other_motive));
+                        stack.push(ConversionGoal::Computation(one_body, other_body));
+                    },
+                    | (
                         &Computation::RecordProjection(a, ref one),
                         &Computation::RecordProjection(b, ref other),
                     ) => {
@@ -1388,6 +1418,7 @@ fn converge(
                     },
                     | (
                         &Computation::DataCase { .. }
+                        | &Computation::SigmaSplit { .. }
                         | &Computation::RecordProjection(..)
                         | &Computation::TupleProjection(..)
                         | &Computation::Transport(..)

@@ -1155,6 +1155,7 @@ _ => ret == Ok(Atom::Other(node)),
                     | ValueType::Stack { .. }
                     | ValueType::Base(_)
                     | ValueType::Product(..)
+                    | ValueType::Sigma { .. }
                     | ValueType::Sum(..)
                     | ValueType::List(_)
                     | ValueType::Thunk(_)
@@ -1203,7 +1204,8 @@ _ => ret == Ok(Atom::Other(node)),
     ///   differ, read after every decode of a quote at either root has fired,
     ///   and otherwise [`Alike::Same`] with the children queued: type children
     ///   as nodes, a decode's code as an atom pair, a dependent arrow's
-    ///   codomain one shared binder further in.
+    ///   codomain and a dependent pair's second factor one shared binder
+    ///   further in.
     /// - provides: the per-former step of the first pass.
     /// - fails: [`ConversionFault::MachineInvariant`] when a node does not
     ///   resolve, without appending partial child obligations.
@@ -1254,7 +1256,8 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         (&ValueType::Abstract(a), &ValueType::Abstract(b)) => Ok((Alike::between(&a, &b), 0, 0)),
                         (&ValueType::Universe { .. }, &ValueType::Universe { .. }) => Ok((Alike::between(left, right), 0, 0)),
                         (&ValueType::Stack { .. }, &ValueType::Stack { .. })
-                        | (&ValueType::StaticPi { .. }, &ValueType::StaticPi { .. }) => Ok((Alike::Same, 2, 0)),
+                        | (&ValueType::StaticPi { .. }, &ValueType::StaticPi { .. })
+                        | (&ValueType::Sigma { .. }, &ValueType::Sigma { .. }) => Ok((Alike::Same, 2, 0)),
                         (&ValueType::List(_), &ValueType::List(_)) | (&ValueType::Thunk(_), &ValueType::Thunk(_)) => Ok((Alike::Same, 1, 0)),
                         (&ValueType::Lift { inner, ref target }, &ValueType::Lift { inner: other_inner, target: ref other_target }) => {
                             if target == other_target {
@@ -1538,6 +1541,21 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             Ok(Alike::Same)
                         }
                     }
+                    else if let ValueType::Sigma {
+                        first: a,
+                        second: b,
+                    } = *matched_left_value
+                        && let ValueType::Sigma {
+                            first: c,
+                            second: d,
+                        } = *matched_right_value
+                    {
+                        let (inside, other_inside) = self.crossed(here, there);
+                        pending
+                            .push((Node::ValueType(b, inside), Node::ValueType(d, other_inside)));
+                        pending.push((Node::ValueType(a, here), Node::ValueType(c, there)));
+                        Ok(Alike::Same)
+                    }
                     else if let ValueType::Thunk(a) = *matched_left_value
                         && let ValueType::Thunk(b) = *matched_right_value
                     {
@@ -1611,6 +1629,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 | ValueType::Element { .. }
                                 | ValueType::Abstract(_)
                                 | ValueType::StaticPi { .. }
+                                | ValueType::Sigma { .. }
                                 | ValueType::Unknown
                                 | ValueType::Session(_)
                                 | ValueType::Flow { .. }
@@ -2221,6 +2240,11 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         } => {
                             types.push(Node::ValueType(first, place));
                             types.push(Node::ValueType(second, place));
+                        },
+                        | ValueType::Sigma { first, second } => {
+                            types.push(Node::ValueType(first, place));
+                            let inside = self.crossed_alone(place);
+                            types.push(Node::ValueType(second, inside));
                         },
                         | ValueType::Thunk(body) => types.push(Node::CompType(body, place)),
                         | ValueType::Lift { inner, .. } => {

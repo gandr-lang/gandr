@@ -1887,6 +1887,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::Universe { .. }
                 | ValueTypeView::Lift { .. }
                 | ValueTypeView::Product(_)
+                | ValueTypeView::Sigma { .. }
                 | ValueTypeView::StaticPi { .. }
                 | ValueTypeView::Session(_)
                 | ValueTypeView::Unknown => return Ok(head),
@@ -2099,6 +2100,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Lift { .. }
                     | ValueTypeView::Element { .. }
                     | ValueTypeView::Product(..)
+                    | ValueTypeView::Sigma { .. }
                     | ValueTypeView::StaticPi { .. }
                     | ValueTypeView::Abstract(_)
                     | ValueTypeView::Session(_)

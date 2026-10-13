@@ -321,6 +321,10 @@ fn enter(
                 | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                     steps.extend(parts.iter().map(|&part| Step::Enter(Node::ValueType(part))));
                 },
+                | ValueType::Sigma { first, second } => {
+                    steps.push(Step::Enter(Node::ValueType(first)));
+                    steps.push(Step::Enter(Node::ValueType(second)));
+                },
                 | ValueType::List(inner)
                 | ValueType::Lift { inner, .. }
                 | ValueType::Path { domain: inner, .. }
@@ -425,6 +429,16 @@ fn exit_value_type(
             }
             else {
                 arena.value_type_sum(&rebuilt)
+            }
+        },
+        | ValueType::Sigma { first, second } => {
+            let rebuilt_first = done.value_type(first)?;
+            let rebuilt_second = done.value_type(second)?;
+            if rebuilt_first == first && rebuilt_second == second {
+                id
+            }
+            else {
+                arena.value_type_sigma(rebuilt_first, rebuilt_second)
             }
         },
         | ValueType::List(element) => {

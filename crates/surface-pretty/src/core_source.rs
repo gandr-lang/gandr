@@ -407,6 +407,7 @@ impl<'arena> CoreSource<'arena>
             | ValueType::Element { .. }
             | ValueType::Abstract(_)
             | ValueType::StaticPi { .. }
+            | ValueType::Sigma { .. }
             | ValueType::Unknown
             | ValueType::Stack { .. }
             | ValueType::Session(_)
@@ -651,7 +652,8 @@ impl<'arena> CoreSource<'arena>
         | (Some(&ValueType::Abstract(index)), Former::Abstract(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&ValueType::Abstract(index)), Former::Unreadable(Unreadable::Unnamed)) => usize::from(index) >= self.names.len(),
-        | (Some(&ValueType::StaticPi { domain, codomain }), Former::StaticPi { domain: actual_domain, codomain: actual_codomain }) =>
+        | (Some(&ValueType::StaticPi { domain, codomain }), Former::StaticPi { domain: actual_domain, codomain: actual_codomain })
+        | (Some(&ValueType::Sigma { first: domain, second: codomain }), Former::Sigma { first: actual_domain, second: actual_codomain }) =>
             actual_domain == CoreNode::ValueType(domain) && actual_codomain == CoreNode::ValueType(codomain),
         | (Some(&ValueType::Session(ref session)), Former::Session { protocol, state, payloads }) =>
             core::ptr::eq(core::ptr::from_ref(protocol), core::ptr::from_ref(session.protocol())) && state == session.state() && usize::from(payloads) == session.payloads().len(),
@@ -720,6 +722,10 @@ impl<'arena> CoreSource<'arena>
             | ValueType::StaticPi { domain, codomain } => Former::StaticPi {
                 domain: CoreNode::ValueType(domain),
                 codomain: CoreNode::ValueType(codomain),
+            },
+            | ValueType::Sigma { first, second } => Former::Sigma {
+                first: CoreNode::ValueType(first),
+                second: CoreNode::ValueType(second),
             },
             | ValueType::Session(ref session) => Former::Session {
                 protocol: session.protocol(),
@@ -849,7 +855,7 @@ impl<'arena> CoreSource<'arena>
             actual == CoreNode::Value(scrutinee) && usize::from(arity) == branches.len(),
         | (Some(&Computation::DataCase { scrutinee, ref branches, .. }), Former::DataCase { scrutinee: actual, arity }) =>
             actual == CoreNode::Value(scrutinee) && usize::from(arity) == branches.len(),
-        | (Some(&Computation::Split { scrutinee, arity, body }), Former::Split { scrutinee: actual, arity: actual_arity, body: actual_body }) =>
+        | (Some(&Computation::Split { scrutinee, arity, body, .. }), Former::Split { scrutinee: actual, arity: actual_arity, body: actual_body }) =>
             actual == CoreNode::Value(scrutinee) && usize::from(arity) == usize::from(actual_arity) && actual_body == CoreNode::Computation(body),
         | (Some(&Computation::Handle { ref clauses, .. }), Former::Handle { clauses: count, .. })
         | (Some(&Computation::Scope { ref clauses, .. }), Former::Scope { clauses: count, .. }) => usize::from(count) == clauses.len(),
@@ -940,6 +946,7 @@ impl<'arena> CoreSource<'arena>
                 scrutinee,
                 arity,
                 body,
+                ..
             } => Former::Split {
                 scrutinee: value(scrutinee),
                 arity: Arity::from(usize::from(arity)),
@@ -1196,6 +1203,7 @@ impl Source for CoreSource<'_>
                 | ValueType::Element { .. }
                 | ValueType::Abstract(_)
                 | ValueType::StaticPi { .. }
+                | ValueType::Sigma { .. }
                 | ValueType::Unknown
                 | ValueType::Stack { .. }
                 | ValueType::Capability { .. } => None,
@@ -1364,6 +1372,7 @@ impl Source for CoreSource<'_>
                 | ValueType::Element { .. }
                 | ValueType::Abstract(_)
                 | ValueType::StaticPi { .. }
+                | ValueType::Sigma { .. }
                 | ValueType::Unknown
                 | ValueType::Stack { .. }
                 | ValueType::Session(_)

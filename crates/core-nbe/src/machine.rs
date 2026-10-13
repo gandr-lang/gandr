@@ -6202,7 +6202,7 @@ mod tests
               ValueType::Stack { .. } | ValueType::Capability { .. } | ValueType::Path { .. } | ValueType::Session(_) | ValueType::Flow { .. } | ValueType::Run(_) => false,
               ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
               ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(Node::ValueType)),
-              ValueType::StaticPi{domain:a,codomain:b} => ret.as_slice() == [Node::ValueType(a),Node::ValueType(b)],
+              ValueType::StaticPi{domain:a,codomain:b} | ValueType::Sigma{first:a,second:b} => ret.as_slice() == [Node::ValueType(a),Node::ValueType(b)],
               ValueType::Thunk(body) => ret.as_slice() == [Node::CompType(body)],
               ValueType::List(inner) | ValueType::Lift{inner,..} => ret.as_slice() == [Node::ValueType(inner)],
               ValueType::Element{code,..} => ret.as_slice() == [Node::Value(code)],
@@ -6396,7 +6396,10 @@ mod tests
                         | ValueType::StaticPi {
                             domain: first,
                             codomain: second,
-                        } => Vec::from([Node::ValueType(first), Node::ValueType(second)]),
+                        }
+                        | ValueType::Sigma { first, second } => {
+                            Vec::from([Node::ValueType(first), Node::ValueType(second)])
+                        },
                         | ValueType::Thunk(body) => Vec::from([Node::CompType(body)]),
                         | ValueType::List(inner) | ValueType::Lift { inner, .. } => {
                             Vec::from([Node::ValueType(inner)])
@@ -6763,6 +6766,11 @@ mod tests
                                 .map(|&component| value_type(self, component))
                                 .collect();
                             self.arena.value_type_product(&components)
+                        },
+                        | ValueType::Sigma { first, second } => {
+                            let (first, second) =
+                                (value_type(self, first), value_type(self, second));
+                            self.arena.value_type_sigma(first, second)
                         },
                         | ValueType::Sum(ref summands) => {
                             let summands: Vec<_> = summands

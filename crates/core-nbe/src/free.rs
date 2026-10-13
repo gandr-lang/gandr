@@ -34,6 +34,7 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
@@ -881,11 +882,13 @@ impl<'arena> Children<'arena>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each child the core former names, left to right: a lambda's
-    ///   body, a static lambda's body, a bind's continuation, a case's branches
-    ///   and a dependent arrow's codomain under one binder, a List fold's cell
-    ///   branch under two, every other child under none, and a leaf none. A
-    ///   quote's child is its type and a decode's its code, so the indices a
-    ///   type reads through a code are the quote's own.
+    ///   body, a static lambda's body, a bind's continuation, a case's
+    ///   branches, a dependent split's motive, a dependent arrow's codomain and
+    ///   a dependent pair's second factor under one binder, a List fold's cell
+    ///   branch under two, a split's body under one per component, every other
+    ///   child under none, and a leaf none. A quote's child is its type and a
+    ///   decode's its code, so the indices a type reads through a code are the
+    ///   quote's own.
     /// - provides: the one reading of the core formers' arity and binding the
     ///   walk and the assembly share.
     /// - fails: [`FreeFault::Dangling`] when `node` does not resolve.
@@ -1083,12 +1086,24 @@ Err(_) => false,
                     | Computation::Split {
                         scrutinee,
                         arity,
+                        motive,
                         body,
-                    } => two(
-                        value(scrutinee),
-                        computation(body),
-                        Lowering(u32::try_from(usize::from(arity)).unwrap_or(u32::MAX)),
-                    ),
+                    } => {
+                        let components =
+                            Lowering(u32::try_from(usize::from(arity)).unwrap_or(u32::MAX));
+                        match motive {
+                            | SplitMotive::Ambient => {
+                                two(value(scrutinee), computation(body), components)
+                            },
+                            | SplitMotive::Scrutinee(motive) => [
+                                Some((value(scrutinee), Lowering::NONE)),
+                                Some((Reached::CompType(motive), Lowering::ONE)),
+                                Some((computation(body), components)),
+                                None,
+                                None,
+                            ],
+                        }
+                    },
                     | Computation::With(first, second) => {
                         two(computation(first), computation(second), Lowering::NONE)
                     },
@@ -1277,6 +1292,11 @@ Err(_) => false,
                         Reached::ValueType(first),
                         Reached::ValueType(second),
                         Lowering::NONE,
+                    ),
+                    | ValueType::Sigma { first, second } => two(
+                        Reached::ValueType(first),
+                        Reached::ValueType(second),
+                        Lowering::ONE,
                     ),
                     | ValueType::Thunk(body) => one(Reached::CompType(body), Lowering::NONE),
                     | ValueType::Lift { inner, .. } => {

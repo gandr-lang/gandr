@@ -28,6 +28,7 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
@@ -529,10 +530,14 @@ fn walk(
                 | Some(&Computation::Split {
                     scrutinee,
                     arity,
+                    motive,
                     body,
                 }) => {
                     let inside = (0_usize .. usize::from(arity)).fold(depth, |at, _| at.deeper());
                     pending.push((AnyNode::Value(scrutinee), depth, results));
+                    if let SplitMotive::Scrutinee(motive) = motive {
+                        pending.push((AnyNode::CompType(motive), deeper, results));
+                    }
                     pending.push((AnyNode::Computation(body), inside, results));
                 },
                 | Some(&Computation::Perform {
@@ -713,6 +718,10 @@ fn walk(
                 }) => {
                     pending.push((AnyNode::ValueType(first), depth, results));
                     pending.push((AnyNode::ValueType(second), depth, results));
+                },
+                | Some(&ValueType::Sigma { first, second }) => {
+                    pending.push((AnyNode::ValueType(first), depth, results));
+                    pending.push((AnyNode::ValueType(second), deeper, results));
                 },
                 | Some(&ValueType::PathUniverse(source, target)) => {
                     pending.push((AnyNode::Value(source), depth, results));

@@ -19,10 +19,12 @@
 //! |force|synthesise|the forced value synthesises `U C`; the force has `C`|
 //! |application|synthesise|the head synthesises `A → C` or `(x : A) → C`, the argument checks against `A`; the application has `C`, instantiated at the argument for the dependent arrow; an argument at a static Pi must not normalize away|
 //! |bind|either|the bound computation synthesises `F A`; opens a binder of `A`; the body is judged in the bind's own mode, and the bind has what the body has, lowered out of the binder|
-//! |pair|either|synthesising, each component synthesises and the pair has their eager product; checking against `A × B`, each component checks against its factor|
+//! |pair|either|synthesising, each component synthesises and the pair has their eager product; checking against `A × B`, each component checks against its factor; checking against `Σ (x : A). B`, the first checks against `A` and the second against `B` at the first; checking against a path between dependent pairs, it checks against that path's fibre (§ Element identity)|
 //! |lambda|check against `A → C` or `(x : A) → C`|opens a binder of `A`; the body checks against `C`|
 //! |static lambda|check against a static Pi `K ⇒ J`|opens a binder of `K`; the body checks against `J`|
 //! |static application|synthesise|the head synthesises one static Pi per argument; each argument checks against its Pi's domain; the application has the last codomain|
+//! |dependent split|synthesise|the scrutinee synthesises `Σ (x : A). B`; the motive `C` forms under a binder of the Σ; the body checks against `C` at the pair of its two binders, `x : A` outermost; the split has `C` at the scrutinee|
+//! |tuple projection|synthesise|the tuple synthesises a product or a Σ; at a Σ the first projection has `A` and the second `B` at the first projection|
 //! |return|check against `F A`|the value checks against `A`|
 //!
 //! A bind and a pair are the formers of either mode. A bind eliminates the
@@ -66,10 +68,13 @@
 //! The pair is answered in both directions for the same reason at its
 //! components: a pair fixed to checking would refuse every unsigned definition
 //! of a pair, and one fixed to synthesis would refuse a pair holding a thunk,
-//! which only checks. The alternative was the checking-only pair of a
-//! bidirectional system without products in synthesis position; it reverses
-//! with the dependent pair, whose second factor reads its first component, and
-//! which then checks only.
+//! which only checks. Against a dependent pair it only checks: its second
+//! factor reads the first component, which no synthesis of the components
+//! fixes, so a pair in synthesis position is the product of its components
+//! and never a Σ. The alternative was the checking-only pair of a
+//! bidirectional system, which refuses every unsigned definition of a
+//! product; it reverses with a metavariable for the second factor, which
+//! would let a pair synthesise the Σ its use solves.
 //!
 //! # Static operators
 //!
@@ -201,7 +206,7 @@
 //! computations, which needs the linearity discipline the core does not have.
 //! Either reverses only with that discipline.
 //!
-//! # A split only checks
+//! # A split checks, and a split under a motive synthesises
 //!
 //! A split's scrutinee synthesises a product of exactly the split's arity, the
 //! unit for a split of none, and its body checks against the expected type
@@ -214,6 +219,24 @@
 //! the bind's rule, not this one.
 //! `judgement::tests::a_split_binds_every_component_of_its_product` asserts
 //! each arm.
+//!
+//! A split under a motive is the dependent pair's eliminator. Its scrutinee
+//! synthesises `Σ (x : A). B` and its arity is two; the motive `C`, written
+//! under a binder of the Σ, forms; the body checks against `C` at the pair of
+//! its two binders, `x : A` and then `y : B`; and the split synthesises `C`
+//! at the scrutinee, so its answer may read what it eliminates. Any other
+//! scrutinee, or another arity, is a `ShapeMismatch` wanting a dependent
+//! pair; a split without a motive at a Σ is the shape mismatch wanting a
+//! product, since its answer could not read the pair.
+//! `judgement::tests::a_dependent_split_synthesises_its_motive_at_the_scrutinee`
+//! asserts each arm.
+//!
+//! - Alternatives: projections alone, which eliminate a Σ but leave a match
+//!   whose answer reads the scrutinee unwritable; a split that infers its
+//!   motive from the expected type, which is higher-order unification.
+//! - Reversal: a motive inferred where the expected type abstracts the
+//!   scrutinee syntactically, as the lowering does, would let the motive go
+//!   unwritten here too.
 //!
 //! # Effects and control
 //!
@@ -339,6 +362,28 @@
 //! forward over both binders; that is the dependent-arrow extension, and this
 //! rule does not take it.
 //!
+//! **A path between dependent pairs is a pair of paths.** A pair checked at
+//! `Path(Σ (x : A). B, l, r)` checks at the fibre `Σ (p : Path(A, l₀, r₀)).
+//! Path(B[r₀], ⟨tr(x. B, p, l₁)⟩, r₁)`: a path between the first components
+//! and, over it, a path from the left second component transported along it
+//! to the right one. `l₀` and `l₁` are the components of a written pair and
+//! `⟨l.0⟩`, `⟨l.1⟩` of any other endpoint, and so for `r`. The kernel computes
+//! the same fibre, so a judged path readmits. Transport along such a path is
+//! the rule above: it reduces on reflexivity and in a motive that ignores its
+//! binder, and stays neutral otherwise.
+//! `judgement::tests::a_pair_of_paths_checks_at_the_identity_of_a_dependent_pair`
+//! and
+//! `judgement::tests::a_transport_along_a_path_at_a_dependent_pair_reads_its_motive_at_the_target`
+//! witness both.
+//!
+//! - Alternatives: the identity at a Σ as its own neutral fibre, which leaves a
+//!   path between pairs unwritable but by reflexivity; a fibre over the product
+//!   of the two components' paths, which is wrong once the second factor reads
+//!   the first.
+//! - Reversal: a fold clause for the Σ in the identity recursion would compute
+//!   this fibre where the rule states it, and reduce transport along a path
+//!   that is not reflexivity componentwise.
+//!
 //! **Identity at an open type is a neutral fibre.** A carrier that mentions a
 //! variable bound outside it — the decode of a type variable, a data type at a
 //! variable index — or exposes no structure — the decode of a code no quote
@@ -387,6 +432,7 @@ use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ContextError;
 use gandr_core_term::Sort;
+use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -411,7 +457,9 @@ use gandr_core_term::instantiate_value_type;
 use gandr_core_term::instantiate_value_type_under;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::shift_comp_type;
+use gandr_core_term::shift_value;
 use gandr_core_term::shift_value_type;
+use gandr_core_term::shift_value_type_under;
 use gandr_core_term::strengthen_comp_type;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
@@ -1065,6 +1113,37 @@ fn telescope_instance(
     instantiate_value_type(arena, fibre, element)
 }
 
+/// The two components of a dependent pair's inhabitant: a written pair's
+/// own, and any other value's two projections, each read as the value it
+/// returns.
+///
+/// # Specification
+/// - requires: `pair` inhabits a dependent pair.
+/// - ensures: the components of a written pair of two; `⟨pair.0⟩` and
+///   `⟨pair.1⟩` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the identity of a written pair reads its components, and
+///   the identity of a declared pair reads its projections.
+/// - witness: `judgement::tests::a_pair_of_paths_checks_at_the_identity_of_a_dependent_pair`
+#[spec(ensures: |ret| ret.iter().all(|&component| arena.value(component).is_some()))]
+fn pair_components(
+    arena: &mut gandr_core_term::CoreArena,
+    pair: ValueId,
+) -> [ValueId; 2]
+{
+    if let Some(&[first, second]) = arena.value(pair).and_then(Value::components) {
+        return [first, second];
+    }
+    [0_usize, 1_usize].map(|index| {
+        let projected =
+            arena.computation_tuple_projection(pair, gandr_kernel_term::Component::from(index));
+        arena.value_returned(projected)
+    })
+}
+
 /// The completed premise of a native List fold rule.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum ListPhase
@@ -1118,6 +1197,18 @@ enum Frame
         term: ComputationId,
         /// Its scrutinee classifier.
         datatype: ValueTypeId,
+    },
+    /// Await a dependent split scrutinee's classifier, which must be a
+    /// dependent pair.
+    SigmaSplitScrutinee(ComputationId),
+    /// Await formation of a dependent split's motive under the scrutinee's
+    /// binder.
+    SigmaSplitMotive
+    {
+        /// The split.
+        term: ComputationId,
+        /// The dependent pair the scrutinee synthesised, at its weak head.
+        sigma: ValueTypeId,
     },
     /// Await a projection operand's record or product classifier.
     NativeProjection(ComputationId),
@@ -1714,17 +1805,19 @@ enum Frame
     Quote(TypeNode),
     /// A former waits on the formation of one child; the next is formed then.
     FormNext(TypeNode),
-    /// A dependent arrow waits on its domain's formation; it then forms its
-    /// codomain under a binder of the domain.
-    FormPi
+    /// A dependent arrow or a dependent pair waits on its domain's formation;
+    /// it then forms its codomain or second factor under a binder of the
+    /// domain.
+    FormUnder
     {
-        /// The domain.
+        /// The domain, or the first factor.
         domain: ValueTypeId,
-        /// The codomain, scoped under the domain's binder.
-        codomain: CompTypeId,
+        /// The codomain or the second factor, scoped under the domain's
+        /// binder.
+        under: TypeNode,
     },
-    /// A dependent arrow waits on its codomain's formation, then closes the
-    /// binder it opened.
+    /// A dependent arrow or a dependent pair waits on the formation under its
+    /// binder, then closes the binder it opened.
     FormBinder,
     /// A lift waits on its type's formation; its target must then lie above
     /// the type's level.
@@ -1736,13 +1829,14 @@ enum Frame
     /// then be a static classifier — a universe or a static Pi — at its weak
     /// head.
     FormStaticPi(ValueTypeId),
-    /// A pair checked against an eager product waits on its first
-    /// component's check; the second then checks against the second factor.
+    /// A list cell, or a pair checked against a dependent pair, waits on its
+    /// first component's check; the second then checks against the second
+    /// factor, read at the first component for a dependent pair.
     PairSecond
     {
         /// The second component.
         second: ValueId,
-        /// The second factor.
+        /// The second factor, at the first component.
         expected: ValueTypeId,
     },
     /// A static application waits on the type its head so far synthesises,
@@ -1904,6 +1998,8 @@ impl Frame
             | Self::NativeRecord { .. } => FrameRole::NativeRecord,
             | Self::NativeCase(_) => FrameRole::NativeCase,
             | Self::NativeMotive { .. } => FrameRole::NativeMotive,
+            | Self::SigmaSplitScrutinee(_) => FrameRole::SigmaSplitScrutinee,
+            | Self::SigmaSplitMotive { .. } => FrameRole::SigmaSplitMotive,
             | Self::NativeProjection(_) => FrameRole::NativeProjection,
             | Self::PerformPayload { .. } => FrameRole::PerformPayload,
             | Self::Next(_) => FrameRole::Next,
@@ -1963,7 +2059,14 @@ impl Frame
             | Self::CompBridge { .. } => FrameRole::CompBridge,
             | Self::Quote(_) => FrameRole::Quote,
             | Self::FormNext(_) => FrameRole::FormNext,
-            | Self::FormPi { .. } => FrameRole::FormPi,
+            | Self::FormUnder {
+                under: TypeNode::Computation(_),
+                ..
+            } => FrameRole::FormPi,
+            | Self::FormUnder {
+                under: TypeNode::Value(_),
+                ..
+            } => FrameRole::FormSigma,
             | Self::FormBinder => FrameRole::FormBinder,
             | Self::FormLift(_) => FrameRole::FormLift,
             | Self::FormElement(_) => FrameRole::FormElement,
@@ -2023,6 +2126,7 @@ impl Frame
             | Self::HandlerReturn { .. }
             | Self::StackBind { .. }
             | Self::NativeMotive { .. }
+            | Self::SigmaSplitMotive { .. }
             | Self::ScopeSubject { .. } => 1_usize,
             | Self::HandlerClause { .. } => 2_usize,
             | Self::SplitBody(arity) => usize::from(arity),
@@ -2033,6 +2137,7 @@ impl Frame
             | Self::NativeTuple { .. }
             | Self::NativeRecord { .. }
             | Self::NativeCase(_)
+            | Self::SigmaSplitScrutinee(_)
             | Self::NativeProjection(_)
             | Self::PerformPayload { .. }
             | Self::Next(_)
@@ -2079,7 +2184,7 @@ impl Frame
             | Self::CompBridge { .. }
             | Self::Quote(_)
             | Self::FormNext(_)
-            | Self::FormPi { .. }
+            | Self::FormUnder { .. }
             | Self::FormLift(_)
             | Self::FormElement(_)
             | Self::FormStaticPi(_)
@@ -3810,20 +3915,24 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - requires: `expected` is formed.
     /// - ensures: a thunk's body checks against the body `expected` matches as
     ///   a thunk type at its weak head; a pair's components check against the
-    ///   factors it matches as an eager product; a static lambda opens a binder
-    ///   of the domain it matches as a static Pi and its body checks against
-    ///   the codomain shifted past the binder; a hole and a mark check against
-    ///   any type at once; a computation written where a value is read is
-    ///   decided by `expected` — against a thunk type, or the unknown type, its
-    ///   computation checks against the thunk's body and it is recorded
-    ///   suspended, and against any other it runs: its computation synthesises
-    ///   a returner whose result crosses the value bridge to `expected`, and it
-    ///   is recorded run; a synthesising value synthesises, then crosses the
-    ///   value bridge to `expected`. Every other rule descends.
+    ///   factors it matches as an eager product, and against a dependent pair
+    ///   its first component checks against the first factor and its second
+    ///   against the second factor at the first component; a static lambda
+    ///   opens a binder of the domain it matches as a static Pi and its body
+    ///   checks against the codomain shifted past the binder; a hole and a mark
+    ///   check against any type at once; a computation written where a value is
+    ///   read is decided by `expected` — against a thunk type, or the unknown
+    ///   type, its computation checks against the thunk's body and it is
+    ///   recorded suspended, and against any other it runs: its computation
+    ///   synthesises a returner whose result crosses the value bridge to
+    ///   `expected`, and it is recorded run; a synthesising value synthesises,
+    ///   then crosses the value bridge to `expected`. Every other rule
+    ///   descends.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a thunk against no thunk
-    ///   type, a pair against no eager product, a static lambda against no
-    ///   static Pi; [`CheckRefusal::OutOfFragment`] for an injection and a
-    ///   value lift.
+    ///   type, a pair against no eager product or dependent pair, a pair of
+    ///   other than two components against a dependent pair, a static lambda
+    ///   against no static Pi; [`CheckRefusal::OutOfFragment`] for an injection
+    ///   and a value lift.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3831,6 +3940,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   former and another.
     /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::a_pair_synthesises_its_eager_product_and_checks_against_one`
+    /// - witness: `judgement::tests::a_pair_checks_against_a_dependent_pair_at_its_first_components_fibre`
     /// - witness: `judgement::tests::a_static_lambda_checks_only_against_a_static_pi`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
     /// - witness: `module::tests::a_nested_computation_is_decided_by_its_expected_type`
@@ -3910,6 +4020,26 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             | Value::Tuple(ref components) if !components.is_empty() => {
                 let count = components.len();
+                let head = self.context.whnf_value_type(expected)?;
+                let view = value_type_view(self.context.arena(), head)?;
+                if let ValueTypeView::Sigma { first, second } = view {
+                    return self.dependent_pair(term, expected, first, second);
+                }
+                if let ValueTypeView::Path {
+                    carrier,
+                    left,
+                    right,
+                } = view
+                    && count == 2
+                {
+                    let base = self.context.whnf_value_type(carrier)?;
+                    if let ValueTypeView::Sigma { first, second } =
+                        value_type_view(self.context.arena(), base)?
+                    {
+                        let (paths, over) = self.sigma_identity(first, second, left, right);
+                        return self.dependent_pair(term, expected, paths, over);
+                    }
+                }
                 let factors = self.product_expected(term, expected)?;
                 if matches!(factors, Components::Known(ref parts) if parts.len() != count) {
                     return Err(CheckRefusal::ShapeMismatch {
@@ -4478,7 +4608,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::Case { .. } => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Case(term),
             }),
-            | Computation::Split { .. } => Err(CheckRefusal::NotSynthesisable {
+            | Computation::Split {
+                scrutinee,
+                motive: SplitMotive::Scrutinee(_),
+                ..
+            } => {
+                self.wait(Frame::SigmaSplitScrutinee(term));
+                Ok(Step::Descend(Goal::Value {
+                    term: scrutinee,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | Computation::Split {
+                motive: SplitMotive::Ambient,
+                ..
+            } => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Split(term),
             }),
             | Computation::Session(_) => self.session(term, Direction::Synthesise),
@@ -4609,6 +4753,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::TelescopeTransport { .. }
             | Computation::Force(_)
             | Computation::Application(..)
+            | Computation::Split {
+                motive: SplitMotive::Scrutinee(_),
+                ..
+            }
             | Computation::Session(
                 SessionAction::Send { .. }
                 | SessionAction::Receive { .. }
@@ -4813,6 +4961,111 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }
     }
 
+    /// Check the pair `term` against the dependent pair `Σ (x : first).
+    /// second` that `expected` reads as at its weak head.
+    ///
+    /// # Specification
+    /// - requires: `first` and `second` are the factors of `expected`'s weak
+    ///   head, `second` scoped under one binder of `first`.
+    /// - ensures: the first component checks against `first` next, and the
+    ///   second waits to check against `second` with the first component for
+    ///   its binder.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at `term`, wanting a dependent
+    ///   pair, for a tuple of other than two components;
+    ///   [`CheckRefusal::DanglingNode`] when `term` does not resolve.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pair whose second component lies in the fibre over
+    ///   its first checks, one at another fibre is refused, and a triple is a
+    ///   shape mismatch.
+    /// - witness: `judgement::tests::a_pair_checks_against_a_dependent_pair_at_its_first_components_fibre`
+    ///
+    /// # Judgement
+    /// - expected: `expected`
+    #[spec(
+        captures: depth = self.frames.len(),
+        ensures: |ret| match ret {
+            | Ok(step) => matches!(step, Step::Descend(_)) && self.frames.len() == depth.saturating_add(1),
+            | Err(CheckRefusal::ShapeMismatch { at, wanted, found }) => at == TermNode::Value(term) && wanted == ExpectedShape::Sigma && found == TypeNode::Value(expected),
+            | Err(_) => true,
+        },
+    )]
+    fn dependent_pair(
+        &mut self,
+        term: ValueId,
+        expected: ValueTypeId,
+        first: ValueTypeId,
+        second: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Some(&[left, right]) = self.value(term)?.components()
+        else {
+            return Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(term),
+                wanted: ExpectedShape::Sigma,
+                found: TypeNode::Value(expected),
+            });
+        };
+        let fibre = instantiate_value_type(self.context.arena_mut(), second, left);
+        self.wait(Frame::PairSecond {
+            second: right,
+            expected: fibre,
+        });
+        Ok(Step::Descend(Goal::Value {
+            term: left,
+            direction: Direction::Check(first),
+        }))
+    }
+
+    /// The fibre of the identity at the dependent pair `Σ (x : first).
+    /// second` between `left` and `right`, as its two factors: a path between
+    /// the first components, and over it a path from the left second
+    /// component transported along that path to the right one.
+    ///
+    /// # Specification
+    /// - requires: `first` and `second` are a dependent pair's factors,
+    ///   `second` under one binder of `first`; `left` and `right` inhabit it.
+    /// - ensures: `Path(first, l₀, r₀)` and, under one binder `p` of it,
+    ///   `Path(second[r₀], ⟨tr(x. second, p, l₁)⟩, r₁)`: the components of a
+    ///   written pair, and `⟨e.0⟩`, `⟨e.1⟩` of any other endpoint `e`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pair of reflexivities at the identity of a written
+    ///   pair with itself checks, and one whose second path ends elsewhere is
+    ///   refused.
+    /// - witness: `judgement::tests::a_pair_of_paths_checks_at_the_identity_of_a_dependent_pair`
+    #[spec(ensures: |ret| self.context.arena().value_type(ret.0).is_some() && self.context.arena().value_type(ret.1).is_some())]
+    fn sigma_identity(
+        &mut self,
+        first: ValueTypeId,
+        second: ValueTypeId,
+        left: ValueId,
+        right: ValueId,
+    ) -> (ValueTypeId, ValueTypeId)
+    {
+        let arena = self.context.arena_mut();
+        let [left_first, left_second] = pair_components(arena, left);
+        let [right_first, right_second] = pair_components(arena, right);
+        let paths = arena.value_type_path(first, left_first, right_first);
+        let at_right = instantiate_value_type(arena, second, right_first);
+        let at_right = shift_value_type(arena, at_right, Binders::ONE);
+        let motive = shift_value_type_under(arena, second, Binders::ONE, Binders::ONE);
+        let path = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let moved = shift_value(arena, left_second, Binders::ONE);
+        let transport = arena.computation_path_transport(motive, path, moved);
+        let transported = arena.value_returned(transport);
+        let target = shift_value(arena, right_second, Binders::ONE);
+        let over = arena.value_type_path(at_right, transported, target);
+
+        (paths, over)
+    }
+
     /// The domain and codomain a static lambda's body checks against: the
     /// ones the expected type matches as a static Pi at its weak head.
     ///
@@ -5004,12 +5257,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   universe is formed below the greatest level; a lift forms its type,
     ///   then awaits the raise; a decode awaits its code's synthesised type; an
     ///   eager product and a sum form each component, an empty sum at once; a
-    ///   static Pi forms both classifiers, then awaits their check as static
-    ///   classifiers; a path type and a flow type form their carrier, open or
-    ///   closed, then check each endpoint against it, source first; a run type
-    ///   checks its protocol against the value universe; a session type forms
-    ///   each payload, then awaits their check as no session types; a
-    ///   capability forms the payload and reply of every operation its
+    ///   dependent pair forms its first factor, then its second under a binder
+    ///   of the first; a static Pi forms both classifiers, then awaits their
+    ///   check as static classifiers; a path type and a flow type form their
+    ///   carrier, open or closed, then check each endpoint against it, source
+    ///   first; a run type checks its protocol against the value universe; a
+    ///   session type forms each payload, then awaits their check as no session
+    ///   types; a capability forms the payload and reply of every operation its
     ///   authority grants, and is refused when consumable. A former formed at
     ///   once leaves the frames as found, but for a data type, a record, a
     ///   product, a sum, a session type and a capability, which queue their
@@ -5159,6 +5413,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.wait(Frame::FormNext(TypeNode::Value(codomain)));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
             },
+            | ValueTypeView::Sigma { first, second } => {
+                self.wait(Frame::FormUnder {
+                    domain: first,
+                    under: TypeNode::Value(second),
+                });
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(first))))
+            },
             | ValueTypeView::Capability {
                 authority, grade, ..
             } => {
@@ -5221,7 +5482,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
             },
             | CompTypeView::Pi { domain, codomain } => {
-                self.wait(Frame::FormPi { domain, codomain });
+                self.wait(Frame::FormUnder {
+                    domain,
+                    under: TypeNode::Computation(codomain),
+                });
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
             },
             | CompTypeView::Element { code, .. } => {
@@ -5444,6 +5708,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Lift { .. }
                 | ValueTypeView::Element { .. }
                 | ValueTypeView::Product(..)
+                | ValueTypeView::Sigma { .. }
                 | ValueTypeView::Abstract(_)
                 | ValueTypeView::Session(_) => {
                     return Err(CheckRefusal::StaticClassifierExpected {
@@ -5510,6 +5775,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Universe { .. }
                 | ValueTypeView::Lift { .. }
                 | ValueTypeView::Product(..)
+                | ValueTypeView::Sigma { .. }
                 | ValueTypeView::StaticPi { .. }
                 | ValueTypeView::Abstract(_)
                 | ValueTypeView::Session(_)
@@ -5685,6 +5951,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | (Frame::NativeMotive { term, datatype }, Produced::Checked) => {
                 self.native_branches(term, datatype)
             },
+            | (Frame::SigmaSplitScrutinee(term), Produced::ValueType(classifier)) => {
+                self.sigma_split(term, classifier)
+            },
+            | (Frame::SigmaSplitMotive { term, sigma }, Produced::Checked) => {
+                self.sigma_split_body(term, sigma)
+            },
             | (Frame::NativeProjection(term), Produced::ValueType(record)) => {
                 self.native_projection(term, record)
             },
@@ -5697,6 +5969,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::NativeRecord { .. }
                 | Frame::NativeCase(_)
                 | Frame::NativeMotive { .. }
+                | Frame::SigmaSplitScrutinee(_)
+                | Frame::SigmaSplitMotive { .. }
                 | Frame::NativeProjection(_),
                 _,
             ) => Err(CheckRefusal::MachineInvariant),
@@ -6580,10 +6854,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::ValueType(self.quoted(quoted)?)))
             },
             | (Frame::FormNext(next), Produced::Checked) => Ok(Step::Descend(Goal::Form(next))),
-            | (Frame::FormPi { domain, codomain }, Produced::Checked) => {
+            | (Frame::FormUnder { domain, under }, Produced::Checked) => {
                 self.context.binders().open(Zone::Intuitionistic, domain);
                 self.wait(Frame::FormBinder);
-                Ok(Step::Descend(Goal::Form(TypeNode::Computation(codomain))))
+                Ok(Step::Descend(Goal::Form(under)))
             },
             | (Frame::FormLift(at), Produced::Checked) => {
                 self.raises(at)?;
@@ -6786,7 +7060,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::FormBinder
                 | Frame::Quote(_)
                 | Frame::FormNext(_)
-                | Frame::FormPi { .. }
+                | Frame::FormUnder { .. }
                 | Frame::FormLift(_)
                 | Frame::FormStaticPi(_)
                 | Frame::PairSecond { .. }
@@ -10425,6 +10699,300 @@ mod tests
             refused.map(|_| ()).map_err(|refusal| refusal.classify()),
             Err(FailureClass::MalformedSource),
             "an identity not over its path is the author's"
+        );
+    }
+
+    /// The constants a dependent pair test reads, admitted at positions
+    /// `0..6`: `a b : Integer`, `r : Path(Integer, a, a)`, `s : Σ (n :
+    /// Integer). Path(Integer, n, n)`, `r₂ : Path(Integer, a, a)` and `q :
+    /// Path(Σ…, #{a, r}, #{a, r})`; that Σ, and the pair `#{a, r}`.
+    struct SigmaScene
+    {
+        /// The constants `[a, b, r, s, r₂, q]`.
+        constants: [ValueId; 6],
+        /// Their types, in order.
+        types: [ValueTypeId; 6],
+        /// `Σ (n : Integer). Path(Integer, n, n)`.
+        sigma: ValueTypeId,
+        /// The pair `#{a, r}`.
+        pair: ValueId,
+    }
+
+    /// [`SigmaScene`], minted in `arena`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn sigma_scene(arena: &mut CoreArena) -> SigmaScene
+    {
+        let integer = arena.value_type_base(BaseType::Integer);
+        let constants = [0_usize, 1, 2, 3, 4, 5]
+            .map(|position| arena.value_constant(ConstantIndex::from(position)));
+        let [a, _, r, ..] = constants;
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let family = arena.value_type_path(integer, bound, bound);
+        let sigma = arena.value_type_sigma(integer, family);
+        let loop_a = arena.value_type_path(integer, a, a);
+        let pair = arena.value_tuple(&[a, r]);
+        let identity = arena.value_type_path(sigma, pair, pair);
+        SigmaScene {
+            constants,
+            types: [integer, integer, loop_a, sigma, loop_a, identity],
+            sigma,
+            pair,
+        }
+    }
+
+    /// `⟨value.index⟩`: a tuple projection read as the value it returns.
+    ///
+    /// # Specification
+    /// trivial.
+    fn projected(
+        arena: &mut CoreArena,
+        value: ValueId,
+        index: gandr_kernel_term::Component,
+    ) -> ValueId
+    {
+        let projection = arena.computation_tuple_projection(value, index);
+        arena.value_returned(projection)
+    }
+
+    #[test]
+    fn a_pair_checks_against_a_dependent_pair_at_its_first_components_fibre()
+    {
+        let mut arena = CoreArena::new();
+        let scene = sigma_scene(&mut arena);
+        let [_, b, r, ..] = scene.constants;
+        let skewed = arena.value_tuple(&[b, r]);
+        let triple = arena.value_tuple(&[b, r, r]);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &scene.types);
+        let sigma = form_value_type(&mut context, scene.sigma).unwrap();
+        let checked = check_value(&mut context, scene.pair, sigma);
+        assert!(
+            checked.is_ok(),
+            "`r : Path(Integer, a, a)` lies in the fibre over `a`: {checked:?}"
+        );
+        assert!(
+            matches!(
+                check_value(&mut context, skewed, sigma),
+                Err(CheckRefusal::TypeMismatch(_))
+            ),
+            "the same second component over `b` lies in another fibre"
+        );
+        assert!(
+            matches!(
+                check_value(&mut context, triple, sigma),
+                Err(CheckRefusal::ShapeMismatch { at, wanted: ExpectedShape::Sigma, .. })
+                    if at == TermNode::Value(triple)
+            ),
+            "a dependent pair has two components"
+        );
+        let synthesised = synthesise_value(&mut context, scene.pair)
+            .map(|found| found.produced().id())
+            .unwrap();
+        assert!(
+            matches!(
+                context.arena().value_type(synthesised),
+                Some(ValueType::Product(parts)) if parts.len() == 2
+            ),
+            "a pair with no type to check against synthesises the product, never a Σ"
+        );
+    }
+
+    #[test]
+    fn a_projection_of_a_dependent_pair_reads_its_second_factor_at_the_first()
+    {
+        let mut arena = CoreArena::new();
+        let scene = sigma_scene(&mut arena);
+        let [a, _, r, s, ..] = scene.constants;
+        let [integer, ..] = scene.types;
+        let first =
+            arena.computation_tuple_projection(s, gandr_kernel_term::Component::from(0_usize));
+        let second =
+            arena.computation_tuple_projection(s, gandr_kernel_term::Component::from(1_usize));
+        let off_path =
+            arena.computation_tuple_projection(r, gandr_kernel_term::Component::from(0_usize));
+        let at_first = projected(&mut arena, s, gandr_kernel_term::Component::from(0_usize));
+        let fibre = arena.value_type_path(integer, at_first, at_first);
+        let fibre = arena.comp_type_returner(fibre);
+        let elsewhere = arena.value_type_path(integer, a, a);
+        let elsewhere = arena.comp_type_returner(elsewhere);
+        let returns_integer = arena.comp_type_returner(integer);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &scene.types);
+        let returns_integer = form_comp_type(&mut context, returns_integer).unwrap();
+        assert!(
+            check_comp(&mut context, first, returns_integer).is_ok(),
+            "the first projection returns the first factor"
+        );
+        let fibre = form_comp_type(&mut context, fibre).unwrap();
+        let checked = check_comp(&mut context, second, fibre);
+        assert!(
+            checked.is_ok(),
+            "the second returns the second factor at the first projection: {checked:?}"
+        );
+        let elsewhere = form_comp_type(&mut context, elsewhere).unwrap();
+        assert!(
+            matches!(
+                check_comp(&mut context, second, elsewhere),
+                Err(CheckRefusal::TypeMismatch(_))
+            ),
+            "and at no other first component"
+        );
+        assert!(
+            matches!(
+                synthesise_comp(&mut context, off_path),
+                Err(CheckRefusal::ShapeMismatch { .. })
+            ),
+            "a projection of a type that is no pair is a shape mismatch"
+        );
+    }
+
+    #[test]
+    fn a_dependent_split_synthesises_its_motive_at_the_scrutinee()
+    {
+        let mut arena = CoreArena::new();
+        let scene = sigma_scene(&mut arena);
+        let [a, _, _, s, ..] = scene.constants;
+        let [integer, ..] = scene.types;
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let first_bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let at_first = projected(
+            &mut arena,
+            bound,
+            gandr_kernel_term::Component::from(0_usize),
+        );
+        let motive = arena.value_type_path(integer, at_first, at_first);
+        let motive = arena.comp_type_returner(motive);
+        let returns_second = arena.computation_return(bound);
+        let arity = gandr_core_term::ComponentCount::from(2_usize);
+        let split = arena.computation_dependent_split(s, arity, motive, returns_second);
+        let at_s = projected(&mut arena, s, gandr_kernel_term::Component::from(0_usize));
+        let answered = arena.value_type_path(integer, at_s, at_s);
+        let answered = arena.comp_type_returner(answered);
+        let ambient = arena.computation_split(s, arity, returns_second);
+        let product = arena.value_tuple(&[a, a]);
+        let returns_integer = arena.comp_type_returner(integer);
+        let returns_first = arena.computation_return(first_bound);
+        let at_product =
+            arena.computation_dependent_split(product, arity, returns_integer, returns_first);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &scene.types);
+        let answered = form_comp_type(&mut context, answered).unwrap();
+        let checked = check_comp(&mut context, split, answered);
+        assert!(
+            checked.is_ok(),
+            "the arm answers the motive at the pair of its components, and the split the motive \
+             at its scrutinee: {checked:?}"
+        );
+        let ambient_checked = check_comp(&mut context, ambient, answered);
+        assert!(
+            matches!(ambient_checked, Err(CheckRefusal::ShapeMismatch { .. })),
+            "a split with no motive does not eliminate a dependent pair: {ambient_checked:?}"
+        );
+        assert!(
+            matches!(
+                synthesise_comp(&mut context, at_product),
+                Err(CheckRefusal::ShapeMismatch {
+                    wanted: ExpectedShape::Sigma,
+                    ..
+                })
+            ),
+            "a split under a motive eliminates only a dependent pair"
+        );
+    }
+
+    #[test]
+    fn a_pair_of_paths_checks_at_the_identity_of_a_dependent_pair()
+    {
+        let mut arena = CoreArena::new();
+        let scene = sigma_scene(&mut arena);
+        let [a, b, r, s, stray, _] = scene.constants;
+        let [.., identity] = scene.types;
+        let here_a = arena.value_here(a);
+        let here_r = arena.value_here(r);
+        let paths = arena.value_tuple(&[here_a, here_r]);
+        let here_stray = arena.value_here(stray);
+        let strayed = arena.value_tuple(&[here_a, here_stray]);
+        let here_b = arena.value_here(b);
+        let moved = arena.value_tuple(&[here_b, here_r]);
+        let declared = arena.value_type_path(scene.sigma, s, s);
+        let first = projected(&mut arena, s, gandr_kernel_term::Component::from(0_usize));
+        let second = projected(&mut arena, s, gandr_kernel_term::Component::from(1_usize));
+        let here_first = arena.value_here(first);
+        let here_second = arena.value_here(second);
+        let projections = arena.value_tuple(&[here_first, here_second]);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &scene.types);
+        let identity = form_value_type(&mut context, identity).unwrap();
+        let checked = check_value(&mut context, paths, identity);
+        assert!(
+            checked.is_ok(),
+            "a path between the first components and, over it, one between the second: \
+             {checked:?}"
+        );
+        assert!(
+            matches!(
+                check_value(&mut context, strayed, identity),
+                Err(CheckRefusal::EndpointMismatch { .. })
+            ),
+            "the second path must end at the right second component"
+        );
+        assert!(
+            matches!(
+                check_value(&mut context, moved, identity),
+                Err(CheckRefusal::EndpointMismatch { .. })
+            ),
+            "the first path must join the first components"
+        );
+        let declared = form_value_type(&mut context, declared).unwrap();
+        let checked = check_value(&mut context, projections, declared);
+        assert!(
+            checked.is_ok(),
+            "an endpoint that is no written pair is read through its projections: {checked:?}"
+        );
+    }
+
+    #[test]
+    fn a_transport_along_a_path_at_a_dependent_pair_reads_its_motive_at_the_target()
+    {
+        let mut arena = CoreArena::new();
+        let scene = sigma_scene(&mut arena);
+        let [a, b, r, _, _, q] = scene.constants;
+        let [integer, _, loop_a, ..] = scene.types;
+        let constant = arena.comp_type_returner(integer);
+        let carried = arena.computation_path_transport(integer, q, a);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let at_first = projected(
+            &mut arena,
+            bound,
+            gandr_kernel_term::Component::from(0_usize),
+        );
+        let family = arena.value_type_path(integer, at_first, at_first);
+        let reading = arena.computation_path_transport(family, q, r);
+        let at_target = arena.comp_type_returner(loop_a);
+        let misplaced = arena.computation_path_transport(family, q, b);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &scene.types);
+        let constant = form_comp_type(&mut context, constant).unwrap();
+        let checked = check_comp(&mut context, carried, constant);
+        assert!(
+            checked.is_ok(),
+            "a motive that ignores its binder returns its own type: {checked:?}"
+        );
+        let at_target = form_comp_type(&mut context, at_target).unwrap();
+        let checked = check_comp(&mut context, reading, at_target);
+        assert!(
+            checked.is_ok(),
+            "a motive reading its binder's projection returns it at the target pair's: \
+             {checked:?}"
+        );
+        assert!(
+            matches!(
+                synthesise_comp(&mut context, misplaced),
+                Err(CheckRefusal::TypeMismatch(_))
+            ),
+            "the operand checks at the motive over the source pair"
         );
     }
 
