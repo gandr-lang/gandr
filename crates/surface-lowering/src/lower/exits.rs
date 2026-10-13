@@ -1287,16 +1287,18 @@ fn continue_end(
 
 /// Label each written variable a rewrite replaced with the value that stands
 /// for it now, when that value answers at other bytes, and carry every label
-/// naming a replaced variable over to its replacement; keep each written
-/// value type a rewrite replaced as a stand-in for its replacement.
+/// naming a replaced variable or session action over to its replacement; keep
+/// each written value type a rewrite replaced as a stand-in for its
+/// replacement.
 ///
 /// # Specification
 /// - requires: every node `carried` reports has its origin recorded.
 /// - ensures: one label per variable `carried` reports replaced whose origin is
 ///   written and whose replacement's origin spans other bytes, naming the
-///   replacement; a label that named a replaced variable names its replacement;
-///   one stand-in per value type `carried` reports replaced whose origin is
-///   written and whose replacement's origin spans other bytes.
+///   replacement; a label that named a replaced variable, or the endpoint of a
+///   replaced session action, names its replacement; one stand-in per value
+///   type `carried` reports replaced whose origin is written and whose
+///   replacement's origin spans other bytes.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1305,9 +1307,11 @@ fn continue_end(
 ///   value an arm passes, answers at that value's type, through a chain of such
 ///   instantiations too; a scrutinee a leaf's copy replaces answers at its
 ///   bytes; a functor's parameter type, renamed to an argument's, answers where
-///   the template writes it.
+///   the template writes it; an endpoint written in an offer the lowering
+///   rebuilds answers at the rebuilt offer.
 /// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
 /// - witness: `lower::tests::a_type_head_answers_at_what_it_stands_for`
+/// - witness: `lower::session::tests::each_endpoint_answers_at_its_action`
 #[spec(captures: before = sink.origins.labels().len(), ensures: sink.origins.labels().len() >= before)]
 pub(super) fn label_replaced(
     sink: &mut Sink<'_>,
@@ -1320,7 +1324,8 @@ pub(super) fn label_replaced(
                 if !matches!(sink.arena.value(replaced), Some(&Value::Variable { .. })) {
                     continue;
                 }
-                sink.origins.relabel(replaced, standing);
+                sink.origins
+                    .relabel(&Labelled::Value(replaced), &Labelled::Value(standing));
                 let (Maybe::Present(written), Maybe::Present(now)) =
                     (sink.origins.value(replaced), sink.origins.value(standing))
                 else {
@@ -1345,7 +1350,16 @@ pub(super) fn label_replaced(
                     sink.origins.record_stand_in(standing, written);
                 }
             },
-            | Carried::Computation(..) | Carried::CompType(..) => {},
+            | Carried::Computation(replaced, standing) => {
+                if matches!(
+                    sink.arena.computation(replaced),
+                    Some(&Computation::Session(_))
+                ) {
+                    sink.origins
+                        .relabel(&Labelled::Endpoint(replaced), &Labelled::Endpoint(standing));
+                }
+            },
+            | Carried::CompType(..) => {},
         }
     }
 }

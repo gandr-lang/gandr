@@ -1,3 +1,4 @@
+use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -31,6 +32,7 @@ use crate::lower::native::tests::tail_of;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredDeclaration;
 use crate::module::LoweredModule;
+use crate::origin::Labelled;
 use crate::resolve::SurfaceName;
 
 /// The seat exchange over strings: the seat's end forked to the child, the
@@ -519,6 +521,58 @@ fn the_seat_exchange_lowers_both_ends()
         "the seat's end is the child's, the operator's the parent's, and each names its endpoint by linear index past the parameter and every receipt"
     );
     assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn each_endpoint_answers_at_its_action()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(EXCHANGE), &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("exchange")));
+    let mut reached = BTreeSet::new();
+    let mut pending = Vec::from([tail]);
+    while let Some(next) = pending.pop() {
+        match arena.computation(next) {
+            | Some(&Computation::Bind(first, second)) => pending.extend([second, first]),
+            | Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
+                pending.push(under);
+            },
+            | Some(&Computation::Session(ref action)) => {
+                if let Maybe::Present(_) = action.endpoint() {
+                    let _fresh = reached.insert(next);
+                }
+                pending.extend(action.computations());
+            },
+            | _ => {},
+        }
+    }
+    let labelled: Vec<(&str, ComputationId)> = module
+        .origins()
+        .labels()
+        .iter()
+        .filter_map(|label| match label.labelled {
+            | Labelled::Endpoint(action) => Some((
+                EXCHANGE
+                    .get(usize::from(label.span.start()) .. usize::from(label.span.end()))
+                    .unwrap_or(""),
+                action,
+            )),
+            | Labelled::ValueType { .. } | Labelled::CompType { .. } | Labelled::Value(_) => None,
+        })
+        .collect();
+    assert!(
+        labelled
+            .iter()
+            .all(|&(written, _)| written == "c" || written == "peer"),
+        "each label stands at an endpoint's name: {labelled:?}"
+    );
+    let named: BTreeSet<ComputationId> = labelled.iter().map(|&(_, action)| action).collect();
+    assert_eq!(
+        (labelled.len(), &named),
+        (20, &reached),
+        "each of the 20 actions the body holds is named by its endpoint once, through every \
+         rewrite"
+    );
 }
 
 #[test]

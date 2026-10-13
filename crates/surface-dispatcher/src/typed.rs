@@ -18,9 +18,11 @@
 //! - **A binder** is spelled at the type of the uses that resolve to it, read
 //!   through the origin table's use-to-binder record. A binder no use resolves
 //!   to, and any other label — a record or sum type's field, a lazy record's
-//!   observation, a record's field — is spelled at what it labels, read through
-//!   the origin table's labels: a type's entry at that type under the binders
-//!   it is read under, a record's field at its value's type.
+//!   observation, a record's field, a session action's endpoint — is spelled at
+//!   what it labels, read through the origin table's labels: a type's entry at
+//!   that type under the binders it is read under, a record's field at its
+//!   value's type, an endpoint at the session type the typed run found it
+//!   standing at in that action, so each use shows the protocol left to run.
 //! - **A written type** is spelled at its universe: the level the typed run
 //!   formed it at, under the binders it was formed under, and the level it
 //!   reads closed where no formation reached it. A type the lowering inserted
@@ -757,6 +759,19 @@ impl TypeTable
                 .map(|&(_, first, _, _, constant)| (first, constant))
         };
         let first_type = |term: TermNode| first_of(term).map(|(first, _)| first);
+        // Each action's endpoint at the first session type a run found it
+        // standing at, and the declaration whose run found it.
+        let mut endpoints: Vec<(TermNode, TypeNode, ConstantIndex)> = typed
+            .iter()
+            .flat_map(|(&constant, typings)| {
+                typings
+                    .endpoints()
+                    .iter()
+                    .map(move |standing| (standing.term, standing.ty, constant))
+            })
+            .collect();
+        endpoints.sort_by_key(|&(term, ..)| term);
+        endpoints.dedup_by_key(|&mut (term, ..)| term);
         let names = constant_names(&module);
         let mut order: Vec<&(TermNode, TypeNode, TypeNode, usize, ConstantIndex)> =
             kept.iter().collect();
@@ -834,6 +849,22 @@ impl TypeTable
                         Standing::Judged(Within {
                             constant,
                             node: CoreNode::Value(value),
+                        }),
+                    )
+                },
+                | Labelled::Endpoint(action) => {
+                    let Some(&(_, ty, constant)) = endpoints
+                        .binary_search_by_key(&TermNode::Computation(action), |&(term, ..)| term)
+                        .ok()
+                        .and_then(|at| endpoints.get(at))
+                    else {
+                        continue;
+                    };
+                    (
+                        ty,
+                        Standing::Judged(Within {
+                            constant,
+                            node: CoreNode::Computation(action),
                         }),
                     )
                 },

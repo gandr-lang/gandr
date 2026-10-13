@@ -2171,8 +2171,8 @@ enum Plan
     /// every site the source writes one of its states at.
     Session(Arc<Protocol>, Stretch, Arc<session::Written>),
     /// A session action over the nodes of its payload, its arms and a fork's
-    /// protocol and children.
-    Action(SessionAction<NodeIndex, NodeIndex, NodeIndex>),
+    /// protocol and children, with the bytes its endpoint is written at.
+    Action(SessionAction<NodeIndex, NodeIndex, NodeIndex>, ByteSpan),
 }
 
 /// A node's lowered core node, at the sort its own form produced.
@@ -8695,7 +8695,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::FlowProduct(..)
                 | Plan::Recorded(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(_) | Plan::Ride(..) | Plan::FlowThen(..) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(..) | Plan::Ride(..) | Plan::FlowThen(..) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -8946,7 +8946,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Session(ref protocol, payloads, ref written) => {
                 self.mint_session(protocol, payloads, written, sink, origin)
             },
-            | Plan::Action(ref action) => self.mint_action(action, sink, origin),
+            | Plan::Action(ref action, subject) => self.mint_action(action, subject, sink, origin),
             | Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),
             | Plan::Ride(motive, flow, value) => {
                 self.mint_ride((motive, flow, value), sink, origin)
@@ -9683,7 +9683,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Reenter(_)
             | Plan::Derived(_)
             | Plan::Session(..)
-            | Plan::Action(_)
+            | Plan::Action(..)
             | Plan::TelescopeTransport(_)
             | Plan::Capability(..)
             | Plan::Effectful(..)

@@ -196,8 +196,8 @@ pub struct Formed
     pub level: Level,
 }
 
-/// What a recording context kept: the term judgements and the type
-/// formations finished, each in the order finished.
+/// What a recording context kept: the term judgements, the type formations
+/// and the endpoints' standings finished, each in the order finished.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Kept
 {
@@ -205,11 +205,13 @@ pub struct Kept
     pub typings: Vec<Typing>,
     /// The type formations finished.
     pub formed: Vec<Formed>,
+    /// The session type each action's endpoint stood at, keyed by the action.
+    pub endpoints: Vec<Typing>,
 }
 
 /// A typed run's record: every term judgement it finished, with its type,
-/// every type formation it finished, with its level, and the refusals it
-/// marked.
+/// every type formation it finished, with its level, the session type each
+/// action's endpoint stood at, and the refusals it marked.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Typings
 {
@@ -218,6 +220,9 @@ pub struct Typings
     judged: Vec<Typing>,
     /// The type formations finished, in the order finished.
     formed: Vec<Formed>,
+    /// The session type each action's endpoint stood at, read where the
+    /// action stands, keyed by the action, in the order met.
+    endpoints: Vec<Typing>,
     /// The refusals marked, in the order met.
     marks: Vec<MarkEntry>,
 }
@@ -248,6 +253,18 @@ impl Typings
         &self.formed
     }
 
+    /// The session type each action's endpoint stood at, read where the
+    /// action stands and keyed by the action, in the order met.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn endpoints(&self) -> &[Typing]
+    {
+        &self.endpoints
+    }
+
     /// The refusals marked, in the order met.
     ///
     /// # Specification
@@ -265,8 +282,8 @@ impl Typings
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the typings and the formations are `signature`'s then
-    ///   `body`'s, in order; the marks are `body`'s.
+    /// - ensures: the typings, the formations and the endpoints are
+    ///   `signature`'s then `body`'s, in order; the marks are `body`'s.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -285,12 +302,15 @@ impl Typings
         let Kept {
             mut typings,
             mut formed,
+            mut endpoints,
         } = signature;
         typings.extend(body.judged);
         formed.extend(body.formed);
+        endpoints.extend(body.endpoints);
         Self {
             judged: typings,
             formed,
+            endpoints,
             marks: body.marks,
         }
     }
@@ -569,10 +589,15 @@ pub fn type_value(
     machine.unwind(entry);
     machine.close_sessions(scope);
     let marks = machine.marks;
-    let Kept { typings, formed } = context.finish_typings(outer);
+    let Kept {
+        typings,
+        formed,
+        endpoints,
+    } = context.finish_typings(outer);
     Typings {
         judged: typings,
         formed,
+        endpoints,
         marks,
     }
 }

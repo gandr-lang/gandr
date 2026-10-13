@@ -1226,8 +1226,8 @@ impl OriginTable
         self.labels.push(label);
     }
 
-    /// Carry every label naming the term `from` over to `to`, which a rewrite
-    /// put in its place.
+    /// Carry every label naming `from` over to `to`, which a rewrite put in
+    /// its place.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1238,21 +1238,23 @@ impl OriginTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a use instantiated at a binder a later instantiation
-    ///   replaces answers at the value that replaced both.
+    ///   replaces answers at the value that replaced both; an endpoint written
+    ///   in an offer the lowering rebuilds answers at the rebuilt offer.
     /// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
+    /// - witness: `lower::session::tests::each_endpoint_answers_at_its_action`
     #[spec(
         captures: before = self.labels.len(),
         ensures: self.labels.len() == before,
     )]
     pub(crate) fn relabel(
         &mut self,
-        from: ValueId,
-        to: ValueId,
+        from: &Labelled,
+        to: &Labelled,
     )
     {
         for label in &mut self.labels {
-            if label.labelled == Labelled::Value(from) {
-                label.labelled = Labelled::Value(to);
+            if label.labelled == *from {
+                label.labelled = to.clone();
             }
         }
     }
@@ -1349,6 +1351,9 @@ pub enum Labelled
     },
     /// A record field's value, whose type the typed run judges.
     Value(ValueId),
+    /// The endpoint a session action names, at the session type the typed
+    /// run found it standing at there.
+    Endpoint(ComputationId),
 }
 
 /// One alternative of one arm of a lowered match.
