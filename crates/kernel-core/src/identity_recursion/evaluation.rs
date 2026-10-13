@@ -12,6 +12,7 @@ use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueTypeId;
 
 use super::Clause;
+use super::Mode;
 use super::Relation;
 use super::RelationError;
 use super::RelationId;
@@ -62,6 +63,8 @@ pub enum Fiber
     /// The suspended product over two arguments and their relation premise.
     Function
     {
+        /// The thunk type both functions inhabit.
+        classifier: ValueTypeId,
         /// Both argument indices range over this type.
         argument: ValueTypeId,
         /// Returned values are related at this type, in the enclosing mode.
@@ -70,6 +73,9 @@ pub enum Fiber
         left: IndexId,
         /// The second function, including neutral projections.
         right: IndexId,
+        /// Identity's fibre lowers to the persisted path type; a bridge's
+        /// has no persisted type.
+        mode: Mode,
     },
 }
 
@@ -284,10 +290,12 @@ impl Relation
                             let argument = self.node(argument)?;
                             let result = self.node(result)?;
                             Fiber::Function {
+                                classifier: node.source,
                                 argument: argument.source,
                                 result: result.source,
                                 left,
                                 right,
+                                mode: self.mode,
                             }
                         },
                         | Clause::Product(first, second) => {
@@ -433,8 +441,13 @@ impl Fibers
     /// # Specification
     /// - ensures: Unit, Empty, Product and universe fibres become native types.
     ///   Universe endpoints pass the existing path decoder; residuals are not
-    ///   interpreted as either truth or falsity.
-    /// - fails: `NeutralFiber` on a residual, `HigherFieldRequired` on a
+    ///   interpreted as either truth or falsity. An identity function fibre
+    ///   between two value indices is the persisted `Path` at its thunk type:
+    ///   function identity has no first-order reduct, and its inhabitants are
+    ///   the forms the persisted identity admits there, a higher evaluation,
+    ///   `here` and a neutral.
+    /// - fails: `NeutralFiber` on a residual, a bridge's function fibre or a
+    ///   function fibre at a neutral projection; `HigherFieldRequired` on a
     ///   certificate identity, `Path` outside native endpoint formation, or
     ///   `Arena` on invalid edges.
     /// - panics: none.
@@ -444,10 +457,12 @@ impl Fibers
     ///
     /// # Adequacy
     /// - hypothesis: L3 — cross injections lower to native Empty, while neutral
-    ///   base equality never does.
+    ///   base equality never does; an identity function fibre lowers to its
+    ///   path type and a bridge's stays neutral.
     /// - witness: `identity_recursion::tests::both_modes_compute_all_element_clauses`
     /// - witness: `identity_recursion::tests::neutral_fibres_do_not_decide_equality`
     /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
+    /// - witness: `identity_recursion::function::tests::function_clause_retains_related_inputs_and_neutrals`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -456,12 +471,13 @@ impl Fibers
         )
     )]
     #[spec(ensures: |ret| match ret {
-        Ok(ty) => !self.nodes.iter().any(|node| matches!(node, &Fiber::Discrete(..) | &Fiber::Suspended(..) | &Fiber::Function { .. } | &Fiber::Certificate(..)))
+        Ok(ty) => !self.nodes.iter().any(|node| matches!(node, &Fiber::Discrete(..) | &Fiber::Suspended(..) | &Fiber::Function { mode: Mode::Bridge, .. } | &Fiber::Certificate(..)))
             && (matches!((self.get(self.root), arena.value_type(ty)),
                 (Ok(Fiber::Unit), Some(gandr_kernel_term::ValueType::Product(parts))) if parts.is_empty())
                 || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Empty), Some(gandr_kernel_term::ValueType::Sum(parts))) if parts.is_empty())
                 || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Product(..)), Some(gandr_kernel_term::ValueType::Product(parts))) if parts.len() == 2_usize)
-                || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Universe(..)), Some(&gandr_kernel_term::ValueType::PathUniverse(..))))),
+                || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Universe(..)), Some(&gandr_kernel_term::ValueType::PathUniverse(..))))
+                || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Function { classifier, .. }), Some(&gandr_kernel_term::ValueType::Path { domain, .. })) if domain == classifier)),
         Err(RelationError::HigherFieldRequired) => self.nodes.iter().any(|node| matches!(node, &Fiber::Certificate(..))),
         Err(_) => true,
     })]
@@ -474,7 +490,12 @@ impl Fibers
         if self.nodes.iter().any(|node| {
             matches!(
                 node,
-                Fiber::Discrete(..) | Fiber::Suspended(..) | Fiber::Function { .. }
+                Fiber::Discrete(..)
+                    | Fiber::Suspended(..)
+                    | Fiber::Function {
+                        mode: Mode::Bridge,
+                        ..
+                    }
             )
         }) {
             return Err(RelationError::NeutralFiber);
@@ -501,7 +522,21 @@ impl Fibers
                     let right = *types.get(right.0).ok_or(RelationError::Arena)?;
                     arena.value_type_product(&[left, right])
                 },
-                | Fiber::Discrete(..) | Fiber::Suspended(..) | Fiber::Function { .. } => {
+                | Fiber::Function {
+                    classifier,
+                    left,
+                    right,
+                    mode: Mode::Identity,
+                    ..
+                } => {
+                    let (left, right) = self.native_indices(left, right)?;
+                    arena.value_type_path(classifier, left, right)
+                },
+                | Fiber::Discrete(..)
+                | Fiber::Suspended(..)
+                | Fiber::Function {
+                    mode: Mode::Bridge, ..
+                } => {
                     return Err(RelationError::NeutralFiber);
                 },
             };

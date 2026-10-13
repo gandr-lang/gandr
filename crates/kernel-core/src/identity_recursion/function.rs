@@ -107,14 +107,18 @@ pub struct RelatedArguments
     pub proof: ValueId,
 }
 
-/// One universally quantified constructor pattern of a first-order relation.
+/// One universally quantified pattern of a related-input product.
 #[derive(Clone, Debug)]
 pub struct RelatedPattern
 {
-    /// Distinct rigid Base leaves, ordered outermost first.
+    /// The pattern's binders, ordered outermost first: one rigid leaf per
+    /// discrete Base coordinate, three per function coordinate.
     pub context: Vec<ValueTypeId>,
-    /// Shared constructor shape after elimination of the relation premise.
-    pub value: ValueId,
+    /// The source argument after elimination of the relation premise.
+    pub left: ValueId,
+    /// The target argument: the source's own shape except at a function
+    /// coordinate, whose two functions stay distinct.
+    pub right: ValueId,
     /// Evidence of the related pair at that pattern.
     pub proof: ValueId,
 }
@@ -209,13 +213,17 @@ impl Relation
     /// # Specification
     /// - ensures: Unit has one pattern; Sum has matching injections only;
     ///   Product has all component combinations; discrete Base shares a fresh
-    ///   rigid variable after eliminating its equality premise. No Base
-    ///   inhabitants are sampled. Both modes use these same relation clauses.
-    /// - provides: a universal introduction boundary for first-order arguments.
-    ///   Function arguments retain their quantified fibre instead of being
-    ///   sampled; their introduction remains suspended.
-    /// - fails: `NeutralFiber` for a higher-order argument; Classifier outside
-    ///   a function clause; Arena or Budget on invalid or excessive work.
+    ///   rigid variable after eliminating its equality premise; a function
+    ///   coordinate at a thunk type `T` binds two functions and their identity,
+    ///   `f₀ f₁ : T` and `p : Path(T, f₀, f₁)`, and relates `f₀` to `f₁` by
+    ///   `p`. No Base inhabitants and no functions are sampled.
+    /// - provides: a universal introduction boundary for first-order and
+    ///   higher-order arguments. The function coordinate's premise is the
+    ///   persisted identity, so its relation stays the inner fibre rather than
+    ///   a case split.
+    /// - fails: `NeutralFiber` for a function coordinate in bridge mode, which
+    ///   has no persisted relation to bind; Classifier outside a function
+    ///   clause; Arena or Budget on invalid or excessive work.
     /// - panics: none.
     /// - intension: sums are left-first; products are lexicographic.
     ///
@@ -224,8 +232,10 @@ impl Relation
     ///
     /// # Adequacy
     /// - hypothesis: L3 — both Bool constructors and independent product Base
-    ///   variables must be covered; higher-order inputs never become samples.
+    ///   variables must be covered; a function argument binds both functions
+    ///   and their identity, never a sample.
     /// - witness: `identity_recursion::function::tests::symbolic_coverage_keeps_base_variables_independent`
+    /// - witness: `identity_recursion::function::tests::a_higher_order_argument_binds_its_inner_fibre`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -234,7 +244,8 @@ impl Relation
         )
     )]
     #[spec(ensures: |ret| match ret {
-        Ok(ref patterns) => u64::from(budget) > 0 && !patterns.is_empty() && patterns.iter().all(|pattern| pattern.context.iter().all(|&ty| matches!(arena.value_type(ty), Some(&gandr_kernel_term::ValueType::Base(_))))),
+        Ok(ref patterns) => u64::from(budget) > 0 && !patterns.is_empty() && patterns.iter().all(|pattern| pattern.context.iter().all(|&ty| matches!(arena.value_type(ty), Some(&gandr_kernel_term::ValueType::Base(_) | &gandr_kernel_term::ValueType::Thunk(_) | &gandr_kernel_term::ValueType::Path { .. })))),
+        Err(RelationError::NeutralFiber) => self.mode == Mode::Bridge && self.nodes.iter().any(|node| matches!(node.clause, Clause::Function(..))),
         Err(RelationError::RecursiveObservationRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::List(_))),
         Err(RelationError::CertificateOperationRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::Universe)),
         Err(RelationError::HigherFieldRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::Certificate)),
@@ -256,16 +267,38 @@ impl Relation
             allowance.charge()?;
             let node = self.node(relation)?;
             let patterns = match node.clause {
-                | Clause::Unit => Vec::from([RelatedPattern {
-                    context: Vec::new(),
-                    value: arena.value_unit(),
-                    proof: arena.value_unit(),
-                }]),
-                | Clause::Discrete => Vec::from([RelatedPattern {
-                    context: Vec::from([node.source]),
-                    value: arena.value_variable(DeBruijnIndex::from(0_u32)),
-                    proof: arena.value_unit(),
-                }]),
+                | Clause::Unit => {
+                    let unit = arena.value_unit();
+                    Vec::from([RelatedPattern {
+                        context: Vec::new(),
+                        left: unit,
+                        right: unit,
+                        proof: unit,
+                    }])
+                },
+                | Clause::Discrete => {
+                    let leaf = arena.value_variable(DeBruijnIndex::from(0_u32));
+                    Vec::from([RelatedPattern {
+                        context: Vec::from([node.source]),
+                        left: leaf,
+                        right: leaf,
+                        proof: arena.value_unit(),
+                    }])
+                },
+                | Clause::Function(..) => {
+                    if self.mode == Mode::Bridge {
+                        return Err(RelationError::NeutralFiber);
+                    }
+                    let source = arena.value_variable(DeBruijnIndex::from(1_u32));
+                    let target = arena.value_variable(DeBruijnIndex::from(0_u32));
+                    let premise = arena.value_type_path(node.source, source, target);
+                    Vec::from([RelatedPattern {
+                        context: Vec::from([node.source, node.source, premise]),
+                        left: arena.value_variable(DeBruijnIndex::from(2_u32)),
+                        right: source,
+                        proof: target,
+                    }])
+                },
                 | Clause::Sum(first, second) | Clause::Product(first, second) => {
                     if !expanded {
                         pending.push((relation, true));
@@ -282,8 +315,14 @@ impl Relation
                             for (side, branch) in [(Side::Left, first), (Side::Right, second)] {
                                 for mut pattern in branch {
                                     allowance.charge()?;
-                                    pattern.value =
-                                        arena.value_injection(side.into(), pattern.value);
+                                    let shared = pattern.left == pattern.right;
+                                    pattern.left = arena.value_injection(side.into(), pattern.left);
+                                    pattern.right = if shared {
+                                        pattern.left
+                                    }
+                                    else {
+                                        arena.value_injection(side.into(), pattern.right)
+                                    };
                                     joined.push(pattern);
                                 }
                             }
@@ -294,30 +333,41 @@ impl Relation
                                     allowance.charge()?;
                                     let depth = u32::try_from(right.context.len())
                                         .map_err(|_error| RelationError::Budget)?;
-                                    let value = shift_value(
-                                        arena,
-                                        &mut table,
-                                        &mut NullMemo,
-                                        left.value,
-                                        BinderDepth::default(),
-                                        BinderDepth::from(depth),
-                                    );
-                                    let proof = shift_value(
-                                        arena,
-                                        &mut table,
-                                        &mut NullMemo,
-                                        left.proof,
-                                        BinderDepth::default(),
-                                        BinderDepth::from(depth),
-                                    );
+                                    let mut shift = |value| {
+                                        shift_value(
+                                            arena,
+                                            &mut table,
+                                            &mut NullMemo,
+                                            value,
+                                            BinderDepth::default(),
+                                            BinderDepth::from(depth),
+                                        )
+                                    };
+                                    let source = shift(left.left);
+                                    let target = if left.left == left.right {
+                                        source
+                                    }
+                                    else {
+                                        shift(left.right)
+                                    };
+                                    let proof = shift(left.proof);
                                     let mut context = Vec::with_capacity(
                                         left.context.len().saturating_add(right.context.len()),
                                     );
                                     context.extend_from_slice(&left.context);
                                     context.extend_from_slice(&right.context);
+                                    let source_value = arena.value_tuple(&[source, right.left]);
+                                    let target_value =
+                                        if source == target && right.left == right.right {
+                                            source_value
+                                        }
+                                        else {
+                                            arena.value_tuple(&[target, right.right])
+                                        };
                                     joined.push(RelatedPattern {
                                         context,
-                                        value: arena.value_tuple(&[value, right.value]),
+                                        left: source_value,
+                                        right: target_value,
                                         proof: arena.value_tuple(&[proof, right.proof]),
                                     });
                                 }
@@ -326,7 +376,6 @@ impl Relation
                     }
                     joined
                 },
-                | Clause::Function(..) => return Err(RelationError::NeutralFiber),
                 | Clause::List(_) => return Err(RelationError::RecursiveObservationRequired),
                 | Clause::Universe => return Err(RelationError::CertificateOperationRequired),
                 | Clause::Certificate => return Err(RelationError::HigherFieldRequired),
@@ -517,8 +566,8 @@ impl Relation
                 patterns.into_iter().zip(&evidence.0).enumerate()
             {
                 let arguments = RelatedArguments {
-                    left: pattern.value,
-                    right: pattern.value,
+                    left: pattern.left,
+                    right: pattern.right,
                     proof: pattern.proof,
                 };
                 let applied = self.apply_component(
@@ -591,13 +640,18 @@ impl Relation
                 return Err(RelationError::NeutralFiber);
             };
             let premise = self
-                .evaluate_at(arena, argument, pattern.value, pattern.value)?
+                .evaluate_at(arena, argument, pattern.left, pattern.right)?
                 .native(arena)?;
-            for (side, function, evaluation) in [
-                (EvaluationSide::Left, functions.0, left_result),
-                (EvaluationSide::Right, functions.1, right_result),
+            for (side, function, input, evaluation) in [
+                (EvaluationSide::Left, functions.0, pattern.left, left_result),
+                (
+                    EvaluationSide::Right,
+                    functions.1,
+                    pattern.right,
+                    right_result,
+                ),
             ] {
-                let computation = apply(arena, function, pattern.value);
+                let computation = apply(arena, function, input);
                 let verdict =
                     replay_evaluation(arena, &pattern.context, computation, evaluation, budget);
                 if verdict != KernelVerdict::Convertible {

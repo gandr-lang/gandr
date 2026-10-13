@@ -32,7 +32,7 @@
 //! | Base | Discrete relation: identical indices give Unit; distinct canonical literals give Empty; unresolved neutral equality remains a relation. | Reflexivity is constructive; distinct variables are not assumed unequal. |
 //! | Sum | Matching injections recurse on their payloads; different injections give Empty. An unknown injection remains suspended. | Payload reflexivity and transport use the matching branch. |
 //! | Product | Component relations paired, including projections of neutral indices. | Componentwise reflexivity and composition; neither coordinate is dropped. |
-//! | Thunk `U (A → F B)` | Suspended product `Π a₀ a₁. Rel(A,a₀,a₁) → Rel(B,force f a₀,force g a₁)`, with the same mode on both premises. | Higher-evaluation reflexivity and pointwise introduction; application transport replays both returners. |
+//! | Thunk `U (A → F B)` | Suspended product `Π a₀ a₁. Rel(A,a₀,a₁) → Rel(B,force f a₀,force g a₁)`, with the same mode on both premises; at identity it lowers to the persisted `Path` at the thunk type. | `here` reflexivity, higher-evaluation (ap) and pointwise introduction; application transport replays both returners. |
 //! | List A | Lazy constructor relation; each Cons applies the already-folded element clause and delays its tail. | A complete finite observation records Unit or a distinguishing Empty fibre, depth and instruction count. |
 //! | Value universe at level zero | Identity only: native `PathUniverse` of the two indexed codes. | Native path reflexivity and certified translator replay. |
 //! | `PathUniverse` | Identity only: the higher record of two native certificates. | Pointwise forward/backward fields and both round-trip coherence obligations, observed separately. |
@@ -107,45 +107,69 @@
 //! two claimed returned values, their `core-nbe` dialogues, and an inhabitant
 //! of the computed output relation. The kernel constructs every replay claim
 //! itself. Open component telescopes close under lambdas before replay.
-//! `function_reflexivity` replays the same function on related inputs;
-//! ordinary structural `reflexivity` requires this higher introduction at
-//! function fibres. `funext` stores raw evidence in `Identity`, and every
-//! consuming operation checks it again. Native conversion gains no
-//! function-extensionality rule.
+//! `function_reflexivity` replays the same function on related inputs, the
+//! λ's ap; structural `reflexivity` at a function is `here` of it, which the
+//! persisted path type admits by conversion. `funext` stores raw evidence in
+//! `Identity`, and every consuming operation checks it again. Native
+//! conversion gains no function-extensionality rule.
 //!
-//! Universal introductions cover closed functions with first-order arguments
-//! and native-representable output fibres. Coverage uses Unit, matching Sum
-//! injections, Product combinations and fresh rigid Base variables; the
-//! relation premise identifies each discrete Base pair, without sampling
-//! literals. Higher-order argument coverage and higher-order output evidence
-//! remain suspended; their quantified function fibres still form. The admitted
-//! function code is the non-dependent arrow `U (A → F B)`; dependent arrows,
-//! universe and recursive codes are outside this clause.
+//! Universal introductions cover closed functions. Coverage uses Unit,
+//! matching Sum injections, Product combinations and fresh rigid Base
+//! variables; the relation premise identifies each discrete Base pair, without
+//! sampling literals. A function coordinate of the argument, at a thunk type
+//! `T`, binds the inner fibre itself: two functions and their identity, `f₀
+//! f₁ : T` and `p : Path(T, f₀, f₁)`, with `f₀` the source argument and `f₁`
+//! the target. Nothing is sampled and nothing is split, so a higher-order
+//! argument is one generic pattern. An identity function fibre lowers to the
+//! persisted `Path` at its thunk type, which is what makes both ends checkable:
+//! the premise is the bound `p`, and a function-valued output is related by
+//! `p`, by `here` or by a nested higher evaluation. A bridge's function fibre
+//! has no persisted type, so bridge coverage stops at a function coordinate
+//! with `NeutralFiber`. The admitted function code is the non-dependent arrow
+//! `U (A → F B)`; dependent arrows, universe and recursive codes are outside
+//! this clause.
+//!
+//! A body that applies its higher-order argument, `λh. force h v`, is stuck at
+//! the generic pattern: it returns no value there, so no claimed evaluation
+//! replays and the component refuses as `Evaluation`. At concrete related
+//! functions the same application computes, its premise checked at the inner
+//! fibre. The generic case needs the value a stuck returner returns and the
+//! related application of `p` at value level; `0x3A` stays reserved for that
+//! quantified evaluation, since the coverage above needed no wire node.
 //!
 //! `transport_application` instantiates a checked function identity at an
-//! argument diagonal and computes the related returned values. Other native
-//! motives retain `Transport::Neutral`, including non-reflexive function
-//! identities. The Bool witnesses compute `not ∘ not = id` at both
-//! constructors and reject `not = id` with the failing component. Double
-//! negation uses the annotation-free, case-inlined term with its return/bind
-//! seam; the independent engine checks the direct composition too.
+//! argument diagonal, `here` at a function argument, and computes the related
+//! returned values. Other native motives retain `Transport::Neutral`, including
+//! non-reflexive function identities. The Bool witnesses compute `not ∘ not =
+//! id` at both constructors and reject `not = id` with the failing component.
+//! The higher-order witnesses replay ap of a λ duplicating its argument, relate
+//! two λs pairing it with `not ∘ not` and with `id` by the premise and a nested
+//! higher evaluation, and refuse the pair with `not`. Double negation uses the
+//! annotation-free, case-inlined term with its return/bind seam: an inlined
+//! λ's injections do not synthesize, and the replay unfolds no constant, so
+//! the composition cannot name `not`. The independent engine checks the direct
+//! composition too.
 //!
 //! **Higher-evaluation cost.** Each Boolean introduction has two components
-//! and four application replays. Coverage and each replay have separate finite
-//! allowances; implicit beta steps consume replay budget even when they emit
-//! no decision. Product coverage can grow multiplicatively, so these bounds do
-//! not establish a global work theorem. Traces move into identity evidence;
-//! only a retained neutral transport clones that evidence to own its suspended
-//! computation.
+//! and four application replays; a function coordinate adds one pattern and
+//! three binders. Coverage and each replay have separate finite allowances;
+//! implicit beta steps consume replay budget even when they emit no decision.
+//! Product coverage can grow multiplicatively, so these bounds do not establish
+//! a global work theorem. Traces move into identity evidence; only a retained
+//! neutral transport clones that evidence to own its suspended computation.
 //!
 //! **Function choice.** A lazy related-input product preserves the
 //! observational definition, including distinct related Unit arguments.
 //! Native function conversion would impose a stronger equality test; finite
 //! literal sampling would not establish the universal premise. Replaying
-//! ordinary CBPV evaluation reuses the trusted machine. **Reversal.**
-//! Higher-order introductions require a quantified evidence language that
-//! checks relation assumptions and nested function evidence; complete
-//! dependent funext additionally requires its substitution and fibrancy laws.
+//! ordinary CBPV evaluation reuses the trusted machine. A higher-order argument
+//! binds its inner fibre as a variable rather than covering it: the
+//! alternatives were refusing it, which left the record's funext by definition
+//! first-order, and sampling functions, which establishes nothing universal.
+//! **Reversal.** A component whose body applies its higher-order argument
+//! needs a value for a stuck returner and the premise's application at value
+//! level; complete dependent funext additionally requires its substitution and
+//! fibrancy laws.
 //!
 //! # Native fibres and admission
 //!

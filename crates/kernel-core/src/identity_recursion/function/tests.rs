@@ -28,6 +28,7 @@ use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
+use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 
 use super::Application;
@@ -431,7 +432,7 @@ fn engine(
 /// - hypothesis: L3 — Boolean components distinguish negation from identity.
 /// - witness: `identity_recursion::function::tests::funext_computes_and_refuses_wrong_components`
 #[spec(ensures: |ret| matches!(&ret, Pointwise::Return { left, right, proof: returned } if left.value == outputs.0 && right.value == outputs.1 && *returned == proof))]
-fn pointwise(
+pub fn pointwise(
     arena: &mut TermArena,
     context: &[ValueTypeId],
     functions: (ValueId, ValueId),
@@ -503,10 +504,16 @@ fn function_clause_retains_related_inputs_and_neutrals()
         assert!(
             matches!(fiber.get(fiber.root()), Ok(Fiber::Function { argument, result, .. }) if argument == boolean.ty && result == boolean.ty)
         );
-        assert!(matches!(
-            fiber.native(&mut arena),
-            Err(RelationError::NeutralFiber)
-        ));
+        // Identity's function fibre is the persisted path type; a bridge's
+        // has none.
+        let lowered = fiber.native(&mut arena);
+        match mode {
+            | Mode::Identity => assert!(matches!(
+                lowered.ok().and_then(|ty| arena.value_type(ty)),
+                Some(&ValueType::Path { domain, left, right }) if domain == boolean.function && left == x && right == y
+            )),
+            | Mode::Bridge => assert!(matches!(lowered, Err(RelationError::NeutralFiber))),
+        }
         let arguments = RelatedArguments {
             left: boolean.truth,
             right: boolean.truth,
@@ -610,10 +617,21 @@ fn lambda_reflexivity_replays_higher_evaluation()
             .expect("refl transport"),
         Transport::Return(unit)
     );
+    // Reflexivity at a function is its `here`, checked by conversion; the
+    // λ's action is the higher evaluation above.
+    let reflexive = family
+        .reflexivity(&mut arena, &[], boolean.not)
+        .expect("function reflexivity");
     assert!(matches!(
-        family.reflexivity(&mut arena, &[], boolean.not),
-        Err(RelationError::HigherEvaluationRequired)
+        reflexive.native_evidence().map(|proof| arena.value(proof)),
+        Ok(Some(&Value::Here(point))) if point == boolean.not
     ));
+    assert_eq!(
+        family
+            .transport(&mut arena, &[], &reflexive, unit_type, unit)
+            .expect("here transport"),
+        Transport::Return(unit)
+    );
     assert!(matches!(
         identity.native_evidence(),
         Err(RelationError::HigherEvaluationRequired)
@@ -838,8 +856,12 @@ fn symbolic_coverage_keeps_base_variables_independent()
     else {
         panic!("one constructor shape")
     };
+    assert_eq!(
+        pattern.left, pattern.right,
+        "a discrete premise is eliminated"
+    );
     let &[left, right] = arena
-        .value(pattern.value)
+        .value(pattern.left)
         .and_then(Value::components)
         .expect("tuple")
     else {
@@ -862,8 +884,8 @@ fn symbolic_coverage_keeps_base_variables_independent()
         &mut arena,
         &pattern.context,
         (identity, identity),
-        (pattern.value, pattern.value),
-        (pattern.value, pattern.value),
+        (pattern.left, pattern.right),
+        (pattern.left, pattern.right),
         pattern.proof,
     );
     family
@@ -874,19 +896,210 @@ fn symbolic_coverage_keeps_base_variables_independent()
             ReplayBudget::DEFAULT,
         )
         .expect("generic Base refl");
-    let arrow = arena.comp_type_arrow(thunk, returned);
-    let outer = arena.value_type_thunk(arrow);
+}
+
+/// The thunk type `U(T → F R)` of a function from `T` returning `R`.
+///
+/// # Specification
+/// trivial.
+pub fn thunk_type(
+    arena: &mut TermArena,
+    domain: ValueTypeId,
+    result: ValueTypeId,
+) -> ValueTypeId
+{
+    let returned = arena.comp_type_returner(result);
+    let arrow = arena.comp_type_arrow(domain, returned);
+    arena.value_type_thunk(arrow)
+}
+
+/// `λh. return (h, h)`, duplicating a function argument.
+///
+/// # Specification
+/// trivial.
+pub fn duplicate(arena: &mut TermArena) -> ValueId
+{
+    let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let both = arena.value_tuple(&[argument, argument]);
+    let body = arena.computation_return(both);
+    let lambda = arena.computation_lambda(body);
+    arena.value_thunk(lambda)
+}
+
+/// `λh. force h truth`, applying a function argument.
+///
+/// # Specification
+/// trivial.
+pub fn apply_to(
+    arena: &mut TermArena,
+    argument: ValueId,
+) -> ValueId
+{
+    let function = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let applied = application(arena, function, argument);
+    let lambda = arena.computation_lambda(applied);
+    arena.value_thunk(lambda)
+}
+
+#[test]
+fn a_higher_order_argument_binds_its_inner_fibre()
+{
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let inner = boolean.function;
+    let pair = arena.value_type_product(&[inner, inner]);
+    let outer = thunk_type(&mut arena, inner, pair);
     let code = arena.value_quote(outer);
-    let higher = relation(&arena, Mode::Identity, code);
+    let family = relation(&arena, Mode::Identity, code);
+
+    // The generic related input is two functions and their identity, the
+    // inner fibre: nothing is sampled and nothing is split.
+    let patterns = family
+        .related_patterns(&mut arena, ReplayBudget::DEFAULT)
+        .expect("higher-order coverage");
+    let [ref pattern] = *patterns.as_slice()
+    else {
+        panic!("one generic related input")
+    };
+    let &[first, second, premise] = pattern.context.as_slice()
+    else {
+        panic!("three binders")
+    };
+    assert_eq!((first, second), (inner, inner));
+    let variable = |index: u32| Some(Value::Variable(DeBruijnIndex::from(index)));
     assert!(matches!(
-        higher.related_patterns(&mut arena, ReplayBudget::DEFAULT),
+        arena.value_type(premise),
+        Some(&ValueType::Path { domain, left, right })
+            if domain == inner
+                && arena.value(left).cloned() == variable(1)
+                && arena.value(right).cloned() == variable(0)
+    ));
+    assert_eq!(
+        [pattern.left, pattern.right, pattern.proof].map(|value| arena.value(value).cloned()),
+        [variable(2), variable(1), variable(0)]
+    );
+    let bridge = relation(&arena, Mode::Bridge, code);
+    assert!(matches!(
+        bridge.related_patterns(&mut arena, ReplayBudget::DEFAULT),
         Err(RelationError::NeutralFiber)
     ));
-    let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let fiber = higher
-        .fiber(&mut arena, &[outer], variable, variable)
-        .expect("higher-order fibre");
-    assert!(
-        matches!(fiber.get(fiber.root()), Ok(Fiber::Function { argument, result, .. }) if argument == thunk && result == pair)
+
+    // Ap of a λ that duplicates its argument relates the two copies by the
+    // premise, and the output evidence is checked: `here(f₀)` is not it.
+    let duplicate = duplicate(&mut arena);
+    let outputs = (
+        arena.value_tuple(&[pattern.left, pattern.left]),
+        arena.value_tuple(&[pattern.right, pattern.right]),
     );
+    let inputs = (pattern.left, pattern.right);
+    let proof = arena.value_tuple(&[pattern.proof, pattern.proof]);
+    let evidence = pointwise(
+        &mut arena,
+        &pattern.context,
+        (duplicate, duplicate),
+        inputs,
+        outputs,
+        proof,
+    );
+    family
+        .function_reflexivity(
+            &mut arena,
+            duplicate,
+            HigherEvaluation(vec![evidence]),
+            ReplayBudget::DEFAULT,
+        )
+        .expect("ap of a higher-order λ");
+    let collapsed = arena.value_here(pattern.left);
+    let collapsed = arena.value_tuple(&[pattern.proof, collapsed]);
+    let forged = pointwise(
+        &mut arena,
+        &pattern.context,
+        (duplicate, duplicate),
+        inputs,
+        outputs,
+        collapsed,
+    );
+    assert!(matches!(
+        family.function_reflexivity(
+            &mut arena,
+            duplicate,
+            HigherEvaluation(vec![forged]),
+            ReplayBudget::DEFAULT
+        ),
+        Err(RelationError::Pointwise(Component(0), _))
+    ));
+
+    // A λ that applies its argument is stuck at the generic pattern: it
+    // returns no value there, so no claimed evaluation replays.
+    let apply = apply_to(&mut arena, boolean.truth);
+    let applying = thunk_type(&mut arena, inner, boolean.ty);
+    let applying = arena.value_quote(applying);
+    let applying = relation(&arena, Mode::Identity, applying);
+    let claimed = Evaluation {
+        value: boolean.truth,
+        dialogue: Dialogue(Vec::new()),
+    };
+    let unit = arena.value_unit();
+    assert!(matches!(
+        applying.function_reflexivity(
+            &mut arena,
+            apply,
+            HigherEvaluation(vec![Pointwise::Return {
+                left: claimed.clone(),
+                right: claimed,
+                proof: unit,
+            }]),
+            ReplayBudget::DEFAULT
+        ),
+        Err(RelationError::Evaluation(
+            Component(0),
+            EvaluationSide::Left,
+            _
+        ))
+    ));
+
+    // At concrete related functions the same application computes: the
+    // premise is the persisted identity at the inner fibre.
+    let premise = arena.value_here(boolean.not);
+    let evidence = pointwise(
+        &mut arena,
+        &[],
+        (apply, apply),
+        (boolean.not, boolean.not),
+        (boolean.falsity, boolean.falsity),
+        unit,
+    );
+    let applied = applying
+        .apply_related(
+            &mut arena,
+            &[],
+            (apply, apply),
+            RelatedArguments {
+                left: boolean.not,
+                right: boolean.not,
+                proof: premise,
+            },
+            &evidence,
+            ReplayBudget::DEFAULT,
+        )
+        .expect("a higher-order argument computes");
+    assert!(
+        matches!(applied, Application::Return { left, right, ref fiber } if left == boolean.falsity && right == boolean.falsity && matches!(fiber.get(fiber.root()), Ok(Fiber::Unit)))
+    );
+    let unrelated = arena.value_here(boolean.identity);
+    assert!(matches!(
+        applying.apply_related(
+            &mut arena,
+            &[],
+            (apply, apply),
+            RelatedArguments {
+                left: boolean.not,
+                right: boolean.not,
+                proof: unrelated,
+            },
+            &evidence,
+            ReplayBudget::DEFAULT
+        ),
+        Err(RelationError::Typing(_))
+    ));
 }

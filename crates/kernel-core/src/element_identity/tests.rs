@@ -59,7 +59,10 @@ use crate::identity_recursion::EvaluationSide;
 use crate::identity_recursion::HigherEvaluation;
 use crate::identity_recursion::Pointwise;
 use crate::identity_recursion::function_fixtures::boolean;
+use crate::identity_recursion::function_fixtures::duplicate;
 use crate::identity_recursion::function_fixtures::higher;
+use crate::identity_recursion::function_fixtures::pointwise;
+use crate::identity_recursion::function_fixtures::thunk_type;
 use crate::path_universe::Reduction;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
@@ -814,6 +817,105 @@ fn a_higher_evaluation_proves_function_extensionality()
         computes(&mut arena, neutral, truth),
         KernelVerdict::Convertible
     );
+}
+
+/// `λh. return (h, second)`, pairing a function argument with a closed one.
+///
+/// # Specification
+/// trivial.
+fn paired_with(
+    arena: &mut TermArena,
+    second: ValueId,
+) -> ValueId
+{
+    let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let both = arena.value_tuple(&[argument, second]);
+    let body = arena.computation_return(both);
+    let lambda = arena.computation_lambda(body);
+    arena.value_thunk(lambda)
+}
+
+#[test]
+fn a_higher_evaluation_covers_a_higher_order_argument()
+{
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let inner = boolean.function;
+    let pair = arena.value_type_product(&[inner, inner]);
+    let outer = thunk_type(&mut arena, inner, pair);
+    // The kernel's coverage telescope at a function argument: two functions
+    // and their identity, `f₀ f₁ : T, p : Path(T, f₀, f₁)`.
+    let [first, second, premise] =
+        [2_u32, 1, 0].map(|index| arena.value_variable(DeBruijnIndex::from(index)));
+    let identity_type = arena.value_type_path(inner, second, premise);
+    let context = [inner, inner, identity_type];
+
+    // Ap of a λ that duplicates its argument replays through the node.
+    let duplicate = duplicate(&mut arena);
+    let outputs = (
+        arena.value_tuple(&[first, first]),
+        arena.value_tuple(&[second, second]),
+    );
+    let proof = arena.value_tuple(&[premise, premise]);
+    let reflexivity = HigherEvaluation(Vec::from([pointwise(
+        &mut arena,
+        &context,
+        (duplicate, duplicate),
+        (first, second),
+        outputs,
+        proof,
+    )]));
+    let reflexivity = persisted(&mut arena, &reflexivity);
+    let reflexive = arena.value_type_path(outer, duplicate, duplicate);
+    check_closed_value(&mut arena, reflexivity, reflexive).expect("ap of a higher-order λ");
+
+    // Two λs that pair their argument with `not ∘ not` and with `id`: the
+    // output relates the arguments by the premise and the closed halves by
+    // the first-order funext, nested.
+    let nested = higher(&mut arena, &boolean, (boolean.double, boolean.identity), [
+        (boolean.truth, boolean.truth),
+        (boolean.falsity, boolean.falsity),
+    ]);
+    let nested = persisted(&mut arena, &nested);
+    let with_double = paired_with(&mut arena, boolean.double);
+    let with_identity = paired_with(&mut arena, boolean.identity);
+    let identity_output = arena.value_tuple(&[second, boolean.identity]);
+    let proof = arena.value_tuple(&[premise, nested]);
+    let double_output = arena.value_tuple(&[first, boolean.double]);
+    let funext = HigherEvaluation(Vec::from([pointwise(
+        &mut arena,
+        &context,
+        (with_double, with_identity),
+        (first, second),
+        (double_output, identity_output),
+        proof,
+    )]));
+    let funext = persisted(&mut arena, &funext);
+    let extensional = arena.value_type_path(outer, with_double, with_identity);
+    check_closed_value(&mut arena, funext, extensional).expect("funext at a higher-order domain");
+
+    // Pairing with `not` instead is not pointwise equal to pairing with `id`:
+    // the nested evaluation refuses at its first component.
+    let with_not = paired_with(&mut arena, boolean.not);
+    let not_output = arena.value_tuple(&[first, boolean.not]);
+    let wrong = HigherEvaluation(Vec::from([pointwise(
+        &mut arena,
+        &context,
+        (with_not, with_identity),
+        (first, second),
+        (not_output, identity_output),
+        proof,
+    )]));
+    let wrong = persisted(&mut arena, &wrong);
+    let negated = arena.value_type_path(outer, with_not, with_identity);
+    assert!(matches!(
+        check_closed_value(&mut arena, wrong, negated),
+        Err(KernelError::Identity(IdentityError::Evaluation {
+            component: Component(0),
+            side: EvaluationSide::Left,
+            ..
+        }))
+    ));
 }
 
 #[test]
