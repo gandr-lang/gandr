@@ -106,9 +106,16 @@ jobs:
           cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (hashFiles('build-state-*.tar.zst') != '' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
       # Cache installed tools by locked pins, including source-built sizelint
       # and macOS Dylint tools. Install the complete CI subset inside the cache.
+      # A hosted runner carries rustup and the setup step installs the pinned
+      # toolchain from its own cache, so mise leaves `rust` alone there: its
+      # cached `rust` entry is a link into rustup's toolchains, dangling until
+      # that restore, and mise would download the toolchain a second time.
+      # Under act mise's install is what provides rustup.
       - &install-policy-tools
         name: install mise-managed policy tools
         if: &without-image ${{ needs.ci-image-ref.outputs.ref == '' || env.CI_INSTALL_TOOLCHAIN == 'true' }}
+        env:
+          MISE_DISABLE_TOOLS: ${{ env.ACT == 'true' && env.MISE_DISABLE_TOOLS || format('{0},rust', env.MISE_DISABLE_TOOLS) }}
         # The pinned mise must read mise.lock's format version 2; an older one
         # warns and resolves every tool unlocked. The CI image parses this
         # step for the version it bakes, so the two cannot drift.
