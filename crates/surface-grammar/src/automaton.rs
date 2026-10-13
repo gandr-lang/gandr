@@ -10,11 +10,13 @@
 //! per state, its kind and its observation class, and per kind and sort the
 //! set of states a parser admits, as bitsets over mold ids. They are derived
 //! once per grammar, by every build and every thaw, in time linear in the
-//! table and a sort of its readings. For the built-in surface's 2,619 molds
-//! that is 18,343 bytes — a byte of kind and four of class per mold, and
-//! sixteen sets of 41 words — and the derivation adds about 0.1 ms to the
-//! 0.65 ms a size-optimized `built_in` takes, about 2 ms to the 5 ms of an
-//! unoptimized one.
+//! table and a sort of its readings. A table of `n` molds takes `5n` bytes —
+//! a byte of kind and four of class per mold — and sixteen sets of
+//! `⌈n / 64⌉` eight-byte words; for the built-in surface's some 2,600 molds
+//! that is about 18 KB. The derivation adds about 0.1 ms to the 0.65 ms a
+//! size-optimized `built_in` takes, about 2 ms to the 5 ms of an unoptimized
+//! one; [`Pbg::tile_table_bytes`](crate::Pbg::tile_table_bytes) reports the
+//! size of a given grammar's tables.
 //!
 //! # Tile kinds
 //!
