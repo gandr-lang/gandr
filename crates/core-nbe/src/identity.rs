@@ -29,10 +29,10 @@
 //! # Identity at an open type
 //!
 //! A sealed atom, a decode of a code no quote reaches and the unknown type
-//! expose no structure, so the recursion has nothing to unfold: their
-//! identity is the owner's obligation, never invented here. The checker
-//! refuses a transport at an open carrier by that name, and refuses the path
-//! type and reflexivity at a carrier that mentions a binder outside it.
+//! expose no structure, so the recursion has nothing to unfold: [`Fibre::Open`]
+//! says the path type is its own neutral fibre there. The checker forms it,
+//! reflexivity checks at it by endpoint conversion, and transport along it is
+//! stuck except on reflexivity, where it reduces whatever the carrier.
 //!
 //! # Decisions
 //!
@@ -98,7 +98,7 @@ pub enum Clause
     Function,
     /// The value universe: certified equivalences.
     Universe,
-    /// An open carrier: identity at an open type.
+    /// An open carrier: the path type is its own neutral fibre.
     Open,
     /// A former the recursion has no clause for.
     Unclassified,
@@ -179,7 +179,7 @@ pub enum Fibre
     Universe,
     /// A stuck endpoint: the path type stays the relation it names.
     Suspended,
-    /// An open carrier: identity at an open type, the owner's obligation.
+    /// An open carrier: the path type is its own neutral fibre.
     Open,
     /// A former the recursion has no clause for.
     Unclassified,
@@ -196,8 +196,7 @@ pub enum Fibre
 ///   [`Clause::Universe`] for the value universe, [`Clause::Open`] for an
 ///   abstract type, a decode and the unknown type, and [`Clause::Unclassified`]
 ///   for every other former.
-/// - provides: the head reading the checker's open-carrier refusal and
-///   [`fibre`] share.
+/// - provides: the head reading [`fibre`] selects its row by.
 /// - fails: [`IdentityFault::DanglingTerm`] for a carrier, or a thunk's body,
 ///   the arena does not hold.
 /// - panics: none.

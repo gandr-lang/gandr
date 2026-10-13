@@ -158,15 +158,15 @@
 //! # Element identity
 //!
 //! Element identity is persisted kernel syntax over the one identity fold.
-//! [`element_identity`] forms `Path(A, a, b)` only at a closed `A`, refusing an
-//! open type by name; an introduction checks at the fold's native fibre,
-//! `here` by the kernel's own conversion, transport at its motive instantiated
-//! by substitution, a higher field through its stated depth and a higher
-//! evaluation by replaying every component over kernel-generated coverage. The
-//! checking machine owes every nested check as a goal on its own stack, and the
-//! replay computes transport and related application by the fold's clauses.
-//! Each decision, with its alternatives and reversal, is stated in that
-//! module; the fold's bridge reading has no persisted node.
+//! [`element_identity`] forms `Path(A, a, b)` at any `A`, the identity at an
+//! open type a neutral fibre; an introduction checks at the fold's native
+//! fibre, `here` by the kernel's own conversion, transport at its motive
+//! instantiated by substitution, a higher field through its stated depth and a
+//! higher evaluation by replaying every component over kernel-generated
+//! coverage. The checking machine owes every nested check as a goal on its own
+//! stack, and the replay computes transport and related application by the
+//! fold's clauses. Each decision, with its alternatives and reversal, is stated
+//! in that module; the fold's bridge reading has no persisted node.
 //!
 //! # Contract boundaries
 //!
@@ -179,7 +179,7 @@
 //! | Admission, staging and audit | [Environment](crate::env): committed prefixes, rollback, registration ownership, provenance ordering, ordered dependency reasons and reachability boundaries. |
 //! | Guarded local admission | [Admission](crate::admission): schema inheritance, rule-discrimination transparency, guarded substitution and exact instance-side agreement by same-arena identity. |
 //! | Checking and conversion | [Checker](crate::check), [conversion](crate::conv) and `witness`: level precedence, refusal subjects, readable identities, mode transitions and witness projections. |
-//! | Element identity | [Element identity](crate::element_identity): open-type refusal, fibre redirection, reflexivity by conversion, guarded higher fields, coverage-replayed higher evaluation and transport by substitution. |
+//! | Element identity | [Element identity](crate::element_identity): the neutral fibre at an open type, fibre redirection, reflexivity by conversion, guarded higher fields, coverage-replayed higher evaluation and transport by substitution. |
 //! | Encoding and support | [Encoding](crate::encoding) and [support]: byte-exact frames and hashes, ordered children, content-id reuse, cache observations and binder reach. |
 //! | Replay and rewrite | [Replay](mod@crate::replay) and [rewrite]: arena restoration, trace consumption, ordered premises, freezing, rule priority and unchanged-subject reuse. |
 //! | Fixture observations | `acceptance`, `adversarial_depth`, `flow_universe::tests` and `path_universe::tests`: differential verdicts, closed-form counts, small-stack teardown and fixed syntax seams. |

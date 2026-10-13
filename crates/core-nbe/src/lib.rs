@@ -49,7 +49,7 @@
 //!   arms in three values against a scrutinee that may hold a hole.
 //! - [`identity`] is the identity recursion: what the paths of a path type are,
 //!   carrier by carrier, read against evaluated endpoints, and the clause a
-//!   carrier's head selects, which names identity at an open type.
+//!   carrier's head selects, an open carrier's being its own neutral fibre.
 //!
 //! What a caller must guarantee is listed in this crate's `README.md`, §
 //! Expected features; each module's documentation states its mechanism and its

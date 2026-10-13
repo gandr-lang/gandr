@@ -16,17 +16,17 @@ module SetoidCat {
     return thunk { become compose(t, u, v, f, g) }
   }
 
-  @[ refuses("IdentityAtOpenType") ]
+  @[ checks ]
   def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) {
     return here(f)
   }
 
-  @[ refuses("IdentityAtOpenType") ]
+  @[ refuses("EndpointMismatch") ]
   def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, q, q, f, id(q)), f) {
     return here(f)
   }
 
-  @[ refuses("IdentityAtOpenType") ]
+  @[ refuses("EndpointMismatch") ]
   def assoc(p : Type, q : Type, r : Type, s : Type, f : +U[ω] (p -> -F q), g : +U[ω] (q -> -F r), h : +U[ω] (r -> -F s)) -> -F Path((+U[ω] (p -> -F s)), comp(p, r, s, comp(p, q, r, f, g), h), comp(p, q, s, f, comp(q, r, s, g, h))) {
     return here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })
   }

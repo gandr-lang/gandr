@@ -714,7 +714,7 @@ enum TypeLevelFrame
 /// - witness: `check::tests::a_static_pi_forms_over_static_classifiers_only`
 /// - witness: `session::tests::session_codes_are_closed_and_contractive`
 /// - witness: `check::tests::a_prenex_scope_controls_universe_formation`
-/// - witness: `element_identity::tests::identity_at_an_open_type_is_refused_by_name`
+/// - witness: `element_identity::tests::identity_at_an_open_type_is_a_neutral_fibre`
 #[spec(ensures: |ret| {
     let closed_leaf = match root {
         TypeLevelGoal::Value(id) => matches!(arena.value_type(id), Some(&ValueType::Base(_))) || matches!(arena.value_type(id), Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) if parts.is_empty()),
@@ -831,17 +831,15 @@ where
                             goal = TypeLevelGoal::Value(endpoints.source);
                             continue 'expand;
                         },
-                        // An identity forms at its domain's level, and only at
-                        // a closed domain: the fold has no reading of a type
-                        // that mentions a binder or reaches a sealed atom. Its
-                        // endpoints are terms, so their checks are owed to the
-                        // checking machine like a decode's code.
+                        // An identity forms at its domain's level, open or
+                        // closed: at an open domain it is its own neutral
+                        // fibre. Its endpoints are terms, so their checks are
+                        // owed to the checking machine like a decode's code.
                         | ValueType::Path {
                             domain,
                             left,
                             right,
                         } => {
-                            crate::element_identity::require_closed(arena, domain)?;
                             owed.push(CodeObligation::Endpoints {
                                 domain,
                                 left,
@@ -2136,7 +2134,7 @@ where
                         continue 'expand;
                     },
                     // `here(c)` synthesizes the diagonal identity at the type
-                    // `c` synthesizes, which must be closed.
+                    // `c` synthesizes, a neutral fibre where that type is open.
                     | Value::Here(point) => {
                         frames.push(Frame::SynthHere(point));
                         goal = Goal::SynthValue(point);
@@ -2826,7 +2824,6 @@ where
                 },
                 | Frame::SynthHere(point) => {
                     let domain = produced.value_type()?;
-                    crate::element_identity::require_closed(arena, domain)?;
                     produced = Produced::ValueType(arena.value_type_path(domain, point, point));
                 },
                 // Reflexivity is decided by the kernel's own conversion, the

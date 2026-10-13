@@ -388,10 +388,6 @@ fn checked(
         | CheckRefusal::EndpointMismatch { .. } => {
             f.write_str("`here` needs both endpoints of the path to equal its point")
         },
-        | CheckRefusal::IdentityAtOpenType { .. } => f.write_str(
-            "identity at a type that mentions a variable bound outside it, or exposes no \
-             structure, is not available; the type's owner supplies its identity",
-        ),
         | CheckRefusal::CompoundEndpoint { .. } => {
             f.write_str("a path endpoint must compute a value without effects")
         },
@@ -778,10 +774,6 @@ mod tests
                 at: value,
                 left: value,
                 right: value,
-            },
-            CheckRefusal::IdentityAtOpenType {
-                at: CoreNode::Type(TypeNode::Value(value_type)),
-                carrier: value_type,
             },
             CheckRefusal::CompoundEndpoint {
                 at: value,

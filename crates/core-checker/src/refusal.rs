@@ -379,20 +379,6 @@ pub enum CheckRefusal
         /// The path type's right endpoint.
         right: ValueId,
     },
-    /// Identity at an open type: a path type whose carrier mentions a variable
-    /// bound outside it, reflexivity synthesised at such a type, or a
-    /// transport whose carrier exposes no structure — the decode of a code no
-    /// quote reaches, the unknown type. The owner of an open type supplies its
-    /// identity. The refusal lifts with identity at an open type read as a
-    /// neutral fibre: the path type and reflexivity formed there, and
-    /// transport stuck except on reflexivity, where it reduces.
-    IdentityAtOpenType
-    {
-        /// The path type, the reflexivity or the transport.
-        at: CoreNode,
-        /// The open carrier.
-        carrier: ValueTypeId,
-    },
     /// A compound endpoint stands for a computation that returns no pure
     /// value: its type is no returner, or its returner performs effects.
     CompoundEndpoint
@@ -623,10 +609,10 @@ impl CheckRefusal
     ///   reference past its block, a descent claim that does not replay,
     ///   reflexivity at endpoints its point does not reach and a compound
     ///   endpoint that returns no pure value are malformed source; a former
-    ///   outside the fragment and identity at an open type are unrepresentable;
-    ///   an unbound index, an exhausted allowance, a dangling id, an admission
-    ///   out of order, a machine invariant and an undecided unfolding are
-    ///   engine faults; nothing is a user absence.
+    ///   outside the fragment is unrepresentable; an unbound index, an
+    ///   exhausted allowance, a dangling id, an admission out of order, a
+    ///   machine invariant and an undecided unfolding are engine faults;
+    ///   nothing is a user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -637,7 +623,7 @@ impl CheckRefusal
     ///   than turning the rejection into an obligation.
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
-        | Self::OutOfFragment { .. } | Self::IdentityAtOpenType { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
@@ -702,9 +688,7 @@ impl CheckRefusal
             | Self::NonUniformOccurrence(_)
             | Self::CrossBlockReference { .. }
             | Self::DescentNotReplayed { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. } | Self::IdentityAtOpenType { .. } => {
-                FailureClass::Unrepresentable
-            },
+            | Self::OutOfFragment { .. } => FailureClass::Unrepresentable,
             | Self::UnboundIndex { .. }
             | Self::BudgetExceeded { .. }
             | Self::DanglingNode { .. }
@@ -721,10 +705,10 @@ impl CheckRefusal
     /// - ensures: a type, sort, level or family-argument mismatch expects the
     ///   type it was checked at and found the type it synthesised; a shape
     ///   mismatch found the type it met, a dependent bind or stack and a
-    ///   compound endpoint the type its body synthesised, identity at an open
-    ///   type the carrier it met, and a static Pi over no classifier of codes
-    ///   the child it stands over, each expecting a former the refusal names
-    ///   rather than a type; every other refusal compares no types.
+    ///   compound endpoint the type its body synthesised, and a static Pi over
+    ///   no classifier of codes the child it stands over, each expecting a
+    ///   former the refusal names rather than a type; every other refusal
+    ///   compares no types.
     /// - provides: the type nodes a face spells beside the refusal's locus.
     /// - fails: never; a side the refusal sets no type on is the
     ///   [`compared::Absent::Unnamed`] absence.
@@ -746,8 +730,6 @@ impl CheckRefusal
         | Self::ShapeMismatch { found, .. } => ret.found == Maybe::Present(found) && ret.expected == UNNAMED,
         | Self::DependentBind { synthesised, .. } | Self::DependentStack { synthesised, .. } | Self::CompoundEndpoint { synthesised, .. } =>
             ret.found == Maybe::Present(TypeNode::Computation(synthesised)) && ret.expected == UNNAMED,
-        | Self::IdentityAtOpenType { carrier, .. } =>
-            ret.found == Maybe::Present(TypeNode::Value(carrier)) && ret.expected == UNNAMED,
         | Self::StaticClassifierExpected { found, .. } =>
             ret.found == Maybe::Present(TypeNode::Value(found)) && ret.expected == UNNAMED,
         | _ => ret == Compared { expected: UNNAMED, found: UNNAMED },
@@ -793,9 +775,6 @@ impl CheckRefusal
             | Self::DependentStack { synthesised, .. }
             | Self::CompoundEndpoint { synthesised, .. } => {
                 (UNNAMED, Maybe::Present(TypeNode::Computation(synthesised)))
-            },
-            | Self::IdentityAtOpenType { carrier, .. } => {
-                (UNNAMED, Maybe::Present(TypeNode::Value(carrier)))
             },
             | Self::StaticClassifierExpected { found, .. } => {
                 (UNNAMED, Maybe::Present(TypeNode::Value(found)))
@@ -874,7 +853,6 @@ mod tests
     use super::CheckRefusal;
     use super::CheckingForm;
     use super::Compared;
-    use super::CoreNode;
     use super::ExpectedShape;
     use super::Mismatch;
     use super::TermNode;
@@ -941,18 +919,6 @@ mod tests
                 found: unnamed,
             },
             "a checking-only form compares nothing"
-        );
-        assert_eq!(
-            CheckRefusal::IdentityAtOpenType {
-                at: CoreNode::Term(TermNode::Computation(body)),
-                carrier: unit,
-            }
-            .compared(),
-            Compared {
-                expected: unnamed,
-                found: Maybe::Present(TypeNode::Value(unit)),
-            },
-            "identity at an open type found the carrier, and expects a former"
         );
         assert_eq!(
             CheckRefusal::EndpointMismatch {

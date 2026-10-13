@@ -184,8 +184,10 @@ fn guarded(
 }
 
 #[test]
-fn identity_at_an_open_type_is_refused_by_name()
+fn identity_at_an_open_type_is_a_neutral_fibre()
 {
+    // A sealed atom: reflexivity at it admits, and native evidence there
+    // refuses, since the fold has no clause to read.
     let mut environment = Environment::new();
     let mut staging = environment.stage();
     let kind = universe(staging.arena());
@@ -204,29 +206,41 @@ fn identity_at_an_open_type_is_refused_by_name()
     let mut staging = environment.stage();
     let arena = staging.arena();
     let sealed = arena.value_type_abstract(atom);
-    let point = arena.value_constant(point);
-    let identity = arena.value_type_path(sealed, point, point);
-    let here = arena.value_here(point);
+    let point_value = arena.value_constant(point);
+    let identity = arena.value_type_path(sealed, point_value, point_value);
+    let here = arena.value_here(point_value);
     let declaration = staging.def(LevelSignature::monomorphic(), identity, here);
-    let refused = environment.add_decl(declaration);
-    let Err(error) = refused
+    environment
+        .add_decl(declaration)
+        .expect("reflexivity at a sealed atom");
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let sealed = arena.value_type_abstract(atom);
+    let point_value = arena.value_constant(point);
+    let identity = arena.value_type_path(sealed, point_value, point_value);
+    let unit = arena.value_unit();
+    let declaration = staging.def(LevelSignature::monomorphic(), identity, unit);
+    let Err(error) = environment.add_decl(declaration)
     else {
-        panic!("identity at a sealed atom admitted");
+        panic!("native evidence inhabited the identity at a sealed atom");
     };
     assert!(matches!(
         error,
-        KernelError::Identity(IdentityError::OpenType(_))
+        KernelError::Identity(IdentityError::NeutralFibre)
     ));
-    assert_eq!(error.to_string(), "identity at an open type");
+    assert_eq!(error.to_string(), "an identity fibre is neutral");
 
     // A domain that reads a binder: `Π (x : U). Π (y : El x). F (Path(El x, y,
-    // y))` refuses at formation, and `here(y)` at its synthesized type.
+    // y))` forms, `here(y)` checks against it and synthesizes at it, and the
+    // unit as native evidence refuses as a neutral fibre.
     let mut arena = TermArena::new();
     let universe_type = universe(&mut arena);
-    let outer = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let element = arena.value_type_element(outer, Level::zero());
-    let code = arena.value_variable(DeBruijnIndex::from(1_u32));
-    let open = arena.value_type_element(code, Level::zero());
+    let decoded = |arena: &mut TermArena, index: u32| {
+        let code = arena.value_variable(DeBruijnIndex::from(index));
+        arena.value_type_element(code, Level::zero())
+    };
+    let element = decoded(&mut arena, 0);
+    let open = decoded(&mut arena, 1);
     let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
     let identity = arena.value_type_path(open, bound, bound);
     let returner = arena.comp_type_returner(identity);
@@ -234,30 +248,125 @@ fn identity_at_an_open_type_is_refused_by_name()
     let outer = arena.comp_type_pi(universe_type, inner);
     let declared = arena.value_type_thunk(outer);
     let here = arena.value_here(bound);
-    let body = arena.computation_return(here);
-    let body = arena.computation_lambda(body);
-    let body = arena.computation_lambda(body);
-    let body = arena.value_thunk(body);
-    assert!(matches!(
-        check_closed_value(&mut arena, body, declared),
-        Err(KernelError::Identity(IdentityError::OpenType(_)))
-    ));
-    let bound_here = arena.computation_return(here);
+    let lambdas = |arena: &mut TermArena, body: ComputationId| {
+        let body = arena.computation_lambda(body);
+        let body = arena.computation_lambda(body);
+        arena.value_thunk(body)
+    };
+    let returned_here = arena.computation_return(here);
+    let reflexive = lambdas(&mut arena, returned_here);
+    check_closed_value(&mut arena, reflexive, declared).expect("reflexivity at an open type");
     let unit = arena.value_unit();
-    let unit_type = arena.value_type_unit();
-    let returner = arena.comp_type_returner(unit_type);
     let returned_unit = arena.computation_return(unit);
-    let synthesized = arena.computation_bind(bound_here, returned_unit);
-    let inner = arena.comp_type_pi(element, returner);
-    let outer = arena.comp_type_pi(universe_type, inner);
-    let declared = arena.value_type_thunk(outer);
-    let body = arena.computation_lambda(synthesized);
-    let body = arena.computation_lambda(body);
-    let body = arena.value_thunk(body);
+    let native = lambdas(&mut arena, returned_unit);
     assert!(matches!(
-        check_closed_value(&mut arena, body, declared),
-        Err(KernelError::Identity(IdentityError::OpenType(_)))
+        check_closed_value(&mut arena, native, declared),
+        Err(KernelError::Identity(IdentityError::NeutralFibre))
     ));
+    let unit_type = arena.value_type_unit();
+    let unit_returner = arena.comp_type_returner(unit_type);
+    let synthesized = arena.computation_bind(returned_here, returned_unit);
+    let inner = arena.comp_type_pi(element, unit_returner);
+    let outer = arena.comp_type_pi(universe_type, inner);
+    let discarded = arena.value_type_thunk(outer);
+    let synthesized = lambdas(&mut arena, synthesized);
+    check_closed_value(&mut arena, synthesized, discarded)
+        .expect("reflexivity synthesized at an open type");
+
+    // A closed Bool between two variables is a neutral fibre too.
+    let boolean = boolean(&mut arena);
+    let first = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let second = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let apart = arena.value_type_path(boolean.ty, first, second);
+    let returner = arena.comp_type_returner(apart);
+    let inner = arena.comp_type_pi(boolean.ty, returner);
+    let outer = arena.comp_type_pi(boolean.ty, inner);
+    let declared = arena.value_type_thunk(outer);
+    assert!(matches!(
+        check_closed_value(&mut arena, native, declared),
+        Err(KernelError::Identity(IdentityError::NeutralFibre))
+    ));
+
+    // `Π (x : U). Π (y z : El x). Path(El x, y, z) → F (Path(El x, y, z))`:
+    // a path inhabits its own neutral fibre by structural conversion, never
+    // the reversed one, and transport in the singleton family along it sends
+    // `here(y)` to the path itself.
+    let typed = |arena: &mut TermArena, result: ValueTypeId| {
+        let x = decoded(arena, 2);
+        let y = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let z = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let premise = arena.value_type_path(x, y, z);
+        let returns = arena.comp_type_returner(result);
+        let arrow = arena.comp_type_arrow(premise, returns);
+        let element_z = decoded(arena, 1);
+        let arrow = arena.comp_type_pi(element_z, arrow);
+        let element_y = decoded(arena, 0);
+        let arrow = arena.comp_type_pi(element_y, arrow);
+        let arrow = arena.comp_type_pi(universe_type, arrow);
+        arena.value_type_thunk(arrow)
+    };
+    let four = |arena: &mut TermArena, body: ComputationId| {
+        let body = arena.computation_lambda(body);
+        let body = arena.computation_lambda(body);
+        lambdas(arena, body)
+    };
+    let x = decoded(&mut arena, 2);
+    let y = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let z = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let forward = arena.value_type_path(x, y, z);
+    let reversed = arena.value_type_path(x, z, y);
+    let declared = typed(&mut arena, forward);
+    let path = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let returned_path = arena.computation_return(path);
+    let echo = four(&mut arena, returned_path);
+    check_closed_value(&mut arena, echo, declared).expect("a path at its own neutral fibre");
+    let swapped = typed(&mut arena, reversed);
+    let refused = check_closed_value(&mut arena, echo, swapped);
+    assert!(
+        matches!(refused, Err(KernelError::ValueTypeMismatch(_))),
+        "{refused:?}"
+    );
+    let family_domain = decoded(&mut arena, 4);
+    let family_left = arena.value_variable(DeBruijnIndex::from(3_u32));
+    let endpoint = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let singleton = arena.value_type_path(family_domain, family_left, endpoint);
+    let y = arena.value_variable(DeBruijnIndex::from(2_u32));
+    let reflexive_y = arena.value_here(y);
+    let transport = arena.computation_path_transport(singleton, path, reflexive_y);
+    let derived_j = four(&mut arena, transport);
+    check_closed_value(&mut arena, derived_j, declared)
+        .expect("transport in the singleton family at an open type");
+    assert_eq!(
+        computes(&mut arena, transport, returned_path),
+        KernelVerdict::Convertible
+    );
+
+    // In a family that reads its binder otherwise, transport along the
+    // neutral path is stuck, and along `here` it reduces.
+    let mut table = ContentTable::new();
+    let mut memo = gandr_kernel_check_memo::NullMemo;
+    let cosingleton = arena.value_type_path(family_domain, endpoint, family_left);
+    assert_eq!(
+        transport_beta(&mut arena, &mut table, &mut memo, ElementTransport {
+            motive: cosingleton,
+            path,
+            value: reflexive_y,
+        }),
+        Ok(Reduction::Stuck)
+    );
+    let Ok(Reduction::Reduced(reduct)) =
+        transport_beta(&mut arena, &mut table, &mut memo, ElementTransport {
+            motive: cosingleton,
+            path: reflexive_y,
+            value: reflexive_y,
+        })
+    else {
+        panic!("transport along here reduces at an open type");
+    };
+    assert_eq!(
+        arena.computation(reduct),
+        Some(&Computation::Return(reflexive_y))
+    );
 }
 
 #[test]

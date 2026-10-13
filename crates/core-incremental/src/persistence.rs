@@ -1760,7 +1760,6 @@ mod tests
             | Typing::Owed => "owed",
             | Typing::Refused(Refusal::PathCode(_)) => "path-code",
             | Typing::Refused(Refusal::EndpointMismatch { .. }) => "endpoint-mismatch",
-            | Typing::Refused(Refusal::IdentityAtOpenType { .. }) => "identity-at-open-type",
             | Typing::Refused(Refusal::CompoundEndpoint { .. }) => "compound-endpoint",
             | Typing::Refused(Refusal::EffectSignatureConflict { .. }) => {
                 "effect-signature-conflict"

@@ -887,7 +887,6 @@ fn checked(
         | CheckRefusal::AbsentRecordField(at)
         | CheckRefusal::AbsentTupleComponent(at) => (spanned(origins.computation(at)), UNNAMED),
         | CheckRefusal::OutOfFragment { at: core, .. }
-        | CheckRefusal::IdentityAtOpenType { at: core, .. }
         | CheckRefusal::DanglingNode { node: core } => (node(origins, core), UNNAMED),
         | CheckRefusal::NotADataType(_)
         | CheckRefusal::NegativeOccurrence(_)
@@ -1088,7 +1087,6 @@ impl fmt::Display for Checked
             | CheckRefusal::EffectSignatureConflict { .. } => f.write_str("two accumulated effect rows disagree on the operation types of a shared interface"),
             | CheckRefusal::PathCode(_) => f.write_str("a universe path requires a quoted closed first-order code"),
             | CheckRefusal::EndpointMismatch { .. } => f.write_str("reflexivity requires its point to convert to both endpoints of the path type"),
-            | CheckRefusal::IdentityAtOpenType { .. } => f.write_str("identity at an open type: the carrier mentions a variable bound outside it or exposes no structure"),
             | CheckRefusal::CompoundEndpoint { .. } => f.write_str("a compound endpoint must return a value without effects"),
             | CheckRefusal::TypeMismatch(_) => f.write_str(
                 "the type this term synthesises does not convert to the type it is checked against",
