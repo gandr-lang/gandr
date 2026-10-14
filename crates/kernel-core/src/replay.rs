@@ -38,9 +38,10 @@
 //! Both sides are first put in weak head form by the reductions that need no
 //! choice — β, a forced thunk, a returner met by a bind, an injection met by a
 //! case, a lazy pairing met by a projection, an elimination met by a returned
-//! endpoint, never a δ-step — and a value of a presented type is read by its
+//! endpoint, never a δ-step — a value of a presented type is read by its
 //! normal form under the type's rules ([`Unfoldings::presentations`], crate
-//! docs § Presented types). Then:
+//! docs § Presented types), and a cong chain whose functions compose to the
+//! identity is read as the `return` of its path (§ A cong chain). Then:
 //!
 //! | goal | what the replay reads |
 //! | --- | --- |
@@ -159,12 +160,29 @@
 //! between a continuation's reduction and an unfolding — or an endpoint read
 //! inside a computation goal the kernel replays plainly takes a delivery word.
 //!
+//! # A cong chain
+//!
+//! `cong(f, p)` is the transport of a reflexivity along `p` in a family whose
+//! right endpoint moves by `f`; along a stuck path it is stuck, and so is a
+//! cong of it. Functoriality, `cong(g, cong(f, p)) = cong(g ∘ f, p)`, and the
+//! identity law, `cong(id, p) = p`, are laws of the path type no reduction
+//! reaches. [`Replay::fuse`] decides their composite: a chain — a link of that
+//! shape, then binds whose continuations are each one link along the path the
+//! bind binds — whose composite right endpoint reads, under the family's
+//! binder, as that binder is the `return` of the path it starts from. The
+//! composite is read by the evaluator's bodies, the admitted definitions the
+//! caller hands over, and by the presentations; no rule of the table unfolds,
+//! so the forced loop stays δ-free where it compares. The engine reads the same
+//! chain before it plans a pair, so no decision names the step.
+//!
 //! # The kernel's own conversion
 //!
 //! [`convert`] is the same loop with no trace: each rule the shapes force —
 //! weak head reduction, the two forces, both η laws, the two bind laws, a
-//! returned endpoint read as its computation, a decomposition — fires unread,
-//! no constant unfolds and no refutation is certified. It is the equality a
+//! returned endpoint read as its computation, a cong chain read as its path,
+//! a decomposition — fires unread, no constant unfolds and no refutation is
+//! certified, and one node on both sides closes convertible before its shape
+//! is read, as the engine's shared comparison closes it. It is the equality a
 //! judgement the kernel decides alone reads, reflexivity's endpoints first,
 //! so the kernel admits what the engine's normalizer admits by the same laws
 //! without asking an engine for a trace.
@@ -804,6 +822,7 @@ where
     let mut run = Replay {
         arena,
         unfoldings,
+        evaluator: unfoldings,
         trace: trace.into_iter().peekable(),
         reading: Reading::Recorded,
         position: 0,
@@ -822,14 +841,17 @@ where
 ///
 /// The rules that fire are the ones no choice stands behind: weak head
 /// reduction, a presented type's terms rewritten to normal form by
-/// `presentations`, forcing two thunks, η for a lambda against a neutral, the
-/// two commuting conversions of `F`, a returned endpoint taken as its
-/// computation, and every structural decomposition. No constant unfolds, so a
-/// constant is compared by name, and no refutation is certified: a pair this
-/// cannot relate declines rather than separating.
+/// `unfoldings`' presentations, a cong chain whose functions compose to the
+/// identity read as its path, forcing two thunks, η for a lambda against a
+/// neutral, the two commuting conversions of `F`, a returned endpoint taken
+/// as its computation, and every structural decomposition. No rule of the
+/// table unfolds a constant, so a constant is compared by name, and no
+/// refutation is certified: a pair this cannot relate declines rather than
+/// separating. `unfoldings`' bodies are read only by the kernel's own
+/// evaluator, inside the cong chain's reading ([`Replay::fuse`]).
 ///
 /// # Specification
-/// - requires: the two sides live in `arena`.
+/// - requires: the two sides, and every body in `unfoldings`, live in `arena`.
 /// - ensures: [`KernelVerdict::Convertible`] exactly when the forced rules
 ///   derive the two sides convertible within `budget`; otherwise a
 ///   [`KernelVerdict::Declined`], never [`KernelVerdict::NotConvertible`].
@@ -853,17 +875,18 @@ where
 #[must_use]
 pub fn convert(
     arena: &mut TermArena,
-    presentations: &crate::presented::Presentations,
+    unfoldings: &Unfoldings,
     sides: ReplaySides,
     budget: ReplayBudget,
 ) -> KernelVerdict
 {
     let (left, right) = terms(sides);
     let watermark = arena.watermark();
-    let none = Unfoldings::default().presenting(presentations.clone());
+    let rules = Unfoldings::default().presenting(unfoldings.presentations().clone());
     let mut run = Replay {
         arena,
-        unfoldings: &none,
+        unfoldings: &rules,
+        evaluator: unfoldings,
         trace: core::iter::empty().peekable(),
         reading: Reading::Forced,
         position: 0,
@@ -927,6 +950,7 @@ pub(crate) fn read_endpoints(
     let mut run = Replay {
         arena,
         unfoldings,
+        evaluator: unfoldings,
         trace: core::iter::empty().peekable(),
         reading: Reading::Forced,
         position: 0,
@@ -1541,6 +1565,28 @@ const fn unreadable() -> Stop
     Stop::Refused(ReplayRefusal::Unreadable)
 }
 
+/// What reading a transport's family as a cong link's gave.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Linked
+{
+    /// A path type whose carrier and left endpoint ignore the binder: its
+    /// right endpoint, under the binder.
+    Right(ValueId),
+    /// Any other family.
+    Other,
+}
+
+/// What a cong chain's composite right endpoint reads as.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Composite
+{
+    /// The variable the family binds: the chain's functions compose to the
+    /// identity.
+    Bound,
+    /// Anything else.
+    Other,
+}
+
 /// One replay in flight.
 struct Replay<'run, I>
 where
@@ -1550,6 +1596,11 @@ where
     arena: &'run mut TermArena,
     /// The δ-rules the replay may fire.
     unfoldings: &'run Unfoldings,
+    /// The bodies the kernel's own evaluator unfolds inside a cong chain's
+    /// reading ([`Self::fuse`]): `unfoldings` itself in a recorded replay and
+    /// at a mode switch, the admitted definitions in the forced loop, whose
+    /// rule table unfolds none.
+    evaluator: &'run Unfoldings,
     /// The decisions still unread.
     trace: Peekable<I>,
     /// Whether forced rewrites are read off the trace or fired unread.
@@ -1625,7 +1676,10 @@ where
     /// - ensures: `Ok` when the goal closed at its owed verdict or pushed the
     ///   premises its derivation owes. A value goal with a returned endpoint on
     ///   either side is first read as the goal between computations
-    ///   ([`Self::open_returned`]), a forced step no decision records.
+    ///   ([`Self::open_returned`]), and each side's weak head form is read
+    ///   through the presentations and as a cong chain ([`Self::fuse`]), forced
+    ///   steps no decision records. In the forced loop one node on both sides
+    ///   closes convertible there.
     /// - provides: one goal's turn through the rule table.
     /// - fails: [`Stop::Budget`] or the first refusal.
     /// - panics: none.
@@ -1648,6 +1702,7 @@ where
     /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
     /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
     /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+    /// - witness: `replay::tests::a_cong_chain_composing_to_the_identity_replays_as_its_path`
     #[spec(
         captures: before = (self.spent, goals.len(), goal.expect),
         ensures: |ret| {
@@ -1672,6 +1727,14 @@ where
             let right = self.whnf(goal.right, goal.reduction)?;
             goal.left = self.present(left)?;
             goal.right = self.present(right)?;
+            goal.left = self.fuse(goal.left)?;
+            goal.right = self.fuse(goal.right)?;
+            // One node on both sides converts by reflexivity: the forced loop
+            // closes it as an engine's shared comparison would, rather than
+            // descend into a term its shapes may not read.
+            if self.reading == Reading::Forced && goal.left == goal.right {
+                return self.close(goal.expect, Expect::Convertible);
+            }
             let left_shape = self.shape(goal.left, &goal.frozen, ConversionSide::Left)?;
             let right_shape = self.shape(goal.right, &goal.frozen, ConversionSide::Right)?;
             let next = self.peek();
@@ -1871,6 +1934,259 @@ where
                 self.spent = self.budget;
                 Err(Stop::Budget)
             },
+        }
+    }
+
+    /// A cong chain whose functions compose to the identity, read as the
+    /// `return` of its path; every other term unchanged.
+    ///
+    /// A **link** is a transport of a reflexivity in a family `y. Path(D, l,
+    /// r)` whose carrier and left endpoint never read `y`; a **chain** is a
+    /// link along a path `p`, under binds whose continuations are each one
+    /// link along the path the bind binds, the family reading no other index.
+    /// The chain is the path `p` when its composite right endpoint `rₙ[y :=
+    /// … r₁]` reads as `y` — normalized by [`Self::normalize_returned`], the
+    /// kernel's own evaluator, and taken to its presented normal form by
+    /// [`Self::present`]: transport along `cong(f, p)` is transport along `p`
+    /// in the family pulled back along `f`, and a family whose right endpoint
+    /// is its binder is the singleton, whose transport of a reflexivity is
+    /// the path.
+    ///
+    /// **Choice.** The chain is read as the engine reads it, by the forced
+    /// replay of its composite: the reading chooses nothing — the evaluator
+    /// fires the one step each head admits — so no decision of the trace
+    /// records it, and the forced loop of [`convert`] reads it as the
+    /// recorded one does. **Alternatives.** A decision naming the fusion,
+    /// which would restate a reduction the kernel re-derives anyway; fusing to
+    /// a composite family rather than to the identity, which needs a family
+    /// rebuilt by substitution and compared by its function. **Reversal.** A
+    /// fusion whose reading would need a search, or one to a composite other
+    /// than the identity, takes a decision of its own.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `return p` when `term` is a computation that is a chain over
+    ///   `p` whose composite right endpoint normalizes, within the budget and
+    ///   with no refusal, to the family's bound variable; `term` itself
+    ///   otherwise, a value among them. Every step of the reading is charged to
+    ///   the budget.
+    /// - provides: cong fusion to the identity in the replay's weak head form,
+    ///   before any rule of the table reads a computation goal.
+    /// - fails: [`Stop::Budget`] when the reading outruns the budget.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop peeling binds and the `for` loop over the
+    ///   continuations, not recursion; each normalization is bounded by the
+    ///   budget.
+    /// - measure: the binds still to peel, then the continuations still to
+    ///   compose.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the presented circle, `run q <- cong(unlooped,
+    ///   p); cong(looped, q)` converts with `return p` in the forced loop with
+    ///   the two definitions unfoldable, and a chain composing to `looped ∘
+    ///   looped` does not.
+    /// - witness: `replay::tests::a_cong_chain_composing_to_the_identity_replays_as_its_path`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| self.spent >= before
+            && (!matches!(term, Term::Value(_)) || ret == Ok(term))
+            && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget),
+    )]
+    fn fuse(
+        &mut self,
+        term: Term,
+    ) -> Result<Term, Stop>
+    {
+        let Term::Computation(computation) = term
+        else {
+            return Ok(term);
+        };
+        let mut continuations = Vec::new();
+        let mut focus = computation;
+        while let Some(&Computation::Bind(bound, body)) = self.arena.computation(focus) {
+            continuations.push(body);
+            focus = bound;
+        }
+        let Some(&Computation::PathTransport {
+            motive,
+            path,
+            value,
+        }) = self.arena.computation(focus)
+        else {
+            return Ok(term);
+        };
+        if !matches!(self.arena.value(value), Some(&Value::Here { .. })) {
+            return Ok(term);
+        }
+        let Linked::Right(mut image) = self.link(motive)
+        else {
+            return Ok(term);
+        };
+        let bound = DeBruijnIndex::from(0_u32);
+        for body in continuations.into_iter().rev() {
+            let Some(&Computation::PathTransport {
+                motive,
+                path: along,
+                value,
+            }) = self.arena.computation(body)
+            else {
+                return Ok(term);
+            };
+            if !matches!(self.arena.value(along), Some(&Value::Variable(index)) if index == bound)
+                || !matches!(self.arena.value(value), Some(&Value::Here { .. }))
+            {
+                return Ok(term);
+            }
+            // The family reads the path the bind binds only past its own
+            // binder: closed off there, it must ignore its innermost index.
+            let closed = self.arena.value_unit();
+            let probe = crate::rewrite::substitute_value_type(
+                self.arena,
+                &mut self.table,
+                &mut self.memo,
+                motive,
+                closed,
+            );
+            if crate::element_identity::binder_use(
+                self.arena,
+                &mut self.table,
+                &mut self.memo,
+                crate::element_identity::Family::Type(probe),
+            ) == crate::element_identity::BinderUse::Read
+            {
+                return Ok(term);
+            }
+            let opened = self.instantiate(body, path);
+            let Some(&Computation::PathTransport { motive, .. }) = self.arena.computation(opened)
+            else {
+                return Ok(term);
+            };
+            let Linked::Right(right) = self.link(motive)
+            else {
+                return Ok(term);
+            };
+            let lifted = shift_value(
+                self.arena,
+                &mut self.table,
+                &mut self.memo,
+                right,
+                BinderDepth::NONE.deeper(),
+                BinderDepth::NONE.deeper(),
+            );
+            image = substitute_value(self.arena, &mut self.table, &mut self.memo, lifted, image);
+        }
+        // The composite is read by the evaluator's bodies, the rule table's
+        // restored whatever the reading ends in.
+        let rules = self.unfoldings;
+        self.unfoldings = self.evaluator;
+        let read = self.composite(image);
+        self.unfoldings = rules;
+        match read? {
+            | Composite::Bound => Ok(Term::Computation(self.arena.computation_return(path))),
+            | Composite::Other => Ok(term),
+        }
+    }
+
+    /// What `image`, a cong chain's composite right endpoint under the
+    /// family's binder, reads as.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Composite::Bound`] exactly when
+    ///   [`Self::normalize_returned`] and then [`Self::present`] take `image`
+    ///   to the variable the family binds; [`Composite::Other`] for any other
+    ///   normal form, and for a reading refused or stopped at a partial
+    ///   fixpoint. Every step is charged to the budget.
+    /// - provides: the identity test of [`Self::fuse`].
+    /// - fails: [`Stop::Budget`] when the reading outruns the budget.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::fuse`].
+    /// - witness: `replay::tests::a_cong_chain_composing_to_the_identity_replays_as_its_path`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| self.spent >= before
+            && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget),
+    )]
+    fn composite(
+        &mut self,
+        image: ValueId,
+    ) -> Result<Composite, Stop>
+    {
+        let read = match self.normalize_returned(image) {
+            | Ok(read) => read,
+            | Err(Stop::Budget) => return Err(Stop::Budget),
+            | Err(Stop::Refused(_) | Stop::PartialFixpoint) => return Ok(Composite::Other),
+        };
+        let normal = match self.present(Term::Value(read)) {
+            | Ok(Term::Value(normal)) => normal,
+            | Err(Stop::Budget) => return Err(Stop::Budget),
+            | Ok(Term::Computation(_)) | Err(Stop::Refused(_) | Stop::PartialFixpoint) => {
+                return Ok(Composite::Other);
+            },
+        };
+        Ok(
+            if matches!(self.arena.value(normal), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
+            {
+                Composite::Bound
+            }
+            else {
+                Composite::Other
+            },
+        )
+    }
+
+    /// `family`, a value type under one binder, read as a link's family.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Linked::Right`] with its right endpoint exactly when
+    ///   `family` is a path type whose carrier and left endpoint provably
+    ///   ignore its binder; [`Linked::Other`] otherwise.
+    /// - provides: the shape every link of [`Self::fuse`]'s chain shares.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::fuse`].
+    /// - witness: `replay::tests::a_cong_chain_composing_to_the_identity_replays_as_its_path`
+    #[spec(ensures: |ret| match ret {
+        Linked::Right(endpoint) => matches!(self.arena.value_type(family), Some(&ValueType::Path { right, .. }) if right == endpoint),
+        Linked::Other => true,
+    })]
+    fn link(
+        &mut self,
+        family: gandr_kernel_term::ValueTypeId,
+    ) -> Linked
+    {
+        let Some(&ValueType::Path {
+            domain,
+            left,
+            right,
+        }) = self.arena.value_type(family)
+        else {
+            return Linked::Other;
+        };
+        let ignored = |run: &mut Self, family| {
+            crate::element_identity::binder_use(run.arena, &mut run.table, &mut run.memo, family)
+                == crate::element_identity::BinderUse::Ignored
+        };
+        if ignored(self, crate::element_identity::Family::Type(domain))
+            && ignored(self, crate::element_identity::Family::Value(left))
+        {
+            Linked::Right(right)
+        }
+        else {
+            Linked::Other
         }
     }
 
@@ -6454,7 +6770,7 @@ mod tests
             assert_eq!(
                 convert(
                     &mut arena,
-                    &crate::presented::FREE,
+                    &Unfoldings::default(),
                     sides,
                     ReplayBudget::default()
                 ),
@@ -6466,7 +6782,7 @@ mod tests
         assert!(matches!(
             convert(
                 &mut arena,
-                &crate::presented::FREE,
+                &Unfoldings::default(),
                 ReplaySides::Computations(held, apart),
                 ReplayBudget::default()
             ),
@@ -6598,6 +6914,7 @@ mod tests
             let mut run = super::Replay {
                 arena: &mut arena,
                 unfoldings: &unfoldings,
+                evaluator: &unfoldings,
                 trace: core::iter::empty().peekable(),
                 reading: super::Reading::Recorded,
                 position: 0,
@@ -6622,6 +6939,7 @@ mod tests
             let mut replay = super::Replay {
                 arena: &mut arena,
                 unfoldings: &unfoldings,
+                evaluator: &unfoldings,
                 trace: core::iter::once(SHARED).peekable(),
                 reading: super::Reading::Recorded,
                 position,
@@ -6658,6 +6976,7 @@ mod tests
         let replay = super::Replay {
             arena: &mut arena,
             unfoldings: &unfoldings,
+            evaluator: &unfoldings,
             trace: core::iter::empty().peekable(),
             reading: super::Reading::Recorded,
             position: 0,
@@ -6917,7 +7236,7 @@ mod tests
         assert_eq!(
             convert(
                 &mut arena,
-                &crate::presented::FREE,
+                &Unfoldings::default(),
                 ReplaySides::Values(endpoint, expected),
                 ReplayBudget::default()
             ),
@@ -6926,7 +7245,7 @@ mod tests
         assert!(matches!(
             convert(
                 &mut arena,
-                &crate::presented::FREE,
+                &Unfoldings::default(),
                 ReplaySides::Computations(bound, returned),
                 ReplayBudget::default()
             ),
@@ -7009,6 +7328,122 @@ mod tests
         };
         assert_eq!(verdict(rules), KernelVerdict::Convertible);
         assert_ne!(verdict(Presentation::default()), KernelVerdict::Convertible);
+    }
+
+    #[test]
+    fn a_cong_chain_composing_to_the_identity_replays_as_its_path()
+    {
+        // `run q <- cong(inner, p); cong(outer, q)` against `return p`, read
+        // engine-free as a respect obligation is: the rules δ-free, the two
+        // functions `looped` (constant 1) and `unlooped` (constant 2) read
+        // only by the chain's composite.
+        let (base, looped, unlooped) = (
+            ConstructorTag::from(0_usize),
+            ConstructorTag::from(1_usize),
+            ConstructorTag::from(2_usize),
+        );
+        let x = RuleNode::Variable(RuleVariable::from(0_u32));
+        let rules = Presentation::new(alloc::vec![
+            PresentedRule::new(
+                [
+                    RuleNode::Constructor(looped),
+                    RuleNode::Constructor(unlooped),
+                    x
+                ]
+                .into(),
+                [x].into(),
+            ),
+            PresentedRule::new(
+                [
+                    RuleNode::Constructor(unlooped),
+                    RuleNode::Constructor(looped),
+                    x
+                ]
+                .into(),
+                [x].into(),
+            ),
+        ]);
+        let verdict = |presentation: Presentation, inner: usize, outer: usize, against: bool| {
+            let mut environment = Environment::new();
+            let mut staging = environment.stage();
+            let kind = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, Level::zero());
+            let own = staging
+                .arena()
+                .value_type_data(ConstantIndex::from(0_usize), Vec::new());
+            let staged = staging
+                .data(
+                    LevelSignature::monomorphic(),
+                    Vec::new(),
+                    alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                    kind,
+                )
+                .presented(presentation);
+            let _circle = environment.add_decl(staged).expect("the circle admits");
+            let mut arena = environment.arena().clone();
+            let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+            let letter = |arena: &mut TermArena, tag| {
+                let occurrence = arena.value_variable(DeBruijnIndex::from(0_u32));
+                let word = arena.value_constructor(own, tag, alloc::vec![occurrence]);
+                let returned = arena.computation_return(word);
+                let lambda = arena.computation_lambda(returned);
+                arena.value_thunk(lambda)
+            };
+            let functions = [letter(&mut arena, looped), letter(&mut arena, unlooped)];
+            let at_base = arena.value_constructor(own, base, Vec::new());
+            let path = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let cong = |arena: &mut TermArena, function: usize| {
+                let named = arena.value_constant(ConstantIndex::from(function));
+                let forced = arena.computation_force(named);
+                let application = arena.computation_application(forced, path);
+                let image = arena.value_returned(application);
+                let motive = arena.value_type_path(own, at_base, image);
+                let reflexivity = arena.value_here(at_base);
+                arena.computation_path_transport(motive, path, reflexivity)
+            };
+            let first = cong(&mut arena, inner);
+            let second = cong(&mut arena, outer);
+            let chain = arena.computation_bind(first, second);
+            let other = if against {
+                arena.computation_return(path)
+            }
+            else {
+                chain
+            };
+            let unfoldings = Unfoldings::new(alloc::vec![
+                Unfoldable::Opaque,
+                Unfoldable::Body(functions[0]),
+                Unfoldable::Body(functions[1])
+            ])
+            .presenting(Presentations::of(environment.entries()));
+            convert(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Computations(chain, other),
+                ReplayBudget::default(),
+            )
+        };
+        assert_eq!(
+            verdict(rules.clone(), 2, 1, true),
+            KernelVerdict::Convertible,
+            "`looped ∘ unlooped` is the identity under the rules, so the chain is its path"
+        );
+        assert_ne!(
+            verdict(rules, 1, 1, true),
+            KernelVerdict::Convertible,
+            "a chain composing to `looped ∘ looped` is not its path"
+        );
+        assert_ne!(
+            verdict(Presentation::default(), 2, 1, true),
+            KernelVerdict::Convertible,
+            "over a free circle `loop(unloop(y))` is not `y`"
+        );
+        assert_eq!(
+            verdict(Presentation::default(), 1, 1, false),
+            KernelVerdict::Convertible,
+            "a chain that does not fuse is still itself, closed before its transport is read"
+        );
     }
 
     #[test]

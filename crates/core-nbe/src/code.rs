@@ -2345,11 +2345,12 @@ fn matching_effect_shapes(
 /// # Specification
 /// - requires: `left` and `right` are value closures of `domain` whose bodies
 ///   are quotes or static lambdas written in `core`.
-/// - ensures: [`CodeComparison::Equal`] when the two are α-equal read through
-///   their environments, a decode of a quote read as the quoted type;
-///   [`CodeComparison::Apart`] when they are not and neither holds anything
-///   that could unfold; and [`CodeComparison::Undecided`] otherwise — always so
-///   for two operators that are not α-equal.
+/// - ensures: [`CodeComparison::Equal`] when the two hold one body over one
+///   environment, or are α-equal read through their environments, a decode of a
+///   quote read as the quoted type; [`CodeComparison::Apart`] when they are not
+///   and neither holds anything that could unfold; and
+///   [`CodeComparison::Undecided`] otherwise — always so for two operators that
+///   are not α-equal.
 /// - provides: the one comparison of two codes or two operators, which
 ///   conversion's structural step and the machine's rule table both read.
 /// - fails: [`ConversionFault::Domain`] for a closure or a held value that does
@@ -2372,6 +2373,7 @@ fn matching_effect_shapes(
 ///   miss separately written equal types; both mutations change the observed
 ///   answer.
 /// - witness: `code::tests::two_quotes_of_one_type_are_equal`
+/// - witness: `code::tests::one_body_over_one_environment_is_one_code`
 /// - witness: `code::tests::rigid_quotes_of_different_types_are_apart`
 /// - witness: `code::tests::a_quote_over_a_defined_constant_is_undecided`
 /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
@@ -2379,7 +2381,9 @@ fn matching_effect_shapes(
 /// - witness: `code::tests::a_decode_of_a_held_quote_compares_as_its_quoted_type`
 #[spec(ensures: |ret| {
     let mut comparison = Walk::new(core, domain, constants);
+    let one_capture = domain.value_closure(left).is_some_and(|one| domain.value_closure(right) == Some(one));
     match comparison.equal(left, right) {
+        _ if one_capture => ret == Ok(CodeComparison::Equal),
         Ok(Alike::Same) => ret == Ok(CodeComparison::Equal),
         Ok(Alike::Different) => match comparison.rigidity(left).and_then(|one| comparison.rigidity(right).map(|other| (one, other))) {
             Ok((Rigidity::Rigid, Rigidity::Rigid)) => ret == Ok(CodeComparison::Apart),
@@ -2397,6 +2401,14 @@ pub fn compare_codes(
     right: ValueClosureId,
 ) -> Result<CodeComparison, ConversionFault>
 {
+    // One body over one environment is one code, whatever the body holds: a
+    // returned endpoint inside a dependent type reads alike only here, the
+    // walk comparing it by its place.
+    if let (Some(one), Some(other)) = (domain.value_closure(left), domain.value_closure(right))
+        && one == other
+    {
+        return Ok(CodeComparison::Equal);
+    }
     let mut walk = Walk::new(core, domain, constants);
     if walk.equal(left, right)? == Alike::Same {
         return Ok(CodeComparison::Equal);
@@ -2576,6 +2588,40 @@ mod tests
             CodeComparison::Apart,
             compare_rigidly(&core, &domain, left, other),
             "a decode at another level is another type, and nothing in either unfolds"
+        );
+    }
+
+    #[test]
+    fn one_body_over_one_environment_is_one_code()
+    {
+        // `⌜Path(Unit, ⟨return #0⟩, ())⌝`: the walk reads a returned endpoint
+        // by its place, which two evaluations of the quote do not share, so
+        // only the closure itself can answer that the two are one code.
+        let mut core = CoreArena::new();
+        let carrier = core.value_type_unit();
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returner = core.computation_return(bound);
+        let endpoint = core.value_returned(returner);
+        let unit = core.value_unit();
+        let path = core.value_type_path(carrier, endpoint, unit);
+        let quote = core.value_quote(path);
+
+        let mut domain = DomainArena::new();
+        let here = variable(&mut domain, BinderLevel::from(0_u32));
+        let there = variable(&mut domain, BinderLevel::from(1_u32));
+        let one = code_of(&core, &mut domain, quote, &[here]);
+        let again = code_of(&core, &mut domain, quote, &[here]);
+        assert_ne!(one, again, "two evaluations close over the body twice");
+        assert_eq!(
+            CodeComparison::Equal,
+            compare_rigidly(&core, &domain, one, again),
+            "one body over one environment is one code, whatever the body holds"
+        );
+        let elsewhere = code_of(&core, &mut domain, quote, &[there]);
+        assert_ne!(
+            CodeComparison::Equal,
+            compare_rigidly(&core, &domain, one, elsewhere),
+            "the same body over another variable is not answered by the closure"
         );
     }
 

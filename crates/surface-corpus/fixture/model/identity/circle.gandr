@@ -2,9 +2,11 @@
 // presented by a point, a loop and its inverse, with the two cancellations
 // as rules; its shape is a signature. The integers are presented the same
 // way, so they model the shape with laws that are conversion: the winding
-// number folds the circle into them, and spinning folds them back. A model
-// over the native integers stands beside it with its laws owed, and the
-// winding number into it is a fold that rests on those laws.
+// number folds the circle into them, and spinning folds them back, and the
+// two are an equivalence whose round trips are proved by induction over each
+// presented type. A model over the native integers stands beside it with its
+// laws owed, and the winding number into it is a fold that rests on those
+// laws.
 
 /// The circle as a presented type: its rules rewrite constructor terms, so a
 /// word normalizes to the loops it winds.
@@ -316,10 +318,47 @@ def wound_spun_respelled = here(P(Z)) ;
 def spun_wound_lost : Path(Circle, spin(wind(Loop(Base))), Base) ;
 def spun_wound_lost = here(Base) ;
 
+/// One inverse loop more: the function the inverse letter applies, as
+/// `around` applies the loop.
+def unaround(c : Circle) -> -F Circle {
+  return Unloop(c)
+}
+
+/// Spinning undoes winding at every word: the round trip at a variable, by
+/// induction over the presented circle. The result type reads the word the
+/// fold descends on, so each arm answers it at its constructor and the
+/// recursive call at the field: `sect[<](x)` relates `spin(wind(x))` to `x`,
+/// and carried along `around` it relates `Loop(spin(wind(x)))`, which
+/// `spin(wind(Loop(x)))` runs to, to `Loop(x)`. The case respects both
+/// rules: at `Loop(Unloop(x))` the arms compose to `cong(around,
+/// cong(unaround, p))`, whose functions compose to the identity under the
+/// rules, so the chain is `p` itself, the answer at `x`.
+@[ checks ]
+def rec sect(c : Circle) -> -F Path(Circle, spin(wind(c)), c) {
+  case c {
+    Base => return here(Base),
+    Loop(x) => { run p <- sect[<](x); become cong(around, p) },
+    Unloop(x) => { run p <- sect[<](x); become cong(unaround, p) }
+  }
+}
+
+/// Winding undoes spinning at every count: the other round trip, by
+/// induction over the presented integers, a successor carried along the
+/// model's `turn` and a predecessor along its `unturn`.
+@[ checks ]
+def rec retr(n : Int) -> -F Path(Int, wind(spin(n)), n) {
+  case n {
+    Z => return here(Z),
+    S(x) => { run p <- retr[<](x); become cong(Winding.turn, p) },
+    P(x) => { run p <- retr[<](x); become cong(Winding.unturn, p) }
+  }
+}
+
 /// The circle's words and the presented integers are equivalent, by `wind`
-/// and `spin`. The round trips hold at every closed word above; at a variable
-/// each is proved by induction over a presented type, which needs a case
-/// whose result type depends on the scrutinee, so the record is owed until
-/// then.
-@[ owes(1) ]
+/// and `spin` with the two round trips at a variable. The later entries read
+/// `to` and `back`, so the record is their dependent pairs nested to the
+/// right, and its value nests the same way: `sect` and `retr` are checked at
+/// the types the record states once `to` is `wind` and `back` is `spin`.
+@[ checks ]
 def winding : #{to : +U (Circle -> -F Int), back : +U (Int -> -F Circle), sect : (c : Circle) => Path(Circle, back(to(c)), c), retr : (n : Int) => Path(Int, to(back(n)), n)} ;
+def winding = #{wind, #{spin, #{sect, retr}}} ;

@@ -2121,7 +2121,8 @@ fn resolve_constant(
 ///   presentations.
 /// - provides: the unfoldings a persisted higher evaluation and a universe
 ///   path's round trips replay under, so a function either relates may name
-///   what was admitted before it.
+///   what was admitted before it; and the bodies a respect obligation's cong
+///   chains are read through.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -3360,7 +3361,7 @@ where
                 | Frame::Respect(case, reading) => {
                     respect::respected(
                         arena,
-                        (judgement.entries, judgement.presentations),
+                        (judgement.entries, &admitted_unfoldings(judgement)),
                         case,
                         reading,
                         judgement.laws,

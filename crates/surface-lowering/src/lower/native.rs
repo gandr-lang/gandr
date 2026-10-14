@@ -67,6 +67,22 @@
 //! - Reversal: a checker that infers the motive from the checking direction
 //!   makes the abstraction here unnecessary.
 //!
+//! A data case over a variable is the dependent eliminator the same way: its
+//! motive is the answer with the scrutinee abstracted, and each branch
+//! answers the motive at its constructor over the branch's fields. A
+//! recursive call at a field, `f[<](x)`, then answers the motive at `x`, and
+//! the `Loop(x)` arm the motive at `Loop(x)`; a leaf under such a root reads
+//! the scrutinee's variable as the constructor its branch matched, over the
+//! root's fields. Only a parameterless family is refined so: a family with
+//! parameters, the presentation's own and the words over a looped point keep
+//! the answer as written under the fields, and an answer that does not read
+//! the scrutinee is unchanged, its motive ignoring its binder.
+//!
+//! - Alternatives: a motive clause written on the case, a second spelling of
+//!   what the result type already states.
+//! - Reversal: a motive that is not the answer with the scrutinee abstracted —
+//!   one reading an index of the scrutinee's type — needs the clause.
+//!
 //! # The patterns are kept beside the tree
 //!
 //! The tree does not keep the patterns, so the origin table does: per match,
@@ -414,6 +430,23 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a data switch names no classifier for the constructors it splits
+    /// into.
+    pub mod bare {
+        /// The switch reads no family the bare family type classifies.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The family has parameters, or is the presentation's own, so a
+            /// constructor needs a written classifier the switch does not hold.
+            Parameterised,
+            /// The words over a looped point: a case over them reads its
+            /// motive at no word yet, the path stratum's step.
+            Words,
+        }
+    }
+}
+
 /// How many tree binders stand above a node of a match's decision tree; as a
 /// variable's index, how many binders stand between the variable and its
 /// binder.
@@ -713,6 +746,9 @@ enum Test
         level: TreeLevel,
         /// The tree binders above the switch.
         depth: Depth,
+        /// The family, when the family over no arguments classifies its
+        /// constructors.
+        family: Maybe<ConstantIndex, bare::Absent>,
         /// Each constructor's arity and child.
         branches: Vec<(usize, TestAt)>,
     },
@@ -2840,6 +2876,20 @@ impl<'source> Lowerer<'_, 'source>
                 arities
             },
         };
+        let family = match form {
+            | Generators::Written(position) => match self.collected.data.get(position) {
+                | Some(written) if written.parameters.is_empty() => self
+                    .collected
+                    .slots
+                    .get(usize::from(written.slot))
+                    .map_or(Maybe::Absent(bare::Absent::Parameterised), |slot| {
+                        Maybe::Present(slot.constant)
+                    }),
+                | _ => Maybe::Absent(bare::Absent::Parameterised),
+            },
+            | Generators::Presentation => Maybe::Absent(bare::Absent::Parameterised),
+            | Generators::Words(_) => Maybe::Absent(bare::Absent::Words),
+        };
         let mut branches = Vec::with_capacity(arities.len());
         for (tag, &arity) in arities.iter().enumerate() {
             let mut specialised = Vec::new();
@@ -2892,6 +2942,7 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Test::Data {
             level: switch.level,
             depth: item.depth,
+            family,
             branches,
         })
     }
@@ -3915,18 +3966,19 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the scrutinee, every arm body and the answer are already
     ///   minted or absent.
     /// - ensures: the tree, every node minted descending: a data case over the
-    ///   scrutinised level with the answer relocated under its binders and one
-    ///   more as its motive, each branch a lambda per field; a sum case for a
-    ///   boolean; an integer comparison bound and cased on; a hole for a stuck
-    ///   node; and a leaf as its arm's body with each variable replaced by the
-    ///   level that settled it and the case's context carried under the tree's
-    ///   binders. Level zero is the scrutinee itself, carried under the binders
-    ///   above its use, so no binding of it is minted. The root carries the
-    ///   written origin, a leaf's copy of its arm's body the origin of what it
-    ///   copies, every other node the inserted match origin, and the arms are
-    ///   recorded beside the root; a match whose first arm matches anything is
-    ///   that arm's body. Nothing when the scrutinee, a reached body or a
-    ///   needed answer did not lower.
+    ///   scrutinised level with the motive [`tracked_motives`] reads, each
+    ///   branch a lambda per field; a sum case for a boolean; an integer
+    ///   comparison bound and cased on; a hole for a stuck node; and a leaf as
+    ///   its arm's body with each variable replaced by the level that settled
+    ///   it and the case's context carried under the tree's binders, the
+    ///   scrutinee's variable read at the root's constructor where
+    ///   [`refinements`] refines it. Level zero is the scrutinee itself,
+    ///   carried under the binders above its use, so no binding of it is
+    ///   minted. The root carries the written origin, a leaf's copy of its
+    ///   arm's body the origin of what it copies, every other node the inserted
+    ///   match origin, and the arms are recorded beside the root; a match whose
+    ///   first arm matches anything is that arm's body. Nothing when the
+    ///   scrutinee, a reached body or a needed answer did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -3981,16 +4033,21 @@ impl<'source> Lowerer<'_, 'source>
         let tracked = match motive {
             | Maybe::Present((base, gap))
                 if form.tests.iter().any(|test| {
-                    matches!(*test, Test::Split {
-                        dependent: Dependent(true),
-                        ..
-                    })
+                    matches!(
+                        *test,
+                        Test::Data { .. }
+                            | Test::Split {
+                                dependent: Dependent(true),
+                                ..
+                            }
+                    )
                 }) =>
             {
                 tracked_motives(&form.tests, base, gap, scrutinised, sink.arena)
             },
             | Maybe::Present(_) | Maybe::Absent(_) => Vec::new(),
         };
+        let refined = refinements(&form.tests, &tracked, scrutinised, sink.arena);
         let mut minted: Vec<Maybe<ComputationId, lowered::Absent>> = Vec::from_iter(
             form.tests
                 .iter()
@@ -4002,12 +4059,16 @@ impl<'source> Lowerer<'_, 'source>
                 .get(position)
                 .copied()
                 .unwrap_or(Maybe::Absent(lowered::Absent::Unminted));
+            let at = refined
+                .get(position)
+                .copied()
+                .unwrap_or(Maybe::Absent(refined::Absent::Unswitched));
             let id = mint_test(
                 test,
                 scrutinised,
                 &bodies,
                 &minted,
-                (motive, read),
+                (read, at),
                 sink,
                 &mut copies,
             );
@@ -4071,27 +4132,76 @@ struct Scrutinised
     outer: Depth,
 }
 
-/// The motive of every data case and dependent split of a tree with a
-/// dependent split, read from the root down.
+quenchant_shape::reason_enum! {
+    /// Why a node of a match's tree reads its scrutinee as itself.
+    pub mod refined {
+        /// No switch above the node refines the scrutinee to a constructor.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The node is the root, or the root is no data switch on the
+            /// scrutinee over a bare family.
+            Unswitched,
+            /// The scrutinee is no variable of the case's frame.
+            Unbound,
+            /// The root's motive does not read its scrutinee.
+            Independent,
+        }
+    }
+}
+
+/// The constructor a leaf reads a match's scrutinee at: the root switch's
+/// branch the leaf descends from, over the root's fields.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `held` is the scrutinee's index in the case's frame, `family` the
+///   bare family that classifies the root's constructors, `tag` and `arity` the
+///   branch's constructor and its field count.
+/// - executable: none — the record holds no tree to check its branch against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a leaf under a dependent root reads the scrutinee at its
+///   branch's constructor, and one under an independent root reads it as
+///   itself.
+/// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Refined
+{
+    /// The scrutinee's index in the case's frame.
+    held: usize,
+    /// The family the bare family type names.
+    family: ConstantIndex,
+    /// The branch's constructor.
+    tag: ConstructorTag,
+    /// The constructor's field count.
+    arity: usize,
+}
+
+/// The motive of every data case and dependent split of a tree, read from the
+/// root down.
 ///
 /// # Specification
 /// - requires: `tests` is a compiled tree, every child after its parent; `base`
 ///   is the answer in the term context of its own frame, `gap` the binders the
 ///   case's frame adds to it.
 /// - ensures: one entry per node. The root answers `base` under `gap` more
-///   binders; a data case's motive is its answer under the scrutinee's binder
-///   and its branches answer it under their fields; a dependent split's motive
-///   is its answer with its scrutinee abstracted, as [`abstracted`] reads it,
-///   and its child answers that motive at the pair of its two components; every
-///   other node passes its answer to its children under the binders it opens.
-///   Nodes other than data cases and dependent splits answer nothing.
+///   binders; a data case's and a dependent split's motive is its answer with
+///   its scrutinee abstracted, as [`abstracted`] reads it. A data case's
+///   branches answer its motive at the constructor over their fields when the
+///   motive reads its binder and the bare family classifies the constructor,
+///   and its answer under their fields otherwise; a dependent split's child
+///   answers its motive at the pair of its two components; every other node
+///   passes its answer to its children under the binders it opens. Nodes other
+///   than data cases and dependent splits answer nothing.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a split whose answer names its scrutinee reads it back at
-///   the pair of its components, and one whose answer does not keeps it.
+///   the pair of its components, and one whose answer does not keeps it; a data
+///   case whose answer names its scrutinee reads it back at each constructor.
 /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
+/// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
 #[spec(ensures: |ret| ret.len() == tests.len())]
 fn tracked_motives(
     tests: &[Test],
@@ -4125,13 +4235,44 @@ fn tracked_motives(
         };
         match *test {
             | Test::Pending | Test::Stuck(_) | Test::Leaf { .. } => {},
-            | Test::Data { ref branches, .. } => {
+            | Test::Data {
+                level,
+                depth,
+                family,
+                ref branches,
+            } => {
+                let scrutinee = level_value(arena, scrutinised, depth, level);
+                let context = Depth(scrutinised.outer.0.saturating_add(depth.0));
+                let motive = abstracted(arena, here, scrutinee, context);
                 if let Some(slot) = motives.get_mut(position) {
-                    *slot =
-                        Maybe::Present(gandr_core_term::shift_comp_type(arena, here, Binders::ONE));
+                    *slot = Maybe::Present(motive);
                 }
-                for &(arity, at) in branches {
-                    under(arena, at, arity);
+                let reads = matches!(
+                    gandr_core_term::strengthen_comp_type(arena, motive),
+                    Maybe::Absent(_)
+                );
+                for (tag, &(arity, at)) in branches.iter().enumerate() {
+                    let answer = match family {
+                        | Maybe::Present(family) if reads => {
+                            let lifted = gandr_core_term::shift_comp_type_under(
+                                arena,
+                                motive,
+                                Binders::ONE,
+                                binders(arity),
+                            );
+                            let fields = (0 .. arity)
+                                .rev()
+                                .map(|field| variable(arena, Depth(field)))
+                                .collect();
+                            let at_constructor =
+                                constructed(arena, family, ConstructorTag::from(tag), fields);
+                            gandr_core_term::instantiate_comp_type(arena, lifted, at_constructor)
+                        },
+                        | Maybe::Present(_) | Maybe::Absent(_) => {
+                            gandr_core_term::shift_comp_type(arena, here, binders(arity))
+                        },
+                    };
+                    answers.push((at, answer));
                 }
             },
             | Test::Boolean { yes, no, .. } => {
@@ -4194,6 +4335,125 @@ fn tracked_motives(
     motives
 }
 
+/// The constructor each node of a match's tree reads the scrutinee at.
+///
+/// # Specification
+/// - requires: `tests` is a compiled tree, every child after its parent;
+///   `tracked` holds the motive [`tracked_motives`] read for each node, or
+///   nothing.
+/// - ensures: one entry per node. When the root is a data switch on level zero
+///   over a bare family, the scrutinee is an intuitionistic variable of the
+///   case's frame and the root's motive reads its binder, every node below a
+///   root branch reads the scrutinee at that branch's constructor and the root
+///   reads it as itself; otherwise every node reads it as itself, with the
+///   first reason that holds.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a root whose answer names its scrutinee refines each
+///   branch's leaves, and one whose answer does not refines none.
+/// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
+#[spec(ensures: |ret| ret.len() == tests.len())]
+fn refinements(
+    tests: &[Test],
+    tracked: &[Maybe<CompTypeId, lowered::Absent>],
+    scrutinised: Scrutinised,
+    arena: &mut CoreArena,
+) -> Vec<Maybe<Refined, refined::Absent>>
+{
+    let unrefined = |reason| alloc::vec![Maybe::Absent(reason); tests.len()];
+    let Some(&Test::Data {
+        level,
+        family: Maybe::Present(family),
+        ref branches,
+        ..
+    }) = tests.first()
+    else {
+        return unrefined(refined::Absent::Unswitched);
+    };
+    if level != TreeLevel::default() {
+        return unrefined(refined::Absent::Unswitched);
+    }
+    let held = match arena.value(scrutinised.scrutinee) {
+        | Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        }) => usize::try_from(u32::from(index)).unwrap_or(usize::MAX),
+        | _ => usize::MAX,
+    };
+    if held >= scrutinised.outer.0 {
+        return unrefined(refined::Absent::Unbound);
+    }
+    let Some(&Maybe::Present(motive)) = tracked.first()
+    else {
+        return unrefined(refined::Absent::Independent);
+    };
+    if matches!(
+        gandr_core_term::strengthen_comp_type(arena, motive),
+        Maybe::Present(_)
+    ) {
+        return unrefined(refined::Absent::Independent);
+    }
+    let mut refined = unrefined(refined::Absent::Unswitched);
+    for (tag, &(arity, at)) in branches.iter().enumerate() {
+        if let Some(slot) = refined.get_mut(at.0) {
+            *slot = Maybe::Present(Refined {
+                held,
+                family,
+                tag: ConstructorTag::from(tag),
+                arity,
+            });
+        }
+    }
+    for (position, test) in tests.iter().enumerate().skip(1) {
+        let Some(&Maybe::Present(read)) = refined.get(position)
+        else {
+            continue;
+        };
+        let mut mark = |at: TestAt| {
+            if let Some(slot) = refined.get_mut(at.0) {
+                *slot = Maybe::Present(read);
+            }
+        };
+        match *test {
+            | Test::Pending | Test::Stuck(_) | Test::Leaf { .. } => {},
+            | Test::Data { ref branches, .. } => {
+                for &(_arity, at) in branches {
+                    mark(at);
+                }
+            },
+            | Test::Boolean { yes, no, .. } | Test::Integer { yes, no, .. } => {
+                mark(yes);
+                mark(no);
+            },
+            | Test::Split { child, .. } | Test::Record { child, .. } => mark(child),
+            | Test::Sum { ref branches, .. } => {
+                for &at in branches {
+                    mark(at);
+                }
+            },
+        }
+    }
+
+    refined
+}
+
+/// The constructor `tag` of the parameterless family `family` over `fields`.
+///
+/// # Specification
+/// trivial.
+fn constructed(
+    arena: &mut CoreArena,
+    family: ConstantIndex,
+    tag: ConstructorTag,
+    fields: Vec<ValueId>,
+) -> ValueId
+{
+    let classifier = arena.value_type_data(family, Vec::new());
+    arena.value_constructor(classifier, tag, fields)
+}
+
 /// `ty`, read under `context` binders, with the value `scrutinee` abstracted
 /// as one binder more: the motive a dependent split reads.
 ///
@@ -4251,15 +4511,16 @@ fn abstracted(
 /// Mint one node of a match's tree over its already minted children.
 ///
 /// # Specification
-/// - requires: every child of `test` is minted in `minted` or absent; the pair
-///   holds the answer relocated with its gap, and the motive
-///   [`tracked_motives`] read for this node in a tree with a dependent split.
-/// - ensures: as [`Lowerer::mint_case`], for one node; a data case reads the
-///   read motive when there is one, a dependent split always; nothing when a
-///   child, the arm's body or a needed motive is absent. A leaf's copy of an
-///   exit or of a bind whose rest is distributed is recorded as its original
-///   is, and every copy a leaf makes is reported in `copies` beside its
-///   original.
+/// - requires: every child of `test` is minted in `minted` or absent; `read` is
+///   the motive [`tracked_motives`] read for this node, and `refined` the
+///   constructor [`refinements`] reads the node's scrutinee at.
+/// - ensures: as [`Lowerer::mint_case`], for one node; a data case and a
+///   dependent split read the read motive; a leaf under a refining root reads
+///   the scrutinee's variable as the refined constructor over the root's
+///   fields; nothing when a child, the arm's body or a needed motive is absent.
+///   A leaf's copy of an exit or of a bind whose rest is distributed is
+///   recorded as its original is, and every copy a leaf makes is reported in
+///   `copies` beside its original.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -4267,15 +4528,16 @@ fn abstracted(
 /// - hypothesis: L3 — as [`Lowerer::mint_case`].
 /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
 /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
+/// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
 #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
 fn mint_test(
     test: &Test,
     scrutinised: Scrutinised,
     bodies: &[Maybe<ComputationId, lowered::Absent>],
     minted: &[Maybe<ComputationId, lowered::Absent>],
-    (motive, read): (
-        Maybe<(CompTypeId, Depth), lowered::Absent>,
+    (read, refined): (
         Maybe<CompTypeId, lowered::Absent>,
+        Maybe<Refined, refined::Absent>,
     ),
     sink: &mut Sink<'_>,
     copies: &mut Vec<Carried>,
@@ -4299,7 +4561,10 @@ fn mint_test(
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            if depth == Depth::default() && bindings.is_empty() {
+            if depth == Depth::default()
+                && bindings.is_empty()
+                && matches!(refined, Maybe::Absent(_))
+            {
                 return Maybe::Present(body);
             }
             let mut environment =
@@ -4308,7 +4573,21 @@ fn mint_test(
                 environment.push(level_value(sink.arena, scrutinised, depth, level));
             }
             for outer in 0 .. scrutinised.outer.0 {
-                environment.push(variable(sink.arena, Depth(outer.saturating_add(depth.0))));
+                let read = match refined {
+                    | Maybe::Present(refined) if refined.held == outer => {
+                        let fields = (0 .. refined.arity)
+                            .map(|field| {
+                                let level = TreeLevel(field.saturating_add(1));
+                                level_value(sink.arena, scrutinised, depth, level)
+                            })
+                            .collect();
+                        constructed(sink.arena, refined.family, refined.tag, fields)
+                    },
+                    | Maybe::Present(_) | Maybe::Absent(_) => {
+                        variable(sink.arena, Depth(outer.saturating_add(depth.0)))
+                    },
+                };
+                environment.push(read);
             }
             let mut carried = Vec::new();
             match gandr_core_term::substitute_environment_traced(
@@ -4329,8 +4608,9 @@ fn mint_test(
             level,
             depth,
             ref branches,
+            ..
         } => {
-            let Maybe::Present((base, gap)) = motive
+            let Maybe::Present(motive) = read
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
@@ -4345,18 +4625,10 @@ fn mint_test(
                 }
                 lowered_branches.push(branch);
             }
-            let shifted = match read {
-                | Maybe::Present(read) => read,
-                | Maybe::Absent(_) => {
-                    let lift = u32::try_from(gap.0.saturating_add(depth.0).saturating_add(1))
-                        .unwrap_or(u32::MAX);
-                    gandr_core_term::shift_comp_type(sink.arena, base, Binders::from(lift))
-                },
-            };
             let scrutinee = level_value(sink.arena, scrutinised, depth, level);
             Maybe::Present(
                 sink.arena
-                    .computation_data_case(scrutinee, shifted, lowered_branches),
+                    .computation_data_case(scrutinee, motive, lowered_branches),
             )
         },
         | Test::Boolean {

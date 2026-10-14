@@ -1066,13 +1066,15 @@ enum Advance
     Cycle,
 }
 
-/// What reading a value pair's presented sides by their normal forms did.
+/// What a forced reading of a pair's sides did: a value pair's presented
+/// sides read by their normal forms, or a computation pair's cong chains
+/// fused to their paths.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Presenting
 {
-    /// Each side is its own normal form.
+    /// Each side is its own reading.
     Normal,
-    /// A side was replaced by its normal form.
+    /// A side was replaced by its reading.
     Rewritten,
     /// The run's budget ran out first.
     Exhausted,
@@ -2425,6 +2427,19 @@ where
                 },
             }
         }
+        // A cong chain whose functions compose to the identity is its path,
+        // read here as the kernel's replay reads it after weak head
+        // reduction: a forced step, recording nothing.
+        if pair.0 != pair.1 {
+            match self.fuse(goal, pair)? {
+                | Presenting::Normal => {},
+                | Presenting::Rewritten => return Ok(Turn::Again),
+                | Presenting::Exhausted => {
+                    self.finish(id, Outcome::Declined(DeclineReason::Budget))?;
+                    return Ok(Turn::Done);
+                },
+            }
+        }
         let planned = plan(
             self.core,
             self.domain,
@@ -2535,6 +2550,95 @@ where
         }
         self.charge(StepCount(before.saturating_sub(u64::from(fuel))));
         Ok(presenting)
+    }
+
+    /// Read the sides of a pair as cong chains, each one whose functions
+    /// compose to the identity replaced by its path: a computation by the
+    /// `return` of the path, a returned endpoint over one by the path itself.
+    ///
+    /// # Specification
+    /// - requires: `pair` holds the goal's ready sides.
+    /// - ensures: [`Presenting::Normal`] with the goal unchanged when neither
+    ///   side fuses; [`Presenting::Rewritten`] with each side that fuses
+    ///   replaced as above, the depth unchanged; [`Presenting::Exhausted`] when
+    ///   the run's budget ran out first. Each step the reading took is charged
+    ///   to the run.
+    /// - provides: conversion modulo cong fusion to the identity, the reading
+    ///   [`crate::fusion::fused`] decides at a variable past the goal's depth;
+    ///   the kernel's replay reads a returned endpoint as its computation
+    ///   before it fuses, so the two engines fuse one chain.
+    /// - fails: every fault [`crate::fusion::fused`] raises;
+    ///   [`ConversionFault::Domain`] for a side that does not resolve.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `run q <- cong(unlooped, p); cong(looped, q)`
+    ///   converts with `return p` over the presented circle under a rigid run,
+    ///   and a chain composing to `looped ∘ looped` does not.
+    /// - witness: `fusion::tests::a_cong_chain_composing_to_the_identity_is_its_path`
+    #[spec(
+        captures: [spent = self.spent.0, depth = goal.depth],
+        ensures: |ret| self.spent.0 >= spent && goal.depth == depth,
+    )]
+    fn fuse(
+        &mut self,
+        goal: &mut Goal,
+        (left, right): (Glued, Glued),
+    ) -> Result<Presenting, ConversionFault>
+    {
+        let budget = u64::from(self.settings.budget());
+        let mut fuel = RewriteFuel::from(budget.saturating_sub(self.spent.0));
+        let before = u64::from(fuel);
+        let mut fusing = Presenting::Normal;
+        for (side, glued) in [(ConversionSide::Left, left), (ConversionSide::Right, right)] {
+            let computation = match glued {
+                | Glued::Computation(computation) => computation,
+                | Glued::Value(value) => {
+                    let Some(&DomainValue::Neutral { neutral, .. }) = self.domain.value(value)
+                    else {
+                        continue;
+                    };
+                    let held = self
+                        .domain
+                        .neutral(neutral)
+                        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+                    match held.head() {
+                        | NeutralHead::Returned(computation) if held.spine().is_empty() => {
+                            computation
+                        },
+                        | _ => continue,
+                    }
+                },
+            };
+            match crate::fusion::fused(
+                self.core,
+                self.domain,
+                self.definitions,
+                (computation, goal.depth),
+                &mut fuel,
+            )? {
+                | crate::fusion::Fusion::Kept => {},
+                | crate::fusion::Fusion::Fused(path) => {
+                    let fused = match glued {
+                        | Glued::Computation(_) => {
+                            Glued::Computation(self.domain.comp_return(path, CompTermFace::Reduced))
+                        },
+                        | Glued::Value(_) => Glued::Value(path),
+                    };
+                    Self::set_side(goal, side, Slot::Ready(fused));
+                    fusing = Presenting::Rewritten;
+                },
+                | crate::fusion::Fusion::Exhausted => {
+                    fusing = Presenting::Exhausted;
+                    break;
+                },
+            }
+        }
+        self.charge(StepCount(before.saturating_sub(u64::from(fuel))));
+        Ok(fusing)
     }
 
     /// The turn an unfolding step leaves its goal at.

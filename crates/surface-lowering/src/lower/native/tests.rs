@@ -1530,6 +1530,81 @@ fn a_pattern_at_a_dependent_record_splits_it_under_its_motive()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A case over a variable whose answer names it answers its motive at each
+/// constructor: the data case's motive reads its scrutinee, a leaf reads the
+/// scrutinee as its branch's constructor over the branch's fields, and a
+/// recursive call at a field answers the motive there, so a cong of it
+/// answers the successor's branch. A case whose answer names another
+/// variable keeps its scrutinee in the leaves.
+#[test]
+fn a_case_over_a_variable_answers_its_motive_at_each_constructor()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def next(n : Nat) -> -F Nat {{ return Succ(n) }}\ndef rec still(n : Nat) -> -F Path(Nat, n, n) {{ case n {{ Zero => return here(n), Succ(p) => {{ run q <- still[<](p); become cong(next, q) }} }} }}\ndef kept(n : Nat, m : Nat) -> -F Path(Nat, m, m) {{ case n {{ Zero => return here(m), Succ(p) => return here(m) }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let cased = |arena: &CoreArena, name: &str| {
+        let mut tail = tail_of(arena, body_named(&module, SurfaceName::from(name)));
+        while let Some(&(Computation::Fixpoint { body: under, .. } | Computation::Lambda(under))) =
+            arena.computation(tail)
+        {
+            tail = under;
+        }
+        reachable(arena, tail)
+            .into_iter()
+            .find_map(|at| match arena.computation(at) {
+                | Some(&Computation::DataCase {
+                    motive,
+                    ref branches,
+                    ..
+                }) => Some((motive, branches.clone())),
+                | _ => None,
+            })
+            .expect("the body cases on its scrutinee")
+    };
+    let returned_at_zero = |arena: &CoreArena, branches: &[ComputationId]| {
+        let zero = *branches.first().expect("a branch per constructor");
+        reachable(arena, zero)
+            .into_iter()
+            .find_map(|at| match arena.computation(at) {
+                | Some(&Computation::Return(value)) => match arena.value(value) {
+                    | Some(&Value::Here(point)) => arena.value(point).cloned(),
+                    | _ => None,
+                },
+                | _ => None,
+            })
+            .expect("the zero branch returns a reflexivity")
+    };
+
+    let (motive, branches) = cased(&arena, "still");
+    assert!(
+        matches!(
+            gandr_core_term::strengthen_comp_type(&mut arena, motive),
+            Maybe::Absent(_)
+        ),
+        "the motive reads the scrutinee it abstracts"
+    );
+    assert!(
+        matches!(returned_at_zero(&arena, &branches), Value::Constructor { tag, .. } if tag == ConstructorTag::from(0_usize)),
+        "the zero leaf reads the scrutinee as `Zero`"
+    );
+
+    let (motive, branches) = cased(&arena, "kept");
+    assert!(
+        matches!(
+            gandr_core_term::strengthen_comp_type(&mut arena, motive),
+            Maybe::Present(_)
+        ),
+        "an answer over another variable reads no scrutinee"
+    );
+    assert!(
+        matches!(returned_at_zero(&arena, &branches), Value::Variable { .. }),
+        "a leaf under an independent case keeps its variables"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// A leaf's copy of an arm keeps each written use naming the pattern variable
 /// that binds it, so a split's components are named where the arm reads them;
 /// the swapped pair tells a copy bound at the wrong component apart. A

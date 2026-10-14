@@ -58,7 +58,7 @@ use super::editing::panic_message;
 /// is hovered but not counted: a comment is no hover target, and corpus items
 /// carry comments saying what they demonstrate, so counting them would lower
 /// the share for documentation alone.
-const ANSWERED_FLOOR: usize = 758;
+const ANSWERED_FLOOR: usize = 773;
 
 /// The random edit scripts each scenario generates in a whole run.
 const CASES: u32 = 32;

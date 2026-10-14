@@ -794,6 +794,45 @@ impl<'run> Definitions<'run>
         }
     }
 
+    /// The same definitions, unfolding every one the scope reads as manifest
+    /// and running every compound endpoint through them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the chain, the environment and the scope unchanged; the
+    ///   constant stance [`Constants::Unfold`] and the endpoint stance
+    ///   [`Endpoints::Run`], so a compound endpoint runs on through every
+    ///   manifest definition until it returns or sticks on a rigid head.
+    /// - provides: the reading a cong chain's composite function takes in a
+    ///   conversion of any stance, rigid or holding: the function is read by
+    ///   what it computes, as the kernel reads it by its own evaluator, and no
+    ///   δ-step of the reading is a recorded decision.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a respect obligation whose cong chain composes to the
+    ///   identity through two definitions converts under a rigid run only when
+    ///   the chain's functions are read under this stance; a stance that does
+    ///   not reach the reading leaves the chain stuck and the case refused.
+    /// - witness: `fusion::tests::a_cong_chain_composing_to_the_identity_is_its_path`
+    #[inline]
+    #[must_use]
+    #[spec(
+        ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret.chain), core::ptr::from_ref(self.chain))
+            && core::ptr::eq(core::ptr::from_ref(ret.environment), core::ptr::from_ref(self.environment))
+            && ret.scope == self.scope && ret.endpoints == Endpoints::Run
+            && ret.constants == Constants::Unfold,
+    )]
+    pub(crate) fn manifest(self) -> Self
+    {
+        Self {
+            constants: Constants::Unfold,
+            endpoints: Endpoints::Run,
+            ..self
+        }
+    }
+
     /// How this run reads a compound endpoint's computation.
     ///
     /// # Specification

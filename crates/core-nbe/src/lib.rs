@@ -347,6 +347,7 @@ mod domain;
 mod duplicate;
 mod eval;
 mod free;
+mod fusion;
 mod guard;
 pub mod identity;
 mod live;

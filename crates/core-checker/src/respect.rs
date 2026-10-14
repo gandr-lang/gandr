@@ -19,6 +19,14 @@
 //! normal forms, which is what the kernel re-derives on readmission with no
 //! trace to replay.
 //!
+//! A dependent fold into a path type meets a rule as a cong chain: at
+//! `Loop(Unloop(x))` the section of the circle binds its call at `x` into
+//! `cong(unaround, _)` and that into `cong(around, _)`. Conversion reads such
+//! a chain whose functions compose to the identity as the path it starts
+//! from, the functions read through their definitions even in a δ-free run,
+//! and the kernel reads the same chain by its own evaluator; the two sides
+//! then meet as the one stuck call, with no law named.
+//!
 //! A fold into a model meets a rule only up to the model's law: the winding
 //! number computes `turn(unturn(wind(x)))` against `wind(x)`. Such a fold
 //! names one law per rule, in rule order ([`crate::Declaration::laws`],
