@@ -368,9 +368,11 @@
 //! core reads. Reversal: when the surface gains a type declaration with
 //! capitalised names, an operator declared there applies by that name.
 //!
-//! # Products, tuples and the value-function alias
+//! # Products, sums, tuples and the value-function alias
 //!
-//! `A * B` is the eager product and `(a, b)` its tuple. An unparenthesized
+//! `A * B` is the eager product and `(a, b)` its tuple; `A + B` is the sum,
+//! the same core type `+{A, B}` is, and chains as the product does, `A + B +
+//! C` one sum of three summands, with `*` binding tighter. An unparenthesized
 //! chain is one product: `A * B * C` is one product of three components, while
 //! `(A * B) * C` and `A * (B * C)` are products of two whose parenthesized
 //! component is a product of its own, as written. A tuple is one node of as
@@ -391,8 +393,9 @@
 //! The alternative was a core former for the alias, which would give one type
 //! two digests by its spelling. It was declined because `=>` is notation for
 //! the thunked arrow, and choosing a spelling is the printer's business, not
-//! the core's. Reversal: none planned; a printer that must restore the alias
-//! finds it through the origin.
+//! the core's. Reversal: none planned. The printer restores the alias, the
+//! infix product and sum and the tuple from the core's shape in its sugared
+//! form, `gandr-surface-pretty`'s § Two forms, one walk.
 //!
 //! # A graded bridge is refused by name
 //!
@@ -1239,6 +1242,7 @@ fn ending(former: Former) -> Ending
         | Former::ReturnerType
         | Former::ArrowType
         | Former::ProductType
+        | Former::SumType
         | Former::LazyProductType
         | Former::TelescopeType
         | Former::LabelledSumType
@@ -1361,6 +1365,7 @@ fn iterating(former: Former) -> Ending
                     | Former::ReturnerType
                     | Former::ArrowType
                     | Former::ProductType
+                    | Former::SumType
                     | Former::LazyProductType
                     | Former::TelescopeType
                     | Former::LabelledSumType
@@ -1428,6 +1433,7 @@ const fn family_of(former: Former) -> Family
         | Former::ReturnerType
         | Former::ArrowType
         | Former::ProductType
+        | Former::SumType
         | Former::LazyProductType
         | Former::TelescopeType
         | Former::LabelledSumType
@@ -4230,7 +4236,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::TypeApplication => self.type_application(site, cursor),
             | Former::ThunkType | Former::ReturnerType => self.formed_type(site, cursor),
             | Former::ArrowType => self.arrow(site, cursor),
-            | Former::ProductType => self.product(site, cursor),
+            | Former::ProductType => self.chain(site, cursor, Former::ProductType),
+            | Former::SumType => self.chain(site, cursor, Former::SumType),
             | Former::LazyProductType => self.lazy_product(site, cursor),
             | Former::TelescopeType => self.telescope_type(site, cursor),
             | Former::LabelledSumType => self.labelled_sum_type(site, cursor),
@@ -7728,57 +7735,66 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify an eager product type, `A * B`, and the chain it heads.
+    /// Classify an eager product type, `A * B`, or a sum type, `A + B`, and
+    /// the chain it heads; `former` names which.
     ///
     /// # Specification
-    /// - requires: `site` is a product in type position, or in value position
-    ///   where a type is quoted.
-    /// - ensures: the product stands as a value type; an operand that is itself
-    ///   an unparenthesized product contributes its own operands instead, so a
-    ///   chain `A * B * C` is one product of three components however it
-    ///   associates, while `(A * B) * C` keeps the parenthesized product as one
-    ///   component. Every component is read as a value type under the product's
-    ///   frame, in written order, and the product is planned over them; the
-    ///   inner products of the chain are not read.
-    /// - provides: the eager product of the fragment.
+    /// - requires: `site` is a product or a sum in type position, or in value
+    ///   position where a type is quoted, and `former` is its former.
+    /// - ensures: the chain stands as a value type; an operand that is itself
+    ///   an unparenthesized form of `former` contributes its own operands
+    ///   instead, so a chain `A * B * C` is one product of three components and
+    ///   `A + B + C` one sum of three summands however each associates, while
+    ///   `(A * B) * C` keeps the parenthesized product as one component. Every
+    ///   component is read as a value type under the chain's frame, in written
+    ///   order, and the product or the sum is planned over them; the inner
+    ///   links of the chain are not read.
+    /// - provides: the eager product and the sum of the fragment, each the same
+    ///   core type as the braced `#{A, B}` and `+{A, B}`.
     /// - fails: yields the wrong-sort refusal where no value type is read, and
-    ///   the refusal of any product in the chain out of shape.
+    ///   the refusal of any link of the chain out of shape.
     /// - panics: none.
     ///
     /// # Errors
-    /// The product's refusal.
+    /// The chain's refusal.
     ///
     /// # Termination
-    /// Each round of the chain walk consumes fuel and replaces one product of
-    /// the finite tree by its two operands.
+    /// Each round of the chain walk consumes fuel and replaces one link of the
+    /// finite tree by its two operands.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a product of atoms, a chain of three, a parenthesized
-    ///   inner product and a product where a computation type is read, each
-    ///   asserted as the exact core node read back out of the arena or the
-    ///   exact refusal.
+    /// - hypothesis: L3 — a product and a sum of atoms, a chain of three of
+    ///   each, a parenthesized inner product, a product inside a sum and a
+    ///   product where a computation type is read, each asserted as the exact
+    ///   core node read back out of the arena or the exact refusal.
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+    /// - witness: `lower::tests::the_bridge_tokens_are_compound_and_sum_is_unaffected`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&Plan::Product(components)) if components.end.saturating_sub(components.start) >= 2_usize
+                    Some(&(Plan::Product(components) | Plan::Sum(components))) if components.end.saturating_sub(components.start) >= 2_usize
                 )
         },
     )]
-    fn product(
+    fn chain(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
+        former: Former,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::ValueType)?;
         let start = self.operands.len();
-        let [first, second] = halves(site, &mut cursor)?;
+        let [first, second] = halves(site, &mut cursor, former)?;
         let mut pending = Vec::from([second, first]);
         while let Some(operand) = pending.pop() {
-            match self.fuel.spend().and_then(|()| self.chained(site, operand)) {
+            match self
+                .fuel
+                .spend()
+                .and_then(|()| self.chained(site, operand, former))
+            {
                 | Ok(Some([inner_first, inner_second])) => {
                     pending.extend([inner_second, inner_first]);
                 },
@@ -7798,50 +7814,59 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.read(component, Reading::ValueType(frame));
             }
         }
+        let plan = if former == Former::SumType {
+            Plan::Sum(components)
+        }
+        else {
+            Plan::Product(components)
+        };
 
-        self.plan(site, Plan::Product(components));
+        self.plan(site, plan);
 
         Ok(())
     }
 
-    /// The two operands of `operand` when it is an unparenthesized product, a
-    /// link of the chain a product heads.
+    /// The two operands of `operand` when it is an unparenthesized form of
+    /// `former`, a link of the chain a form of `former` heads.
     ///
     /// # Specification
-    /// - requires: `operand` is an operand of a product at `site`.
-    /// - ensures: a product form answers its operands in written order; any
-    ///   other node, a parenthesized product included, answers nothing.
-    /// - provides: the one place a product chain is followed.
-    /// - fails: a repaired or ill-shaped product in the chain yields its own
+    /// - requires: `operand` is an operand of a chain of `former` at `site`.
+    /// - ensures: a form of `former` answers its operands in written order; any
+    ///   other node, a parenthesized one of `former` included, answers nothing.
+    /// - provides: the one place a product or a sum chain is followed.
+    /// - fails: a repaired or ill-shaped link in the chain yields its own
     ///   refusal; [`LoweringRefusal::UnknownMold`] for a mold the grammar does
     ///   not hold.
     /// - panics: none.
     ///
     /// # Errors
-    /// The inner product's refusal.
+    /// The inner link's refusal.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a chain of three and a parenthesized inner product
-    ///   separate the followed link from the kept component.
+    ///   separate the followed link from the kept component, and a product
+    ///   inside a sum is kept as one summand.
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+    /// - witness: `lower::tests::the_bridge_tokens_are_compound_and_sum_is_unaffected`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |halves| halves.is_none_or(|[first, second]| first != operand && second != operand)))]
     fn chained(
         &mut self,
         site: Site,
         operand: NodeIndex,
+        former: Former,
     ) -> Result<Option<[NodeIndex; 2]>, LoweringRefusal<'source>>
     {
         let Some(node) = self.tree.node(operand)
         else {
             return Ok(None);
         };
-        let Shape::Form {
-            name,
-            former: Former::ProductType,
-        } = shape_of(self.pbg, node)?
+        let Shape::Form { name, former: link } = shape_of(self.pbg, node)?
         else {
             return Ok(None);
         };
+        if link != former {
+            return Ok(None);
+        }
         let link = Site {
             at: Placed::of(operand, node),
             name,
@@ -7852,7 +7877,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let Maybe::Present(repaired) = scratch.repair {
                 return Err(repaired.refusal(name));
             }
-            halves(link, &mut Cursor::new(&scratch.pieces, link.at.span))
+            halves(
+                link,
+                &mut Cursor::new(&scratch.pieces, link.at.span),
+                former,
+            )
         });
         self.scratch = scratch;
 
@@ -12345,30 +12374,41 @@ fn exhausted<'source>(
     }
 }
 
-/// The two operands of the product `site`, `A * B`, in written order.
+/// The two operands of the product `site`, `A * B`, or of the sum `site`,
+/// `A + B`, in written order; `former` names which.
 ///
 /// # Specification
-/// - requires: `cursor` holds the pieces of the product at `site`.
-/// - ensures: one operand, the `*` tile and one operand, nothing after them.
-/// - provides: the shape check every link of a product chain shares.
+/// - requires: `cursor` holds the pieces of a form of `former` at `site`.
+/// - ensures: one operand, the `*` tile of a product or the `+` tile of a sum,
+///   and one operand, nothing after them.
+/// - provides: the shape check every link of a product or a sum chain shares.
 /// - fails: either hole's own refusal, and a misplaced-tile or extra-operand
-///   refusal for a product out of shape.
+///   refusal for a link out of shape.
 /// - panics: none.
 ///
 /// # Errors
-/// The product's refusal.
+/// The link's refusal.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a well-shaped product answers its operands in order.
+/// - hypothesis: L3 — a well-shaped product and a well-shaped sum answer their
+///   operands in order.
 /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+/// - witness: `lower::tests::the_bridge_tokens_are_compound_and_sum_is_unaffected`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&[first, second]| first != second))]
 fn halves<'source>(
     site: Site,
     cursor: &mut Cursor<'_>,
+    former: Former,
 ) -> Result<[NodeIndex; 2], LoweringRefusal<'source>>
 {
+    let tile = if former == Former::SumType {
+        TileName::PLUS
+    }
+    else {
+        TileName::STAR
+    };
     let first = site.one(cursor.operands())?;
-    closed(site, cursor, TileName::STAR)?;
+    closed(site, cursor, tile)?;
     let second = site.one(cursor.operands())?;
     exhausted(site, cursor)?;
 
@@ -12568,6 +12608,7 @@ pub fn parse_literal(
         | Former::ReturnerType
         | Former::ArrowType
         | Former::ProductType
+        | Former::SumType
         | Former::LazyProductType
         | Former::TelescopeType
         | Former::LabelledSumType
@@ -13353,31 +13394,54 @@ mod tests
     fn the_bridge_tokens_are_compound_and_sum_is_unaffected()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let sum = |start: usize, end: usize| LoweringRefusal::OutOfFragment {
-            span: at(start, end),
-            form: FormName::from(NamedKind("sum_type")),
-            sort: FragmentSort::ValueType,
-            boundary: FragmentBoundary::Unadmitted,
-        };
-
         let mut arena = CoreArena::new();
-        let module = lowered(SourceText::from("def x : +U(-F Integer) ;"), &mut arena);
+        let module = lowered(
+            SourceText::from(
+                "def x : +U(-F Integer) ; def s : Integer + Unit ; def t : Integer +Unit ; \
+                 def u : Integer + Unit + String ; def v : (Integer + Unit) + String ; \
+                 def w : Integer * Unit + String ;",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
         assert!(
             matches!(
-                arena.value_type(declared_of(outcomes(&module)[0])),
+                arena.value_type(declared_of(lowered[0])),
                 Some(&ValueType::Thunk(_))
             ),
             "`+U` against a bracket is the bridge"
         );
+        let summands = |id| match arena.value_type(id) {
+            | Some(&ValueType::Sum(ref parts)) => parts
+                .iter()
+                .map(|&part| spine(&arena, part).join(" "))
+                .collect::<Vec<_>>(),
+            | _ => Vec::new(),
+        };
         assert_eq!(
-            refusal(SourceText::from("def s : Integer + Unit ;")),
-            sum(8_usize, 22_usize),
-            "`A + B` is the sum"
+            summands(declared_of(lowered[1])),
+            ["Integer", "Unit"],
+            "`A + B` is the sum, the same type `+{{A, B}}` is"
         );
         assert_eq!(
-            refusal(SourceText::from("def s : Integer +Unit ;")),
-            sum(8_usize, 21_usize),
+            summands(declared_of(lowered[2])),
+            ["Integer", "Unit"],
             "a sign against a word that begins with the bridge letter is still the sum"
+        );
+        assert_eq!(
+            summands(declared_of(lowered[3])),
+            ["Integer", "Unit", "String"],
+            "an unparenthesized chain is one sum of three summands"
+        );
+        assert_eq!(
+            summands(declared_of(lowered[4])),
+            ["+ Integer Unit", "String"],
+            "a parenthesized sum stays one summand"
+        );
+        assert_eq!(
+            summands(declared_of(lowered[5])),
+            ["* Integer Unit", "String"],
+            "the product binds tighter than the sum and stays one summand"
         );
         for source in [
             "def x : Integer +U Integer ;",
@@ -14855,9 +14919,9 @@ mod tests
     ///
     /// # Specification
     /// - requires: an acyclic type graph rooted in the supplied arena.
-    /// - ensures: preorder tokens preserve the supported thunk, returner, arrow
-    ///   and product structure; unsupported or absent nodes are terminal
-    ///   diagnostic tokens.
+    /// - ensures: preorder tokens preserve the supported thunk, returner,
+    ///   arrow, product and sum structure; unsupported or absent nodes are
+    ///   terminal diagnostic tokens.
     /// - provides: an arena-coordinate-independent comparison for the supported
     ///   type fragment.
     /// - fails: never; this is not a complete serialization of every core type.
@@ -14898,6 +14962,10 @@ mod tests
                     },
                     | Some(&ValueType::Product(ref parts)) => {
                         tokens.push(String::from("*"));
+                        pending.extend(parts.iter().rev().map(|&part| TypeNode::Value(part)));
+                    },
+                    | Some(&ValueType::Sum(ref parts)) => {
+                        tokens.push(String::from("+"));
                         pending.extend(parts.iter().rev().map(|&part| TypeNode::Value(part)));
                     },
                     | other => tokens.push(format!("{other:?}")),

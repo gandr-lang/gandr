@@ -20,20 +20,20 @@ def five = 5 ;
 @[ runs("fn (a) { fn (b) { b } }") ]
 def id(a : Type, x : a) -> -F a { return x }
 
-def at_integer : +U (-F Integer) ;
+def at_integer : () => Integer ;
 def at_integer = thunk { become id(Integer, five) } ;
 
-def at_string : +U (-F String) ;
+def at_string : () => String ;
 def at_string = thunk { become id(String, "text") } ;
 
-def at_small : +U (-F small) ;
+def at_small : () => small ;
 def at_small = thunk { become id(small, five) } ;
 
 @[ runs("fn (a) { fn (b) { force b } }") ]
 def perform(c : Type[-], t : +U c) -> c { become force t }
 
-def performed : +U (-F Integer) ;
+def performed : () => Integer ;
 def performed = thunk { become perform(effect, thunk { return 42 }) } ;
 
-def quoted : +U (-F Integer) ;
+def quoted : () => Integer ;
 def quoted = thunk { become perform(-F Integer, thunk { return 7 }) } ;

@@ -2,9 +2,9 @@
 def product_chain : Integer * Unit * Integer * String;
 def product_chain = (1, unit, 2, "text");
 
-@[ refuses("OutOfFragment") ]
-def sum_chain : Integer + Unit + Boolean + String;
-def sum_chain = pure 1;
+@[ checks ]
+def sum_chain : Integer + Unit + Integer + String;
+def sum_chain = +{.2 = 2};
 
 @[ refuses("OutOfFragment") ]
 def lazy_chain : -F Integer & -F Unit & -F Boolean & -F String;

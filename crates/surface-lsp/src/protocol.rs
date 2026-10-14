@@ -15,6 +15,7 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
+use gandr_surface_pretty::Form;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::Serializer;
@@ -22,6 +23,7 @@ use serde::ser;
 use serde_json::Map;
 use serde_json::Value;
 
+use crate::markup::Markup;
 use crate::position::Line;
 use crate::position::Position;
 use crate::position::Range;
@@ -254,15 +256,74 @@ pub struct DocumentIdentifier
 }
 
 /// The parameters of `initialize` the server reads: the client's `gandr`
-/// settings, passed as its initialization options.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+/// settings, passed as its initialization options, and the HTML tags its
+/// markdown renderer keeps.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[repr(transparent)]
 pub struct InitializeParams
 {
     /// The `gandr` settings, when the client passes any.
     #[serde(default)]
     pub initialization_options: Option<Settings>,
+    /// The client's capabilities, of which the server reads the markdown
+    /// renderer's.
+    #[serde(default)]
+    pub capabilities: Option<ClientCapabilities>,
+}
+
+impl InitializeParams
+{
+    /// The markup a hover is written in for this client: [`Markup::Html`]
+    /// when its markdown renderer keeps the `span`, `pre` and `code` tags,
+    /// else [`Markup::Markdown`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn markup(&self) -> Markup
+    {
+        let tags = self
+            .capabilities
+            .as_ref()
+            .and_then(|capabilities| capabilities.general.as_ref())
+            .and_then(|general| general.markdown.as_ref())
+            .and_then(|markdown| markdown.allowed_tags.as_deref())
+            .unwrap_or_default();
+        Markup::of(tags)
+    }
+}
+
+/// The client capabilities the server reads.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct ClientCapabilities
+{
+    /// `general`.
+    #[serde(default)]
+    pub general: Option<GeneralCapabilities>,
+}
+
+/// The general client capabilities the server reads.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct GeneralCapabilities
+{
+    /// `general.markdown`: the client's markdown renderer.
+    #[serde(default)]
+    pub markdown: Option<MarkdownCapabilities>,
+}
+
+/// What the client's markdown renderer keeps.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct MarkdownCapabilities
+{
+    /// `general.markdown.allowedTags`: the HTML tags it renders rather than
+    /// strips.
+    #[serde(default)]
+    pub allowed_tags: Option<Vec<String>>,
 }
 
 /// The parameters of `workspace/didChangeConfiguration`: every section the
@@ -288,12 +349,52 @@ pub struct Sections
 
 /// The `gandr` settings the server reads.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[repr(transparent)]
 pub struct Settings
 {
     /// `gandr.diagnostics`.
     #[serde(default)]
     pub diagnostics: Option<DiagnosticSettings>,
+    /// `gandr.presentation`.
+    #[serde(default)]
+    pub presentation: Option<PresentationSettings>,
+}
+
+/// The `gandr.presentation` settings.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct PresentationSettings
+{
+    /// `gandr.presentation.form`: whether a type is written with the sugar
+    /// the surface reads or in the explicit formers.
+    #[serde(default)]
+    pub form: Option<FormSetting>,
+}
+
+/// A `gandr.presentation.form` value.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum FormSetting
+{
+    /// [`Form::Sugared`].
+    Sugared,
+    /// [`Form::Explicit`].
+    Explicit,
+}
+
+impl From<FormSetting> for Form
+{
+    /// The form `setting` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(setting: FormSetting) -> Self
+    {
+        match setting {
+            | FormSetting::Sugared => Self::Sugared,
+            | FormSetting::Explicit => Self::Explicit,
+        }
+    }
 }
 
 /// The `gandr.diagnostics` settings.
@@ -408,6 +509,19 @@ impl Settings
         self.diagnostics
             .and_then(|diagnostics| diagnostics.quiet)
             .map(|QuietSetting(quiet)| quiet)
+    }
+
+    /// The presentation form these settings name, when they name one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn form(self) -> Option<Form>
+    {
+        self.presentation
+            .and_then(|presentation| presentation.form)
+            .map(Form::from)
     }
 }
 

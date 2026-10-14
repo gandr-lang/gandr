@@ -46,7 +46,11 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_surface_syntax::SourceText;
 
+use crate::markup::Code;
+use crate::markup::Host;
+use crate::markup::Markup;
 use crate::position::Position;
 use crate::position::Range;
 use crate::protocol::CodeAction;
@@ -354,7 +358,7 @@ pub fn actions(
 }
 
 /// The notes of each of `proposals` whose range holds `position` and that
-/// carries an explanation, as markdown, and the range of the first.
+/// carries an explanation, in `markup`, and the range of the first.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -375,28 +379,38 @@ pub fn actions(
 pub fn notes(
     proposals: &[Proposal],
     position: Position,
+    markup: Markup,
 ) -> Option<(Range, String)>
 {
     let mut explained =
         holding(proposals, position).filter(|proposal| proposal.explanation.is_some());
     let first = explained.next()?;
-    let mut markdown = note(first);
+    let mut markdown = note(first, markup);
     for proposal in explained {
         markdown.push_str("\n\n");
-        markdown.push_str(&note(proposal));
+        markdown.push_str(&note(proposal, markup));
     }
     Some((first.range, markdown))
 }
 
-/// The note of `proposal`: its fill's first line, then its explanation.
+/// The note of `proposal` in `markup`: its fill's first line, as gandr text,
+/// then its explanation.
 ///
 /// # Specification
 /// trivial.
-fn note(proposal: &Proposal) -> String
+fn note(
+    proposal: &Proposal,
+    markup: Markup,
+) -> String
 {
+    let mut fill = Code::new(markup);
+    fill.printed(
+        SourceText::from(proposal.text.lines().next().unwrap_or_default()),
+        Host::Term,
+    );
     alloc::format!(
-        "**Checked fill** `{}`: {}",
-        proposal.text.lines().next().unwrap_or_default(),
+        "**Checked fill** {}: {}",
+        fill.inline(),
         proposal.explanation.as_deref().unwrap_or_default()
     )
 }

@@ -1,4 +1,4 @@
-@[ normalizes("divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero))) ~> #{Succ(Succ(Zero)), Succ(Zero)}") ]
+@[ normalizes("divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero))) ~> (Succ(Succ(Zero)), Succ(Zero))") ]
 data NatDiv : Type {
   Zero : NatDiv;
   Succ : (n : NatDiv) --> NatDiv;
@@ -11,7 +11,7 @@ data NatDiv : Type {
   rule divmod(m, Succ(d)) ==> walk(m, d, d, Zero, Zero);
 }
 
-@[ runs("#{Succ(Succ(Zero)), Succ(Zero)}") ]
+@[ runs("(Succ(Succ(Zero)), Succ(Zero))") ]
 def five_by_two : +U (-F (NatDiv * NatDiv)) ;
 def five_by_two = thunk {
   run (quot, rem) <- divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero)));

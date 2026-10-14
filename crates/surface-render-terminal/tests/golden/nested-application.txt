@@ -6,6 +6,6 @@ error[NotSynthesisable]: the type of a return cannot be inferred where it stands
   │         │              ││
   │         │              │needs a type to be checked against
   │         │              checked against `-F Integer`; while synthesising the function this applies
-  │         checked against `+U (-F Integer)`; while checking the body of this thunk
+  │         checked against `() => Integer`; while checking the body of this thunk
   │
   ╰ note: `b` is expected to check, and this refusal leaves it unsettled

@@ -9,8 +9,9 @@
 //! pinned so it only shrinks. A kind in neither fails, as does a pin that no
 //! longer matches and a by-design kind whose every node has its entry. A few
 //! nodes are by design whatever their kind, by where they stand — inside an
-//! attribute, inside a declaration the lowering or the checker refused, or
-//! heading a call — and `Placed` names them.
+//! attribute, inside a declaration the lowering or the checker refused,
+//! heading a call, or the value a `run _ <-` discards — and `Placed` names
+//! them.
 
 extern crate alloc;
 
@@ -39,6 +40,7 @@ mod entries
     use gandr_surface_grammar::Sort;
     use gandr_surface_grammar::built_in;
     use gandr_surface_parser::parse;
+    use gandr_surface_pretty::Form;
     use gandr_surface_pretty::PageWidth;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
@@ -98,7 +100,7 @@ mod entries
         ("Expression fn", Standing::Owed(0)),
         ("Expression force", Standing::Owed(0)),
         ("Expression handle", Standing::Owed(0)),
-        ("Expression identifier", Standing::Owed(2)),
+        ("Expression identifier", Standing::Owed(0)),
         ("Expression loop", Standing::Owed(0)),
         ("Expression number", Standing::Owed(0)),
         ("Expression offer", Standing::Owed(0)),
@@ -263,8 +265,8 @@ mod entries
     /// Why a node needs no entry of its own by where it stands, whatever its
     /// kind: inside an attribute or documentation, inside a declaration the
     /// lowering refused, as the head of a former's call, as the module a path
-    /// qualifies, as a run literal's move, or as an inner link of a product
-    /// chain.
+    /// qualifies, as a run literal's move, as an inner link of a product or a
+    /// sum chain, or as the value a discarded bind drops.
     ///
     /// # Specification
     /// trivial.
@@ -285,10 +287,18 @@ mod entries
         /// A move of a run literal, its head, or the label it names: read by
         /// its shape, never resolved, so the run answers.
         Move,
-        /// An unparenthesised product inside another, `B * C` in `A * B * C`:
-        /// the chain is one product of every factor, however it associates,
-        /// and the outermost link answers.
+        /// An unparenthesised product inside another, `B * C` in `A * B * C`,
+        /// or a sum inside another, `B + C` in `A + B + C`: the chain is one
+        /// product or one sum of every operand, however it associates, and
+        /// the outermost link answers.
         Chained,
+        /// The value a `run _ <- c` discards, where `c` gives it with `pure`:
+        /// `r` in `run _ <- case p { Succ(r) => pure r, … }`. The lowering
+        /// commutes the bind into each arm of `c` and drops a value nothing
+        /// reads, so no core node holds it for a judgement to type; the
+        /// lowering's result is the term the program means, and the case
+        /// around the value answers.
+        Discarded,
     }
 
     /// Every gated node of `tree` with its kind, its span and where it stands.
@@ -308,6 +318,7 @@ mod entries
             None::<Placed>,
             None::<(MoldId, &str, bool, bool)>,
             Run::Outside,
+            false,
         )];
         let spelled = |at: Option<NodeIndex>| {
             at.and_then(|at| tree.node(at))
@@ -316,7 +327,7 @@ mod entries
                 })
                 .unwrap_or("")
         };
-        while let Some((position, placed, parent, run)) = stack.pop() {
+        while let Some((position, placed, parent, run, discarding)) = stack.pop() {
             let Some(node) = tree.node(position)
             else {
                 continue;
@@ -334,14 +345,14 @@ mod entries
                 | NodeLabel::Doc => {
                     stack.extend(
                         tree.children(position)
-                            .map(|child| (child, Some(Placed::Quoted), None, run)),
+                            .map(|child| (child, Some(Placed::Quoted), None, run, discarding)),
                     );
                     continue;
                 },
                 | _ => {
                     stack.extend(
                         tree.children(position)
-                            .map(|child| (child, placed, None, run)),
+                            .map(|child| (child, placed, None, run, discarding)),
                     );
                     continue;
                 },
@@ -364,7 +375,38 @@ mod entries
                 | Run::Moves if called == "selected" || called == "offered" => Run::Labelled,
                 | held => held,
             };
-            stack.extend(tree.children(position).map(|child| {
+            let span = node.span();
+            let text = source
+                .get(usize::from(span.start()) .. usize::from(span.end()))
+                .unwrap_or("");
+            // A bind's tiles stand among its block's children: the computation
+            // after `run _ <-` is discarded, the one after a named binder's
+            // `<-` kept; every other child stands as its parent does.
+            let children: Vec<NodeIndex> = tree
+                .children(position)
+                .filter(|&child| {
+                    tree.node(child)
+                        .is_some_and(|node| node.label() != NodeLabel::Space)
+                })
+                .collect();
+            let mut binds = Vec::with_capacity(children.len());
+            let mut bound = None::<bool>;
+            for (at, &child) in children.iter().enumerate() {
+                let previous = |back: usize| {
+                    at.checked_sub(back)
+                        .and_then(|before| children.get(before))
+                        .map_or("", |&before| spelled(Some(before)))
+                };
+                let discarded = match bound.take() {
+                    | Some(discards) => discards,
+                    | None => discarding,
+                };
+                if spelled(Some(child)) == "<-" && previous(2) == "run" {
+                    bound = Some(previous(1) == "_");
+                }
+                binds.push(discarded);
+            }
+            stack.extend(children.iter().zip(binds).map(|(&child, discards)| {
                 let headed = melded
                     && opener == Some(child)
                     && (def.label == "[" || (def.label == "(" && def.sort == Sort::Expression));
@@ -374,15 +416,12 @@ mod entries
                     placed,
                     Some((mold, def.label, headed, qualifying)),
                     within,
+                    discards,
                 )
             }));
             if !matches!(def.sort, Sort::Expression | Sort::Type | Sort::Pattern) {
                 continue;
             }
-            let span = node.span();
-            let text = source
-                .get(usize::from(span.start()) .. usize::from(span.end()))
-                .unwrap_or("");
             let head = !melded
                 && parent.is_some_and(|(_, label, headed, _)| {
                     headed
@@ -399,14 +438,19 @@ mod entries
                 | Run::Labelled => !melded && def.label == "identifier",
             };
             let chained = melded
-                && def.label == "*"
+                && (def.label == "*" || def.label == "+")
                 && def.sort == Sort::Type
                 && parent.is_some_and(|(held, ..)| held == mold);
+            let dropped = discarding
+                && !melded
+                && def.label == "identifier"
+                && parent.is_some_and(|(_, label, ..)| label == "pure");
             let placed = placed
                 .or_else(|| head.then_some(Placed::Head))
                 .or_else(|| qualifier.then_some(Placed::Qualifier))
                 .or_else(|| moved.then_some(Placed::Move))
-                .or_else(|| chained.then_some(Placed::Chained));
+                .or_else(|| chained.then_some(Placed::Chained))
+                .or_else(|| dropped.then_some(Placed::Discarded));
             gated.push((kind(grammar, tree, position, *def), span, placed));
         }
         gated
@@ -442,7 +486,7 @@ mod entries
             };
             let tree = parsed.into_tree();
             let mut refused: BTreeSet<_> = table
-                .declarations(page)
+                .declarations(page, Form::Sugared)
                 .filter(|entry| matches!(entry.1, Maybe::Present(Declared::Refused(_))))
                 .map(|(key, _)| key)
                 .collect();

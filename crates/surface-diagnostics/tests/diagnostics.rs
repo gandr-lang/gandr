@@ -588,7 +588,7 @@ mod diagnostics
                 (
                     String::from("thunk { become force 1 }"),
                     String::from(
-                        "checked against `+U (-F Integer)`; while checking the body of this thunk"
+                        "checked against `() => Integer`; while checking the body of this thunk"
                     )
                 ),
                 (
@@ -608,7 +608,7 @@ mod diagnostics
                 (
                     String::from("thunk { become (pure 1)(2) }"),
                     String::from(
-                        "checked against `+U (-F Integer)`; while checking the body of this thunk"
+                        "checked against `() => Integer`; while checking the body of this thunk"
                     )
                 ),
                 (

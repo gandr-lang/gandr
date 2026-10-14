@@ -1,6 +1,6 @@
 # gandr-surface-pretty
 
-The presentation printer: a checked core type, a normal-form value or an elaborated body, written in its one surface spelling and laid out at a page width through `gandr-surface-layout`.
+The presentation printer: a checked core type, a normal-form value or an elaborated body, written in a surface spelling — sugared or explicit — and laid out at a page width through `gandr-surface-layout`.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -13,9 +13,9 @@ The presentation printer: a checked core type, a normal-form value or an elabora
 
 ## Synopsis
 
-**What.** `present_type`, `present_value` and `present_computation` take a `Source` — a store that answers, for one node, the `Former` it carries — a root and a `PageWidth`, and return a `Presentation`: the laid-out text and its `Fidelity`, which says whether every node was written in full. `CoreSource` reads the core arena and `ContentSource` an incremental checkpoint's content table; a face with a store of its own implements `Source` beside them. The crate uses `core` and `alloc` under `no_std`.
+**What.** `present_type`, `present_value` and `present_computation` take a `Source` — a store that answers, for one node, the `Former` it carries — a root, a `PageWidth` and a `Form`, and return a `Presentation`: the laid-out text and its `Fidelity`, which says whether every node was written in full. `CoreSource` reads the core arena and `ContentSource` an incremental checkpoint's content table; a face with a store of its own implements `Source` beside them. The crate uses `core` and `alloc` under `no_std`.
 
-**Why.** A transcript line, a hover and a diagnostic operand each name a type or show a value, and each must say it the same way, in the syntax a reader can type back. One producer of that spelling, laid out by one engine, keeps every face in agreement on both the words and where a line breaks.
+**Why.** A transcript line, a hover and a diagnostic operand each name a type or show a value, and each must say it the same way, in the syntax a reader can type back. One producer of that spelling, laid out by one engine, keeps every face in agreement on both the words and where a line breaks. The sugared form writes the sugar a reader writes — `A => B`, `A * B`, `A + B`, `C & D`, `(a, b)` — where the core's shape is exactly the one it stands for; the explicit form writes the formers the core is made of.
 
 **How.** The walk reads the root's former, spells it or schedules its children, and joins their documents on an explicit task stack. Every break point is a choice between the byte the one-line spelling carries there and a line break, so a page the one-line spelling fits selects it unchanged; the layout engine chooses among the rest by least overflow, then fewest lines. A pre-scan over the same nodes collects the names a type mentions, so a generated binder name never shadows one.
 
@@ -32,6 +32,7 @@ The presentation printer: a checked core type, a normal-form value or an elabora
 - `DEPTH_LIMIT`, `ValueDepth`: the value depth at which the printer writes `<deep>`.
 - `PresentationError`: a layout ceiling reached while building or rendering, or a defect in the walk's own bookkeeping.
 - `PageWidth`, re-exported from `gandr-surface-layout`.
+- `Form`: `Sugared` or `Explicit`, the spelling every entry point writes. Witnesses: `goldens::tests::the_sugared_form_writes_every_sugar_its_shape_admits`, `goldens::tests::the_sugared_form_breaks_its_infix_and_lists_at_the_narrow_page`.
 
 ## Expected features
 
@@ -39,7 +40,7 @@ A caller supplies a `Source` whose node handles are `Copy`, the root and a page 
 
 ## Examples
 
-Present a dependent function type at a wide and a narrow page:
+Present a dependent function type in both forms, at a wide and a narrow page:
 
 ```rust
 use gandr_core_term::CoreArena;
@@ -50,6 +51,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Form;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::PresentationError;
 use gandr_surface_pretty::present_type;
@@ -71,9 +73,11 @@ fn main() -> Result<(), PresentationError> {
 
     let source = CoreSource::new(&core, &[]);
     let root = CoreNode::CompType(pi_outer);
-    let wide = present_type(&source, root, PageWidth::from(100_u32))?;
-    assert_eq!(wide.as_ref(), "(a : Type) -> (b : Type) -> +U (a -> -F b) -> a -> -F b");
-    let narrow = present_type(&source, root, PageWidth::from(40_u32))?;
+    let explicit = present_type(&source, root, PageWidth::from(100_u32), Form::Explicit)?;
+    assert_eq!(explicit.as_ref(), "(a : Type) -> (b : Type) -> +U (a -> -F b) -> a -> -F b");
+    let sugared = present_type(&source, root, PageWidth::from(100_u32), Form::Sugared)?;
+    assert_eq!(sugared.as_ref(), "(a : Type) -> (b : Type) -> (a => b) -> a -> -F b");
+    let narrow = present_type(&source, root, PageWidth::from(40_u32), Form::Explicit)?;
     assert_eq!(narrow.as_ref(), "(a : Type) -> (b : Type) -> +U (a ->\n  -F b) -> a -> -F b");
     Ok(())
 }
@@ -93,7 +97,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 | Topic | Module |
 | ----- | ------ |
-| One spelling per former, a body's canonical form with its exits elided, tests and their limits, references | [`src/lib.rs`](src/lib.rs) |
+| Two forms of one walk, a body's canonical form with its exits elided, tests and their limits, references | [`src/lib.rs`](src/lib.rs) |
 | The input is a source | [`former`](src/former.rs) |
 | Products, sums and tuples between their braces, native universe paths, break points, a body's statements breaking together, binder names, bounds | [`walk`](src/walk.rs) |
 

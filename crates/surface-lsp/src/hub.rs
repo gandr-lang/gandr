@@ -661,12 +661,26 @@ mod tests
         /// trivial.
         fn new(socket: &Path) -> Self
         {
+            Self::initialised(socket, Json("{}"))
+        }
+
+        /// A client connected to `socket`, initialised with the `initialize`
+        /// parameters `params` spells.
+        ///
+        /// # Specification
+        /// trivial.
+        fn initialised(
+            socket: &Path,
+            params: Json<'_>,
+        ) -> Self
+        {
             let writing = UnixStream::connect(socket).expect("the hub accepts");
             let reading = BufReader::new(writing.try_clone().expect("the stream clones"));
             let mut client = Self { writing, reading };
-            client.send(Json(
-                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
-            ));
+            let Json(params) = params;
+            let initialize =
+                format!(r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{params}}}"#);
+            client.send(Json(&initialize));
             assert!(client.receive().pointer("/result/capabilities").is_some());
             client
         }
@@ -829,6 +843,76 @@ mod tests
         drop(second);
         hub.join().expect("the hub exits");
         assert!(!socket.exists(), "the hub removes its socket");
+    }
+
+    #[test]
+    fn an_html_client_hovers_in_the_roles_its_tokens_carry()
+    {
+        let scratch = Scratch::new(Json("html"));
+        let socket = scratch.socket();
+        let hub = hub(&socket);
+        let mut client = Client::initialised(
+            &socket,
+            Json(
+                r#"{"capabilities":{"general":{"markdown":{"parser":"marked",
+                    "allowedTags":["p","code","pre","span","em"]}}}}"#,
+            ),
+        );
+        let coloured = |role: &str, text: &str| {
+            format!("<span style=\"color:var(--vscode-gandr-hover-{role});\">{text}</span>")
+        };
+        let mut hovered = |uri: &str, text: &str, (line, character): (u32, u32)| {
+            let open = serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": uri, "version": 1_i32, "text": text}},
+            })
+            .to_string();
+            client.send(Json(&open));
+            assert_eq!(client.published(), Some(serde_json::json!(1_i32)));
+            let hover = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 5_i32,
+                "method": "textDocument/hover",
+                "params": {
+                    "textDocument": {"uri": uri},
+                    "position": {"line": line, "character": character},
+                },
+            })
+            .to_string();
+            client.send(Json(&hover));
+            client.receive().pointer("/result/contents/value").cloned()
+        };
+        assert_eq!(
+            hovered("file:///tmp/f.gandr", "def f = 42 ;\n", (0, 4)),
+            Some(serde_json::json!(format!(
+                "<pre><code>{} : {}</code></pre>",
+                coloured("functionDef", "f"),
+                coloured("typeBuiltin", "Integer"),
+            ))),
+            "a client keeping `span`, `pre` and `code` reads the hover coloured by role"
+        );
+        assert_eq!(
+            hovered(
+                "file:///tmp/ua-corolla.gandr",
+                include_str!("../../surface-corpus/fixture/model/higher-cells/ua-corolla.gandr"),
+                (46, 4),
+            ),
+            Some(serde_json::json!(format!(
+                "<pre><code>{} : {}({} {} {}, {}, {})</code></pre>",
+                coloured("functionDef", "agree"),
+                coloured("typeBuiltin", "Path"),
+                coloured("type", "Bool"),
+                coloured("operator", "=&gt;"),
+                coloured("type", "Bool"),
+                coloured("variable", "exchange"),
+                coloured("variable", "flip"),
+            ))),
+            "a path type in its sugared form, each role coloured, its punctuation as the editor \
+             leaves it"
+        );
+        drop(client);
+        hub.join().expect("the hub exits");
     }
 
     #[test]

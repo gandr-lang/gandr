@@ -48,14 +48,19 @@ use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::Subject;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::TypedSpan;
+use gandr_surface_pretty::Form;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_render_remote::ByteOffset as RenderOffset;
+use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::Session;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::markup::Code;
+use crate::markup::Host;
+use crate::markup::Markup;
 use crate::position::Position;
 use crate::position::Range;
 use crate::protocol::Hover;
@@ -124,25 +129,38 @@ pub fn hovering(text: SourceText<'_>) -> Hovering
     Hovering { table }
 }
 
+/// How a hover spells and writes what it shows: the presentation form of its
+/// types and the markup its client renders.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Style
+{
+    /// The form every type is spelled in.
+    pub form: Form,
+    /// The markup the hover is written in.
+    pub markup: Markup,
+}
+
 /// What a hover at `position` of `text` shows, read against the text's
-/// `reading`, its `hovering` and `session`.
+/// `reading`, its `hovering` and `session`, in `style`.
 ///
 /// # Specification
 /// - requires: `reading` and `hovering` were read off `text`, and `session`
 ///   last checked `text`, as the server's synchronisation leaves them; a stale
 ///   session answers the documentation it last accepted.
 /// - ensures: on a declaration's name — from its first character to just past
-///   its last — a fenced `gandr` block holding the name and, when the table
+///   its last — a block of `gandr` text holding the name and, when the table
 ///   types the declaration by its form's key, ` : ` and its type, or, when the
 ///   table holds the lowering's refusal of it, that refusal after a blank line;
 ///   then the documentation the session filed for the form after a blank line,
 ///   about the name's range; else, on the innermost typed node holding the
-///   position, a fenced block of its type — a binder's name or a written type's
-///   text before ` : ` — and, for a term checked against a type spelled
-///   otherwise, that type in a second block, about the node's range; else, in
-///   the head of a non-module declaration — from its start to the brace opening
-///   its own body — as on its name, about the head. Absent elsewhere, and
-///   absent for a declaration with neither a type, a refusal nor documentation.
+///   position, a block of its type — a binder's name or a written type's text
+///   before ` : ` — and, for a term checked against a type spelled otherwise,
+///   that type in a second block, about the node's range; else, in the head of
+///   a non-module declaration — from its start to the brace opening its own
+///   body — as on its name, about the head. Absent elsewhere, and absent for a
+///   declaration with neither a type, a refusal nor documentation. Every type
+///   is spelled in `style`'s form, and every block is written as [`Code`]
+///   writes it in `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -154,12 +172,14 @@ pub fn hovering(text: SourceText<'_>) -> Hovering
 ///   written value and computation types, a mismatched term, a term past a
 ///   refusal in its body, a keyword, layout inside a declaration, a word in a
 ///   comment and a position past the last declaration are asserted at their
-///   exact answers.
+///   exact answers; a declaration and a written type in HTML, coloured by their
+///   roles.
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::each_member_hovers_its_own_type`
+/// - witness: `hover::tests::html_hovers_colour_the_name_and_the_type`
 #[spec(ensures: |ref ret| match *ret {
-    Maybe::Present(ref hover) => hover.contents.value.starts_with("```gandr\n")
+    Maybe::Present(ref hover) => hover.contents.value.starts_with(style.markup.opener().0)
         && hover.range.start <= position && position <= hover.range.end,
     Maybe::Absent(_) => true,
 })]
@@ -169,6 +189,7 @@ pub fn hover<Store, Blocks>(
     reading: &Reading,
     hovering: &Hovering,
     position: Position,
+    style: Style,
 ) -> Maybe<Hover, hovered::Absent>
 {
     let Maybe::Present(found) = reading.declarations()
@@ -177,14 +198,26 @@ pub fn hover<Store, Blocks>(
     };
     let table = &hovering.table;
     let index = LineIndex::new(<&str>::from(text).into());
+    let quoted = Quoted {
+        text,
+        index: &index,
+        spans: reading.spans(),
+    };
     if let Some(named) = found.iter().find(|found| {
         found.symbol.selection_range.start <= position
             && position <= found.symbol.selection_range.end
     }) {
-        return declared(session, table, named, named.symbol.selection_range);
+        return declared(
+            session,
+            table,
+            named,
+            named.symbol.selection_range,
+            &quoted,
+            style,
+        );
     }
     let offset = ByteOffset::from(usize::from(position.byte(&index)));
-    if let Maybe::Present(entry) = table.at(offset, PageWidth::from(HOVER_WIDTH))
+    if let Maybe::Present(entry) = table.at(offset, PageWidth::from(HOVER_WIDTH), style.form)
         && let Ok(range) = Range::of_bytes(
             &index,
             RenderOffset::from(usize::from(entry.span().start())),
@@ -194,7 +227,7 @@ pub fn hover<Store, Blocks>(
         return Maybe::Present(Hover {
             contents: MarkupContent {
                 kind: "markdown",
-                value: typed(text, &entry),
+                value: typed(&quoted, &entry, style.markup),
             },
             range,
         });
@@ -205,20 +238,61 @@ pub fn hover<Store, Blocks>(
             && position < found.head.end
     });
     match enclosing {
-        | Some(enclosing) => declared(session, table, enclosing, enclosing.head),
+        | Some(enclosing) => declared(session, table, enclosing, enclosing.head, &quoted, style),
         | None => Maybe::Absent(hovered::Absent::Untyped),
+    }
+}
+
+/// The document a hover quotes from: its text, its line index and the
+/// highlighter's spans over it.
+#[derive(Clone, Copy, Debug)]
+struct Quoted<'text>
+{
+    /// The document's text.
+    text: SourceText<'text>,
+    /// The line index of `text`.
+    index: &'text LineIndex<'text>,
+    /// The highlighter's spans over `text`, sorted and disjoint.
+    spans: &'text [HlSpan],
+}
+
+impl Quoted<'_>
+{
+    /// Append to `code` the document's text over `bytes` when it is `quoted`,
+    /// in the colours the document gives it; else `quoted` uncoloured.
+    ///
+    /// # Specification
+    /// trivial.
+    fn quote(
+        &self,
+        code: &mut Code,
+        quoted: SourceText<'_>,
+        start: RenderOffset,
+    )
+    {
+        let from = usize::from(start);
+        let text = <&str>::from(quoted);
+        let written = <&str>::from(self.text).get(from .. from.saturating_add(text.len()));
+        if written == Some(text) {
+            code.quoted(quoted, start, self.spans);
+        }
+        else {
+            code.plain(quoted);
+        }
     }
 }
 
 /// The hover of the declaration `declaration`, about `range`.
 ///
 /// # Specification
-/// - requires: `range` holds the hovered position.
-/// - ensures: a fenced `gandr` block of the name and, when `table` types the
-///   declaration by its form's key and the symbol is no module, ` : ` and its
-///   type; when `table` holds the lowering's refusal of it instead, that
-///   refusal after a blank line; then the documentation `session` filed under
-///   the form's key after a blank line; absent when none is known.
+/// - requires: `range` holds the hovered position, and `quoted` is the document
+///   `declaration` was read from.
+/// - ensures: a block of the name — in the colours the document gives it — and,
+///   when `table` types the declaration by its form's key and the symbol is no
+///   module, ` : ` and its type in `style`'s form; when `table` holds the
+///   lowering's refusal of it instead, that refusal after a blank line; then
+///   the documentation `session` filed under the form's key after a blank line;
+///   absent when none is known.
 /// - provides: the declaration half of [`hover`].
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -228,9 +302,10 @@ pub fn hover<Store, Blocks>(
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
 /// - witness: `hover::tests::each_member_hovers_its_own_type`
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
+/// - witness: `hover::tests::html_hovers_colour_the_name_and_the_type`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref hover) => hover.range == range
-        && hover.contents.value.starts_with(&format!("```gandr\n{}", declaration.symbol.name)),
+        && hover.contents.value.starts_with(style.markup.opener().0),
     Maybe::Absent(reason) => reason == hovered::Absent::Unknown,
 })]
 fn declared<Store, Blocks>(
@@ -238,13 +313,15 @@ fn declared<Store, Blocks>(
     table: &TypeTable,
     declaration: &Declaration,
     range: Range,
+    quoted: &Quoted<'_>,
+    style: Style,
 ) -> Maybe<Hover, hovered::Absent>
 {
     let symbol = &declaration.symbol;
     let key = declaration.key;
     let held = match key {
         | Some(key) if symbol.kind != SymbolKind::MODULE => {
-            match table.declared(key, PageWidth::from(HOVER_WIDTH)) {
+            match table.declared(key, PageWidth::from(HOVER_WIDTH), style.form) {
                 | Maybe::Present(held) => Some(held),
                 | Maybe::Absent(_) => None,
             }
@@ -258,14 +335,19 @@ fn declared<Store, Blocks>(
     if held.is_none() && documented.is_none() {
         return Maybe::Absent(hovered::Absent::Unknown);
     }
+    let mut code = Code::new(style.markup);
+    let start = symbol.selection_range.start.byte(quoted.index);
+    quoted.quote(&mut code, SourceText::from(symbol.name.as_str()), start);
     let mut value = match held {
         | Some(Declared::Typed(spelled)) => {
-            format!("```gandr\n{} : {}\n```", symbol.name, spelled.as_ref())
+            code.printed(
+                SourceText::from(format!(" : {}", spelled.as_ref()).as_str()),
+                Host::Signature,
+            );
+            code.block()
         },
-        | Some(Declared::Refused(refusal)) => {
-            format!("```gandr\n{}\n```\n\nrefused: {refusal}", symbol.name)
-        },
-        | None => format!("```gandr\n{}\n```", symbol.name),
+        | Some(Declared::Refused(refusal)) => format!("{}\n\nrefused: {refusal}", code.block()),
+        | None => code.block(),
     };
     if let Some(text) = documented {
         value.push_str("\n\n");
@@ -280,14 +362,16 @@ fn declared<Store, Blocks>(
     })
 }
 
-/// The hover text of the typed node `entry` of `text`.
+/// The hover text of the typed node `entry` of the `quoted` document, in
+/// `markup`.
 ///
 /// # Specification
-/// - requires: `entry` was read from the table of `text`.
-/// - ensures: a fenced `gandr` block: a term's type alone; a binder's name and
-///   a written type's text, each when it is one line of the source, then ` : `
-///   and the entry's type; for a term checked against a type spelled otherwise,
-///   a second block of that type after a line saying so.
+/// - requires: `entry` was read from the table of the `quoted` document.
+/// - ensures: a block: a term's type alone; a binder's name and a written
+///   type's text, each when it is one line of the source and in the colours the
+///   document gives it, then ` : ` and the entry's type; for a term checked
+///   against a type spelled otherwise, a second block of that type after a line
+///   saying so.
 /// - provides: the node half of [`hover`].
 /// - fails: never.
 /// - panics: none.
@@ -296,27 +380,41 @@ fn declared<Store, Blocks>(
 /// - hypothesis: L3 — a use, a binder, a written type and a mismatched term are
 ///   asserted at their exact texts.
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
-#[spec(ensures: |ret| ret.starts_with("```gandr\n") && ret.contains(entry.ty().as_ref()))]
+/// - witness: `hover::tests::html_hovers_colour_the_name_and_the_type`
+#[spec(ensures: |ret| ret.starts_with(markup.opener().0))]
 fn typed(
-    text: SourceText<'_>,
+    quoted: &Quoted<'_>,
     entry: &TypedSpan,
+    markup: Markup,
 ) -> String
 {
-    let written = <&str>::from(text)
-        .get(usize::from(entry.span().start()) .. usize::from(entry.span().end()))
+    let start = usize::from(entry.span().start());
+    let written = <&str>::from(quoted.text)
+        .get(start .. usize::from(entry.span().end()))
         .filter(|written| !written.contains('\n'));
-    let mut value = match (entry.subject(), written) {
+    let mut code = Code::new(markup);
+    match (entry.subject(), written) {
         | (Subject::Binder | Subject::Type, Some(written)) => {
-            format!("```gandr\n{written} : {}\n```", entry.ty().as_ref())
+            quoted.quote(
+                &mut code,
+                SourceText::from(written),
+                RenderOffset::from(start),
+            );
+            code.printed(
+                SourceText::from(format!(" : {}", entry.ty().as_ref()).as_str()),
+                Host::Signature,
+            );
         },
         | (Subject::Term, _) | (Subject::Binder | Subject::Type, None) => {
-            format!("```gandr\n{}\n```", entry.ty().as_ref())
+            code.printed(SourceText::from(entry.ty().as_ref()), Host::Type);
         },
-    };
+    }
+    let mut value = code.block();
     if let Maybe::Present(expected) = entry.expected() {
-        value.push_str("\n\nchecked against\n\n```gandr\n");
-        value.push_str(expected.as_ref());
-        value.push_str("\n```");
+        let mut against = Code::new(markup);
+        against.printed(SourceText::from(expected.as_ref()), Host::Type);
+        value.push_str("\n\nchecked against\n\n");
+        value.push_str(&against.block());
     }
     value
 }
@@ -328,20 +426,30 @@ mod tests
     use gandr_core_incremental::MemoryCheckpointStore;
     use gandr_storage_records::InMemoryBlockStore;
     use gandr_surface_dispatcher::SourceRoot;
+    use gandr_surface_pretty::Form;
     use gandr_surface_render_remote::ByteOffset as RenderOffset;
     use gandr_surface_render_remote::LineIndex;
     use gandr_surface_session::Session;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
+    use super::Style;
     use super::hover;
     use super::hovered;
     use super::hovering;
+    use crate::markup::Markup;
     use crate::position::Character;
     use crate::position::Line;
     use crate::position::Position;
     use crate::reading::Reading;
     use crate::recheck::grammar;
+
+    /// The style a client keeping no HTML tags reads, in the explicit form
+    /// the fixtures below are written in.
+    const PLAIN: Style = Style {
+        form: Form::Explicit,
+        markup: Markup::Markdown,
+    };
 
     /// A session that has checked `text`.
     ///
@@ -372,13 +480,27 @@ mod tests
         shown_at(text, Position { line, character })
     }
 
-    /// What a hover at `position` of `text` shows, or why not.
+    /// What a hover at `position` of `text` shows in markdown and the
+    /// explicit form, or why not.
     ///
     /// # Specification
     /// trivial.
     fn shown_at(
         text: SourceText<'_>,
         position: Position,
+    ) -> Result<String, hovered::Absent>
+    {
+        styled(text, position, PLAIN)
+    }
+
+    /// What a hover at `position` of `text` shows in `style`, or why not.
+    ///
+    /// # Specification
+    /// trivial.
+    fn styled(
+        text: SourceText<'_>,
+        position: Position,
+        style: Style,
     ) -> Result<String, hovered::Absent>
     {
         let session = checked(text);
@@ -388,6 +510,7 @@ mod tests
             &Reading::of(text),
             &hovering(text),
             position,
+            style,
         ) {
             | Maybe::Present(shown) => Ok(shown.contents.value),
             | Maybe::Absent(reason) => Err(reason),
@@ -564,6 +687,49 @@ mod tests
             shown(text, (0.into(), 7.into())),
             Err(hovered::Absent::Unknown),
             "an undocumented module has no type to show"
+        );
+    }
+
+    #[test]
+    fn html_hovers_colour_the_name_and_the_type()
+    {
+        let html = Style {
+            form: Form::Sugared,
+            markup: Markup::Html,
+        };
+        let coloured = |role: &str, text: &str| {
+            format!("<span style=\"color:var(--vscode-gandr-hover-{role});\">{text}</span>")
+        };
+        let (text, at) = marker(SourceText::from(
+            "def $0f(x: Integer) -> -F Integer { return x }\n",
+        ));
+        assert_eq!(
+            styled(SourceText::from(text.as_str()), at, html),
+            Ok(format!(
+                "<pre><code>{} : {} {} {}</code></pre>",
+                coloured("functionDef", "f"),
+                coloured("typeBuiltin", "Integer"),
+                coloured("operator", "=&gt;"),
+                coloured("typeBuiltin", "Integer"),
+            )),
+            "the name in its editor colour, the sugared type in its roles, `>` escaped"
+        );
+        let (text, at) = marker(SourceText::from(
+            "def f($0x: Integer) -> -F Integer { return x }\n",
+        ));
+        assert_eq!(
+            styled(SourceText::from(text.as_str()), at, html),
+            Ok(format!(
+                "<pre><code>{} : {}</code></pre>",
+                coloured("variableParam", "x"),
+                coloured("typeBuiltin", "Integer"),
+            )),
+            "a binder in the parameter colour the editor gives it"
+        );
+        assert_eq!(
+            styled(SourceText::from(text.as_str()), at, PLAIN),
+            Ok(fenced(SourceText::from("x : Integer"))),
+            "the markdown hover is the fenced block it always was"
         );
     }
 

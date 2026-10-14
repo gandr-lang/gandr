@@ -60,6 +60,7 @@ use std::time::Instant;
 
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
+use gandr_surface_pretty::Form;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::RenderFrame;
@@ -72,9 +73,11 @@ use serde_json::Value;
 
 use crate::format::edits;
 use crate::hover::Hovering;
+use crate::hover::Style;
 use crate::hover::hover;
 use crate::hover::hovering;
 use crate::inline::ghost;
+use crate::markup::Markup;
 use crate::position::Position;
 use crate::position::Range;
 use crate::proposal::Proposal;
@@ -982,6 +985,7 @@ impl Workspace
             peer: Peer(u64::MAX),
             verbosity: Verbosity::User,
             quiet: QUIET,
+            style: STYLE,
         };
         let answer = match classify(request) {
             | Err(malformed) => malformed.response(),
@@ -1099,9 +1103,11 @@ impl Workspace
     }
 }
 
-/// One connection's state: where it stands in the lifecycle, which connection
-/// it is, how much of each report its diagnostics carry, and how long a
-/// diagnostic of the form under the caret waits.
+/// One connection's state.
+///
+/// Where it stands in the lifecycle, which connection it is, how much of
+/// each report its diagnostics carry, how long a diagnostic of the form under
+/// the caret waits, and how its hovers spell types and are written.
 pub struct Server
 {
     /// Where the connection stands in the lifecycle.
@@ -1114,7 +1120,18 @@ pub struct Server
     /// The interval its editor's `gandr.diagnostics.quiet` setting names, read
     /// as the verbosity is; zero holds nothing.
     quiet: Duration,
+    /// The form its editor's `gandr.presentation.form` setting names, read as
+    /// the verbosity is, and the markup its client's markdown renderer reads,
+    /// read at `initialize`.
+    style: Style,
 }
+
+/// The style a connection hovers in until `initialize` says otherwise: the
+/// sugared form, in markdown.
+const STYLE: Style = Style {
+    form: Form::Sugared,
+    markup: Markup::Markdown,
+};
 
 impl Default for Server
 {
@@ -1144,6 +1161,7 @@ impl Server
             peer,
             verbosity: Verbosity::User,
             quiet: QUIET,
+            style: STYLE,
         }
     }
 
@@ -1381,11 +1399,13 @@ impl Server
     /// # Specification
     /// - requires: nothing.
     /// - ensures: initialization and shutdown advance the lifecycle once, and
-    ///   initialization takes the verbosity and the quiet interval its options
-    ///   name, the user level and [`QUIET`] when they name none; other requests
-    ///   preserve both, and no request changes `workspace`. The response echoes
-    ///   the identifier and carries the method result or its lifecycle,
-    ///   unknown-method or invalid-parameter error.
+    ///   initialization takes the verbosity, the quiet interval and the
+    ///   presentation form its options name, the user level, [`QUIET`] and the
+    ///   sugared form when they name none, and the markup its client's
+    ///   capabilities name; other requests preserve them, and no request
+    ///   changes `workspace`. The response echoes the identifier and carries
+    ///   the method result or its lifecycle, unknown-method or
+    ///   invalid-parameter error.
     /// - provides: one response per request.
     /// - fails: refusals are error responses, never Rust errors.
     /// - panics: none.
@@ -1403,11 +1423,12 @@ impl Server
     /// - witness: `server::tests::formatting_answers_the_edits_that_lay_a_document_out`
     /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     #[spec(
-        captures: [phase = self.phase, initial = initial_settings(&params)],
+        captures: [phase = self.phase, initial = initial_settings(&params), markup = initial_markup(&params)],
         ensures: |ret| match (phase, method.as_ref()) {
             (Phase::Waiting, "initialize") => self.phase == Phase::Running
                 && self.verbosity == initial.verbosity().unwrap_or_default()
                 && self.quiet == initial.quiet().unwrap_or(QUIET)
+                && self.style == Style { form: initial.form().unwrap_or(Form::Sugared), markup }
                 && matches!(ret, Outgoing::Success { result: Answer::Initialize(_), .. }),
             (Phase::Waiting, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::SERVER_NOT_INITIALIZED),
@@ -1471,6 +1492,10 @@ impl Server
                 let settings = initial_settings(&params);
                 self.verbosity = settings.verbosity().unwrap_or_default();
                 self.quiet = settings.quiet().unwrap_or(QUIET);
+                self.style = Style {
+                    form: settings.form().unwrap_or(Form::Sugared),
+                    markup: initial_markup(&params),
+                };
                 success(
                     id,
                     Answer::Initialize(Box::new(InitializeResult::advertised())),
@@ -1561,7 +1586,12 @@ impl Server
                 match serde_json::from_value::<PositionParams>(params) {
                     | Ok(params) => success(
                         id,
-                        workspace.hover(&params.text_document.uri, self.peer, params.position),
+                        workspace.hover(
+                            &params.text_document.uri,
+                            self.peer,
+                            params.position,
+                            self.style,
+                        ),
                     ),
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -1646,7 +1676,8 @@ impl Server
     ///   connection's copy go, forgets the document once no connection holds a
     ///   copy, and publishes a versionless empty diagnostic list to this
     ///   connection, even for an unknown URI. A running-state configuration
-    ///   change whose `gandr` section names a quiet interval takes it. One that
+    ///   change whose `gandr` section names a quiet interval takes it, and one
+    ///   naming a presentation form takes it for every later hover. One that
     ///   names a verbosity other than this connection's takes it, then
     ///   republishes every copy this connection holds, in URI order, at its
     ///   version, to this connection alone, logging one timing line each;
@@ -1669,6 +1700,7 @@ impl Server
     /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
     /// - witness: `server::tests::ranged_changes_edit_the_held_text_in_order`
     /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
+    /// - witness: `server::tests::a_configuration_change_reanswers_hovers_in_its_form`
     /// - witness: `server::tests::two_connections_hold_their_own_copies`
     #[spec(
         captures: [phase = self.phase, count = workspace.documents.len()],
@@ -1787,6 +1819,9 @@ impl Server
                 };
                 if let Some(quiet) = settings.quiet() {
                     self.quiet = quiet;
+                }
+                if let Some(form) = settings.form() {
+                    self.style.form = form;
                 }
                 let mut outcome = Outcome::quiet();
                 let Some(verbosity) = settings
@@ -1988,17 +2023,17 @@ impl Workspace
     }
 
     /// What a hover at `position` of the copy of the document at `uri` that
-    /// `peer` is answered from shows.
+    /// `peer` is answered from shows, in `style`.
     ///
     /// # Specification
     /// - requires: nothing; an unknown URI and any position are admitted.
     /// - ensures: an unknown document yields Nothing; otherwise the hover
-    ///   [`hover()`] shows read against the text's reading, what the copy keeps
-    ///   for its hovers and its session, followed by the notes of the kept
-    ///   proposals whose range holds the position and explain themselves, or
-    ///   those notes alone over the first one's range when the hover shows
-    ///   nothing there or the grammar did not build. Nothing when neither shows
-    ///   anything.
+    ///   [`hover()`] shows in `style`, read against the text's reading, what
+    ///   the copy keeps for its hovers and its session, followed by the notes
+    ///   of the kept proposals whose range holds the position and explain
+    ///   themselves, in `style`'s markup, or those notes alone over the first
+    ///   one's range when the hover shows nothing there or the grammar did not
+    ///   build. Nothing when neither shows anything.
     /// - provides: the answer to `textDocument/hover`.
     /// - fails: never.
     /// - panics: none.
@@ -2016,6 +2051,7 @@ impl Workspace
         uri: &DocumentUri,
         peer: Peer,
         position: Position,
+        style: Style,
     ) -> Answer
     {
         let Maybe::Present(document) = self.view(uri, peer)
@@ -2029,10 +2065,11 @@ impl Workspace
                 document.text.reading(),
                 document.text.hovering(),
                 position,
+                style,
             ),
             | Err(_) => Maybe::Absent(crate::hover::hovered::Absent::Unparsed),
         };
-        match (shown, notes(&document.proposals, position)) {
+        match (shown, notes(&document.proposals, position, style.markup)) {
             | (Maybe::Present(mut shown), Some((_range, notes))) => {
                 shown.contents.value.push_str("\n\n---\n\n");
                 shown.contents.value.push_str(&notes);
@@ -2144,6 +2181,18 @@ fn initial_settings(params: &Value) -> Settings
     InitializeParams::deserialize(params)
         .ok()
         .and_then(|params| params.initialization_options)
+        .unwrap_or_default()
+}
+
+/// The markup the client sending the `initialize` parameters `params` reads
+/// a hover in, markdown when they cannot be read.
+///
+/// # Specification
+/// trivial.
+fn initial_markup(params: &Value) -> Markup
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.markup())
         .unwrap_or_default()
 }
 
@@ -3225,6 +3274,77 @@ mod tests
                 server.handle(&unchanged).messages.is_empty(),
                 "{why} republishes nothing"
             );
+        }
+    }
+
+    #[test]
+    fn a_configuration_change_reanswers_hovers_in_its_form()
+    {
+        let mut server = Connected::default();
+        let _answered = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},
+                    "initializationOptions":{"presentation":{"form":"explicit"}}}}"#,
+            ),
+        );
+        let _opened = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+                    "uri":"file:///tmp/f.gandr","languageId":"gandr","version":1,
+                    "text":"def f(x: Integer) -> -F Integer { return x }\n"}}}"#,
+            ),
+        );
+        let hovered = |server: &mut Connected| {
+            send(
+                server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{
+                        "textDocument":{"uri":"file:///tmp/f.gandr"},
+                        "position":{"line":0,"character":4}}}"#,
+                ),
+            )
+            .pointer("/0/result/contents/value")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+        };
+        let configure = |form: &str| {
+            Body::from(
+                format!(
+                    r#"{{"jsonrpc":"2.0","method":"workspace/didChangeConfiguration",
+                        "params":{{"settings":{{"gandr":{{"presentation":{{"form":{form}}}}}}}}}}}"#
+                )
+                .into_bytes(),
+            )
+        };
+        let explicit = Some(String::from(
+            "```gandr\nf : +U (Integer -> -F Integer)\n```",
+        ));
+        let sugared = Some(String::from("```gandr\nf : Integer => Integer\n```"));
+        assert_eq!(
+            hovered(&mut server),
+            explicit,
+            "the initialization options choose the form"
+        );
+        assert!(
+            server
+                .handle(&configure(r#""sugared""#))
+                .messages
+                .is_empty(),
+            "a form republishes nothing"
+        );
+        assert_eq!(
+            hovered(&mut server),
+            sugared,
+            "the next hover answers in the form configured"
+        );
+        for (unchanged, why) in [
+            (configure(r#""loose""#), "a value that names no form"),
+            (configure("null"), "a section that names none"),
+        ] {
+            let _ignored = server.handle(&unchanged);
+            assert_eq!(hovered(&mut server), sugared, "{why} keeps the form held");
         }
     }
 

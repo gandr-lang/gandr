@@ -636,7 +636,12 @@ mod tests
         root: NodeIndex,
     ) -> Result<Presentation, PresentationError>
     {
-        present_type(&ContentSource::from(nodes), root, PageWidth::from(100_u32))
+        present_type(
+            &ContentSource::from(nodes),
+            root,
+            PageWidth::from(100_u32),
+            crate::Form::Explicit,
+        )
     }
 
     /// The first eight node indices.

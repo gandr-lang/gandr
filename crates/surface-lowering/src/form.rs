@@ -671,6 +671,8 @@ pub enum Former
     ArrowType,
     /// The eager product type `A * B`.
     ProductType,
+    /// The sum type `A + B`.
+    SumType,
     /// The lazy product type `C & D`, the binary lazy record.
     LazyProductType,
     /// The telescope type `#{…}`: the product of its positional entries, or
@@ -746,7 +748,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 57_usize] = [
+    pub const ALL: [Self; 58_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -783,6 +785,7 @@ impl Former
         Self::ReturnerType,
         Self::ArrowType,
         Self::ProductType,
+        Self::SumType,
         Self::LazyProductType,
         Self::TelescopeType,
         Self::LabelledSumType,
@@ -826,7 +829,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 64_usize] = [
+pub const FORMERS: [(&str, Former); 65_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -866,6 +869,7 @@ pub const FORMERS: [(&str, Former); 64_usize] = [
     ("f_type", Former::ReturnerType),
     ("function_type", Former::ArrowType),
     ("product_type", Former::ProductType),
+    ("sum_type", Former::SumType),
     ("lazy_product_type", Former::LazyProductType),
     ("telescope_type", Former::TelescopeType),
     ("labelled_sum_type", Former::LabelledSumType),

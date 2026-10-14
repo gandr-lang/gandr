@@ -31,7 +31,12 @@
 //! text, built at the first hover after an edit and kept until the next: its
 //! entries are the nodes the run judged, the binders their uses resolve to,
 //! the written types it formed, and the members of `sign` blocks and `data`
-//! families at the types the description route states for them.
+//! families at the types the description route states for them. Each type is
+//! spelled in the form the editor's `gandr.presentation.form` names, the
+//! sugared one unless it names the explicit one; a client whose markdown
+//! renderer keeps HTML reads every piece of gandr text a hover shows coloured
+//! by the roles its semantic tokens carry, as the `markup` module states, with
+//! the decision, its alternatives and its reversal.
 //! A formatting request lays the document out through `gandr-surface-format`
 //! and answers the edits that turn the held text into that layout: one
 //! trimmed edit for the whole document, or one per top-level form a range
@@ -130,7 +135,7 @@
 //! | monikers | `textDocument/moniker` | declined: no cross-repository index reads them |
 //! | workspace symbols | `workspace/symbol` | blocked: a workspace of more than the open documents |
 //! | workspace folders, file watching, file operations | `workspace/didChangeWorkspaceFolders`, `didChangeWatchedFiles`, `willCreateFiles` and the other file operations | blocked: a workspace of more than the open documents |
-//! | configuration | `workspace/didChangeConfiguration` | served: the `gandr` section's `diagnostics.verbosity`, as the `recheck` module states, and `diagnostics.quiet`, as the `quiet` module states |
+//! | configuration | `workspace/didChangeConfiguration` | served: the `gandr` section's `diagnostics.verbosity`, as the `recheck` module states, `diagnostics.quiet`, as the `quiet` module states, and `presentation.form`, which every later hover reads |
 //! | pulled configuration | `workspace/configuration` | declined: the settings are pushed; reverses for a client that only answers pulls |
 //! | window messages and progress | `window/showMessage`, `logMessage`, `workDoneProgress/*` | declined: the timing line goes to the server's log; reverses for a client that reads only the protocol stream |
 //! | gandr's extensions | `gandr/goals`, `gandr/syntaxTree`, `gandr/serverStatus`, the render-bus attach through the language server's stream | blocked: each as the assessment in § Extensions beyond the specification names; the bus itself is served on the hub's socket (the `bus` module) |
@@ -314,6 +319,7 @@ mod hover;
 #[cfg(unix)]
 mod hub;
 mod inline;
+mod markup;
 mod outline;
 mod position;
 mod proposal;

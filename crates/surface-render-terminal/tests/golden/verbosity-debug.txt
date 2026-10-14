@@ -6,7 +6,7 @@ error[ShapeMismatch]: expected a thunk type `+U C`
   │         │              │     │
   │         │              │     its type is not of the required shape: found `Integer`
   │         │              checked against `-F Integer`; while forcing this
-  │         checked against `+U (-F Integer)`; while checking the body of this thunk
+  │         checked against `() => Integer`; while checking the body of this thunk
   │
   ├ note: `a` is expected to check, and this refusal leaves it unsettled
   ├ class: malformed source

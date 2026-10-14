@@ -15,11 +15,11 @@
 //! an abstract type the term mentions. Both passes bound their scheduled
 //! visits, including when the source changes between passes.
 //!
-//! # Products, sums and tuples are written between their braces
+//! # Products, sums and tuples: braces at every arity, infix from two
 //!
 //! The core's product and sum hold a list of components
-//! ([#134](https://github.com/gandr-lang/gandr/issues/134)), and the printer
-//! writes each between its delimiters at any arity from one: `#{A}` and
+//! ([#134](https://github.com/gandr-lang/gandr/issues/134)), and the explicit
+//! form writes each between its delimiters at any arity from one: `#{A}` and
 //! `#{A, B, C}`, `+{A}` and `+{A, B, C}`, a nested product or sum one
 //! component among them. The 0-ary product is `Unit`, the 0-ary sum `Void`,
 //! and the sum of two units `Bool`, the fixed names the lowering resolves. A
@@ -33,11 +33,18 @@
 //! order; the empty record, which the surface does not write (`#{}` is the
 //! unit), is `?`. The lazy product is `&{C, D}`, binary as the core holds it.
 //!
+//! The sugared form writes a product or a sum of two components or more
+//! infix, `A * B * C` and `A + B + C`, one flat chain as the lowering reads
+//! an unparenthesized one; a tuple of two or more `(a, b, c)`; the lazy
+//! product `C & D`, right-nested as the grammar associates it. A product or
+//! a sum of one component, an injection and a record keep their braces in
+//! both forms: the surface has no infix spelling for them.
+//!
 //! - **Alternatives.** A former holding its components' handles would need
 //!   every source to keep them as a slice of its own handle type, which the
-//!   core arena does not. Printing the binary sugar would leave the 1-ary
-//!   product, an injection past the second summand and a record without a
-//!   spelling.
+//!   core arena does not. The binary sugar alone, in both forms, would leave
+//!   the 1-ary product, an injection past the second summand and a record
+//!   without a spelling.
 //! - **Reversal.** A source whose components are costly to reach one at a time,
 //!   measured, answers them as a slice instead.
 //!
@@ -202,6 +209,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::DEPTH_LIMIT;
 use crate::Fidelity;
+use crate::Form;
 use crate::ValueDepth;
 use crate::compose::Compose;
 use crate::compose::Doc;
@@ -1092,9 +1100,10 @@ fn below(
 ///
 /// A piece stands bare in a slot that admits its binding and is parenthesized
 /// in one that admits only tighter pieces. The order is the grammar's: an
-/// atom, then the bridges and the keyword-led computations, then `->`, then a
-/// bind's statements. Every arity-shaped former is an atom, its entries
-/// between its own delimiters.
+/// atom, then the bridges and the keyword-led computations, then the infix
+/// `*`, `+` and `&` the sugared form writes, then `->` and `=>`, then a bind's
+/// statements. Every arity-shaped former is an atom, its entries between its
+/// own delimiters.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Binding
 {
@@ -1103,8 +1112,14 @@ enum Binding
     /// `+U C`, `-F A`, `pure v`, `force v`, `run c`, `fn (x) { c }` or
     /// `thunk { c }`.
     Prefix,
-    /// `A -> C`, `(x : A) -> C`, or the static abstraction `\a. v`, whose
-    /// body runs as far right as an arrow's codomain.
+    /// `A * B`.
+    Product,
+    /// `A + B`.
+    Sum,
+    /// `C & D`.
+    Lazy,
+    /// `A -> C`, `(x : A) -> C`, `A => B`, or the static abstraction `\a. v`,
+    /// whose body runs as far right as an arrow's codomain.
     Arrow,
     /// `run x <- c ; rest`, whose rest runs to the end of the block it stands
     /// in; anywhere else it is a block of its own, `{ … }`.
@@ -1443,6 +1458,71 @@ impl Bracket
     }
 }
 
+/// The infix type formers the sugared form writes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Infix
+{
+    /// The eager product `A * B * …`, a chain of one product.
+    Product,
+    /// The sum `A + B + …`, a chain of one sum.
+    Sum,
+    /// The lazy product `C & D`, binary and nested to the right.
+    Lazy,
+}
+
+impl Infix
+{
+    /// The symbol between two operands, after the space before it.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn symbol(self) -> Glyphs<'static>
+    {
+        Glyphs(match self {
+            | Self::Product => " *",
+            | Self::Sum => " +",
+            | Self::Lazy => " &",
+        })
+    }
+
+    /// How loosely the spelled chain binds.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn binding(self) -> Binding
+    {
+        match self {
+            | Self::Product => Binding::Product,
+            | Self::Sum => Binding::Sum,
+            | Self::Lazy => Binding::Lazy,
+        }
+    }
+
+    /// The loosest operand the operand at `position` of `arity` stands bare
+    /// as: a product's and a sum's every operand tighter than the chain, since
+    /// the lowering reads an unparenthesized inner chain as more components
+    /// of the outer one; the lazy product's left operand tighter than it and
+    /// its right one at most as loose, as `&` nests to the right.
+    ///
+    /// # Specification
+    /// trivial.
+    fn operand(
+        self,
+        position: crate::former::Component,
+        arity: crate::former::Arity,
+    ) -> Binding
+    {
+        match self {
+            | Self::Product => Binding::Prefix,
+            | Self::Sum => Binding::Product,
+            | Self::Lazy if usize::from(position).saturating_add(1_usize) == usize::from(arity) => {
+                Binding::Lazy
+            },
+            | Self::Lazy => Binding::Sum,
+        }
+    }
+}
+
 /// How one join combines the finished pieces below it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Join
@@ -1462,6 +1542,19 @@ enum Join
         /// it.
         entries: Entries,
     },
+    /// An infix chain over this many operands, two or more.
+    Infix
+    {
+        /// Its former.
+        infix: Infix,
+        /// How many operands it joins.
+        arity: Arity,
+    },
+    /// A tuple of this many components, two or more, `(a, b)`.
+    Tuple(Arity),
+    /// The value-function alias over this many domains and then its
+    /// codomain: `() => C`, `A => C`, `(A, B) => C`.
+    ValueFunction(Arity),
     /// An arrow over its domain and codomain.
     Arrow,
     /// A dependent arrow over its domain and codomain, its binder named by the
@@ -2109,6 +2202,11 @@ struct Walk<'walk, 'names>
     /// The parts of the formers spelled by parts whose children are being
     /// walked, innermost last; each join takes its own.
     forms: Vec<Vec<Part>>,
+    /// Whether the sugar the grammar parses is written where it fits.
+    form: Form,
+    /// The node reads the walk may still make: one per visit, and one per
+    /// link the alias's look-ahead reads.
+    remaining: u32,
 }
 
 impl Walk<'_, '_>
@@ -2524,6 +2622,147 @@ impl Walk<'_, '_>
         self.pieces.pop().ok_or(PresentationError::Unbalanced)
     }
 
+    /// The top `arity` finished pieces, in the order they were finished.
+    ///
+    /// # Specification
+    /// - requires: nothing; a stack holding fewer is reported as unbalanced.
+    /// - ensures: the top `arity` pieces, removed, the deepest first.
+    /// - provides: the operands of a join over a counted list.
+    /// - fails: a stack holding fewer than `arity`, which the walk's own
+    ///   scheduling excludes.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Unbalanced`] on a stack holding fewer than
+    /// `arity`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the sugared goldens' chains and tuples of two and
+    ///   three expose reordered operands.
+    /// - witness: `goldens::tests::the_sugared_form_writes_every_sugar_its_shape_admits`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| match *ret {
+            | Ok(ref taken) => taken.len() == arity.0 && self.pieces.len().checked_add(arity.0) == Some(entry),
+            | Err(PresentationError::Unbalanced) => entry < arity.0,
+            | Err(_) => false,
+        },
+    )]
+    fn take(
+        &mut self,
+        arity: Arity,
+    ) -> Result<Vec<Piece>, PresentationError>
+    {
+        let start = self
+            .pieces
+            .len()
+            .checked_sub(arity.0)
+            .ok_or(PresentationError::Unbalanced)?;
+        Ok(self.pieces.split_off(start))
+    }
+
+    /// The domains and the codomain of the value-function alias the thunk
+    /// type over `body` is, when it is one: `body` a chain of non-dependent
+    /// arrows, none or more, ending in a pure returner.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: the domains of the arrows from `body` down, outermost first,
+    ///   and the value type the returner they end in returns; none when a link
+    ///   is anything else — a dependent arrow, an effectful returner, a missing
+    ///   or misplaced node — or the walk's remaining visits run out first.
+    ///   Every link read is one visit spent.
+    /// - provides: the shape `+U (A1 -> … -> An -> -F C)` the alias `(A1, …,
+    ///   An) => C` stands for, which the lowering reads back to the same type.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each round reads one link and spends one remaining visit, and the loop
+    /// stops when none is left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the sugared goldens spell the alias at no, one and
+    ///   two domains, over a domain and a codomain that are themselves aliases,
+    ///   and keep the thunk over a dependent arrow; a source that becomes a
+    ///   cycle of thunks over returners after its scan stays within the walk's
+    ///   reads.
+    /// - witness: `goldens::tests::the_sugared_form_writes_every_sugar_its_shape_admits`
+    /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+    #[spec(
+        captures: [entry = self.remaining],
+        ensures: |ret| self.remaining <= entry
+            && ret.as_ref().is_none_or(|found| u32::try_from(found.0.len()).is_ok_and(|links| links < entry)),
+    )]
+    fn alias<S>(
+        &mut self,
+        source: &S,
+        body: S::Node,
+    ) -> Option<(Vec<S::Node>, S::Node)>
+    where
+        S: Source + ?Sized,
+    {
+        let mut domains = Vec::new();
+        let mut link = body;
+        while let Some(left) = self.remaining.checked_sub(1_u32) {
+            self.remaining = left;
+            match source.read(link) {
+                | Former::Arrow { domain, codomain } => {
+                    domains.push(domain);
+                    link = codomain;
+                },
+                | Former::Returner(result) => return Some((domains, result)),
+                | _ => return None,
+            }
+        }
+        None
+    }
+
+    /// `(a, b, …)`: `items` between parentheses, each bare, a break after
+    /// each comma and before the closer.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the opener, the items' documents separated by a comma and a
+    ///   space or a break, then nothing or a break, then the closer.
+    /// - provides: the tuple and the alias's domain list.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the sugared goldens' tuples and domain lists at the
+    ///   wide and the narrow page expose a lost separator or closer.
+    /// - witness: `goldens::tests::the_sugared_form_writes_every_sugar_its_shape_admits`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok(_) | Err(PresentationError::Build(_)) => true,
+            | Err(_) => false,
+        },
+    )]
+    fn listed(
+        &mut self,
+        items: &[Piece],
+    ) -> Result<Doc, PresentationError>
+    {
+        let opener = self.leaf(Glyphs("("))?;
+        let mut docs = Vec::from([opener]);
+        for (position, item) in items.iter().enumerate() {
+            if position > 0_usize {
+                let comma = self.leaf(Glyphs(","))?;
+                docs.push(self.space_or_break(comma)?);
+            }
+            docs.push(item.doc);
+        }
+        let inner = self.builder.concat_all(&docs)?;
+        let inner = self.none_or_break(inner)?;
+        let close = self.leaf(Glyphs(")"))?;
+        self.builder.concat(inner, close)
+    }
+
     /// `piece`, parenthesized when it binds looser than `loosest`.
     ///
     /// # Specification
@@ -2898,6 +3137,10 @@ impl Walk<'_, '_>
                 self.fidelity = Fidelity::Approximate;
                 Some(Join::Bracket(Bracket::Stack))
             },
+            | Former::With(..) if self.form == Form::Sugared => Some(Join::Infix {
+                infix: Infix::Lazy,
+                arity: Arity(2_usize),
+            }),
             | Former::With(..) => Some(Join::Braced {
                 brace: Brace::Ampersand,
                 arity: Arity(2_usize),
@@ -2967,6 +3210,21 @@ impl Walk<'_, '_>
                 Some(Join::Bracket(Bracket::PathEquiv))
             },
             | Former::PathProduct(..) => Some(Join::Bracket(Bracket::PathProduct)),
+            | Former::Product(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
+                Some(Join::Infix {
+                    infix: Infix::Product,
+                    arity: Arity(usize::from(arity)),
+                })
+            },
+            | Former::Sum(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
+                Some(Join::Infix {
+                    infix: Infix::Sum,
+                    arity: Arity(usize::from(arity)),
+                })
+            },
+            | Former::Tuple(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
+                Some(Join::Tuple(Arity(usize::from(arity))))
+            },
             | Former::Product(arity) | Former::Tuple(arity) => Some(Join::Braced {
                 brace: Brace::Hash,
                 arity: Arity(usize::from(arity)),
@@ -2983,7 +3241,22 @@ impl Walk<'_, '_>
                 entries: Entries::Labelled(Label::Field),
             }),
             | Former::List(_) => Some(Join::Bracket(Bracket::List)),
-            | Former::ThunkType(_) => Some(Join::Prefix(Prefix::Thunk)),
+            | Former::ThunkType(body) => {
+                if self.form == Form::Sugared
+                    && let Some((domains, codomain)) = self.alias(source, body)
+                {
+                    tasks.push(Task::Join(Join::ValueFunction(Arity(domains.len()))));
+                    for node in core::iter::once(codomain).chain(domains.into_iter().rev()) {
+                        tasks.push(Task::Visit {
+                            node,
+                            admits: Admits::ValueType,
+                            depth,
+                        });
+                    }
+                    return Ok(());
+                }
+                Some(Join::Prefix(Prefix::Thunk))
+            },
             | Former::Returner(_) => Some(Join::Prefix(Prefix::Returner)),
             | Former::EffectfulReturner { effects, .. } => {
                 let annotation = alloc::format!("-F^{effects:?} ");
@@ -3804,7 +4077,8 @@ impl Walk<'_, '_>
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
                 | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::List | Bracket::Stay | Bracket::Forward | Bracket::Run) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
-                | Join::Form { pieces: Arity(count), .. } => Some(count),
+                | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
+            Join::ValueFunction(Arity(domains)) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
             Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::Then | Bracket::FlowProduct | Bracket::Arrow) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
@@ -3813,9 +4087,10 @@ impl Walk<'_, '_>
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
                     Join::Prefix(_) | Join::EffectReturner(_) | Join::Lambda | Join::Thunk => Binding::Prefix,
-                    Join::Arrow | Join::Pi | Join::StaticLambda => Binding::Arrow,
+                    Join::Arrow | Join::Pi | Join::StaticLambda | Join::ValueFunction(_) => Binding::Arrow,
                     Join::Sequence => Binding::Sequence,
-                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Sigma | Join::Ua(_) => Binding::Atom,
+                    Join::Infix { infix, .. } => infix.binding(),
+                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Sigma | Join::Ua(_) | Join::Tuple(_) => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
@@ -3900,10 +4175,50 @@ impl Walk<'_, '_>
                 let close = self.leaf(Glyphs("}"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
             },
+            | Join::Infix { infix, arity } => {
+                let mut joined = None;
+                for (position, operand) in self.take(arity)?.into_iter().enumerate() {
+                    let place = infix.operand(
+                        crate::former::Component::from(position),
+                        crate::former::Arity::from(arity.0),
+                    );
+                    let operand = self.bare_up_to(operand, place)?;
+                    joined = Some(match joined {
+                        | None => operand,
+                        | Some(head) => {
+                            let symbol = self.leaf(infix.symbol())?;
+                            let head = self.builder.concat(head, symbol)?;
+                            let head = self.space_or_break(head)?;
+                            self.builder.concat(head, operand)?
+                        },
+                    });
+                }
+                (
+                    joined.ok_or(PresentationError::Unbalanced)?,
+                    infix.binding(),
+                )
+            },
+            | Join::Tuple(arity) => {
+                let components = self.take(arity)?;
+                (self.listed(&components)?, Binding::Atom)
+            },
+            | Join::ValueFunction(arity) => {
+                let codomain = self.pop()?;
+                let domains = self.take(arity)?;
+                let domain = match *domains.as_slice() {
+                    | [] => self.leaf(Glyphs("()"))?,
+                    | [only] => self.bare_up_to(only, Binding::Lazy)?,
+                    | _ => self.listed(&domains)?,
+                };
+                let arrow = self.leaf(Glyphs(" =>"))?;
+                let head = self.builder.concat(domain, arrow)?;
+                let head = self.space_or_break(head)?;
+                (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
+            },
             | Join::Arrow => {
                 let codomain = self.pop()?;
                 let domain = self.pop()?;
-                let domain = self.bare_up_to(domain, Binding::Prefix)?;
+                let domain = self.bare_up_to(domain, Binding::Lazy)?;
                 let arrow = self.leaf(Glyphs(" ->"))?;
                 let head = self.builder.concat(domain, arrow)?;
                 let head = self.space_or_break(head)?;
@@ -4141,6 +4456,7 @@ pub fn walk<S>(
     source: &S,
     root: S::Node,
     admits: Admits,
+    form: Form,
     builder: &mut dyn Compose,
 ) -> Result<Walked, PresentationError>
 where
@@ -4163,13 +4479,14 @@ where
         bodies: Bodies::of(admits),
         protocols: Vec::new(),
         forms: Vec::new(),
+        form,
+        remaining: VISIT_BUDGET,
     };
     let mut tasks = Vec::from([Task::Visit {
         node: root,
         admits,
         depth: ValueDepth::ROOT,
     }]);
-    let mut remaining = VISIT_BUDGET;
     while let Some(task) = tasks.pop() {
         match task {
             | Task::Visit {
@@ -4177,11 +4494,11 @@ where
                 admits,
                 depth,
             } => {
-                let Some(left) = remaining.checked_sub(1_u32)
+                let Some(left) = walk.remaining.checked_sub(1_u32)
                 else {
                     return Ok(Walked::OverBudget);
                 };
-                remaining = left;
+                walk.remaining = left;
                 walk.visit(source, node, source.read(node), admits, depth, &mut tasks)?;
             },
             | Task::Bind(zone) => walk.opened.push(zone),
@@ -4319,7 +4636,12 @@ mod tests
         let source = ChangingSource {
             reads: Cell::new(0_u32),
         };
-        let result = crate::present_type(&source, ChangingNode, PageWidth::from(80_u32));
+        let result = crate::present_type(
+            &source,
+            ChangingNode,
+            PageWidth::from(80_u32),
+            crate::Form::Sugared,
+        );
         assert!(
             source.reads.get() <= VISIT_BUDGET.saturating_add(1_u32),
             "read count escaped the scan plus walk bound: {}",
@@ -4428,6 +4750,8 @@ mod tests
             bodies: super::Bodies::Opaque,
             protocols: super::Vec::new(),
             forms: super::Vec::new(),
+            form: crate::Form::Sugared,
+            remaining: super::VISIT_BUDGET,
         };
         let refusal = super::PresentationError::Build(
             gandr_surface_layout::error::BuildError::LimitExceeded {
@@ -4472,6 +4796,8 @@ mod tests
             bodies: super::Bodies::Opaque,
             protocols: super::Vec::new(),
             forms: super::Vec::new(),
+            form: crate::Form::Sugared,
+            remaining: super::VISIT_BUDGET,
         };
         walk.atom(super::Glyphs("x")).expect("one operand builds");
         assert_eq!(
@@ -4498,6 +4824,7 @@ mod tests
                 &source,
                 crate::core_source::CoreNode::Value(constant),
                 PageWidth::from(80_u32),
+                crate::Form::Sugared,
             )
             .expect("malformed names are approximated");
             assert_eq!(result.as_ref(), "?");

@@ -37,6 +37,7 @@ use gandr_core_incremental::Resume;
 use gandr_core_incremental::Typing;
 use gandr_core_incremental::submitted;
 use gandr_surface_pretty::ContentSource;
+use gandr_surface_pretty::Form;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::present_type;
@@ -64,8 +65,8 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The type of the last declaration named `name` in `resume`, laid out at
-/// `page`.
+/// The type of the last declaration named `name` in `resume`, in the sugared
+/// form every face a person reads takes, laid out at `page`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -113,7 +114,8 @@ pub fn type_of(
     )
 }
 
-/// The type `checkpoint` gives its item, laid out at `page`.
+/// The type `checkpoint` gives its item, in the sugared form, laid out at
+/// `page`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -147,7 +149,7 @@ fn spelled_type(
 {
     let content = checkpoint.content();
     let laid_out = |nodes: &[ContentNode], root: NodeIndex| {
-        present_type(&ContentSource::from(nodes), root, page).map_or(
+        present_type(&ContentSource::from(nodes), root, page, Form::Sugared).map_or(
             Maybe::Absent(spelled::Absent::Unpresentable),
             Maybe::Present,
         )

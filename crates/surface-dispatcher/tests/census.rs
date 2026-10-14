@@ -24,6 +24,7 @@ mod census
     use gandr_surface_dispatcher::TypeTable;
     use gandr_surface_dispatcher::Walk;
     use gandr_surface_grammar::built_in;
+    use gandr_surface_pretty::Form;
     use gandr_surface_pretty::PageWidth;
     use gandr_surface_pretty::Presentation;
     use gandr_surface_pretty::Unreadable;
@@ -149,7 +150,7 @@ mod census
                 continue;
             };
             if let Ok(table) = TypeTable::of(&grammar, text) {
-                for entry in table.entries(page) {
+                for entry in table.entries(page, Form::Sugared) {
                     let Maybe::Present(entry) = entry
                     else {
                         continue;
@@ -160,7 +161,7 @@ mod census
                         census.count(path, site, expected);
                     }
                 }
-                for (_, declared) in table.declarations(page) {
+                for (_, declared) in table.declarations(page, Form::Sugared) {
                     if let Maybe::Present(Declared::Typed(ty)) = declared {
                         census.count(path, Site::Declaration, &ty);
                     }

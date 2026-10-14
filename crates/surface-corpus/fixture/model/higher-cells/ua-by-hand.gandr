@@ -61,7 +61,7 @@ module ByHand {
     become ride(\X. X, opposite_dir_by_hand, t)
   }
 
-  @[ runs("#{unit, #{+{.0 = unit}, +{.1 = unit}}}") ]
+  @[ runs("(unit, (+{.0 = unit}, +{.1 = unit}))") ]
   def ridden : +U (-F Tel) ;
   def ridden = thunk { become forth(#{unit, #{+{.0 = unit}, +{.0 = unit}}}) } ;
 
