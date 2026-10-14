@@ -23,6 +23,7 @@ The elaborator seam of the cell-rewriting stack: a levitated description's rules
 
 - `elaborate_data_desc`, `DescElaboration`, `OpFrame`, `OpElaborateError`, `CircuitElaboration`: a whole description into one store, the operation gate first, every decline reported; a many-out operation's frame carries one return continuation per output port.
 - `elaborate_rule`, `ElaborateError`: one face into one cell at the declaration's polarity; a results tuple leaves by one delivery frame, and a result count other than the output count is refused.
+- `PresentedRules`, `presented_reading`, `TermAlphabet`, `Term`, `face_cell`: a presented type's constructor-headed rules, with the operation rules beside them, read over first-order terms where every subterm is a position, so a rule fires below the root and two rules overlap inside a left-hand side.
 - Every cell a declaration contributes — frame, rule, circuit and η — cuts at the polarity its η law requires, and a `codata` declaration's η critical pair joins.
 - The admission seam's two refusals, `ElaborateError::NonLinear` and `ElaborateError::MixedPolarity` with `MixedPolarityHole`, distinct in variant and diagnostic, the copy decided first.
 - `EtaElaboration`, `EtaElaborateError`: the η cells a declaration licenses, at its polarity, or the missing half of the licence.
@@ -111,7 +112,8 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 | Topic | Module |
 | ----- | ------ |
-| The supported fragment, the declaration's polarity, the admission seam, the operation gate, η cells, circuit rules and reports | [`elaborate`](src/elaborate.rs) |
+| The supported fragment, the declaration's polarity, the admission seam, the operation gate, a presented type's rules, η cells, circuit rules and reports | [`elaborate`](src/elaborate.rs) |
+| The term alphabet: why a second alphabet, its positions, order and renaming | [`term`](src/term.rs) |
 | Instantiation and the convexity supply point | [`instantiate`](src/instantiate.rs) |
 | Boundary wrappers | [`boundary`](src/boundary.rs) |
 | The closed tier, specification evidence, references | [`src/lib.rs`](src/lib.rs) |

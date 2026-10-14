@@ -103,6 +103,7 @@ pub use crate::overlap::OverlapRefusal;
 pub use crate::overlap::OverlapSupport;
 pub use crate::overlap::PeakLegs;
 pub use crate::overlap::enumerate_overlaps;
+pub use crate::overlap::interior_overlaps_between;
 pub use crate::overlap::overlaps_between;
 pub use crate::overlap::peak_legs;
 pub use crate::rewrite::CellApp;
