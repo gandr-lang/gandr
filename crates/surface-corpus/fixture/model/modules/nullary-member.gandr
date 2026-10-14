@@ -1,0 +1,19 @@
+// Calls of no arguments: a module member called through its module's name,
+// and a suspension called by its own. Such a call is its head's force, and
+// it answers at the call, as a call that applies arguments does.
+
+/// A module whose one member takes no arguments.
+module Origin {
+  /// The starting point.
+  def zero() -> -F Integer { return 0 }
+}
+
+/// The member called through its module's name.
+@[ runs("0") ]
+def started : +U (-F Integer) ;
+def started = thunk { become Origin.zero() } ;
+
+/// A top-level suspension called with no arguments by its own name.
+@[ runs("0") ]
+def restarted : +U (-F Integer) ;
+def restarted = thunk { become started() } ;

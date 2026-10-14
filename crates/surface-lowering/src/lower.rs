@@ -2675,6 +2675,9 @@ struct Lowerer<'run, 'source>
     /// Each recursive call, by its head: the instantiation whose claim checks
     /// it.
     descents: BTreeMap<NodeIndex, native::Descent>,
+    /// Each head of a call of no arguments, beside the call: such a call is
+    /// its head's force, so the force carries the call's origin.
+    nullary: BTreeMap<NodeIndex, NodeIndex>,
     /// Each callable operation's minted type and body, by slot.
     operated: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// Each `sign` block's definition, `S : Sig`, as its minted type and
@@ -3162,6 +3165,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             constructors: Vec::new(),
             recursions: BTreeMap::new(),
             descents: BTreeMap::new(),
+            nullary: BTreeMap::new(),
             operated: BTreeMap::new(),
             presented: BTreeMap::new(),
             renamings: Vec::new(),
@@ -6044,7 +6048,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   arguments left to right; a call whose head is an instantiation, a
     ///   recursive call, records every argument for the head's claim to check
     ///   and reads and applies its last alone, the one its fixpoint takes; a
-    ///   call of no arguments is its head.
+    ///   call of no arguments is its head, whose force [`Self::mint_at`] marks
+    ///   as the call the source wrote.
     /// - provides: the elimination of a lambda, curried over any argument
     ///   count.
     /// - fails: yields the wrong-sort refusal outside computation position, and
@@ -6162,6 +6167,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             written
         };
+        if applied.start == applied.end {
+            let _first = self.nullary.insert(head.node, site.at.node);
+        }
         self.read(head.node, Reading::Head(frame));
         for position in applied.start .. applied.end {
             if let Some(&argument) = self.operands.get(position) {
@@ -8557,9 +8565,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: the node's plan is taken and minted, its bridge written over
-    ///   it and the result kept as the node's lowered core node; a tail whose
-    ///   exit was inferred and minted as a computation is recorded with that
-    ///   exit, `return` when the bridge is the inserted one and `become`
+    ///   it and the result kept as the node's lowered core node; the force over
+    ///   the value head of a call of no arguments is that call, so it is minted
+    ///   with the call's origin rather than as an insertion at the head; a tail
+    ///   whose exit was inferred and minted as a computation is recorded with
+    ///   that exit, `return` when the bridge is the inserted one and `become`
     ///   otherwise; a `return` crossing a handler's frame is minted as the
     ///   capture [`Self::unwind`] writes, and that capture recorded as the
     ///   exit; a `break`'s returner is recorded as a break; a loop end written
@@ -8574,8 +8584,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a refused declaration leaves its ordinary plans
     ///   untouched but still permits its attribute payloads to mint; consumed
     ///   plans are not minted twice when a manifest and the full traversal both
-    ///   reach them; a tail of each polarity records its own exit once.
+    ///   reach them; a tail of each polarity records its own exit once; a call
+    ///   of no arguments answers at the call, its head at the head.
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
+    /// - witness: `lower::tests::a_call_of_no_arguments_is_the_call_the_source_wrote`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
@@ -8634,7 +8646,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if stands_in && let Maybe::Present(Lowered::ValueType(id)) = minted {
             sink.origins.record_stand_in(id, origin);
         }
-        let bridged = match sink.bridge(minted, bridge, origin) {
+        // A call of no arguments is its head's force, so that force is the
+        // call the source wrote: it answers at the call, not at the head.
+        let called = self
+            .nullary
+            .get(&position)
+            .map(|&call| self.origin_at(call));
+        let bridged = match (bridge, minted, called) {
+            | (
+                Bridge::Inserted(Insertion::Force),
+                Maybe::Present(Lowered::Value(forced)),
+                Some(Maybe::Present(call)),
+            ) => {
+                let id = sink.arena.computation_force(forced);
+                Maybe::Present(sink.computation(id, call))
+            },
+            | (_, minted, _) => sink.bridge(minted, bridge, origin),
+        };
+        let bridged = match bridged {
             | Maybe::Present(Lowered::Computation(returned)) if self.crossing.contains(&position) => {
                 Maybe::Present(Lowered::Computation(Self::unwind(sink, returned, origin)))
             },
@@ -14813,6 +14842,61 @@ mod tests
                 Some(&Computation::Force(_))
             ),
             "a call of no arguments is its head"
+        );
+    }
+
+    #[test]
+    fn a_call_of_no_arguments_is_the_call_the_source_wrote()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        // `g()` at 52..55 with its head at 52..53; `M.z()` at 131..136 with
+        // its head at 131..134.
+        let module = lowered(
+            SourceText::from(
+                "def g = thunk { return 1 } ; def k = thunk { become g() } ; \
+                 module M { def z() -> -F Integer { return 0 } } \
+                 def m = thunk { become M.z() } ;",
+            ),
+            &mut arena,
+        );
+        let called = |wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            let Some(&Value::Thunk(suspended)) = arena.value(body_of(declaration.outcome()))
+            else {
+                panic!("`{wanted}` lowers to a thunk value");
+            };
+            let Some(&Computation::Force(forced)) = arena.computation(suspended)
+            else {
+                panic!("`{wanted}`'s call of no arguments forces its head");
+            };
+            (
+                module
+                    .origins()
+                    .computation(suspended)
+                    .map(|origin| (origin.provenance(), origin.span())),
+                module.origins().value(forced).map(|origin| origin.span()),
+            )
+        };
+        assert_eq!(
+            called("k"),
+            (
+                Maybe::Present((Provenance::Written, at(52_usize, 55_usize))),
+                Maybe::Present(at(52_usize, 53_usize)),
+            ),
+            "the force is the call the source wrote, and its head stays at the head"
+        );
+        assert_eq!(
+            called("m"),
+            (
+                Maybe::Present((Provenance::Written, at(131_usize, 136_usize))),
+                Maybe::Present(at(131_usize, 134_usize)),
+            ),
+            "a module member called with no arguments answers at its call too"
         );
     }
 
