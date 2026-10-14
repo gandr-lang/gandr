@@ -689,9 +689,10 @@ pub fn head(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`Head::Endpoint`] when `computation` is a neutral headed by a
-///   constant whose body is at hand — unforced, or forced to a value — and the
-///   goal has not frozen it on `side`; [`Head::Indeterminate`] otherwise.
+/// - ensures: [`Head::Endpoint`] when the neutral [`held_call`] reaches from
+///   `computation` is headed by a constant whose body is at hand — unforced, or
+///   forced to a value — and the goal has not frozen it on `side`;
+///   [`Head::Indeterminate`] otherwise.
 /// - provides: the held endpoint's reading: only a [`crate::Endpoints::Hold`]
 ///   run leaves a computation stuck on a definition it could unfold, and the
 ///   goal's one rule there is that unfolding. An endpoint stuck where no
@@ -704,14 +705,17 @@ pub fn head(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an endpoint held at a definition unfolds by a recorded
-///   step the kernel replays, while an endpoint stuck on a hole still declines;
-///   reading the first as indeterminate declines the conversion, and reading
-///   the second as an endpoint unfolds what has no body.
+///   step the kernel replays, also when the definition is held inside another
+///   held endpoint's elimination, while an endpoint stuck on a hole still
+///   declines; reading the first as indeterminate declines the conversion, and
+///   reading the second as an endpoint unfolds what has no body.
 /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
+/// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on`
 /// - witness: `live::tests::a_comparison_that_meets_a_hole_declines`
-#[spec(ensures: |ret| match domain.computation(computation) {
-    | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
-    | Some(&DomainComp::Neutral { neutral, .. }) => match domain.neutral(neutral) {
+#[spec(ensures: |ret| match held_call(domain, computation) {
+    | Err(fault) => ret == Err(fault),
+    | Ok(None) => ret == Ok(Head::Indeterminate),
+    | Ok(Some(neutral)) => match domain.neutral(neutral) {
         | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
         | Some(node) => match (node.head(), node.unfolding()) {
             (NeutralHead::Constant(constant), Unfolding::Unforced(_) | Unfolding::Forced(Glued::Value(_)))
@@ -719,7 +723,6 @@ pub fn head(
             _ => ret == Ok(Head::Indeterminate),
         },
     },
-    | Some(_) => ret == Ok(Head::Indeterminate),
 })]
 fn endpoint_head(
     domain: &DomainArena,
@@ -728,9 +731,7 @@ fn endpoint_head(
     computation: DomainCompId,
 ) -> Result<Head, ConversionFault>
 {
-    let DomainComp::Neutral { neutral, .. } = *domain
-        .computation(computation)
-        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
+    let Some(neutral) = held_call(domain, computation)?
     else {
         return Ok(Head::Indeterminate);
     };
@@ -744,6 +745,78 @@ fn endpoint_head(
         ) if frozen.holds(side, constant) == Membership::Absent => Head::Endpoint(constant),
         | _ => Head::Indeterminate,
     })
+}
+
+/// The neutral a returned endpoint over `computation` waits on: the
+/// computation's own neutral, or, when that neutral eliminates another
+/// returned endpoint, the neutral that one waits on, and so on inward.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some` of the first neutral, read inward from `computation`
+///   through each returned head, whose head is not a returned endpoint; in
+///   particular `computation`'s own neutral when its head is not one; `None`
+///   when the walk meets a computation that is not neutral.
+/// - provides: the call a nested endpoint is stuck on. `f(g(x))` with both
+///   calls held unfolds `f` first; `f`'s body then eliminates the endpoint
+///   `g(x)` and sticks on it, and the call that unsticks the whole is `g`.
+/// - fails: [`ConversionFault::Domain`] when a node does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// - [`ConversionFault::Domain`] — a node does not resolve.
+///
+/// # Termination
+/// - reason: the `loop` below, reading one returned head per turn, not
+///   recursion.
+/// - measure: the allocation position of the node read. A neutral names its
+///   returned head's computation, and a computation its neutral, only once that
+///   node is minted, and the arena only appends, so each turn reads a node
+///   minted before the last.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an endpoint whose elimination waits on another held
+///   endpoint unfolds the inner call and the kernel replays it; stopping at the
+///   first returned head reads the endpoint as indeterminate and declines the
+///   conversion.
+/// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on`
+/// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
+#[spec(ensures: |ret| match domain.computation(computation) {
+    | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+    | Some(&DomainComp::Neutral { neutral, .. }) => match domain.neutral(neutral) {
+        | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+        | Some(node) if !matches!(node.head(), NeutralHead::Returned(_)) => ret == Ok(Some(neutral)),
+        | Some(_) => ret.as_ref().is_ok_and(|found| found.is_none_or(|inner| domain.neutral(inner)
+            .is_some_and(|node| !matches!(node.head(), NeutralHead::Returned(_)))))
+            || matches!(ret, Err(ConversionFault::Domain(DomainFault::Dangling))),
+    },
+    | Some(_) => ret == Ok(None),
+})]
+pub fn held_call(
+    domain: &DomainArena,
+    computation: DomainCompId,
+) -> Result<Option<NeutralId>, ConversionFault>
+{
+    let mut focus = computation;
+    loop {
+        let DomainComp::Neutral { neutral, .. } = *domain
+            .computation(focus)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
+        else {
+            return Ok(None);
+        };
+        let held = domain
+            .neutral(neutral)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        match held.head() {
+            | NeutralHead::Returned(inner) => focus = inner,
+            | NeutralHead::Constant(_)
+            | NeutralHead::Variable { .. }
+            | NeutralHead::Module(_)
+            | NeutralHead::Hole { .. }
+            | NeutralHead::Mark { .. } => return Ok(Some(neutral)),
+        }
+    }
 }
 
 /// What two spines compared elimination by elimination give.

@@ -36,23 +36,9 @@
 //!
 //! # The normal form
 //!
-//! [`normal_form`] reads a value headed by a constructor of a presented type
-//! as a constructor term whose leaves are every field that is not itself such
-//! a constructor — a variable, a returned endpoint, a constant, a field of
-//! another type — rewrites it, and mints the constructors a rewrite rebuilt,
-//! keeping every subterm it did not touch at its own id. A leaf is never read
-//! through: a rule a δ-step would expose fires only once something else has
-//! taken that step, so the normal form is δ-free and needs no decision. The
-//! replay takes it as part of weak head form, before any rule of its table
-//! reads the goal.
-//!
-//! **Alternatives.** Normalizing at evaluation, so that a presented
-//! constructor is never built unreduced, would let a `case` see a different
-//! term in the kernel than in the producer's evaluator; reading through a
-//! leaf's definition would put a δ-step the trace does not name into the
-//! forced loop. **Reversal.** A conversion that needs a rewrite exposed only
-//! by unfolding a leaf takes that unfolding as a recorded decision at the
-//! leaf's position.
+//! The replay takes [`normal_form`] in weak head form, once it has read the
+//! leaves that are returned endpoints: `Replay::read_returned_leaves` in
+//! [`mod@crate::replay`] records which leaves are read, how, and why.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
