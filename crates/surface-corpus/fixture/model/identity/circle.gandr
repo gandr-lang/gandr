@@ -1,10 +1,9 @@
 // The circle and the integers without a higher inductive type. The circle is
 // presented by a point, a loop and its inverse, with the two cancellations
-// as rules; its shape is a signature, and the integers are a model of it.
-// A case over the circle is admitted when it computes one result from both
-// sides of each rule; the winding number does so only up to arithmetic, so
-// it is refused until the fold into the integers lands, and the equivalence
-// between them is owed.
+// as rules; its shape is a signature. The integers are presented the same
+// way, so they model the shape with laws that are conversion: the winding
+// number folds the circle into them, and spinning folds them back. A model
+// over the native integers stands beside it with its laws owed.
 
 /// The circle as a presented type: its rules rewrite constructor terms, so a
 /// word normalizes to the loops it winds.
@@ -128,10 +127,53 @@ def counted(presented : Sig) -> -F Integer {
 def shape_laws : +U (-F Integer) ;
 def shape_laws = thunk { become counted(CircleShape) } ;
 
-/// The integers as a model of the shape: `turn` the successor and `unturn`
-/// the predecessor. The laws hold by arithmetic, which conversion does not
-/// evaluate, so each is owed; `wound` turns twice from the base point.
+/// The integers, presented: zero, successor and predecessor, with the two
+/// cancellations as rules. Their critical pairs join, so a word normalizes to
+/// the successors or predecessors it counts.
+@[ normalizes("S(S(P(P(S(Z))))) ~> S(Z)") ]
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) ==> x;
+  rule P(S(x)) ==> x;
+}
+
+/// The presented integers as a model of the shape: `turn` the successor and
+/// `unturn` the predecessor. Each law is proved by `here`: conversion reads
+/// the inner call under the constructor the outer one builds, and the
+/// integers' rules cancel the pair.
 module Winding : Model(CircleShape) {
+  type Pt = Int;
+
+  def base() -> -F Int { return Z }
+
+  def turn(n : Int) -> -F Int { return S(n) }
+
+  def unturn(n : Int) -> -F Int { return P(n) }
+
+  @[ checks ]
+  def turnUnturn(n : Int) -> -F Path(Int, turn(unturn(n)), n) {
+    return here(n)
+  }
+
+  @[ checks ]
+  def unturnTurn(n : Int) -> -F Path(Int, unturn(turn(n)), n) {
+    return here(n)
+  }
+
+  @[ runs("S(S(Z))") ]
+  def wound() -> -F Int {
+    run b <- base() ;
+    run n <- turn(b) ;
+    become turn(n)
+  }
+}
+
+/// The same shape modelled over the native integers. The laws hold by
+/// arithmetic, which conversion leaves to the runtime, so each is owed until
+/// `respects` lands.
+module NativeWinding : Model(CircleShape) {
   type Pt = Integer;
 
   def base() -> -F Integer { return 0 }
@@ -154,33 +196,84 @@ module Winding : Model(CircleShape) {
   }
 }
 
-/// The winding number as a fixpoint over the circle, refused: at
-/// `Loop(Unloop(x))` it computes `(wind(x) - 1) + 1`, which is not `wind(x)`
-/// by conversion on a variable, so it is not shown to respect
-/// `Loop(Unloop(x)) ==> x`.
-@[ refuses("RuleNotRespected") ]
-def rec wind(c : Circle) -> -F Integer {
+/// The winding number, the fold out of the circle into the presented
+/// integers. At `Loop(Unloop(x))` it builds `S(P(wind(x)))`, whose normal form
+/// is `wind(x)`, so it respects both rules and is admitted.
+def rec wind(c : Circle) -> -F Int {
   case c {
-    Base => return 0,
-    Loop(x) => { run n <- wind[<](x); return n + 1 },
-    Unloop(x) => { run n <- wind[<](x); return n - 1 }
+    Base => return Z,
+    Loop(x) => { run n <- wind[<](x); return S(n) },
+    Unloop(x) => { run n <- wind[<](x); return P(n) }
   }
 }
 
-/// Two loops wind twice. With `wind` refused the run waits; the row checks
-/// against `wind`'s declared type.
-@[ checks ]
-def twice_wound : +U (-F Integer) ;
+/// Two loops wind twice.
+@[ runs("S(S(Z))") ]
+def twice_wound : +U (-F Int) ;
 def twice_wound = thunk { become wind(Loop(Loop(Base))) } ;
 
-/// A cancelled word winds as its normal form does: not at all. The run
-/// waits on `wind` as `twice_wound`'s does.
-@[ checks ]
-def unwound : +U (-F Integer) ;
+/// A run builds the count letter by letter: a cancelled word winds to
+/// `S(P(Z))`, which conversion reads as `Z` (`wound_never`).
+@[ runs("S(P(Z))") ]
+def unwound : +U (-F Int) ;
 def unwound = thunk { become wind(Loop(Unloop(Base))) } ;
 
-/// The circle's words and the integers are equivalent. Each round trip is
-/// proved by induction over the presented type, which needs its eliminator
-/// with dependent elimination, so the record is owed until then.
+/// Conversion runs the fold at a closed word: two loops are two successors.
+@[ checks ]
+def wound_twice : Path(Int, wind(Loop(Loop(Base))), S(S(Z))) ;
+def wound_twice = here(S(S(Z))) ;
+
+/// A cancelled word winds to zero in conversion.
+@[ checks ]
+def wound_never : Path(Int, wind(Loop(Unloop(Base))), Z) ;
+def wound_never = here(Z) ;
+
+/// The winding number into the native integers, refused: at `Loop(Unloop(x))`
+/// it computes `(wind(x) - 1) + 1`, which is not `wind(x)` by conversion on a
+/// variable, so it is not shown to respect `Loop(Unloop(x)) ==> x`.
+@[ refuses("RuleNotRespected") ]
+def rec native_wind(c : Circle) -> -F Integer {
+  case c {
+    Base => return 0,
+    Loop(x) => { run n <- native_wind[<](x); return n + 1 },
+    Unloop(x) => { run n <- native_wind[<](x); return n - 1 }
+  }
+}
+
+/// Spinning, the fold out of the presented integers into the circle: a
+/// successor is a loop and a predecessor an inverse. It recurses structurally
+/// and respects both rules as the winding number does.
+def rec spin(n : Int) -> -F Circle {
+  case n {
+    Z => return Base,
+    S(x) => { run c <- spin[<](x); return Loop(c) },
+    P(x) => { run c <- spin[<](x); return Unloop(c) }
+  }
+}
+
+/// Two successors spin twice around.
+@[ runs("Loop(Loop(Base))") ]
+def spun : +U (-F Circle) ;
+def spun = thunk { become spin(S(S(Z))) } ;
+
+/// Conversion runs spinning at a closed word: two successors are two loops.
+@[ checks ]
+def spun_twice : Path(Circle, spin(S(S(Z))), Loop(Loop(Base))) ;
+def spun_twice = here(Loop(Loop(Base))) ;
+
+/// A cancelled count spins to the point.
+@[ checks ]
+def spun_back : Path(Circle, spin(S(P(Z))), Base) ;
+def spun_back = here(Base) ;
+
+/// A predecessor spins to the inverse loop.
+@[ checks ]
+def spun_under : Path(Circle, spin(P(Z)), Unloop(Base)) ;
+def spun_under = here(Unloop(Base)) ;
+
+/// The circle's words and the presented integers are equivalent, by `wind`
+/// and `spin`. Each round trip is proved by induction over a presented type,
+/// which needs a case whose result type depends on the scrutinee, so the
+/// record is owed until then.
 @[ owes(1) ]
-def winding : #{to : +U (Circle -> -F Integer), back : +U (Integer -> -F Circle), sect : (c : Circle) => Path(Circle, back(to(c)), c), retr : (n : Integer) => Path(Integer, to(back(n)), n)} ;
+def winding : #{to : +U (Circle -> -F Int), back : +U (Int -> -F Circle), sect : (c : Circle) => Path(Circle, back(to(c)), c), retr : (n : Int) => Path(Int, to(back(n)), n)} ;
