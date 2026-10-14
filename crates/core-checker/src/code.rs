@@ -667,6 +667,47 @@ impl CodeDefinitions
         }
     }
 
+    /// Record the data declaration at `constant` as presented by its
+    /// signature's rules, when it has any: every later conversion reads its
+    /// terms by their normal forms.
+    ///
+    /// # Specification
+    /// - requires: `signature` formed at `constant`, its rules validated.
+    /// - ensures: the lowered chain presents `constant` by the signature's
+    ///   rules over its constructor table's arities exactly when the signature
+    ///   has rules; a free signature leaves the table unchanged.
+    /// - provides: the one place a presented type reaches the checker's
+    ///   conversion.
+    /// - panics: none.
+    /// - executable: none — the lowered chain is read only through a
+    ///   conversion's definitions; the witness observes the rules there.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a circle word checks at its reduced word's path type
+    ///   once the circle is presented, and is refused over a free circle.
+    /// - witness: `native_formers::native_formers::a_presented_word_meets_its_reduced_word_in_both_checkers`
+    #[inline]
+    pub fn present(
+        &mut self,
+        constant: ConstantIndex,
+        signature: &gandr_core_term::DataSignature,
+    )
+    {
+        let presentation = signature.presentation();
+        if presentation.rules().is_empty() {
+            return;
+        }
+        let arities = signature
+            .constructors()
+            .iter()
+            .map(|fields| gandr_kernel_term::FieldCount::from(fields.len()))
+            .collect();
+        self.lowered.present(
+            constant,
+            gandr_core_nbe::Presented::new(presentation.clone(), arities),
+        );
+    }
+
     /// The body recorded at `constant`.
     ///
     /// # Specification

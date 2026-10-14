@@ -94,6 +94,12 @@
 //!   a body no entry names. `LoweredChain::define` appends one definition whose
 //!   body is already lowered, in place, and equals the extended chain lowered
 //!   whole.
+//! - `Presented` with `LoweredChain::present`: the rules a data declaration
+//!   presents its type by. The conversion machine reads a value pair's
+//!   presented constructors by their normal forms before it plans the pair, the
+//!   kernel's replay taking the same normal forms after weak head reduction, so
+//!   the step records no decision (`presented` module docs). Witness:
+//!   `presented::tests::a_circle_word_reads_as_its_reduced_word`.
 //! - `convert_values` and `convert_computations`: conversion steps 1 through 3,
 //!   answering a `Settlement` — `Identical` from step 1, `GuardedApart` from
 //!   step 2, `StructurallyEqual`, `StructurallyApart` or `Deferred` with its
@@ -349,6 +355,7 @@ mod measure;
 mod overlay;
 mod overlay_eval;
 mod policy;
+mod presented;
 mod readback;
 mod resharing;
 mod rules;
@@ -479,6 +486,7 @@ pub use crate::policy::SchedulingPolicy;
 pub use crate::policy::SchedulingStance;
 pub use crate::policy::Share;
 pub use crate::policy::SharedPart;
+pub use crate::presented::Presented;
 pub use crate::readback::ReadbackFault;
 pub use crate::readback::ReadbackMode;
 pub use crate::readback::readback_computation;

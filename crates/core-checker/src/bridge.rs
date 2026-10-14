@@ -363,6 +363,7 @@ use gandr_kernel_core::Environment;
 use gandr_kernel_core::KernelError;
 use gandr_kernel_core::KernelVerdict;
 use gandr_kernel_core::ParameterCount;
+use gandr_kernel_core::Presentations;
 use gandr_kernel_core::ReplayBudget;
 use gandr_kernel_core::ReplayDecline;
 use gandr_kernel_core::ReplayNode;
@@ -1511,12 +1512,20 @@ where
             parameters,
             constructors,
             kind,
-        } => staging.data(
-            LevelSignature::monomorphic(),
-            parameters,
-            constructors,
-            kind,
-        ),
+        } => {
+            let staged = staging.data(
+                LevelSignature::monomorphic(),
+                parameters,
+                constructors,
+                kind,
+            );
+            // The rules name constructor tags and pattern variables only, so
+            // they cross unchanged.
+            match offer {
+                | Offer::Data(signature) => staged.presented(signature.presentation().clone()),
+                | Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => staged,
+            }
+        },
         | Erased::Definition {
             declared,
             body,
@@ -1548,7 +1557,15 @@ where
             positions.define(constant, admitted, defined, image);
             (Outcome::Defined { admitted, audit }, replayed)
         },
-        | (Offer::Data(_) | Offer::Abstract(_), _) => {
+        | (Offer::Data(signature), _) => {
+            positions.declare(constant, admitted);
+            if !signature.presentation().rules().is_empty() {
+                positions.definitions.present(constant, signature);
+                positions.presentations = Presentations::of(environment.entries());
+            }
+            (Outcome::Data { admitted, audit }, replayed)
+        },
+        | (Offer::Abstract(_), _) => {
             positions.declare(constant, admitted);
             (Outcome::Data { admitted, audit }, replayed)
         },
@@ -1581,6 +1598,9 @@ struct Positions
     exports: Vec<KernelDeclaration>,
     /// The atoms admitted whose seals have not ended, in minting order.
     open: Vec<OpenSeal>,
+    /// The presented types the kernel admitted, whose terms its replay reads
+    /// by their normal forms.
+    presentations: Presentations,
 }
 
 impl Positions
@@ -1761,7 +1781,7 @@ impl Positions
             }
             bodies.push(entry);
         }
-        Unfoldings::new(bodies)
+        Unfoldings::new(bodies).presenting(self.presentations.clone())
     }
 
     /// The decision the kernel's replay reads for the normaliser's `decision`:

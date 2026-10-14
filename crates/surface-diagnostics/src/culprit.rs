@@ -215,6 +215,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             "not a value universe"
         },
         | CheckRefusal::DataFieldLevel { .. } => "above the declared universe",
+        | CheckRefusal::RuleNotPresentable { .. } => "rules that do not present the datatype",
         | CheckRefusal::RepresentationAboveKind { .. } => "above the abstract type's universe",
         | CheckRefusal::NotAnAbstractType(_) => "not an abstract type",
         | CheckRefusal::SealSiteRepeated(_) => "a component sealed twice",

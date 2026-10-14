@@ -279,6 +279,7 @@ use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
 use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::SourceFragment;
 use quenchant_shape::shape::Maybe;
 
 use super::FormName;
@@ -3024,9 +3025,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the mint sweep has run.
     /// - ensures: each unrefused data declaration's signature over its minted
     ///   parameter types, field types and universe — `Type` at the fuss-free
-    ///   level when none is written, its origin the declaration form — pushed
-    ///   onto the module's list, its index recorded by the declaration's
-    ///   position in the collection's data list.
+    ///   level when none is written, its origin the declaration form — and the
+    ///   rules of its presented reading ([`Self::presentation`]), pushed onto
+    ///   the module's list, its index recorded by the declaration's position in
+    ///   the collection's data list.
     /// - provides: the
     ///   [`DeclarationOutcome::Data`](crate::DeclarationOutcome::Data)
     ///   outcome's signature.
@@ -3097,8 +3099,9 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             }
             let index = DataIndex::from(self.data.len());
-            self.data
-                .push(Arc::new(DataSignature::new(parameters, constructors, kind)));
+            let signature = DataSignature::new(parameters, constructors, kind)
+                .presented(self.presentation(form));
+            self.data.push(Arc::new(signature));
             self.constructors.push(
                 form.generators
                     .iter()
@@ -3107,6 +3110,82 @@ impl<'source> Lowerer<'_, 'source>
             );
             let _first = self.signatures.insert(position, index);
         }
+    }
+
+    /// The rules a data declaration's presented reading writes over its own
+    /// constructors, as the checkers read a presented type: each side in
+    /// pre-order, a constructor by its tag and a variable by the order its
+    /// first occurrence on the left takes.
+    ///
+    /// # Specification
+    /// - requires: the description route has read the declaration's cells.
+    /// - ensures: one rule per face of the presented reading, in rule order,
+    ///   whose left side is headed by a constructor, whose two sides apply only
+    ///   the declaration's own constructors and whose right side names only
+    ///   variables the left binds; the empty presentation when the declaration
+    ///   has no presented reading. A face applying an operation rewrites a
+    ///   call, not the type's terms, and is left to its operation.
+    /// - provides: the rules [`DataSignature::presented`] carries to both
+    ///   checkers, which validate them against the constructor table.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's two cancellations lower to the rules
+    ///   both checkers rewrite its words by, and a family without rules lowers
+    ///   to the free signature.
+    /// - witness: `lower::native::tests::a_presented_family_lowers_its_rules`
+    #[spec(ensures: |ret| ret.rules().len() <= self.collected.descriptions.get(&form.declaration.node)
+        .map_or(0, |described| described.description.rules.len()))]
+    fn presentation(
+        &self,
+        form: &crate::module::DataForm,
+    ) -> gandr_core_term::Presentation
+    {
+        let Some(described) = self.collected.descriptions.get(&form.declaration.node)
+        else {
+            return gandr_core_term::Presentation::default();
+        };
+        let Some(cells) = self
+            .collected
+            .cells
+            .declarations
+            .iter()
+            .find(|cells| cells.at.node == form.declaration.node)
+        else {
+            return gandr_core_term::Presentation::default();
+        };
+        let Maybe::Present(ref presented) = cells.presented
+        else {
+            return gandr_core_term::Presentation::default();
+        };
+        let names: Vec<SourceFragment<'source>> = form
+            .generators
+            .iter()
+            .map(|generator| self.text_at(generator.named))
+            .collect();
+        let mut rules = Vec::new();
+        for &(index, _cell) in &presented.faces {
+            let Some(face) = described.description.rules.get(usize::from(index))
+            else {
+                continue;
+            };
+            let mut variables = Vec::new();
+            let (Maybe::Present(left), Maybe::Present(right)) = (
+                rule_side(&face.lhs, &names, &mut variables, Binding::Binds),
+                rule_side(&face.rhs, &names, &mut variables, Binding::Reads),
+            )
+            else {
+                continue;
+            };
+            if matches!(
+                left.first(),
+                Some(gandr_core_term::RuleNode::Constructor(_))
+            ) {
+                rules.push(gandr_core_term::PresentedRule::new(left, right));
+            }
+        }
+        gandr_core_term::Presentation::new(rules)
     }
 
     /// Mint the nominal type of the family at `constant` over the arguments
@@ -4474,4 +4553,107 @@ impl<'source> Lowerer<'_, 'source>
             | Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
+}
+
+/// Whether a rule side binds its variables or reads the left side's.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Binding
+{
+    /// The left side: a variable's first occurrence takes the next ordinal.
+    Binds,
+    /// The right side: a variable reads the ordinal the left side gave it.
+    Reads,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a rule side is not a presented type's.
+    pub(crate) mod rule_side {
+        /// The reason the side was passed over.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub(crate) enum Absent {
+            /// It applies an operation or a results tuple, or a constructor
+            /// of another family.
+            Foreign,
+            /// Its right side names a variable its left side does not bind.
+            Unbound,
+        }
+    }
+}
+
+/// One rule side in pre-order over a family's constructors `names`, its
+/// variables numbered through `variables`.
+///
+/// # Specification
+/// - requires: `variables` holds the left side's variables when `binding` reads
+///   them.
+/// - ensures: one node per term node, a constructor by its position in `names`
+///   and a variable by its position in `variables` — appended there on its
+///   first occurrence when `binding` binds.
+/// - fails: [`rule_side::Absent::Foreign`] for an operation, a results tuple or
+///   a constructor `names` does not hold; [`rule_side::Absent::Unbound`] for a
+///   variable a reading side meets unbound.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` worklist, not recursion.
+/// - measure: the term nodes still to visit.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::presentation`].
+/// - witness: `lower::native::tests::a_presented_family_lowers_its_rules`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(ref nodes) => !nodes.is_empty(),
+    Maybe::Absent(_) => true,
+})]
+fn rule_side(
+    side: &gandr_theory_levitation::FreeTerm,
+    names: &[SourceFragment<'_>],
+    variables: &mut Vec<gandr_theory_levitation::Name>,
+    binding: Binding,
+) -> Maybe<alloc::boxed::Box<[gandr_core_term::RuleNode]>, rule_side::Absent>
+{
+    let mut nodes = Vec::new();
+    let mut pending = Vec::from([side.to_node()]);
+    while let Some(node) = pending.pop() {
+        match node.view() {
+            | gandr_theory_levitation::TermView::Var(name) => {
+                let position = match variables.iter().position(|bound| bound == name) {
+                    | Some(position) => position,
+                    | None if binding == Binding::Binds => {
+                        variables.push(name.clone());
+                        variables.len().saturating_sub(1)
+                    },
+                    | None => return Maybe::Absent(rule_side::Absent::Unbound),
+                };
+                let Ok(ordinal) = u32::try_from(position)
+                else {
+                    return Maybe::Absent(rule_side::Absent::Unbound);
+                };
+                nodes.push(gandr_core_term::RuleNode::Variable(
+                    gandr_core_term::RuleVariable::from(ordinal),
+                ));
+            },
+            | gandr_theory_levitation::TermView::Ctor { name, args } => {
+                let Some(tag) = names
+                    .iter()
+                    .position(|&written| <&str>::from(written) == name.as_ref())
+                else {
+                    return Maybe::Absent(rule_side::Absent::Foreign);
+                };
+                nodes.push(gandr_core_term::RuleNode::Constructor(
+                    ConstructorTag::from(tag),
+                ));
+                let mark = pending.len();
+                pending.extend(args);
+                if let Some(children) = pending.get_mut(mark ..) {
+                    children.reverse();
+                }
+            },
+            | gandr_theory_levitation::TermView::Op { .. }
+            | gandr_theory_levitation::TermView::Results { .. } => {
+                return Maybe::Absent(rule_side::Absent::Foreign);
+            },
+        }
+    }
+    Maybe::Present(nodes.into_boxed_slice())
 }

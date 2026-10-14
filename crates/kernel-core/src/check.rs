@@ -508,7 +508,7 @@ fn read_returned(
 ) -> Result<EndpointReading, KernelError>
 {
     let mut pending = Vec::new();
-    let structural = pending_endpoints(arena, goal, &mut pending);
+    let structural = pending_endpoints(arena, judgement.presentations, goal, &mut pending);
     if structural == Convertibility::Convertible && pending.is_empty() {
         return Ok(EndpointReading::Converts);
     }
@@ -526,7 +526,8 @@ fn read_returned(
                 | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
             })
             .collect(),
-    );
+    )
+    .presenting(judgement.presentations.clone());
     if structural == Convertibility::Convertible
         && read_endpoints(arena, &unfoldings, &pending, ReplayBudget::DEFAULT)
             == EndpointReading::Converts
@@ -563,6 +564,9 @@ pub struct Judgement<'session>
     /// The block in scope at its own position, while a data declaration's
     /// fields form.
     block: Block<'session>,
+    /// The presented types among the entries, whose terms conversion
+    /// rewrites.
+    presentations: &'session crate::presented::Presentations,
 }
 
 /// The data block a judgement may name at its own admission position.
@@ -601,6 +605,25 @@ impl<'session> Judgement<'session>
             manifest: &[],
             related: &[],
             block: Block::Outside,
+            presentations: &crate::presented::FREE,
+        }
+    }
+
+    /// The same judgement rewriting the terms of the presented types in
+    /// `presentations`, which are those of its entries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn presenting(
+        self,
+        presentations: &'session crate::presented::Presentations,
+    ) -> Self
+    {
+        Self {
+            presentations,
+            ..self
         }
     }
 
@@ -2063,14 +2086,17 @@ fn resolve_constant(
 }
 
 /// The δ-rules the admission log offers a replay: each definition's body at
-/// its admission position, every other declaration opaque.
+/// its admission position, every other declaration opaque; and the presented
+/// types whose terms the replay rewrites.
 ///
 /// # Specification
-/// - requires: `entries` is the environment's admission log, in admission
-///   order, every body minted into the arena the replay runs in.
+/// - requires: the judgement's entries are the environment's admission log, in
+///   admission order, every body minted into the arena the replay runs in, and
+///   its presentations are those of the entries.
 /// - ensures: [`Unfoldable::Body`] at each definition's position and
 ///   [`Unfoldable::Opaque`] at every data declaration, axiom and abstract type,
-///   one entry per admitted declaration.
+///   one entry per admitted declaration, presenting the judgement's
+///   presentations.
 /// - provides: the unfoldings a persisted higher evaluation and a universe
 ///   path's round trips replay under, so a function either relates may name
 ///   what was admitted before it.
@@ -2083,18 +2109,19 @@ fn resolve_constant(
 ///   universe path's translator.
 /// - witness: `element_identity::tests::a_higher_evaluation_unfolds_what_the_environment_admitted`
 /// - witness: `path_universe::tests::a_translator_may_name_an_admitted_definition`
-#[spec(ensures: |ret| entries.iter().enumerate().all(|(position, entry)| {
+#[spec(ensures: |ret| judgement.entries.iter().enumerate().all(|(position, entry)| {
     ret.unfolding(ConstantIndex::from(position)) == match *entry.content() {
         | DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
         | DeclarationContent::Data { .. }
         | DeclarationContent::Axiom { .. }
         | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
     }
-}))]
-fn admitted_unfoldings(entries: &[AdmittedDeclaration]) -> Unfoldings
+}) && ret.presentations() == judgement.presentations)]
+fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
 {
     Unfoldings::new(
-        entries
+        judgement
+            .entries
             .iter()
             .map(|entry| match *entry.content() {
                 | DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
@@ -2104,6 +2131,7 @@ fn admitted_unfoldings(entries: &[AdmittedDeclaration]) -> Unfoldings
             })
             .collect(),
     )
+    .presenting(judgement.presentations.clone())
 }
 
 /// Run the checker machine from an initial goal and context to a verdict,
@@ -2827,7 +2855,7 @@ where
                         let components = components.clone();
                         let mut remaining = crate::element_identity::evaluation_obligations(
                             arena,
-                            &admitted_unfoldings(judgement.entries),
+                            &admitted_unfoldings(judgement),
                             expected,
                             &dialogues,
                             &components,
@@ -2851,7 +2879,7 @@ where
                         let children = children.clone();
                         let mut remaining = crate::element_identity::quantified_obligations(
                             arena,
-                            &admitted_unfoldings(judgement.entries),
+                            &admitted_unfoldings(judgement),
                             expected,
                             &steps,
                             &children,
@@ -3456,7 +3484,7 @@ where
                     // A translator may name what the environment admitted
                     // before it, so both round trips unfold its definitions.
                     let evidence = alloc::sync::Arc::clone(evidence);
-                    let unfoldings = admitted_unfoldings(judgement.entries);
+                    let unfoldings = admitted_unfoldings(judgement);
                     let watermark = arena.watermark();
                     let source = crate::path_universe::coverage::round_trip(
                         arena,
@@ -3523,7 +3551,7 @@ where
                 } => {
                     crate::element_identity::reflexive_endpoints(
                         arena,
-                        &admitted_unfoldings(judgement.entries),
+                        &admitted_unfoldings(judgement),
                         point,
                         (left, right),
                         &dialogues,
@@ -3752,7 +3780,7 @@ where
                         ),
                         | _ => return Err(KernelError::ArenaFault),
                     };
-                    let unfoldings = admitted_unfoldings(judgement.entries);
+                    let unfoldings = admitted_unfoldings(judgement);
                     let watermark = arena.watermark();
                     let result = crate::flow_universe::forward(
                         arena,
@@ -3834,6 +3862,7 @@ where
                     };
                     let composite = crate::flow_universe::compose(
                         arena,
+                        judgement.presentations,
                         (first, second_type),
                         seam,
                         (earlier, second),
@@ -4168,8 +4197,12 @@ where
                             ConversionGoal::ValueType(expected, synthesized),
                         )?;
                         if reading != EndpointReading::Converts
-                            && crate::flow_universe::agree(arena, synthesized, expected)
-                                == crate::flow_universe::Agreement::Differ
+                            && crate::flow_universe::agree(
+                                arena,
+                                judgement.presentations,
+                                synthesized,
+                                expected,
+                            ) == crate::flow_universe::Agreement::Differ
                         {
                             return Err(mismatch);
                         }
@@ -4656,8 +4689,12 @@ where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
     let declared = declaration.declared_id();
-    // A relating definition's conversions read the pairs it relates.
-    let judgement = judgement.relating(declaration.related());
+    // A relating definition's conversions read the pairs it relates, and
+    // every conversion rewrites the presented types admitted before it.
+    let presentations = crate::presented::Presentations::of(judgement.entries);
+    let judgement = judgement
+        .relating(declaration.related())
+        .presenting(&presentations);
     // A data declaration's own position names its block while it is checked:
     // the occurrence walk refuses every non-strictly-positive or non-uniform
     // self occurrence by name first, and formation then reads the self
@@ -4733,6 +4770,15 @@ where
                 )?;
                 judgement.levels.check_universe_below(&formed, &upper)?;
             }
+            // A presented type's rules are checked against the table its
+            // fields just formed: linear, constructor-headed over the own
+            // type, and shrinking, so its conversion terminates.
+            crate::presented::admit(
+                arena,
+                ConstantIndex::from(judgement.entries.len()),
+                constructors,
+                declaration.presentation(),
+            )?;
             Ok(())
         },
         | DeclarationContent::Def { declared, body } => {

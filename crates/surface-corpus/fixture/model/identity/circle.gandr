@@ -14,3 +14,19 @@ def around(c : Circle) -> -F Circle {
 @[ runs("Loop(Loop(Base))") ]
 def twice : +U (-F Circle) ;
 def twice = thunk { become around(Loop(Base)) } ;
+
+@[ checks ]
+def cancelled : Path(Circle, Loop(Unloop(Loop(Base))), Loop(Base)) ;
+def cancelled = here(Loop(Base)) ;
+
+@[ checks ]
+def respelled : Path(Circle, Loop(Base), Loop(Base)) ;
+def respelled = cancelled ;
+
+@[ checks ]
+def nested : Path(Circle, Unloop(Loop(Base)), Loop(Unloop(Base))) ;
+def nested = here(Base) ;
+
+@[ refuses("EndpointMismatch") ]
+def around_once : Path(Circle, Loop(Base), Base) ;
+def around_once = here(Base) ;

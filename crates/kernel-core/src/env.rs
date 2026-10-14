@@ -236,6 +236,43 @@ impl StagedDeclaration
             ..self
         }
     }
+
+    /// This staged data declaration carrying `presentation` as the rules
+    /// rewriting its constructor terms, its content start and content
+    /// unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the choke point checks the rules against the
+    ///   constructor table.
+    /// - ensures: the declaration as [`Declaration::presented`] leaves it, at
+    ///   the same content start: a data declaration carries exactly
+    ///   `presentation`, any other declaration is unchanged.
+    /// - provides: how a producer attaches a presented type's rules before
+    ///   offering the declaration.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle admits with its rules and normalizes its
+    ///   words by them.
+    /// - witness: `presented::tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
+    #[spec(
+        captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Data { .. }), self.declaration.presentation().rules().len(), presentation.rules().len()),
+        ensures: |ret| ret.content_start == entry.0
+            && ret.declaration.presentation().rules().len() == if entry.1 { entry.3 } else { entry.2 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn presented(
+        self,
+        presentation: gandr_kernel_term::Presentation,
+    ) -> Self
+    {
+        Self {
+            declaration: self.declaration.presented(presentation),
+            ..self
+        }
+    }
 }
 
 /// Whether an environment holds staged, unresolved content above some mark.

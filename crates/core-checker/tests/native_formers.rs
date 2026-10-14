@@ -205,6 +205,162 @@ mod native_formers
         );
     }
 
+    /// The circle's word over `base` (tag 0), spelled by `letters` outermost
+    /// first: tag 1 a `Loop`, tag 2 an `Unloop`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn word(
+        arena: &mut CoreArena,
+        letters: &[ConstructorTag],
+    ) -> ValueId
+    {
+        let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+        let mut built = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![]);
+        for &letter in letters.iter().rev() {
+            built = arena.value_constructor(own, letter, vec![built]);
+        }
+        built
+    }
+
+    /// The circle at position zero, presented by `rules`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn circle(
+        arena: &mut CoreArena,
+        rules: Vec<gandr_kernel_term::PresentedRule>,
+    ) -> Declaration
+    {
+        let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+        Declaration::data(
+            ConstantIndex::from(0_usize),
+            DataSignature::new(vec![], vec![vec![], vec![own], vec![own]], kind)
+                .presented(gandr_kernel_term::Presentation::new(rules))
+                .into(),
+            OriginToken::from(0_usize),
+        )
+    }
+
+    /// The circle's cancellations `Loop(Unloop(x)) ~> x` and
+    /// `Unloop(Loop(x)) ~> x`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn cancellations() -> Vec<gandr_kernel_term::PresentedRule>
+    {
+        use gandr_kernel_term::RuleNode;
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let x = RuleNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32));
+        vec![
+            gandr_kernel_term::PresentedRule::new([c(1), c(2), x].into(), [x].into()),
+            gandr_kernel_term::PresentedRule::new([c(2), c(1), x].into(), [x].into()),
+        ]
+    }
+
+    #[test]
+    fn a_presented_word_meets_its_reduced_word_in_both_checkers()
+    {
+        let looped = ConstructorTag::from(1_usize);
+        let unlooped = ConstructorTag::from(2_usize);
+        for (rules, admitted) in [(cancellations(), true), (vec![], false)] {
+            let mut arena = CoreArena::new();
+            let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+            let written = word(&mut arena, &[looped, unlooped, looped]);
+            let reduced = word(&mut arena, &[looped]);
+            let declared = arena.value_type_path(own, written, reduced);
+            let point = word(&mut arena, &[looped]);
+            let reflexivity = arena.value_here(point);
+            let declarations = vec![
+                circle(&mut arena, rules),
+                definition(ConstantIndex::from(1_usize), declared, reflexivity),
+            ];
+            let (report, crossed) = run(&mut arena, &declarations);
+            assert_eq!(report.judged()[0].verdict(), Verdict::Data);
+            if admitted {
+                assert!(
+                    matches!(report.judged()[1].verdict(), Verdict::Checked { .. }),
+                    "`here(Loop(Base))` meets `Loop(Unloop(Loop(Base)))` under the rules: {:?}",
+                    report.judged()[1].verdict()
+                );
+                assert!(
+                    matches!(crossed.readmitted()[1].outcome(), Outcome::Defined { .. }),
+                    "the kernel admits the reflexivity by the same normal forms: {:?}",
+                    crossed.readmitted()[1].outcome()
+                );
+            }
+            else {
+                assert!(
+                    matches!(
+                        report.judged()[1].verdict(),
+                        Verdict::Refused(CheckRefusal::EndpointMismatch { .. })
+                    ),
+                    "over a free circle the two words are two terms: {:?}",
+                    report.judged()[1].verdict()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_misplaced_rule_is_refused_in_both_checkers()
+    {
+        use gandr_kernel_term::RuleNode;
+        let mut arena = CoreArena::new();
+        let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+        // `Mark(Empty) ~> Empty`, with `Mark`'s field an integer: no term of
+        // the family stands there.
+        let misplaced = gandr_kernel_term::PresentedRule::new(
+            [
+                RuleNode::Constructor(ConstructorTag::from(1_usize)),
+                RuleNode::Constructor(ConstructorTag::from(0_usize)),
+            ]
+            .into(),
+            [RuleNode::Constructor(ConstructorTag::from(0_usize))].into(),
+        );
+        let presentation = gandr_kernel_term::Presentation::new(vec![misplaced]);
+        let tally = Declaration::data(
+            ConstantIndex::from(0_usize),
+            DataSignature::new(vec![], vec![vec![], vec![integer]], kind)
+                .presented(presentation.clone())
+                .into(),
+            OriginToken::from(0_usize),
+        );
+        let refusal = gandr_kernel_term::RuleRefusal {
+            rule: gandr_kernel_term::RuleIndex::from(0_usize),
+            fault: gandr_kernel_term::RuleFault::NotOwnPosition,
+        };
+        let (report, _crossed) = run(&mut arena, &[tally]);
+        assert_eq!(
+            report.judged()[0].verdict(),
+            Verdict::Refused(CheckRefusal::RuleNotPresentable { kind, refusal }),
+            "the checker names the rule and its fault"
+        );
+        let mut environment = gandr_kernel_core::Environment::new();
+        let mut staging = environment.stage();
+        let kernel_kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let kernel_integer = staging
+            .arena()
+            .value_type_base(gandr_kernel_term::BaseType::Integer);
+        let staged = staging
+            .data(
+                gandr_kernel_term::LevelSignature::monomorphic(),
+                vec![],
+                vec![vec![], vec![kernel_integer]],
+                kernel_kind,
+            )
+            .presented(presentation);
+        assert_eq!(
+            environment.add_decl(staged).map(|_admitted| ()),
+            Err(gandr_kernel_core::KernelError::RuleNotPresentable(refusal)),
+            "the kernel refuses the same rule for the same fault"
+        );
+    }
+
     #[test]
     fn dependent_data_parameters_and_case_motives()
     {

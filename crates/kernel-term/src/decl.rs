@@ -667,6 +667,9 @@ pub struct Declaration
     /// dialogue relating each pair; empty for every declaration whose
     /// conversions the kernel's forced reading decides alone.
     related: Vec<RelatedEndpoints>,
+    /// The rules rewriting a data declaration's constructor terms; free for
+    /// every free type and every declaration that is not data.
+    presentation: crate::presented::Presentation,
 }
 
 impl Declaration
@@ -737,6 +740,18 @@ impl Declaration
     pub fn related(&self) -> &[RelatedEndpoints]
     {
         &self.related
+    }
+
+    /// The rules rewriting the data declaration's constructor terms, in
+    /// written order: none for a free type or any other declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn presentation(&self) -> &crate::presented::Presentation
+    {
+        &self.presentation
     }
 
     /// This declaration under `name`, its levels, content and provenance
@@ -824,6 +839,49 @@ impl Declaration
         match self.content {
             | DeclarationContent::Def { .. } => Self { related, ..self },
             | DeclarationContent::Data { .. }
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::AbstractType { .. } => self,
+        }
+    }
+
+    /// This data declaration carrying `presentation` as the rules rewriting
+    /// its constructor terms, everything else unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — a rule is checked against the constructor table at
+    ///   admission, never taken on trust.
+    /// - ensures: a data declaration comes back carrying exactly
+    ///   `presentation`; any other declaration, which has no constructor terms
+    ///   to rewrite, comes back unchanged. Content, levels, provenance, name
+    ///   and related pairs are untouched either way.
+    /// - provides: the one way a producer attaches a presented type's rules,
+    ///   after the finisher built its constructor table, so no finisher changes
+    ///   its signature for them.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a data declaration keeps the rules and a definition
+    ///   passed through keeps none.
+    /// - witness: `decl::tests::presenting_touches_only_a_data_declaration`
+    #[spec(
+        captures: entry = (matches!(self.content, DeclarationContent::Data { .. }), self.presentation.rules().len(), presentation.rules().len(), self.related.len(), self.name.0.len()),
+        ensures: |ret| ret.presentation.rules().len() == if entry.0 { entry.2 } else { entry.1 }
+            && ret.related.len() == entry.3 && ret.name.0.len() == entry.4,
+    )]
+    #[inline]
+    #[must_use]
+    pub fn presented(
+        self,
+        presentation: crate::presented::Presentation,
+    ) -> Self
+    {
+        match self.content {
+            | DeclarationContent::Data { .. } => Self {
+                presentation,
+                ..self
+            },
+            | DeclarationContent::Def { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::AbstractType { .. } => self,
         }
@@ -1225,6 +1283,7 @@ impl<'arena> DeclarationBuilder<'arena>
             provenance: Vec::new(),
             name: StructuredName::default(),
             related: Vec::new(),
+            presentation: crate::presented::Presentation::default(),
         }
     }
 
@@ -1278,6 +1337,7 @@ impl<'arena> DeclarationBuilder<'arena>
             provenance,
             name: StructuredName::default(),
             related: Vec::new(),
+            presentation: crate::presented::Presentation::default(),
         }
     }
 
@@ -1328,6 +1388,7 @@ impl<'arena> DeclarationBuilder<'arena>
             provenance: Vec::new(),
             name: StructuredName::default(),
             related: Vec::new(),
+            presentation: crate::presented::Presentation::default(),
         }
     }
 
@@ -1385,6 +1446,7 @@ impl<'arena> DeclarationBuilder<'arena>
             provenance: Vec::new(),
             name: StructuredName::default(),
             related: Vec::new(),
+            presentation: crate::presented::Presentation::default(),
         }
     }
 }
@@ -1450,6 +1512,7 @@ impl DeclarationBuilder<'_>
             provenance: Vec::new(),
             name: StructuredName::default(),
             related: Vec::new(),
+            presentation: crate::presented::Presentation::default(),
         }
     }
 }
@@ -1769,6 +1832,56 @@ mod tests
             axiom.clone().relating(related),
             axiom,
             "an axiom has no body whose conversions relate anything"
+        );
+    }
+
+    #[test]
+    fn presenting_touches_only_a_data_declaration()
+    {
+        use crate::presented::Presentation;
+        use crate::presented::PresentedRule;
+        use crate::presented::RuleNode;
+        use crate::presented::RuleVariable;
+
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let kind =
+            arena.value_type_universe(crate::GroundSort::Value, gandr_kernel_strata::Level::zero());
+        let own = arena.value_type_data(crate::ConstantIndex::from(0_usize), alloc::vec![]);
+        let tag = |ordinal: usize| RuleNode::Constructor(crate::ConstructorTag::from(ordinal));
+        let presentation = Presentation::new(alloc::vec![PresentedRule::new(
+            alloc::vec![
+                tag(1),
+                tag(2),
+                RuleNode::Variable(RuleVariable::from(0_u32))
+            ]
+            .into(),
+            alloc::vec![RuleNode::Variable(RuleVariable::from(0_u32))].into(),
+        )]);
+        let data = DeclarationBuilder::new(&mut arena).data(
+            LevelSignature::monomorphic(),
+            alloc::vec![],
+            alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+            kind,
+        );
+        assert!(
+            data.presentation().rules().is_empty(),
+            "a finisher presents no rule"
+        );
+        let presented = data.clone().presented(presentation.clone());
+        assert_eq!(presented.presentation(), &presentation);
+        assert_eq!(presented.content(), data.content());
+        assert_ne!(
+            presented, data,
+            "the rules are part of what a data declaration is"
+        );
+        let definition =
+            DeclarationBuilder::new(&mut arena).def(LevelSignature::monomorphic(), unit_type, unit);
+        assert_eq!(
+            definition.clone().presented(presentation),
+            definition,
+            "a definition has no constructor terms to rewrite"
         );
     }
 

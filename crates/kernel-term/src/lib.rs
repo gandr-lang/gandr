@@ -61,6 +61,25 @@
 //! the bytes, and no codec sits inside a reader whose rejection vocabulary has
 //! to stay clean. The bytes are declaration-segmented and self-delimiting.
 //!
+//! # Presentations
+//!
+//! A data declaration may carry rules over its own constructors that present
+//! its type ([`Presentation`]), encoded under its own declaration kind
+//! ([`KIND_DATA_PRESENTED`]) so a free declaration's bytes are unchanged. The
+//! rules' validation against a constructor table and their rewriting to
+//! normal form live beside their representation: they are what a presentation
+//! means, and the kernel and the engine must run one strategy to reach one
+//! normal form. Neither is a judgement — the kernel's admission decides
+//! whether a declaration's rules present its type, and its conversion decides
+//! what the normal forms relate.
+//!
+//! **Choice.** Rule sides in pre-order over constructor tags and pattern
+//! variables, so a rule names no arena node and crosses every boundary
+//! unchanged. **Alternatives.** Rule sides as arena terms, which would tie a
+//! presentation to one arena and widen the node vocabulary. **Reversal.** A
+//! rule that must name a value of another type, a literal in a pattern,
+//! takes a leaf payload in [`RuleNode`].
+//!
 //! # Specification attributes
 //!
 //! Clause-bearing items carry executable `#[spec(...)]` predicates or a local
@@ -112,6 +131,7 @@ mod decode;
 mod encode;
 mod error;
 mod identity;
+mod presented;
 pub mod stage;
 mod tags;
 mod term;
@@ -177,6 +197,19 @@ pub use crate::identity::endpoint_words;
 pub use crate::identity::evaluation_words;
 pub use crate::identity::forward_words;
 pub use crate::identity::quantified_words;
+pub use crate::presented::Exhausted;
+pub use crate::presented::FieldCount;
+pub use crate::presented::Normalized;
+pub use crate::presented::Presentation;
+pub use crate::presented::PresentedRule;
+pub use crate::presented::RewriteFuel;
+pub use crate::presented::RuleFault;
+pub use crate::presented::RuleIndex;
+pub use crate::presented::RuleNode;
+pub use crate::presented::RuleRefusal;
+pub use crate::presented::RuleSlot;
+pub use crate::presented::RuleTerm;
+pub use crate::presented::RuleVariable;
 pub use crate::tags::ADMISSION_CHECKED;
 pub use crate::tags::ADMISSION_UNCHECKED;
 pub use crate::tags::BASE_INTEGER;
@@ -191,6 +224,7 @@ pub use crate::tags::HIGHER_REDIRECT;
 pub use crate::tags::KIND_ABSTRACT_TYPE;
 pub use crate::tags::KIND_AXIOM;
 pub use crate::tags::KIND_DATA;
+pub use crate::tags::KIND_DATA_PRESENTED;
 pub use crate::tags::KIND_DEF;
 pub use crate::tags::KIND_DEF_RELATING;
 pub use crate::tags::KIND_FUNCTOR_DEF;

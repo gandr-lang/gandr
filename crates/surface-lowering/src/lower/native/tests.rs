@@ -367,6 +367,54 @@ fn a_data_declaration_lowers_to_its_signature()
 }
 
 #[test]
+fn a_presented_family_lowers_its_rules()
+{
+    use gandr_core_term::PresentedRule;
+    use gandr_core_term::RuleNode;
+    use gandr_core_term::RuleVariable;
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Circle : Type {\n  Base : Circle;\n  Loop : (x : Circle) --> Circle;\n  Unloop : (x : Circle) --> Circle;\n  rule Loop(Unloop(x)) ==> x;\n  rule Unloop(Loop(y)) ==> y;\n}\ndata Flag : Type { On : Flag; Off : Flag; }\n",
+        ),
+        &mut arena,
+    );
+    let (DeclarationOutcome::Data(circle), DeclarationOutcome::Data(flag)) = (
+        outcome_of(&module, SurfaceName::from("Circle")),
+        outcome_of(&module, SurfaceName::from("Flag")),
+    )
+    else {
+        panic!("both declarations lower to their signatures");
+    };
+    let (Maybe::Present(circle), Maybe::Present(flag)) = (module.data(circle), module.data(flag))
+    else {
+        panic!("each index names a signature");
+    };
+    let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+    let x = RuleNode::Variable(RuleVariable::from(0_u32));
+    assert_eq!(
+        circle.presentation().rules(),
+        [
+            PresentedRule::new([c(1), c(2), x].into(), [x].into()),
+            PresentedRule::new([c(2), c(1), x].into(), [x].into()),
+        ],
+        "each cancellation over the constructors' tags, its variable by first occurrence"
+    );
+    assert!(
+        flag.presentation().rules().is_empty(),
+        "a family without rules is free"
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .all(|judged| judged.verdict() == Verdict::Data),
+        "the checker admits both families: {report:?}"
+    );
+}
+
+#[test]
 fn a_recursive_family_names_itself_in_its_fields()
 {
     let mut arena = CoreArena::new();

@@ -727,6 +727,22 @@ pub const KIND_DATA: WireTag = WireTag(0x06);
 /// predating this kind refuses it as an unknown declaration kind rather than
 /// misreading it, which is why the format version holds.
 pub const KIND_DEF_RELATING: WireTag = WireTag(0x07);
+/// Declaration tag: a presented datatype, whose segment closes with the rules
+/// rewriting its constructor terms.
+///
+/// After the [`KIND_DATA`] fields comes a rule count, at least one, then per
+/// rule its left and its right side, each a node count and that many nodes
+/// in pre-order: [`RULE_CONSTRUCTOR`] and a constructor ordinal, or
+/// [`RULE_VARIABLE`] and a pattern variable's ordinal. The kernel reads the
+/// rules wherever it converts the type's terms. A datatype with no rule
+/// writes [`KIND_DATA`], so every other artifact keeps its bytes, and a reader
+/// predating this kind refuses it as an unknown declaration kind rather than
+/// misreading it, which is why the format version holds.
+pub const KIND_DATA_PRESENTED: WireTag = WireTag(0x08);
+/// Rule node tag: a constructor of the declaration's own table.
+pub const RULE_CONSTRUCTOR: WireTag = WireTag(0);
+/// Rule node tag: a pattern variable.
+pub const RULE_VARIABLE: WireTag = WireTag(1);
 /// Node tag: nominal application with a counted argument vector.
 pub const NODE_VT_DATA: WireTag = WireTag(0x5d);
 /// Node tag: structural record classifier with counted labels and children.

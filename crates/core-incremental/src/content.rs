@@ -1743,7 +1743,8 @@ pub enum Opacity
     Opaque,
 }
 
-/// The roots of a nominal declaration in a discovery-numbered table.
+/// The roots of a nominal declaration in a discovery-numbered table, and the
+/// rules presenting its terms, which name constructors by tag and no node.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DataRoots
 {
@@ -1753,6 +1754,9 @@ pub struct DataRoots
     pub constructors: Vec<Vec<NodeIndex>>,
     /// The universe classifying the declared datatype.
     pub kind: NodeIndex,
+    /// The rules rewriting the datatype's constructor terms; none for a free
+    /// type.
+    pub presentation: gandr_core_term::Presentation,
 }
 
 impl DataRoots
@@ -2481,6 +2485,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             parameters,
             constructors,
             kind,
+            presentation: signature.presentation().clone(),
         }
     }
 

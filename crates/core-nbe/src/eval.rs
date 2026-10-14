@@ -451,6 +451,8 @@ pub struct LoweredChain
     chain: DefinitionChain,
     /// Each body's core value, keyed by its canonical entry index.
     bodies: BTreeMap<GlobalIndex, ValueId>,
+    /// The rules of each presented data declaration, by admission position.
+    presentations: BTreeMap<ConstantIndex, crate::presented::Presented>,
 }
 
 impl LoweredChain
@@ -520,7 +522,11 @@ impl LoweredChain
                 vacant.insert(lowered);
             }
         }
-        Ok(Self { chain, bodies })
+        Ok(Self {
+            chain,
+            bodies,
+            presentations: BTreeMap::new(),
+        })
     }
 
     /// Append one definition to the chain in place, its body already lowered
@@ -575,6 +581,34 @@ impl LoweredChain
             vacant.insert(lowered);
         }
         Ok(height)
+    }
+
+    /// Record the data declaration at `constant` as presented by
+    /// `presented`: conversion reads its terms by their normal forms.
+    ///
+    /// # Specification
+    /// - requires: `presented` validated against the declaration's constructor
+    ///   table.
+    /// - ensures: [`Definitions::presented`] answers `presented` at `constant`
+    ///   for every run over this chain; an earlier record at `constant` is
+    ///   replaced.
+    /// - provides: the one place a presented type reaches conversion.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a circle word converts with its reduced word once the
+    ///   circle is recorded, and not before.
+    /// - witness: `presented::tests::a_circle_word_reads_as_its_reduced_word`
+    #[inline]
+    #[spec(ensures: self.presentations.contains_key(&constant))]
+    pub fn present(
+        &mut self,
+        constant: ConstantIndex,
+        presented: crate::presented::Presented,
+    )
+    {
+        let _replaced = self.presentations.insert(constant, presented);
     }
 
     /// The definitions, in admission order.
@@ -725,6 +759,20 @@ impl<'run> Definitions<'run>
     pub(crate) const fn bodies(&self) -> &'run BTreeMap<GlobalIndex, ValueId>
     {
         self.chain.bodies()
+    }
+
+    /// The rules presenting the data declaration at `constant`, when it is
+    /// presented.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn presented(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<&'run crate::presented::Presented>
+    {
+        self.chain.presentations.get(&constant)
     }
 
     /// The definitional height of `constant`, or the floor when the chain

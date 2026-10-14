@@ -275,6 +275,8 @@ pub enum RefusalName
     DataKindNotUniverse,
     /// The checker reports `DataFieldLevel`.
     DataFieldLevel,
+    /// The checker reports `RuleNotPresentable`.
+    RuleNotPresentable,
     /// The checker reports `AbstractKindNotUniverse`.
     AbstractKindNotUniverse,
     /// The checker reports `RepresentationAboveKind`.
@@ -548,10 +550,11 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 125_usize] = [
+    pub const VOCABULARY: [Self; 126_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
+        Self::RuleNotPresentable,
         Self::AbstractKindNotUniverse,
         Self::RepresentationAboveKind,
         Self::NotAnAbstractType,
@@ -741,6 +744,7 @@ impl RefusalName
         | (Self::NotADataType, b"NotADataType")
         | (Self::DataKindNotUniverse, b"DataKindNotUniverse")
         | (Self::DataFieldLevel, b"DataFieldLevel")
+        | (Self::RuleNotPresentable, b"RuleNotPresentable")
         | (Self::AbstractKindNotUniverse, b"AbstractKindNotUniverse")
         | (Self::RepresentationAboveKind, b"RepresentationAboveKind")
         | (Self::NotAnAbstractType, b"NotAnAbstractType")
@@ -817,6 +821,7 @@ impl RefusalName
             | Self::NotADataType => "NotADataType",
             | Self::DataKindNotUniverse => "DataKindNotUniverse",
             | Self::DataFieldLevel => "DataFieldLevel",
+            | Self::RuleNotPresentable => "RuleNotPresentable",
             | Self::AbstractKindNotUniverse => "AbstractKindNotUniverse",
             | Self::RepresentationAboveKind => "RepresentationAboveKind",
             | Self::NotAnAbstractType => "NotAnAbstractType",
@@ -1152,6 +1157,7 @@ impl Refusal<'_>
         (Self::Checking(CheckRefusal::NotADataType(_)), RefusalName::NotADataType)
         | (Self::Checking(CheckRefusal::DataKindNotUniverse(_)), RefusalName::DataKindNotUniverse)
         | (Self::Checking(CheckRefusal::DataFieldLevel { .. }), RefusalName::DataFieldLevel)
+        | (Self::Checking(CheckRefusal::RuleNotPresentable { .. }), RefusalName::RuleNotPresentable)
         | (Self::Checking(CheckRefusal::AbstractKindNotUniverse(_)), RefusalName::AbstractKindNotUniverse)
         | (Self::Checking(CheckRefusal::RepresentationAboveKind { .. }), RefusalName::RepresentationAboveKind)
         | (Self::Checking(CheckRefusal::NotAnAbstractType(_)), RefusalName::NotAnAbstractType)
@@ -1398,6 +1404,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::NotADataType(_), RefusalName::NotADataType)
         | (CheckRefusal::DataKindNotUniverse(_), RefusalName::DataKindNotUniverse)
         | (CheckRefusal::DataFieldLevel { .. }, RefusalName::DataFieldLevel)
+        | (CheckRefusal::RuleNotPresentable { .. }, RefusalName::RuleNotPresentable)
         | (CheckRefusal::AbstractKindNotUniverse(_), RefusalName::AbstractKindNotUniverse)
         | (CheckRefusal::RepresentationAboveKind { .. }, RefusalName::RepresentationAboveKind)
         | (CheckRefusal::NotAnAbstractType(_), RefusalName::NotAnAbstractType)
@@ -1474,6 +1481,7 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::NotADataType(_) => RefusalName::NotADataType,
         | CheckRefusal::DataKindNotUniverse(_) => RefusalName::DataKindNotUniverse,
         | CheckRefusal::DataFieldLevel { .. } => RefusalName::DataFieldLevel,
+        | CheckRefusal::RuleNotPresentable { .. } => RefusalName::RuleNotPresentable,
         | CheckRefusal::AbstractKindNotUniverse(_) => RefusalName::AbstractKindNotUniverse,
         | CheckRefusal::RepresentationAboveKind { .. } => RefusalName::RepresentationAboveKind,
         | CheckRefusal::NotAnAbstractType(_) => RefusalName::NotAnAbstractType,

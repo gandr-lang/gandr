@@ -359,8 +359,10 @@ fn encode_minted_atom_table(
 ///   completed entries, in first-completion order. Definitions write
 ///   declared/body roots and four annotation slots, and a definition relating
 ///   endpoints writes [`tags::KIND_DEF_RELATING`] and closes with the pair
-///   count and each pair's roots and dialogue; abstract types write their kind
-///   and representation roots and the extent of their scope, an open scope as
+///   count and each pair's roots and dialogue; a data declaration presenting
+///   rules writes [`tags::KIND_DATA_PRESENTED`] and closes with the rule count
+///   and each rule's two sides; abstract types write their kind and
+///   representation roots and the extent of their scope, an open scope as
 ///   `remaining`; the other kinds write one root and no slots.
 /// - provides: one segment with cross-declaration sharing. The predicate checks
 ///   the mark/kind bytes, root memo presence and global-counter transition;
@@ -380,12 +382,13 @@ fn encode_minted_atom_table(
 /// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
 /// - witness: `encode::tests::atom_positions_and_provenance_preserve_sequence_identity`
 /// - witness: `encode::tests::a_relating_definition_closes_its_segment_with_its_pairs`
+/// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
 #[spec(
     captures: entry = (out.as_image().as_ref().len(), interner.by_content.len(), interner.next),
     ensures: |ret| { let image = out.as_image();
         let bytes = image.as_ref();
         bytes.get(entry.0).copied() == Some(u8::from(match marked.mark() { AdmissionMark::Checked => tags::ADMISSION_CHECKED, AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED }))
-            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { .. } => tags::KIND_DATA, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
+            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
             && interner.by_node.contains_key(&AnyNode::ValueType(marked.declaration().declared_id()))
             && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.by_node.contains_key(&AnyNode::Value(body)), _ => true }
             && marked.declaration().related().iter().all(|related| interner.by_node.contains_key(&AnyNode::Value(related.left)) && interner.by_node.contains_key(&AnyNode::Value(related.right)))
@@ -407,7 +410,10 @@ fn encode_declaration(
     let declaration = marked.declaration();
     let content = declaration.content();
     out.put_tag(match *content {
-        | DeclarationContent::Data { .. } => tags::KIND_DATA,
+        | DeclarationContent::Data { .. } if declaration.presentation().rules().is_empty() => {
+            tags::KIND_DATA
+        },
+        | DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED,
         | DeclarationContent::Def { .. } if declaration.related().is_empty() => tags::KIND_DEF,
         | DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING,
         | DeclarationContent::Axiom { .. } => tags::KIND_AXIOM,
@@ -524,6 +530,32 @@ fn encode_declaration(
             out.put_uvarint(WireU64::from(WireUsize::from(related.dialogue.len())));
             for &decision in &related.dialogue {
                 out.put_uvarint(WireU64::from(crate::term::decision_word(decision).0));
+            }
+        }
+    }
+    // The rule block closes a presented data declaration's segment: a rule
+    // count of at least one, since a free type wrote the plain kind, then each
+    // rule's left and right sides, a node count and the nodes in pre-order.
+    let rules = declaration.presentation().rules();
+    if !rules.is_empty() {
+        out.put_uvarint(WireU64::from(WireUsize::from(rules.len())));
+        for rule in rules {
+            for side in [rule.left(), rule.right()] {
+                out.put_uvarint(WireU64::from(WireUsize::from(side.len())));
+                for &node in side {
+                    let (tag, ordinal) = match node {
+                        | crate::presented::RuleNode::Constructor(tag) => (
+                            tags::RULE_CONSTRUCTOR,
+                            WireU64::from(WireUsize::from(usize::from(tag))),
+                        ),
+                        | crate::presented::RuleNode::Variable(variable) => (
+                            tags::RULE_VARIABLE,
+                            WireU64::from(u64::from(u32::from(variable))),
+                        ),
+                    };
+                    out.put_tag(tag);
+                    out.put_uvarint(ordinal);
+                }
             }
         }
     }
@@ -2203,6 +2235,106 @@ mod tests
         let mut plain = expected;
         if let Some(kind) = plain.get_mut(9) {
             *kind = 0;
+        }
+        assert_eq!(
+            crate::decode::decode(ArtifactImage::from(plain.as_slice())),
+            Err(crate::error::DecodeError::Malformed {
+                site: crate::error::MalformedSite::TrailingBytes,
+            })
+        );
+    }
+
+    #[test]
+    fn a_presented_data_declaration_closes_its_segment_with_its_rules()
+    {
+        use crate::presented::Presentation;
+        use crate::presented::PresentedRule;
+        use crate::presented::RuleNode;
+        use crate::presented::RuleVariable;
+
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let kind = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = builder
+            .arena()
+            .value_type_data(crate::ConstantIndex::from(0_usize), alloc::vec![]);
+        let tag = |ordinal: usize| RuleNode::Constructor(crate::ConstructorTag::from(ordinal));
+        let variable = RuleNode::Variable(RuleVariable::from(0_u32));
+        // The circle: `base`, `loop(x)`, `unloop(x)`, with
+        // `loop(unloop(x)) ==> x` and `unloop(loop(x)) ==> x`.
+        let rules = alloc::vec![
+            PresentedRule::new(
+                alloc::vec![tag(1), tag(2), variable].into(),
+                alloc::vec![variable].into()
+            ),
+            PresentedRule::new(
+                alloc::vec![tag(2), tag(1), variable].into(),
+                alloc::vec![variable].into()
+            ),
+        ];
+        let data = builder
+            .data(
+                LevelSignature::monomorphic(),
+                alloc::vec![],
+                alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                kind,
+            )
+            .presented(Presentation::new(rules.clone()));
+        let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, data)];
+        // The presented kind, then the plain data declaration's fields: the
+        // universe and the circle's own type as entries, the declared root, no
+        // parameter, three constructors of arity zero, one and one; then two
+        // rules, each two sides of a node count and tagged nodes.
+        let expected = [
+            b'G', b'K', b'X', b'1', 5, 0, 0, 1, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
+            0, 1, 1, 1, 1, 2, 3, 0, 1, 0, 2, 1, 0, 1, 1, 0, 3, 0, 2, 0, 1, 1, 0, 1, 1, 0,
+        ];
+        let bytes = super::encode(&arena, &declarations);
+        assert_eq!(bytes.as_image().as_ref(), expected);
+        let decoded = crate::decode::decode(ArtifactImage::from(expected.as_slice()))
+            .expect("the literal artifact is structurally admissible");
+        let declaration = decoded
+            .declarations()
+            .first()
+            .expect("one data declaration");
+        assert_eq!(declaration.declaration().presentation().rules(), rules);
+        assert_eq!(
+            super::encode(decoded.arena(), decoded.declarations())
+                .as_image()
+                .as_ref(),
+            expected
+        );
+        // A presented kind closing with no rule decodes to a free type, whose
+        // canonical bytes carry the plain kind.
+        let empty = [
+            b'G', b'K', b'X', b'1', 5, 0, 0, 1, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
+            0, 1, 1, 1, 1, 0,
+        ];
+        assert_eq!(
+            crate::decode::decode(ArtifactImage::from(empty.as_slice())),
+            Err(crate::error::DecodeError::Malformed {
+                site: crate::error::MalformedSite::NonCanonical,
+            })
+        );
+        // A node tag outside the constructor and variable alphabet is refused
+        // at the rule-node site.
+        let mut unknown = expected;
+        if let Some(node) = unknown.get_mut(32) {
+            *node = 2;
+        }
+        assert_eq!(
+            crate::decode::decode(ArtifactImage::from(unknown.as_slice())),
+            Err(crate::error::DecodeError::UnknownTag {
+                site: crate::error::TagSite::RuleNode,
+                tag: crate::WireTag::from(2_u8),
+            })
+        );
+        // The plain kind over the same bytes leaves the rules unread.
+        let mut plain = expected;
+        if let Some(kind) = plain.get_mut(9) {
+            *kind = 6;
         }
         assert_eq!(
             crate::decode::decode(ArtifactImage::from(plain.as_slice())),

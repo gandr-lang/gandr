@@ -546,6 +546,10 @@ pub enum KernelError
         /// The later position it names.
         index: ConstantIndex,
     },
+    /// A presented data declaration's rule does not present its type: it is
+    /// not a linear, constructor-headed, terminating rewrite over the
+    /// declaration's own constructor table.
+    RuleNotPresentable(gandr_kernel_term::RuleRefusal),
     /// A fixpoint's structural-descent claim did not replay.
     DescentNotReplayed(gandr_kernel_term::DescentRefusal),
     /// A required record field is absent.
@@ -810,6 +814,9 @@ impl core::fmt::Display for KernelError
             },
             | Self::CrossBlockReference { .. } => {
                 f.write_str("a data declaration named a declaration after its own block")
+            },
+            | Self::RuleNotPresentable(_) => {
+                f.write_str("a data declaration's rule did not present its type")
             },
             | Self::DescentNotReplayed(_) => {
                 f.write_str("a fixpoint's structural-descent claim did not replay")
