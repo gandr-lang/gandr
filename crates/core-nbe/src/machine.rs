@@ -7874,6 +7874,111 @@ mod tests
         );
     }
 
+    /// `(fix rec. λx. return x) R` for a rigid `R`: a fixpoint call stuck at
+    /// a head nothing unfolds, as `wind(x)` is stuck at its variable.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stuck_call(core: &mut CoreArena) -> ComputationId
+    {
+        let rigid = core.value_constant(Name::Rigid.constant());
+        let occurrence = innermost(core);
+        let produced = core.computation_return(occurrence);
+        let body = core.computation_lambda(produced);
+        let fixpoint =
+            core.computation_fixpoint(body, gandr_kernel_term::FixpointEvidence::StructuralDescent);
+        core.computation_application(fixpoint, rigid)
+    }
+
+    #[test]
+    fn a_bind_over_a_stuck_call_reads_through_its_continuation()
+    {
+        // `⟨S to n. return (n, ())⟩` for the stuck call `S`, against
+        // `(⟨S⟩, ())`: `wind(Loop(x))` against `S(wind(x))` in miniature. The
+        // endpoint's computation is pure, so it reads as its continuation's
+        // pair over the held call, under either stance, and that call compares
+        // whole with the other side's. Two binds, as `wind(Loop(Loop(x)))`
+        // leaves, read the inner first, so the outer reads over a pair rather
+        // than over a held bind. No decision names the reading, and the kernel
+        // replays it by forcing it.
+        let mut core = CoreArena::new();
+        let stuck = stuck_call(&mut core);
+        let occurrence = innermost(&mut core);
+        let unit = core.value_unit();
+        let paired = core.value_tuple(&[occurrence, unit]);
+        let continuation = core.computation_return(paired);
+        let bound = core.computation_bind(stuck, continuation);
+        let endpoint = core.value_returned(bound);
+        let call = core.value_returned(stuck);
+        let expected = core.value_tuple(&[call, unit]);
+        let twice = core.computation_bind(bound, continuation);
+        let twice = core.value_returned(twice);
+        let nested = core.value_tuple(&[expected, unit]);
+        let pairs = [
+            Sides::Values(endpoint, expected),
+            Sides::Values(twice, nested),
+        ];
+        let run = World::new(core, &[]);
+
+        for sides in pairs {
+            let (verdict, decisions) = run.traced(sides);
+            assert_eq!(
+                MachineVerdict::Convertible,
+                verdict,
+                "the endpoint reads as the pairs over its call: {decisions:?}"
+            );
+            assert_eq!(
+                KernelVerdict::Convertible,
+                run.replayed(sides, verdict, &decisions),
+                "the kernel forces the same reading: {decisions:?}"
+            );
+        }
+        let held = run.holding();
+        for sides in pairs {
+            let (verdict, decisions) = held.traced(sides);
+            assert_eq!(
+                MachineVerdict::Convertible,
+                verdict,
+                "a held endpoint reads through a call no definition heads: {decisions:?}"
+            );
+            assert_eq!(
+                KernelVerdict::Convertible,
+                held.replayed(sides, verdict, &decisions),
+                "and the kernel replays it held: {decisions:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_continuation_casing_on_a_stuck_call_stays_whole()
+    {
+        // `⟨S to n. n.0 to m. return (m, ())⟩` against `(⟨S⟩, ())`: the
+        // continuation eliminates the held call and sticks there, so it never
+        // returns and the endpoint stays its bind, apart from a pair.
+        let mut core = CoreArena::new();
+        let stuck = stuck_call(&mut core);
+        let occurrence = innermost(&mut core);
+        let unit = core.value_unit();
+        let projected = core
+            .computation_tuple_projection(occurrence, gandr_kernel_term::Component::from(0_usize));
+        let paired = core.value_tuple(&[occurrence, unit]);
+        let returned = core.computation_return(paired);
+        let continuation = core.computation_bind(projected, returned);
+        let bound = core.computation_bind(stuck, continuation);
+        let endpoint = core.value_returned(bound);
+        let call = core.value_returned(stuck);
+        let expected = core.value_tuple(&[call, unit]);
+        let sides = Sides::Values(endpoint, expected);
+        let world = World::new(core, &[]);
+
+        let (verdict, decisions) = world.traced(sides);
+        assert_eq!(
+            MachineVerdict::Declined(DeclineReason::Indeterminate),
+            verdict,
+            "the endpoint stays the bind over its call: {decisions:?}"
+        );
+    }
+
     #[test]
     fn unfolding_one_function_twice_is_not_a_cycle()
     {
