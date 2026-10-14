@@ -259,6 +259,93 @@ data Circle : Type {
     });
 }
 
+/// The circle's shape: the presentation the circle's constructors present,
+/// read as a signature whose models interpret it.
+const CIRCLE_SHAPE: &str = r#"sign CircleShape {
+    sort Pt : Type;
+    oper base : Pt;
+    oper turn : (x : Pt) --> Pt;
+    oper unturn : (x : Pt) --> Pt;
+    rule turnUnturn : turn(unturn(x)) ==> x;
+    rule unturnTurn : unturn(turn(x)) ==> x;
+}"#;
+
+/// The peaks of a block's term certificates, spelled, or the block's cell
+/// diagnostics.
+///
+/// # Specification
+/// trivial.
+fn term_peaks(module: &LoweredModule<'_>) -> Result<Vec<String>, Vec<CellFault>>
+{
+    let diagnostics = &module.cells().diagnostics;
+    if !diagnostics.is_empty() {
+        return Err(diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.fault.clone())
+            .collect());
+    }
+    let [ref cells] = *module.cells().declarations.as_slice()
+    else {
+        panic!("one block")
+    };
+    let Coincidence::Joined(ref certificates) = cells.coincidence
+    else {
+        panic!("the block joins: {:?}", cells.coincidence)
+    };
+    Ok(certificates
+        .terms
+        .iter()
+        .map(|certificate| match certificate.overlap.peak.read() {
+            | Maybe::Present(term) => term.to_string(),
+            | Maybe::Absent(reason) => panic!("a peak spells a term: {reason:?}"),
+        })
+        .collect())
+}
+
+#[test]
+fn the_circles_shape_joins_where_the_circle_does()
+{
+    let shape = lowered(SourceText::from(CIRCLE_SHAPE), |module| {
+        let [ref cells] = *module.cells().declarations.as_slice()
+        else {
+            panic!("one presentation")
+        };
+        assert!(
+            cells.faces.is_empty() && cells.declined_faces.is_empty(),
+            "no law is a sequent cell, and none is declined"
+        );
+        assert!(
+            matches!(cells.presented, Maybe::Present(ref presented) if presented.faces.len() == 2),
+            "both laws are read over terms"
+        );
+        term_peaks(module)
+    })
+    .expect("the laws join");
+    assert_eq!(
+        shape,
+        ["turn(unturn(turn(x')))", "unturn(turn(unturn(x')))"],
+        "each law meets the other inside its left-hand side"
+    );
+    let circle = lowered(SourceText::from(CIRCLE), term_peaks).expect("the rules join");
+    let renamed: Vec<String> = circle
+        .iter()
+        .map(|peak| peak.replace("Unloop(", "unturn(").replace("Loop(", "turn("))
+        .collect();
+    assert_eq!(
+        shape, renamed,
+        "the presentation meets where the presented type does"
+    );
+    let tampered = CIRCLE_SHAPE.replace('}', "    rule twice : turn(turn(x)) ==> x;\n}");
+    let faults = lowered(SourceText::from(tampered.as_str()), term_peaks)
+        .expect_err("a third law parts the readings");
+    assert!(
+        matches!(*faults.as_slice(), [CellFault::Coherence(
+            CoherenceFault::Diverges { .. }
+        )]),
+        "the third law diverges: {faults:?}"
+    );
+}
+
 #[test]
 fn two_rules_rewriting_one_term_apart_refuse_the_block()
 {

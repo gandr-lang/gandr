@@ -77,6 +77,16 @@
 //! `coincide::tests::the_circles_cancellations_join_below_the_root`,
 //! `coincide::tests::a_third_cancellation_parts_the_circles_readings`.
 //!
+//! A `sign` block's laws over unindexed sorts take the same road where one
+//! applies an operation where an argument stands: the circle's shape,
+//! `turn(unturn(x)) ==> x` and `unturn(turn(x)) ==> x` over the operations
+//! `turn` and `unturn`, meets at the peaks the circle's constructor rules meet
+//! at and joins there, so the presentation and the presented type are one
+//! rewriting system read twice. A law over an indexed sort, a category's
+//! `comp(id(a), f) ==> f`, stays declined at the cell gate
+//! (`gandr_theory_computads::DescReading`). Witness:
+//! `coincide::tests::the_circles_shape_joins_where_the_circle_does`.
+//!
 //! # The normal form a call reaches
 //!
 //! [`normal_form`] reads a call written in the inspection notation —
@@ -420,7 +430,7 @@ pub(crate) fn decide<G>(
             at,
             PairTerm::Term,
         )?,
-        | Maybe::Absent(presented_reading::Absent::NoConstructorRule) => Vec::new(),
+        | Maybe::Absent(presented_reading::Absent::NoTermFace) => Vec::new(),
     };
     if commands.is_empty() && terms.is_empty() {
         return Ok(Coincidence::Orthogonal);
@@ -765,7 +775,7 @@ pub fn normal_form<G>(
             })?;
             (NormalPath::Terms(path), normal)
         },
-        | Maybe::Absent(presented_reading::Absent::NoConstructorRule) => {
+        | Maybe::Absent(presented_reading::Absent::NoTermFace) => {
             let command = elaborate_call(&call, description.polarity, &cells.operations)
                 .map_err(NormalFormFault::NotACall)?;
             let (path, normal) = certified_normal(&cells.rewriting(), &command, |command| {

@@ -82,6 +82,7 @@ mod entries
             Standing::Design("a parenthesised group: the node inside answers"),
         ),
         ("Expression +", Standing::Owed(0)),
+        ("Expression -", Standing::Owed(0)),
         ("Expression .", Standing::Owed(0)),
         ("Expression >", Standing::Owed(0)),
         ("Expression ?", Standing::Owed(0)),

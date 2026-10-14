@@ -1,3 +1,9 @@
+// The circle and the integers without a higher inductive type. The circle is
+// presented by a point, a loop and its inverse, with the two cancellations
+// as rules; its shape is a signature, and the integers are a model of it.
+
+/// The circle as a presented type: its rules rewrite constructor terms, so a
+/// word normalizes to the loops it winds.
 @[ normalizes("Loop(Loop(Unloop(Unloop(Loop(Base))))) ~> Loop(Base)") ]
 data Circle : Type {
   Base : Circle;
@@ -7,26 +13,92 @@ data Circle : Type {
   rule Unloop(Loop(x)) ==> x;
 }
 
+/// A function that builds a word: one more loop.
 def around(c : Circle) -> -F Circle {
   return Loop(c)
 }
 
+/// A run returns the word it builds.
 @[ runs("Loop(Loop(Base))") ]
 def twice : +U (-F Circle) ;
 def twice = thunk { become around(Loop(Base)) } ;
 
+/// Conversion reads a word by its normal form: a cancelled loop is a loop.
 @[ checks ]
 def cancelled : Path(Circle, Loop(Unloop(Loop(Base))), Loop(Base)) ;
 def cancelled = here(Loop(Base)) ;
 
+/// A path between words stands at the path between their normal forms.
 @[ checks ]
 def respelled : Path(Circle, Loop(Base), Loop(Base)) ;
 def respelled = cancelled ;
 
+/// Two words that both cancel to the point are one point.
 @[ checks ]
 def nested : Path(Circle, Unloop(Loop(Base)), Loop(Unloop(Base))) ;
 def nested = here(Base) ;
 
+/// No rule identifies a loop with the point.
 @[ refuses("EndpointMismatch") ]
 def around_once : Path(Circle, Loop(Base), Base) ;
 def around_once = here(Base) ;
+
+/// The circle's shape: the same presentation as a signature models interpret.
+/// `Model` reads a `sign` block, so the shape is spelled apart from `Circle`.
+sign CircleShape {
+  sort Pt : Type;
+
+  oper base : Pt;
+  oper turn : (x : Pt) --> Pt;
+  oper unturn : (x : Pt) --> Pt;
+
+  rule turnUnturn : turn(unturn(x)) ==> x;
+  rule unturnTurn : unturn(turn(x)) ==> x;
+}
+
+/// The number of laws in a presentation's rule chain.
+def rec laws(chain : Sig) -> -F Integer {
+  case chain {
+    Rule(name, left, right, rest) => { run r <- laws[<](rest); return r + 1 },
+    _ => return 0
+  }
+}
+
+/// The number of laws a presentation states.
+def counted(presented : Sig) -> -F Integer {
+  case presented {
+    Presents(sorts, opers, rules) => become laws(rules),
+    _ => return 0
+  }
+}
+
+/// The shape's laws join, so its `Sig` value carries both as `Rule` entries.
+@[ runs("2") ]
+def shape_laws : +U (-F Integer) ;
+def shape_laws = thunk { become counted(CircleShape) } ;
+
+/// The integers as a model of the shape: `turn` the successor and `unturn`
+/// the predecessor. The laws hold by arithmetic, which conversion does not
+/// evaluate, so each is owed; `wound` turns twice from the base point.
+module Winding : Model(CircleShape) {
+  type Pt = Integer;
+
+  def base() -> -F Integer { return 0 }
+
+  def turn(n : Integer) -> -F Integer { return n + 1 }
+
+  def unturn(n : Integer) -> -F Integer { return n - 1 }
+
+  @[ owes(1) ]
+  def turnUnturn : (n : Integer) => Path(Integer, turn(unturn(n)), n) ;
+
+  @[ owes(1) ]
+  def unturnTurn : (n : Integer) => Path(Integer, unturn(turn(n)), n) ;
+
+  @[ runs("2") ]
+  def wound() -> -F Integer {
+    run b <- base() ;
+    run n <- turn(b) ;
+    become turn(n)
+  }
+}

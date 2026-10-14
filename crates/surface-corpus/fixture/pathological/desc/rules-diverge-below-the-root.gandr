@@ -1,3 +1,7 @@
+// The circle's presentation with a third rule its readings part on.
+
+/// `Loop(Loop(x)) ==> x` overlaps `Unloop(Loop(x)) ==> x` below the root, at
+/// `Unloop(Loop(Loop(x')))`, and the two reducts have different normal forms.
 @[ refuses("RulesDiverge") ]
 data Circle : Type {
   Base : Circle;
