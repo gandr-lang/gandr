@@ -1214,14 +1214,17 @@ _ => ret == Ok(Atom::Other(node)),
     /// # Adequacy
     /// - hypothesis: L3 — a dependent arrow is equal only when its domain and
     ///   bound codomain agree, unequal rigid formers and lift levels separate,
-    ///   and decoded held quotes compare as their types. The predicate pins
-    ///   payload decisions and the number of queued premises; omitting a child
-    ///   or crossing the codomain under the wrong binder changes the witnesses.
+    ///   two capability types agree only at one grade, one region and equal
+    ///   authority types, and decoded held quotes compare as their types. The
+    ///   predicate pins payload decisions and the number of queued premises;
+    ///   omitting a child or crossing the codomain under the wrong binder
+    ///   changes the witnesses.
     /// - witness: `code::tests::two_quotes_of_one_type_are_equal`
     /// - witness: `code::tests::rigid_quotes_of_different_types_are_apart`
     /// - witness: `code::tests::a_decode_of_a_held_quote_compares_as_its_quoted_type`
     /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
     /// - witness: `code::tests::native_classifier_endpoints_compare_in_order_and_refuse_a_missing_target`
+    /// - witness: `code::tests::capability_types_compare_grade_region_and_authority_types`
     ///
     /// # Errors
     /// As above, and as [`Walk::atom`].
@@ -1286,6 +1289,11 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 let second_right = self.atom(Node::Code(d, there))?;
                                 Ok([(first_left, first_right), (second_left, second_right)])
                             }).map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 1, 2) }),
+                        (&ValueType::Capability { authority: ref first, grade, region }, &ValueType::Capability { authority: ref second, grade: other_grade, region: other_region }) =>
+                            if (grade, region) == (other_grade, other_region) && matching_effect_shapes(first, second) == Alike::Same {
+                                children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(first.types().zip(second.types()).map(|(a, b)| (Node::ValueType(a, here), Node::ValueType(b, there)))));
+                                Ok((Alike::Same, first.types().count(), 0))
+                            } else { Ok((Alike::Different, 0, 0)) },
                         (&ValueType::Run(a), &ValueType::Run(b)) =>
                             self.atom(Node::Code(a, here)).and_then(|left| Ok([(left, self.atom(Node::Code(b, there))?)]))
                                 .map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 0, 1) }),
@@ -2695,6 +2703,58 @@ mod tests
             assert_eq!(
                 CodeComparison::Apart,
                 compare_rigidly(&core, &domain, at_unit, changed)
+            );
+        }
+    }
+
+    #[test]
+    fn capability_types_compare_grade_region_and_authority_types()
+    {
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        use gandr_core_term::effect::capability::CapabilityGrade;
+        use gandr_core_term::effect::capability::Region;
+        use gandr_core_term::effect::capability::RegionDepth;
+        let mut core = CoreArena::new();
+        let unit = core.value_type_unit();
+        let integer = core.value_type_base(BaseType::Integer);
+        let mut quoted = |reply, grade, region| {
+            let signature = EffectSig::new(EffectName::from("Probe"), alloc::vec![EffectOp {
+                name: OperationName::from("ask"),
+                payload: unit,
+                reply
+            }])
+            .unwrap();
+            let capability =
+                core.value_type_capability(EffectRow::singleton(signature), grade, region);
+            core.value_quote(capability)
+        };
+        let scoped = Region::Scoped(RegionDepth::from(1_u32));
+        let held = quoted(unit, CapabilityGrade::Durable, Region::Held);
+        let other_reply = quoted(integer, CapabilityGrade::Durable, Region::Held);
+        let other_grade = quoted(unit, CapabilityGrade::Consumable, Region::Held);
+        let other_region = quoted(unit, CapabilityGrade::Durable, scoped);
+        let mut domain = DomainArena::new();
+        let [left, right, other_reply, other_grade, other_region] =
+            [held, held, other_reply, other_grade, other_region]
+                .map(|code| code_of(&core, &mut domain, code, &[]));
+        assert_eq!(
+            Ok(CodeComparison::Equal),
+            compare_codes(&core, &domain, ConstantReading::Unread, left, right),
+            "equal grade, region and authority shapes compare their authority types"
+        );
+        assert_eq!(
+            Ok(CodeComparison::Apart),
+            compare_codes(&core, &domain, ConstantReading::Unread, left, other_reply),
+            "a queued authority type that differs separates the two"
+        );
+        for changed in [other_grade, other_region] {
+            assert_eq!(
+                Ok(CodeComparison::Apart),
+                compare_codes(&core, &domain, ConstantReading::Unread, left, changed)
             );
         }
     }
