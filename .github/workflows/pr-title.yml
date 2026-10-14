@@ -1,0 +1,81 @@
+# <critical>
+# MUST preserve anchor-first CI: maximal sharing, no copied orchestration.
+# New functionality MUST reuse template anchors or add anchors for likely reuse.
+# MUST parameterize differences; performance exceptions require measured evidence.
+# Share exceptional logic through actions; preserve parallelism, caches, and gates.
+# </critical>
+name: PR title
+
+# Pull requests land as merge commits titled from the pull request, so the
+# title is the header that reaches main. ci.yml lints each authored commit and
+# never a merge; this workflow lints the title with the same rules, on the
+# pull request and again in the merge queue. Its own workflow, because an
+# edited title must re-run the check alone: an `edited` run of ci.yml would
+# repeat every lane or report them skipped, and a skipped check counts as
+# passed.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+  merge_group: {}
+
+permissions:
+  contents: read
+
+# A newer edit or push supersedes a pull request's pending title check. A
+# queue entry has its own ref, so its run is never cancelled.
+concurrency:
+  group: pr-title-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The commitlint config's title mode: no author, no trailers, nothing
+  # ignored (commitlint.config.mjs).
+  COMMITLINT_TITLE: "1"
+  # commitlint alone: aube installs the npm package, node runs it.
+  MISE_ENABLE_TOOLS: "node,github:aubepkg/aube,npm:@commitlint/cli"
+
+jobs:
+  # Definitions only: aliases run in each consuming job's context.
+  template:
+    if: false
+    runs-on: &linux ubuntu-latest
+    permissions: {}
+    steps:
+      # The config comes from the checkout; the merge group also reads HEAD.
+      - &git-checkout
+        name: git checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      # ci.yml's mise pin, scoped by MISE_ENABLE_TOOLS. No cache: this
+      # workflow never runs on main, and caches written by pull request and
+      # queue refs are visible to no other ref.
+      - &install-commitlint
+        name: install commitlint
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.10.3
+          cache: false
+
+  title:
+    name: lint the pull request title
+    runs-on: *linux
+    timeout-minutes: 5
+    steps:
+      - *git-checkout
+      - *install-commitlint
+      - name: lint the title
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        shell: bash
+        run: printf '%s\n' "$PR_TITLE" | mise exec -- commitlint
+      # The queue's merge commit is the one that lands; a title edited after
+      # the pull request's check is caught here. GitHub appends ` (#N)` to
+      # the title, which is stripped so both checks lint the same header.
+      # Bash, for pipefail: a failed git log must fail the step.
+      - name: lint the merge commit header
+        if: ${{ github.event_name == 'merge_group' }}
+        shell: bash
+        run: git log -1 --format=%s HEAD | sed -E 's/ \(#[0-9]+\)$//' | mise exec -- commitlint

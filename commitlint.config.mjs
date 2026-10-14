@@ -88,6 +88,15 @@ const commitAuthor = () => {
   }
 };
 
+// A pull request's title. Merge commits only, titled from the pull request,
+// so the title is the header that lands on main. CI lints the title on the
+// pull request, and the queue's merge commit header in the merge group, with
+// COMMITLINT_TITLE set. A title has no author and no trailers of its own: the
+// identity rule is off for it, and the authored commits beneath it carry
+// their marks and are linted one at a time. It lands, so the default ignores
+// are off for it too.
+const TITLE = Boolean(process.env.COMMITLINT_TITLE);
+
 // Autosquash markers. A fix to a commit of the same PR is committed with
 // `git commit --fixup` onto that commit, so the local hook must pass
 // `fixup!`, `squash!` and `amend!` subjects, and commitlint's default ignores
@@ -97,7 +106,7 @@ const commitAuthor = () => {
 // marked commit in a PR's range means the branch was queued without
 // `git rebase --autosquash`. The same switch lints the `Revert "..."` header
 // git writes, which must be reworded as a conventional `revert` commit.
-const LANDED = Boolean(process.env.COMMITLINT_COMMIT);
+const LANDED = Boolean(process.env.COMMITLINT_COMMIT) || TITLE;
 const AUTOSQUASH_MARKER = /^(?:fixup|squash|amend)! /;
 
 const noAutosquashMarker = (parsed) => {
@@ -165,7 +174,7 @@ export default {
     "footer-leading-blank": [0, "always"],
     "trailer-leading-blank": [2, "always"],
     "no-harness-trailer": [2, "always"],
-    "identity-trailers": [2, "always"],
+    "identity-trailers": [TITLE ? 0 : 2, "always"],
     "no-autosquash-marker": [2, "always"],
     // Stock conventional types plus config, for changes to the repository's
     // configuration surfaces (lint vocabularies, tool settings).
