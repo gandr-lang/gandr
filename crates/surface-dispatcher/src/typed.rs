@@ -105,6 +105,7 @@ use gandr_surface_lowering::described::DescribedRole;
 use gandr_surface_pretty::BinderIndex;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
@@ -972,8 +973,8 @@ impl TypeTable
         })
     }
 
-    /// The innermost typed node whose span holds `offset`, spelled on a page
-    /// of `page` columns.
+    /// The innermost typed node whose span holds `offset`, spelled in `form`
+    /// on a page of `page` columns.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1017,10 +1018,11 @@ impl TypeTable
         &self,
         offset: ByteOffset,
         page: PageWidth,
+        form: Form,
     ) -> Maybe<TypedSpan, typing::Absent>
     {
         match self.chosen(offset) {
-            | Some(entry) => self.answer(entry, page),
+            | Some(entry) => self.answer(entry, page, form),
             | None => Maybe::Absent(typing::Absent::Untyped),
         }
     }
@@ -1089,8 +1091,8 @@ impl TypeTable
     }
 
     /// Every entry of the table, in the order the typed run finished them,
-    /// each spelled on a page of `page` columns as [`Self::at`] spells the
-    /// entry it answers with.
+    /// each spelled in `form` on a page of `page` columns as [`Self::at`]
+    /// spells the entry it answers with.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1112,14 +1114,15 @@ impl TypeTable
     pub fn entries(
         &self,
         page: PageWidth,
+        form: Form,
     ) -> impl Iterator<Item = Maybe<TypedSpan, typing::Absent>> + '_
     {
         self.entries
             .iter()
-            .map(move |entry| self.answer(entry, page))
+            .map(move |entry| self.answer(entry, page, form))
     }
 
-    /// `entry` spelled on a page of `page` columns.
+    /// `entry` spelled in `form` on a page of `page` columns.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1140,14 +1143,15 @@ impl TypeTable
         &self,
         entry: &Entry,
         page: PageWidth,
+        form: Form,
     ) -> Maybe<TypedSpan, typing::Absent>
     {
         let binders = self.standing(entry.standing);
-        let Maybe::Present(ty) = self.spell(entry.ty, &binders, page)
+        let Maybe::Present(ty) = self.spell(entry.ty, &binders, page, form)
         else {
             return Maybe::Absent(typing::Absent::Unspelled);
         };
-        let expected = match self.spell(entry.last, &binders, page) {
+        let expected = match self.spell(entry.last, &binders, page, form) {
             | Maybe::Present(other) if entry.last != entry.ty && other != ty => {
                 Maybe::Present(other)
             },
@@ -1165,7 +1169,7 @@ impl TypeTable
     }
 
     /// The type or refusal of the declaration one of whose forms has the key
-    /// `key`, a type spelled on a page of `page` columns.
+    /// `key`, a type spelled in `form` on a page of `page` columns.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1192,10 +1196,11 @@ impl TypeTable
         &self,
         key: NodeKey,
         page: PageWidth,
+        form: Form,
     ) -> Maybe<Declared, typing::Absent>
     {
         match self.declared.get(&key) {
-            | Some(&Held::Typed(node)) => match self.spell(node, &[], page) {
+            | Some(&Held::Typed(node)) => match self.spell(node, &[], page, form) {
                 | Maybe::Present(spelled) => Maybe::Present(Declared::Typed(spelled)),
                 | Maybe::Absent(reason) => Maybe::Absent(reason),
             },
@@ -1207,7 +1212,7 @@ impl TypeTable
     }
 
     /// Every declaration's form key with its type or refusal, a type spelled
-    /// on a page of `page` columns, in key order.
+    /// in `form` on a page of `page` columns, in key order.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1227,16 +1232,17 @@ impl TypeTable
     pub fn declarations(
         &self,
         page: PageWidth,
+        form: Form,
     ) -> impl Iterator<Item = (NodeKey, Maybe<Declared, typing::Absent>)> + '_
     {
         self.declared
             .keys()
-            .map(move |&key| (key, self.declared(key, page)))
+            .map(move |&key| (key, self.declared(key, page, form)))
     }
 
-    /// `node` spelled through the shared printer on a page of `page` columns,
-    /// writing each constant by its name and each variable of the context
-    /// whose innermost binder is `context` by the name written for it.
+    /// `node` spelled through the shared printer in `form` on a page of `page`
+    /// columns, writing each constant by its name and each variable of the
+    /// context whose innermost binder is `context` by the name written for it.
     ///
     /// # Specification
     /// trivial.
@@ -1245,6 +1251,7 @@ impl TypeTable
         node: TypeNode,
         binders: &[Option<String>],
         page: PageWidth,
+        form: Form,
     ) -> Maybe<Presentation, typing::Absent>
     {
         let names: Vec<Name<'_>> = self
@@ -1260,7 +1267,7 @@ impl TypeTable
         let printer = CoreSource::new(&self.arena, &names)
             .naming(&constructors)
             .within(&binders);
-        match present_type(&printer, root(node), page) {
+        match present_type(&printer, root(node), page, form) {
             | Ok(spelled) => Maybe::Present(spelled),
             | Err(_) => Maybe::Absent(typing::Absent::Unspelled),
         }
@@ -1337,6 +1344,7 @@ mod tests
     use alloc::vec::Vec;
 
     use gandr_surface_grammar::built_in;
+    use gandr_surface_pretty::Form;
     use gandr_surface_pretty::PageWidth;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::SourceText;
@@ -1374,7 +1382,11 @@ mod tests
         let offset = <&str>::from(source)
             .find(<&str>::from(needle))
             .expect("the needle occurs");
-        match table.at(ByteOffset::from(offset), PageWidth::from(80_u32)) {
+        match table.at(
+            ByteOffset::from(offset),
+            PageWidth::from(80_u32),
+            Form::Explicit,
+        ) {
             | Maybe::Present(entry) => Maybe::Present(Answer {
                 subject: entry.subject(),
                 ty: String::from(entry.ty().as_ref()),
@@ -1486,10 +1498,14 @@ mod tests
         let keyed: Vec<String> = tree
             .positions()
             .filter_map(|position| tree.key(position))
-            .filter_map(|key| match table.declared(key, PageWidth::from(80_u32)) {
-                | Maybe::Present(Declared::Typed(spelled)) => Some(String::from(spelled.as_ref())),
-                | Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
-            })
+            .filter_map(
+                |key| match table.declared(key, PageWidth::from(80_u32), Form::Explicit) {
+                    | Maybe::Present(Declared::Typed(spelled)) => {
+                        Some(String::from(spelled.as_ref()))
+                    },
+                    | Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
+                },
+            )
             .collect();
         assert_eq!(
             keyed,
@@ -1518,10 +1534,14 @@ mod tests
         let keyed: Vec<String> = tree
             .positions()
             .filter_map(|position| tree.key(position))
-            .filter_map(|key| match table.declared(key, PageWidth::from(80_u32)) {
-                | Maybe::Present(Declared::Typed(spelled)) => Some(String::from(spelled.as_ref())),
-                | Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
-            })
+            .filter_map(
+                |key| match table.declared(key, PageWidth::from(80_u32), Form::Explicit) {
+                    | Maybe::Present(Declared::Typed(spelled)) => {
+                        Some(String::from(spelled.as_ref()))
+                    },
+                    | Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
+                },
+            )
             .collect();
         assert_eq!(
             keyed,
@@ -1572,10 +1592,14 @@ mod tests
         let keyed: Vec<String> = tree
             .positions()
             .filter_map(|position| tree.key(position))
-            .filter_map(|key| match table.declared(key, PageWidth::from(80_u32)) {
-                | Maybe::Present(Declared::Typed(spelled)) => Some(String::from(spelled.as_ref())),
-                | Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
-            })
+            .filter_map(
+                |key| match table.declared(key, PageWidth::from(80_u32), Form::Explicit) {
+                    | Maybe::Present(Declared::Typed(spelled)) => {
+                        Some(String::from(spelled.as_ref()))
+                    },
+                    | Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
+                },
+            )
             .collect();
         assert_eq!(
             keyed,

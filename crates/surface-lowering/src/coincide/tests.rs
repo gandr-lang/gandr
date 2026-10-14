@@ -289,7 +289,7 @@ def later = 7;"#,
         let five_by_two =
             CallText::from("divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero)))");
         let reached = module.normal_form(family, five_by_two).unwrap();
-        assert_eq!(reached.spelling(), "#{Succ(Succ(Zero)), Succ(Zero)}");
+        assert_eq!(reached.spelling(), "(Succ(Succ(Zero)), Succ(Zero))");
         assert_eq!(
             module.normal_form(walk, five_by_two),
             Ok(reached),
@@ -299,7 +299,7 @@ def later = 7;"#,
             module
                 .normal_form(family, CallText::from(" divmod ( Zero , Zero ) "))
                 .map(|reached| reached.spelling()),
-            Ok(String::from("#{Zero, Zero}")),
+            Ok(String::from("(Zero, Zero)")),
             "space between the tokens is read past"
         );
         for (call, fault) in [

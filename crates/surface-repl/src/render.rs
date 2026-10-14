@@ -2,10 +2,10 @@
 //!
 //! The incremental checker hands a checked item's signature and a synthesised
 //! item's type back as [`ContentNode`] tables. [`spell`] lays one out through
-//! the printer's [`ContentSource`] at the transcript's width, in the one
-//! spelling every face shows — `Integer`, `+U C`, `-F A`, `A -> C`,
-//! `(x : A) -> C`, `Type[+, l]` — writing `?` wherever a node has no surface
-//! spelling.
+//! the printer's [`ContentSource`] at the transcript's width, in the sugared
+//! form every face a person reads takes — `Integer`, `A => B`, `-F A`, `A ->
+//! C`, `A * B`, `(x : A) -> C`, `Type[+, l]` — writing `?` wherever a node has
+//! no surface spelling.
 //!
 //! # Types are spelled from the checkpoints
 //!
@@ -14,9 +14,10 @@
 //! incremental checker's checkpoint holds a checked or owed item's signature,
 //! and a synthesised item's type, as content tables, and `spell` lays a table
 //! out through the presentation printer's `ContentSource`,
-//! `gandr-surface-pretty`'s reading of a content table, in its one spelling per
-//! former — `Integer`, `String`, `Unit`, `+U C`, `-F A`, `A -> C` right
-//! associative, `(x : A) -> C` with generated binder names, `Type`, `Type[-]`,
+//! `gandr-surface-pretty`'s reading of a content table, in its sugared form —
+//! `Integer`, `String`, `Unit`, `(A, B) => C` for `+U (A -> B -> -F C)`, `+U
+//! C` otherwise, `-F A`, `A -> C` right associative, `A * B`, `A + B`, `C &
+//! D`, `(x : A) -> C` with generated binder names, `Type`, `Type[-]`,
 //! `Type[+, l]`, a decode as the code it reads, a constant or an abstract type
 //! by its item key. A node the surface cannot write — the numeric atom, a lift,
 //! an unoccupied position, an unresolved node, a term — is written `?`, and the
@@ -24,9 +25,10 @@
 //! characters of a name. The printer keeps its own stack and a visit budget, so
 //! a malformed table spells `?` rather than looping. Over the strict corpus's
 //! `values`, `functions` and `classifier/universes` sources every signature
-//! spells exactly as its source wrote it. The table's reading and the
-//! checkpoint lookup live in the printer and the session rather than here so
-//! the language server's hover spells a type in the same words.
+//! spells as its source wrote it, its thunked arrows read as the alias. The
+//! table's reading and the checkpoint lookup live in the printer and the
+//! session rather than here so the language server's hover spells a type in
+//! the same words.
 //!
 //! Nonempty effect rows, Stack and With classifiers have diagnostic notation
 //! marked approximate, not parseable source. Stack literals display as opaque
@@ -62,6 +64,7 @@ use anodized::spec;
 use gandr_core_incremental::ContentNode;
 use gandr_core_incremental::NodeIndex;
 use gandr_surface_pretty::ContentSource;
+use gandr_surface_pretty::Form;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::PresentationError;
@@ -78,13 +81,14 @@ pub const TRANSCRIPT_WIDTH: u32 = 100;
 ///
 /// # Specification
 /// - requires: nothing; any table and index are admissible.
-/// - ensures: the printer's presentation of the root as a type, at
-///   [`TRANSCRIPT_WIDTH`] columns: every former the surface writes in its one
-///   spelling, and every node it cannot — the numeric atom, a lift, an
-///   unresolved node, an unoccupied position, a term, an index past the table,
-///   a former over an argument of the wrong polarity — written `?`, the
-///   presentation then approximate. A table that would take more than the
-///   printer's visit budget, which only a malformed one does, spells `?`.
+/// - ensures: the printer's presentation of the root as a type, in the sugared
+///   form at [`TRANSCRIPT_WIDTH`] columns: every former the surface writes in
+///   its sugar where the shape admits one and else in its one spelling, and
+///   every node it cannot — the numeric atom, a lift, an unresolved node, an
+///   unoccupied position, a term, an index past the table, a former over an
+///   argument of the wrong polarity — written `?`, the presentation then
+///   approximate. A table that would take more than the printer's visit budget,
+///   which only a malformed one does, spells `?`.
 /// - provides: the one spelling a transcript line names a type by.
 /// - fails: a layout ceiling the printer reaches, which no table of a size a
 ///   transcript holds reaches.
@@ -115,6 +119,7 @@ pub fn spell(
         &ContentSource::from(nodes),
         root,
         PageWidth::from(TRANSCRIPT_WIDTH),
+        Form::Sugared,
     )
 }
 

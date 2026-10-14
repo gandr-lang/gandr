@@ -13,6 +13,7 @@
 //! | [`present_value`]             | a value at a width, bounded at [`DEPTH_LIMIT`]            |
 //! | [`present_computation`]       | an elaborated body at a width, its exits elided           |
 //! | [`present_computation_line`]  | the same body on one line, never laid out                |
+//! | [`Form`]                      | sugared or explicit: which spelling a former takes       |
 //! | [`Presentation`]              | the laid-out text and whether it says the whole node     |
 //! | [`Source`], [`Former`]        | the one question the printer asks of its input           |
 //! | [`CoreSource`]                | the core arena as a source                               |
@@ -32,61 +33,78 @@
 //! - **Reversal.** A one-line face whose text must follow a cost only the
 //!   resolver decides.
 //!
-//! # One spelling per former
+//! # Two forms, one walk
 //!
-//! Every former has exactly one spelling, the one the surface grammar parses:
-//! `Integer`, `String`, `Unit`, `#{A, B}`, `#{l : A, m : B}`, `+{A, B}`,
-//! `&{C, D}`, `+U C`, `-F A`, `A -> C`, `(x : A) -> C`, `Type`, `Type[-]`,
-//! `Type[+, l]`, `Type[-, l]`; `unit`, literals, `#{a, b}`, `#{.l = v}`,
-//! `+{.i = v}`, `here(a)`, `funext(f, g)`, `equiv(f, g)`,
-//! `ua[n, k](a, b, f, g)`. Every braced former
-//! is written between its delimiters at any arity from one, its labels in
-//! their declared order; the binary sugar `A * B`, `A + B`, `C & D` and
-//! `(a, b)` parses and is never printed. A former the surface does not write —
-//! a lift, the numeric atom, a variable past every binder, the empty record —
-//! is written `?`. Effectful returners display their interface names as
-//! diagnostic notation. Both are [`Fidelity::Approximate`], not
-//! round-trippable source. A page the one-line spelling fits selects it
-//! unchanged.
+//! Every presentation entry point takes a [`Form`]. Both forms write only
+//! what the surface grammar parses, so a printed type reads back as the type
+//! it names.
 //!
-//! Every former has exactly one spelling, the one the surface grammar parses,
-//! so a printed type reads back as the type it names: `Integer`, `String`,
-//! `Unit`, `Void`, `Bool`, `#{A, B, …}`, `#{l : A, …}`, `+{A, B, …}`,
-//! `&{C, D}`, `+U C`, `-F A`, `A -> C`, `(x : A) -> C`, the static Pi `A -> B`
-//! between value types, `Type`, `Type[-]`, `Type[+, l]`, `Type[-, l]`, an
-//! abstract type and a constant by name, and a decode as the code it reads;
-//! values are `unit`, literals with their canonical digits and escapes,
-//! `#{a, b, …}`, `#{.l = v, …}`, `+{.i = v}`, `here(a)`, `funext(f, g)`,
-//! `equiv(f, g)`, univalence at a stratum `ua[n, k](a, b, f, g)` with its two
-//! descriptions by name, the static abstraction `\a. v`, and a static
-//! application as
-//! its spine, `f(a, b)` for `f` applied to `a` and then to `b` (the type
-//! operators of `gandr-surface-grammar`). Binding strength follows the
-//! grammar's bands, tightest first: atoms, every braced former among them,
-//! then the bridges `+U` and `-F` (built-in spellings in
-//! `gandr-surface-grammar`), then arrow; an arrow's domain is bare up to a
-//! bridge and its codomain bare. A static abstraction binds as loosely as an
-//! arrow, its body running to the right, and an application is an atom whose
+//! **Explicit** gives every former one spelling: `Integer`, `String`, `Unit`,
+//! `Void`, `Bool`, `#{A, B, …}`, `#{l : A, …}`, `+{A, B, …}`, `&{C, D}`,
+//! `+U C`, `-F A`, `A -> C`, `(x : A) -> C`, the static Pi `A -> B` between
+//! value types, `Type`, `Type[-]`, `Type[+, l]`, `Type[-, l]`, an abstract
+//! type and a constant by name, and a decode as the code it reads; values are
+//! `unit`, literals with their canonical digits and escapes, `#{a, b, …}`,
+//! `#{.l = v, …}`, `+{.i = v}`, `here(a)`, `funext(f, g)`, `equiv(f, g)`,
+//! univalence at a stratum `ua[n, k](a, b, f, g)` with its two descriptions
+//! by name, the static abstraction `\a. v`, and a static application as its
+//! spine, `f(a, b)` for `f` applied to `a` and then to `b` (the type
+//! operators of `gandr-surface-grammar`). Every braced former is written
+//! between its delimiters at any arity from one, its labels in their declared
+//! order.
+//!
+//! **Sugared** writes, besides, every sugar the grammar parses where the
+//! core's shape is exactly the one the sugar stands for: the product `A * B`
+//! and the sum `A + B` of two components or more, `A * B * C` one product of
+//! three as the lowering flattens the chain; the binary lazy product `C & D`;
+//! the tuple `(a, b)` of two components or more; and the value-function alias
+//! `A => C`, `() => C` and `(A, B) => C` for a thunk over a chain of
+//! non-dependent arrows ending in a pure returner. A dependent arrow, an
+//! effectful returner, a record, a sum or product of one component and the
+//! empty ones keep their explicit spelling. Sugared is what every reader-facing
+//! face shows — a hover, a diagnostic, the REPL, the terminal face and a
+//! run's value; explicit is what an editor's `gandr.presentation.form` asks
+//! for, and what the golden fixtures of the core's own spellings pin.
+//!
+//! Binding strength follows the grammar's bands, tightest first: atoms, every
+//! braced former among them, then the bridges `+U` and `-F` (built-in
+//! spellings in `gandr-surface-grammar`), then `*`, then `+`, then `&`, then
+//! the arrows `->` and `=>`; every band associates to the right. A product's
+//! operand is bare up to a bridge, a sum's up to a product, `&`'s left
+//! operand up to a sum and its right up to `&`, and an arrow's domain up to
+//! `&`, its codomain bare. A static abstraction binds as loosely as an arrow,
+//! its body running to the right, and an application is an atom whose
 //! operator is parenthesized unless it is one, so a redex reads
-//! `(\a. a)(Integer)`. The sugar `A * B`, `A + B`, `C & D`, `(a, b)` and the
-//! value-function alias `(A, B) => C` parse and are never printed: the printer
-//! writes what the core holds, the alias as `+U (A -> B -> -F C)`.
+//! `(\a. a)(Integer)`.
 //!
 //! A node the surface has no spelling for — a lift, the numeric atom, a linear
 //! or unbound variable, a term where a type stands — is written `?`, and a
 //! thunk value presented alone `<thunk>`; each makes the presentation
-//! approximate. Fidelity is recorded by the nodes the walk met, so a name that
-//! happens to contain `?` stays faithful.
+//! approximate. Effectful returners display their interface names as
+//! diagnostic notation, approximate too. Fidelity is recorded by the nodes the
+//! walk met, so a name that happens to contain `?` stays faithful. A page the
+//! one-line spelling fits selects it unchanged.
 //!
-//! A right-nested arrow chain stays bare because the grammar parses it so. The
-//! REPL's corpus witness expects each signature's line to be its source's own
-//! text.
+//! The recorded design gave every former one spelling and printed none of the
+//! sugar, so that the printer wrote what the core holds: a thunked arrow read
+//! `+U (Integer -> -F String)` where its source read `Integer => String`, and
+//! a pair `#{1, "a"}` where it was written `(1, "a")`. The change keeps that
+//! spelling as the explicit form and adds the sugared one as the default,
+//! because the reader of a hover or a diagnostic reads the surface they write,
+//! and the sugar is no less exact: each sugared spelling lowers to the same
+//! core node, which the dispatcher's readback witness checks. The form is one
+//! flag on the walk — a former's sugared spelling is one more arm of its
+//! visit and join — so the two forms never diverge in what they admit.
 //!
-//! - **Alternatives.** A notation independent of the grammar would print text
-//!   the surface cannot read back. Parenthesizing every compound operand is
-//!   simpler to state but lengthens every chain.
+//! - **Alternatives.** One spelling with the sugar always, which hides the
+//!   formers a reader learning the core needs to see; one without it, the
+//!   recorded design, which a hover over a function shows as a thunk of an
+//!   arrow of a returner; a notation independent of the grammar, which would
+//!   print text the surface cannot read back; parenthesizing every compound
+//!   operand, simpler to state but longer at every chain.
 //! - **Reversal.** A ruled change to the grammar's spellings or bands; this
-//!   crate follows it, never leads it.
+//!   crate follows it, never leads it. A sugar the lowering stops reading back
+//!   to the shape it prints leaves the sugared form.
 //!
 //! # A body prints in its canonical form, its exits elided
 //!
@@ -296,6 +314,24 @@ pub enum Fidelity
     Approximate,
 }
 
+/// Which of the spellings the grammar parses a presentation writes where the
+/// core's shape admits more than one.
+///
+/// Both read back to the same core term; they differ only where the surface
+/// has a sugar for a shape (§ Two forms, one walk).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Form
+{
+    /// Every sugar the grammar parses where the core's shape is exactly the
+    /// sugar's: the value-function alias `(A, B) => C` for `+U (A -> B -> -F
+    /// C)`, the infix `A * B`, `A + B` and `C & D`, and the tuple `(a, b)`.
+    /// The form every face a person reads takes by default.
+    Sugared,
+    /// What the core holds, former by former: `+U (A -> B -> -F C)`,
+    /// `#{A, B}`, `+{A, B}`, `&{C, D}` and `#{a, b}`.
+    Explicit,
+}
+
 /// A node laid out at a page width.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Presentation
@@ -410,11 +446,12 @@ pub fn present_type<S>(
     source: &S,
     root: S::Node,
     page: PageWidth,
+    form: Form,
 ) -> Result<Presentation, PresentationError>
 where
     S: Source + ?Sized,
 {
-    present(source, root, Admits::Type, Layout::Page(page))
+    present(source, root, Admits::Type, form, Layout::Page(page))
 }
 
 /// The value at `root` of `source`, laid out at `page`.
@@ -460,11 +497,12 @@ pub fn present_value<S>(
     source: &S,
     root: S::Node,
     page: PageWidth,
+    form: Form,
 ) -> Result<Presentation, PresentationError>
 where
     S: Source + ?Sized,
 {
-    present(source, root, Admits::Value, Layout::Page(page))
+    present(source, root, Admits::Value, form, Layout::Page(page))
 }
 
 /// The computation at `root` of `source`, an elaborated body, laid out at
@@ -509,6 +547,7 @@ pub fn present_computation<S>(
     source: &S,
     root: S::Node,
     page: PageWidth,
+    form: Form,
 ) -> Result<Presentation, PresentationError>
 where
     S: Source + ?Sized,
@@ -517,6 +556,7 @@ where
         source,
         root,
         Admits::Computation(Tail::Ends),
+        form,
         Layout::Page(page),
     )
 }
@@ -556,11 +596,18 @@ where
 pub fn present_computation_line<S>(
     source: &S,
     root: S::Node,
+    form: Form,
 ) -> Result<Presentation, PresentationError>
 where
     S: Source + ?Sized,
 {
-    present(source, root, Admits::Computation(Tail::Ends), Layout::Line)
+    present(
+        source,
+        root,
+        Admits::Computation(Tail::Ends),
+        form,
+        Layout::Line,
+    )
 }
 
 /// Where a presentation is written: laid out at a page, or on as few lines
@@ -575,7 +622,7 @@ enum Layout
 }
 
 /// The node at `root` of `source`, in a position admitting `admits`, written
-/// as `layout` asks.
+/// in `form` as `layout` asks.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -612,13 +659,14 @@ fn present<S>(
     source: &S,
     root: S::Node,
     admits: Admits,
+    form: Form,
     layout: Layout,
 ) -> Result<Presentation, PresentationError>
 where
     S: Source + ?Sized,
 {
     let spelled = |composer: &mut dyn Compose| {
-        Ok::<_, PresentationError>(match walk(source, root, admits, composer)? {
+        Ok::<_, PresentationError>(match walk(source, root, admits, form, composer)? {
             | Walked::Built {
                 doc,
                 fidelity,

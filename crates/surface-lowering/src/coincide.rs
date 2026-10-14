@@ -89,6 +89,7 @@
 
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
+use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
@@ -739,8 +740,9 @@ impl<'desc> Symbol<'desc>
     }
 }
 
-/// `term` in the inspection notation, a results tuple at its root as `#{…}`:
-/// the spelling `gandr run` gives the value.
+/// `term` in the inspection notation, a results tuple at its root as
+/// `(a, b, …)` from two components and `#{a}` at one: the spelling `gandr run`
+/// gives the value in its sugared form.
 ///
 /// # Specification
 /// trivial.
@@ -748,15 +750,16 @@ fn spell(term: &FreeTerm) -> String
 {
     match term.view() {
         | TermView::Results { args } => {
-            let mut spelled = String::from("#{");
-            for (position, component) in args.enumerate() {
-                if position > 0 {
-                    spelled.push_str(", ");
-                }
-                spelled.push_str(&component.to_term().to_string());
+            let components: Vec<String> = args
+                .map(|component| component.to_term().to_string())
+                .collect();
+            let joined = components.join(", ");
+            if components.len() >= 2 {
+                format!("({joined})")
             }
-            spelled.push('}');
-            spelled
+            else {
+                format!("#{{{joined}}}")
+            }
         },
         | TermView::Var(_) | TermView::Ctor { .. } | TermView::Op { .. } => term.to_string(),
     }

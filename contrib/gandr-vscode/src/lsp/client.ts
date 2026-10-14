@@ -46,13 +46,17 @@ export class GandrLanguageClient extends LanguageClient {
       run: server,
       debug: server,
     };
-    // The server reads `gandr.diagnostics.verbosity` and
-    // `gandr.diagnostics.quiet` from the initialization options at startup,
-    // and from the `gandr` section each `workspace/didChangeConfiguration`
-    // pushes, republishing open documents at a new verbosity.
+    // The server reads `gandr.diagnostics.verbosity`,
+    // `gandr.diagnostics.quiet` and `gandr.presentation.form` from the
+    // initialization options at startup, and from the `gandr` section each
+    // `workspace/didChangeConfiguration` pushes, republishing open documents
+    // at a new verbosity. With `supportHtml` the client announces the `span`,
+    // `pre` and `code` tags, and the server colours each hover by the roles
+    // its semantic tokens carry, through the `gandr.hover.*` colours.
     const clientOptions: LanguageClientOptions = {
       documentSelector: [{ scheme: "file", language: "gandr" }],
-      initializationOptions: diagnosticSettings(),
+      initializationOptions: settings(),
+      markdown: { supportHtml: true },
       outputChannel,
       traceOutputChannel,
     };
@@ -69,13 +73,14 @@ export class GandrLanguageClient extends LanguageClient {
   // Never called from `start()`: `sendNotification` ensures a connection by
   // awaiting `start()` itself, so a push from an override of `start()`
   // recurses without bound and the extension host dies. The startup value
-  // travels in the initialization options.
-  private pushConfiguration(): Promise<void> {
+  // travels in the initialization options. The form toggle awaits it, so the
+  // hover it asks for next is answered in the new form.
+  public pushConfiguration(): Promise<void> {
     if (!this.isRunning()) {
       return Promise.resolve();
     }
     return this.sendNotification("workspace/didChangeConfiguration", {
-      settings: { gandr: diagnosticSettings() },
+      settings: { gandr: settings() },
     }).then(
       () => undefined,
       (error: unknown) => {
@@ -85,14 +90,19 @@ export class GandrLanguageClient extends LanguageClient {
   }
 }
 
-// The `gandr.diagnostics` settings the server reads, as the `gandr` section
-// carries them.
-function diagnosticSettings(): { diagnostics: { verbosity: string; quiet: number } } {
+// The `gandr` settings the server reads, as the `gandr` section carries them.
+function settings(): {
+  diagnostics: { verbosity: string; quiet: number };
+  presentation: { form: string };
+} {
   const gandr = vscode.workspace.getConfiguration("gandr");
   return {
     diagnostics: {
       verbosity: gandr.get<string>("diagnostics.verbosity", "user"),
       quiet: gandr.get<number>("diagnostics.quiet", 1.5),
+    },
+    presentation: {
+      form: gandr.get<string>("presentation.form", "sugared"),
     },
   };
 }

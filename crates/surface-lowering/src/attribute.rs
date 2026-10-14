@@ -679,6 +679,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::ReturnerType
         | Former::ArrowType
         | Former::ProductType
+        | Former::SumType
         | Former::LazyProductType
         | Former::TelescopeType
         | Former::LabelledSumType

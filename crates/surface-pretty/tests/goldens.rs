@@ -69,6 +69,7 @@ mod tests
     use gandr_surface_pretty::CoreSource;
     use gandr_surface_pretty::DEPTH_LIMIT;
     use gandr_surface_pretty::Fidelity;
+    use gandr_surface_pretty::Form;
     use gandr_surface_pretty::Former;
     use gandr_surface_pretty::Name;
     use gandr_surface_pretty::PageWidth;
@@ -127,7 +128,7 @@ mod tests
         fidelity: Fidelity,
     }
 
-    /// `root` of `source` laid out at `page`.
+    /// `root` of `source` laid out at `page` in the explicit form.
     ///
     /// # Specification
     /// - requires: the fixture fits the default build and render ceilings.
@@ -153,10 +154,35 @@ mod tests
     where
         S: Source<Node = CoreNode>,
     {
+        presented_in(source, root, page, Form::Explicit)
+    }
+
+    /// `root` of `source` laid out at `page` in `form`.
+    ///
+    /// # Specification
+    /// - requires: the fixture fits the default build and render ceilings.
+    /// - ensures: as [`presented`], in `form`.
+    /// - provides: a presentation in either form.
+    /// - panics: if the presentation refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`presented`], and the sugared fixtures in both
+    ///   forms.
+    /// - witness: `goldens::tests::the_sugared_form_writes_every_sugar_its_shape_admits`
+    #[spec(ensures: |ref ret| !ret.as_ref().contains(['\r', '\t']))]
+    fn presented_in<S>(
+        source: &S,
+        root: Root,
+        page: PageWidth,
+        form: Form,
+    ) -> Presentation
+    where
+        S: Source<Node = CoreNode>,
+    {
         match root {
-            | Root::Type(node) => present_type(source, node, page),
-            | Root::Value(node) => present_value(source, node, page),
-            | Root::Computation(node) => present_computation(source, node, page),
+            | Root::Type(node) => present_type(source, node, page, form),
+            | Root::Value(node) => present_value(source, node, page, form),
+            | Root::Computation(node) => present_computation(source, node, page, form),
         }
         .expect("a presentation within the default ceilings lays out")
     }
@@ -193,8 +219,32 @@ mod tests
         pinned: Pinned<'_>,
     )
     {
-        let at_narrow = presented(source, root, narrow());
-        let at_wide = presented(source, root, wide());
+        pin_in(source, root, pinned, Form::Explicit);
+    }
+
+    /// As [`pin`], in `form`.
+    ///
+    /// # Specification
+    /// - requires: as [`pin`].
+    /// - ensures: as [`pin`], each page in `form`.
+    /// - provides: golden pairs of the sugared form.
+    /// - panics: as [`pin`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`pin`].
+    /// - witness: `goldens::tests::the_sugared_form_breaks_its_infix_and_lists_at_the_narrow_page`
+    #[spec(requires: !pinned.name.is_empty()
+        && !pinned.name.contains(['/', '\\']) && !pinned.flat.contains(['\r', '\n', '\t'])
+    )]
+    fn pin_in(
+        source: &CoreSource<'_>,
+        root: Root,
+        pinned: Pinned<'_>,
+        form: Form,
+    )
+    {
+        let at_narrow = presented_in(source, root, narrow(), form);
+        let at_wide = presented_in(source, root, wide(), form);
         if u32::try_from(pinned.flat.chars().count())
             .is_ok_and(|width| PageWidth::from(width) <= wide())
         {
@@ -494,8 +544,8 @@ mod tests
     {
         let table = Table(rows);
         let presentation = match reading {
-            | Reading::AsType => present_type(&table, Row(0), wide()),
-            | Reading::AsValue => present_value(&table, Row(0), wide()),
+            | Reading::AsType => present_type(&table, Row(0), wide(), Form::Explicit),
+            | Reading::AsValue => present_value(&table, Row(0), wide(), Form::Explicit),
         }
         .expect("a table presentation lays out");
         (presentation.to_string(), presentation.fidelity())
@@ -901,6 +951,203 @@ mod tests
                 "{root:?} spells between its braces"
             );
         }
+    }
+
+    /// The sugared form writes the value-function alias for a thunked chain
+    /// of non-dependent arrows ending in a pure returner, at no, one and more
+    /// domains, and the thunk over any other computation type; the infix
+    /// product and sum at two components or more, every operand tighter than
+    /// the chain, so an inner chain keeps its parentheses; the lazy product
+    /// nested to the right; and the tuple at two components or more. A
+    /// one-component product, sum and tuple keep their braces, and the
+    /// explicit form writes every one as the core holds it.
+    #[test]
+    fn the_sugared_form_writes_every_sugar_its_shape_admits()
+    {
+        let mut core = CoreArena::new();
+        let one = integer(&mut core, Sign::NonNegative, Written("1"));
+        let integer = core.value_type_base(BaseType::Integer);
+        let string = core.value_type_base(BaseType::String);
+        let unit = core.value_type_unit();
+        let returns_integer = core.comp_type_returner(integer);
+        let returns_string = core.comp_type_returner(string);
+        let returns_unit = core.comp_type_returner(unit);
+        let nullary = core.value_type_thunk(returns_integer);
+        let unary_arrow = core.comp_type_arrow(integer, returns_string);
+        let unary = core.value_type_thunk(unary_arrow);
+        let binary_tail = core.comp_type_arrow(string, returns_unit);
+        let binary_arrow = core.comp_type_arrow(integer, binary_tail);
+        let binary = core.value_type_thunk(binary_arrow);
+        let higher_arrow = core.comp_type_arrow(unary, returns_unit);
+        let higher = core.value_type_thunk(higher_arrow);
+        let returns_unary = core.comp_type_returner(unary);
+        let curried_arrow = core.comp_type_arrow(integer, returns_unary);
+        let curried = core.value_type_thunk(curried_arrow);
+        let universe = small_universe(&mut core);
+        let variable = bound(&mut core, DeBruijnIndex::from(0_u32));
+        let returns_variable = core.comp_type_returner(variable);
+        let dependent_arrow = core.comp_type_pi(universe, returns_variable);
+        let dependent = core.value_type_thunk(dependent_arrow);
+        let pair = core.value_type_product(&[integer, string]);
+        let triple = core.value_type_product(&[integer, string, unit]);
+        let lonely = core.value_type_product(&[integer]);
+        let nested_pair = core.value_type_product(&[pair, unit]);
+        let either = core.value_type_sum(&[integer, string]);
+        let only = core.value_type_sum(&[integer]);
+        let sum_of_pair = core.value_type_sum(&[pair, unit]);
+        let pair_of_sum = core.value_type_product(&[either, unit]);
+        let nested_sum = core.value_type_sum(&[either, unit]);
+        let boolean = core.value_type_sum(&[unit, unit]);
+        let lazy = core.comp_type_with(returns_integer, returns_string);
+        let right = core.comp_type_with(returns_integer, lazy);
+        let left = core.comp_type_with(lazy, returns_unit);
+        let paired_domain = core.comp_type_arrow(pair, returns_unit);
+        let returns_pair = core.comp_type_returner(pair);
+        let returns_either = core.comp_type_returner(either);
+        let aliased_pair_arrow = core.comp_type_arrow(pair, returns_either);
+        let aliased_pair = core.value_type_thunk(aliased_pair_arrow);
+        let two = text(&mut core, Written("two"));
+        let single = core.value_tuple(&[one]);
+        let tuple = core.value_tuple(&[one, two]);
+        let nested_tuple = core.value_tuple(&[one, tuple]);
+        let values = [single, tuple, nested_tuple].map(|value| normal_form(&mut core, value));
+        let source = CoreSource::new(&core, &[]);
+        let types = [
+            (nullary, "() => Integer", "+U (-F Integer)"),
+            (unary, "Integer => String", "+U (Integer -> -F String)"),
+            (
+                binary,
+                "(Integer, String) => Unit",
+                "+U (Integer -> String -> -F Unit)",
+            ),
+            (
+                higher,
+                "(Integer => String) => Unit",
+                "+U (+U (Integer -> -F String) -> -F Unit)",
+            ),
+            (
+                curried,
+                "Integer => Integer => String",
+                "+U (Integer -> -F (+U (Integer -> -F String)))",
+            ),
+            (
+                dependent,
+                "+U ((a : Type) -> -F a)",
+                "+U ((a : Type) -> -F a)",
+            ),
+            (pair, "Integer * String", "#{Integer, String}"),
+            (
+                triple,
+                "Integer * String * Unit",
+                "#{Integer, String, Unit}",
+            ),
+            (lonely, "#{Integer}", "#{Integer}"),
+            (
+                nested_pair,
+                "(Integer * String) * Unit",
+                "#{#{Integer, String}, Unit}",
+            ),
+            (either, "Integer + String", "+{Integer, String}"),
+            (only, "+{Integer}", "+{Integer}"),
+            (
+                sum_of_pair,
+                "Integer * String + Unit",
+                "+{#{Integer, String}, Unit}",
+            ),
+            (
+                pair_of_sum,
+                "(Integer + String) * Unit",
+                "#{+{Integer, String}, Unit}",
+            ),
+            (
+                nested_sum,
+                "(Integer + String) + Unit",
+                "+{+{Integer, String}, Unit}",
+            ),
+            (boolean, "Bool", "Bool"),
+            (
+                aliased_pair,
+                "Integer * String => Integer + String",
+                "+U (#{Integer, String} -> -F +{Integer, String})",
+            ),
+        ]
+        .map(|(root, sugared, explicit)| (CoreNode::ValueType(root), sugared, explicit));
+        let computations = [
+            (lazy, "-F Integer & -F String", "&{-F Integer, -F String}"),
+            (
+                right,
+                "-F Integer & -F Integer & -F String",
+                "&{-F Integer, &{-F Integer, -F String}}",
+            ),
+            (
+                left,
+                "(-F Integer & -F String) & -F Unit",
+                "&{&{-F Integer, -F String}, -F Unit}",
+            ),
+            (
+                paired_domain,
+                "Integer * String -> -F Unit",
+                "#{Integer, String} -> -F Unit",
+            ),
+            (
+                returns_pair,
+                "-F (Integer * String)",
+                "-F #{Integer, String}",
+            ),
+        ]
+        .map(|(root, sugared, explicit)| (CoreNode::CompType(root), sugared, explicit));
+        for (root, sugared, explicit) in types.into_iter().chain(computations) {
+            for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
+                let presented = presented_in(&source, Root::Type(root), wide(), form);
+                assert_eq!(
+                    (presented.as_ref(), presented.fidelity()),
+                    (expected, Fidelity::Faithful),
+                    "{root:?} in the {form:?} form"
+                );
+            }
+        }
+        for (root, (sugared, explicit)) in values.into_iter().zip([
+            ("#{1}", "#{1}"),
+            ("(1, \"two\")", "#{1, \"two\"}"),
+            ("(1, (1, \"two\"))", "#{1, #{1, \"two\"}}"),
+        ]) {
+            for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
+                let presented = presented_in(&source, Root::Value(root), wide(), form);
+                assert_eq!(
+                    (presented.as_ref(), presented.fidelity()),
+                    (expected, Fidelity::Faithful),
+                    "{root:?} in the {form:?} form"
+                );
+            }
+        }
+    }
+
+    /// The sugared form breaks after an infix symbol, after the alias's `=>`
+    /// and after each comma of its domain list and of a tuple, as the
+    /// explicit form breaks after an arrow and a comma.
+    #[test]
+    fn the_sugared_form_breaks_its_infix_and_lists_at_the_narrow_page()
+    {
+        let mut core = CoreArena::new();
+        let integer = core.value_type_base(BaseType::Integer);
+        let string = core.value_type_base(BaseType::String);
+        let unit = core.value_type_unit();
+        let triple = core.value_type_product(&[integer, string, unit]);
+        let either = core.value_type_sum(&[string, unit]);
+        let returns_either = core.comp_type_returner(either);
+        let tail = core.comp_type_arrow(triple, returns_either);
+        let chain = core.comp_type_arrow(integer, tail);
+        let alias = core.value_type_thunk(chain);
+        pin_in(
+            &CoreSource::new(&core, &[]),
+            Root::Type(CoreNode::ValueType(alias)),
+            Pinned {
+                name: "sugared_alias",
+                flat: "(Integer, Integer * String * Unit) => String + Unit",
+                fidelity: Fidelity::Faithful,
+            },
+            Form::Sugared,
+        );
     }
 
     /// A record type and a record spell each field after its own label, in
@@ -1807,9 +2054,11 @@ mod tests
             sequenced,
         ] {
             let root = CoreNode::Computation(id);
-            let wide = present_computation(&source, root, PageWidth::from(4_096_u32))
-                .expect("the body lays out");
-            let line = present_computation_line(&source, root).expect("the body writes");
+            let wide =
+                present_computation(&source, root, PageWidth::from(4_096_u32), Form::Explicit)
+                    .expect("the body lays out");
+            let line =
+                present_computation_line(&source, root, Form::Explicit).expect("the body writes");
             assert_eq!(
                 (line.as_ref(), line.fidelity()),
                 (wide.as_ref(), wide.fidelity()),

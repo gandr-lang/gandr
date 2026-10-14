@@ -49,6 +49,7 @@ use gandr_surface_pretty::Arity;
 use gandr_surface_pretty::Constructors;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
@@ -176,11 +177,11 @@ impl Spellings
     /// - ensures: each type a produced checker refusal compares, as
     ///   [`gandr_core_checker::CheckRefusal::compared`] names it, and each type
     ///   [`Failure::types`] names, is keyed by its node and spelled through
-    ///   [`present_type`] on a page of [`SPELLING_WIDTH`] columns, constants by
-    ///   their paths from the top level, so a member of a module, a sealed
-    ///   abstract type among them, reads as it is written outside it; a type
-    ///   the printer cannot lay out, or lays out over more than one line, is
-    ///   left unkeyed; nothing else is keyed.
+    ///   [`present_type`] in its sugared form on a page of [`SPELLING_WIDTH`]
+    ///   columns, constants by their paths from the top level, so a member of a
+    ///   module, a sealed abstract type among them, reads as it is written
+    ///   outside it; a type the printer cannot lay out, or lays out over more
+    ///   than one line, is left unkeyed; nothing else is keyed.
     /// - provides: the spellings a diagnostic reads a refusal's types from once
     ///   the arena is gone.
     /// - fails: never.
@@ -240,8 +241,12 @@ impl Spellings
                 | TypeNode::Value(id) => CoreNode::ValueType(id),
                 | TypeNode::Computation(id) => CoreNode::CompType(id),
             };
-            if let Ok(presentation) = present_type(&source, root, PageWidth::from(SPELLING_WIDTH))
-                && !presentation.as_ref().contains('\n')
+            if let Ok(presentation) = present_type(
+                &source,
+                root,
+                PageWidth::from(SPELLING_WIDTH),
+                Form::Sugared,
+            ) && !presentation.as_ref().contains('\n')
             {
                 let _fresh = spelled.insert(node, presentation);
             }

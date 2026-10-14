@@ -18,10 +18,10 @@ module Schema {
   def everyone(olds : List(Old)) -> -F List(New) {
     become ride(\X. List(X), upgrade, olds)
   }
-  @[ runs("#{30, \"ada\", +{.0 = unit}}") ]
+  @[ runs("(30, \"ada\", +{.0 = unit})") ]
   def one : +U (-F New) ;
   def one = thunk { become moved(#{"ada", 30}) } ;
-  @[ runs("cons(#{30, \"ada\", +{.0 = unit}}, cons(#{41, \"grace\", +{.0 = unit}}, nil))") ]
+  @[ runs("cons((30, \"ada\", +{.0 = unit}), cons((41, \"grace\", +{.0 = unit}), nil))") ]
   def many : +U (-F List(New)) ;
   def many = thunk { become everyone(cons(#{"ada", 30}, cons(#{"grace", 41}, nil))) } ;
 }

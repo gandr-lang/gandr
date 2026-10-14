@@ -1464,6 +1464,7 @@ mod tests
     use gandr_core_term::FailureClass;
     use gandr_core_term::Value;
     use gandr_core_term::equal_certificate_syntax;
+    use gandr_core_term::equal_type_syntax;
     use gandr_kernel_term::decode;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_corpus::Outcome;
@@ -1484,10 +1485,13 @@ mod tests
     use gandr_surface_pretty::CoreNode;
     use gandr_surface_pretty::CoreSource;
     use gandr_surface_pretty::Fidelity;
+    use gandr_surface_pretty::Form;
     use gandr_surface_pretty::Name;
     use gandr_surface_pretty::PageWidth;
     use gandr_surface_pretty::Restoration;
     use gandr_surface_pretty::present_computation;
+    use gandr_surface_pretty::present_type;
+    use gandr_surface_pretty::present_value;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
@@ -2234,6 +2238,7 @@ def h = 1 ;"#,
                 &printer,
                 CoreNode::Computation(computation),
                 PageWidth::from(100_u32),
+                Form::Explicit,
             )
             .expect("the body lays out");
             (presentation.to_string(), presentation.fidelity())
@@ -2256,6 +2261,155 @@ def h = 1 ;"#,
                 equal_certificate_syntax(&arena, body(written), body(&restated)),
                 CertificateEquality::Equal,
                 "`{written}`'s printed body reads back to its term"
+            );
+        }
+    }
+
+    #[test]
+    fn the_sugared_form_reads_back_to_the_term_it_prints()
+    {
+        let types = [
+            ("+U (-F Integer)", "() => Integer"),
+            ("+U (Integer -> -F String)", "Integer => String"),
+            (
+                "+U (Integer -> String -> -F Unit)",
+                "(Integer, String) => Unit",
+            ),
+            (
+                "+U (+U (Integer -> -F Integer) -> -F Integer)",
+                "(Integer => Integer) => Integer",
+            ),
+            (
+                "+U (Integer -> -F (+U (-F Integer)))",
+                "Integer => () => Integer",
+            ),
+            ("#{Integer, String, Unit}", "Integer * String * Unit"),
+            ("#{#{Integer, String}, Unit}", "(Integer * String) * Unit"),
+            ("+{Integer, +{String, Unit}}", "Integer + (String + Unit)"),
+            ("+{#{Integer, String}, Unit}", "Integer * String + Unit"),
+            ("#{+{Integer, String}, Unit}", "(Integer + String) * Unit"),
+            (
+                "+U (&{-F Integer, &{-F Unit, -F String}})",
+                "+U (-F Integer & -F Unit & -F String)",
+            ),
+            (
+                "+U (&{&{-F Integer, -F Unit}, -F String})",
+                "+U ((-F Integer & -F Unit) & -F String)",
+            ),
+            (
+                "+U (#{Integer, String} -> -F +{Integer, Unit})",
+                "Integer * String => Integer + Unit",
+            ),
+        ];
+        let mut written = types
+            .iter()
+            .enumerate()
+            .map(|(index, &(explicit, sugared))| {
+                format!("def e{index} : {explicit} ;\ndef s{index} : {sugared} ;\n")
+            })
+            .collect::<Vec<String>>()
+            .concat();
+        written.push_str(
+            "def pair : Integer * String ;\ndef pair = #{1, \"a\"} ;\n\
+             def pair_sugared : Integer * String ;\ndef pair_sugared = (1, \"a\") ;\n\
+             def pure_pair : () => Integer * String ;\n\
+             def pure_pair = thunk { return #{1, \"a\"} } ;\n\
+             def pure_pair_sugared : () => Integer * String ;\n\
+             def pure_pair_sugared = thunk { pure (1, \"a\") } ;\n",
+        );
+        let grammar = grammar();
+        let mut lowerings = LoweringCount::default();
+        let Lowered::Module { module, arena } =
+            lower_source(&grammar, SourceText::from(written.as_str()), &mut lowerings)
+                .expect("the module lowers")
+                .into_lowered()
+        else {
+            panic!("the module is read");
+        };
+        let spelled = constant_names(&module);
+        let names: Vec<Name<'_>> = spelled
+            .iter()
+            .map(|name| Name::from(name.as_str()))
+            .collect();
+        let printer = CoreSource::new(&arena, &names);
+        let outcome = |wanted: &str| {
+            module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"))
+                .outcome()
+        };
+        let declared = |wanted: &str| match outcome(wanted) {
+            | DeclarationOutcome::Completed { declared_type, .. }
+            | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
+            | other => panic!("`{wanted}` lowers a signature, not {other:?}"),
+        };
+        let body = |wanted: &str| match outcome(wanted) {
+            | DeclarationOutcome::Completed { body, .. } => body,
+            | other => panic!("`{wanted}` lowers a body, not {other:?}"),
+        };
+        let shown = |presented: Result<_, _>| {
+            let presentation: gandr_surface_pretty::Presentation =
+                presented.expect("the node lays out");
+            (presentation.to_string(), presentation.fidelity())
+        };
+        for (index, &(explicit, sugared)) in types.iter().enumerate() {
+            let (explicit_name, sugared_name) = (format!("e{index}"), format!("s{index}"));
+            for name in [explicit_name.as_str(), sugared_name.as_str()] {
+                assert_eq!(
+                    shown(present_type(
+                        &printer,
+                        CoreNode::ValueType(declared(name)),
+                        PageWidth::from(100_u32),
+                        Form::Sugared,
+                    )),
+                    (String::from(sugared), Fidelity::Faithful),
+                    "`{explicit}` prints sugared as `{sugared}`"
+                );
+            }
+            assert_eq!(
+                equal_type_syntax(&arena, declared(&explicit_name), declared(&sugared_name)),
+                CertificateEquality::Equal,
+                "`{sugared}` reads back to `{explicit}`"
+            );
+        }
+        let suspended = match arena.value(body("pure_pair")) {
+            | Some(&Value::Thunk(computation)) => computation,
+            | other => panic!("`pure_pair` is a suspended computation, not {other:?}"),
+        };
+        for (name, expected, presented) in [
+            (
+                "pair",
+                "(1, \"a\")",
+                present_value(
+                    &printer,
+                    CoreNode::Value(body("pair")),
+                    PageWidth::from(100_u32),
+                    Form::Sugared,
+                ),
+            ),
+            (
+                "pure_pair",
+                "(1, \"a\")",
+                present_computation(
+                    &printer,
+                    CoreNode::Computation(suspended),
+                    PageWidth::from(100_u32),
+                    Form::Sugared,
+                ),
+            ),
+        ] {
+            assert_eq!(
+                shown(presented),
+                (String::from(expected), Fidelity::Faithful),
+                "`{name}` prints its tuple sugared"
+            );
+            let sugared = format!("{name}_sugared");
+            assert_eq!(
+                equal_certificate_syntax(&arena, body(name), body(&sugared)),
+                CertificateEquality::Equal,
+                "the sugared tuple of `{name}` reads back to its term"
             );
         }
     }
@@ -2319,6 +2473,7 @@ def h = 1 ;"#,
                 &CoreSource::new(&arena, &names).restoring(&restoration),
                 CoreNode::Computation(computation),
                 PageWidth::from(100_u32),
+                Form::Explicit,
             )
             .expect("the body lays out");
             (presentation.to_string(), presentation.fidelity())

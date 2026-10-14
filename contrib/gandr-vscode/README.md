@@ -1,6 +1,6 @@
 # gandr for Visual Studio Code
 
-Language support for `.gandr` sources. The extension registers the `gandr` language and starts the gandr language server, `gandr lsp`, over standard input and output for every `.gandr` file opened from disk. The server publishes the diagnostics `gandr check` prints and answers semantic-token requests with the highlighter's roles. A small TextMate grammar colors comments and a few keywords until the server's tokens arrive.
+Language support for `.gandr` sources. The extension registers the `gandr` language and starts the gandr language server, `gandr lsp`, over standard input and output for every `.gandr` file opened from disk. The server publishes the diagnostics `gandr check` prints, answers semantic-token requests with the highlighter's roles, and answers hovers with types coloured by the same roles. A small TextMate grammar colors comments and a few keywords until the server's tokens arrive.
 
 ## Contents
 
@@ -8,6 +8,7 @@ Language support for `.gandr` sources. The extension registers the `gandr` langu
 - [Install the gandr binary](#install-the-gandr-binary)
 - [Install the extension](#install-the-extension)
 - [Check the connection](#check-the-connection)
+- [Hover colours](#hover-colours)
 - [Develop the extension](#develop-the-extension)
 
 ## Requirements
@@ -47,10 +48,10 @@ cd contrib/gandr-vscode
 mise exec -- aube run package
 ```
 
-`aube run package` type-checks the sources with `tsc`, bundles them with the language client into `dist/extension.js`, and writes `gandr-vscode-0.0.0.vsix`. Install the package:
+`aube run package` type-checks the sources with `tsc`, bundles them with the language client into `dist/extension.js`, and writes `gandr-vscode-0.1.0.vsix`. Install the package:
 
 ```sh
-code --install-extension gandr-vscode-0.0.0.vsix
+code --install-extension gandr-vscode-0.1.0.vsix
 ```
 
 **Extensions: Install from VSIX…** in the Command Palette does the same. Reinstall the same way after rebuilding; `code --uninstall-extension gandr-lang.gandr-vscode` removes it.
@@ -71,6 +72,37 @@ No setting selects the server's features. The client adopts what `initialize` ad
 `gandr.diagnostics.verbosity` chooses how much of each report a diagnostic shows, at the levels `gandr check --verbosity` names: `user`, the default, shows the message, the label and the note; `detailed` adds the report's class, the checker's own wording and the offending source text; `debug` adds every locus's byte span and the checker's refusal as its implementers print it; `json` shows the whole report as one line of JSON. Changing it republishes the open files' diagnostics at the new level.
 
 `gandr.diagnostics.quiet` keeps the form you are typing free of red: a diagnostic of the form the cursor is in waits until the cursor leaves the form, the form's `;` or `}` arrives, or the file goes that many seconds without a change, 1.5 by default. A diagnostic elsewhere in the file shows at once. `0` shows every diagnostic at once.
+
+`gandr.presentation.form` chooses how a hover spells a type. `sugared`, the default, writes every sugar the surface reads where the type has its shape: `Integer => String` for `+U (Integer -> -F String)`, `A * B`, `A + B`, `C & D`, and `(a, b)` for a tuple. `explicit` writes the formers the core is made of. **gandr: Toggle sugared/explicit types** in the Command Palette flips it and hovers again at the cursor.
+
+## Hover colours
+
+The server colours a hover by the roles its semantic tokens carry: the extension's client announces that its hovers render HTML, and the server writes each type, name and checked fill as `<pre><code>` with every classified run in a `span` coloured by a theme colour the extension contributes. Each colour defaults, per theme kind, to what the built-in theme of that kind gives the role's semantic token, so a hover reads as the line it describes. Override any of them under `workbench.colorCustomizations`. A run the highlighter classifies as `other`, such as the `:` of a signature, is left in the hover's foreground, as the editor leaves it.
+
+| Role | Colour | Semantic token | Dark Modern | Light Modern | Dark High Contrast | Light High Contrast |
+| ---- | ------ | -------------- | ----------- | ------------ | ------------------ | ------------------- |
+| keyword | `gandr.hover.keyword` | `keyword` | `#C586C0` | `#AF00DB` | `#C586C0` | `#B5200D` |
+| boolean | `gandr.hover.boolean` | `keyword` | `#C586C0` | `#AF00DB` | `#C586C0` | `#B5200D` |
+| operator | `gandr.hover.operator` | `operator` | `#D4D4D4` | `#000000` | `#D4D4D4` | `#000000` |
+| functionDef | `gandr.hover.functionDef` | `function` | `#DCDCAA` | `#795E26` | `#DCDCAA` | `#5E2CBC` |
+| functionCall | `gandr.hover.functionCall` | `function` | `#DCDCAA` | `#795E26` | `#DCDCAA` | `#5E2CBC` |
+| variableDef | `gandr.hover.variableDef` | `variable` | `#9CDCFE` | `#001080` | `#9CDCFE` | `#001080` |
+| variable | `gandr.hover.variable` | `variable` | `#9CDCFE` | `#001080` | `#9CDCFE` | `#001080` |
+| variableParam | `gandr.hover.variableParam` | `parameter` | `#9CDCFE` | `#001080` | `#9CDCFE` | `#001080` |
+| member | `gandr.hover.member` | `property` | `#9CDCFE` | `#001080` | `#9CDCFE` | `#001080` |
+| constructor | `gandr.hover.constructor` | `enumMember` | `#4FC1FF` | `#0070C1` | `#9CDCFE` | `#02715D` |
+| type | `gandr.hover.type` | `type` | `#4EC9B0` | `#267F99` | `#4EC9B0` | `#185E73` |
+| typeBuiltin | `gandr.hover.typeBuiltin` | `type.defaultLibrary` | `#4EC9B0` | `#267F99` | `#4EC9B0` | `#185E73` |
+| typeVariable | `gandr.hover.typeVariable` | `typeParameter` | `#4EC9B0` | `#267F99` | `#4EC9B0` | `#185E73` |
+| number | `gandr.hover.number` | `number` | `#B5CEA8` | `#098658` | `#B5CEA8` | `#096D48` |
+| stringLit | `gandr.hover.stringLit` | `string` | `#CE9178` | `#A31515` | `#CE9178` | `#0F4A85` |
+| character | `gandr.hover.character` | `string` | `#CE9178` | `#A31515` | `#CE9178` | `#0F4A85` |
+| escape | `gandr.hover.escape` | `string` | `#CE9178` | `#A31515` | `#CE9178` | `#0F4A85` |
+| path | `gandr.hover.path` | `string` | `#CE9178` | `#A31515` | `#CE9178` | `#0F4A85` |
+| comment | `gandr.hover.comment` | `comment` | `#6A9955` | `#008000` | `#7CA668` | `#515151` |
+| hole | `gandr.hover.hole` | `macro` | `#569CD6` | `#0000FF` | `#DCDCAA` | `#0F4A85` |
+| directive | `gandr.hover.directive` | `macro` | `#569CD6` | `#0000FF` | `#DCDCAA` | `#0F4A85` |
+| label | `gandr.hover.label` | `label` | hover foreground | hover foreground | hover foreground | hover foreground |
 
 ## Develop the extension
 

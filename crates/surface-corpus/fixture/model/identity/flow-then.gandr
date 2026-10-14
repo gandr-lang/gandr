@@ -37,7 +37,7 @@ module Schema {
     run along <- both() ;
     become ride(\X. X, along, record)
   }
-  @[ runs("#{+{.1 = unit}, 30, \"ada\"}") ]
+  @[ runs("(+{.1 = unit}, 30, \"ada\")") ]
   def latest : +U (-F V3) ;
   def latest = thunk { become moved(#{"ada", 30}) } ;
 }

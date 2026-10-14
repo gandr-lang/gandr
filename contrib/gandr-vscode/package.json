@@ -1,7 +1,7 @@
 {
   "name": "gandr-vscode",
   "displayName": "gandr",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "gandr language support for Visual Studio Code",
   "categories": [
@@ -61,9 +61,251 @@
           "minimum": 0,
           "default": 1.5,
           "markdownDescription": "Seconds a file goes without a change before a diagnostic of the form being typed shows. A diagnostic elsewhere shows at once; `0` shows every diagnostic at once."
+        },
+        "gandr.presentation.form": {
+          "type": "string",
+          "enum": [
+            "sugared",
+            "explicit"
+          ],
+          "enumDescriptions": [
+            "Every sugar the surface reads where the type has its shape: `A => B`, `A * B`, `A + B`, `C & D`, `(a, b)`.",
+            "The formers the core is made of: `+U (A -> -F B)`, `#{A, B}`, `+{A, B}`, `&{C, D}`, `#{a, b}`."
+          ],
+          "default": "sugared",
+          "markdownDescription": "How a hover spells a type. **gandr: Toggle sugared/explicit types** flips it."
         }
       }
     },
+    "colors": [
+      {
+        "id": "gandr.hover.keyword",
+        "description": "The colour of a keyword in a hover, as the `keyword` semantic token.",
+        "defaults": {
+          "dark": "#C586C0",
+          "light": "#AF00DB",
+          "highContrast": "#C586C0",
+          "highContrastLight": "#B5200D"
+        }
+      },
+      {
+        "id": "gandr.hover.boolean",
+        "description": "The colour of a boolean literal in a hover, as the `keyword` semantic token.",
+        "defaults": {
+          "dark": "#C586C0",
+          "light": "#AF00DB",
+          "highContrast": "#C586C0",
+          "highContrastLight": "#B5200D"
+        }
+      },
+      {
+        "id": "gandr.hover.operator",
+        "description": "The colour of an operator in a hover, as the `operator` semantic token.",
+        "defaults": {
+          "dark": "#D4D4D4",
+          "light": "#000000",
+          "highContrast": "#D4D4D4",
+          "highContrastLight": "#000000"
+        }
+      },
+      {
+        "id": "gandr.hover.functionDef",
+        "description": "The colour of a defined function name in a hover, as the `function` semantic token.",
+        "defaults": {
+          "dark": "#DCDCAA",
+          "light": "#795E26",
+          "highContrast": "#DCDCAA",
+          "highContrastLight": "#5E2CBC"
+        }
+      },
+      {
+        "id": "gandr.hover.functionCall",
+        "description": "The colour of a called function name in a hover, as the `function` semantic token.",
+        "defaults": {
+          "dark": "#DCDCAA",
+          "light": "#795E26",
+          "highContrast": "#DCDCAA",
+          "highContrastLight": "#5E2CBC"
+        }
+      },
+      {
+        "id": "gandr.hover.variableDef",
+        "description": "The colour of a defined value or binder name in a hover, as the `variable` semantic token.",
+        "defaults": {
+          "dark": "#9CDCFE",
+          "light": "#001080",
+          "highContrast": "#9CDCFE",
+          "highContrastLight": "#001080"
+        }
+      },
+      {
+        "id": "gandr.hover.variable",
+        "description": "The colour of a variable reference in a hover, as the `variable` semantic token.",
+        "defaults": {
+          "dark": "#9CDCFE",
+          "light": "#001080",
+          "highContrast": "#9CDCFE",
+          "highContrastLight": "#001080"
+        }
+      },
+      {
+        "id": "gandr.hover.variableParam",
+        "description": "The colour of a parameter binder in a hover, as the `parameter` semantic token.",
+        "defaults": {
+          "dark": "#9CDCFE",
+          "light": "#001080",
+          "highContrast": "#9CDCFE",
+          "highContrastLight": "#001080"
+        }
+      },
+      {
+        "id": "gandr.hover.member",
+        "description": "The colour of a record or co-record member in a hover, as the `property` semantic token.",
+        "defaults": {
+          "dark": "#9CDCFE",
+          "light": "#001080",
+          "highContrast": "#9CDCFE",
+          "highContrastLight": "#001080"
+        }
+      },
+      {
+        "id": "gandr.hover.constructor",
+        "description": "The colour of a constructor in a hover, as the `enumMember` semantic token.",
+        "defaults": {
+          "dark": "#4FC1FF",
+          "light": "#0070C1",
+          "highContrast": "#9CDCFE",
+          "highContrastLight": "#02715D"
+        }
+      },
+      {
+        "id": "gandr.hover.type",
+        "description": "The colour of a type name in a hover, as the `type` semantic token.",
+        "defaults": {
+          "dark": "#4EC9B0",
+          "light": "#267F99",
+          "highContrast": "#4EC9B0",
+          "highContrastLight": "#185E73"
+        }
+      },
+      {
+        "id": "gandr.hover.typeBuiltin",
+        "description": "The colour of a built-in type in a hover, as the `type.defaultLibrary` semantic token.",
+        "defaults": {
+          "dark": "#4EC9B0",
+          "light": "#267F99",
+          "highContrast": "#4EC9B0",
+          "highContrastLight": "#185E73"
+        }
+      },
+      {
+        "id": "gandr.hover.typeVariable",
+        "description": "The colour of a type variable in a hover, as the `typeParameter` semantic token.",
+        "defaults": {
+          "dark": "#4EC9B0",
+          "light": "#267F99",
+          "highContrast": "#4EC9B0",
+          "highContrastLight": "#185E73"
+        }
+      },
+      {
+        "id": "gandr.hover.number",
+        "description": "The colour of a numeric literal in a hover, as the `number` semantic token.",
+        "defaults": {
+          "dark": "#B5CEA8",
+          "light": "#098658",
+          "highContrast": "#B5CEA8",
+          "highContrastLight": "#096D48"
+        }
+      },
+      {
+        "id": "gandr.hover.stringLit",
+        "description": "The colour of a string literal in a hover, as the `string` semantic token.",
+        "defaults": {
+          "dark": "#CE9178",
+          "light": "#A31515",
+          "highContrast": "#CE9178",
+          "highContrastLight": "#0F4A85"
+        }
+      },
+      {
+        "id": "gandr.hover.character",
+        "description": "The colour of a character literal in a hover, as the `string` semantic token.",
+        "defaults": {
+          "dark": "#CE9178",
+          "light": "#A31515",
+          "highContrast": "#CE9178",
+          "highContrastLight": "#0F4A85"
+        }
+      },
+      {
+        "id": "gandr.hover.escape",
+        "description": "The colour of an escape sequence in a hover, as the `string` semantic token.",
+        "defaults": {
+          "dark": "#CE9178",
+          "light": "#A31515",
+          "highContrast": "#CE9178",
+          "highContrastLight": "#0F4A85"
+        }
+      },
+      {
+        "id": "gandr.hover.path",
+        "description": "The colour of a shell word or path in a hover, as the `string` semantic token.",
+        "defaults": {
+          "dark": "#CE9178",
+          "light": "#A31515",
+          "highContrast": "#CE9178",
+          "highContrastLight": "#0F4A85"
+        }
+      },
+      {
+        "id": "gandr.hover.comment",
+        "description": "The colour of a comment in a hover, as the `comment` semantic token.",
+        "defaults": {
+          "dark": "#6A9955",
+          "light": "#008000",
+          "highContrast": "#7CA668",
+          "highContrastLight": "#515151"
+        }
+      },
+      {
+        "id": "gandr.hover.hole",
+        "description": "The colour of a typed hole in a hover, as the `macro` semantic token.",
+        "defaults": {
+          "dark": "#569CD6",
+          "light": "#0000FF",
+          "highContrast": "#DCDCAA",
+          "highContrastLight": "#0F4A85"
+        }
+      },
+      {
+        "id": "gandr.hover.directive",
+        "description": "The colour of a directive in a hover, as the `macro` semantic token.",
+        "defaults": {
+          "dark": "#569CD6",
+          "light": "#0000FF",
+          "highContrast": "#DCDCAA",
+          "highContrastLight": "#0F4A85"
+        }
+      },
+      {
+        "id": "gandr.hover.label",
+        "description": "The colour of a label in a hover, as the `label` semantic token.",
+        "defaults": {
+          "dark": "editorHoverWidget.foreground",
+          "light": "editorHoverWidget.foreground",
+          "highContrast": "editorHoverWidget.foreground",
+          "highContrastLight": "editorHoverWidget.foreground"
+        }
+      }
+    ],
+    "commands": [
+      {
+        "command": "gandr.toggleForm",
+        "title": "Toggle sugared/explicit types",
+        "category": "gandr"
+      }
+    ],
     "grammars": [
       {
         "language": "gandr",

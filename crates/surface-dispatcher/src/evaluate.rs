@@ -142,6 +142,7 @@ use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::present_computation_line;
@@ -1116,12 +1117,12 @@ impl<'source> Program<'source>
     ///
     /// # Specification
     /// - requires: nothing; a malformed core graph is admissible.
-    /// - ensures: the terminal presented as the computation it is, on one line
-    ///   without a break search: a returned value as the value, a function as
-    ///   its `fn`, constants by their paths from the top level and constructors
-    ///   by their names, every former as the grammar writes it and `?` where
-    ///   the printer cannot spell a node; the unspelled-layout absence where
-    ///   the printer cannot write it.
+    /// - ensures: the terminal presented as the computation it is, in the
+    ///   sugared form on one line without a break search: a returned value as
+    ///   the value, a function as its `fn`, constants by their paths from the
+    ///   top level and constructors by their names, every former as the grammar
+    ///   writes it and `?` where the printer cannot spell a node; the
+    ///   unspelled-layout absence where the printer cannot write it.
     /// - provides: the one value spelling `gandr run`, the session and a `runs`
     ///   expectation share, the same printer a hover answers with.
     /// - fails: [`Unfinished::Unspelled`] when the presentation reaches a build
@@ -1151,7 +1152,7 @@ impl<'source> Program<'source>
             .collect();
         let constructors = self.families.naming(&names);
         let source = CoreSource::new(core, &names).naming(&constructors);
-        present_computation_line(&source, CoreNode::Computation(read))
+        present_computation_line(&source, CoreNode::Computation(read), Form::Sugared)
             .map(ValueSpelling)
             .map_err(|_refusal| Unfinished::Unspelled)
     }
@@ -1829,7 +1830,7 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
         };
         assert_eq!(
             spelled(&core, returned),
-            Ok(String::from("#{first, #{second, first}}"))
+            Ok(String::from("(first, (second, first))"))
         );
         for (summand, expected) in [
             (0_usize, "+{.0 = second}"),

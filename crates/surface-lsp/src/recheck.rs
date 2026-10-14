@@ -1078,8 +1078,8 @@ mod tests
                 (range(Span(0, 9, 0, 16)), "the type it synthesises"),
                 (
                     range(Span(0, 0, 0, 43)),
-                    "checked against `+U (Integer -> -F String)`; while checking the body of \
-                     this thunk"
+                    "checked against `Integer => String`; while checking the body of this \
+                     thunk"
                 ),
                 (
                     range(Span(0, 6, 0, 7)),
