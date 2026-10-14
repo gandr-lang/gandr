@@ -1,0 +1,34 @@
+@[ checks ]
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) ==> x;
+  rule P(S(x)) ==> x;
+}
+
+@[ checks ]
+def rec dbl(n : Int) -> -F Int {
+  case n {
+    Z => Z,
+    S(x) => S(S(dbl[<](x))),
+    P(x) => P(P(dbl[<](x)))
+  }
+}
+
+@[ checks ]
+def rec neg(n : Int) -> -F Int {
+  case n {
+    Z => Z,
+    S(x) => P(neg[<](x)),
+    P(x) => S(neg[<](x))
+  }
+}
+
+@[ runs("S(S(S(S(Z))))") ]
+def doubled : +U (-F Int) ;
+def doubled = thunk { dbl(S(S(Z))) } ;
+
+@[ runs("P(P(Z))") ]
+def negated : +U (-F Int) ;
+def negated = thunk { neg(S(S(Z))) } ;

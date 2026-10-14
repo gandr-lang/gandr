@@ -1465,6 +1465,7 @@ mod tests
     use gandr_core_checker::bridge;
     use gandr_core_checker::check_module;
     use gandr_core_term::CertificateEquality;
+    use gandr_core_term::Computation;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
     use gandr_core_term::Value;
@@ -2507,6 +2508,112 @@ def h = 1 ;"#,
                 equal_certificate_syntax(&arena, defined(left), defined(right)),
                 CertificateEquality::Equal,
                 "`{left}` and `{right}` elaborate to one term"
+            );
+        }
+    }
+
+    #[test]
+    fn a_nested_call_checks_to_the_certificate_of_its_bind()
+    {
+        let grammar = grammar();
+        let source = SourceText::from(
+            "data Int : Type {\n\
+             Z : Int;\n\
+             S : (x : Int) --> Int;\n\
+             P : (x : Int) --> Int;\n\
+             rule S(P(x)) ==> x;\n\
+             rule P(S(x)) ==> x;\n\
+             }\n\
+             def rec dbl(n : Int) -> -F Int {\n\
+             case n { Z => Z, S(x) => S(S(dbl[<](x))), P(x) => P(P(dbl[<](x))) }\n\
+             }\n\
+             def rec bound(n : Int) -> -F Int {\n\
+             case n {\n\
+             Z => Z,\n\
+             S(x) => { run d <- bound[<](x) ; S(S(d)) },\n\
+             P(x) => { run d <- bound[<](x) ; P(P(d)) }\n\
+             }\n\
+             }\n",
+        );
+        let mut lowerings = LoweringCount::default();
+        let Lowered::Module { module, mut arena } = lower_source(&grammar, source, &mut lowerings)
+            .expect("the module lowers")
+            .into_lowered()
+        else {
+            panic!("the module is read");
+        };
+        let verdicts = check_module(
+            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &adapt(&module),
+        );
+        let constant = |wanted: &str| {
+            module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"))
+                .constant()
+        };
+        let defined = |wanted: &str| {
+            *verdicts
+                .definitions()
+                .get(&constant(wanted))
+                .unwrap_or_else(|| panic!("`{wanted}` checks: {verdicts:?}"))
+        };
+        assert_eq!(
+            equal_certificate_syntax(&arena, defined("dbl"), defined("bound")),
+            CertificateEquality::Equal,
+            "the nested call and its bind check to one term"
+        );
+        let spelled = constant_names(&module);
+        let names: Vec<Name<'_>> = spelled
+            .iter()
+            .map(|name| Name::from(name.as_str()))
+            .collect();
+        let families = gandr_surface_diagnostics::Families::of(&module);
+        let constructors = families.naming(&names);
+        let restoration = verdicts
+            .nested_elaborations()
+            .get(&constant("dbl"))
+            .map_or_else(Restoration::default, |elaboration| {
+                Restoration::of(elaboration.carried())
+            });
+        // `rec dbl { fn (n) { case n { …, S(x) => arm, … } } }`: the arm at `S`.
+        let arm = match arena.value(defined("dbl")) {
+            | Some(&Value::Thunk(fixpoint)) => match arena.computation(fixpoint) {
+                | Some(&Computation::Fixpoint { body, .. }) => match arena.computation(body) {
+                    | Some(&Computation::Lambda(case)) => match arena.computation(case) {
+                        | Some(&Computation::DataCase { ref branches, .. }) => {
+                            branches.get(1_usize).copied()
+                        },
+                        | _ => None,
+                    },
+                    | _ => None,
+                },
+                | _ => None,
+            },
+            | _ => None,
+        }
+        .expect("`dbl` is a fixpoint over a case with an arm at `S`");
+        let context = [Some(Name::from("dbl")), Some(Name::from("n"))];
+        let plain = CoreSource::new(&arena, &names)
+            .naming(&constructors)
+            .within(&context);
+        for (source, expected) in [
+            (plain.restoring(&restoration), "fn (a) { S(S(dbl(a))) }"),
+            (plain, "fn (a) { run b <- dbl(a) ; S(S(b)) }"),
+        ] {
+            let presentation = present_computation(
+                &source,
+                CoreNode::Computation(arm),
+                PageWidth::from(100_u32),
+                Form::Sugared,
+            )
+            .expect("the arm lays out");
+            assert_eq!(
+                (presentation.to_string(), presentation.fidelity()),
+                (String::from(expected), Fidelity::Faithful),
+                "restored, the bind prints as the nested call written; unrestored, as the bind"
             );
         }
     }
