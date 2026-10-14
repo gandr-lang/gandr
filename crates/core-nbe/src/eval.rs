@@ -1096,6 +1096,38 @@ enum Task
     /// Apply an already-captured fixpoint to the value on the stack: a
     /// spine's stuck fixpoint, re-applied.
     FixpointClosure(CompClosureId),
+    /// Finish reading a held computation through its bind at `bind`, once
+    /// that bind's continuation has run with the call before it: what the
+    /// continuation returned, under the eliminations past the bind, or, when
+    /// it did not return, the computation read from the next position
+    /// ([`read_from`]).
+    ReadThrough
+    {
+        /// The held computation.
+        computation: DomainCompId,
+        /// The position of the bind in the computation's spine.
+        bind: SpinePosition,
+    },
+}
+
+/// The position of an elimination in a neutral's spine, innermost first.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct SpinePosition(usize);
+
+impl SpinePosition
+{
+    /// The spine's innermost position.
+    const INNERMOST: Self = Self(0);
+
+    /// The position just outside this one.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn outward(self) -> Self
+    {
+        Self(self.0.saturating_add(1))
+    }
 }
 
 /// The index of one configuration whose evaluation is under way.
@@ -2877,6 +2909,10 @@ fn run(
             Task::Returned => entry_comps.checked_sub(1_usize) == Some(machine.comps.len())
                 && ((machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
                     || machine.tasks.len() > entry_tasks),
+            Task::ReadThrough { .. } => (machine.comps.len() == entry_comps && machine.tasks.len() > entry_tasks)
+                || (entry_comps.checked_sub(1_usize) == Some(machine.comps.len())
+                    && ((machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
+                        || machine.tasks.len() > entry_tasks)),
             Task::Value { .. } => machine.comps.len() == entry_comps
                 && ((machine.values.len() == entry_values.saturating_add(1_usize) && machine.tasks.len() >= entry_tasks)
                     || (machine.values.len() == entry_values && machine.tasks.len() > entry_tasks)),
@@ -3424,6 +3460,32 @@ fn step(
                 .comps
                 .push(domain.comp_fixpoint(recursive, CompTermFace::Reduced));
             step_apply(core, domain, machine)
+        },
+        | Task::ReadThrough { computation, bind } => {
+            let continued = machine.pop_comp()?;
+            if !matches!(
+                domain.computation(continued),
+                Some(&DomainComp::Return { .. })
+            ) {
+                return read_from(domain, machine, computation, bind.outward());
+            }
+            let DomainComp::Neutral { neutral, .. } = *domain
+                .computation(computation)
+                .ok_or(EvalFault::Domain(DomainFault::Dangling))?
+            else {
+                return Err(EvalFault::MachineInvariant);
+            };
+            let held = domain
+                .neutral(neutral)
+                .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+            let past = held
+                .spine()
+                .get(bind.outward().0 ..)
+                .ok_or(EvalFault::MachineInvariant)?;
+            machine.tasks.push(Task::Returned);
+            let _answer = push_eliminations(machine, past);
+            machine.comps.push(continued);
+            Ok(())
         },
     }
 }
@@ -5711,7 +5773,8 @@ fn push_eliminations(
 
 /// Deliver the value a compound endpoint's computation returns, running a
 /// computation stuck on a manifest definition on through that definition
-/// when the run's stance is [`Endpoints::Run`].
+/// when the run's stance is [`Endpoints::Run`], and reading the rest through
+/// their binds ([`read_from`]).
 ///
 /// # Specification
 /// - requires: nothing; a dangling id is refused.
@@ -5719,18 +5782,18 @@ fn push_eliminations(
 ///   head has a body here — forced already, or lowered in this run's chain —
 ///   queues the head's body, the neutral's spine over it and this delivery
 ///   again, so the endpoint runs on until it returns or sticks on a rigid head;
-///   any other computation, and every computation under [`Endpoints::Hold`],
-///   delivers [`returned_value`] at once.
+///   any other computation, under either stance, is delivered as [`read_from`]
+///   delivers it from its spine's first position.
 /// - provides: the reading of a compound endpoint as what its computation
 ///   returns: `dbl(x)` and `x + x` are one endpoint once `dbl` unfolds. The run
 ///   is strict where a value position is lazy, because an endpoint is compared
 ///   by its returned value, and the driver's fuel bounds it. A held endpoint
 ///   leaves that unfolding to the conversion, which records it.
-/// - fails: as [`returned_value`].
+/// - fails: as [`read_from`].
 /// - panics: none.
 ///
 /// # Errors
-/// An `EvalFault`, as [`returned_value`] raises.
+/// An `EvalFault`, as [`read_from`] raises.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an endpoint applying a definition to a variable runs to
@@ -5745,7 +5808,7 @@ fn push_eliminations(
     captures: [entry_tasks = machine.tasks.len(), entry_values = machine.values.len()],
     ensures: |ret| ret.is_err()
         || (machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
-        || (machine.definitions.endpoints() == Endpoints::Run && machine.tasks.len() > entry_tasks),
+        || machine.tasks.len() > entry_tasks,
 )]
 fn resume_returned(
     domain: &mut DomainArena,
@@ -5782,9 +5845,165 @@ fn resume_returned(
             return Ok(());
         }
     }
-    let value = returned_value(domain, produced)?;
+    read_from(domain, machine, produced, SpinePosition::INNERMOST)
+}
+
+/// Deliver `computation` as an endpoint, read through the first bind at or
+/// past `from` in its spine over a call stuck at a rigid head.
+///
+/// An endpoint's computation is pure, so a bind over a call no unfolding
+/// reaches is its continuation run with the call, held as an endpoint, for
+/// the bound value: `wind(Loop(x))` sticks at `run n <- wind(x); return
+/// S(n)` and reads as `S(wind(x))`. The reading takes the continuation only
+/// when it returns, so an arm that cases on the call stays stuck at the
+/// bind; a call a definition heads waits for the conversion to unfold it as
+/// a recorded step. The kernel mirrors the reading in its replay of an
+/// endpoint, by the same forced run, so it records no decision of its own.
+///
+/// # Specification
+/// - requires: nothing; a dangling id is refused.
+/// - ensures: when [`read_through`] finds a bind at or past `from`, the bind's
+///   continuation is queued over the call before it, beneath
+///   [`Task::ReadThrough`], which delivers what it returns under the
+///   eliminations past the bind or reads on from the next position; with no
+///   such bind, [`returned_value`] of `computation` is delivered at once.
+/// - provides: a held call's reading under the binds of a compound endpoint.
+/// - fails: as [`read_through`] and [`returned_value`].
+/// - panics: none.
+///
+/// # Errors
+/// An `EvalFault`, as [`read_through`] and [`returned_value`] raise.
+///
+/// # Termination
+/// - reason: no loop or recursion here; a failed reading re-enters through
+///   [`Task::ReadThrough`] at a later position of the same spine.
+/// - measure: the positions past `from`, which fall at every re-entry; each
+///   continuation run spends the driver's fuel.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a bind over a fixpoint stuck at a variable reads as its
+///   arm's constructor over the call, and the kernel replays that endpoint
+///   without a decision; a bind whose continuation cases on the call stays
+///   whole, and skipping the reading leaves the first apart.
+/// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation`
+/// - witness: `machine::tests::a_continuation_casing_on_a_stuck_call_stays_whole`
+#[spec(
+    captures: [entry_tasks = machine.tasks.len(), entry_values = machine.values.len()],
+    ensures: |ret| ret.is_err()
+        || (machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
+        || machine.tasks.len() == entry_tasks.saturating_add(2_usize),
+)]
+fn read_from(
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    computation: DomainCompId,
+    from: SpinePosition,
+) -> Result<(), EvalFault>
+{
+    if let Some((bind, continuation, call)) = read_through(domain, computation, from)? {
+        let closure = domain
+            .comp_closure(continuation)
+            .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+        let body = closure.body();
+        let mut extended = closure.environment().clone();
+        extended.extend(Zone::Intuitionistic, call);
+        let env = machine.hold_env(extended);
+        machine.tasks.push(Task::ReadThrough { computation, bind });
+        machine.tasks.push(Task::Body { body, env });
+        return Ok(());
+    }
+    let value = returned_value(domain, computation)?;
     machine.values.push(value);
     Ok(())
+}
+
+/// The first bind at or past `from` in a stuck computation's spine, when the
+/// computation is stuck at a variable or a constant with no body: the bind's
+/// position, its continuation, and the call before it as a held endpoint.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some` exactly when `computation` is neutral, its head — read
+///   through returned heads to the call they wait on — is a variable or a
+///   constant, rigid, and its spine holds a bind at or past `from`; the
+///   position is the first such bind's, and the call is the neutral's head
+///   under its spine before that position, delivered by [`returned_value`].
+/// - provides: the bind [`read_from`] reads through.
+/// - fails: [`DomainFault::Dangling`] when a node does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// [`EvalFault::Domain`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a bind over a fixpoint stuck at a rigid head is found
+///   with the stuck call as its leaf, and a bind whose continuation then sticks
+///   is passed over; finding no bind, or the call with its bind, leaves the
+///   first endpoint apart.
+/// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation`
+/// - witness: `machine::tests::a_continuation_casing_on_a_stuck_call_stays_whole`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|(bind, _, _)| bind >= from)))]
+fn read_through(
+    domain: &mut DomainArena,
+    computation: DomainCompId,
+    from: SpinePosition,
+) -> Result<Option<(SpinePosition, CompClosureId, DomainValueId)>, EvalFault>
+{
+    let DomainComp::Neutral { neutral, .. } = *domain
+        .computation(computation)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?
+    else {
+        return Ok(None);
+    };
+    let held = domain
+        .neutral(neutral)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    let (head, unfolding) = (held.head(), held.unfolding());
+    let Some((bind, continuation)) =
+        held.spine()
+            .iter()
+            .enumerate()
+            .skip(from.0)
+            .find_map(|(position, elimination)| match *elimination {
+                | Elimination::Bind(continuation) => Some((SpinePosition(position), continuation)),
+                | _ => None,
+            })
+    else {
+        return Ok(None);
+    };
+    let prefix = Vec::from(
+        held.spine()
+            .get(.. bind.0)
+            .ok_or(EvalFault::MachineInvariant)?,
+    );
+    let waits = match head {
+        | NeutralHead::Returned(inner) => {
+            let Some(inner) = crate::rules::held_call(domain, inner)
+                .map_err(|_fault| EvalFault::Domain(DomainFault::Dangling))?
+            else {
+                return Ok(None);
+            };
+            let node = domain
+                .neutral(inner)
+                .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+            (node.head(), node.unfolding())
+        },
+        | _ => (head, unfolding),
+    };
+    if !matches!(
+        waits,
+        (
+            NeutralHead::Variable { .. } | NeutralHead::Constant(_),
+            Unfolding::Rigid
+        )
+    ) {
+        return Ok(None);
+    }
+    let call = domain
+        .neutral_node(head, prefix, unfolding)
+        .map_err(EvalFault::Domain)?;
+    let call = domain.comp_neutral(call, CompTermFace::Reduced);
+    Ok(Some((bind, continuation, returned_value(domain, call)?)))
 }
 
 /// The value a computation's weak head returns: a returner's value, or a

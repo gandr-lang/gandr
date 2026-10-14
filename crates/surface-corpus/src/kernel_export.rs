@@ -67,6 +67,13 @@
 //! endpoint the point does not reach; a twin whose circle carries a rule that
 //! grows its word is refused at the circle, naming the rule and its fault.
 //!
+//! `kernel_export::kernel_open_fold_readmission::a_step_case_read_through_a_swapped_fold_is_refused_by_name`
+//! readmits `fixture/model/identity/open-fold.gandr`, whose `unfolded` relates
+//! `wind(Loop(x))` to `S(wind(x))` at a variable: the kernel reads the `Loop`
+//! arm's bind over the stuck `wind(x)` itself. A twin whose fold swaps its two
+//! loop arms still respects the circle's rules and readmits, and is refused at
+//! `unfolded`, naming the endpoint the point no longer reaches.
+//!
 //! The suite derives its expectations from admission and storage semantics
 //! rather than checked-in sizes, identities, class thresholds or corpus
 //! cardinalities. Exact kernel format goldens belong to `gandr-kernel-term`;
@@ -1579,6 +1586,116 @@ mod kernel_presented_readmission
             *refusal.error(),
             KernelError::RuleNotRespected(RuleIndex::from(0_usize)),
             "the kernel names the rule the forged law fails"
+        );
+    }
+}
+
+/// A step case at a variable readmits by the kernel's own reading of the bind
+/// over the stuck call; a twin whose fold swaps its loop arms is refused by
+/// name at the step case it no longer meets.
+mod kernel_open_fold_readmission
+{
+    use alloc::vec;
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::EndpointSide;
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::IdentityError;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::Computation;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_kernel_term::decode;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_step_case_read_through_a_swapped_fold_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/identity/open-fold.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("open-fold lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("open-fold's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("open-fold readmits, `unfolded` by the bind its endpoint reads through");
+        let position = |name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(vec![segment]);
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"))
+        };
+        let wind = position("wind");
+        let unfolded = position("unfolded");
+        let marked = &declarations[wind];
+        let DeclarationContent::Def { declared, body } = *marked.declaration().content()
+        else {
+            panic!("`wind` is a definition");
+        };
+        let Some(&Value::Thunk(fixpoint)) = arena.value(body)
+        else {
+            panic!("`wind` is a thunk");
+        };
+        let Some(&Computation::Fixpoint {
+            body: lambda,
+            evidence,
+        }) = arena.computation(fixpoint)
+        else {
+            panic!("`wind` is a fixpoint");
+        };
+        let Some(&Computation::Lambda(case)) = arena.computation(lambda)
+        else {
+            panic!("`wind` opens with a lambda");
+        };
+        let Some(Computation::DataCase {
+            scrutinee,
+            motive,
+            branches,
+        }) = arena.computation(case).cloned()
+        else {
+            panic!("`wind` cases on its argument");
+        };
+        // The twin's `Loop` arm returns `P(n)` and its `Unloop` arm `S(n)`: it
+        // still respects both cancellations, but `wind(Loop(x))` now reads as
+        // `P(wind(x))`, which `unfolded`'s dialogue does not meet.
+        let swapped = vec![branches[0], branches[2], branches[1]];
+        let case = arena.computation_data_case(scrutinee, motive, swapped);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(lambda, evidence);
+        let body = arena.value_thunk(fixpoint);
+        let twin_declaration = DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, body)
+            .named(marked.declaration().name().clone());
+        let mut twin = declarations.clone();
+        twin[wind] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("the swapped fold reads `wind(Loop(x))` as a predecessor");
+        assert_eq!(usize::from(refusal.position()), unfolded);
+        assert!(
+            matches!(
+                refusal.error(),
+                KernelError::Identity(IdentityError::EndpointsDiffer {
+                    side: EndpointSide::Left,
+                    ..
+                })
+            ),
+            "the kernel names the endpoint the swapped fold no longer reaches: {refusal:?}"
         );
     }
 }

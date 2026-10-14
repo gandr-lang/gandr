@@ -173,6 +173,10 @@ pub enum Head
     /// A held endpoint whose computation is stuck on a defined constant the
     /// goal may unfold: the endpoint's only rule is that unfolding.
     Endpoint(ConstantIndex),
+    /// A held endpoint whose computation is stuck on a call no unfolding
+    /// reaches — a variable, a module form, an opaque declaration — so it
+    /// compares whole, as the kernel compares two α-equal sides.
+    Held,
     /// A hole or a mark, or an endpoint with no unfolding left to the goal:
     /// what it stands for is not decided here, so nothing the goal finds is a
     /// verdict.
@@ -692,11 +696,12 @@ pub fn head(
 /// - ensures: [`Head::Endpoint`] when the neutral [`held_call`] reaches from
 ///   `computation` is headed by a constant whose body is at hand — unforced, or
 ///   forced to a value — and the goal has not frozen it on `side`;
-///   [`Head::Indeterminate`] otherwise.
+///   [`Head::Held`] when that neutral is headed by a variable, a module form,
+///   or a constant with no body; [`Head::Indeterminate`] otherwise.
 /// - provides: the held endpoint's reading: only a [`crate::Endpoints::Hold`]
 ///   run leaves a computation stuck on a definition it could unfold, and the
 ///   goal's one rule there is that unfolding. An endpoint stuck where no
-///   unfolding of this goal reaches decides nothing.
+///   unfolding reaches is the call it stands for, and compares whole.
 /// - fails: [`ConversionFault::Domain`] when a node does not resolve.
 /// - panics: none.
 ///
@@ -706,11 +711,14 @@ pub fn head(
 /// # Adequacy
 /// - hypothesis: L3 — an endpoint held at a definition unfolds by a recorded
 ///   step the kernel replays, also when the definition is held inside another
-///   held endpoint's elimination, while an endpoint stuck on a hole still
-///   declines; reading the first as indeterminate declines the conversion, and
-///   reading the second as an endpoint unfolds what has no body.
+///   held endpoint's elimination; an endpoint held at a fixpoint stuck on a
+///   variable converts with the same call; an endpoint stuck on a hole still
+///   declines. Reading the first or the second as indeterminate declines the
+///   conversion, and reading the third as held compares what has no meaning
+///   yet.
 /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
 /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on`
+/// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation`
 /// - witness: `live::tests::a_comparison_that_meets_a_hole_declines`
 #[spec(ensures: |ret| match held_call(domain, computation) {
     | Err(fault) => ret == Err(fault),
@@ -720,6 +728,8 @@ pub fn head(
         | Some(node) => match (node.head(), node.unfolding()) {
             (NeutralHead::Constant(constant), Unfolding::Unforced(_) | Unfolding::Forced(Glued::Value(_)))
                 if frozen.holds(side, constant) == Membership::Absent => ret == Ok(Head::Endpoint(constant)),
+            (NeutralHead::Constant(_), Unfolding::Rigid) | (NeutralHead::Variable { .. } | NeutralHead::Module(_), _) =>
+                ret == Ok(Head::Held),
             _ => ret == Ok(Head::Indeterminate),
         },
     },
@@ -743,6 +753,8 @@ fn endpoint_head(
             NeutralHead::Constant(constant),
             Unfolding::Unforced(_) | Unfolding::Forced(Glued::Value(_)),
         ) if frozen.holds(side, constant) == Membership::Absent => Head::Endpoint(constant),
+        | (NeutralHead::Constant(_), Unfolding::Rigid)
+        | (NeutralHead::Variable { .. } | NeutralHead::Module(_), _) => Head::Held,
         | _ => Head::Indeterminate,
     })
 }
@@ -1249,9 +1261,15 @@ fn plan_constants(
         },
         | (
             Neutrality::Former
-            | Neutrality::Neutral(_, Head::Rigid | Head::Frozen(_) | Head::Indeterminate),
+            | Neutrality::Neutral(
+                _,
+                Head::Rigid | Head::Frozen(_) | Head::Held | Head::Indeterminate,
+            ),
             Neutrality::Former
-            | Neutrality::Neutral(_, Head::Rigid | Head::Frozen(_) | Head::Indeterminate),
+            | Neutrality::Neutral(
+                _,
+                Head::Rigid | Head::Frozen(_) | Head::Held | Head::Indeterminate,
+            ),
         ) => return Ok(Constants::NoneDefined),
     };
     Ok(Constants::Planned(planned))
@@ -1562,15 +1580,85 @@ const fn determinacy(
             Neutrality::Former
             | Neutrality::Neutral(
                 _,
-                Head::Rigid | Head::Frozen(_) | Head::Defined(_) | Head::Endpoint(_),
+                Head::Rigid | Head::Frozen(_) | Head::Defined(_) | Head::Endpoint(_) | Head::Held,
             ),
             Neutrality::Former
             | Neutrality::Neutral(
                 _,
-                Head::Rigid | Head::Frozen(_) | Head::Defined(_) | Head::Endpoint(_),
+                Head::Rigid | Head::Frozen(_) | Head::Defined(_) | Head::Endpoint(_) | Head::Held,
             ),
         ) => Determinacy::Determinate,
     }
+}
+
+/// The two sides of a goal a held endpoint stands in.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Term
+{
+    /// A value pair.
+    Values(DomainValueId, DomainValueId),
+    /// A computation pair.
+    Comps(DomainCompId, DomainCompId),
+}
+
+/// The plan for a pair with a [`Head::Held`] side: the whole sides compared
+/// by [`crate::conv`]'s walk.
+///
+/// A held endpoint stuck where no unfolding reaches is the call it stands
+/// for: two such endpoints over one call are one endpoint, and the kernel
+/// closes the shared comparison on the α-equal sides the walk found. Sides
+/// the walk does not equate decline, since a held endpoint's spine is a
+/// computation's, which a decomposition would compare against the other
+/// side's term rather than its call.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `None` when neither side is [`Head::Held`]; a shared
+///   [`Settled::Convertible`] when the walk finds the sides identical or
+///   structurally equal; an [`DeclineReason::Indeterminate`] decline otherwise.
+/// - provides: the comparison of a held endpoint against its own call.
+/// - fails: as the walk.
+/// - panics: none.
+///
+/// # Errors
+/// [`ConversionFault`], as the walk raises.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two endpoints over one fixpoint stuck on a variable
+///   convert and the kernel replays the shared comparison; an endpoint and a
+///   different value decline rather than settle apart.
+/// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation`
+/// - witness: `machine::tests::a_continuation_casing_on_a_stuck_call_stays_whole`
+#[spec(ensures: |ret| match ret.as_ref().map(Option::as_ref) {
+    Ok(None) => !matches!(heads, (Neutrality::Neutral(_, Head::Held), _) | (_, Neutrality::Neutral(_, Head::Held))),
+    Ok(Some(plan)) => matches!(*plan, Plan::Shared(Settled::Convertible) | Plan::Decline(DeclineReason::Indeterminate)),
+    Err(_) => true,
+})]
+fn whole(
+    core: &CoreArena,
+    domain: &DomainArena,
+    heads: (Neutrality, Neutrality),
+    term: Term,
+) -> Result<Option<Plan>, ConversionFault>
+{
+    if !matches!(
+        heads,
+        (Neutrality::Neutral(_, Head::Held), _) | (_, Neutrality::Neutral(_, Head::Held))
+    ) {
+        return Ok(None);
+    }
+    let settled = match term {
+        | Term::Values(left, right) => crate::conv::convert_values(core, domain, left, right)?,
+        | Term::Comps(left, right) => crate::conv::convert_computations(core, domain, left, right)?,
+    };
+    Ok(Some(match settled {
+        | crate::conv::Settlement::Identical | crate::conv::Settlement::StructurallyEqual => {
+            Plan::Shared(Settled::Convertible)
+        },
+        | crate::conv::Settlement::GuardedApart
+        | crate::conv::Settlement::StructurallyApart
+        | crate::conv::Settlement::Deferred(_) => Plan::Decline(DeclineReason::Indeterminate),
+    }))
 }
 
 /// The literal a domain literal's core id names.
@@ -1668,6 +1756,14 @@ fn plan_values(
     }
     let constants = plan_constants(domain, (left_head, right_head), Lambda::Neither)?;
     if let Constants::Planned(planned) = constants {
+        return Ok(planned);
+    }
+    if let Some(planned) = whole(
+        core,
+        domain,
+        (left_head, right_head),
+        Term::Values(left, right),
+    )? {
         return Ok(planned);
     }
     let planned = match (one, other) {
@@ -2058,6 +2154,14 @@ fn plan_comps(
     }
     let constants = plan_constants(domain, (left_head, right_head), lambda)?;
     if let Constants::Planned(planned) = constants {
+        return Ok(planned);
+    }
+    if let Some(planned) = whole(
+        core,
+        domain,
+        (left_head, right_head),
+        Term::Comps(left, right),
+    )? {
         return Ok(planned);
     }
     let planned = match (one, other) {
