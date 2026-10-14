@@ -1,3 +1,9 @@
+// A generic program over descriptions. A `sign` block is a value of `Sig`, so
+// an ordinary function reads any presentation by `case`; a function whose arms
+// return type quotes names a type where a type is read (`El` as unquote).
+
+/// A monoid presented as data: the block binds `Monoid : Sig`, its sort and
+/// its two operations held in one value.
 @[ checks ]
 sign Monoid {
   sort M : Type;
@@ -5,6 +11,8 @@ sign Monoid {
   oper one : () --> (z : M);
 }
 
+/// Structural recursion over any presentation's operation chain: one per
+/// `Oper` link, zero at its end.
 @[ checks ]
 def rec operations(chain : Sig) -> -F Integer {
   case chain {
@@ -13,6 +21,8 @@ def rec operations(chain : Sig) -> -F Integer {
   }
 }
 
+/// The number of operations a presentation declares, read off its `Presents`
+/// value by the generic program above.
 @[ checks ]
 def arity(presented : Sig) -> -F Integer {
   case presented {
@@ -21,10 +31,14 @@ def arity(presented : Sig) -> -F Integer {
   }
 }
 
+/// The generic program run on `Monoid`: two operations, `mul` and `one`.
 @[ runs("2") ]
 def counted : +U (-F Integer) ;
 def counted = thunk { become arity(Monoid) } ;
 
+/// A type computed from a presentation: a `case` over `Sig` whose arms return
+/// the quotes `Integer` and `Unit`. The type language gains no `case`; the call
+/// is unquoted where a type is read.
 @[ checks ]
 def counted_at(presented : Sig) -> -F Type {
   case presented {
@@ -33,15 +47,20 @@ def counted_at(presented : Sig) -> -F Type {
   }
 }
 
+/// `counted_at(Monoid)` as a type: the closed call runs to `Integer`, so the
+/// count of `Monoid`'s operations inhabits it.
 @[ runs("2") ]
 def typed : +U (-F counted_at(Monoid)) ;
 def typed = thunk { become arity(Monoid) } ;
 
+/// On a binder the call cannot run: `counted_at(presented)` stays rigid, and
+/// its two occurrences are one type.
 @[ checks ]
 def kept(presented : Sig, n : counted_at(presented)) -> -F counted_at(presented) {
   return n
 }
 
+/// Text is no `Integer`, so it does not inhabit `counted_at(Monoid)`.
 @[ refuses("TypeMismatch") ]
 def text : counted_at(Monoid) ;
 def text = "two" ;
