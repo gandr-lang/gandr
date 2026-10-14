@@ -42,6 +42,15 @@
 //! decision, naming the endpoint and the replay refusal, rather than finding
 //! the unfolding itself.
 //!
+//! `kernel_export::kernel_transport_readmission::a_returned_endpoint_read_as_fibre_evidence_is_refused_by_name`
+//! readmits `fixture/model/identity/transport-path.gandr`, whose `moved_end`
+//! stands a reflexive transport at a path-type motive as an endpoint of a
+//! path between paths, then forges a twin relating a transported unit to
+//! itself at that path type: the kernel reads the returned endpoint by the
+//! type it returns, as the checker does when it refuses `unit_end`, and
+//! refuses the twin as a value-type mismatch naming the path type and the
+//! unit.
+//!
 //! The suite derives its expectations from admission and storage semantics
 //! rather than checked-in sizes, identities, class thresholds or corpus
 //! cardinalities. Exact kernel format goldens belong to `gandr-kernel-term`;
@@ -1091,6 +1100,117 @@ mod kernel_ride_readmission
                 }) if at == TracePosition::from(misread)
             ),
             "the kernel names the endpoint and the misread decision: {:?}",
+            refusal.error()
+        );
+    }
+}
+
+/// The reflexive transport at a path-type motive readmits; a twin relating a
+/// transported unit, the evidence of the fibre of its path type, to itself
+/// at that path type is refused by name at the endpoint's type.
+mod kernel_transport_readmission
+{
+    use alloc::vec;
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_core::ValueTypeHead;
+    use gandr_kernel_term::Computation;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_kernel_term::ValueType;
+    use gandr_kernel_term::decode;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_returned_endpoint_read_as_fibre_evidence_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/identity/transport-path.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("transport-path lowers");
+        };
+        let decoded =
+            decode(exported.artifact.as_image()).expect("transport-path's export decodes");
+        let mut declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("transport-path readmits, `moved_end` at the path type its transport returns");
+
+        let segment =
+            NameSegment::from_text("moved_end".into()).expect("`moved_end` is a name segment");
+        let moved_end = StructuredName::from(vec![segment]);
+        let Some(position) = declarations
+            .iter()
+            .position(|marked| *marked.declaration().name() == moved_end)
+        else {
+            panic!("`moved_end` crossed");
+        };
+        let Some(statement) = declarations.get_mut(position)
+        else {
+            panic!("`moved_end` is a declaration");
+        };
+        let DeclarationContent::Def { declared, .. } = *statement.declaration().content()
+        else {
+            panic!("`moved_end` is a definition");
+        };
+        let Some(&ValueType::Path { domain, left, .. }) = arena.value_type(declared)
+        else {
+            panic!("`moved_end` is declared at a path type");
+        };
+        let Some(&Value::Returned(moved)) = arena.value(left)
+        else {
+            panic!("its left endpoint crosses as a returned endpoint");
+        };
+        let Some(&Computation::PathTransport { path, .. }) = arena.computation(moved)
+        else {
+            panic!("over the transport it erases");
+        };
+        // The same path carries the unit at the constant unit motive, and the
+        // twin relates that returned unit to itself at the path type: the
+        // endpoint returns the fibre's evidence, not a path, which the checker
+        // refuses as `unit_end` and a kernel reading it as fibre evidence
+        // admitted.
+        let unit_type = arena.value_type_unit();
+        let unit = arena.value_unit();
+        let carried = arena.computation_path_transport(unit_type, path, unit);
+        let carried = arena.value_returned(carried);
+        let forged = arena.value_type_path(domain, carried, carried);
+        let reflexive = arena.value_here(carried);
+        let content = DeclarationBuilder::new(&mut arena).def(
+            statement.declaration().levels().clone(),
+            forged,
+            reflexive,
+        );
+        *statement = MarkedDeclaration::new(
+            statement.mark(),
+            content.named(statement.declaration().name().clone()),
+        );
+
+        let refusal = Environment::replay(arena, &declarations)
+            .expect_err("a returned unit does not stand at a path type");
+        assert_eq!(usize::from(refusal.position()), position);
+        assert!(
+            matches!(
+                *refusal.error(),
+                KernelError::ValueTypeMismatch(mismatch)
+                    if mismatch.expected().head() == ValueTypeHead::Path
+                        && mismatch.actual().head() == ValueTypeHead::Product
+            ),
+            "the kernel names the path type expected and the unit found: {:?}",
             refusal.error()
         );
     }

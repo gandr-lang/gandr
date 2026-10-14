@@ -62,6 +62,7 @@ use crate::error::ExpectedComputationShape;
 use crate::error::ExpectedValueShape;
 use crate::error::KernelError;
 use crate::error::NonInferableForm;
+use crate::error::ValueTypeHead;
 use crate::higher_field::Cell;
 use crate::higher_field::Depth;
 use crate::higher_field::ObservationBudget;
@@ -538,6 +539,25 @@ fn native_evidence_checks_against_the_fold_fibre()
         Err(KernelError::ValueTypeMismatch(_))
     ));
 
+    // A returned endpoint inhabits an identity as a neutral does, by the type
+    // its computation returns, as the checker's value bridge reads it: a
+    // returned path checks at its identity type, a returned unit does not
+    // stand for the unit fibre's evidence.
+    let string_type = arena.value_type_base(BaseType::String);
+    let at_text = arena.value_type_path(string_type, text, text);
+    let returns_path = arena.computation_return(diagonal_text);
+    let returned_path = arena.value_returned(returns_path);
+    check_closed_value(&mut arena, returned_path, at_text)
+        .expect("a returned path at its identity type");
+    let returns_unit = arena.computation_return(unit);
+    let returned_unit = arena.value_returned(returns_unit);
+    assert!(matches!(
+        check_closed_value(&mut arena, returned_unit, at_text),
+        Err(KernelError::ValueTypeMismatch(mismatch))
+            if mismatch.expected().head() == ValueTypeHead::Path
+                && mismatch.actual().head() == ValueTypeHead::Product
+    ));
+
     // A type the fold does not cover is refused by name.
     let list = arena.value_type_list(boolean.ty);
     let nil = arena.value_list_nil();
@@ -584,6 +604,50 @@ fn a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair()
         ),
         "the first path must join the first components"
     );
+
+    // A declared pair's identity reads the components of its admitted body,
+    // so the reflexivities of those components relate it to itself; an
+    // axiom's is read through its projections, which no dialogue relates.
+    declared_pair_identity(Admitted::Defined)
+        .expect("a declared pair relates by its body's components");
+    assert!(
+        matches!(
+            declared_pair_identity(Admitted::Assumed),
+            Err(KernelError::Identity(IdentityError::EndpointsDiffer { .. }))
+        ),
+        "an axiom's projections do not unfold"
+    );
+}
+
+/// Admit `c : Σ (b : Bool). Path(Bool, b, b)` — as `#{true, here(true)}`, or
+/// as an axiom — then `Path(Σ…, c, c)` as `#{here(true), here(here(true))}`.
+///
+/// # Specification
+/// trivial.
+fn declared_pair_identity(admitted: Admitted) -> Result<(), KernelError>
+{
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let boolean = boolean(arena);
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let family = arena.value_type_path(boolean.ty, bound, bound);
+    let sigma = arena.value_type_sigma(boolean.ty, family);
+    let here_truth = arena.value_here(boolean.truth);
+    let pair = arena.value_tuple(&[boolean.truth, here_truth]);
+    let declaration = match admitted {
+        | Admitted::Defined => staging.def(LevelSignature::monomorphic(), sigma, pair),
+        | Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), sigma),
+    };
+    let position = environment.add_decl(declaration)?.position();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let named = arena.value_constant(position);
+    let identity = arena.value_type_path(sigma, named, named);
+    let here_here = arena.value_here(here_truth);
+    let paths = arena.value_tuple(&[here_truth, here_here]);
+    let declaration = staging.def(LevelSignature::monomorphic(), identity, paths);
+    environment.add_decl(declaration).map(|_admitted| ())
 }
 
 #[test]

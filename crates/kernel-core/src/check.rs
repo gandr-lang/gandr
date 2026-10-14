@@ -2604,6 +2604,7 @@ where
                         crate::element_identity::sigma_fibre(
                             arena,
                             session.rewrite_parts(),
+                            judgement.entries,
                             (first, second),
                             (left, right),
                         )
