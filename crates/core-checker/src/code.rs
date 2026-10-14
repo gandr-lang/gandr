@@ -50,6 +50,26 @@
 //! conversion the kernel oracle exists to rule out. The choice reverses when
 //! the machine decides codes under quotes, at which point the walk hands the
 //! machine each code pair whole and a comparison carries one certificate.
+//!
+//! # A function to a universe is a function to a code
+//!
+//! `El` is unquote. A dynamic function whose arms return quotes — a `case`
+//! over a presentation's value returning `⌜Integer⌝` in one arm and `⌜Unit⌝`
+//! in another — is a first-order function to a code, and its call where a
+//! type is read is the decode of `returned(c)`, the code the call returns. A
+//! closed returned code steps to that code by running the call; the step is
+//! certified as an endpoint is related, its δ-steps held as recorded
+//! unfoldings, because the kernel replays it by reading the returned code as
+//! its computation and needs every unfolding named in the trace. A call on a
+//! binder is rigid, and two nodes of one call compare as the same syntax.
+//!
+//! The alternative was a large elimination: a `case` standing in the type
+//! language with types for arms, which would make the kernel's types compute
+//! by themselves. The type language has no such former and none is added.
+//! Static operators were the other route, and they inspect no value: their
+//! arguments are codes. The choice reverses when the machine reads an open
+//! run back under rigid binders, at which point a call on a binder steps as
+//! far as its scrutinee allows.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -279,6 +299,9 @@ pub enum Unfolded
     /// The static lambda at this node, met at the head of a static
     /// application: its β-step.
     Abstraction(ValueId),
+    /// The returned code at this node, `returned(c)`: the call `c` run to the
+    /// quote it returns, the unquote of a function to a universe.
+    Returned(ValueId),
 }
 
 /// One step of reduction at a code's head: what it unfolds, the code it fires
@@ -696,8 +719,9 @@ impl CodeDefinitions
     }
 
     /// One step of reduction at `code`'s head: a constant's δ-step, a static
-    /// definition's δβ-step at a saturated instance, or a static lambda's
-    /// β-step at a saturated application, its reduct minted into `core`.
+    /// definition's δβ-step at a saturated instance, a static lambda's
+    /// β-step at a saturated application, or a closed returned code's run to
+    /// the code it returns, its reduct minted into `core`.
     ///
     /// # Specification
     /// - requires: every body this table holds lives in `core`.
@@ -708,19 +732,26 @@ impl CodeDefinitions
     ///   constant whose body is one, unfolding the definition — and at least
     ///   `n` arguments, the innermost body instantiated at the first `n`
     ///   arguments outermost first, under the rest; with `n` zero, a constant's
-    ///   body itself under every argument. [`unfolding::Absent::Rigid`] for
-    ///   every other code, an operator short of its arguments included. A step
-    ///   fires at `code` itself, and names a definition that has a body or a
-    ///   node that is a static lambda.
+    ///   body itself under every argument. For a closed returned code standing
+    ///   alone, `returned(c)` where `c` runs to `return v`, the value `v` read
+    ///   back with every definition unfolded. [`unfolding::Absent::Rigid`] for
+    ///   every other code, an operator short of its arguments, an open returned
+    ///   code and a run that does not return included. A step fires at `code`
+    ///   itself, and names a definition that has a body, a node that is a
+    ///   static lambda, or a node that is a returned code.
     /// - provides: the one step every walk reduces a code by, whose reduct a
     ///   certificate then relates to the code. The kernel's replay re-derives a
     ///   δβ-step by the same saturated substitution, so a lambda chain is
-    ///   consumed whole or not at all, as an operator of as many parameters.
-    /// - fails: [`CheckRefusal::DanglingNode`] for a node `core` does not hold.
+    ///   consumed whole or not at all, as an operator of as many parameters; it
+    ///   re-derives a run by reading the returned code as its computation.
+    /// - fails: [`CheckRefusal::DanglingNode`] for a node `core` does not hold;
+    ///   [`CheckRefusal::Undecided`] at the code when its run faults or runs
+    ///   out of fuel.
     /// - panics: none.
     ///
     /// # Errors
     /// - [`CheckRefusal::DanglingNode`] — a node does not resolve.
+    /// - [`CheckRefusal::Undecided`] — a returned code's run faulted.
     ///
     /// # Termination
     /// - reason: `while let` loops descending a head path and a lambda chain,
@@ -732,13 +763,16 @@ impl CodeDefinitions
     /// - hypothesis: L3 — the arms, separated by a constant unfolding, a
     ///   saturated and an unsaturated instance of a two-parameter operator, a
     ///   saturated and an unsaturated static redex, an instance carrying a
-    ///   further argument, and a rigid head.
+    ///   further argument, a rigid head, and a closed and an open returned
+    ///   code.
     /// - witness: `code::tests::a_static_step_reduces_saturated_instances_and_redexes_only`
+    /// - witness: `code::tests::a_closed_returned_code_runs_to_the_quote_it_returns`
     #[inline]
     #[spec(ensures: |ret| match ret {
         | Ok(Maybe::Present(step)) => step.redex() == code && match step.unfolded() {
             | Unfolded::Definition(constant) => matches!(self.body(constant), Maybe::Present(_)),
             | Unfolded::Abstraction(head) => matches!(core.value(head), Some(Value::StaticLambda(_))),
+            | Unfolded::Returned(at) => at == code && matches!(core.value(at), Some(Value::Returned(_))),
         },
         | Ok(Maybe::Absent(_)) | Err(_) => true,
     })]
@@ -763,6 +797,9 @@ impl CodeDefinitions
         arguments.reverse();
         let (unfolded, mut reduct) = match read(core, head)? {
             | Value::StaticLambda(_) => (Unfolded::Abstraction(head), head),
+            | Value::Returned(_) if arguments.is_empty() => {
+                return self.run_returned(core, code);
+            },
             | Value::Constant(constant) => {
                 let Maybe::Present(body) = self.body(constant)
                 else {
@@ -826,6 +863,66 @@ impl CodeDefinitions
         }))
     }
 
+    /// The run of the returned code `code`, standing alone at a code position,
+    /// to the code its computation returns.
+    ///
+    /// # Specification
+    /// - requires: every body this table holds lives in `core`.
+    /// - ensures: for a closed `returned(c)` whose computation reads back, with
+    ///   every definition unfolded, to `return v`, the step unfolding the
+    ///   returned code at `code` to `v`. [`unfolding::Absent::Rigid`] for any
+    ///   other node, for an open code — its run waits on a binder — and for a
+    ///   run that reads back stuck.
+    /// - provides: the reduct of `El` as unquote: a function to a universe
+    ///   returns a quote, and the type at the code position is the quoted one.
+    /// - fails: [`CheckRefusal::Undecided`] at `code` when evaluation or
+    ///   readback faults or runs out of fuel; [`CheckRefusal::DanglingNode`]
+    ///   for a node `core` does not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed call of a function selecting a quote by
+    ///   `case` runs to that quote, and the same call on a variable is rigid.
+    /// - witness: `code::tests::a_closed_returned_code_runs_to_the_quote_it_returns`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(step)) => step.unfolded() == Unfolded::Returned(code)
+            && step.redex() == code
+            && core.value(step.reduct()).is_some(),
+        | Ok(Maybe::Absent(_)) => true,
+        | Err(refusal) => refusal == CheckRefusal::Undecided { at: code }
+            || matches!(refusal, CheckRefusal::DanglingNode { .. }),
+    })]
+    fn run_returned(
+        &self,
+        core: &mut CoreArena,
+        code: ValueId,
+    ) -> Result<Maybe<Reduction, unfolding::Absent>, CheckRefusal>
+    {
+        let Some(&Value::Returned(computation)) = core.value(code)
+        else {
+            return Ok(Maybe::Absent(unfolding::Absent::Rigid));
+        };
+        let reach = loose_reach(core, CoreNode::Term(TermNode::Value(code)))?;
+        if usize::from(reach) != 0 {
+            return Ok(Maybe::Absent(unfolding::Absent::Rigid));
+        }
+        let claim = core.value_thunk(computation);
+        match self.read_back(core, claim) {
+            | Ok(Readback::Returned { returned, .. }) => Ok(Maybe::Present(Reduction {
+                unfolded: Unfolded::Returned(code),
+                redex: code,
+                reduct: returned,
+            })),
+            | Ok(Readback::Stuck(_) | Readback::Unsuspended) => {
+                Ok(Maybe::Absent(unfolding::Absent::Rigid))
+            },
+            | Err(_undecided) => Err(CheckRefusal::Undecided { at: code }),
+        }
+    }
+
     /// Certify that the step `step` took holds: its redex converts to its
     /// reduct.
     ///
@@ -835,7 +932,10 @@ impl CodeDefinitions
     /// - ensures: the certificate of the machine's verdict on the redex against
     ///   the reduct, each evaluated with the free binders the redex reaches
     ///   read as rigid variables — the reduct reaches no further — the
-    ///   derivation a recording sink kept.
+    ///   derivation a recording sink kept. A returned code's run is related as
+    ///   an endpoint is, its δ-steps held as recorded unfoldings, so the
+    ///   kernel's replay of the code as its computation meets every unfolding
+    ///   it needs in the trace.
     /// - provides: the one route by which a code position reduces, and the
     ///   trace the kernel's replay re-derives.
     /// - fails: [`CheckRefusal::Undecided`] at `redex` when either side does
@@ -861,6 +961,7 @@ impl CodeDefinitions
     /// - witness: `bridge::tests::every_readmission_certificate_replays`
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
     /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
+    /// - witness: `bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
     #[inline]
     #[spec(ensures: |ret| match ret {
         | Ok(ref certificate) => {
@@ -879,6 +980,18 @@ impl CodeDefinitions
     ) -> Result<Certificate, CheckRefusal>
     {
         let undecided = CheckRefusal::Undecided { at: step.redex };
+        if let Unfolded::Returned(_) = step.unfolded {
+            return match self.relate_terms(core, step.redex, step.reduct)? {
+                | Maybe::Present(decisions) => Ok(Certificate {
+                    unfolded: step.unfolded,
+                    redex: step.redex,
+                    reduct: step.reduct,
+                    verdict: MachineVerdict::Convertible,
+                    decisions,
+                }),
+                | Maybe::Absent(_) => Err(undecided),
+            };
+        }
         let definitions =
             Definitions::new(&self.lowered, &self.environment, self.environment.root());
         let mut domain = DomainArena::new();
@@ -2071,6 +2184,7 @@ mod tests
     use gandr_core_term::ValueId;
     use gandr_core_term::ValueType;
     use gandr_core_term::Zone;
+    use gandr_kernel_conversion_trace::ConversionDecision;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
@@ -2235,6 +2349,66 @@ mod tests
                  body are rigid"
             );
         }
+    }
+
+    #[test]
+    fn a_closed_returned_code_runs_to_the_quote_it_returns()
+    {
+        // def pick : U (Integer + Unit -> F Type) =
+        //     thunk λ. case x { _ => return ⌜Integer⌝ ; _ => return ⌜Unit⌝ } ;
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let unit_type = arena.value_type_unit();
+        let integer_code = arena.value_quote(integer);
+        let unit_code = arena.value_quote(unit_type);
+        let to_integer = arena.computation_return(integer_code);
+        let to_unit = arena.computation_return(unit_code);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = arena.computation_case(bound, &[to_integer, to_unit]);
+        let pick = arena.computation_lambda(case);
+        let pick = arena.value_thunk(pick);
+        let mut definitions = CodeDefinitions::new();
+        definitions.define(ConstantIndex::from(0_usize), pick);
+        let call = |arena: &mut CoreArena, argument: ValueId| {
+            let head = arena.value_constant(ConstantIndex::from(0_usize));
+            let forced = arena.computation_force(head);
+            let applied = arena.computation_application(forced, argument);
+            arena.value_returned(applied)
+        };
+        let zero = arena.value_literal(crate::fixture::integer_literal());
+        let unit = arena.value_unit();
+        let first = arena.value_injection(gandr_core_term::Summand::from(0_usize), zero);
+        let second = arena.value_injection(gandr_core_term::Summand::from(1_usize), unit);
+        let to_first = call(&mut arena, first);
+        let to_second = call(&mut arena, second);
+        let open = call(&mut arena, bound);
+        for (code, quoted) in [(to_first, integer), (to_second, unit_type)] {
+            let Maybe::Present(step) = definitions.reduce(&mut arena, code).unwrap()
+            else {
+                panic!("a closed call runs");
+            };
+            assert_eq!(step.unfolded(), Unfolded::Returned(code));
+            assert!(
+                matches!(arena.value(step.reduct()), Some(&Value::Quote(held))
+                    if arena.value_type(held) == arena.value_type(quoted)),
+                "the call runs to the quote its branch returns: {:?}",
+                arena.value(step.reduct())
+            );
+            let certificate = definitions.certify(&arena, step).unwrap();
+            assert!(
+                certificate
+                    .decisions()
+                    .iter()
+                    .any(|decision| matches!(decision, ConversionDecision::Unfold { .. })),
+                "the run's δ-step is a recorded unfolding: {:?}",
+                certificate.decisions()
+            );
+        }
+        assert_eq!(
+            definitions.reduce(&mut arena, open).unwrap(),
+            Maybe::Absent(unfolding::Absent::Rigid),
+            "a call waiting on a binder is rigid"
+        );
     }
 
     #[test]

@@ -112,6 +112,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::Sort;
@@ -120,6 +121,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::effect::RowInclusion;
 use gandr_core_term::effect::capability::RegionOrder;
+use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::hole::Knowledge;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::GroundSort;
@@ -660,9 +662,9 @@ fn endpoints_agree(
 ///   differing at the root and beneath a thunk in either order, universes and
 ///   lifts differing only in level, two rigid decodes of different variables, a
 ///   decode of a defined code against its body beneath a former, static
-///   instances rigid and defined, static lambdas alike and unlike, and a
-///   dangling id; the fast path is pinned against the structural decision by
-///   property.
+///   instances rigid and defined, static lambdas alike and unlike, two rigid
+///   returned codes of one call at distinct ids, and a dangling id; the fast
+///   path is pinned against the structural decision by property.
 /// - witness: `conversion::tests::one_id_converts_without_being_read`
 /// - witness: `conversion::tests::equal_trees_at_distinct_ids_convert`
 /// - witness: `conversion::tests::differing_trees_are_apart_in_either_order`
@@ -671,6 +673,7 @@ fn endpoints_agree(
 /// - witness: `conversion::tests::a_dangling_type_is_refused`
 /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
 /// - witness: `conversion::tests::the_unknown_type_is_consistent_beside_a_differing_former`
+/// - witness: `bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
 #[spec(ensures: |ret| match root {
     | Pairing::Values(left, right) | Pairing::Assignable(left, right) | Pairing::SubValues(left, right) if left == right => ret == Ok(Agreement::Convertible),
     | Pairing::Comps(left, right) | Pairing::SubComps(left, right) if left == right => ret == Ok(Agreement::Convertible),
@@ -1246,6 +1249,12 @@ fn convert(
                                     pending.push(Pairing::Codes(*left_body, *right_body));
                                     true
                                 }
+                            }
+                            else if let Value::Returned(_) = *matched_left_value
+                                && let Value::Returned(_) = *matched_right_value
+                            {
+                                equal_certificate_syntax(context.arena(), left, right)
+                                    == CertificateEquality::Equal
                             }
                             else if let Value::Recorded(ref left_moves) = *matched_left_value
                                 && let Value::Recorded(ref right_moves) = *matched_right_value
