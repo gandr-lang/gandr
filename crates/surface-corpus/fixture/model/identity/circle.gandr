@@ -81,6 +81,19 @@ def rec mirror(c : Circle) -> -F Circle {
 def mirrored : +U (-F Circle) ;
 def mirrored = thunk { become mirror(Loop(Base)) } ;
 
+/// Conversion runs an admitted fold at a closed word. Read by its normal
+/// form, `Loop(Unloop(Base))` is `Base`, whose mirror is `Base`; unfolded
+/// letter by letter, the mirror is `Unloop(Loop(Base))`, which is `Base`
+/// again. The two readings agree because the mirror respects the rules.
+@[ checks ]
+def mirror_cancelled : Path(Circle, mirror(Loop(Unloop(Base))), Base) ;
+def mirror_cancelled = here(Base) ;
+
+/// The mirror of a respelled loop is the inverse of the loop.
+@[ checks ]
+def mirror_respelled : Path(Circle, mirror(Loop(Unloop(Loop(Base)))), Unloop(Base)) ;
+def mirror_respelled = here(Unloop(Base)) ;
+
 /// The circle's shape: the same presentation as a signature models interpret.
 /// `Model` reads a `sign` block, so the shape is spelled apart from `Circle`.
 sign CircleShape {
