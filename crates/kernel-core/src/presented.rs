@@ -195,7 +195,32 @@ pub(crate) fn admit(
     if presentation.rules().is_empty() {
         return Ok(());
     }
-    let table: Vec<Vec<RuleSlot<ValueTypeId>>> = constructors
+    presentation
+        .validate(&slot_table(arena, position, constructors))
+        .map_err(KernelError::RuleNotPresentable)
+}
+
+/// A data declaration's constructor table as a rule side reads it.
+///
+/// # Specification
+/// - requires: `constructors` is the declaration's table, its field types in
+///   `arena`, the declaration standing at `position`.
+/// - ensures: one row per constructor, one slot per field in order:
+///   [`RuleSlot::Own`] where the field's type is the declaration's own family,
+///   [`RuleSlot::Other`] with the field's type id elsewhere.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`admit`].
+/// - witness: `presented::tests::admission_reads_the_own_type_from_the_table`
+#[spec(ensures: |ret| ret.len() == constructors.len())]
+pub(crate) fn slot_table(
+    arena: &TermArena,
+    position: ConstantIndex,
+    constructors: &[Vec<ValueTypeId>],
+) -> Vec<Vec<RuleSlot<ValueTypeId>>>
+{
+    constructors
         .iter()
         .map(|fields| {
             fields
@@ -208,10 +233,7 @@ pub(crate) fn admit(
                 })
                 .collect()
         })
-        .collect();
-    presentation
-        .validate(&table)
-        .map_err(KernelError::RuleNotPresentable)
+        .collect()
 }
 
 /// Where a flattened constructor came from.

@@ -404,6 +404,161 @@ mod native_formers
         }
     }
 
+    /// Admit `declared` as an axiom.
+    ///
+    /// # Specification
+    /// - requires: `declared` forms in the environment.
+    /// - ensures: the returned position names an axiom of that type.
+    /// - panics: if the axiom is refused.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the fold's witness, which names these axioms.
+    /// - witness: `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+    #[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret) == position)]
+    fn assume(
+        environment: &mut Environment,
+        declared: impl FnOnce(&mut gandr_kernel_term::TermArena) -> ValueTypeId,
+    ) -> ConstantIndex
+    {
+        let mut staging = environment.stage();
+        let declared = declared(staging.arena());
+        let axiom = staging.axiom(LevelSignature::monomorphic(), declared);
+        environment
+            .add_decl(axiom)
+            .expect("the axiom admits")
+            .position()
+    }
+
+    #[test]
+    fn a_fold_rests_on_the_law_of_each_rule_it_computes_apart()
+    {
+        use gandr_kernel_term::Presentation;
+        use gandr_kernel_term::PresentedRule;
+        use gandr_kernel_term::RuleNode;
+        let x = RuleNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32));
+        let around = RuleNode::Constructor(ConstructorTag::from(1_usize));
+        let back = RuleNode::Constructor(ConstructorTag::from(2_usize));
+        // The circle: a point, a loop and its inverse, the two cancellations
+        // its rules.
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let circle = staging
+            .data(
+                LevelSignature::monomorphic(),
+                vec![],
+                vec![vec![], vec![own], vec![own]],
+                kind,
+            )
+            .presented(Presentation::new(vec![
+                PresentedRule::new([around, back, x].into(), [x].into()),
+                PresentedRule::new([back, around, x].into(), [x].into()),
+            ]));
+        let circle = environment
+            .add_decl(circle)
+            .expect("the circle admits")
+            .position();
+        // The integers' successor and predecessor, opaque to conversion, and
+        // the two laws a model of the circle owes: `turn(unturn(n)) = n` and
+        // `unturn(turn(n)) = n`, each assumed.
+        let step = |arena: &mut gandr_kernel_term::TermArena| {
+            let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+            let returner = arena.comp_type_returner(integer);
+            let arrow = arena.comp_type_arrow(integer, returner);
+            arena.value_type_thunk(arrow)
+        };
+        let turn = assume(&mut environment, step);
+        let unturn = assume(&mut environment, step);
+        let call = |arena: &mut gandr_kernel_term::TermArena, operation, argument| {
+            let operation = arena.value_constant(operation);
+            let forced = arena.computation_force(operation);
+            let applied = arena.computation_application(forced, argument);
+            arena.value_returned(applied)
+        };
+        let law = |first, second| {
+            move |arena: &mut gandr_kernel_term::TermArena| {
+                let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+                let n = arena.value_variable(DeBruijnIndex::from(0_u32));
+                let inner = call(arena, second, n);
+                let outer = call(arena, first, inner);
+                let path = arena.value_type_path(integer, outer, n);
+                let returner = arena.comp_type_returner(path);
+                let pi = arena.comp_type_pi(integer, returner);
+                arena.value_type_thunk(pi)
+            }
+        };
+        let turn_unturn = assume(&mut environment, law(turn, unturn));
+        let unturn_turn = assume(&mut environment, law(unturn, turn));
+        // `fix f. λy. case y { Base ⇒ return 0; Loop(x) ⇒ r ← f(x); turn(r);
+        // Unloop(x) ⇒ r ← f(x); unturn(r) }`, its runs elaborated into binds
+        // as the bridge delivers them: at `Loop(Unloop(x))` it computes
+        // `turn(unturn(f(x)))`, which meets `f(x)` only by the first law.
+        let wind = |environment: &mut Environment, laws: Vec<ConstantIndex>| {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let datatype = arena.value_type_data(circle, vec![]);
+            let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+            let motive = arena.comp_type_returner(integer);
+            let zero = arena.value_literal(gandr_kernel_term::Literal::Integer(
+                gandr_kernel_term::IntegerLiteral::new(
+                    gandr_kernel_term::Sign::NonNegative,
+                    gandr_kernel_term::Magnitude::zero(),
+                ),
+            ));
+            let base = arena.computation_return(zero);
+            let mut arm = |operation| {
+                let recursive = arena.value_variable(DeBruijnIndex::from(2_u32));
+                let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+                let forced = arena.computation_force(recursive);
+                let folded = arena.computation_application(forced, field);
+                let result = arena.value_variable(DeBruijnIndex::from(0_u32));
+                let operation = arena.value_constant(operation);
+                let operation = arena.computation_force(operation);
+                let applied = arena.computation_application(operation, result);
+                let sequenced = arena.computation_bind(folded, applied);
+                arena.computation_lambda(sequenced)
+            };
+            let looped = arm(turn);
+            let unlooped = arm(unturn);
+            let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let case = arena.computation_data_case(argument, motive, vec![base, looped, unlooped]);
+            let lambda = arena.computation_lambda(case);
+            let fixpoint = arena.computation_fixpoint(
+                lambda,
+                gandr_kernel_term::FixpointEvidence::StructuralDescent,
+            );
+            let body = arena.value_thunk(fixpoint);
+            let arrow = arena.comp_type_arrow(datatype, motive);
+            let declared = arena.value_type_thunk(arrow);
+            let declaration = staging
+                .def(LevelSignature::monomorphic(), declared, body)
+                .lawful(laws);
+            environment.add_decl(declaration)
+        };
+        let first = Err(KernelError::RuleNotRespected(
+            gandr_kernel_term::RuleIndex::from(0_usize),
+        ));
+        assert_eq!(
+            wind(&mut environment, vec![]).map(|_admitted| ()),
+            first,
+            "with no law the fold computes the first rule's sides apart"
+        );
+        assert_eq!(
+            wind(&mut environment, vec![unturn_turn, turn_unturn]).map(|_admitted| ()),
+            first,
+            "the second law does not state the first rule"
+        );
+        let admitted = wind(&mut environment, vec![turn_unturn, unturn_turn])
+            .expect("each rule's law relates the fold's two sides of it");
+        assert_eq!(
+            environment.audit(admitted).axioms(),
+            [turn, unturn, turn_unturn, unturn_turn],
+            "the fold rests on its laws as on the operations it calls"
+        );
+    }
+
     #[test]
     fn empty_nominal_case_eliminates_only_an_empty_declaration()
     {

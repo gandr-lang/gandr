@@ -317,6 +317,9 @@ struct DeclMeta
     /// The left and right endpoint roots and the dialogue of each pair a
     /// relating definition carries; empty for every other declaration.
     related: Vec<(GlobalIndex, GlobalIndex, crate::Dialogue)>,
+    /// The laws a lawful definition's folds rest on; empty for every other
+    /// declaration.
+    laws: Vec<ConstantIndex>,
     /// The rules a presented data declaration carries; empty for every other
     /// declaration.
     rules: Vec<crate::presented::PresentedRule>,
@@ -962,6 +965,7 @@ fn build_declarations(
                 DeclarationBuilder::new(&mut table.arena)
                     .sealed_def(meta.levels.clone(), declared, body, meta.provenance.clone())
                     .relating(related)
+                    .lawful(core::mem::take(&mut meta.laws))
             },
             | DeclKind::AbstractType => {
                 let (root, extent) = meta.sealed.ok_or(DecodeError::Malformed {
@@ -1579,9 +1583,10 @@ impl<'bytes> ByteReader<'bytes>
 /// - ensures: success appends this segment’s entries in wire order and returns
 ///   its mark, kind, name, level interface, family-correct live roots and
 ///   definition provenance. Exactly definitions have a body root, only a
-///   definition under [`tags::KIND_DEF_RELATING`] carries related pairs, each
-///   two value roots and a dialogue, and only a data declaration under
-///   [`tags::KIND_DATA_PRESENTED`] carries rules.
+///   definition under [`tags::KIND_DEF_RELATING`] or [`tags::KIND_DEF_LAWFUL`]
+///   carries related pairs, each two value roots and a dialogue, only a
+///   definition under [`tags::KIND_DEF_LAWFUL`] carries laws, and only a data
+///   declaration under [`tags::KIND_DATA_PRESENTED`] carries rules.
 /// - provides: segment parsing, not semantic validation of producer claims. On
 ///   failure the cursor and previously completed entries may have advanced;
 ///   this operation does not roll back an entire segment.
@@ -1607,6 +1612,7 @@ impl<'bytes> ByteReader<'bytes>
 /// - witness: `decode::tests::declaration_assembly_preserves_claims_and_consumes_names`
 /// - witness: `decode::tests::counted_records_validate_content_and_consumption`
 /// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
+/// - witness: `encode::tests::a_lawful_definition_closes_its_segment_with_its_laws`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|meta|
     meta.root_declared < table.next_index()
         && table.families.get(meta.root_declared.offset().0) == Some(&Family::ValueType)
@@ -1647,6 +1653,7 @@ fn decode_declaration(
     let mut constructors = Vec::new();
     let mut sealed = None;
     let mut related = Vec::new();
+    let mut laws = Vec::new();
     let mut rules = Vec::new();
     let root_body = match kind {
         | DeclKind::Data => {
@@ -1679,16 +1686,23 @@ fn decode_declaration(
         | DeclKind::Def => {
             let body = decode_root(reader, table, Family::Value)?;
             provenance = decode_definition_slots(reader)?;
-            // A relating definition closes with its pairs. A count of none
-            // decodes, and the canonical re-encoding, which writes such a
-            // definition under the plain kind, refuses it.
-            if kind_tag == tags::KIND_DEF_RELATING {
+            // A relating definition closes with its pairs, and a lawful one
+            // with its pairs and then its laws. A count of none decodes, and
+            // the canonical re-encoding, which writes such a definition under
+            // a plainer kind, refuses it.
+            if kind_tag == tags::KIND_DEF_RELATING || kind_tag == tags::KIND_DEF_LAWFUL {
                 let count = usize::from(reader.read_usize()?);
                 for _ in 0 .. count {
                     let left = decode_root(reader, table, Family::Value)?;
                     let right = decode_root(reader, table, Family::Value)?;
                     let dialogue = decode_dialogue(reader)?;
                     related.push((left, right, dialogue));
+                }
+            }
+            if kind_tag == tags::KIND_DEF_LAWFUL {
+                let count = usize::from(reader.read_usize()?);
+                for _ in 0 .. count {
+                    laws.push(ConstantIndex::from(usize::from(reader.read_usize()?)));
                 }
             }
             Some(body)
@@ -1717,6 +1731,7 @@ fn decode_declaration(
         constructors,
         provenance,
         related,
+        laws,
         rules,
     })
 }
@@ -3069,14 +3084,14 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 | 7 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 => ret.as_ref() == Ok(&DeclKind::Data), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 => ret.as_ref() == Ok(&DeclKind::Data), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 {
     match kind {
         | tags::KIND_DATA | tags::KIND_DATA_PRESENTED => Ok(DeclKind::Data),
-        | tags::KIND_DEF | tags::KIND_DEF_RELATING => Ok(DeclKind::Def),
+        | tags::KIND_DEF | tags::KIND_DEF_RELATING | tags::KIND_DEF_LAWFUL => Ok(DeclKind::Def),
         | tags::KIND_AXIOM => Ok(DeclKind::Axiom),
         // The abstract-type kind is deliberately live here: it was reserved with
         // the other three and sealing made it real, so it is decoded rather than
@@ -4105,7 +4120,7 @@ mod tests
             assert_eq!(super::decode_sign(&mut reader), sign);
             assert_eq!(reader.position.0, 1);
             let kind = match byte {
-                | 0 | 7 => Ok(super::DeclKind::Def),
+                | 0 | 7 | 9 => Ok(super::DeclKind::Def),
                 | 1 => Ok(super::DeclKind::Axiom),
                 | 2 => Ok(super::DeclKind::AbstractType),
                 | 3 => Err(DecodeError::ReservedDeclarationKind {
@@ -4501,6 +4516,7 @@ mod tests
                     sealed: None,
                     provenance: vec![],
                     related: vec![],
+                    laws: vec![],
                     rules: vec![],
                 })
                 .collect();
@@ -4588,6 +4604,7 @@ mod tests
                 super::GlobalIndex::from(5_u32),
                 vec![],
             )],
+            laws: vec![],
             rules: vec![],
         };
         let metrics = super::budget_report(&table, &[meta]);
@@ -5393,6 +5410,7 @@ mod tests
                     super::GlobalIndex::from(5_u32),
                     vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
                 )],
+                laws: vec![],
                 rules: vec![],
             },
             super::DeclMeta {
@@ -5407,6 +5425,7 @@ mod tests
                 sealed: None,
                 provenance: vec![],
                 related: vec![],
+                laws: vec![],
                 rules: vec![],
             },
             super::DeclMeta {
@@ -5424,6 +5443,7 @@ mod tests
                 )),
                 provenance: vec![],
                 related: vec![],
+                laws: vec![],
                 rules: vec![],
             },
         ];

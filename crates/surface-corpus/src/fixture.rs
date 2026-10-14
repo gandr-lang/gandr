@@ -163,8 +163,9 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
 /// - requires: `module` is a lowered fixture module.
 /// - ensures: only non-refused declarations are returned, in admission order,
 ///   preserving each constant, origin, declared type and body or its absence
-///   reason, a data declaration's native signature, shared with `module`, and a
-///   sealed abstract type's kind, representation, extent and site.
+///   reason, the laws its `respects` attribute names, a data declaration's
+///   native signature, shared with `module`, and a sealed abstract type's kind,
+///   representation, extent and site.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -207,6 +208,7 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
                 };
                 declared.constant() == lowered.constant()
                     && usize::from(declared.origin()) == usize::from(lowered.origin())
+                    && declared.laws() == module.laws(lowered)
                     && match lowered.outcome() {
                         DeclarationOutcome::Completed { declared_type, body: value } => {
                             *signature == Maybe::Present(declared_type)
@@ -264,12 +266,10 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
                 | DeclarationOutcome::Refused(_) => return None,
             };
             let origin = OriginToken::from(usize::from(lowered.origin()));
-            Some(Declaration::new(
-                lowered.constant(),
-                declared,
-                defined,
-                origin,
-            ))
+            Some(
+                Declaration::new(lowered.constant(), declared, defined, origin)
+                    .lawful(module.laws(lowered).to_vec()),
+            )
         })
         .collect()
 }

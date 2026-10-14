@@ -3,7 +3,8 @@
 // as rules; its shape is a signature. The integers are presented the same
 // way, so they model the shape with laws that are conversion: the winding
 // number folds the circle into them, and spinning folds them back. A model
-// over the native integers stands beside it with its laws owed.
+// over the native integers stands beside it with its laws owed, and the
+// winding number into it is a fold that rests on those laws.
 
 /// The circle as a presented type: its rules rewrite constructor terms, so a
 /// word normalizes to the loops it winds.
@@ -171,8 +172,8 @@ module Winding : Model(CircleShape) {
 }
 
 /// The same shape modelled over the native integers. The laws hold by
-/// arithmetic, which conversion leaves to the runtime, so each is owed until
-/// `respects` lands.
+/// arithmetic, which conversion leaves to the runtime, so each is owed, and
+/// a fold into this model rests on them.
 module NativeWinding : Model(CircleShape) {
   type Pt = Integer;
 
@@ -228,17 +229,32 @@ def wound_twice = here(S(S(Z))) ;
 def wound_never : Path(Int, wind(Loop(Unloop(Base))), Z) ;
 def wound_never = here(Z) ;
 
-/// The winding number into the native integers, refused: at `Loop(Unloop(x))`
-/// it computes `(wind(x) - 1) + 1`, which is not `wind(x)` by conversion on a
-/// variable, so it is not shown to respect `Loop(Unloop(x)) ==> x`.
-@[ refuses("RuleNotRespected") ]
+/// The winding number into the native integers, a fold that rests on the
+/// native model's laws. At `Loop(Unloop(x))` it computes
+/// `turn(unturn(native_wind(x)))`, which conversion does not reduce to
+/// `native_wind(x)` on a variable; the law `turnUnturn` states exactly that
+/// path, so `respects` names it for the first rule and `unturnTurn` for the
+/// second. The loop arms call the model's operations rather than spelling
+/// `n + 1`, so each side the rule relates is the law's own endpoint. The fold
+/// checks and owes what its two laws owe.
+@[ respects((NativeWinding.turnUnturn, NativeWinding.unturnTurn)), owes(2) ]
 def rec native_wind(c : Circle) -> -F Integer {
   case c {
     Base => return 0,
-    Loop(x) => { run n <- native_wind[<](x); return n + 1 },
-    Unloop(x) => { run n <- native_wind[<](x); return n - 1 }
+    Loop(x) => become NativeWinding.turn(native_wind[<](x)),
+    Unloop(x) => become NativeWinding.unturn(native_wind[<](x))
   }
 }
+
+/// Two loops wind twice into the native integers.
+@[ runs("2") ]
+def native_twice : +U (-F Integer) ;
+def native_twice = thunk { become native_wind(Loop(Loop(Base))) } ;
+
+/// A cancelled word winds as its normal form does: not at all.
+@[ runs("0") ]
+def native_unwound : +U (-F Integer) ;
+def native_unwound = thunk { become native_wind(Loop(Unloop(Base))) } ;
 
 /// Spinning, the fold out of the presented integers into the circle: a
 /// successor is a loop and a predecessor an inverse. It recurses structurally

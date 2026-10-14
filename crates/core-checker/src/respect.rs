@@ -19,40 +19,67 @@
 //! normal forms, which is what the kernel re-derives on readmission with no
 //! trace to replay.
 //!
-//! A case that respects every rule is admitted; one that does not is refused
-//! `RuleNotRespected`, naming the case, the rule's position and its two sides
-//! as built. Witness:
-//! `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`.
+//! A fold into a model meets a rule only up to the model's law: the winding
+//! number computes `turn(unturn(wind(x)))` against `wind(x)`. Such a fold
+//! names one law per rule, in rule order ([`crate::Declaration::laws`],
+//! written `respects`), and where the δ-free test leaves rule `i`'s sides
+//! apart, law `i` is instantiated at the fold of the rule's variables and its
+//! endpoints must convert with the two sides ([`lawful`]). The instance is
+//! fixed by the rule, so nothing is searched, and the fold rests on the laws
+//! it names: the kernel's audit names each owed one as an axiom.
+//!
+//! A case that respects every rule, by conversion or by its law, is admitted;
+//! one that does not is refused `RuleNotRespected`, naming the case, the
+//! rule's position and its two sides as built. Witnesses:
+//! `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+//! and
+//! `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`.
 //!
 //! **Choice.** The fold form, `F(l) ≡ F(r)` under the arms, is the
 //! obligation the rule's quotient puts on any map out of the type, and over a
-//! free type it is empty. **Alternatives.** Refusing every case over a
-//! presented type, which leaves the type without an eliminator; an
-//! eliminator per rule taking a path for each, which moves the obligation to
-//! every caller. **Reversal.** A respect that holds only up to a path, as
-//! `(n - 1) + 1` and `n` over the integers, takes that path as an owed
-//! obligation instead of a conversion.
+//! free type it is empty; where it holds only up to a path, the path is a law
+//! the definition names, a declaration of its own that the ledger counts.
+//! **Alternatives.** Refusing every case over a presented type, which leaves
+//! the type without an eliminator; an eliminator per rule taking a path for
+//! each, which moves the obligation to every caller; a goal minted per rule
+//! beside the fold, which repeats the model's laws for every fold out of it.
+//! **Reversal.** Arms generated from a model's signature carry the laws with
+//! the model, and the attribute retires.
 
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::Binders;
+use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::instantiate_comp_type;
 use gandr_core_term::shift_computation_under_traced;
+use gandr_core_term::shift_value;
 use gandr_core_term::shift_value_type;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldCount;
+use gandr_kernel_term::PresentedRule;
 use gandr_kernel_term::RuleIndex;
 use gandr_kernel_term::RuleNode;
+use gandr_kernel_term::RuleSlot;
+use gandr_kernel_term::RuleVariable;
+use gandr_kernel_term::VariableCount;
 use gandr_kernel_term::build_side;
 use quenchant_shape::shape::Maybe;
 
 use crate::CheckRefusal;
 use crate::CheckingContext;
+use crate::conversion::Agreement;
 
 quenchant_shape::reason_enum! {
     /// Why a case carries no obligation against its type's rules.
@@ -94,6 +121,8 @@ pub enum Reading
         fixpoint: ComputationId,
         /// The data application it recurses over.
         domain: ValueTypeId,
+        /// The fixpoint's type, whose codomain a law's endpoints stand at.
+        arrow: CompTypeId,
     },
     /// Any other case: the case itself, its scrutinee of `datatype`, both
     /// standing where the case stands.
@@ -105,7 +134,8 @@ pub enum Reading
 }
 
 /// Decide that the case `at` respects every rule of `signature`, read as
-/// `reading` says.
+/// `reading` says, resting a fold on the laws its declaration names where
+/// conversion does not decide.
 ///
 /// # Specification
 /// - requires: `signature` presents the scrutinee's type at `reading`'s data
@@ -113,11 +143,13 @@ pub enum Reading
 /// - ensures: `Ok(())` exactly when, for every rule `l ==> r` in written order,
 ///   `F(l)` converts with `F(r)` under
 ///   [`crate::code::CodeDefinitions::convert_rigidly`], `l` and `r` built over
-///   one fresh variable per pattern variable and `F` read as `reading` says.
+///   one fresh variable per pattern variable and `F` read as `reading` says;
+///   or, at a fold, the law at the rule's position among the laws the
+///   declaration under judgement names relates them, as [`lawful`] decides.
 /// - fails: [`CheckRefusal::RuleNotRespected`] at `at` naming the first rule
-///   whose sides do not convert, with the two sides as built;
-///   [`CheckRefusal::MachineInvariant`] for a rule side that does not build or
-///   a case node the arena does not hold.
+///   whose sides neither convert nor are related by a law, with the two sides
+///   as built; [`CheckRefusal::MachineInvariant`] for a rule side that does not
+///   build or a case node the arena does not hold.
 /// - panics: none.
 ///
 /// # Errors
@@ -132,8 +164,11 @@ pub enum Reading
 /// - hypothesis: L3 — over the circle, a fixpoint recursing through both
 ///   inverse letters is admitted, a case reading the letter as written is
 ///   refused at the first rule, and the same refusal names the rule's two
-///   sides; the kernel re-derives both verdicts.
+///   sides; a fold computing the integers is admitted on its two cancellation
+///   laws and refused without them or with a law stating another path; the
+///   kernel re-derives every verdict.
 /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+/// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::RuleNotRespected { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 pub fn respected(
     context: &mut CheckingContext<'_>,
@@ -148,7 +183,9 @@ pub fn respected(
         .map(|fields| FieldCount::from(fields.len()))
         .collect();
     let (head, datatype) = match reading {
-        | Reading::Fold { fixpoint, domain } => (fixpoint, domain),
+        | Reading::Fold {
+            fixpoint, domain, ..
+        } => (fixpoint, domain),
         | Reading::Case { datatype } => (at, datatype),
     };
     for (index, rule) in signature.presentation().rules().iter().enumerate() {
@@ -160,13 +197,10 @@ pub fn respected(
             shift_computation_under_traced(arena, head, Binders::NONE, amount, &mut Vec::new());
         let mut side = |nodes: &[RuleNode]| {
             build_side(nodes, &arities, |node, fields| match node {
-                | RuleNode::Variable(variable) => {
-                    let index = bound
-                        .checked_sub(u32::from(variable))
-                        .and_then(|past| past.checked_sub(1_u32))
-                        .unwrap_or_default();
-                    arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
-                },
+                | RuleNode::Variable(variable) => arena.value_variable(
+                    Zone::Intuitionistic,
+                    pattern_binder(rule.variables(), variable),
+                ),
                 | RuleNode::Constructor(tag) => arena.value_constructor(datatype, tag, fields),
             })
             .map_err(|_fault| CheckRefusal::MachineInvariant)
@@ -194,10 +228,26 @@ pub fn respected(
                 )
             },
         };
-        if let Maybe::Absent(_) = context
+        if context
             .definitions()
             .convert_rigidly(context.arena(), obligation)
+            == Maybe::Present(())
         {
+            continue;
+        }
+        let law = context.admitted_laws().get(index).copied();
+        let related = match (reading, law) {
+            | (Reading::Fold { arrow, .. }, Some(law)) => {
+                let obliged = Obliged {
+                    sides: obligation,
+                    head,
+                    datatype,
+                };
+                lawful(context, (obliged, arrow), (rule, signature), law)?
+            },
+            | (Reading::Fold { .. } | Reading::Case { .. }, _) => Related::Apart,
+        };
+        if related == Related::Apart {
             return Err(CheckRefusal::RuleNotRespected {
                 at,
                 rule: RuleIndex::from(index),
@@ -207,4 +257,370 @@ pub fn respected(
         }
     }
     Ok(())
+}
+
+/// One rule's obligation at a fold, built beneath one fresh binder per
+/// pattern variable.
+#[derive(Clone, Copy, Debug)]
+struct Obliged
+{
+    /// `F(l)` and `F(r)`.
+    sides: (ComputationId, ComputationId),
+    /// The fixpoint, shifted past the pattern's binders.
+    head: ComputationId,
+    /// The scrutinee's data application, shifted past the pattern's binders.
+    datatype: ValueTypeId,
+}
+
+/// Whether a law relates a fold's two sides of its rule.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Related
+{
+    /// The law's instance relates them.
+    Related,
+    /// It does not: its statement is of another shape, or its endpoints are
+    /// not the two sides.
+    Apart,
+}
+
+/// The binder pattern variable `variable` of `bound` stands at: the first
+/// variable outermost.
+///
+/// # Specification
+/// - requires: `variable < bound`.
+/// - ensures: `bound - variable - 1`; zero when the requirement fails.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`respected`]: a rule over one variable reads it at
+///   the innermost binder.
+/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+#[spec(ensures: |ret| u32::from(ret) == u32::from(bound).checked_sub(u32::from(variable)).and_then(|past| past.checked_sub(1_u32)).unwrap_or_default())]
+fn pattern_binder(
+    bound: VariableCount,
+    variable: RuleVariable,
+) -> DeBruijnIndex
+{
+    DeBruijnIndex::from(
+        u32::from(bound)
+            .checked_sub(u32::from(variable))
+            .and_then(|past| past.checked_sub(1_u32))
+            .unwrap_or_default(),
+    )
+}
+
+/// Decide that `law` relates the two sides a fold computes for `rule`.
+///
+/// The fold's sides `F(l)` and `F(r)` stand under one binder per pattern
+/// variable. The law states, for every assignment of its parameters, a path
+/// in the fold's carrier; it is instantiated at the fold's reading of each
+/// variable — `F(x)` returned where the variable stands at the folded type
+/// itself, the variable where it stands at another field — and its two
+/// endpoints must then convert with the two sides, δ-free as the kernel
+/// re-derives them.
+///
+/// An endpoint is a value, a call among it written as the value its run
+/// returns. The fold's arms are judged twice when they hold a run written
+/// where a value is read: first with each run in place, then with every run
+/// elaborated into a bind ahead of its arm. An endpoint is read to match:
+/// its own run with the runs in its arguments in place, and else
+/// [`sequenced`], the runs bound ahead as elaboration binds them. The second
+/// run's verdict is the one kept, and the kernel reads the sequenced endpoint
+/// alone, since it sees only elaborated arms.
+///
+/// # Specification
+/// - requires: `obliged` is `rule`'s obligation at a fold whose type is
+///   `arrow`, built beneath `rule`'s pattern binders over a data application of
+///   `signature`.
+/// - ensures: [`Related::Related`] exactly when `arrow` is `A → F C`, the law's
+///   declared type is `Path(C', a, b)` for a rule over no variable or `U (Π (x₁
+///   : A₁) … (xₙ : Aₙ). F Path(C', a, b))` with one parameter per variable,
+///   each `Aᵢ` equivalent to the classifier of the `i`th variable's reading,
+///   `C'` equivalent to `C`, and at the instance `a` converts with `F(l)` and
+///   `b` with `F(r)`, each endpoint read in place or sequenced;
+///   [`Related::Apart`] otherwise, a conversion that faults included.
+/// - fails: [`CheckRefusal::MachineInvariant`] when the rule does not read
+///   against the signature's constructor table.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `for` loop over the rule's finite variables and the two
+///   endpoints, not recursion; each conversion runs under the machine's fuel.
+/// - measure: the variables, then the endpoints, left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's fold into the integers is related by the two
+///   cancellation laws and refused when a law states another path.
+/// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
+fn lawful(
+    context: &mut CheckingContext<'_>,
+    (obliged, arrow): (Obliged, CompTypeId),
+    (rule, signature): (&PresentedRule, &DataSignature),
+    law: ConstantIndex,
+) -> Result<Related, CheckRefusal>
+{
+    let arena = context.arena();
+    let Some(&CompType::Arrow { codomain, .. }) = arena.comp_type(arrow)
+    else {
+        return Ok(Related::Apart);
+    };
+    let Some(&CompType::Returner {
+        result: carrier, ..
+    }) = arena.comp_type(codomain)
+    else {
+        return Ok(Related::Apart);
+    };
+    let Some(&ValueType::Data { declaration, .. }) = arena.value_type(obliged.datatype)
+    else {
+        return Err(CheckRefusal::MachineInvariant);
+    };
+    let Maybe::Present(declared) = context.signature(law)
+    else {
+        return Ok(Related::Apart);
+    };
+    let declared = declared.id();
+    let slots = rule
+        .slots(&crate::former::slot_table(arena, declaration, signature))
+        .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+    let bound = u32::from(rule.variables());
+    let carrier = shift_value_type(context.arena_mut(), carrier, Binders::from(bound));
+    let parameters = gandr_core_term::BinderDepth::from(signature.parameters().len());
+    // A law over no variable may state its path bare; any other states it
+    // behind one parameter per variable.
+    let statement = match context.arena().value_type(declared) {
+        | Some(&ValueType::Path { .. }) if bound == 0 => declared,
+        | Some(&ValueType::Thunk(stated)) => {
+            let mut at = stated;
+            for (variable, slot) in (0_u32 ..).map(RuleVariable::from).zip(slots) {
+                let arena = context.arena_mut();
+                let reached = arena.value_variable(
+                    Zone::Intuitionistic,
+                    pattern_binder(rule.variables(), variable),
+                );
+                let (instance, classifier) = match slot {
+                    | RuleSlot::Own => {
+                        let folded = arena.computation_application(obliged.head, reached);
+                        (arena.value_returned(folded), carrier)
+                    },
+                    | RuleSlot::Other(field) => (
+                        reached,
+                        crate::former::instantiate(context, obliged.datatype, field, parameters)?,
+                    ),
+                };
+                let arena = context.arena_mut();
+                let (domain, rest) = match arena.comp_type(at) {
+                    | Some(&CompType::Arrow { domain, codomain }) => (domain, codomain),
+                    | Some(&CompType::Pi { domain, codomain }) => {
+                        (domain, instantiate_comp_type(arena, codomain, instance))
+                    },
+                    | _ => return Ok(Related::Apart),
+                };
+                if !matches!(
+                    crate::conversion::equivalent(context, classifier, domain),
+                    Ok(Agreement::Convertible)
+                ) {
+                    return Ok(Related::Apart);
+                }
+                at = rest;
+            }
+            let Some(&CompType::Returner { result, .. }) = context.arena().comp_type(at)
+            else {
+                return Ok(Related::Apart);
+            };
+            result
+        },
+        | _ => return Ok(Related::Apart),
+    };
+    let Some(&ValueType::Path {
+        carrier: stated,
+        left,
+        right,
+    }) = context.arena().value_type(statement)
+    else {
+        return Ok(Related::Apart);
+    };
+    if !matches!(
+        crate::conversion::equivalent(context, carrier, stated),
+        Ok(Agreement::Convertible)
+    ) {
+        return Ok(Related::Apart);
+    }
+    let (from, to) = obliged.sides;
+    for (side, endpoint) in [(from, left), (to, right)] {
+        let in_place = match context.arena().value(endpoint) {
+            | Some(&Value::Returned(run)) => run,
+            | _ => context.arena_mut().computation_return(endpoint),
+        };
+        if context
+            .definitions()
+            .convert_rigidly(context.arena(), (side, in_place))
+            == Maybe::Present(())
+        {
+            continue;
+        }
+        let stated = sequenced(context.arena_mut(), endpoint);
+        if let Maybe::Absent(_) = context
+            .definitions()
+            .convert_rigidly(context.arena(), (side, stated))
+        {
+            return Ok(Related::Apart);
+        }
+    }
+    Ok(Related::Related)
+}
+
+/// One application spine of a law's endpoint, read argument by argument.
+#[derive(Debug)]
+struct Spine
+{
+    /// The computation the arguments are applied to.
+    head: ComputationId,
+    /// The arguments, the first applied first.
+    arguments: Vec<ValueId>,
+    /// What each argument read so far stands as, in the same order.
+    read: Vec<Argument>,
+}
+
+/// What one argument of a spine stands as once read.
+#[derive(Clone, Copy, Debug)]
+enum Argument
+{
+    /// A value the spine keeps, scoped where the endpoint stands.
+    Kept(ValueId),
+    /// A run bound ahead of the spine, by its position among the binds.
+    Bound(usize),
+}
+
+/// The spine of `computation`: its head and its arguments, none read yet.
+///
+/// # Specification
+/// - requires: `computation` is live in `arena`.
+/// - ensures: `computation` is the head applied to the arguments in order, and
+///   the head is no application.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: a `while` loop down the application's head, which is finite.
+/// - measure: the applications left above the head.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`sequenced`].
+/// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+#[spec(ensures: |ref ret| ret.read.is_empty()
+    && !matches!(arena.computation(ret.head), Some(&Computation::Application(..))))]
+fn spine_of(
+    arena: &CoreArena,
+    computation: ComputationId,
+) -> Spine
+{
+    let mut head = computation;
+    let mut arguments = Vec::new();
+    while let Some(&Computation::Application(function, argument)) = arena.computation(head) {
+        arguments.push(argument);
+        head = function;
+    }
+    arguments.reverse();
+    Spine {
+        head,
+        arguments,
+        read: Vec::new(),
+    }
+}
+
+/// The computation that returns what `endpoint` denotes, its runs sequenced.
+///
+/// A law states its endpoints as values, and a call written where a value is
+/// read is the value its computation returns, `Returned(M)`. The sides a fold
+/// computes are computations whose runs elaboration already sequenced into
+/// binds, the innermost first; the endpoint is read the same way, so the two
+/// meet under δ-free conversion. `Returned(M a₁ … aₙ)` is `M a₁ … aₙ` with each
+/// argument that is itself `Returned(N …)` run first and bound, innermost
+/// first, and every kept argument carried under the binds before it; any
+/// other endpoint is returned as written. No conversion rule is added: the
+/// law's statement is read as the fold's arms were elaborated.
+///
+/// # Specification
+/// - requires: `endpoint` is live in `arena`.
+/// - ensures: `return endpoint` when `endpoint` is no `Returned`; otherwise one
+///   bind per run among its spine's arguments, the first bound outermost, over
+///   the endpoint's own spine applied to its arguments read.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: a worklist over the endpoint's finite spines, each pushed once for
+///   the argument that holds it and built once its arguments are read; not
+///   recursion.
+/// - measure: the spines unbuilt, then their arguments unread.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's cancellation law, whose endpoint calls
+///   `turn` on the run of `unturn` on the fold's run, meets the fold's side,
+///   and a crossed law does not.
+/// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+#[spec(ensures: |ret| arena.computation(ret).is_some())]
+fn sequenced(
+    arena: &mut CoreArena,
+    endpoint: ValueId,
+) -> ComputationId
+{
+    let Some(&Value::Returned(top)) = arena.value(endpoint)
+    else {
+        return arena.computation_return(endpoint);
+    };
+    let mut bound: Vec<ComputationId> = Vec::new();
+    let mut spines = Vec::from([spine_of(arena, top)]);
+    let mut body = top;
+    while let Some(mut spine) = spines.pop() {
+        if let Some(&argument) = spine.arguments.get(spine.read.len()) {
+            if let Some(&Value::Returned(run)) = arena.value(argument) {
+                let inner = spine_of(arena, run);
+                spines.push(spine);
+                spines.push(inner);
+            }
+            else {
+                spine.read.push(Argument::Kept(argument));
+                spines.push(spine);
+            }
+            continue;
+        }
+        let depth = bound.len();
+        let amount = Binders::from(u32::try_from(depth).unwrap_or(u32::MAX));
+        let mut built = shift_computation_under_traced(
+            arena,
+            spine.head,
+            Binders::NONE,
+            amount,
+            &mut Vec::new(),
+        );
+        for &argument in &spine.read {
+            let value = match argument {
+                | Argument::Kept(kept) => shift_value(arena, kept, amount),
+                | Argument::Bound(position) => {
+                    let past = depth.saturating_sub(position).saturating_sub(1);
+                    arena.value_variable(
+                        Zone::Intuitionistic,
+                        DeBruijnIndex::from(u32::try_from(past).unwrap_or(u32::MAX)),
+                    )
+                },
+            };
+            built = arena.computation_application(built, value);
+        }
+        match spines.last_mut() {
+            | Some(holder) => {
+                holder.read.push(Argument::Bound(depth));
+                bound.push(built);
+            },
+            | None => body = built,
+        }
+    }
+    bound
+        .iter()
+        .rev()
+        .fold(body, |body, &run| arena.computation_bind(run, body))
 }

@@ -479,6 +479,141 @@ mod native_formers
     }
 
     #[test]
+    fn a_fold_rests_on_the_laws_of_the_rules_it_computes_apart()
+    {
+        let (turn, unturn) = (ConstantIndex::from(1_usize), ConstantIndex::from(2_usize));
+        let (turn_unturn, unturn_turn) =
+            (ConstantIndex::from(3_usize), ConstantIndex::from(4_usize));
+        let wind = ConstantIndex::from(5_usize);
+        let first = gandr_kernel_term::RuleIndex::from(0_usize);
+        for (laws, admitted) in [
+            (vec![turn_unturn, unturn_turn], true),
+            (vec![], false),
+            (vec![unturn_turn, turn_unturn], false),
+        ] {
+            let mut arena = CoreArena::new();
+            let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+            let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+            let returner = arena.comp_type_returner(integer);
+            // The integers' successor and predecessor, holes conversion
+            // cannot see through.
+            let step = arena.comp_type_arrow(integer, returner);
+            let step = arena.value_type_thunk(step);
+            let call = |arena: &mut CoreArena, operation, argument| {
+                let operation = arena.value_constant(operation);
+                let forced = arena.computation_force(operation);
+                arena.computation_application(forced, argument)
+            };
+            // `Π n. turn(unturn(n)) = n`, the law of `Loop(Unloop(x)) ~> x`,
+            // and its mirror.
+            let mut law = |first_operation, second_operation| {
+                let n = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                let inner = call(&mut arena, second_operation, n);
+                let inner = arena.value_returned(inner);
+                let outer = call(&mut arena, first_operation, inner);
+                let outer = arena.value_returned(outer);
+                let path = arena.value_type_path(integer, outer, n);
+                let returner = arena.comp_type_returner(path);
+                let pi = arena.comp_type_pi(integer, returner);
+                arena.value_type_thunk(pi)
+            };
+            let first_law = law(turn, unturn);
+            let second_law = law(unturn, turn);
+            // `fix f. λy. case y { Base ⇒ return 0; Loop(x) ⇒ turn(f(x));
+            // Unloop(x) ⇒ unturn(f(x)) }`, each recursive run written where
+            // a value is read: at `Loop(Unloop(x))` it computes
+            // `turn(unturn(f(x)))`, which meets `f(x)` only by the first law.
+            let zero = arena.value_literal(gandr_kernel_term::Literal::Integer(
+                gandr_kernel_term::IntegerLiteral::new(
+                    gandr_kernel_term::Sign::NonNegative,
+                    gandr_kernel_term::Magnitude::zero(),
+                ),
+            ));
+            let base = arena.computation_return(zero);
+            let mut arm = |operation| {
+                let recursive =
+                    arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+                let field = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                let forced = arena.computation_force(recursive);
+                let folded = arena.computation_application(forced, field);
+                let folded = arena.value_returned(folded);
+                let applied = call(&mut arena, operation, folded);
+                arena.computation_lambda(applied)
+            };
+            let looping = arm(turn);
+            let unlooping = arm(unturn);
+            let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let case =
+                arena.computation_data_case(argument, returner, vec![base, looping, unlooping]);
+            let lambda = arena.computation_lambda(case);
+            let fixpoint = arena.computation_fixpoint(
+                lambda,
+                gandr_kernel_term::FixpointEvidence::StructuralDescent,
+            );
+            let body = arena.value_thunk(fixpoint);
+            let arrow = arena.comp_type_arrow(own, returner);
+            let declared = arena.value_type_thunk(arrow);
+            let hole = |constant: ConstantIndex, stated| {
+                Declaration::new(
+                    constant,
+                    Maybe::Present(stated),
+                    Maybe::Absent(gandr_core_checker::body::Absent::Hole),
+                    OriginToken::from(usize::from(constant)),
+                )
+            };
+            let declarations = vec![
+                circle(&mut arena, cancellations()),
+                hole(turn, step),
+                hole(unturn, step),
+                hole(turn_unturn, first_law),
+                hole(unturn_turn, second_law),
+                definition(wind, declared, body).lawful(laws),
+            ];
+            let (report, crossed) = run(&mut arena, &declarations);
+            let verdict = report.judged()[5].verdict();
+            if admitted {
+                assert!(
+                    matches!(verdict, Verdict::Checked { .. }),
+                    "each rule's law relates the fold's two sides of it: {verdict:?}"
+                );
+                let assumed: Vec<_> = crossed.readmitted()[1 .. 5]
+                    .iter()
+                    .map(|entry| match *entry.outcome() {
+                        | Outcome::Assumed { admitted, .. } => admitted.position(),
+                        | ref other => panic!("each hole crosses as an axiom: {other:?}"),
+                    })
+                    .collect();
+                let Outcome::Defined { ref audit, .. } = *crossed.readmitted()[5].outcome()
+                else {
+                    panic!(
+                        "and the kernel re-derives the fold from its laws: {:?}",
+                        crossed.readmitted()[5].outcome()
+                    );
+                };
+                assert_eq!(
+                    audit.axioms(),
+                    assumed.as_slice(),
+                    "the fold rests on its laws as on the operations it calls"
+                );
+            }
+            else {
+                assert!(
+                    matches!(
+                        verdict,
+                        Verdict::Refused(CheckRefusal::RuleNotRespected { rule, .. }) if rule == first
+                    ),
+                    "without the first rule's law the fold is refused by that rule: {verdict:?}"
+                );
+                assert!(
+                    matches!(crossed.readmitted()[5].outcome(), Outcome::Marked(_)),
+                    "and the kernel is offered nothing: {:?}",
+                    crossed.readmitted()[5].outcome()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn dependent_data_parameters_and_case_motives()
     {
         let mut arena = CoreArena::new();

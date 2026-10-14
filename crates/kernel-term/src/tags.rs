@@ -739,6 +739,19 @@ pub const KIND_DEF_RELATING: WireTag = WireTag(0x07);
 /// predating this kind refuses it as an unknown declaration kind rather than
 /// misreading it, which is why the format version holds.
 pub const KIND_DATA_PRESENTED: WireTag = WireTag(0x08);
+/// Declaration tag: a typed definition whose segment closes with the laws its
+/// folds rest on.
+///
+/// After the [`KIND_DEF`] fields comes the related block as
+/// [`KIND_DEF_RELATING`] writes it, its pair count here possibly zero, then a
+/// law count, at least one, and each law's admission position. The kernel
+/// instantiates a law where a fold over a presented type computes the two
+/// sides of the law's rule apart, and the definition's audit rests on every
+/// law named. A definition resting on no law writes [`KIND_DEF`] or
+/// [`KIND_DEF_RELATING`], so every other artifact keeps its bytes, and a
+/// reader predating this kind refuses it as an unknown declaration kind rather
+/// than misreading it, which is why the format version holds.
+pub const KIND_DEF_LAWFUL: WireTag = WireTag(0x09);
 /// Rule node tag: a constructor of the declaration's own table.
 pub const RULE_CONSTRUCTOR: WireTag = WireTag(0);
 /// Rule node tag: a pattern variable.

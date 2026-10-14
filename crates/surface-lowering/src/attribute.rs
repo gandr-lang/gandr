@@ -14,13 +14,15 @@
 //! attributes: editing an attribute re-keys that form's entries, and an edit
 //! to another form leaves the key alone.
 //!
-//! # Every schema here is inert
+//! # Every schema but `respects` is inert
 //!
 //! The lowered term is neither read nor written by the attribute pass: a
 //! payload lowers to its own core value, filed here, and nothing about the
-//! decorated declaration's core term depends on it. The semantic tier — an
-//! attribute reflected into the core term because it changes what the entity
-//! *is* — has no representation in this crate.
+//! decorated declaration's core term depends on it. `respects` is the one
+//! semantic attribute: its payload names the laws a fold rests on, which the
+//! table keeps beside the entry as constants and the checker's declaration
+//! carries. The term is still untouched; what changes is the evidence the
+//! declaration is admitted on.
 //!
 //! # An unknown name gets a bounded suggestion
 //!
@@ -43,7 +45,11 @@
 //!
 //! The registry is closed: `checks` and `explicit_exits` take no payload,
 //! `explicit_runs` none or a text naming its one option, `effects`, `owes` an
-//! integer, `refuses`, `runs`, `normalizes` and `doc` a text. Five diagnostics
+//! integer, `refuses`, `runs`, `normalizes` and `doc` a text, and `respects`
+//! one declared name or a tuple of them. The attribute block admits one
+//! payload per attribute and refuses an attribute written twice, so several
+//! laws are one tuple, `respects((a, b))`, in the order of the rules they
+//! answer. Five diagnostics
 //! cover what an attribute can get wrong, checked in this order: an unknown
 //! name, with the registered name within edit distance two when one exists;
 //! the same attribute written twice for one declared name, naming the first;
@@ -107,7 +113,10 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
 use gandr_core_term::ValueId;
+use gandr_kernel_term::ConstantIndex;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeKey;
 use quenchant_shape::shape::Maybe;
@@ -151,6 +160,71 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a `respects` payload names no laws.
+    pub mod laws {
+        /// The payload is a value of another form.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Neither a declared name nor a tuple of declared names.
+            Unnamed,
+        }
+    }
+}
+
+/// The laws a `respects` payload names, in the order it names them.
+///
+/// A declared name lowers to its constant and a tuple to its components, so a
+/// payload names laws exactly when it is one constant or a tuple of them. The
+/// unit is the empty tuple, and a fold resting on no law is no fold: it names
+/// none.
+///
+/// # Specification
+/// - requires: `payload` is the lowered value of a `respects` payload.
+/// - ensures: the one constant `payload` is, or the constants of its components
+///   in written order when it is a non-empty tuple of constants;
+///   [`laws::Absent::Unnamed`] for any other value, the unit included.
+/// - fails: never — an unnamed payload is an absence, not an error.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one pass over the tuple's finite components, not recursion.
+/// - measure: the components left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a single name, a tuple of names, a tuple holding a unit,
+///   and the unit separate the answers.
+/// - witness: `attribute::tests::a_respects_payload_names_its_laws_in_written_order`
+#[spec(ensures: |ref ret| match (ret, arena.value(payload)) {
+    | (&Maybe::Present(ref laws), Some(&Value::Constant(law))) => laws.as_slice() == [law],
+    | (&Maybe::Present(ref laws), Some(&Value::Tuple(ref items))) => !items.is_empty() && laws.len() == items.len(),
+    | (&Maybe::Present(_), _) => false,
+    | (&Maybe::Absent(_), _) => true,
+})]
+#[inline]
+pub fn laws(
+    arena: &CoreArena,
+    payload: ValueId,
+) -> Maybe<Vec<ConstantIndex>, laws::Absent>
+{
+    let unnamed = Maybe::Absent(laws::Absent::Unnamed);
+    match arena.value(payload) {
+        | Some(&Value::Constant(law)) => Maybe::Present(Vec::from([law])),
+        | Some(&Value::Tuple(ref items)) if !items.is_empty() => {
+            let mut named = Vec::with_capacity(items.len());
+            for &item in items {
+                let Some(&Value::Constant(law)) = arena.value(item)
+                else {
+                    return unnamed;
+                };
+                named.push(law);
+            }
+            Maybe::Present(named)
+        },
+        | _ => unnamed,
+    }
+}
+
 /// The furthest an unknown attribute name may sit from a registered one and
 /// still be answered with it.
 ///
@@ -187,6 +261,11 @@ impl RegisteredAttribute
     /// The one option `explicit_runs` takes: only the runs that perform an
     /// effect are asked for.
     pub const EFFECTS: &'static str = "effects";
+    /// `respects`: the recursive definition it decorates is a fold, and the
+    /// laws it names, one per rule of the presented type the fold's `case`
+    /// is over and in the rules' written order, are the evidence for each
+    /// rule the fold does not respect by conversion alone.
+    pub const RESPECTS: Self = Self("respects");
 }
 
 impl AsRef<str> for RegisteredAttribute
@@ -261,6 +340,8 @@ pub enum AttributeSchema
     Text,
     /// A bare marker, or the one text literal spelling the option named.
     MarkerOr(&'static str),
+    /// One declared name, or a tuple of declared names.
+    Laws,
 }
 
 impl fmt::Display for AttributeSchema
@@ -280,6 +361,7 @@ impl fmt::Display for AttributeSchema
             | Self::Integer => f.write_str("an integer payload"),
             | Self::Text => f.write_str("a text payload"),
             | Self::MarkerOr(option) => write!(f, "no payload or the text \"{option}\""),
+            | Self::Laws => f.write_str("a declared name or a tuple of declared names"),
         }
     }
 }
@@ -374,7 +456,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 8_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 9_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -389,6 +471,7 @@ const REGISTRY: [(&str, AttributeSchema); 8_usize] = [
         RegisteredAttribute::EXPLICIT_RUNS.0,
         AttributeSchema::MarkerOr(RegisteredAttribute::EFFECTS),
     ),
+    (RegisteredAttribute::RESPECTS.0, AttributeSchema::Laws),
 ];
 
 impl AttributeRegistry
@@ -550,8 +633,9 @@ impl AttributeRegistry
 ///   marker-or-option schema; an integer literal exactly by the integer schema;
 ///   a text literal by the text schema and, read as the option it spells, by
 ///   the marker-or-option schema; a text spelling no option by the text schema
-///   alone; every other pair is refused, and the refusal is the missing one
-///   exactly when nothing was written for a schema that takes something.
+///   alone; a non-literal value exactly by the laws schema; every other pair is
+///   refused, and the refusal is the missing one exactly when nothing was
+///   written for a schema that takes something.
 /// - provides: the one decision the payload half of the attribute pass makes,
 ///   separated from the diagnostics that report it.
 /// - fails: never — a refusal is a verdict here, not an error.
@@ -570,9 +654,10 @@ impl AttributeRegistry
                 | (AttributeSchema::Integer, PayloadForm::Integer)
                 | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
                 | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
+                | (AttributeSchema::Laws, PayloadForm::OtherValue)
         );
         let missing = matches!(form, PayloadForm::Absent)
-            && matches!(schema, AttributeSchema::Integer | AttributeSchema::Text);
+            && matches!(schema, AttributeSchema::Integer | AttributeSchema::Text | AttributeSchema::Laws);
         matches!(ret, PayloadVerdict::Admitted) == admitted
             && matches!(ret, PayloadVerdict::Missing) == missing
             && matches!(ret, PayloadVerdict::IllTyped) == (!admitted && !missing)
@@ -589,10 +674,12 @@ pub const fn payload_verdict(
         | (AttributeSchema::Marker | AttributeSchema::MarkerOr(_), PayloadForm::Absent)
         | (AttributeSchema::Integer, PayloadForm::Integer)
         | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
-        | (AttributeSchema::MarkerOr(_), PayloadForm::Text) => PayloadVerdict::Admitted,
-        | (AttributeSchema::Integer | AttributeSchema::Text, PayloadForm::Absent) => {
-            PayloadVerdict::Missing
-        },
+        | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
+        | (AttributeSchema::Laws, PayloadForm::OtherValue) => PayloadVerdict::Admitted,
+        | (
+            AttributeSchema::Integer | AttributeSchema::Text | AttributeSchema::Laws,
+            PayloadForm::Absent,
+        ) => PayloadVerdict::Missing,
         | (
             AttributeSchema::Marker,
             PayloadForm::Integer
@@ -608,6 +695,10 @@ pub const fn payload_verdict(
         | (
             AttributeSchema::MarkerOr(_),
             PayloadForm::Integer | PayloadForm::OtherText | PayloadForm::OtherValue,
+        )
+        | (
+            AttributeSchema::Laws,
+            PayloadForm::Integer | PayloadForm::Text | PayloadForm::OtherText,
         ) => PayloadVerdict::IllTyped,
     }
 }
@@ -870,7 +961,7 @@ impl AttributeEntry
 }
 
 /// Every attributed declaration's entries, keyed by the declaration form's
-/// cross-tree key.
+/// cross-tree key, and the laws a `respects` entry names under the same key.
 ///
 /// # Specification
 /// - requires: producers file entries under the intended declaration's key.
@@ -887,13 +978,15 @@ impl AttributeEntry
 /// - witness: `attribute::tests::entries_keep_the_order_they_were_filed_in`
 /// - witness: `attribute::tests::two_declarations_keep_separate_entry_lists`
 /// - witness: `attribute::tests::an_unattributed_declaration_has_no_entries`
-#[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AttributeTable
 {
     /// Declaration key to that declaration's entries, in the order the source
     /// wrote them.
     entries: BTreeMap<NodeKey, Vec<AttributeEntry>>,
+    /// Declaration key to the laws its `respects` entry names, in the order
+    /// the payload names them.
+    laws: BTreeMap<NodeKey, Vec<ConstantIndex>>,
 }
 
 impl AttributeTable
@@ -908,6 +1001,7 @@ impl AttributeTable
     {
         Self {
             entries: BTreeMap::new(),
+            laws: BTreeMap::new(),
         }
     }
 
@@ -987,6 +1081,65 @@ impl AttributeTable
         self.entries.get(&key).map_or(&[], Vec::as_slice)
     }
 
+    /// File `laws`, what the `respects` entry filed under `key` names.
+    ///
+    /// # Specification
+    /// - requires: an entry naming `laws` is filed under `key`; the attribute
+    ///   pass refuses a second `respects` for one declaration, so `key` holds
+    ///   no laws yet.
+    /// - ensures: [`Self::laws`] at `key` answers `laws`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — laws filed under one key are read back from it and
+    ///   from no other.
+    /// - witness: `attribute::tests::a_respects_payload_names_its_laws_in_written_order`
+    #[spec(
+        captures: count = laws.len(),
+        ensures: self.laws.get(&key).is_some_and(|held| held.len() == count),
+    )]
+    #[inline]
+    pub fn file_laws(
+        &mut self,
+        key: NodeKey,
+        laws: Vec<ConstantIndex>,
+    )
+    {
+        let _replaced = self.laws.insert(key, laws);
+    }
+
+    /// The laws the `respects` entry filed under `key` names, in the order
+    /// it names them.
+    ///
+    /// # Specification
+    /// - requires: nothing — a key holding no laws is admissible input, a
+    ///   declaration that is no lawful fold.
+    /// - ensures: exactly the laws filed under `key`; the empty slice when none
+    ///   were.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a filed key and an unfiled one separate the two
+    ///   answers.
+    /// - witness: `attribute::tests::a_respects_payload_names_its_laws_in_written_order`
+    #[spec(
+        ensures: |ret| match self.laws.get(&key) {
+            | Some(laws) => core::ptr::eq(&raw const *ret, &raw const *laws.as_slice()),
+            | None => ret.is_empty(),
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn laws(
+        &self,
+        key: NodeKey,
+    ) -> &[ConstantIndex]
+    {
+        self.laws.get(&key).map_or(&[], Vec::as_slice)
+    }
+
     /// How many declarations carry at least one entry.
     ///
     /// # Specification
@@ -1035,6 +1188,8 @@ mod tests
 {
     use alloc::vec;
 
+    use gandr_core_term::CoreArena;
+    use gandr_kernel_term::ConstantIndex;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::FormRank;
     use gandr_surface_syntax::NodeDigest;
@@ -1050,6 +1205,7 @@ mod tests
     use super::PayloadForm;
     use super::PayloadVerdict;
     use super::edit_distance;
+    use super::laws;
     use super::payload;
     use super::payload_verdict;
     use super::registry;
@@ -1126,6 +1282,7 @@ mod tests
             ("doc", AttributeSchema::Text),
             ("explicit_exits", AttributeSchema::Marker),
             ("explicit_runs", AttributeSchema::MarkerOr("effects")),
+            ("respects", AttributeSchema::Laws),
         ];
 
         for (spelling, schema) in expected {
@@ -1176,6 +1333,7 @@ mod tests
             ("docs", "doc"),
             ("explicit_exit", "explicit_exits"),
             ("explicit_run", "explicit_runs"),
+            ("respect", "respects"),
         ];
 
         for (written, nearest) in expected {
@@ -1196,9 +1354,9 @@ mod tests
     fn a_distant_spelling_suggests_nothing()
     {
         assert_eq!(
-            AttributeRegistry::suggestion(SurfaceName::from("expects")),
+            AttributeRegistry::suggestion(SurfaceName::from("expect")),
             Maybe::Absent(suggestion::Absent::BeyondBound),
-            "three edits from every entry is past the bound"
+            "three edits from the nearest entry is past the bound"
         );
         assert_eq!(
             AttributeRegistry::suggestion(SurfaceName::from("")),
@@ -1341,6 +1499,31 @@ mod tests
             (option, PayloadForm::Text, PayloadVerdict::Admitted),
             (option, PayloadForm::OtherText, PayloadVerdict::IllTyped),
             (option, PayloadForm::OtherValue, PayloadVerdict::IllTyped),
+            (
+                AttributeSchema::Laws,
+                PayloadForm::Absent,
+                PayloadVerdict::Missing,
+            ),
+            (
+                AttributeSchema::Laws,
+                PayloadForm::Integer,
+                PayloadVerdict::IllTyped,
+            ),
+            (
+                AttributeSchema::Laws,
+                PayloadForm::Text,
+                PayloadVerdict::IllTyped,
+            ),
+            (
+                AttributeSchema::Laws,
+                PayloadForm::OtherText,
+                PayloadVerdict::IllTyped,
+            ),
+            (
+                AttributeSchema::Laws,
+                PayloadForm::OtherValue,
+                PayloadVerdict::Admitted,
+            ),
         ];
 
         for (schema, form, verdict) in expected {
@@ -1352,9 +1535,48 @@ mod tests
         }
         assert_eq!(
             expected.len(),
-            20_usize,
+            25_usize,
             "the pinned table covers the whole product of the two vocabularies"
         );
+    }
+
+    #[test]
+    fn a_respects_payload_names_its_laws_in_written_order()
+    {
+        let mut arena = CoreArena::new();
+        let (first, second) = (ConstantIndex::from(7_usize), ConstantIndex::from(3_usize));
+        let named = arena.value_constant(first);
+        let other = arena.value_constant(second);
+        let pair = arena.value_tuple(&[named, other]);
+        let unit = arena.value_unit();
+        let mixed = arena.value_tuple(&[named, unit]);
+        assert_eq!(
+            laws(&arena, named),
+            Maybe::Present(vec![first]),
+            "a declared name names one law"
+        );
+        assert_eq!(
+            laws(&arena, pair),
+            Maybe::Present(vec![first, second]),
+            "a tuple names its laws in the order written, not by position"
+        );
+        for unnamed in [mixed, unit] {
+            assert_eq!(
+                laws(&arena, unnamed),
+                Maybe::Absent(laws::Absent::Unnamed),
+                "a payload holding anything but names names no law"
+            );
+        }
+        let mut table = AttributeTable::new();
+        let filed = NodeKey::new(NodeDigest::from([1_u8; 32_usize]), FormRank::default());
+        let unfiled = NodeKey::new(NodeDigest::from([2_u8; 32_usize]), FormRank::default());
+        table.file_laws(filed, vec![first, second]);
+        assert_eq!(
+            table.laws(filed),
+            [first, second].as_slice(),
+            "the laws filed under a key are read back from it"
+        );
+        assert!(table.laws(unfiled).is_empty(), "and from no other");
     }
 
     #[test]

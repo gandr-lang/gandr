@@ -670,6 +670,11 @@ pub struct Declaration
     /// The rules rewriting a data declaration's constructor terms; free for
     /// every free type and every declaration that is not data.
     presentation: crate::presented::Presentation,
+    /// The laws a definition's folds rest on, one per rule of the folded
+    /// type in written order: a rule whose two sides a fold computes apart is
+    /// respected by its law instead. Empty for every declaration that rests
+    /// on none.
+    laws: Vec<ConstantIndex>,
 }
 
 impl Declaration
@@ -752,6 +757,18 @@ impl Declaration
     pub const fn presentation(&self) -> &crate::presented::Presentation
     {
         &self.presentation
+    }
+
+    /// The laws the definition's folds rest on, one per rule of the folded
+    /// type in written order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn laws(&self) -> &[ConstantIndex]
+    {
+        &self.laws
     }
 
     /// This declaration under `name`, its levels, content and provenance
@@ -838,6 +855,52 @@ impl Declaration
     {
         match self.content {
             | DeclarationContent::Def { .. } => Self { related, ..self },
+            | DeclarationContent::Data { .. }
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::AbstractType { .. } => self,
+        }
+    }
+
+    /// This definition carrying `laws` as the laws its folds rest on,
+    /// everything else unchanged.
+    ///
+    /// A fold into a model computes a rule's two sides as the model's
+    /// operations read them, which meet only up to the model's law for the
+    /// rule. The kernel instantiates each law at the fold of the rule's
+    /// variables and relates its endpoints to the two sides it computes, so a
+    /// law is a claim the kernel re-derives, never a fact taken on trust, and
+    /// the definition's audit rests on every law it names.
+    ///
+    /// # Specification
+    /// - requires: nothing — each law is instantiated and its endpoints related
+    ///   at admission.
+    /// - ensures: a definition comes back carrying exactly `laws`; any other
+    ///   declaration, which has no body to fold, comes back unchanged. Content,
+    ///   levels, provenance, name and related pairs are untouched either way.
+    /// - provides: the one way a producer attaches a fold's laws, after
+    ///   whichever finisher built the definition, so no finisher changes its
+    ///   signature for them.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition keeps the laws through the wire, and the
+    ///   kernel's admission reads them where it runs.
+    /// - witness: `encode::tests::a_lawful_definition_closes_its_segment_with_its_laws`
+    #[spec(
+        captures: entry = (matches!(self.content, DeclarationContent::Def { .. }), self.laws.len(), laws.len(), self.related.len(), self.name.0.len()),
+        ensures: |ret| ret.laws.len() == if entry.0 { entry.2 } else { entry.1 }
+            && ret.related.len() == entry.3 && ret.name.0.len() == entry.4,
+    )]
+    #[inline]
+    #[must_use]
+    pub fn lawful(
+        self,
+        laws: Vec<ConstantIndex>,
+    ) -> Self
+    {
+        match self.content {
+            | DeclarationContent::Def { .. } => Self { laws, ..self },
             | DeclarationContent::Data { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::AbstractType { .. } => self,
@@ -1284,6 +1347,7 @@ impl<'arena> DeclarationBuilder<'arena>
             name: StructuredName::default(),
             related: Vec::new(),
             presentation: crate::presented::Presentation::default(),
+            laws: Vec::new(),
         }
     }
 
@@ -1338,6 +1402,7 @@ impl<'arena> DeclarationBuilder<'arena>
             name: StructuredName::default(),
             related: Vec::new(),
             presentation: crate::presented::Presentation::default(),
+            laws: Vec::new(),
         }
     }
 
@@ -1389,6 +1454,7 @@ impl<'arena> DeclarationBuilder<'arena>
             name: StructuredName::default(),
             related: Vec::new(),
             presentation: crate::presented::Presentation::default(),
+            laws: Vec::new(),
         }
     }
 
@@ -1447,6 +1513,7 @@ impl<'arena> DeclarationBuilder<'arena>
             name: StructuredName::default(),
             related: Vec::new(),
             presentation: crate::presented::Presentation::default(),
+            laws: Vec::new(),
         }
     }
 }
@@ -1513,6 +1580,7 @@ impl DeclarationBuilder<'_>
             name: StructuredName::default(),
             related: Vec::new(),
             presentation: crate::presented::Presentation::default(),
+            laws: Vec::new(),
         }
     }
 }

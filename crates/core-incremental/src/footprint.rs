@@ -562,6 +562,7 @@ mod tests
             crate::content::DeclarationRoots::Value {
                 signature: Maybe::Absent(signature::Absent::Unsigned),
                 body: Maybe::Present(crate::boundary::NodeIndex::from(0_usize)),
+                laws: Vec::new(),
             },
             vec![
                 crate::content::ContentNode::Tuple(vec![
@@ -586,6 +587,7 @@ mod tests
             crate::content::DeclarationRoots::Value {
                 signature: Maybe::Present(crate::boundary::NodeIndex::from(usize::MAX)),
                 body: Maybe::Present(crate::boundary::NodeIndex::from(usize::MAX)),
+                laws: Vec::new(),
             },
             vec![crate::content::ContentNode::Unresolved(super::Sort::Value)],
         );
@@ -604,6 +606,7 @@ mod tests
             crate::content::DeclarationRoots::Value {
                 signature: Maybe::Absent(signature::Absent::Unsigned),
                 body: Maybe::Absent(body::Absent::Hole),
+                laws: Vec::new(),
             },
             vec![],
         );

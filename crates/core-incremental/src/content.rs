@@ -76,6 +76,14 @@
 //! split, its arity a count between its scrutinee and body children. Field
 //! labels and arbitrary child counts survive persistence.
 //!
+//! A value declaration's roots carry the laws its folds rest on as item
+//! references, so adding, removing or reordering a `respects` law changes the
+//! declaration's content even though its body is unchanged. A law's statement
+//! reaches the fold the way any read signature does: the check reads it
+//! through the signature table, and the support records the answer. Lawful
+//! roots persist under their own roots tag, so content naming no law encodes
+//! exactly as before.
+//!
 //! An abstract type answers no support query: a reader of its atom records
 //! the atom in a type position, so an edit to the representation, the extent
 //! or the site changes the abstract type's content and reaches every reader
@@ -1785,13 +1793,18 @@ impl DataRoots
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum DeclarationRoots
 {
-    /// A value declaration's optional signature and body.
+    /// A value declaration's optional signature and body, and the laws a fold
+    /// rests on.
     Value
     {
         /// The signature classifier, or why it is absent.
         signature: Maybe<NodeIndex, signature::Absent>,
         /// The body, or why it is absent.
         body: Maybe<NodeIndex, body::Absent>,
+        /// The items whose laws the declaration's folds rest on, in its folded
+        /// type's rule order; empty for a declaration that names none. A law
+        /// is evidence, not content the body reaches, so it is no node.
+        laws: Vec<Reference>,
     },
     /// A complete nominal signature.
     Data(DataRoots),
@@ -1833,6 +1846,7 @@ impl DeclarationRoots
             | Self::Value {
                 ref signature,
                 ref body,
+                ..
             } => (
                 [
                     match *signature {
@@ -2270,8 +2284,9 @@ pub struct Encoded
     && match layout.items.get(usize::from(ordinal)) {
         Some(item) => layout.references.get(usize::from(ordinal)) == Some(&ret.content.reference)
             && { let (matched_left_value, matched_right_value) = (item.declaration().content(),&ret.content.declaration);
-if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } = *matched_left_value && let DeclarationRoots::Value { signature:ref actual_signature,body:ref actual_body } = *matched_right_value { signature.map(|ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).copied()) == actual_signature.map(Some)
-                    && body.map(|value| ret.sites.0.get(&ArenaNode::Value(value)).copied()) == actual_body.map(Some) }
+if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } = *matched_left_value && let DeclarationRoots::Value { signature:ref actual_signature,body:ref actual_body,laws:ref actual_laws } = *matched_right_value { signature.map(|ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).copied()) == actual_signature.map(Some)
+                    && body.map(|value| ret.sites.0.get(&ArenaNode::Value(value)).copied()) == actual_body.map(Some)
+                    && item.declaration().laws().iter().map(|&law| layout.resolve(law)).eq(actual_laws.iter().cloned()) }
  else if let gandr_core_checker::DeclarationContent::Data(ref signature) = *matched_left_value && let DeclarationRoots::Data(ref roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(signature.kind())) == Some(&roots.kind)
                     && signature.parameters().iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.parameters.iter().map(Some))
                     && signature.constructors().len() == roots.constructors.len()
@@ -2282,7 +2297,7 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
  else { false }
 },
         None => ret.content.reference == Reference::Unoccupied
-            && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole)})
+            && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws} if laws.is_empty())
             && ret.content.nodes.is_empty(),
     })]
 pub fn encode_item(
@@ -2301,6 +2316,12 @@ pub fn encode_item(
                 } => DeclarationRoots::Value {
                     signature: signature.map(|ty| encoder.discover(ArenaNode::ValueType(ty))),
                     body: body.map(|term| encoder.discover(ArenaNode::Value(term))),
+                    laws: item
+                        .declaration()
+                        .laws()
+                        .iter()
+                        .map(|&law| layout.resolve(law))
+                        .collect(),
                 },
                 | gandr_core_checker::DeclarationContent::Data(ref signature) => {
                     DeclarationRoots::Data(encoder.data_roots(signature))
@@ -2325,6 +2346,7 @@ pub fn encode_item(
         | None => (Reference::Unoccupied, DeclarationRoots::Value {
             signature: Maybe::Absent(signature::Absent::Unsigned),
             body: Maybe::Absent(body::Absent::Hole),
+            laws: Vec::new(),
         }),
     };
     encoder.drain();

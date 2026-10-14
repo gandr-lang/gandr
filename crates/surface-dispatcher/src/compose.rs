@@ -1191,9 +1191,10 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
 ///   order, at the same position and with the lowering's origin as its token: a
 ///   completed declaration carries its declared type and its body, an
 ///   uncompleted one its declared type and a hole, a bodiless definition its
-///   body and no signature, a data declaration its native signature, shared
-///   with the lowered module, and a sealed abstract type its kind,
-///   representation, extent and site. A refused declaration is not offered.
+///   body and no signature, each of the three the laws its `respects` attribute
+///   names; a data declaration carries its native signature, shared with the
+///   lowered module, and a sealed abstract type its kind, representation,
+///   extent and site. A refused declaration is not offered.
 /// - provides: the one place that names both the lowering's module and the
 ///   checker's declaration input.
 /// - fails: never.
@@ -1213,6 +1214,7 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
     ret.iter().all(|actual| expected.next().is_some_and(|lowered| {
         actual.constant() == lowered.constant()
             && usize::from(actual.origin()) == usize::from(lowered.origin())
+            && actual.laws() == module.laws(lowered)
             && match lowered.outcome() {
                 DeclarationOutcome::Completed { declared_type, body } =>
                     actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Present(body)},
@@ -1265,12 +1267,15 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
             },
             | DeclarationOutcome::Refused(_) => continue,
         };
-        declarations.push(Declaration::new(
-            lowered.constant(),
-            declared,
-            defined,
-            OriginToken::from(usize::from(lowered.origin())),
-        ));
+        declarations.push(
+            Declaration::new(
+                lowered.constant(),
+                declared,
+                defined,
+                OriginToken::from(usize::from(lowered.origin())),
+            )
+            .lawful(module.laws(lowered).to_vec()),
+        );
     }
     declarations
 }

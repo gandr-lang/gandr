@@ -245,6 +245,9 @@ pub struct ModuleReport
     /// The path endpoint pairs each accepted declaration's type conversions
     /// related, by position, with each derivation.
     relations: BTreeMap<ConstantIndex, Vec<EndpointRelation>>,
+    /// The laws each lawful declaration's folds rest on, by position, in its
+    /// folded type's rule order.
+    laws: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
     /// The native path each univalence statement the run decided derives, and
     /// each path product it judged elaborates to, by node.
     natives: BTreeMap<ValueId, ValueId>,
@@ -407,6 +410,19 @@ impl ModuleReport
     pub const fn relations(&self) -> &BTreeMap<ConstantIndex, Vec<EndpointRelation>>
     {
         &self.relations
+    }
+
+    /// The laws each lawful declaration's folds rest on, by position, in its
+    /// folded type's rule order: what the declaration crosses to the kernel
+    /// carrying.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn laws(&self) -> &BTreeMap<ConstantIndex, Vec<ConstantIndex>>
+    {
+        &self.laws
     }
 
     /// The native path each univalence statement the run decided derives, and
@@ -653,6 +669,7 @@ fn decide(
     if let Err(refusal) = context.admit(constant) {
         return unrun(refusal);
     }
+    context.keep_laws(constant, declaration.laws().to_vec());
     let outer = (run == Run::Typed).then(|| context.start_typings());
     let finish = |context: &mut CheckingContext<'_>, outer: Option<Option<Kept>>| {
         outer.map(|outer| context.finish_typings(outer))
@@ -995,6 +1012,7 @@ pub fn check_module(
         directed: context.directed().clone(),
         reflexivities: context.reflexivities().clone(),
         relations: context.relations().clone(),
+        laws: context.laws().clone(),
         natives: context.natives().clone(),
         definitions: context.definitions().definitions().collect(),
         data_signatures: context.data_signatures().clone(),
