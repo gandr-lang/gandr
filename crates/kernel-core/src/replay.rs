@@ -1754,19 +1754,26 @@ where
     }
 
     /// A value headed by a constructor of a presented type, rewritten to its
-    /// normal form; every other term unchanged.
+    /// normal form once its returned leaves are read; every other term
+    /// unchanged.
     ///
-    /// The rules are the type's definition, applied by one fixed strategy, so
-    /// the step chooses nothing and no decision of the trace records it.
+    /// The rules are the type's definition, applied by one fixed strategy, and
+    /// a returned leaf reads by the kernel's own evaluator, so the step chooses
+    /// nothing and no decision of the trace records it. Normalizing at
+    /// evaluation instead, so that a presented constructor is never built
+    /// unreduced, would let a `case` see a different term in the kernel than
+    /// in the producer's evaluator.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`crate::presented::normal_form`] of a value under the
-    ///   unfoldings' presentations, a computation unchanged; every node the
-    ///   rewriting compared or copied charged to the budget.
+    /// - ensures: [`crate::presented::normal_form`] under the unfoldings'
+    ///   presentations of what [`Self::read_returned_leaves`] gives a value, a
+    ///   computation unchanged; every node the rewriting compared or copied,
+    ///   and every step the reading took, charged to the budget.
     /// - provides: the presented half of weak head form, before any rule of the
     ///   table reads a value goal.
-    /// - fails: [`Stop::Budget`] when the rewriting outruns the budget.
+    /// - fails: [`Stop::Budget`] when the rewriting outruns the budget; as
+    ///   [`Self::read_returned_leaves`].
     /// - panics: none.
     ///
     /// # Errors
@@ -1776,6 +1783,7 @@ where
     /// - hypothesis: L3 — the circle's words convert by their normal forms in
     ///   the forced loop, which compares a free type's constructors as before.
     /// - witness: `presented::tests::the_forced_loop_converts_circle_words_by_their_normal_forms`
+    /// - witness: `replay::tests::a_returned_leaf_of_a_presented_term_reads_before_the_rules`
     #[spec(
         captures: before = self.spent,
         ensures: |ret| self.spent >= before
@@ -1791,6 +1799,7 @@ where
         else {
             return Ok(term);
         };
+        let value = self.read_returned_leaves(value)?;
         let mut fuel = RewriteFuel::from(self.budget.saturating_sub(self.spent));
         let before = u64::from(fuel);
         let normal = crate::presented::normal_form(
@@ -1809,6 +1818,145 @@ where
                 Err(Stop::Budget)
             },
         }
+    }
+
+    /// `value` with every returned endpoint standing as a leaf of its presented
+    /// constructor term read by [`Self::normalize_returned`].
+    ///
+    /// A presented type's normal form reads no definition: [`normal_form`] in
+    /// [`crate::presented`] carries every leaf as written. A returned endpoint
+    /// standing as a leaf is the one exception, read here before the rules run
+    /// so a rewrite a call hides — `S(unturn(n))` once `unturn(n)` returns
+    /// `P(n)` — fires. The conversion machine reads the same leaves, held
+    /// endpoints it runs as an unheld evaluation would, so both sides rewrite
+    /// one term.
+    ///
+    /// **Choice.** A returned leaf under a presented constructor is read by
+    /// forced replay: the kernel's own evaluator, [`Self::normalize_returned`],
+    /// re-derives what the endpoint returns by the one step each head admits,
+    /// with no search and no decision, budgeted like every normalization.
+    /// **Alternatives.** A recorded decision at the leaf's position, which
+    /// needs a trace address for a position under a constructor and a rule
+    /// that follows it, for no gain in what the kernel trusts. **Reversal.** A
+    /// leaf whose reading would need a search, or would outrun the normalizer's
+    /// budget, takes the recorded route.
+    ///
+    /// [`normal_form`]: crate::presented::normal_form
+    ///
+    /// # Specification
+    /// - requires: `value` lives in the arena.
+    /// - ensures: `value` itself when it is no constructor of a presented type;
+    ///   otherwise its constructor term, flattened through its own
+    ///   declaration's constructors, with each leaf that is a returned endpoint
+    ///   whose normal form is no returned endpoint replaced by that normal form
+    ///   and read again in turn, every constructor whose fields are unchanged
+    ///   kept at its own id.
+    /// - provides: the leaf half of [`Self::present`].
+    /// - fails: as [`Self::normalize_returned`]; [`ReplayRefusal::Unreadable`]
+    ///   on a dangling node.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop over the walk, not recursion.
+    /// - measure: the budget left, which every reading charges, then the
+    ///   constructor nodes still to visit and rebuild.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `loop(⟨force wound⟩)` over the presented circle, with
+    ///   `wound` returning `unloop(base)`, reads as `base` once the leaf is
+    ///   read, and the same term over a free circle stays apart from `base`.
+    /// - witness: `replay::tests::a_returned_leaf_of_a_presented_term_reads_before_the_rules`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| self.spent >= before
+            && ret.as_ref().map_or(true, |read| *read == value || self.arena.value(*read).is_some()),
+    )]
+    fn read_returned_leaves(
+        &mut self,
+        value: ValueId,
+    ) -> Result<ValueId, Stop>
+    {
+        /// One step of the walk.
+        enum Walk
+        {
+            /// Read the node at this id.
+            Visit(ValueId),
+            /// Rebuild the constructor at this id over the fields read last.
+            Rebuild(ValueId),
+        }
+        let Some(&Value::Constructor { datatype, .. }) = self.arena.value(value)
+        else {
+            return Ok(value);
+        };
+        let Some(&ValueType::Data {
+            declaration: own, ..
+        }) = self.arena.value_type(datatype)
+        else {
+            return Ok(value);
+        };
+        if self.unfoldings.presentations().presented(own).is_none() {
+            return Ok(value);
+        }
+        let owned = |arena: &TermArena, datatype| {
+            matches!(
+                arena.value_type(datatype),
+                Some(&ValueType::Data { declaration, .. }) if declaration == own
+            )
+        };
+        let mut walk = Vec::from([Walk::Visit(value)]);
+        let mut built: Vec<ValueId> = Vec::new();
+        while let Some(step) = walk.pop() {
+            match step {
+                | Walk::Visit(id) => match self.arena.value(id) {
+                    | Some(&Value::Constructor {
+                        datatype,
+                        ref fields,
+                        ..
+                    }) if owned(self.arena, datatype) => {
+                        walk.push(Walk::Rebuild(id));
+                        walk.extend(fields.iter().rev().map(|&field| Walk::Visit(field)));
+                    },
+                    | Some(&Value::Returned(_)) => {
+                        let read = self.normalize_returned(id)?;
+                        if matches!(self.arena.value(read), Some(&Value::Returned(_))) {
+                            built.push(id);
+                        }
+                        else {
+                            walk.push(Walk::Visit(read));
+                        }
+                    },
+                    | Some(_) => built.push(id),
+                    | None => return Err(unreadable()),
+                },
+                | Walk::Rebuild(id) => {
+                    let Some(&Value::Constructor {
+                        datatype,
+                        tag,
+                        ref fields,
+                    }) = self.arena.value(id)
+                    else {
+                        return Err(unreadable());
+                    };
+                    let start = built
+                        .len()
+                        .checked_sub(fields.len())
+                        .ok_or_else(unreadable)?;
+                    if built.get(start ..) == Some(fields.as_slice()) {
+                        built.truncate(start);
+                        built.push(id);
+                    }
+                    else {
+                        let read = built.split_off(start);
+                        let rebuilt = self.arena.value_constructor(datatype, tag, read);
+                        built.push(rebuilt);
+                    }
+                },
+            }
+        }
+        built.pop().ok_or_else(unreadable)
     }
 
     /// Apply the δ-rule decision the trace names at a goal with a defined
@@ -3895,10 +4043,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   thunk, a returner met by a bind, an injection met by a case, a lazy
     ///   pairing met by a projection, a fixpoint carrying replayed
     ///   structural-descent evidence applied to a constructor, an elimination
-    ///   met by a returned endpoint, which binds the endpoint's computation and
-    ///   eliminates what it returns, and the element-identity transport and
-    ///   related application steps of [`crate::element_identity`], until none
-    ///   fires at its head, and the original id when none fired at all.
+    ///   met by a returned endpoint — a fixpoint applied to one among them —
+    ///   which binds the endpoint's computation and eliminates what it returns,
+    ///   and the element-identity transport and related application steps of
+    ///   [`crate::element_identity`], until none fires at its head, and the
+    ///   original id when none fired at all.
     /// - provides: the search-free reductions the trace never records.
     /// - fails: [`Stop::Budget`] on a term that reduces past the budget;
     ///   [`Stop::PartialFixpoint`] when a fixpoint without evidence stands at
@@ -4300,6 +4449,17 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 // and only at a constructor; at a partial fixpoint's gate it
                 // declines rather than refutes.
                 | Some(&Computation::Fixpoint { body, evidence }) => {
+                    // A fixpoint's gate inspects its argument, so a returned
+                    // endpoint there runs first: `fix f c ⇝ c to x. fix f x`.
+                    if let Some(&Frame::Apply(argument)) = frames.last()
+                        && let Some(&Value::Returned(returned)) = self.arena.value(argument)
+                    {
+                        let _argument = frames.pop();
+                        let applied = self.arena.computation_application(focus, argument);
+                        focus = self.bind_returned(applied, returned)?;
+                        progress = Progress::Reduced;
+                        continue;
+                    }
                     let gate = match frames.last() {
                         | Some(&Frame::Apply(argument)) => match self.arena.value(argument) {
                             | Some(&Value::Constructor { .. }) => Gate::Constructor,
@@ -4369,8 +4529,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///
     /// # Specification
     /// - requires: `elimination` is a force, a case, a data case, a dependent
-    ///   split, a list fold or a projection, and `returned` the computation of
-    ///   the returned endpoint it inspects.
+    ///   split, a list fold, a projection or a fixpoint's application, and
+    ///   `returned` the computation of the returned endpoint it inspects.
     /// - ensures: `returned to x. E[x]`, where `E` is the elimination shifted
     ///   past the new binder and `x` stands where the endpoint stood.
     /// - provides: the elimination rule of a returned endpoint: a pure
@@ -4385,8 +4545,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Adequacy
     /// - hypothesis: L3 — a force and a case over a returned endpoint reduce to
     ///   what forcing or casing its returned value gives, and a stuck one stays
-    ///   the bind.
+    ///   the bind; a fixpoint applied to a call it waits on unfolds that call.
     /// - witness: `element_identity::tests::a_returned_endpoint_replays_as_its_computation`
+    /// - witness: `replay::tests::a_fixpoint_at_a_returned_endpoint_runs_the_endpoint_first`
     #[spec(ensures: |ret| match ret {
         Ok(bind) => matches!(self.arena.computation(bind), Some(&Computation::Bind(bound, _)) if bound == returned),
         Err(_) => true,
@@ -4439,6 +4600,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             }) => self
                 .arena
                 .computation_list_fold(element, result, bound, on_nil, on_cons),
+            | Some(&Computation::Application(head, _)) => {
+                self.arena.computation_application(head, bound)
+            },
             | _ => return Err(unreadable()),
         };
         Ok(self.arena.computation_bind(returned, continuation))
@@ -5152,8 +5316,15 @@ mod tests
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::FixpointEvidence;
+    use gandr_kernel_term::GroundSort;
+    use gandr_kernel_term::LevelSignature;
+    use gandr_kernel_term::Presentation;
+    use gandr_kernel_term::PresentedRule;
+    use gandr_kernel_term::RuleNode;
+    use gandr_kernel_term::RuleVariable;
     use gandr_kernel_term::Side;
     use gandr_kernel_term::TermArena;
 
@@ -5170,6 +5341,8 @@ mod tests
     use super::Unfoldings;
     use super::convert;
     use super::replay;
+    use crate::env::Environment;
+    use crate::presented::Presentations;
 
     /// Replay `trace` for `sides` under the default budget.
     ///
@@ -6494,6 +6667,128 @@ mod tests
             ),
             KernelVerdict::Declined(ReplayDecline::PartialFixpoint)
         );
+    }
+
+    #[test]
+    fn a_fixpoint_at_a_returned_endpoint_runs_the_endpoint_first()
+    {
+        // `pred ⟨return S(Z)⟩`, with `pred` a structural fixpoint, is
+        // `return Z`: the gate reads what the endpoint returns.
+        let mut arena = TermArena::new();
+        let none = Unfoldings::default();
+        let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+        let one = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![zero]);
+        let motive = arena.comp_type_returner(nat);
+        let on_zero = arena.computation_return(zero);
+        let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let on_successor = arena.computation_return(field);
+        let on_successor = arena.computation_lambda(on_successor);
+        let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let cases =
+            arena.computation_data_case(argument, motive, alloc::vec![on_zero, on_successor]);
+        let body = arena.computation_lambda(cases);
+        let pred = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+        let returns_one = arena.computation_return(one);
+        let endpoint = arena.value_returned(returns_one);
+        let applied = arena.computation_application(pred, endpoint);
+        let returns_zero = arena.computation_return(zero);
+        assert_eq!(
+            run(
+                &mut arena,
+                &none,
+                ReplaySides::Computations(applied, returns_zero),
+                EngineClaim::Convertible,
+                &[]
+            ),
+            KernelVerdict::Convertible
+        );
+        assert_ne!(
+            run(
+                &mut arena,
+                &none,
+                ReplaySides::Computations(applied, returns_one),
+                EngineClaim::Convertible,
+                &[]
+            ),
+            KernelVerdict::Convertible
+        );
+    }
+
+    #[test]
+    fn a_returned_leaf_of_a_presented_term_reads_before_the_rules()
+    {
+        // `loop(⟨force wound⟩)`, `wound` defined as `thunk(return
+        // unloop(base))`, is `base` over the presented circle: the leaf returns
+        // `unloop(base)` and `loop(unloop(x))` rewrites to `x`. Over a free
+        // circle the leaf is not read and the sides stay apart.
+        let (base, looped, unlooped) = (
+            ConstructorTag::from(0_usize),
+            ConstructorTag::from(1_usize),
+            ConstructorTag::from(2_usize),
+        );
+        let x = RuleNode::Variable(RuleVariable::from(0_u32));
+        let rules = Presentation::new(alloc::vec![
+            PresentedRule::new(
+                [
+                    RuleNode::Constructor(looped),
+                    RuleNode::Constructor(unlooped),
+                    x
+                ]
+                .into(),
+                [x].into(),
+            ),
+            PresentedRule::new(
+                [
+                    RuleNode::Constructor(unlooped),
+                    RuleNode::Constructor(looped),
+                    x
+                ]
+                .into(),
+                [x].into(),
+            ),
+        ]);
+        let verdict = |presentation: Presentation| {
+            let mut environment = Environment::new();
+            let mut staging = environment.stage();
+            let kind = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, Level::zero());
+            let own = staging
+                .arena()
+                .value_type_data(ConstantIndex::from(0_usize), Vec::new());
+            let staged = staging
+                .data(
+                    LevelSignature::monomorphic(),
+                    Vec::new(),
+                    alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                    kind,
+                )
+                .presented(presentation);
+            let _circle = environment.add_decl(staged).expect("the circle admits");
+            let mut arena = environment.arena().clone();
+            let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+            let at_base = arena.value_constructor(own, base, Vec::new());
+            let back = arena.value_constructor(own, unlooped, alloc::vec![at_base]);
+            let returns_back = arena.computation_return(back);
+            let wound = arena.value_thunk(returns_back);
+            let named = arena.value_constant(ConstantIndex::from(1_usize));
+            let forced = arena.computation_force(named);
+            let leaf = arena.value_returned(forced);
+            let word = arena.value_constructor(own, looped, alloc::vec![leaf]);
+            let unfoldings =
+                Unfoldings::new(alloc::vec![Unfoldable::Opaque, Unfoldable::Body(wound)])
+                    .presenting(Presentations::of(environment.entries()));
+            run(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Values(word, at_base),
+                EngineClaim::Convertible,
+                &[SHARED],
+            )
+        };
+        assert_eq!(verdict(rules), KernelVerdict::Convertible);
+        assert_ne!(verdict(Presentation::default()), KernelVerdict::Convertible);
     }
 
     #[test]

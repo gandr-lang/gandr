@@ -4169,18 +4169,20 @@ where
     }
 
     /// The neutral whose head unfolding `neutral` unfolds: `neutral` itself,
-    /// or the neutral computation a held endpoint's computation is stuck on.
+    /// or the neutral computation a held endpoint's computation is stuck on,
+    /// read inward through every held endpoint it eliminates.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `neutral` for every head but a returned endpoint's; for a
-    ///   returned endpoint, the neutral its computation is.
+    ///   returned endpoint, the neutral [`crate::rules::held_call`] reaches
+    ///   from its computation.
     /// - provides: the one place an endpoint's unfolding is read through to the
     ///   definition it waits on, so the cycle key, the recorded constant and
     ///   the channel all name that definition.
     /// - fails: [`ConversionFault::Domain`] for a dangling node;
-    ///   [`ConversionFault::MachineInvariant`] for an endpoint over a
-    ///   computation that is not neutral.
+    ///   [`ConversionFault::MachineInvariant`] for an endpoint whose walk meets
+    ///   a computation that is not neutral.
     /// - panics: none.
     ///
     /// # Errors
@@ -4188,16 +4190,19 @@ where
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a held endpoint unfolds the definition its
-    ///   computation waits on and the kernel replays that unfolding at the same
-    ///   head; reading the endpoint's own head instead refuses the unfolding.
+    ///   computation waits on, also through an elimination of another held
+    ///   endpoint, and the kernel replays that unfolding at the same head;
+    ///   reading the endpoint's own head, or stopping at the first returned
+    ///   head, refuses the unfolding.
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
+    /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on`
     #[spec(ensures: |ret| match self.domain.neutral(neutral) {
         | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
         | Some(node) => match node.head() {
-            | NeutralHead::Returned(computation) => match self.domain.computation(computation) {
-                | Some(&DomainComp::Neutral { neutral: inner, .. }) => ret == Ok(inner),
-                | Some(_) => ret == Err(ConversionFault::MachineInvariant),
-                | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+            | NeutralHead::Returned(computation) => match crate::rules::held_call(&*self.domain, computation) {
+                | Ok(Some(inner)) => ret == Ok(inner),
+                | Ok(None) => ret == Err(ConversionFault::MachineInvariant),
+                | Err(fault) => ret == Err(fault),
             },
             | _ => ret == Ok(neutral),
         },
@@ -4215,16 +4220,8 @@ where
         else {
             return Ok(neutral);
         };
-        match *self
-            .domain
-            .computation(computation)
-            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
-        {
-            | DomainComp::Neutral { neutral: inner, .. } => Ok(inner),
-            | DomainComp::Lambda { .. }
-            | DomainComp::Return { .. }
-            | DomainComp::Fixpoint { .. } => Err(ConversionFault::MachineInvariant),
-        }
+        crate::rules::held_call(&*self.domain, computation)?
+            .ok_or(ConversionFault::MachineInvariant)
     }
 
     /// The evaluation re-applying `neutral`'s spine to `head`, the body of the
@@ -4234,8 +4231,9 @@ where
     /// - requires: `head` is the body of the constant heading
     ///   [`Scheduler::unfolded_neutral`] of `neutral`.
     /// - ensures: for a constant-headed neutral, [`Evaluation::eliminate`] over
-    ///   its spine; for a held endpoint, [`Evaluation::endpoint`] over its
-    ///   computation's spine and its own.
+    ///   its spine; for a held endpoint, [`Evaluation::endpoint`] over the
+    ///   spine of the call it waits on, then the spine of each endpoint between
+    ///   that call and `neutral`, `neutral`'s own last.
     /// - provides: the second half of δ for both kinds of unfoldable neutral.
     /// - fails: as [`Scheduler::unfolded_neutral`].
     /// - panics: none.
@@ -4243,12 +4241,21 @@ where
     /// # Errors
     /// As [`Scheduler::unfolded_neutral`].
     ///
+    /// # Termination
+    /// - reason: the `while` loop collecting the endpoints' spines, which walks
+    ///   the chain [`crate::rules::held_call`] walks and stops where it
+    ///   stopped, not recursion.
+    /// - measure: as [`crate::rules::held_call`]'s.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a held endpoint under a force runs its definition,
-    ///   delivers the returned value and forces it, so the conversion meets
-    ///   what the kernel's replay meets; re-applying only the endpoint's own
-    ///   spine refuses in evaluation.
+    ///   delivers the returned value and forces it, and one under an
+    ///   elimination of another held endpoint runs the inner call, delivers its
+    ///   value to the elimination and delivers that in turn, so the conversion
+    ///   meets what the kernel's replay meets; re-applying only the endpoint's
+    ///   own spine refuses in evaluation.
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
+    /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on`
     /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     #[spec(ensures: |ret| ret.is_ok() == self.unfolded_neutral(neutral).is_ok())]
     fn reapplication(
@@ -4265,6 +4272,19 @@ where
         if defined == neutral {
             return Ok(Evaluation::eliminate(self.definitions, head, held.spine()));
         }
+        let mut enclosing = Vec::from([held.spine()]);
+        let mut focus = held;
+        while let NeutralHead::Returned(computation) = focus.head()
+            && let Some(&DomainComp::Neutral { neutral: inner, .. }) =
+                self.domain.computation(computation)
+            && inner != defined
+        {
+            focus = self
+                .domain
+                .neutral(inner)
+                .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+            enclosing.push(focus.spine());
+        }
         let inner = self
             .domain
             .neutral(defined)
@@ -4273,7 +4293,7 @@ where
             self.definitions,
             head,
             inner.spine(),
-            held.spine(),
+            &enclosing,
         ))
     }
 
@@ -7801,6 +7821,56 @@ mod tests
             KernelVerdict::Convertible,
             held.replayed(sides, verdict, &decisions),
             "the kernel replays both unfoldings where the endpoints hold them"
+        );
+    }
+
+    #[test]
+    fn a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on()
+    {
+        // `run(ident(thunk(return unit)))`, `run` forcing its argument, as a
+        // compound endpoint against `unit`. Held, `run` unfolds first and
+        // forces the inner endpoint, so the outer endpoint waits on `ident`
+        // through that force: the conversion unfolds `ident` next, and the
+        // kernel replays both steps.
+        let mut core = CoreArena::new();
+        let function = identity(&mut core);
+        let occurrence = innermost(&mut core);
+        let forced = core.computation_force(occurrence);
+        let forcing = core.computation_lambda(forced);
+        let forcing = core.value_thunk(forcing);
+        let ident = core.value_constant(Name::Zero.constant());
+        let run = core.value_constant(Name::One.constant());
+        let unit = core.value_unit();
+        let returned = core.computation_return(unit);
+        let suspended = core.value_thunk(returned);
+        let inner = call(&mut core, ident, &[suspended]);
+        let inner = core.value_returned(inner);
+        let outer = call(&mut core, run, &[inner]);
+        let endpoint = core.value_returned(outer);
+        let sides = Sides::Values(unit, endpoint);
+        let held = World::new(core, &[(Name::Zero, function), (Name::One, forcing)]).holding();
+
+        let (verdict, decisions) = held.traced(sides);
+        assert_eq!(MachineVerdict::Convertible, verdict, "{decisions:?}");
+        let unfolded: Vec<TraceNode> = decisions
+            .iter()
+            .filter_map(|decision| match *decision {
+                | ConversionDecision::Unfold { constant } => Some(constant),
+                | _ => None,
+            })
+            .collect();
+        assert_eq!(
+            unfolded,
+            [
+                TraceNode::Constant(Name::One.constant()),
+                TraceNode::Constant(Name::Zero.constant())
+            ],
+            "the outer call unfolds, then the call its force waits on: {decisions:?}"
+        );
+        assert_eq!(
+            KernelVerdict::Convertible,
+            held.replayed(sides, verdict, &decisions),
+            "the kernel replays both unfoldings"
         );
     }
 

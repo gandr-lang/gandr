@@ -70,6 +70,9 @@
 //! `eval::tests::a_held_endpoint_stays_at_its_definition` and
 //! `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`.
 //!
+//! A held endpoint standing as a leaf of a presented constructor term is the
+//! one a conversion reads without a decision; [`crate::presented`] says why.
+//!
 //! # Source sharing is expanded unless the policy handed a leg over
 //!
 //! A core term is a DAG, and this machine walks it as a tree: a node reached
@@ -2499,20 +2502,25 @@ impl<'run> Evaluation<'run>
 
     /// An evaluation of a held endpoint once the definition its computation
     /// is stuck on unfolds: `inner` re-applied to `head`, the computation that
-    /// gives delivered as the endpoint's value, and `outer` applied to that.
+    /// gives delivered as a value, and each spine of `enclosing`, innermost
+    /// last in the slice, applied to what the one inside it delivers.
     ///
     /// # Specification
-    /// - requires: `inner` is the spine of the neutral computation the endpoint
-    ///   holds, so it is non-empty, its first elimination eliminates a value
-    ///   and the last leaves a computation; `outer` is the endpoint's own
-    ///   spine.
+    /// - requires: `inner` is the spine of the neutral computation the
+    ///   innermost endpoint holds, so it is non-empty, its first elimination
+    ///   eliminates a value and the last leaves a computation; `enclosing`
+    ///   holds the endpoint's own spine first, then the spine of each neutral
+    ///   computation between it and `inner`, outermost first, so it is
+    ///   non-empty.
     /// - ensures: an evaluation whose stacks hold `head` alone and whose tasks
-    ///   run `inner`'s eliminations, then one delivery of the returned value,
-    ///   then `outer`'s; its answer is a value when every elimination of
-    ///   `outer` is a static application, a computation otherwise.
+    ///   run `inner`'s eliminations, then, for each spine of `enclosing` from
+    ///   the last to the first, one delivery of the returned value and that
+    ///   spine's eliminations; its answer is a value when every elimination of
+    ///   the first spine is a static application, a computation otherwise.
     /// - provides: the unfolding of a held endpoint, `E[c]` with `c` stuck on a
     ///   definition: the definition's body stands where it stood, the endpoint
-    ///   delivers what `c` then returns, and `E` runs on it.
+    ///   delivers what `c` then returns, and `E` runs on it. A nested endpoint
+    ///   `E[F[c]]`, where `F` eliminates the endpoint over `c`, delivers twice.
     /// - fails: never here; an ill-shaped spine is refused by the slice that
     ///   reaches it.
     /// - panics: none.
@@ -2520,16 +2528,19 @@ impl<'run> Evaluation<'run>
     /// # Adequacy
     /// - hypothesis: L3 — a held endpoint nested under a force and an
     ///   application unfolds to the value its definition returns and runs the
-    ///   force on it, and the kernel replays the recorded unfolding at the
-    ///   endpoint's head; dropping the delivery or the outer spine changes the
-    ///   verdict or the replay.
+    ///   force on it, one under another endpoint's elimination runs that
+    ///   elimination on the value, and the kernel replays the recorded
+    ///   unfolding at the endpoint's head; dropping a delivery or an enclosing
+    ///   spine changes the verdict or the replay.
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
+    /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on`
     #[spec(
-        requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
+        requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_)))
+            && !enclosing.is_empty(),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32
-            && ret.machine.tasks.iter().filter(|task| matches!(task, Task::Returned)).count() == 1_usize
-            && ret.answer == if outer.iter().all(|elimination| matches!(elimination, Elimination::StaticApply(_))) {
+            && ret.machine.tasks.iter().filter(|task| matches!(task, Task::Returned)).count() == enclosing.len()
+            && ret.answer == if enclosing.first().is_none_or(|outer| outer.iter().all(|elimination| matches!(elimination, Elimination::StaticApply(_)))) {
                 Answer::Value
             } else {
                 Answer::Computation
@@ -2539,12 +2550,19 @@ impl<'run> Evaluation<'run>
         definitions: Definitions<'run>,
         head: DomainValueId,
         inner: &[Elimination],
-        outer: &[Elimination],
+        enclosing: &[&[Elimination]],
     ) -> Self
     {
         let mut machine = Machine::new(definitions, Fuel(0_u32));
-        let answer = push_eliminations(&mut machine, outer);
-        machine.tasks.push(Task::Returned);
+        let mut answer = Answer::Value;
+        if let Some((outer, within)) = enclosing.split_first() {
+            answer = push_eliminations(&mut machine, outer);
+            machine.tasks.push(Task::Returned);
+            for spine in within {
+                let _computation = push_eliminations(&mut machine, spine);
+                machine.tasks.push(Task::Returned);
+            }
+        }
         let _computation = push_eliminations(&mut machine, inner);
         machine.values.push(head);
         Self { machine, answer }
@@ -5823,6 +5841,76 @@ fn returned_value(
             Err(EvalFault::ReturnedNonReturner)
         },
     }
+}
+
+/// What a held endpoint returns once its computation runs on through the
+/// definitions it is stuck on.
+///
+/// # Specification
+/// - requires: `value` lives in `domain`.
+/// - ensures: `Ok((Some(read), left))` when `value` is a held endpoint — a
+///   neutral headed by a returned computation, with an empty spine — whose
+///   computation, run under [`Endpoints::Run`], returns `read`, a value that is
+///   no held endpoint; `Ok((None, left))` for any other value, and for an
+///   endpoint whose run sticks again. `left` is `fuel` less one unit per task
+///   the run popped.
+/// - provides: the reading of a held endpoint no recorded decision can reach:
+///   one standing as a leaf of a presented type's constructor term.
+/// - fails: every variant of [`EvalFault`] the run raises,
+///   [`EvalFault::OutOfFuel`] when `fuel` runs out first.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `loop(⟨ident(unloop(base))⟩)` over the presented circle
+///   reads as `base` once the held `ident(unloop(base))` returns
+///   `unloop(base)`, and the kernel's replay reads the same leaf by its own
+///   evaluator; over a free circle the word stays apart from `base`.
+/// - witness: `presented::tests::a_held_call_under_a_presented_constructor_reads_as_what_it_returns`
+#[spec(ensures: |ret| match ret {
+    Ok((read, left)) => u32::from(left) <= u32::from(fuel)
+        && read.is_none_or(|read| domain.value(read).is_some()),
+    Err(_) => true,
+})]
+pub fn run_held(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    fuel: Fuel,
+    value: DomainValueId,
+) -> Result<(Option<DomainValueId>, Fuel), EvalFault>
+{
+    let held = |domain: &DomainArena, value| -> Result<Option<DomainCompId>, EvalFault> {
+        let Some(&DomainValue::Neutral { neutral, .. }) = domain.value(value)
+        else {
+            return Ok(None);
+        };
+        let node = domain
+            .neutral(neutral)
+            .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+        Ok(match node.head() {
+            | NeutralHead::Returned(computation) if node.spine().is_empty() => Some(computation),
+            | _ => None,
+        })
+    };
+    let Some(computation) = held(domain, value)?
+    else {
+        return Ok((None, fuel));
+    };
+    let mut machine = Machine::new(definitions.reading_endpoints(Endpoints::Run), fuel);
+    machine.comps.push(computation);
+    machine.tasks.push(Task::Returned);
+    run(core, domain, &mut machine)?;
+    let read = machine.pop_value()?;
+    let read = if held(domain, read)?.is_some() {
+        None
+    }
+    else {
+        Some(read)
+    };
+    Ok((read, machine.fuel))
 }
 
 /// Assemble a nominal value from its already evaluated fields.
