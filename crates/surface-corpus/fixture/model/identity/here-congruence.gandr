@@ -1,0 +1,25 @@
+/// A declared reflexivity.
+@[ checks ]
+def two : Path(Integer, 2, 2) ;
+def two = here(2) ;
+
+/// Two reflexivities convert when their points do.
+@[ checks ]
+def two_is_here : Path(Path(Integer, 2, 2), two, here(2)) ;
+def two_is_here = here(here(2)) ;
+
+/// `here(two)` at that path.
+@[ checks ]
+def here_two : Path(Path(Integer, 2, 2), two, here(2)) ;
+def here_two = here(two) ;
+
+/// Points one unfolding apart, one level up.
+@[ checks ]
+def here_two_up : Path(Path(Path(Integer, 2, 2), two, here(2)), here(two), here(here(2))) ;
+def here_two_up = here(here(two)) ;
+
+/// A parameter does not unfold to `here(2)`.
+@[ refuses("EndpointMismatch") ]
+def apart(q: Path(Integer, 2, 2)) -> -F Path(Path(Integer, 2, 2), q, here(2)) {
+  return here(q)
+}

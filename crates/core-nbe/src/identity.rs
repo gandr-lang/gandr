@@ -1205,6 +1205,66 @@ mod tests
     }
 
     #[test]
+    fn reflexivities_convert_by_points_a_definition_relates()
+    {
+        // def five_is = "five" ; `here(five_is)` against `here("five")`.
+        let mut core = CoreArena::new();
+        let five = literal(&mut core, Word::Five);
+        let six = literal(&mut core, Word::Six);
+        let defined = core.value_constant(ConstantIndex::from(0_usize));
+        let declared = core.value_here(defined);
+        let written = core.value_here(five);
+        let apart = core.value_here(six);
+        let mut chain = gandr_core_term::DefinitionChain::new();
+        chain
+            .define(
+                ConstantIndex::from(0_usize),
+                gandr_kernel_term::GlobalIndex::from(0_u32),
+                gandr_core_term::Transparency::Manifest,
+                &[],
+            )
+            .expect("one definition enters an empty chain");
+        let Ok(chain) =
+            LoweredChain::lower(chain, |_entry| Ok::<_, core::convert::Infallible>(five));
+        let environment = DefinitionalEnvironment::new();
+        let empty = LoweredChain::new();
+        for (definitions, related) in [
+            (
+                Definitions::new(&chain, &environment, environment.root()),
+                MachineVerdict::Convertible,
+            ),
+            (
+                Definitions::new(&empty, &environment, environment.root()),
+                MachineVerdict::NotConvertible,
+            ),
+        ] {
+            let mut domain = DomainArena::new();
+            let [declared, written, apart] = [declared, written, apart].map(|value| {
+                eval_value(&core, &mut domain, definitions, ample(), value)
+                    .expect("closed values evaluate")
+            });
+            let mut decided = |left, right| {
+                decide::<NullSink, NullMemo>(
+                    &core,
+                    &mut domain,
+                    definitions,
+                    MachineSettings::default(),
+                    Problem::values(left, right),
+                    &mut NullSink,
+                )
+                .expect("the machine answers")
+                .verdict()
+            };
+            assert_eq!(
+                decided(declared, written),
+                related,
+                "the points relate exactly when the definition unfolds"
+            );
+            assert_eq!(decided(declared, apart), MachineVerdict::NotConvertible);
+        }
+    }
+
+    #[test]
     fn stuck_transports_compare_by_motive_and_operand()
     {
         let mut core = CoreArena::new();
