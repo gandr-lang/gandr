@@ -59,6 +59,14 @@
 //! kernel refuses `here_two_up` at that decision, naming the endpoint and the
 //! replay refusal.
 //!
+//! `kernel_export::kernel_presented_readmission::a_circle_read_without_or_against_its_rules_is_refused_by_name`
+//! readmits `fixture/model/identity/circle.gandr`, whose `cancelled` relates
+//! `Loop(Unloop(Loop(Base)))` to `Loop(Base)` by reflexivity alone: the kernel
+//! reads both endpoints by their normal forms under the circle's rules. A twin
+//! whose circle carries no rules is refused at `cancelled`, naming the
+//! endpoint the point does not reach; a twin whose circle carries a rule that
+//! grows its word is refused at the circle, naming the rule and its fault.
+//!
 //! The suite derives its expectations from admission and storage semantics
 //! rather than checked-in sizes, identities, class thresholds or corpus
 //! cardinalities. Exact kernel format goldens belong to `gandr-kernel-term`;
@@ -1337,6 +1345,114 @@ mod kernel_here_congruence_readmission
             ),
             "the kernel names the endpoint and the misread decision: {:?}",
             refusal.error()
+        );
+    }
+}
+
+/// A presented type's cancellation readmits by its normal forms; a circle
+/// without its rules, or with a rule that does not present it, is refused by
+/// name.
+mod kernel_presented_readmission
+{
+    use alloc::vec;
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::EndpointSide;
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::IdentityError;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::Presentation;
+    use gandr_kernel_term::PresentedRule;
+    use gandr_kernel_term::RuleFault;
+    use gandr_kernel_term::RuleIndex;
+    use gandr_kernel_term::RuleNode;
+    use gandr_kernel_term::RuleRefusal;
+    use gandr_kernel_term::RuleVariable;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::decode;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_circle_read_without_or_against_its_rules_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/identity/circle.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the circle lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the circle's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("the circle readmits, `cancelled` by its endpoints' normal forms");
+        let position = |name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(vec![segment]);
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"))
+        };
+        let circle = position("Circle");
+        let cancelled = position("cancelled");
+        // The declarations with the circle presented by `presentation`.
+        let presenting = |presentation: Presentation| {
+            let mut twin = declarations.clone();
+            let Some(marked) = twin.get_mut(circle)
+            else {
+                panic!("the circle is a declaration");
+            };
+            *marked = MarkedDeclaration::new(
+                marked.mark(),
+                marked.declaration().clone().presented(presentation),
+            );
+            twin
+        };
+
+        let free = presenting(Presentation::default());
+        let refusal = Environment::replay(arena.clone(), &free)
+            .expect_err("over a free circle the two words are two terms");
+        assert_eq!(usize::from(refusal.position()), cancelled);
+        assert!(
+            matches!(
+                *refusal.error(),
+                KernelError::Identity(IdentityError::EndpointsDiffer {
+                    side: EndpointSide::Left,
+                    ..
+                })
+            ),
+            "the kernel names the endpoint the point does not reach: {:?}",
+            refusal.error()
+        );
+
+        let x = RuleNode::Variable(RuleVariable::from(0_u32));
+        let loop_ = RuleNode::Constructor(ConstructorTag::from(1_usize));
+        let growing = Presentation::new(vec![PresentedRule::new(
+            [loop_, x].into(),
+            [loop_, loop_, x].into(),
+        )]);
+        let grown = presenting(growing);
+        let refusal = Environment::replay(arena, &grown)
+            .expect_err("a rule that grows its word does not present the circle");
+        assert_eq!(usize::from(refusal.position()), circle);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::RuleNotPresentable(RuleRefusal {
+                rule: RuleIndex::from(0_usize),
+                fault: RuleFault::NotDecreasing,
+            }),
+            "the kernel names the rule and its fault"
         );
     }
 }

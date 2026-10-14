@@ -255,6 +255,42 @@
 //! loop stays δ-free. The witness is
 //! `element_identity::tests::a_definition_relating_compound_endpoints_admits`.
 //!
+//! # Presented types
+//!
+//! A data declaration may present its type by rules over its own
+//! constructors, `Loop(Unloop(x)) ~> x` (kernel-term's `Presentation`, the
+//! additive declaration kind `0x08`): two terms of the type are equal when
+//! the rules rewrite them to one normal form. Admission validates the rules
+//! against the constructor table ([`presented`]): each left side is headed by
+//! a constructor, linear, and matches constructors only where a field has the
+//! declaration's own type; each right side is built from the variables its
+//! left side binds, each at most once and at the field type it was bound at,
+//! and holds fewer constructors, so every rewrite shrinks the term and
+//! normalization ends. A rule that fails is refused `RuleNotPresentable`,
+//! naming the rule and its fault.
+//!
+//! The replay reads a presented value by its normal form as part of weak head
+//! reduction, a forced step no decision records, and the mode switch sets a
+//! pair of presented constructors aside for that reading. Normalization is
+//! δ-free: it flattens the constructors of the presented type alone, and every
+//! other field is a leaf it moves but never reads. A refutation of two
+//! presented terms is not authoritative, because two normal forms headed
+//! apart may still meet through a leaf.
+//!
+//! **Choice.** Rules live on the data declaration, read by one rewriting
+//! strategy both checkers run (innermost, last in pre-order, first rule in
+//! written order), so they reach one normal form even for rules that are not
+//! confluent; conversion is then an equivalence the rules generate, and sound.
+//! **Alternatives.** Quotient syntax with a node of its own, which would put
+//! the rules' obligations in every term that names the type; a confluence
+//! check in the kernel, which the producer's critical-pair joins already
+//! certify. **Reversal.** A presentation whose rules terminate only by a path
+//! order takes that order's check here in place of the size bound; one whose
+//! redexes sit behind a definition unfolds its leaves by recorded decisions.
+//! The witnesses are
+//! `presented::tests::the_forced_loop_converts_circle_words_by_their_normal_forms`
+//! and `presented::tests::a_mode_switch_reads_circle_words_by_their_normal_forms`.
+//!
 //! # Contract boundaries
 //!
 //! The source `# Specification` is authoritative; `#[spec(...)]` checks
@@ -285,7 +321,7 @@
 //!
 //! | Boundary | Items | Unavailable observation |
 //! | -------- | ----: | ----------------------- |
-//! | Data declarations | 10 | Evidence validity, event history or comparison of executions; producers and consumers carry the callable obligations. |
+//! | Data declarations | 12 | Evidence validity, event history or comparison of executions; producers and consumers carry the callable obligations. |
 //! | Evaluated tag assertion | 1 | No callable boundary; constant evaluation checks the sparse tag bound. |
 //! | `KernelError::fmt` | 1 | No readable formatter output buffer. |
 //! | `Unfoldings::new` | 1 | No arena provenance or closure observer; lookup and replay witness it. |

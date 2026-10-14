@@ -38,7 +38,9 @@
 //! Both sides are first put in weak head form by the reductions that need no
 //! choice — β, a forced thunk, a returner met by a bind, an injection met by a
 //! case, a lazy pairing met by a projection, an elimination met by a returned
-//! endpoint, never a δ-step. Then:
+//! endpoint, never a δ-step — and a value of a presented type is read by its
+//! normal form under the type's rules ([`Unfoldings::presentations`], crate
+//! docs § Presented types). Then:
 //!
 //! | goal | what the replay reads |
 //! | --- | --- |

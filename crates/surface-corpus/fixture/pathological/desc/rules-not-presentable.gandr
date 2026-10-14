@@ -1,0 +1,6 @@
+@[ refuses("RuleNotPresentable") ]
+data Tally : Type {
+  Empty : Tally;
+  Mark : (n : Integer) --> Tally;
+  rule Mark(Empty) ==> Empty;
+}

@@ -61,6 +61,25 @@
 //! the bytes, and no codec sits inside a reader whose rejection vocabulary has
 //! to stay clean. The bytes are declaration-segmented and self-delimiting.
 //!
+//! # Presentations
+//!
+//! A data declaration may carry rules over its own constructors that present
+//! its type ([`Presentation`]), encoded under its own declaration kind
+//! ([`KIND_DATA_PRESENTED`]) so a free declaration's bytes are unchanged. The
+//! rules' validation against a constructor table and their rewriting to
+//! normal form live beside their representation: they are what a presentation
+//! means, and the kernel and the engine must run one strategy to reach one
+//! normal form. Neither is a judgement — the kernel's admission decides
+//! whether a declaration's rules present its type, and its conversion decides
+//! what the normal forms relate.
+//!
+//! **Choice.** Rule sides in pre-order over constructor tags and pattern
+//! variables, so a rule names no arena node and crosses every boundary
+//! unchanged. **Alternatives.** Rule sides as arena terms, which would tie a
+//! presentation to one arena and widen the node vocabulary. **Reversal.** A
+//! rule that must name a value of another type, a literal in a pattern,
+//! takes a leaf payload in [`RuleNode`].
+//!
 //! # Specification attributes
 //!
 //! Clause-bearing items carry executable `#[spec(...)]` predicates or a local

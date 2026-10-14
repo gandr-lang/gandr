@@ -194,10 +194,11 @@ pub fn form_signature(
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the circle's rules admit, and a rule placing a
-///   constructor under a field of another type is refused by name in both
-///   checkers.
-/// - witness: `presented::tests::the_circle_presents_and_a_misplaced_rule_is_refused`
+/// - hypothesis: L3 — a rule placing a constructor of the family at a field of
+///   another type is refused by name in both checkers, and the circle's
+///   cancellations admit.
+/// - witness: `native_formers::native_formers::a_misplaced_rule_is_refused_in_both_checkers`
+/// - witness: `native_formers::native_formers::a_presented_word_meets_its_reduced_word_in_both_checkers`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::RuleNotPresentable { .. })))]
 fn present(
     context: &CheckingContext<'_>,

@@ -685,7 +685,7 @@ impl CodeDefinitions
     /// # Adequacy
     /// - hypothesis: L3 — a circle word checks at its reduced word's path type
     ///   once the circle is presented, and is refused over a free circle.
-    /// - witness: `presented::tests::a_presented_word_meets_its_reduced_word_in_both_checkers`
+    /// - witness: `native_formers::native_formers::a_presented_word_meets_its_reduced_word_in_both_checkers`
     #[inline]
     pub fn present(
         &mut self,
