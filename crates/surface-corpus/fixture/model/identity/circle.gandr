@@ -271,9 +271,39 @@ def spun_back = here(Base) ;
 def spun_under : Path(Circle, spin(P(Z)), Unloop(Base)) ;
 def spun_under = here(Unloop(Base)) ;
 
+/// The round trip at a closed word: winding a loop and spinning the count
+/// gives the loop back. The inner call stands as the outer one's argument,
+/// and conversion runs both.
+@[ checks ]
+def spun_wound : Path(Circle, spin(wind(Loop(Base))), Loop(Base)) ;
+def spun_wound = here(Loop(Base)) ;
+
+/// The other round trip at a closed count: spinning two successors and
+/// winding the word counts two.
+@[ checks ]
+def wound_spun : Path(Int, wind(spin(S(S(Z)))), S(S(Z))) ;
+def wound_spun = here(S(S(Z))) ;
+
+/// A round trip returns the normal form, not the word it started from: a
+/// cancelled loop comes back as the loop.
+@[ checks ]
+def spun_wound_cancelled : Path(Circle, spin(wind(Loop(Unloop(Loop(Base))))), Loop(Base)) ;
+def spun_wound_cancelled = here(Loop(Base)) ;
+
+/// A respelled count comes back as its normal form, one predecessor.
+@[ checks ]
+def wound_spun_respelled : Path(Int, wind(spin(S(P(P(Z))))), P(Z)) ;
+def wound_spun_respelled = here(P(Z)) ;
+
+/// The round trip does not lose the loop: it is not the point.
+@[ refuses("EndpointMismatch") ]
+def spun_wound_lost : Path(Circle, spin(wind(Loop(Base))), Base) ;
+def spun_wound_lost = here(Base) ;
+
 /// The circle's words and the presented integers are equivalent, by `wind`
-/// and `spin`. Each round trip is proved by induction over a presented type,
-/// which needs a case whose result type depends on the scrutinee, so the
-/// record is owed until then.
+/// and `spin`. The round trips hold at every closed word above; at a variable
+/// each is proved by induction over a presented type, which needs a case
+/// whose result type depends on the scrutinee, so the record is owed until
+/// then.
 @[ owes(1) ]
 def winding : #{to : +U (Circle -> -F Int), back : +U (Int -> -F Circle), sect : (c : Circle) => Path(Circle, back(to(c)), c), retr : (n : Int) => Path(Int, to(back(n)), n)} ;
