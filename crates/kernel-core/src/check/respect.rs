@@ -8,8 +8,17 @@
 //! other case is `F` itself, its scrutinee replaced by each side. The
 //! conversion is the kernel's own, [`crate::replay::convert`]: the forced
 //! rules, no constant unfolding, a presented type's terms read by their normal
-//! forms. The checker decides the same obligation δ-free and the kernel
-//! re-derives it with no trace, so no dialogue carries it.
+//! forms, and a cong chain whose functions compose to the identity read as its
+//! path, the chain's functions read through the admitted definitions by the
+//! kernel's own evaluator. The checker decides the same obligation δ-free and
+//! the kernel re-derives it with no trace, so no dialogue carries it.
+//!
+//! A dependent fold into a path type meets a rule's two sides as cong chains:
+//! `sect(Loop(Unloop(x)))` binds `sect(x)` into `cong(unlooped, _)` and that
+//! into `cong(looped, _)`, and the chain's composite `looped ∘ unlooped`
+//! reads as the identity once the circle's rules apply, so the obligation
+//! against `sect(x)` converts by the commuting conversions of `F` and the
+//! chain's reading, with no law named.
 //!
 //! A fold into a model meets a rule only up to the model's law: the winding
 //! number computes `turn(unturn(wind(x)))` against `wind(x)`. Such a fold's
@@ -52,6 +61,7 @@ use crate::presented::Presentations;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
 use crate::replay::ReplaySides;
+use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_computation;
 use crate::rewrite::shift_value;
@@ -244,7 +254,7 @@ pub(super) fn obliged(
 )]
 pub(super) fn respected(
     arena: &mut TermArena,
-    (entries, presentations): (&[AdmittedDeclaration], &Presentations),
+    (entries, unfoldings): (&[AdmittedDeclaration], &Unfoldings),
     case: ComputationId,
     reading: Reading,
     laws: &[ConstantIndex],
@@ -277,7 +287,7 @@ pub(super) fn respected(
         let decided =
             obligation(arena, (head, datatype), reading, rule, &arities).and_then(|obliged| {
                 let sides = ReplaySides::Computations(obliged.left, obliged.right);
-                if crate::replay::convert(arena, presentations, sides, ReplayBudget::DEFAULT)
+                if crate::replay::convert(arena, unfoldings, sides, ReplayBudget::DEFAULT)
                     == KernelVerdict::Convertible
                 {
                     return Ok(());
@@ -286,7 +296,7 @@ pub(super) fn respected(
                     | (Reading::Fold { arrow, .. }, Some(&law)) => {
                         let related = lawful(
                             arena,
-                            (entries, presentations),
+                            (entries, unfoldings),
                             (obliged, arrow),
                             (rule, signature, declaration),
                             law,
@@ -487,7 +497,7 @@ fn pattern_binder(
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::ArenaFault | KernelError::DataArgumentArity)))]
 fn lawful(
     arena: &mut TermArena,
-    (entries, presentations): (&[AdmittedDeclaration], &Presentations),
+    (entries, unfoldings): (&[AdmittedDeclaration], &Unfoldings),
     (obliged, arrow): (Obliged, CompTypeId),
     (rule, signature, declaration): (&PresentedRule, super::former::Signature<'_>, ConstantIndex),
     law: ConstantIndex,
@@ -579,7 +589,7 @@ fn lawful(
             | _ => arena.computation_return(endpoint),
         };
         let sides = ReplaySides::Computations(side, in_place);
-        if crate::replay::convert(arena, presentations, sides, ReplayBudget::DEFAULT)
+        if crate::replay::convert(arena, unfoldings, sides, ReplayBudget::DEFAULT)
             == KernelVerdict::Convertible
         {
             continue;
@@ -587,7 +597,7 @@ fn lawful(
         let mut table = ContentTable::default();
         let stated = sequenced(arena, &mut table, endpoint);
         let sides = ReplaySides::Computations(side, stated);
-        if crate::replay::convert(arena, presentations, sides, ReplayBudget::DEFAULT)
+        if crate::replay::convert(arena, unfoldings, sides, ReplayBudget::DEFAULT)
             != KernelVerdict::Convertible
         {
             return Ok(Related::Apart);

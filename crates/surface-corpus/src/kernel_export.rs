@@ -67,6 +67,14 @@
 //! endpoint the point does not reach; a twin whose circle carries a rule that
 //! grows its word is refused at the circle, naming the rule and its fault.
 //!
+//! `kernel_export::kernel_presented_readmission::a_section_at_a_variable_readmits_and_a_tampered_twin_is_refused_by_name`
+//! readmits `fixture/model/identity/circle.gandr`'s round trips at a variable:
+//! `sect`, a fold into `Path(Circle, spin(wind(c)), c)` whose respect
+//! obligations are cong chains the kernel reads as their paths, `retr`, and the
+//! equivalence `winding` that holds them. A twin whose `sect` carries the
+//! loop's path along the inverse is refused at `sect`, naming the computation
+//! type its loop arm does not answer.
+//!
 //! `kernel_export::kernel_open_fold_readmission::a_step_case_read_through_a_swapped_fold_is_refused_by_name`
 //! readmits `fixture/model/identity/open-fold.gandr`, whose `unfolded` relates
 //! `wind(Loop(x))` to `S(wind(x))` at a variable: the kernel reads the `Loop`
@@ -1369,9 +1377,10 @@ mod kernel_here_congruence_readmission
 /// name; a fold over the circle readmits when it respects the rules, and a
 /// twin whose arm breaks one is refused by name; a fold that rests on laws
 /// readmits on them, and a twin whose laws are forged — each stating the
-/// other rule's path — is refused by the first rule; a loop's words readmit
-/// as their cell mints them, and a twin without the cancellations is refused
-/// by name.
+/// other rule's path — is refused by the first rule; a section at a variable
+/// readmits by its cong chains, and a twin carrying the wrong loop is refused
+/// by name; a loop's words readmit as their cell mints them, and a twin
+/// without the cancellations is refused by name.
 mod kernel_presented_readmission
 {
     use alloc::vec;
@@ -1652,6 +1661,85 @@ mod kernel_presented_readmission
             *refusal.error(),
             KernelError::RuleNotRespected(RuleIndex::from(0_usize)),
             "the kernel names the rule the forged law fails"
+        );
+    }
+
+    #[test]
+    fn a_section_at_a_variable_readmits_and_a_tampered_twin_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/identity/circle.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the circle lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the circle's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        let position = |name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(vec![segment]);
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"))
+        };
+        let (sect, _retr, _winding) = (position("sect"), position("retr"), position("winding"));
+        Environment::replay(arena.clone(), &declarations).expect(
+            "the round trips at a variable readmit, each respect obligation fusing its cong chain",
+        );
+        let marked = &declarations[sect];
+        let DeclarationContent::Def { declared, body } = *marked.declaration().content()
+        else {
+            panic!("`sect` is a definition");
+        };
+        let Some(&Value::Thunk(fixpoint)) = arena.value(body)
+        else {
+            panic!("`sect` is a thunk");
+        };
+        let Some(&Computation::Fixpoint {
+            body: lambda,
+            evidence,
+        }) = arena.computation(fixpoint)
+        else {
+            panic!("`sect` is a fixpoint");
+        };
+        let Some(&Computation::Lambda(case)) = arena.computation(lambda)
+        else {
+            panic!("`sect` opens with a lambda");
+        };
+        let Some(Computation::DataCase {
+            scrutinee,
+            motive,
+            branches,
+        }) = arena.computation(case).cloned()
+        else {
+            panic!("`sect` cases on its argument");
+        };
+        // The twin carries the loop's path along `unaround`: the loop arm
+        // then relates `Unloop(spin(wind(x)))` to `Unloop(x)`, not the
+        // motive at `Loop(x)`.
+        let tampered = vec![branches[0], branches[2], branches[2]];
+        let case = arena.computation_data_case(scrutinee, motive, tampered);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(lambda, evidence);
+        let body = arena.value_thunk(fixpoint);
+        let named = marked.declaration().name().clone();
+        let twin_declaration = DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, body)
+            .named(named);
+        let mut twin = declarations.clone();
+        twin[sect] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("the tampered arm does not answer the motive at the loop");
+        assert_eq!(usize::from(refusal.position()), sect);
+        assert!(
+            matches!(*refusal.error(), KernelError::ComputationTypeMismatch(_)),
+            "the kernel refuses the arm at the motive it does not answer: {:?}",
+            refusal.error()
         );
     }
 }
