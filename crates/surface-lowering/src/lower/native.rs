@@ -321,6 +321,8 @@ use crate::module::DataIndex;
 use crate::module::Generators;
 use crate::module::Half;
 use crate::module::Operand;
+use crate::module::SlotIndex;
+use crate::module::closed_term;
 use crate::origin::ArmOrigin;
 use crate::origin::CaseOrigin;
 use crate::origin::Insertion;
@@ -926,6 +928,14 @@ enum Head
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Punned(bool);
 
+/// Whether a word's letter is a loop's inverse rather than the loop.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Inverse(bool);
+
 /// How many components a split binds, or how many summands a sum switch
 /// cases on.
 ///
@@ -1209,7 +1219,7 @@ impl<'source> Lowerer<'_, 'source>
                 .data
                 .get(form)
                 .map_or(0_usize, |written| written.parameters.len()),
-            | Generators::Presentation => 0_usize,
+            | Generators::Presentation | Generators::Words(_) => 0_usize,
         };
         let classifier = match self.classifiers.get(&site.at.node) {
             | Some(&written) => Maybe::Present(written),
@@ -1237,6 +1247,265 @@ impl<'source> Lowerer<'_, 'source>
         );
 
         Ok(())
+    }
+
+    /// Classify the word `letter ∷ rest`, written at `site`.
+    ///
+    /// # Specification
+    /// - requires: `letter` and `rest` are the cons's operands, in order.
+    /// - ensures: the constructor of the words `letter` names, as
+    ///   [`Self::written_letter`] reads it, applied to `rest`, as
+    ///   [`Self::construct`] plans it; the letter, and the name inside an
+    ///   inverse letter, recorded with its words so each answers at the path
+    ///   type at their point.
+    /// - fails: the unadmitted refusal at the cons for a left operand that is
+    ///   no loop and no loop's inverse; [`Self::construct`]'s refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The cons's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a letter and an inverse cons onto a word, each letter
+    ///   and the name inside the inverse labelled at the path type, and a left
+    ///   operand that is no loop is refused.
+    /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Constructor(_))))]
+    pub(super) fn cons(
+        &mut self,
+        site: Site,
+        letter: Placed,
+        rest: Placed,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Maybe::Present(constructor) = self.written_letter(site, letter)?
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted));
+        };
+        if let Generators::Words(words) = constructor.form {
+            self.lettered.push((letter.span, words));
+            if constructor.named.span != letter.span {
+                self.lettered.push((constructor.named.span, words));
+            }
+        }
+        let start = self.operands.len();
+        self.operands.push(rest.node);
+        let fields = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        self.construct(site, constructor, fields)
+    }
+
+    /// The letter a cons's left operand `at`, written under `site`, spells: a
+    /// loop's name its letter, and `back(g)`, `g` a loop's name, its inverse.
+    ///
+    /// # Specification
+    /// - requires: `at` is a cons's left operand.
+    /// - ensures: as [`Self::loop_letter`], for the name `at` is or the one
+    ///   `back` applies to; `back` is read by its spelling, whatever a
+    ///   declaration of that name binds, since only a letter conses. The
+    ///   unnamed absence for any other form.
+    /// - fails: [`Self::loop_letter`]'s refusals;
+    ///   [`LoweringRefusal::UnknownMold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As stated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::cons`].
+    /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    #[spec(ensures: |ret| match ret {
+        Ok(Maybe::Present(constructor)) => constructor.arity == 1 && matches!(constructor.form, Generators::Words(_)),
+        _ => true,
+    })]
+    fn written_letter(
+        &mut self,
+        site: Site,
+        at: Placed,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        let unnamed = Ok(Maybe::Absent(constructed::Absent::Unnamed));
+        let Some(node) = self.tree.node(at.node)
+        else {
+            return unnamed;
+        };
+        let (cell, inverse) = match shape_of(self.pbg, node)? {
+            | Shape::Form {
+                former: Former::Name,
+                ..
+            } => (at, false),
+            | Shape::Form {
+                former: Former::Call,
+                ..
+            } => {
+                let mut pieces = core::mem::take(&mut self.scratch);
+                let read = read_pieces(self.pbg, self.tree, at.node, &mut pieces);
+                let mut operands = pieces.pieces.iter().filter_map(|piece| match *piece {
+                    | Piece::Operand(operand) => Some(operand),
+                    | Piece::Tile { .. } => None,
+                });
+                let written = (operands.next(), operands.next(), operands.next());
+                self.scratch = pieces;
+                read?;
+                let (Some(head), Some(cell), None) = written
+                else {
+                    return unnamed;
+                };
+                if self.text_at(head).as_ref() != super::identity::BACK
+                    || !matches!(self.form_at(cell)?, Some((_, Former::Name)))
+                {
+                    return unnamed;
+                }
+                (cell, true)
+            },
+            | Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+                return unnamed;
+            },
+        };
+        self.loop_letter(site, cell, Inverse(inverse))
+    }
+
+    /// The letter of the loop `cell` names, written under `site`, or its
+    /// inverse when `inverse` holds.
+    ///
+    /// # Specification
+    /// - requires: `cell` is a name's own node or tile inside the form at
+    ///   `site`, which the name is resolved under: a name inside a letter is
+    ///   owned by no declaration until the form around it is read.
+    /// - ensures: when the name resolves to a loop's binding, the constructor
+    ///   of the loop's words whose tag is the loop's letter, or its inverse,
+    ///   with one field, the rest of the word; the unnamed absence for a name
+    ///   that resolves to anything else or to nothing.
+    /// - fails: the name's resolution refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As stated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::cons`].
+    /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    #[spec(ensures: |ret| match ret {
+        Ok(Maybe::Present(constructor)) => constructor.arity == 1 && constructor.named == cell,
+        _ => true,
+    })]
+    fn loop_letter(
+        &mut self,
+        site: Site,
+        cell: Placed,
+        inverse: Inverse,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        let named = Site {
+            at: Placed {
+                node: site.at.node,
+                span: cell.span,
+            },
+            ..site
+        };
+        let name = self.name_at(cell);
+        let Maybe::Present(super::Resolved::Declaration { constant, .. }) =
+            self.resolve_name(named, site.reading.frame(), name)?
+        else {
+            return Ok(Maybe::Absent(constructed::Absent::Unnamed));
+        };
+        let Some(Maybe::Present(Half {
+            operand: Operand::Loop { words, generator },
+            ..
+        })) = self
+            .collected
+            .slots
+            .get(usize::from(constant))
+            .map(|slot| slot.definition)
+        else {
+            return Ok(Maybe::Absent(constructed::Absent::Unnamed));
+        };
+        let Some(family) = self.collected.words.get(words).map(|written| written.slot)
+        else {
+            return Ok(Maybe::Absent(constructed::Absent::Unnamed));
+        };
+        let tag = if inverse.0 {
+            gandr_core_term::FreeCells::inverse(gandr_core_term::CellIndex::from(generator))
+        }
+        else {
+            gandr_core_term::FreeCells::letter(gandr_core_term::CellIndex::from(generator))
+        };
+
+        Ok(Maybe::Present(Constructor {
+            family,
+            form: Generators::Words(words),
+            tag: usize::from(tag),
+            arity: 1,
+            named: cell,
+        }))
+    }
+
+    /// The empty word `here(point)` is, when `point` spells the point a
+    /// family's loops are at.
+    ///
+    /// # Specification
+    /// - requires: `point` is the operand of a `here` call.
+    /// - ensures: the empty word of the first words whose point `point` spells
+    ///   as a closed term over their family's constructors, each written node
+    ///   of the point recorded with the words so it answers at their family;
+    ///   the unnamed absence when no words are at it, and `here(point)` stays
+    ///   reflexivity.
+    /// - fails: [`LoweringRefusal::UnknownMold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `here` at a looped point is the empty word, its point
+    ///   labelled at the family, and at any other point reflexivity.
+    /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    #[spec(
+        captures: before = self.pointed.len(),
+        ensures: |ret| match ret {
+            Ok(Maybe::Present(constructor)) => constructor.arity == 0 && constructor.tag == 0
+                && matches!(constructor.form, Generators::Words(_)) && self.pointed.len() > before,
+            _ => self.pointed.len() == before,
+        },
+    )]
+    pub(super) fn looped_point(
+        &mut self,
+        point: Placed,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        let mut found = None;
+        for (index, words) in self.collected.words.iter().enumerate() {
+            let family = Generators::Written(words.family);
+            let tag_of = |name: SourceFragment<'source>| {
+                self.collected
+                    .constructors
+                    .get(&SurfaceName::from(name))
+                    .filter(|constructor| constructor.form == family)
+                    .map(|constructor| (constructor.tag, constructor.arity))
+            };
+            if let Maybe::Present(term) = closed_term(self.pbg, self.tree, point, &tag_of)?
+                && term.nodes == words.point
+            {
+                found = Some((index, words.slot, term.written));
+                break;
+            }
+        }
+        let Some((index, family, written)) = found
+        else {
+            return Ok(Maybe::Absent(constructed::Absent::Unnamed));
+        };
+        self.pointed
+            .extend(written.iter().map(|node| (node.span, index)));
+
+        Ok(Maybe::Present(Constructor {
+            family,
+            form: Generators::Words(index),
+            tag: 0,
+            arity: 0,
+            named: point,
+        }))
     }
 
     /// Classify `(e : T)`, its `(` and `e` read, the cursor at its `:`.
@@ -1856,7 +2125,15 @@ impl<'source> Lowerer<'_, 'source>
         }
         if name == FormName::IDENTIFIER {
             if self.text_at(at).as_ref() == super::identity::HERE {
-                return Err(LoweringRefusal::WithoutK { span: at.span });
+                return match self.collected.words.len() {
+                    | 0_usize => Err(LoweringRefusal::WithoutK { span: at.span }),
+                    | 1_usize => Ok(Matcher::Constructor {
+                        form: Generators::Words(0),
+                        tag: 0,
+                        fields: allocated(patterns, work, &[]),
+                    }),
+                    | _ => Err(here.out(FragmentBoundary::Unannotated)),
+                };
             }
             return self.binder(at, named);
         }
@@ -1872,6 +2149,9 @@ impl<'source> Lowerer<'_, 'source>
         read_pieces(self.pbg, self.tree, at.node, pieces)?;
         if let Maybe::Present(repaired) = pieces.repair {
             return Err(repaired.refusal(here.name));
+        }
+        if name == FormName::CONS_PATTERN {
+            return self.cons_pattern(site, here, pieces, patterns, work);
         }
         if name == FormName::LITERAL_PATTERN {
             return match pieces.pieces.first() {
@@ -1981,6 +2261,80 @@ impl<'source> Lowerer<'_, 'source>
                 punned: Punned(false),
             })
             .collect();
+
+        Ok(Matcher::Constructor {
+            form: constructor.form,
+            tag: constructor.tag,
+            fields: allocated(patterns, work, &queued),
+        })
+    }
+
+    /// The shape of the word pattern `g ∷ p` or `back(g) ∷ p` at `here`, read
+    /// from `pieces`, its rest pattern `p` allocated and queued.
+    ///
+    /// # Specification
+    /// - requires: `here` is a cons pattern of the match at `site` and `pieces`
+    ///   its reading.
+    /// - ensures: the constructor of the words of the loop `g` names whose tag
+    ///   is its letter, or its inverse under `back`, as [`Self::loop_letter`]
+    ///   reads it, its one field the rest queued on `work`.
+    /// - fails: the unadmitted refusal for a head other than `back` applied to
+    ///   a name; the unresolved-name refusal for a name that is no loop; a tile
+    ///   out of place.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The pattern's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a letter and an inverse match their constructors, and
+    ///   a name that is no loop is refused.
+    /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    #[spec(captures: before = work.len(), ensures: |ret| ret.is_err() || work.len() == before.saturating_add(1))]
+    fn cons_pattern(
+        &mut self,
+        site: Site,
+        here: Site,
+        pieces: &Pieces,
+        patterns: &mut Written,
+        work: &mut Vec<Queued>,
+    ) -> Result<Matcher, LoweringRefusal<'source>>
+    {
+        let mut cursor = Cursor::new(&pieces.pieces, here.at.span);
+        let Maybe::Present(head) = cursor.tile(TileName::IDENTIFIER)
+        else {
+            return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let (cell, inverse) = if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
+            let Maybe::Present(cell) = cursor.tile(TileName::IDENTIFIER)
+            else {
+                return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            closed(here, &mut cursor, TileName::PAREN_CLOSE)?;
+            if self.text_at(head).as_ref() != super::identity::BACK {
+                return Err(here.out(FragmentBoundary::Unadmitted));
+            }
+            (cell, Inverse(true))
+        }
+        else {
+            (head, Inverse(false))
+        };
+        closed(here, &mut cursor, TileName::CONS)?;
+        let rest = here.one(cursor.operands())?;
+        exhausted(here, &cursor)?;
+        let Maybe::Present(constructor) = self.loop_letter(site, cell, inverse)?
+        else {
+            return Err(LoweringRefusal::UnresolvedName {
+                span: cell.span,
+                name: self.name_at(cell),
+            });
+        };
+        let queued = [Queued {
+            at: rest,
+            slot: UNWRITTEN,
+            stated: Maybe::Absent(binder_type::Absent::Untyped),
+            punned: Punned(false),
+        }];
 
         Ok(Matcher::Constructor {
             form: constructor.form,
@@ -2474,6 +2828,16 @@ impl<'source> Lowerer<'_, 'source>
             | Generators::Presentation => match self.collected.sig {
                 | Maybe::Present(ref sig) => sig.arities.clone(),
                 | Maybe::Absent(_) => Vec::new(),
+            },
+            | Generators::Words(words) => {
+                let loops = self
+                    .collected
+                    .words
+                    .get(words)
+                    .map_or(0_usize, |written| written.loops.len());
+                let mut arities = Vec::from([0_usize]);
+                arities.resize(loops.saturating_mul(2).saturating_add(1), 1_usize);
+                arities
             },
         };
         let mut branches = Vec::with_capacity(arities.len());
@@ -3109,6 +3473,164 @@ impl<'source> Lowerer<'_, 'source>
                     .collect(),
             );
             let _first = self.signatures.insert(position, index);
+        }
+        self.mint_words(sink);
+    }
+
+    /// Mint the words of every family's loops at their point, and each
+    /// loop's binding, for the families [`Self::mint_data`] minted.
+    ///
+    /// # Specification
+    /// - requires: the family signatures are minted.
+    /// - ensures: per words entry over a minted family, a signature without
+    ///   parameters at the family's universe whose constructors are the empty
+    ///   word, then each loop's letter and its inverse, each a cons onto a
+    ///   word, presented as the words of the loops at their point — the two
+    ///   cancellations per loop the presentation mints — its index recorded by
+    ///   the entry's position; each loop's binding the path type at the point
+    ///   and the word of its one letter. Each letter a cons wrote is labelled
+    ///   at the path type, and each node of a point an empty word or a cell's
+    ///   side wrote at the family, since no core node holds them.
+    /// - provides: the
+    ///   [`DeclarationOutcome::Data`](crate::DeclarationOutcome::Data) outcome
+    ///   of a words slot and the completed outcome of a loop.
+    /// - fails: never; words over a family that did not mint mint nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block with one loop mints its words with three
+    ///   constructors and two rules, and binds the loop at its path type; a
+    ///   word's letters and its empty word's point are labelled.
+    /// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
+    /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    #[spec(captures: before = self.data.len(), ensures: self.data.len() >= before && self.worded.len() <= self.collected.words.len())]
+    fn mint_words(
+        &mut self,
+        sink: &mut Sink<'_>,
+    )
+    {
+        for (index, words) in self.collected.words.iter().enumerate() {
+            let (Some(&minted), Some(form)) = (
+                self.signatures.get(&words.family),
+                self.collected.data.get(words.family),
+            )
+            else {
+                continue;
+            };
+            let constant = |slot: SlotIndex| {
+                self.collected
+                    .slots
+                    .get(usize::from(slot))
+                    .map(|entry| entry.constant)
+            };
+            let (Some(family), Some(own), Some(kind), Maybe::Present(origin)) = (
+                constant(form.slot),
+                constant(words.slot),
+                self.data
+                    .get(usize::from(minted))
+                    .map(|signature| signature.kind()),
+                self.origin_at(form.declaration.node),
+            )
+            else {
+                continue;
+            };
+            let word = sink.arena.value_type_data(own, Vec::new());
+            sink.origins.record_value_type(word, origin);
+            let mut constructors =
+                Vec::with_capacity(words.loops.len().saturating_mul(2).saturating_add(1));
+            let mut names = Vec::with_capacity(constructors.capacity());
+            constructors.push(Vec::new());
+            names.push(String::from(super::identity::HERE));
+            for &bound in &words.loops {
+                let letter = self
+                    .collected
+                    .slots
+                    .get(usize::from(bound))
+                    .map_or("", |entry| entry.name.as_ref());
+                constructors.extend([Vec::from([word]), Vec::from([word])]);
+                names.extend([String::from(letter), alloc::format!("back({letter})")]);
+            }
+            let cells = words
+                .loops
+                .iter()
+                .map(|_bound| {
+                    gandr_core_term::FreeCell::new(words.point.clone(), words.point.clone())
+                })
+                .collect();
+            let presentation = gandr_core_term::Presentation::words(
+                gandr_core_term::FreeCells::new(family, cells),
+            );
+            let data = DataIndex::from(self.data.len());
+            self.data.push(Arc::new(
+                DataSignature::new(Vec::new(), constructors, kind).presented(presentation),
+            ));
+            self.constructors.push(names);
+            let _first = self.worded.insert(index, data);
+            let carrier = sink.arena.value_type_data(family, Vec::new());
+            sink.origins.record_value_type(carrier, origin);
+            let arities: Vec<usize> = form
+                .generators
+                .iter()
+                .map(|generator| generator.fields.len())
+                .collect();
+            let mut built = Vec::new();
+            for node in words.point.iter().rev() {
+                let gandr_core_term::RuleNode::Constructor(tag) = *node
+                else {
+                    continue;
+                };
+                let arity = arities.get(usize::from(tag)).copied().unwrap_or(0_usize);
+                let fields: Vec<ValueId> = built
+                    .drain(built.len().saturating_sub(arity) ..)
+                    .rev()
+                    .collect();
+                let value = sink.arena.value_constructor(carrier, tag, fields);
+                sink.origins.record_value(value, origin);
+                built.push(value);
+            }
+            let Some(&point) = built.last()
+            else {
+                continue;
+            };
+            let path = sink.arena.value_type_path(carrier, point, point);
+            sink.origins.record_value_type(path, origin);
+            let lettered = self
+                .lettered
+                .iter()
+                .filter(|&&(_, at)| at == index)
+                .map(|&(span, _)| (span, path));
+            let pointed = self
+                .pointed
+                .iter()
+                .filter(|&&(_, at)| at == index)
+                .map(|&(span, _)| (span, carrier));
+            let sides = form
+                .cells
+                .iter()
+                .filter(|cell| cell.point == words.point)
+                .flat_map(|cell| cell.sides.iter().map(|&span| (span, carrier)));
+            for (span, ty) in lettered.chain(pointed).chain(sides) {
+                sink.origins.record_label(crate::origin::Label {
+                    span,
+                    labelled: crate::origin::Labelled::ValueType {
+                        ty,
+                        context: Vec::new(),
+                    },
+                });
+            }
+            let nil =
+                sink.arena
+                    .value_constructor(word, gandr_core_term::FreeCells::nil(), Vec::new());
+            sink.origins.record_value(nil, origin);
+            for (generator, &bound) in words.loops.iter().enumerate() {
+                let letter = sink.arena.value_constructor(
+                    word,
+                    gandr_core_term::FreeCells::letter(gandr_core_term::CellIndex::from(generator)),
+                    Vec::from([nil]),
+                );
+                sink.origins.record_value(letter, origin);
+                let _first = self.looped.insert(bound, (path, letter));
+            }
         }
     }
 

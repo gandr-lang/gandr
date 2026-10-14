@@ -1,0 +1,132 @@
+// The circle with one point and a loop at it. The loop is a free invertible
+// cell at the point, so the paths from the point to itself are the words over
+// the loop and its inverse, with the two cancellations as rules: the lowering
+// mints them, and `Path(Circle, Base, Base)` is that presented type. The
+// integers are presented the same way, so the winding number folds the words
+// into them and spinning folds them back, each fold respecting the other
+// side's rules by conversion.
+
+/// The circle: one point and a loop at it, bound as `loop : Path(Circle,
+/// Base, Base)`.
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+/// The integers as a presented type: a successor and a predecessor that
+/// cancel.
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) ==> x;
+  rule P(S(x)) ==> x;
+}
+
+/// The loop's word: one letter before the empty word.
+@[ runs("loop ∷ here(Base)") ]
+def once : +U (-F Path(Circle, Base, Base)) ;
+def once = thunk { return loop } ;
+
+/// `p` then `q`, `q` held fixed while `p` is taken apart, so it is written
+/// with the fixed argument first.
+def rec onto(q : Path(Circle, Base, Base), p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+  case p {
+    here => return q,
+    loop ∷ r => { run s <- onto[<](q, r); return loop ∷ s },
+    back(loop) ∷ r => { run s <- onto[<](q, r); return back(loop) ∷ s }
+  }
+}
+
+/// Composition: `p` then `q`, by recursion on `p`.
+def then(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+  become onto(q, p)
+}
+
+/// Reversal with an accumulator: the reversal of `p` answers the function
+/// that puts `p`'s inverse before an accumulated word, each letter inverted on
+/// its way to the front.
+def rec rev(p : Path(Circle, Base, Base)) -> -F (Path(Circle, Base, Base) => Path(Circle, Base, Base)) {
+  case p {
+    here => return thunk { fn (acc) { return acc } },
+    loop ∷ r => { run k <- rev[<](r); return thunk { fn (acc) { become k(back(loop) ∷ acc) } } },
+    back(loop) ∷ r => { run k <- rev[<](r); return thunk { fn (acc) { become k(loop ∷ acc) } } }
+  }
+}
+
+/// The inverse of a path: its reversal before the empty word.
+def back(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+  run k <- rev(p);
+  become k(here(Base))
+}
+
+/// The inverse of the loop is the letter `back(loop)`.
+@[ runs("back(loop) ∷ here(Base)") ]
+def unwound : +U (-F Path(Circle, Base, Base)) ;
+def unwound = thunk { become back(loop) } ;
+
+/// The loop then its inverse is the empty word: the minted cancellation, read
+/// by conversion.
+@[ checks ]
+def cancelled : Path(Path(Circle, Base, Base), then(loop, back(loop)), here(Base)) ;
+def cancelled = here(here(Base)) ;
+
+/// No rule identifies the loop with the empty word.
+@[ refuses("EndpointMismatch") ]
+def around_once : Path(Path(Circle, Base, Base), loop, here(Base)) ;
+def around_once = here(here(Base)) ;
+
+/// A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷
+/// here(Base)` is the empty word, which it would read as 1.
+@[ refuses("RuleNotRespected") ]
+def tell(p : Path(Circle, Base, Base)) -> -F Integer {
+  case p {
+    here => return 0,
+    loop ∷ q => return 1,
+    back(loop) ∷ q => return 2
+  }
+}
+
+/// The winding number: a loop counts one up, its inverse one down. It respects
+/// the cancellations by `Int`'s rules.
+def rec wind(p : Path(Circle, Base, Base)) -> -F Int {
+  case p {
+    here => return Z,
+    loop ∷ q => { run n <- wind[<](q); return S(n) },
+    back(loop) ∷ q => { run n <- wind[<](q); return P(n) }
+  }
+}
+
+/// Spinning a count: a successor is one more loop, a predecessor one more
+/// inverse. It respects `Int`'s rules by the cancellations.
+def rec spin(n : Int) -> -F Path(Circle, Base, Base) {
+  case n {
+    Z => return here(Base),
+    S(x) => { run c <- spin[<](x); return loop ∷ c },
+    P(x) => { run c <- spin[<](x); return back(loop) ∷ c }
+  }
+}
+
+/// Winding twice around and spinning the count back returns the word
+/// `then(loop, loop)` runs to.
+@[ runs("loop ∷ loop ∷ here(Base)") ]
+def round : +U (-F Path(Circle, Base, Base)) ;
+def round = thunk { become spin(wind(then(loop, loop))) } ;
+
+/// The composite the round trip returns.
+@[ runs("loop ∷ loop ∷ here(Base)") ]
+def twice : +U (-F Path(Circle, Base, Base)) ;
+def twice = thunk { become then(loop, loop) } ;
+
+/// Spinning two successors and winding the word counts two.
+@[ runs("S(S(Z))") ]
+def counted : +U (-F Int) ;
+def counted = thunk { become wind(spin(S(S(Z)))) } ;
+
+/// The loops at the point and the presented integers are equivalent, by
+/// `wind` and `spin`. The round trips hold at every closed word above; at a
+/// variable each is proved by induction over the words, which needs a case
+/// whose result type depends on the scrutinee, so the record is owed until
+/// then.
+@[ owes(1) ]
+def winding : #{to : +U (Path(Circle, Base, Base) -> -F Int), back : +U (Int -> -F Path(Circle, Base, Base)), sect : (p : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), back(to(p)), p), retr : (n : Int) => Path(Int, to(back(n)), n)} ;

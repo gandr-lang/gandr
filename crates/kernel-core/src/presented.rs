@@ -210,9 +210,9 @@ impl Presentations
         table.iter().find_map(|(&words, presented)| {
             let cells = presented.presentation.cells()?;
             (cells.sort() == sort
-                && spells(arena, sort, left, cells.point())
-                && spells(arena, sort, right, cells.point()))
-            .then_some(words)
+                && spells(arena, sort, left, cells.point()) == Spelling::Spelled
+                && spells(arena, sort, right, cells.point()) == Spelling::Spelled)
+                .then_some(words)
         })
     }
 
@@ -253,14 +253,28 @@ impl Presentations
     }
 }
 
+/// Whether a value is the closed term a rule side spells.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Spelling
+{
+    /// The value is the term the side spells.
+    Spelled,
+    /// It is another term, or no term the arena can read.
+    Apart,
+}
+
 /// Whether `value` is the constructor term of `sort` that the closed rule side
 /// `side` spells.
 ///
 /// # Specification
 /// - requires: nothing — unreadable ids spell nothing.
-/// - ensures: `true` exactly when reading `value` in pre-order meets one
-///   constructor of `sort` per node of `side`, each with the node's tag, and no
-///   node is left over on either side; a variable node spells nothing.
+/// - ensures: [`Spelling::Spelled`] exactly when reading `value` in pre-order
+///   meets one constructor of `sort` per node of `side`, each with the node's
+///   tag, and no node is left over on either side; a variable node spells
+///   nothing.
 /// - provides: the endpoint comparison of [`Presentations::words`], bounded by
 ///   the side's length whatever the value's depth.
 /// - fails: never.
@@ -273,20 +287,20 @@ impl Presentations
 /// # Adequacy
 /// - hypothesis: L3 — as [`Presentations::words`].
 /// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
-#[spec(ensures: |ret| !ret || !side.is_empty())]
+#[spec(ensures: |ret| ret == Spelling::Apart || !side.is_empty())]
 fn spells(
     arena: &TermArena,
     sort: ConstantIndex,
     value: ValueId,
     side: &[RuleNode],
-) -> bool
+) -> Spelling
 {
     let mut pending = Vec::with_capacity(side.len());
     pending.push(value);
     for &node in side {
         let (Some(at), RuleNode::Constructor(tag)) = (pending.pop(), node)
         else {
-            return false;
+            return Spelling::Apart;
         };
         let Some(&Value::Constructor {
             datatype,
@@ -294,7 +308,7 @@ fn spells(
             ref fields,
         }) = arena.value(at)
         else {
-            return false;
+            return Spelling::Apart;
         };
         if written != tag
             || !matches!(
@@ -302,11 +316,16 @@ fn spells(
                 Some(&ValueType::Data { declaration, .. }) if declaration == sort
             )
         {
-            return false;
+            return Spelling::Apart;
         }
         pending.extend(fields.iter().rev());
     }
-    pending.is_empty()
+    if pending.is_empty() {
+        Spelling::Spelled
+    }
+    else {
+        Spelling::Apart
+    }
 }
 
 /// Check a data declaration's rules against its constructor table, and a type
@@ -315,7 +334,7 @@ fn spells(
 /// # Specification
 /// - requires: `constructors` is the declaration's table, its field types in
 ///   `arena`, the declaration standing at `position` after `entries` and
-///   binding `parameters` parameters.
+///   binding the telescope `parameters`.
 /// - ensures: `Ok(())` exactly when `presentation` validates against the table,
 ///   a field reading [`RuleSlot::Own`] where its type is the declaration's own
 ///   family and [`RuleSlot::Other`] with its type id elsewhere, and, when it
@@ -339,7 +358,7 @@ fn spells(
 pub(crate) fn admit(
     arena: &TermArena,
     entries: &[AdmittedDeclaration],
-    (position, parameters): (ConstantIndex, usize),
+    (position, parameters): (ConstantIndex, &[ValueTypeId]),
     constructors: &[Vec<ValueTypeId>],
     presentation: &Presentation,
 ) -> Result<(), KernelError>
@@ -391,7 +410,7 @@ pub(crate) fn admit(
 fn words(
     arena: &TermArena,
     entries: &[AdmittedDeclaration],
-    (position, parameters): (ConstantIndex, usize),
+    (position, parameters): (ConstantIndex, &[ValueTypeId]),
     (constructors, rules): (&[Vec<ValueTypeId>], &[PresentedRule]),
     cells: &FreeCells,
 ) -> Result<(), CellFault>
@@ -422,8 +441,8 @@ fn words(
                 if declaration == position && arguments.is_empty()
         )
     };
-    let minted = parameters == 0
-        && constructors.len() == cells.constructors()
+    let minted = parameters.is_empty()
+        && constructors.len() == usize::from(cells.constructors())
         && constructors
             .iter()
             .enumerate()
@@ -717,7 +736,7 @@ mod tests
             super::admit(
                 &arena,
                 &[],
-                (ConstantIndex::from(0_usize), 0),
+                (ConstantIndex::from(0_usize), &[]),
                 &table,
                 &circle()
             ),
@@ -731,7 +750,7 @@ mod tests
             super::admit(
                 &arena,
                 &[],
-                (ConstantIndex::from(0_usize), 0),
+                (ConstantIndex::from(0_usize), &[]),
                 &table,
                 &other
             ),
@@ -744,7 +763,7 @@ mod tests
             super::admit(
                 &arena,
                 &[],
-                (ConstantIndex::from(1_usize), 0),
+                (ConstantIndex::from(1_usize), &[]),
                 &table,
                 &circle()
             ),
@@ -936,11 +955,12 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn looped(sort: usize) -> gandr_kernel_term::FreeCells
+    fn looped(sort: ConstantIndex) -> gandr_kernel_term::FreeCells
     {
-        gandr_kernel_term::FreeCells::new(ConstantIndex::from(sort), alloc::vec![
-            gandr_kernel_term::FreeCell::new(base(), base())
-        ])
+        gandr_kernel_term::FreeCells::new(sort, alloc::vec![gandr_kernel_term::FreeCell::new(
+            base(),
+            base()
+        )])
     }
 
     /// An environment holding the one-point sort `base` at position zero.
@@ -1003,7 +1023,7 @@ mod tests
         assert_eq!(
             words(
                 &mut environment,
-                Presentation::new(Vec::new()).carrying(looped(0))
+                Presentation::new(Vec::new()).carrying(looped(ConstantIndex::from(0_usize)))
             ),
             Err(KernelError::WordsRefused(CellFault::NotMinted)),
             "words whose cancellations were dropped are not the words their cell mints"
@@ -1011,13 +1031,17 @@ mod tests
         assert_eq!(
             words(
                 &mut environment,
-                Presentation::new(circle().rules()[.. 1].to_vec()).carrying(looped(0))
+                Presentation::new(circle().rules()[.. 1].to_vec())
+                    .carrying(looped(ConstantIndex::from(0_usize)))
             ),
             Err(KernelError::WordsRefused(CellFault::NotMinted)),
             "nor are words with one cancellation of two"
         );
         assert_eq!(
-            words(&mut environment, Presentation::words(looped(1))),
+            words(
+                &mut environment,
+                Presentation::words(looped(ConstantIndex::from(1_usize)))
+            ),
             Err(KernelError::WordsRefused(CellFault::Sort)),
             "the sort must be admitted before the words"
         );
@@ -1035,12 +1059,18 @@ mod tests
             "a point the sort's table does not spell"
         );
         assert_eq!(
-            words(&mut environment, Presentation::words(looped(0))),
+            words(
+                &mut environment,
+                Presentation::words(looped(ConstantIndex::from(0_usize)))
+            ),
             Ok(ConstantIndex::from(1_usize)),
             "the words the loop at `base` mints admit"
         );
         assert_eq!(
-            words(&mut environment, Presentation::words(looped(0))),
+            words(
+                &mut environment,
+                Presentation::words(looped(ConstantIndex::from(0_usize)))
+            ),
             Err(KernelError::WordsRefused(CellFault::Twice)),
             "one type of words per point"
         );
@@ -1050,8 +1080,11 @@ mod tests
     fn a_path_at_a_looped_point_reads_as_its_words()
     {
         let mut environment = point();
-        let words_at = words(&mut environment, Presentation::words(looped(0)))
-            .expect("the loop's words admit");
+        let words_at = words(
+            &mut environment,
+            Presentation::words(looped(ConstantIndex::from(0_usize))),
+        )
+        .expect("the loop's words admit");
         let sort = ConstantIndex::from(0_usize);
         let presentations = super::Presentations::of(environment.entries());
         let mut arena = environment.arena().clone();

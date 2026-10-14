@@ -683,6 +683,10 @@ impl Reader<'_, '_>
             }
             else {
                 match polarity {
+                    // A cell `name : a <-> a` between terms is the native
+                    // reading's: it mints the words of the path type at its
+                    // point, which the description does not carry.
+                    | DeclPolarity::Data if member.at(Spelling("identifier")).0 => Ok(()),
                     | DeclPolarity::Data => self
                         .generator(&mut member, &family, &parameters, indices)
                         .map(|(ctor, signature)| {

@@ -147,9 +147,12 @@ pub mod session;
 mod syntax;
 pub mod ua;
 
+pub use gandr_kernel_term::CellIndex;
 pub use gandr_kernel_term::Component;
 pub use gandr_kernel_term::ConstructorTag;
 pub use gandr_kernel_term::FieldLabel;
+pub use gandr_kernel_term::FreeCell;
+pub use gandr_kernel_term::FreeCells;
 pub use gandr_kernel_term::Presentation;
 pub use gandr_kernel_term::PresentedRule;
 pub use gandr_kernel_term::RuleNode;

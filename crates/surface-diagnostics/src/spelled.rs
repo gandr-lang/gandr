@@ -45,6 +45,7 @@ use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::Role;
 use gandr_surface_pretty::Arity;
 use gandr_surface_pretty::Constructors;
 use gandr_surface_pretty::CoreNode;
@@ -52,6 +53,7 @@ use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
+use gandr_surface_pretty::Placement;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::present_type;
 use gandr_surface_syntax::SourceFragment;
@@ -274,13 +276,17 @@ impl Spellings
 /// position.
 ///
 /// A name is the declaration's path from the top level, its segments joined
-/// by `.`; a position no declaration holds is the empty name.
+/// by `.`; a position no declaration holds is the empty name. The words of a
+/// family's loops are named by the path type they read as, `Path(Circle,
+/// Base, Base)`, so a word's type spells as it is written and its letters are
+/// not looked up under its family's name.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one name per position up to the highest declared one; each
 ///   declared position holds its declaration's path, so a member of a module, a
-///   sealed abstract type among them, reads as it is written outside it.
+///   sealed abstract type among them, reads as it is written outside it, and
+///   the words of a family's loops hold the path type at their point.
 /// - provides: the constant names a [`CoreSource`] reads to spell a type that
 ///   mentions a declaration.
 /// - fails: never.
@@ -289,9 +295,11 @@ impl Spellings
 /// # Adequacy
 /// - hypothesis: L3 — a refusal comparing two declared types spells the names
 ///   of the declarations it mentions, and a sealed abstract type is spelled by
-///   its module's path rather than its bare name.
+///   its module's path rather than its bare name; a word spells by its letters,
+///   which only a words family named apart from its sort finds.
 /// - witness: `diagnostics::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
 /// - witness: `diagnostics::diagnostics::a_sealed_type_is_spelled_by_its_path`
+/// - witness: `diagnostics::diagnostics::a_word_spells_by_its_letters`
 #[spec(ensures: |ret| module.declarations().iter().all(|declaration|
     ret.get(usize::from(declaration.constant())).is_some()))]
 #[inline]
@@ -315,19 +323,145 @@ pub fn constant_names(module: &LoweredModule<'_>) -> Vec<String>
                 .join(".");
         }
     }
+    for declaration in module.declarations() {
+        if let Maybe::Present((sort, point)) = words_point(module, declaration) {
+            let family = paths.get(usize::from(sort)).cloned().unwrap_or_default();
+            if let Some(slot) = paths.get_mut(usize::from(declaration.constant())) {
+                *slot = alloc::format!("Path({family}, {point}, {point})");
+            }
+        }
+    }
     paths
 }
 
-/// The constructors of every data declaration of a module, each family by
-/// its constant's admission position, each constructor by its name and field
-/// count in tag order.
+quenchant_shape::reason_enum! {
+    /// Why a declaration names no words' point.
+    pub mod words_point {
+        /// The reason no point is spelled.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The declaration is no words of a family's loops, or its family
+            /// is not among the module's data declarations.
+            Unworded,
+        }
+    }
+}
+
+/// The sort the words `declaration` declares are over, and the point their
+/// loops are at, spelled by the sort's constructor names.
 ///
-/// The core names a constructor by its family and its tag, so a printer
-/// reads the names here, owned so a table outliving the lowered module keeps
-/// them.
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for the words of a family's loops whose family the module holds,
+///   the family's admission position and the closed term its loops are at, each
+///   constructor by its name, applied to its fields when it has any.
+/// - fails: [`words_point::Absent::Unworded`] for any other declaration.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one pass over the point's pre-order nodes, last to first.
+/// - measure: the point's nodes still to spell.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`constant_names`].
+/// - witness: `diagnostics::diagnostics::a_word_spells_by_its_letters`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present((_, ref point)) => !point.is_empty(),
+    Maybe::Absent(_) => true,
+})]
+fn words_point(
+    module: &LoweredModule<'_>,
+    declaration: &gandr_surface_lowering::LoweredDeclaration<'_>,
+) -> Maybe<(ConstantIndex, String), words_point::Absent>
+{
+    let unworded = Maybe::Absent(words_point::Absent::Unworded);
+    if declaration.role() != Role::Words {
+        return unworded;
+    }
+    let DeclarationOutcome::Data(index) = declaration.outcome()
+    else {
+        return unworded;
+    };
+    let Maybe::Present(cells) = module
+        .data(index)
+        .map(|signature| signature.presentation().cells())
+    else {
+        return unworded;
+    };
+    let Some(cells) = cells
+    else {
+        return unworded;
+    };
+    let Some(family) = module
+        .declarations()
+        .iter()
+        .find_map(|held| match held.outcome() {
+            | DeclarationOutcome::Data(family) if held.constant() == cells.sort() => Some(family),
+            | _ => None,
+        })
+    else {
+        return unworded;
+    };
+    let Maybe::Present(signature) = module.data(family)
+    else {
+        return unworded;
+    };
+    let names = module.constructors(family);
+    let mut spelled: Vec<String> = Vec::new();
+    for node in cells.point().iter().rev() {
+        let gandr_kernel_term::RuleNode::Constructor(tag) = *node
+        else {
+            return unworded;
+        };
+        let tag = usize::from(tag);
+        let (Some(name), Some(fields)) = (names.get(tag), signature.constructors().get(tag))
+        else {
+            return unworded;
+        };
+        let arguments: Vec<String> = spelled
+            .drain(spelled.len().saturating_sub(fields.len()) ..)
+            .rev()
+            .collect();
+        spelled.push(if arguments.is_empty() {
+            name.clone()
+        }
+        else {
+            alloc::format!("{name}({})", arguments.join(", "))
+        });
+    }
+    match (spelled.pop(), spelled.is_empty()) {
+        | (Some(point), true) => Maybe::Present((cells.sort(), point)),
+        | _ => unworded,
+    }
+}
+
+/// The constructors of every data declaration of a module, each family by
+/// its constant's admission position.
+///
+/// Each constructor is kept by its name and field count in tag order, and
+/// a family records whether it is the words of a family's loops, whose empty
+/// word is spelled `here(a)` at their point `a` and whose letters cons onto
+/// the rest of a word. The core names a constructor by its family and its
+/// tag, so a printer reads the names here, owned so a table outliving the
+/// lowered module keeps them.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Families(Vec<(usize, Vec<(String, usize)>)>);
+pub struct Families(Vec<Family>);
+
+/// One data declaration's constructors, as [`Families`] keeps them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Family
+{
+    /// The admission position of the family's constant.
+    constant: usize,
+    /// Each constructor's name and field count, in tag order.
+    constructors: Vec<(String, usize)>,
+    /// Where each constructor's name stands to its fields.
+    placement: Placement,
+}
 
 impl Families
 {
@@ -337,7 +471,9 @@ impl Families
     /// - requires: nothing.
     /// - ensures: one family per data declaration whose signature the module
     ///   holds, at its constant's position, its constructors named as written
-    ///   in tag order with the field count the signature gives each.
+    ///   in tag order with the field count the signature gives each; the words
+    ///   of a family's loops are consed, their empty word named `here(a)` at
+    ///   their point `a`.
     /// - provides: the constructor names a [`CoreSource`] spells a constructor
     ///   value and a data case's patterns with.
     /// - fails: never.
@@ -348,6 +484,7 @@ impl Families
     ///   spells it by its declared name; a family left out spells `?`, which
     ///   the test fails on.
     /// - witness: `diagnostics::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
+    /// - witness: `diagnostics::diagnostics::a_word_spells_by_its_letters`
     #[spec(ensures: |ret| ret.0.len() <= module.declarations().len())]
     #[inline]
     #[must_use]
@@ -366,13 +503,28 @@ impl Families
                     else {
                         return None;
                     };
+                    let point = words_point(module, declaration);
                     let constructors = module
                         .constructors(index)
                         .iter()
                         .zip(signature.constructors())
-                        .map(|(name, fields)| (name.clone(), fields.len()))
+                        .enumerate()
+                        .map(|(tag, (name, fields))| match point {
+                            | Maybe::Present((_, ref point)) if tag == 0 => {
+                                (alloc::format!("{name}({point})"), fields.len())
+                            },
+                            | _ => (name.clone(), fields.len()),
+                        })
                         .collect();
-                    Some((usize::from(declaration.constant()), constructors))
+                    let placement = match point {
+                        | Maybe::Present(_) => Placement::Consed,
+                        | Maybe::Absent(_) => Placement::Applied,
+                    };
+                    Some(Family {
+                        constant: usize::from(declaration.constant()),
+                        constructors,
+                        placement,
+                    })
                 })
                 .collect(),
         )
@@ -404,14 +556,16 @@ impl Families
     ) -> Constructors<'names>
     {
         let mut constructors = Constructors::default();
-        for &(constant, ref members) in &self.0 {
-            if let Some(&family) = names.get(constant) {
-                constructors.family(
-                    family,
-                    members.iter().map(|&(ref name, fields)| {
-                        (Name::from(name.as_str()), Arity::from(fields))
-                    }),
-                );
+        for family in &self.0 {
+            if let Some(&named) = names.get(family.constant) {
+                let members = family
+                    .constructors
+                    .iter()
+                    .map(|&(ref name, fields)| (Name::from(name.as_str()), Arity::from(fields)));
+                match family.placement {
+                    | Placement::Applied => constructors.family(named, members),
+                    | Placement::Consed => constructors.words(named, members),
+                }
             }
         }
         constructors

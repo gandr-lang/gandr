@@ -218,6 +218,7 @@ use crate::error::PresentationError;
 use crate::former::Component;
 use crate::former::Former;
 use crate::former::Name;
+use crate::former::Placement;
 use crate::former::Source;
 use crate::former::Unreadable;
 use crate::former::Unspelled;
@@ -1100,8 +1101,9 @@ fn below(
 ///
 /// A piece stands bare in a slot that admits its binding and is parenthesized
 /// in one that admits only tighter pieces. The order is the grammar's: an
-/// atom, then the bridges and the keyword-led computations, then the infix
-/// `*`, `+` and `&` the sugared form writes, then `->` and `=>`, then a bind's
+/// atom, then the bridges and the keyword-led computations, then a word's
+/// cons, then the infix `*`, `+` and `&` the sugared form writes, then `->`
+/// and `=>`, then a bind's
 /// statements. Every arity-shaped former is an atom, its entries between its
 /// own delimiters.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1112,6 +1114,8 @@ enum Binding
     /// `+U C`, `-F A`, `pure v`, `force v`, `run c`, `fn (x) { c }` or
     /// `thunk { c }`.
     Prefix,
+    /// `g ∷ p`, a word's letter before the rest, nested to the right.
+    Cons,
     /// `A * B`.
     Product,
     /// `A + B`.
@@ -3693,7 +3697,21 @@ impl Walk<'_, '_>
                 let _ = parts.part(Part::Tight).text(")");
                 Binding::Atom
             },
-            | Former::Data { name, arity } | Former::Constructor { name, arity } => {
+            | Former::Constructor {
+                name,
+                placement: Placement::Consed,
+                ..
+            } => {
+                let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
+                let _ = parts.text(name).text(" ∷ ").piece(Binding::Cons);
+                Binding::Cons
+            },
+            | Former::Data { name, arity }
+            | Former::Constructor {
+                name,
+                arity,
+                placement: Placement::Applied,
+            } => {
                 let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
                 let _ = parts.text(name);
                 if usize::from(arity) > 0_usize {

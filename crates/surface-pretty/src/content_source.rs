@@ -172,8 +172,8 @@ impl Source for ContentSource<'_>
                 datatype,
                 tag,
                 ref fields,
-            } => Former::Constructor {
-                name: self
+            } => {
+                let family = self
                     .nodes
                     .get(usize::from(datatype))
                     .and_then(|family| match *family {
@@ -182,12 +182,21 @@ impl Source for ContentSource<'_>
                         } => key(declaration),
                         | _ => None,
                     })
-                    .zip(self.constructors)
-                    .and_then(|(family, constructors)| {
-                        constructors.constructor(family, Component::from(usize::from(tag)))
-                    })
-                    .map(|(name, _)| name),
-                arity: Arity::from(fields.len()),
+                    .zip(self.constructors);
+                Former::Constructor {
+                    name: family.and_then(|(family, constructors)| {
+                        constructors
+                            .constructor(family, Component::from(usize::from(tag)))
+                            .map(|(name, _)| name)
+                    }),
+                    arity: Arity::from(fields.len()),
+                    placement: family.map_or(
+                        crate::Placement::Applied,
+                        |(family, constructors)| {
+                            constructors.placement(family, Arity::from(fields.len()))
+                        },
+                    ),
+                }
             },
             | ContentNode::DataCase {
                 scrutinee,

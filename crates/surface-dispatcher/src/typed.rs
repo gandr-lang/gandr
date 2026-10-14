@@ -929,9 +929,10 @@ impl TypeTable
         }
         let mut declared = BTreeMap::new();
         for declaration in module.declarations() {
-            // A `data` family's operation is declared from the family's form
-            // and has no form of its own: the family's key is the family's.
-            if declaration.role() == Role::Operation {
+            // A `data` family's operation and the words of its loops are
+            // declared from the family's form and have no form of their own:
+            // the family's key is the family's.
+            if matches!(declaration.role(), Role::Operation | Role::Words) {
                 continue;
             }
             let held = match declaration.outcome() {

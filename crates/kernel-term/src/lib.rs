@@ -210,6 +210,8 @@ pub use crate::identity::evaluation_words;
 pub use crate::identity::forward_words;
 pub use crate::identity::quantified_words;
 pub use crate::presented::CellFault;
+pub use crate::presented::CellIndex;
+pub use crate::presented::ConstructorCount;
 pub use crate::presented::Exhausted;
 pub use crate::presented::FieldCount;
 pub use crate::presented::FreeCell;

@@ -460,6 +460,10 @@ pub enum RefusalName
     ForNeedsListCase,
     /// A path matched against reflexivity, `here`: axiom K.
     WithoutK,
+    /// A directed cell `-->` between two terms of a `data` block.
+    DirectedCell,
+    /// A cell `<->` of a `data` block between two distinct terms.
+    CellNotALoop,
     /// A rule of a block's rules the path order does not orient, so the
     /// rules may not end.
     RulesUnoriented,
@@ -552,7 +556,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 127_usize] = [
+    pub const VOCABULARY: [Self; 129_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -640,6 +644,8 @@ impl RefusalName
         Self::AcrossHandler,
         Self::ForNeedsListCase,
         Self::WithoutK,
+        Self::DirectedCell,
+        Self::CellNotALoop,
         Self::RulesUnoriented,
         Self::RulesDiverge,
         Self::RulesUndecided,
@@ -727,6 +733,8 @@ impl RefusalName
         (Self::AcrossHandler, b"AcrossHandler") |
         (Self::ForNeedsListCase, b"ForNeedsListCase") |
         (Self::WithoutK, b"WithoutK") |
+        (Self::DirectedCell, b"DirectedCell") |
+        (Self::CellNotALoop, b"CellNotALoop") |
         (Self::RulesUnoriented, b"RulesUnoriented") |
         (Self::RulesDiverge, b"RulesDiverge") |
         (Self::RulesUndecided, b"RulesUndecided") |
@@ -926,6 +934,8 @@ impl RefusalName
             | Self::AcrossHandler => "AcrossHandler",
             | Self::ForNeedsListCase => "ForNeedsListCase",
             | Self::WithoutK => "WithoutK",
+            | Self::DirectedCell => "DirectedCell",
+            | Self::CellNotALoop => "CellNotALoop",
             | Self::RulesUnoriented => "RulesUnoriented",
             | Self::RulesDiverge => "RulesDiverge",
             | Self::RulesUndecided => "RulesUndecided",
@@ -1127,6 +1137,10 @@ impl Refusal<'_>
         RefusalName::ForNeedsListCase) |
         (Self::Lowering(LoweringRefusal::WithoutK { .. }),
         RefusalName::WithoutK) |
+        (Self::Lowering(LoweringRefusal::DirectedCell { .. }),
+        RefusalName::DirectedCell) |
+        (Self::Lowering(LoweringRefusal::CellNotALoop { .. }),
+        RefusalName::CellNotALoop) |
         (Self::Lowering(LoweringRefusal::RulesUnoriented { .. }),
         RefusalName::RulesUnoriented) |
         (Self::Lowering(LoweringRefusal::RulesDiverge { .. }),
@@ -1318,7 +1332,9 @@ impl Refusal<'_>
         RefusalName::OutsideLoop) | (LoweringRefusal::AcrossHandler { .. },
         RefusalName::AcrossHandler) | (LoweringRefusal::ForNeedsListCase { .. },
         RefusalName::ForNeedsListCase) | (LoweringRefusal::WithoutK { .. },
-        RefusalName::WithoutK) | (LoweringRefusal::RulesUnoriented { .. },
+        RefusalName::WithoutK) | (LoweringRefusal::DirectedCell { .. },
+        RefusalName::DirectedCell) | (LoweringRefusal::CellNotALoop { .. },
+        RefusalName::CellNotALoop) | (LoweringRefusal::RulesUnoriented { .. },
         RefusalName::RulesUnoriented) | (LoweringRefusal::RulesDiverge { .. },
         RefusalName::RulesDiverge) | (LoweringRefusal::RulesUndecided { .. },
         RefusalName::RulesUndecided) | (LoweringRefusal::BudgetExceeded { .. },
@@ -1364,6 +1380,8 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | LoweringRefusal::AcrossHandler { .. } => RefusalName::AcrossHandler,
         | LoweringRefusal::ForNeedsListCase { .. } => RefusalName::ForNeedsListCase,
         | LoweringRefusal::WithoutK { .. } => RefusalName::WithoutK,
+        | LoweringRefusal::DirectedCell { .. } => RefusalName::DirectedCell,
+        | LoweringRefusal::CellNotALoop { .. } => RefusalName::CellNotALoop,
         | LoweringRefusal::RulesUnoriented { .. } => RefusalName::RulesUnoriented,
         | LoweringRefusal::RulesDiverge { .. } => RefusalName::RulesDiverge,
         | LoweringRefusal::RulesUndecided { .. } => RefusalName::RulesUndecided,

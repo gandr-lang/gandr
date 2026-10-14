@@ -202,6 +202,7 @@ const OPERATORS: &[&str] = &[
     "|&",
     "||",
     "~>",
+    "∷",
 ];
 
 /// The primitive type spellings, and the universe.
@@ -877,7 +878,8 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 ///
 /// # Specification
 /// - requires: `facts` is an `identifier` mold's.
-/// - ensures: the reference atom's identifier is a variable. A member: in a
+/// - ensures: the reference atom's identifier is a variable, and so is each
+///   name of a cons pattern's letter, `g` and `back(g)`. A member: in a
 ///   projection, after `.`, inside a record bracket `#{`, and inside a block
 ///   `{` of fields or observations. A label: a world and the label a `select`
 ///   names. A named instantiation argument is a parameter, and an attribute
@@ -900,7 +902,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `highlight::tests::role_priorities_distinguish_competing_contexts`
 #[spec(requires: facts.label.0 == "identifier", ensures: |ret| ret == match facts.kind.0 {
-    "identifier" => HlRole::Variable,
+    "identifier" | "cons_pattern" => HlRole::Variable,
     "projection_expression" => HlRole::Member,
     "at_type" => HlRole::Label,
     "attribute_block" => HlRole::Other,
@@ -927,7 +929,7 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
 {
     let kind = facts.kind.0;
     match kind {
-        | "identifier" => return HlRole::Variable,
+        | "identifier" | "cons_pattern" => return HlRole::Variable,
         | "projection_expression" => return HlRole::Member,
         | "at_type" => return HlRole::Label,
         | "attribute_block" => return HlRole::Other,

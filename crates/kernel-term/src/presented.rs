@@ -740,9 +740,9 @@ impl FreeCells
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn letter(generator: usize) -> ConstructorTag
+    pub fn letter(generator: CellIndex) -> ConstructorTag
     {
-        ConstructorTag::from(generator.saturating_mul(2).saturating_add(1))
+        ConstructorTag::from(generator.0.saturating_mul(2).saturating_add(1))
     }
 
     /// The tag of generator `generator`'s inverse.
@@ -751,9 +751,9 @@ impl FreeCells
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn inverse(generator: usize) -> ConstructorTag
+    pub fn inverse(generator: CellIndex) -> ConstructorTag
     {
-        ConstructorTag::from(generator.saturating_mul(2).saturating_add(2))
+        ConstructorTag::from(generator.0.saturating_mul(2).saturating_add(2))
     }
 
     /// How many constructors the words take: the empty word and a letter and
@@ -763,9 +763,9 @@ impl FreeCells
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn constructors(&self) -> usize
+    pub fn constructors(&self) -> ConstructorCount
     {
-        self.cells.len().saturating_mul(2).saturating_add(1)
+        ConstructorCount(self.cells.len().saturating_mul(2).saturating_add(1))
     }
 
     /// The words' rules: per cell, in order, a letter then its inverse
@@ -791,7 +791,7 @@ impl FreeCells
     {
         let rest = RuleNode::Variable(RuleVariable(0));
         let mut rules = Vec::with_capacity(self.cells.len().saturating_mul(2));
-        for generator in 0 .. self.cells.len() {
+        for generator in (0 .. self.cells.len()).map(CellIndex) {
             let letter = RuleNode::Constructor(Self::letter(generator));
             let inverse = RuleNode::Constructor(Self::inverse(generator));
             rules.push(PresentedRule::new(
@@ -860,6 +860,61 @@ impl FreeCells
             }
         }
         Ok(())
+    }
+}
+
+/// A cell's position among a type of words' cells, its generator.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CellIndex(usize);
+
+impl From<usize> for CellIndex
+{
+    /// The cell at `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: usize) -> Self
+    {
+        Self(position)
+    }
+}
+
+impl From<CellIndex> for usize
+{
+    /// The cell's position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: CellIndex) -> Self
+    {
+        index.0
+    }
+}
+
+/// How many constructors a type of words takes.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ConstructorCount(usize);
+
+impl From<ConstructorCount> for usize
+{
+    /// The count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: ConstructorCount) -> Self
+    {
+        count.0
     }
 }
 
@@ -1532,12 +1587,12 @@ mod tests
         let cells = FreeCells::new(sort, alloc::vec![FreeCell::new(base(), base())]);
         assert_eq!(
             (
-                cells.constructors(),
-                FreeCells::letter(0),
-                FreeCells::inverse(0)
+                usize::from(cells.constructors()),
+                FreeCells::letter(super::CellIndex::from(0_usize)),
+                FreeCells::inverse(super::CellIndex::from(0_usize))
             ),
             (
-                3,
+                3_usize,
                 ConstructorTag::from(1_usize),
                 ConstructorTag::from(2_usize)
             ),

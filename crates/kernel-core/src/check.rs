@@ -4851,7 +4851,7 @@ where
                 judgement.entries,
                 (
                     ConstantIndex::from(judgement.entries.len()),
-                    parameters.len(),
+                    parameters.as_slice(),
                 ),
                 constructors,
                 declaration.presentation(),

@@ -82,6 +82,28 @@ pub struct Move<'text>
     pub label: Option<Name<'text>>,
 }
 
+/// Where a constructor's name stands to its fields.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: an applied constructor writes its fields as a call's arguments; a
+///   consed one is a word's letter, written before the one field it conses
+///   onto.
+/// - executable: none — the tag holds no constructor to check it against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a word of two letters spells as a right-nested cons, and
+///   an applied constructor as its call.
+/// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Placement
+{
+    /// `C(a, …)`, or the bare name with no fields.
+    Applied,
+    /// `g ∷ p`: a word's letter before the rest of the word.
+    Consed,
+}
+
 /// The moves of a recorded run, as the printer spells them.
 pub trait Moves: core::fmt::Debug
 {
@@ -500,7 +522,8 @@ pub enum Former<'source, Node>
         arity: Arity,
     },
     /// A constructor applied to its fields, which the source answers by
-    /// [`Source::component`]: `Succ(Zero)`, or the bare name with no fields.
+    /// [`Source::component`]: `Succ(Zero)`, or the bare name with no fields;
+    /// a word's letter before the rest of the word, `loop ∷ p`.
     Constructor
     {
         /// The constructor's name; none where the source cannot name it,
@@ -508,6 +531,8 @@ pub enum Former<'source, Node>
         name: Option<Name<'source>>,
         /// How many fields it holds.
         arity: Arity,
+        /// Where its name stands to its fields.
+        placement: Placement,
     },
     /// Directed identity `Flow(A, x, y)`: the carrier and the two endpoints.
     Flow

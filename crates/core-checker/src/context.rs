@@ -2029,9 +2029,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         let found = self.data_signatures.iter().find_map(|(&words, signature)| {
             let cells = signature.presentation().cells()?;
             (cells.sort() == sort
-                && spells(self.arena, sort, left, cells.point())
-                && spells(self.arena, sort, right, cells.point()))
-            .then_some(words)
+                && spells(self.arena, sort, left, cells.point()) == Spelling::Spelled
+                && spells(self.arena, sort, right, cells.point()) == Spelling::Spelled)
+                .then_some(words)
         });
         if let Some(words) = found {
             let _logged = self.consult_data(words);
@@ -2430,14 +2430,28 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     }
 }
 
+/// Whether a value is the closed term a rule side spells.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Spelling
+{
+    /// The value is the term the side spells.
+    Spelled,
+    /// It is another term, or no term the arena can read.
+    Apart,
+}
+
 /// Whether `value` is the constructor term of `sort` that the closed rule side
 /// `side` spells.
 ///
 /// # Specification
 /// - requires: nothing — unreadable ids spell nothing.
-/// - ensures: `true` exactly when reading `value` in pre-order meets one
-///   constructor of `sort` per node of `side`, each with the node's tag, and no
-///   node is left over on either side; a variable node spells nothing.
+/// - ensures: [`Spelling::Spelled`] exactly when reading `value` in pre-order
+///   meets one constructor of `sort` per node of `side`, each with the node's
+///   tag, and no node is left over on either side; a variable node spells
+///   nothing.
 /// - provides: the endpoint comparison of [`CheckingContext::words`], as the
 ///   kernel's, bounded by the side's length whatever the value's depth.
 /// - fails: never.
@@ -2450,20 +2464,20 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
 /// # Adequacy
 /// - hypothesis: L3 — as [`CheckingContext::words`].
 /// - witness: `native_formers::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
-#[spec(ensures: |ret| !ret || !side.is_empty())]
+#[spec(ensures: |ret| ret == Spelling::Apart || !side.is_empty())]
 fn spells(
     arena: &CoreArena,
     sort: ConstantIndex,
     value: ValueId,
     side: &[gandr_core_term::RuleNode],
-) -> bool
+) -> Spelling
 {
     let mut pending = Vec::with_capacity(side.len());
     pending.push(value);
     for &node in side {
         let (Some(at), gandr_core_term::RuleNode::Constructor(tag)) = (pending.pop(), node)
         else {
-            return false;
+            return Spelling::Apart;
         };
         let Some(&Value::Constructor {
             datatype,
@@ -2471,7 +2485,7 @@ fn spells(
             ref fields,
         }) = arena.value(at)
         else {
-            return false;
+            return Spelling::Apart;
         };
         if written != tag
             || !matches!(
@@ -2479,11 +2493,16 @@ fn spells(
                 Ok(ValueTypeView::Data { declaration, .. }) if declaration == sort
             )
         {
-            return false;
+            return Spelling::Apart;
         }
         pending.extend(fields.iter().rev());
     }
-    pending.is_empty()
+    if pending.is_empty() {
+        Spelling::Spelled
+    }
+    else {
+        Spelling::Apart
+    }
 }
 
 #[cfg(test)]

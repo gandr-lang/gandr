@@ -2663,6 +2663,20 @@ struct Lowerer<'run, 'source>
     /// The position each lowered data declaration's signature takes, by its
     /// position in the collection's data list.
     signatures: BTreeMap<usize, DataIndex>,
+    /// The position each words' signature takes, by its position in the
+    /// collection's words list.
+    worded: BTreeMap<usize, DataIndex>,
+    /// Each loop's binding, the path type at its point and the word of its
+    /// one letter, by slot.
+    looped: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
+    /// Each letter written before a cons, and the name an inverse letter
+    /// applies `back` to, with the words it spells a letter of: no core node
+    /// holds it, so it answers at the path type at the words' point.
+    lettered: Vec<(ByteSpan, usize)>,
+    /// Each node of a point `here` names when it is the empty word, with the
+    /// words at that point: no core node holds it, so it answers at the
+    /// words' family.
+    pointed: Vec<(ByteSpan, usize)>,
     /// The position each described family's decoded signature takes, by its
     /// slot: a family the native data reading does not own.
     described: BTreeMap<SlotIndex, DataIndex>,
@@ -3161,6 +3175,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             stated: BTreeMap::new(),
             cases: Vec::new(),
             signatures: BTreeMap::new(),
+            worded: BTreeMap::new(),
+            looped: BTreeMap::new(),
+            lettered: Vec::new(),
+            pointed: Vec::new(),
             described: BTreeMap::new(),
             data: Vec::new(),
             constructors: Vec::new(),
@@ -3637,6 +3655,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     },
                     | Operand::Member(_)
                     | Operand::Data(_)
+                    | Operand::Words(_)
+                    | Operand::Loop { .. }
                     | Operand::Operation
                     | Operand::Signature
                     | Operand::Presented
@@ -6189,9 +6209,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: the table row selected by the operator receives value
     ///   operands in source order; the infix `then` is the composite of two
     ///   paths, or of two flows where a flow is answered, as [`Self::derive`]
-    ///   plans it.
+    ///   plans it; the cons `g ∷ p` is a word, as [`Self::cons`] plans it.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
-    ///   are refused; `then` refuses as [`Self::derive`] does.
+    ///   are refused; `then` refuses as [`Self::derive`] does, and the cons as
+    ///   [`Self::cons`] does.
     /// - panics: none.
     ///
     /// # Errors
@@ -6203,7 +6224,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::native_operator_plans_preserve_order`
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(Plan::PrimitiveCall(..) | Plan::Derived(_) | Plan::FlowThen(..))))]
+    /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(Plan::PrimitiveCall(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_))))]
     fn operator(
         &mut self,
         site: Site,
@@ -6213,6 +6235,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         use gandr_core_term::primitive::Arguments;
         use gandr_core_term::primitive::Operator;
         use gandr_core_term::primitive::PRELUDE;
+        if let &[
+            Piece::Operand(letter),
+            Piece::Tile { label, .. },
+            Piece::Operand(rest),
+        ] = pieces.pieces.as_slice()
+            && label == TileName::CONS
+        {
+            return self.cons(site, letter, rest);
+        }
         let frame = self.require(site, Produced::Computation)?;
         let (label, arguments) = match pieces.pieces.as_slice() {
             | &[Piece::Tile { label, .. }, Piece::Operand(argument)] => {
@@ -11466,6 +11497,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else if let Maybe::Present(Half { operand: Operand::Data(form), .. }) = slot.definition {
                 ret == self.signatures.get(&form).map_or(Maybe::Absent(lowered::Absent::Unminted), |&index| Maybe::Present(DeclarationOutcome::Data(index)))
             }
+            else if let Maybe::Present(Half { operand: Operand::Words(words), .. }) = slot.definition {
+                ret == self.worded.get(&words).map_or(Maybe::Absent(lowered::Absent::Unminted), |&index| Maybe::Present(DeclarationOutcome::Data(index)))
+            }
+            else if let Maybe::Present(Half { operand: Operand::Loop { .. }, .. }) = slot.definition {
+                ret == self.looped.get(&position).map_or(Maybe::Absent(lowered::Absent::Unminted), |&(declared_type, body)| Maybe::Present(DeclarationOutcome::Completed { declared_type, body }))
+            }
             else if let Some(&index) = self.described.get(&position) {
                 ret == Maybe::Present(DeclarationOutcome::Data(index))
             }
@@ -11491,7 +11528,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Operand::Written(written) => self.value_type_at(written.node),
                         | Operand::Function => self.signature_at(half.declaration.node),
                         | Operand::Model(_) => self.modelled.get(&position).copied().map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Member(_) | Operand::Data(_) | Operand::Operation | Operand::Signature | Operand::Presented | Operand::Code => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Signature | Operand::Presented | Operand::Code => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -11504,7 +11541,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             .get(&position)
                             .copied()
                             .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Data(_) | Operand::Operation | Operand::Signature | Operand::Presented | Operand::Code | Operand::Model(_) => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Signature | Operand::Presented | Operand::Code | Operand::Model(_) => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -11553,6 +11590,33 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .map_or(Maybe::Absent(lowered::Absent::Unminted), |&index| {
                     Maybe::Present(DeclarationOutcome::Data(index))
                 });
+        }
+        if let Maybe::Present(Half {
+            operand: Operand::Words(words),
+            ..
+        }) = slot.definition
+        {
+            return self
+                .worded
+                .get(&words)
+                .map_or(Maybe::Absent(lowered::Absent::Unminted), |&index| {
+                    Maybe::Present(DeclarationOutcome::Data(index))
+                });
+        }
+        if let Maybe::Present(Half {
+            operand: Operand::Loop { .. },
+            ..
+        }) = slot.definition
+        {
+            return self.looped.get(&position).map_or(
+                Maybe::Absent(lowered::Absent::Unminted),
+                |&(declared_type, body)| {
+                    Maybe::Present(DeclarationOutcome::Completed {
+                        declared_type,
+                        body,
+                    })
+                },
+            );
         }
         if let Some(&index) = self.described.get(&position) {
             return Maybe::Present(DeclarationOutcome::Data(index));
@@ -11619,6 +11683,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
                 | Operand::Member(_)
                 | Operand::Data(_)
+                | Operand::Words(_)
+                | Operand::Loop { .. }
                 | Operand::Operation
                 | Operand::Signature
                 | Operand::Presented
@@ -11636,6 +11702,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .copied()
                     .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
                 | Operand::Data(_)
+                | Operand::Words(_)
+                | Operand::Loop { .. }
                 | Operand::Operation
                 | Operand::Signature
                 | Operand::Presented
