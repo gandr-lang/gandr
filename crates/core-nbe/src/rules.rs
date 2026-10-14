@@ -1535,7 +1535,8 @@ fn payload(
 ///
 /// # Specification
 /// - requires: nothing — dangling ids are admissible input and refused.
-/// - ensures: as [`plan`], over the value formers.
+/// - ensures: as [`plan`], over the value formers; two reflexivities that
+///   neither share nor separate decompose to their points.
 /// - provides: the value half of the table.
 /// - fails: as [`plan`].
 /// - panics: none.
@@ -1546,12 +1547,16 @@ fn payload(
 /// # Adequacy
 /// - hypothesis: L2 — rigid spines identify the differing argument, and
 ///   closures meet through forcing or eta rather than immediate refutation;
-///   selecting the wrong structural rule changes the verdict or its trace.
+///   selecting the wrong structural rule changes the verdict or its trace. Two
+///   reflexivities whose points are one unfolding apart convert only by the
+///   congruence on their points, and stay apart when that unfolding is
+///   unavailable.
 /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
 /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
 /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
 /// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
 /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
+/// - witness: `identity::tests::reflexivities_convert_by_points_a_definition_relates`
 #[spec(ensures: |ret| (match early_values(domain, left, right) {
     Ok(Early::Identical) => ret == Ok(Plan::Shared(Settled::Convertible)),
     Ok(Early::Apart) => ret == Ok(Plan::Shared(Settled::NotConvertible)),
@@ -1560,6 +1565,8 @@ fn payload(
 }) && match (domain.value(left), domain.value(right)) {
     (Some(&DomainValue::PathCertificate { .. }), Some(&DomainValue::PathProduct { .. })) | (Some(&DomainValue::PathProduct { .. }), Some(&DomainValue::PathCertificate { .. })) => ret == Ok(Plan::Shared(Settled::NotConvertible)),
     (Some(&DomainValue::PathCertificate { certificate: a, .. }), Some(&DomainValue::PathCertificate { certificate: b, .. })) if a == b => ret == Ok(Plan::Shared(Settled::Convertible)),
+    (Some(&DomainValue::Here { point: a, .. }), Some(&DomainValue::Here { point: b, .. })) => early_values(domain, left, right) != Ok(Early::Open)
+        || ret == Ok(Plan::Decompose(Vec::from([Subgoal::Values(a, b)]))),
     _ => true,
 })]
 fn plan_values(
@@ -1798,6 +1805,14 @@ fn plan_values(
                 Plan::Leaf(Settled::NotConvertible)
             }
         },
+        | (
+            DomainValue::Here {
+                point: left_point, ..
+            },
+            DomainValue::Here {
+                point: right_point, ..
+            },
+        ) => Plan::Decompose(Vec::from([Subgoal::Values(left_point, right_point)])),
         | (
             DomainValue::Lift {
                 target: left_target,

@@ -51,6 +51,14 @@
 //! refuses the twin as a value-type mismatch naming the path type and the
 //! unit.
 //!
+//! `kernel_export::kernel_here_congruence_readmission::reflexivities_related_through_the_wrong_side_are_refused_by_name`
+//! readmits `fixture/model/identity/here-congruence.gandr`, whose
+//! `here_two_up` relates `here(two)` to `here(here(2))` by the dialogue that
+//! decomposes the two reflexivities to their points and unfolds `two`, then
+//! tampers that dialogue so it reads the unfolding on the other point: the
+//! kernel refuses `here_two_up` at that decision, naming the endpoint and the
+//! replay refusal.
+//!
 //! The suite derives its expectations from admission and storage semantics
 //! rather than checked-in sizes, identities, class thresholds or corpus
 //! cardinalities. Exact kernel format goldens belong to `gandr-kernel-term`;
@@ -1211,6 +1219,123 @@ mod kernel_transport_readmission
                         && mismatch.actual().head() == ValueTypeHead::Product
             ),
             "the kernel names the path type expected and the unit found: {:?}",
+            refusal.error()
+        );
+    }
+}
+
+/// Two reflexivities whose points differ by a definition's unfolding readmit
+/// by the dialogue that decomposes them to their points; a twin whose
+/// dialogue reads the unfolding on the wrong side is refused by name.
+mod kernel_here_congruence_readmission
+{
+    use alloc::sync::Arc;
+    use alloc::vec;
+    use std::path::PathBuf;
+
+    use gandr_kernel_conversion_trace::ConversionDecision;
+    use gandr_kernel_core::EndpointSide;
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::IdentityError;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_core::KernelVerdict;
+    use gandr_kernel_core::ReplayDecline;
+    use gandr_kernel_core::ReplayRefusal;
+    use gandr_kernel_core::TracePosition;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_kernel_term::decode;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn reflexivities_related_through_the_wrong_side_are_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/identity/here-congruence.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("here-congruence lowers");
+        };
+        let decoded =
+            decode(exported.artifact.as_image()).expect("here-congruence's export decodes");
+        let mut declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations).expect(
+            "here-congruence readmits, `here_two_up` by the points its dialogue decomposes to",
+        );
+
+        let segment =
+            NameSegment::from_text("here_two_up".into()).expect("`here_two_up` is a name segment");
+        let here_two_up = StructuredName::from(vec![segment]);
+        let Some(position) = declarations
+            .iter()
+            .position(|marked| *marked.declaration().name() == here_two_up)
+        else {
+            panic!("`here_two_up` crossed");
+        };
+        let Some(statement) = declarations.get_mut(position)
+        else {
+            panic!("`here_two_up` is a declaration");
+        };
+        let DeclarationContent::Def { declared, body } = *statement.declaration().content()
+        else {
+            panic!("`here_two_up` is a definition");
+        };
+        let Some(Value::Here { point, dialogues }) = arena.value(body).cloned()
+        else {
+            panic!("`here_two_up` crosses as the kernel's reflexivity");
+        };
+        // The right endpoint `here(here(2))` meets the point `here(two)`: the
+        // dialogue decomposes the two reflexivities and unfolds `two` on the
+        // left, which the twin reads on the right instead.
+        let mut tampered = (*dialogues).clone();
+        let Some(misread) = tampered
+            .right
+            .iter()
+            .position(|decision| matches!(decision, ConversionDecision::ReduceLeft { .. }))
+        else {
+            panic!("the dialogue unfolds `two` on the left: {dialogues:?}");
+        };
+        if let Some(reduction) = tampered.right.get_mut(misread) {
+            *reduction = ConversionDecision::ReduceRight { redex: () };
+        }
+        let forged = arena.value_here_relating(point, Arc::new(tampered));
+        let content = DeclarationBuilder::new(&mut arena).def(
+            statement.declaration().levels().clone(),
+            declared,
+            forged,
+        );
+        *statement = MarkedDeclaration::new(
+            statement.mark(),
+            content.named(statement.declaration().name().clone()),
+        );
+
+        let refusal = Environment::replay(arena, &declarations)
+            .expect_err("the unfolding read on the wrong side is refused");
+        assert_eq!(usize::from(refusal.position()), position);
+        assert!(
+            matches!(
+                *refusal.error(),
+                KernelError::Identity(IdentityError::EndpointsDiffer {
+                    side: EndpointSide::Right,
+                    verdict: KernelVerdict::Declined(ReplayDecline::Refused(
+                        ReplayRefusal::Inapplicable { at }
+                    )),
+                    ..
+                }) if at == TracePosition::from(misread)
+            ),
+            "the kernel names the endpoint and the misread decision: {:?}",
             refusal.error()
         );
     }

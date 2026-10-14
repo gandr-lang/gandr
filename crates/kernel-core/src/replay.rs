@@ -2601,8 +2601,9 @@ where
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: as [`Self::decompose`], over the value formers. A returned
-    ///   endpoint never reaches here: [`Self::settle`] reads it first.
+    /// - ensures: as [`Self::decompose`], over the value formers; two
+    ///   reflexivities decompose to their points. A returned endpoint never
+    ///   reaches here: [`Self::settle`] reads it first.
     /// - provides: the former half of [`Self::decompose`].
     /// - fails: [`ReplayRefusal::Unreadable`] on a dangling id or a returned
     ///   endpoint.
@@ -2614,13 +2615,16 @@ where
     /// # Adequacy
     /// - hypothesis: L3: pair refutations select the differing component and
     ///   reject a positive sibling or an absent index; unit and distinct rigid
-    ///   leaves close at opposite verdicts. Quotes and larger former
-    ///   combinations are not claimed by these fixtures. Native path witnesses
-    ///   separate evidence from syntax; their predicate observes identity and
-    ///   root family without repeating conversion.
+    ///   leaves close at opposite verdicts; two reflexivities one unfolding
+    ///   apart convert by the unfolding their points need and refuse it read on
+    ///   the other side. Quotes and larger former combinations are not claimed
+    ///   by these fixtures. Native path witnesses separate evidence from
+    ///   syntax; their predicate observes identity and root family without
+    ///   repeating conversion.
     /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
     /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
     /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
+    /// - witness: `replay::tests::two_reflexivities_decompose_to_their_points`
     #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (self.arena.value(left), self.arena.value(right));
 if let Some(matched_left_node) = matched_left_value && let Value::Constructor { datatype:a,tag:a_tag,fields:ref a_fields } = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Constructor { datatype:b,tag:b_tag,fields:ref b_fields } = *matched_right_node { {
             if a_tag != b_tag || a_fields.len() != b_fields.len() { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
@@ -2632,6 +2636,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             if a.keys().eq(b.keys()) { ret == Ok(Structure::of(a.values().zip(b.values()).map(|(a,b)| Premise::values(*a,*b)).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
         } }
  else if matched_left_value.is_none() || matched_right_value.is_none() || matches!(matched_left_value, Some(&Value::Returned(_))) || matches!(matched_right_value, Some(&Value::Returned(_))) { ret == Err(unreadable()) }
+ else if let (Some(&Value::Here { point: one_point, .. }), Some(&Value::Here { point: other_point, .. })) = (matched_left_value, matched_right_value) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_point, other_point)]) }
  else if let Some(matched_left_node) = matched_left_value && let ref one @ (Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. }) = *matched_left_node && let Some(other) = matched_right_value { matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
                 && (core::mem::discriminant(one) == core::mem::discriminant(other) || verdict == Expect::NotConvertible)) }
  else if matches!((matched_left_value, matched_right_value), (Some(&Value::ListNil), Some(&Value::ListNil))) { ret == Ok(Structure::Leaf(Expect::Convertible)) }
@@ -2715,6 +2720,17 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     )
                 }
             },
+            // Two reflexivities convert exactly when their points do; the
+            // dialogues they carry are evidence for their endpoints, never
+            // part of the value.
+            | (
+                &Value::Here {
+                    point: left_point, ..
+                },
+                &Value::Here {
+                    point: right_point, ..
+                },
+            ) => Structure::of(Vec::from([Premise::values(left_point, right_point)])),
             | (
                 &(Value::PathRefl(_)
                 | Value::PathProduct(..)
@@ -5313,6 +5329,54 @@ mod tests
             refused(ReplayRefusal::Contradicted {
                 at: TracePosition::from(0),
             })
+        );
+    }
+
+    #[test]
+    fn two_reflexivities_decompose_to_their_points()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let first = ConstantIndex::from(0_usize);
+        let defined = arena.value_constant(first);
+        let declared = arena.value_here(defined);
+        let written = arena.value_here(unit);
+        let unfoldings = Unfoldings::new(Vec::from([Unfoldable::Body(unit)]));
+        let sides = ReplaySides::Values(declared, written);
+        let unfolded = |reduce: ConversionDecision<ReplayNode>| {
+            [
+                ConversionDecision::Decompose,
+                ConversionDecision::Unfold {
+                    constant: ReplayNode::Constant(first),
+                },
+                reduce,
+            ]
+        };
+        let redex = ReplayNode::Constant(first);
+
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                sides,
+                EngineClaim::Convertible,
+                &unfolded(ConversionDecision::ReduceLeft { redex })
+            ),
+            KernelVerdict::Convertible,
+            "the reflexivities convert by their points, one unfolding apart"
+        );
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                sides,
+                EngineClaim::Convertible,
+                &unfolded(ConversionDecision::ReduceRight { redex })
+            ),
+            refused(ReplayRefusal::Inapplicable {
+                at: TracePosition::from(2),
+            }),
+            "the unfolding read on the other point does not apply"
         );
     }
 
