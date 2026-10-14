@@ -228,6 +228,7 @@ use gandr_kernel_conversion_trace::SubgoalPosition;
 use gandr_kernel_conversion_trace::TraceSink;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::GlobalIndex;
+use gandr_kernel_term::RewriteFuel;
 
 use crate::arena::CompClosureId;
 use crate::arena::DomainArena;
@@ -261,6 +262,7 @@ use crate::policy::GranularityPolicy;
 use crate::policy::GranularityStance;
 use crate::policy::SchedulingPolicy;
 use crate::policy::Share;
+use crate::presented::NormalForm;
 use crate::resharing::GoalSupport;
 use crate::resharing::SupportEdges;
 use crate::resharing::SupportSides;
@@ -1062,6 +1064,18 @@ enum Advance
     Unfolding,
     /// The unfolding repeats one on the side's chain, so the goal declines.
     Cycle,
+}
+
+/// What reading a value pair's presented sides by their normal forms did.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Presenting
+{
+    /// Each side is its own normal form.
+    Normal,
+    /// A side was replaced by its normal form.
+    Rewritten,
+    /// The run's budget ran out first.
+    Exhausted,
 }
 
 /// Number of fresh variables a computation closure binds.
@@ -2396,6 +2410,21 @@ where
     ) -> Result<Turn, ConversionFault>
     {
         self.charge(StepCount::ONE);
+        // A presented type's terms compare by their normal forms, taken here
+        // as the kernel's replay takes them after weak head reduction: a
+        // forced step, recording nothing.
+        if let (Glued::Value(left), Glued::Value(right)) = pair
+            && left != right
+        {
+            match self.present(goal, (left, right))? {
+                | Presenting::Normal => {},
+                | Presenting::Rewritten => return Ok(Turn::Again),
+                | Presenting::Exhausted => {
+                    self.finish(id, Outcome::Declined(DeclineReason::Budget))?;
+                    return Ok(Turn::Done);
+                },
+            }
+        }
         let planned = plan(
             self.core,
             self.domain,
@@ -2449,6 +2478,63 @@ where
                 Ok(Turn::Done)
             },
         }
+    }
+
+    /// Read the presented sides of a value pair by their normal forms.
+    ///
+    /// # Specification
+    /// - requires: `left` and `right` are the goal's ready sides.
+    /// - ensures: [`Presenting::Normal`] with the goal unchanged when each side
+    ///   is its own normal form; [`Presenting::Rewritten`] with each side that
+    ///   is not replaced by its normal form, the depth unchanged;
+    ///   [`Presenting::Exhausted`] when the run's budget ran out first. The
+    ///   nodes the rewriting compared or copied are charged to the run.
+    /// - provides: conversion modulo a presented type's rules.
+    /// - fails: every fault [`crate::presented::normal_form`] raises.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a circle word converts with its reduced word, the
+    ///   kernel replaying the derivation, and not without the circle's rules.
+    /// - witness: `presented::tests::a_circle_word_reads_as_its_reduced_word`
+    #[spec(
+        captures: [spent = self.spent.0, depth = goal.depth],
+        ensures: |ret| self.spent.0 >= spent && goal.depth == depth,
+    )]
+    fn present(
+        &mut self,
+        goal: &mut Goal,
+        (left, right): (DomainValueId, DomainValueId),
+    ) -> Result<Presenting, ConversionFault>
+    {
+        let budget = u64::from(self.settings.budget());
+        let mut fuel = RewriteFuel::from(budget.saturating_sub(self.spent.0));
+        let before = u64::from(fuel);
+        let mut presenting = Presenting::Normal;
+        for (side, value) in [(ConversionSide::Left, left), (ConversionSide::Right, right)] {
+            match crate::presented::normal_form(
+                self.core,
+                self.domain,
+                self.definitions,
+                value,
+                &mut fuel,
+            )? {
+                | NormalForm::Kept => {},
+                | NormalForm::Rewritten(normal) => {
+                    Self::set_side(goal, side, Slot::Ready(Glued::Value(normal)));
+                    presenting = Presenting::Rewritten;
+                },
+                | NormalForm::Exhausted => {
+                    presenting = Presenting::Exhausted;
+                    break;
+                },
+            }
+        }
+        self.charge(StepCount(before.saturating_sub(u64::from(fuel))));
+        Ok(presenting)
     }
 
     /// The turn an unfolding step leaves its goal at.

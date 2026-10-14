@@ -610,6 +610,7 @@ pub(crate) enum Agreement
 #[spec(ensures: |ret| ret == Agreement::Differ || actual != expected)]
 pub(crate) fn agree(
     arena: &mut TermArena,
+    presentations: &crate::presented::Presentations,
     actual: ValueTypeId,
     expected: ValueTypeId,
 ) -> Agreement
@@ -621,8 +622,10 @@ pub(crate) fn agree(
     let agrees = synthesized.reading != wanted.reading
         && convertible_value_types(arena, synthesized.carrier, wanted.carrier)
             == Convertibility::Convertible
-        && convert_values(arena, synthesized.source, wanted.source) == Convertibility::Convertible
-        && convert_values(arena, synthesized.target, wanted.target) == Convertibility::Convertible;
+        && convert_values(arena, presentations, synthesized.source, wanted.source)
+            == Convertibility::Convertible
+        && convert_values(arena, presentations, synthesized.target, wanted.target)
+            == Convertibility::Convertible;
     if agrees {
         Agreement::Agree
     }
@@ -658,6 +661,7 @@ pub(crate) fn agree(
 })]
 pub(crate) fn compose(
     arena: &mut TermArena,
+    presentations: &crate::presented::Presentations,
     (first, second): (ValueTypeId, ValueTypeId),
     seam: Seam,
     occurrences: (ValueId, ValueId),
@@ -666,12 +670,15 @@ pub(crate) fn compose(
     let left = ends(arena, first)?;
     let right = ends(arena, second)?;
     if convertible_value_types(arena, left.carrier, right.carrier) != Convertibility::Convertible
-        || convert_values(arena, left.target, right.source) != Convertibility::Convertible
+        || convert_values(arena, presentations, left.target, right.source)
+            != Convertibility::Convertible
     {
         return Err(FlowError::EndpointMismatch);
     }
     if seam == Seam::Feedback {
-        if convert_values(arena, right.target, left.source) != Convertibility::Convertible {
+        if convert_values(arena, presentations, right.target, left.source)
+            != Convertibility::Convertible
+        {
             return Err(FlowError::EndpointMismatch);
         }
         return Err(FlowError::Cycle {

@@ -242,7 +242,9 @@ use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Exhausted;
 use gandr_kernel_term::FixpointEvidence;
+use gandr_kernel_term::RewriteFuel;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -327,13 +329,15 @@ impl From<ParameterCount> for u32
     }
 }
 
-/// The definitions a replay may unfold, by admission position.
-#[repr(transparent)]
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+/// The definitions a replay may unfold, by admission position, and the
+/// presented types whose terms it rewrites.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Unfoldings
 {
     /// The unfolding of each constant, at its admission position.
     bodies: Vec<Unfoldable>,
+    /// The rules of every presented type the replay's terms may hold.
+    presentations: crate::presented::Presentations,
 }
 
 impl Unfoldings
@@ -363,9 +367,41 @@ impl Unfoldings
     /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
     #[inline]
     #[must_use]
-    pub const fn new(bodies: Vec<Unfoldable>) -> Self
+    pub fn new(bodies: Vec<Unfoldable>) -> Self
     {
-        Self { bodies }
+        Self {
+            bodies,
+            presentations: crate::presented::Presentations::default(),
+        }
+    }
+
+    /// These unfoldings, the replay rewriting every presented type's terms by
+    /// `presentations`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn presenting(
+        self,
+        presentations: crate::presented::Presentations,
+    ) -> Self
+    {
+        Self {
+            presentations,
+            ..self
+        }
+    }
+
+    /// The presented types the replay rewrites by.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn presentations(&self) -> &crate::presented::Presentations
+    {
+        &self.presentations
     }
 
     /// How the constant `constant` unfolds.
@@ -761,8 +797,9 @@ where
 /// rule the shapes force fired unread.
 ///
 /// The rules that fire are the ones no choice stands behind: weak head
-/// reduction, forcing two thunks, η for a lambda against a neutral, the two
-/// commuting conversions of `F`, a returned endpoint taken as its
+/// reduction, a presented type's terms rewritten to normal form by
+/// `presentations`, forcing two thunks, η for a lambda against a neutral, the
+/// two commuting conversions of `F`, a returned endpoint taken as its
 /// computation, and every structural decomposition. No constant unfolds, so a
 /// constant is compared by name, and no refutation is certified: a pair this
 /// cannot relate declines rather than separating.
@@ -792,13 +829,14 @@ where
 #[must_use]
 pub fn convert(
     arena: &mut TermArena,
+    presentations: &crate::presented::Presentations,
     sides: ReplaySides,
     budget: ReplayBudget,
 ) -> KernelVerdict
 {
     let (left, right) = terms(sides);
     let watermark = arena.watermark();
-    let none = Unfoldings::default();
+    let none = Unfoldings::default().presenting(presentations.clone());
     let mut run = Replay {
         arena,
         unfoldings: &none,
@@ -881,7 +919,13 @@ pub(crate) fn read_endpoints(
             reading = EndpointReading::Apart;
             break;
         };
-        if convert_values(run.arena, left_normal, right_normal) != Convertibility::Convertible {
+        if convert_values(
+            run.arena,
+            run.unfoldings.presentations(),
+            left_normal,
+            right_normal,
+        ) != Convertibility::Convertible
+        {
             reading = EndpointReading::Apart;
             break;
         }
@@ -1571,8 +1615,8 @@ where
             self.open_returned(&mut goal);
             let left = self.whnf(goal.left)?;
             let right = self.whnf(goal.right)?;
-            goal.left = left;
-            goal.right = right;
+            goal.left = self.present(left)?;
+            goal.right = self.present(right)?;
             let left_shape = self.shape(goal.left, &goal.frozen, ConversionSide::Left)?;
             let right_shape = self.shape(goal.right, &goal.frozen, ConversionSide::Right)?;
             let next = self.peek();
@@ -1704,6 +1748,64 @@ where
                 | None => self.arena.computation_return(value),
             };
             goal.set(side, Term::Computation(computation));
+        }
+    }
+
+    /// A value headed by a constructor of a presented type, rewritten to its
+    /// normal form; every other term unchanged.
+    ///
+    /// The rules are the type's definition, applied by one fixed strategy, so
+    /// the step chooses nothing and no decision of the trace records it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`crate::presented::normal_form`] of a value under the
+    ///   unfoldings' presentations, a computation unchanged; every node the
+    ///   rewriting compared or copied charged to the budget.
+    /// - provides: the presented half of weak head form, before any rule of the
+    ///   table reads a value goal.
+    /// - fails: [`Stop::Budget`] when the rewriting outruns the budget.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's words convert by their normal forms in
+    ///   the forced loop, which compares a free type's constructors as before.
+    /// - witness: `presented::tests::the_forced_loop_converts_circle_words_by_their_normal_forms`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| self.spent >= before
+            && (!matches!(term, Term::Computation(_)) || ret == Ok(term))
+            && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget),
+    )]
+    fn present(
+        &mut self,
+        term: Term,
+    ) -> Result<Term, Stop>
+    {
+        let Term::Value(value) = term
+        else {
+            return Ok(term);
+        };
+        let mut fuel = RewriteFuel::from(self.budget.saturating_sub(self.spent));
+        let before = u64::from(fuel);
+        let normal = crate::presented::normal_form(
+            self.arena,
+            self.unfoldings.presentations(),
+            value,
+            &mut fuel,
+        );
+        self.spent = self
+            .spent
+            .saturating_add(before.saturating_sub(u64::from(fuel)));
+        match normal {
+            | Ok(normal) => Ok(Term::Value(normal)),
+            | Err(Exhausted) => {
+                self.spent = self.budget;
+                Err(Stop::Budget)
+            },
         }
     }
 
@@ -2431,6 +2533,29 @@ where
             }
             self.take();
         }
+        // A refutation over a presented type's term is not authoritative: a
+        // leaf of its normal form may unfold into a redex, so two normal forms
+        // apart here may still be one term.
+        let presentations = self.unfoldings.presentations();
+        let presented = |term: Term| match term {
+            | Term::Value(value) => match self.arena.value(value) {
+                | Some(&Value::Constructor { datatype, .. }) => matches!(
+                    self.arena.value_type(datatype),
+                    Some(&ValueType::Data { declaration, .. })
+                        if presentations.presented(declaration).is_some()
+                ),
+                | _ => false,
+            },
+            | Term::Computation(_) => false,
+        };
+        if goal.expect == Expect::NotConvertible
+            && structure == Structure::Leaf(Expect::NotConvertible)
+            && (presented(goal.left) || presented(goal.right))
+        {
+            return Err(Stop::Refused(ReplayRefusal::NonAuthoritative {
+                at: self.at(),
+            }));
+        }
         let premises = match structure {
             | Structure::Leaf(verdict) => return self.close(goal.expect, verdict),
             | Structure::Premises(premises) => premises,
@@ -2951,10 +3076,24 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         datatype,
                         ref fields,
                         ..
-                    }) => work.extend(
-                        core::iter::once(AnyNode::ValueType(datatype))
-                            .chain(fields.iter().copied().map(AnyNode::Value)),
-                    ),
+                    }) => {
+                        // A presented type's constructor may be a redex, or
+                        // become one when a leaf unfolds.
+                        if let Some(&ValueType::Data { declaration, .. }) =
+                            self.arena.value_type(datatype)
+                            && self
+                                .unfoldings
+                                .presentations()
+                                .presented(declaration)
+                                .is_some()
+                        {
+                            return Rigidity::Flexible;
+                        }
+                        work.extend(
+                            core::iter::once(AnyNode::ValueType(datatype))
+                                .chain(fields.iter().copied().map(AnyNode::Value)),
+                        );
+                    },
                     | Some(&Value::Record(ref fields)) => {
                         work.extend(fields.values().copied().map(AnyNode::Value));
                     },
@@ -5971,7 +6110,12 @@ mod tests
             ReplaySides::Values(suspended, suspended_expanded),
         ] {
             assert_eq!(
-                convert(&mut arena, sides, ReplayBudget::default()),
+                convert(
+                    &mut arena,
+                    &crate::presented::FREE,
+                    sides,
+                    ReplayBudget::default()
+                ),
                 KernelVerdict::Convertible
             );
         }
@@ -5980,6 +6124,7 @@ mod tests
         assert!(matches!(
             convert(
                 &mut arena,
+                &crate::presented::FREE,
                 ReplaySides::Computations(held, apart),
                 ReplayBudget::default()
             ),

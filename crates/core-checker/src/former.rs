@@ -52,6 +52,7 @@
 //! declaration under the same two premises.
 
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::Binders;
@@ -66,6 +67,7 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::RuleSlot;
 use quenchant_shape::shape::Maybe;
 
 use crate::CheckRefusal;
@@ -163,7 +165,7 @@ pub fn form_signature(
                 });
             }
         }
-        Ok(())
+        present(context, position, signature)
     })();
     context.close_block();
     while context.depth(Zone::Intuitionistic) != depth {
@@ -173,6 +175,61 @@ pub fn form_signature(
             .map_err(|_cause| CheckRefusal::MachineInvariant)?;
     }
     outcome
+}
+
+/// Check a data declaration's rules against its constructor table.
+///
+/// # Specification
+/// - requires: `signature` is the declaration's at `position`, its fields
+///   formed.
+/// - ensures: `Ok(())` exactly when the rules validate against the table, a
+///   field reading as the declaration's own type where it is the family at
+///   `position` and as its classifier elsewhere — the table the kernel's
+///   admission reads, so the two refuse alike.
+/// - fails: [`CheckRefusal::RuleNotPresentable`] naming the first rule that
+///   does not present the type and why.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's rules admit, and a rule placing a
+///   constructor under a field of another type is refused by name in both
+///   checkers.
+/// - witness: `presented::tests::the_circle_presents_and_a_misplaced_rule_is_refused`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::RuleNotPresentable { .. })))]
+fn present(
+    context: &CheckingContext<'_>,
+    position: ConstantIndex,
+    signature: &DataSignature,
+) -> Result<(), CheckRefusal>
+{
+    let presentation = signature.presentation();
+    if presentation.rules().is_empty() {
+        return Ok(());
+    }
+    let table: Vec<Vec<RuleSlot<ValueTypeId>>> = signature
+        .constructors()
+        .iter()
+        .map(|fields| {
+            fields
+                .iter()
+                .map(|&field| match context.arena().value_type(field) {
+                    | Some(&ValueType::Data { declaration, .. }) if declaration == position => {
+                        RuleSlot::Own
+                    },
+                    | _ => RuleSlot::Other(field),
+                })
+                .collect()
+        })
+        .collect();
+    presentation
+        .validate(&table)
+        .map_err(|refusal| CheckRefusal::RuleNotPresentable {
+            kind: signature.kind(),
+            refusal,
+        })
 }
 
 /// Form an abstract type's kind and representation: the level of the universe

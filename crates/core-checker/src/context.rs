@@ -745,7 +745,8 @@ impl<'arena> CheckingContext<'arena>
         &self.data_signatures
     }
 
-    /// Retain a signature after its formation judgment has succeeded.
+    /// Retain a signature after its formation judgment has succeeded, and
+    /// read the terms of a presented one by their normal forms from then on.
     ///
     /// # Specification
     /// trivial.
@@ -755,6 +756,7 @@ impl<'arena> CheckingContext<'arena>
         signature: alloc::sync::Arc<gandr_core_term::DataSignature>,
     )
     {
+        self.definitions.present(constant, &signature);
         let _previous = self.data_signatures.insert(constant, signature);
     }
 

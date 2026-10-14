@@ -697,7 +697,10 @@ fn checked(
         | CheckRefusal::DataKindNotUniverse(at)
         | CheckRefusal::DataArgumentArity(at)
         | CheckRefusal::AbstractKindNotUniverse(at)
-        | CheckRefusal::CapabilityConsumable(at) => (spanned(origins.value_type(at)), UNNAMED),
+        | CheckRefusal::CapabilityConsumable(at)
+        | CheckRefusal::RuleNotPresentable { kind: at, .. } => {
+            (spanned(origins.value_type(at)), UNNAMED)
+        },
         | CheckRefusal::DataFieldLevel { field: at, kind }
         | CheckRefusal::RepresentationAboveKind {
             representation: at,
@@ -1076,6 +1079,17 @@ impl fmt::Display for Checked
             CheckRefusal::NotADataType(constant) => write!(f,"declaration {} is not an admitted datatype",usize::from(constant)),
             CheckRefusal::DataKindNotUniverse(_) => f.write_str("a datatype kind must be a value universe"),
             CheckRefusal::DataFieldLevel {..} => f.write_str("a constructor field exceeds the declared universe"),
+            CheckRefusal::RuleNotPresentable { refusal, .. } => write!(f, "rule {} does not present its datatype: {}", usize::from(refusal.rule), match refusal.fault {
+                gandr_kernel_term::RuleFault::VariableHeaded => "its left side is a bare variable",
+                gandr_kernel_term::RuleFault::UnknownConstructor => "it names a constructor the datatype does not declare",
+                gandr_kernel_term::RuleFault::Arity => "a constructor in it has the wrong number of fields",
+                gandr_kernel_term::RuleFault::NotOwnPosition => "a constructor in it stands at a field of another type",
+                gandr_kernel_term::RuleFault::NonLinear => "its left side repeats or skips a variable",
+                gandr_kernel_term::RuleFault::Unbound => "its right side names a variable the left side does not bind",
+                gandr_kernel_term::RuleFault::Duplicated => "its right side names a variable twice",
+                gandr_kernel_term::RuleFault::SlotMismatch => "its right side moves a variable to a field of another type",
+                gandr_kernel_term::RuleFault::NotDecreasing => "its right side is not smaller than its left",
+            }),
             CheckRefusal::AbstractKindNotUniverse(_) => f.write_str("an abstract type's kind must be a value universe"),
             CheckRefusal::RepresentationAboveKind {..} => f.write_str("a sealed representation exceeds its abstract type's universe"),
             CheckRefusal::NotAnAbstractType(constant) => write!(f,"declaration {} is not an abstract type",usize::from(constant)),

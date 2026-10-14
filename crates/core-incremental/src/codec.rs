@@ -2704,10 +2704,12 @@ fn read_linearity(reader: &mut Reader<'_>) -> Result<Linearity, CodecError>
     })
 }
 
-/// Write every root of a nominal signature.
+/// Write every root of a nominal signature, then the rules presenting it.
 ///
 /// # Specification
-/// - ensures: parameters, constructor rows and kind retain their order.
+/// - ensures: parameters, constructor rows, kind and rules retain their order;
+///   a rule side writes its node count, then per node a tag and either a
+///   constructor ordinal or a variable word.
 /// - fails: an unrepresentable count or index.
 /// - executable: none — a generic sink exposes no byte observer.
 ///
@@ -2727,21 +2729,43 @@ where
     for fields in &roots.constructors {
         write_indices(writer, fields)?;
     }
-    write_index(writer, roots.kind)
+    write_index(writer, roots.kind)?;
+    let rules = roots.presentation.rules();
+    writer.count(Count(rules.len()))?;
+    for rule in rules {
+        for side in [rule.left(), rule.right()] {
+            writer.count(Count(side.len()))?;
+            for &node in side {
+                match node {
+                    | gandr_core_term::RuleNode::Constructor(tag) => {
+                        writer.tag(Tag(0));
+                        writer.count(Count(usize::from(tag)))?;
+                    },
+                    | gandr_core_term::RuleNode::Variable(variable) => {
+                        writer.tag(Tag(1));
+                        writer.word(Word(u64::from(u32::from(variable))));
+                    },
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
-/// Read all nominal roots without allocating from untrusted counts.
+/// Read all nominal roots and rules without allocating from untrusted counts.
 ///
 /// # Specification
-/// - ensures: successful reads consume parameters, constructor rows and kind.
-/// - fails: truncated or malformed root frames.
+/// - ensures: successful reads consume parameters, constructor rows, kind and
+///   rules.
+/// - fails: truncated or malformed root frames, an unknown rule-node tag and a
+///   variable past `u32`.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — nominal round trips retain the complete constructor
 ///   table.
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
-#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(24))]
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(32))]
 fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots, CodecError>
 {
     let parameters = read_indices(reader)?;
@@ -2751,11 +2775,54 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
         constructors.push(read_indices(reader)?);
     }
     let kind = read_index(reader)?;
+    let count = reader.count()?;
+    let mut rules = Vec::new();
+    for _ in 0 .. count.0 {
+        let left = read_rule_side(reader)?;
+        let right = read_rule_side(reader)?;
+        rules.push(gandr_core_term::PresentedRule::new(left, right));
+    }
     Ok(crate::content::DataRoots {
         parameters,
         constructors,
         kind,
+        presentation: gandr_core_term::Presentation::new(rules),
     })
+}
+
+/// Read one rule side: a node count, then each node's tag and ordinal.
+///
+/// # Specification
+/// - ensures: successful reads consume the count and every node in order.
+/// - fails: truncation, a tag outside the constructor and variable alphabet,
+///   and a variable past `u32`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`read_data_roots`].
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(8))]
+fn read_rule_side(
+    reader: &mut Reader<'_>
+) -> Result<alloc::boxed::Box<[gandr_core_term::RuleNode]>, CodecError>
+{
+    let count = reader.count()?;
+    let mut side = Vec::new();
+    for _ in 0 .. count.0 {
+        let node = match reader.tag()?.0 {
+            | 0 => gandr_core_term::RuleNode::Constructor(gandr_core_term::ConstructorTag::from(
+                reader.count()?.0,
+            )),
+            | 1 => {
+                let word = reader.word()?;
+                let ordinal = u32::try_from(word.0).map_err(|_overflow| CodecError::Corrupt)?;
+                gandr_core_term::RuleNode::Variable(gandr_core_term::RuleVariable::from(ordinal))
+            },
+            | _ => return Err(CodecError::Corrupt),
+        };
+        side.push(node);
+    }
+    Ok(side.into_boxed_slice())
 }
 
 /// Write a nominal signature's roots and shared node table.
@@ -4520,6 +4587,19 @@ const DESCENT_REFUSALS: [DescentRefusal; 5] = [
     DescentRefusal::NonDescendingCall,
 ];
 
+/// The faults a presented type's rule is refused for, in stable wire order.
+const RULE_FAULTS: [gandr_kernel_term::RuleFault; 9] = [
+    gandr_kernel_term::RuleFault::VariableHeaded,
+    gandr_kernel_term::RuleFault::UnknownConstructor,
+    gandr_kernel_term::RuleFault::Arity,
+    gandr_kernel_term::RuleFault::NotOwnPosition,
+    gandr_kernel_term::RuleFault::NonLinear,
+    gandr_kernel_term::RuleFault::Unbound,
+    gandr_kernel_term::RuleFault::Duplicated,
+    gandr_kernel_term::RuleFault::SlotMismatch,
+    gandr_kernel_term::RuleFault::NotDecreasing,
+];
+
 /// Write the parameter or field an occurrence refusal names.
 ///
 /// # Specification
@@ -4754,6 +4834,12 @@ where
             writer.tag(Tag(21));
             write_site(writer, field)?;
             write_type(writer, kind)?;
+        },
+        | Refusal::RuleNotPresentable { kind, refusal } => {
+            writer.tag(Tag(72));
+            write_site(writer, kind)?;
+            writer.count(Count(usize::from(refusal.rule)))?;
+            write_listed(writer, &RULE_FAULTS, &refusal.fault)?;
         },
         | Refusal::AbstractKindNotUniverse(at) => {
             writer.tag(Tag(48));
@@ -5299,6 +5385,7 @@ where
                     Refusal::NotADataType(_) => 19,
                     Refusal::DataKindNotUniverse(_) => 20,
                     Refusal::DataFieldLevel {..} => 21,
+                    Refusal::RuleNotPresentable {..} => 72,
                     Refusal::DataArgumentArity(_) => 22,
                     Refusal::UnknownConstructor {..} => 23,
                     Refusal::ConstructorArity(_) => 24,
@@ -5385,6 +5472,15 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         | 21 => Refusal::DataFieldLevel {
             field: read_site(reader)?,
             kind: read_type(reader)?,
+        },
+        | 72 => {
+            let kind = read_site(reader)?;
+            let rule = gandr_kernel_term::RuleIndex::from(reader.count()?.0);
+            let fault = read_listed(reader, &RULE_FAULTS)?;
+            Refusal::RuleNotPresentable {
+                kind,
+                refusal: gandr_kernel_term::RuleRefusal { rule, fault },
+            }
         },
         | 22 => Refusal::DataArgumentArity(read_site(reader)?),
         | 23 => Refusal::UnknownConstructor {

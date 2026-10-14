@@ -2200,11 +2200,13 @@ mod tests
     }
 }
 
-/// A nominal declaration's parameter telescope, constructor table and universe.
+/// A nominal declaration's parameter telescope, constructor table, universe
+/// and the rules presenting its terms.
 ///
 /// Parameter classifiers are scoped under their predecessors. Constructor
 /// fields are scoped under all parameters and do not bind one another.
-/// Admission, not this container, verifies those scopes and the universe bound.
+/// Admission, not this container, verifies those scopes, the universe bound
+/// and that every rule is constructor-headed over the table.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DataSignature
 {
@@ -2214,17 +2216,20 @@ pub struct DataSignature
     constructors: Vec<Vec<ValueTypeId>>,
     /// The positive universe bounding every constructor field.
     kind: ValueTypeId,
+    /// The rules rewriting the type's constructor terms; none for a free type.
+    presentation: gandr_kernel_term::Presentation,
 }
 
 impl DataSignature
 {
-    /// Construct a signature whose formation remains the checker's obligation.
+    /// Construct a free signature whose formation remains the checker's
+    /// obligation; [`Self::presented`] attaches rules.
     ///
     /// # Specification
     /// trivial.
     #[must_use]
     #[inline]
-    pub const fn new(
+    pub fn new(
         parameters: Vec<ValueTypeId>,
         constructors: Vec<Vec<ValueTypeId>>,
         kind: ValueTypeId,
@@ -2234,6 +2239,7 @@ impl DataSignature
             parameters,
             constructors,
             kind,
+            presentation: gandr_kernel_term::Presentation::default(),
         }
     }
 
@@ -2268,5 +2274,35 @@ impl DataSignature
     pub const fn kind(&self) -> ValueTypeId
     {
         self.kind
+    }
+
+    /// The rules rewriting the type's constructor terms, in written order:
+    /// none for a free type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn presentation(&self) -> &gandr_kernel_term::Presentation
+    {
+        &self.presentation
+    }
+
+    /// This signature presenting its terms by `presentation`, its parameters,
+    /// constructors and universe unchanged.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn presented(
+        self,
+        presentation: gandr_kernel_term::Presentation,
+    ) -> Self
+    {
+        Self {
+            presentation,
+            ..self
+        }
     }
 }

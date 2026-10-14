@@ -415,6 +415,15 @@ pub enum CheckRefusal
         /// The declaration's universe.
         kind: ValueTypeId,
     },
+    /// A data declaration's rules do not present its type: a rule is not
+    /// constructor-headed, linear and decreasing over its constructor table.
+    RuleNotPresentable
+    {
+        /// The declaration's universe, which locates the declaration.
+        kind: ValueTypeId,
+        /// The first rule that does not present the type, and why.
+        refusal: gandr_kernel_term::RuleRefusal,
+    },
     /// An abstract type's kind is not a value universe.
     AbstractKindNotUniverse(ValueTypeId),
     /// A sealed representation forms above its abstract type's universe.
@@ -951,25 +960,25 @@ impl CheckRefusal
     ///   dependent bind, a family at the wrong arity or with an argument at the
     ///   wrong classifier, a static lambda at a dynamic parameter, a static Pi
     ///   over a type that classifies no codes, an occurrence of a data
-    ///   declaration's own family outside a strictly positive, uniform field, a
-    ///   reference past its block, a descent claim that does not replay,
-    ///   reflexivity at endpoints its point does not reach, a compound endpoint
-    ///   that returns no pure value, an abstract type's kind that is no
-    ///   universe, a representation above it, an atom naming no abstract type,
-    ///   translators that are no equivalence of species, a run with no
-    ///   computation enclosing it, a session action its endpoint's state
-    ///   refuses, a break of an endpoint's linear use, a forged, amplified,
-    ///   escaping, consumable or ungranted capability or one exercised outside
-    ///   its authority, sessions that are not bisimilar or not related by
-    ///   subtyping, an operand that is no session code, a ride whose motive is
-    ///   not covariant, a run its session does not admit and a function flow's
-    ///   boundary against its variance are malformed source; a former outside
-    ///   the fragment, a stratum the checker does not certify, a ride the
-    ///   checker does not move and a translator `forward` cannot image are
-    ///   unrepresentable; an unbound index, an exhausted allowance, a dangling
-    ///   id, an admission out of order, a repeated sealing site, a machine
-    ///   invariant and an undecided unfolding are engine faults; nothing is a
-    ///   user absence.
+    ///   declaration's own family outside a strictly positive, uniform field,
+    ///   rules that do not present their type, a reference past its block, a
+    ///   descent claim that does not replay, reflexivity at endpoints its point
+    ///   does not reach, a compound endpoint that returns no pure value, an
+    ///   abstract type's kind that is no universe, a representation above it,
+    ///   an atom naming no abstract type, translators that are no equivalence
+    ///   of species, a run with no computation enclosing it, a session action
+    ///   its endpoint's state refuses, a break of an endpoint's linear use, a
+    ///   forged, amplified, escaping, consumable or ungranted capability or one
+    ///   exercised outside its authority, sessions that are not bisimilar or
+    ///   not related by subtyping, an operand that is no session code, a ride
+    ///   whose motive is not covariant, a run its session does not admit and a
+    ///   function flow's boundary against its variance are malformed source; a
+    ///   former outside the fragment, a stratum the checker does not certify, a
+    ///   ride the checker does not move and a translator `forward` cannot image
+    ///   are unrepresentable; an unbound index, an exhausted allowance, a
+    ///   dangling id, an admission out of order, a repeated sealing site, a
+    ///   machine invariant and an undecided unfolding are engine faults;
+    ///   nothing is a user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -989,7 +998,7 @@ impl CheckRefusal
         | Self::MachineInvariant
         | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
         | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. }
-        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
+        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
         | Self::UnknownOperation { .. } | Self::HandlerCoverage { .. }
@@ -1024,6 +1033,7 @@ impl CheckRefusal
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
+            | Self::RuleNotPresentable { .. }
             | Self::AbstractKindNotUniverse(_)
             | Self::RepresentationAboveKind { .. }
             | Self::NotAnAbstractType(_)
@@ -1220,6 +1230,7 @@ impl CheckRefusal
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
+            | Self::RuleNotPresentable { .. }
             | Self::AbstractKindNotUniverse(_)
             | Self::RepresentationAboveKind { .. }
             | Self::NotAnAbstractType(_)

@@ -121,18 +121,32 @@ pub(crate) enum ConversionGoal
 }
 
 /// What the walk does with a value pair one of whose sides is a returned
-/// endpoint.
+/// endpoint or a presented type's constructor.
 #[derive(Debug)]
 enum Endpoints<'pending>
 {
     /// Decide it as every other pair: two returned endpoints by their
-    /// computations, a returned endpoint against any other former apart.
+    /// computations, a returned endpoint against any other former apart, two
+    /// constructors by their tags and fields.
     Structural,
-    /// Set it aside, unread, for the caller to read.
-    Deferred(&'pending mut Vec<(ValueId, ValueId)>),
+    /// Set it aside, unread, for the caller to read; a presented type's
+    /// constructor is read by the types `presentations` names.
+    Deferred
+    {
+        /// The pairs set aside.
+        pending: &'pending mut Vec<(ValueId, ValueId)>,
+        /// The presented types whose constructors are set aside.
+        presentations: &'pending crate::presented::Presentations,
+    },
     /// Set it aside as [`Endpoints::Deferred`] does, and set aside every
     /// pair of path endpoints too, for the caller to relate.
-    Related(&'pending mut Vec<(ValueId, ValueId)>),
+    Related
+    {
+        /// The pairs set aside.
+        pending: &'pending mut Vec<(ValueId, ValueId)>,
+        /// The presented types whose constructors are set aside.
+        presentations: &'pending crate::presented::Presentations,
+    },
 }
 
 /// Decide convertibility of two value types in one arena.
@@ -319,7 +333,8 @@ pub(crate) fn equal_computations(
 }
 
 /// The kernel's term equality on two values: α-equality first, then the
-/// rules a conversion is forced to fire.
+/// rules a conversion is forced to fire, a presented type's terms rewritten
+/// by `presentations` among them.
 ///
 /// # Specification
 /// - requires: nothing — an unreadable id is admissible input and fails closed.
@@ -346,6 +361,7 @@ pub(crate) fn equal_computations(
 )]
 pub(crate) fn convert_values(
     arena: &mut TermArena,
+    presentations: &crate::presented::Presentations,
     left: ValueId,
     right: ValueId,
 ) -> Convertibility
@@ -355,6 +371,7 @@ pub(crate) fn convert_values(
     }
     match crate::replay::convert(
         arena,
+        presentations,
         crate::replay::ReplaySides::Values(left, right),
         crate::replay::ReplayBudget::DEFAULT,
     ) {
@@ -365,7 +382,8 @@ pub(crate) fn convert_values(
 }
 
 /// Compare `goal` structurally, setting aside into `pending` every value pair
-/// one of whose sides is a returned endpoint.
+/// one of whose sides is a returned endpoint or a constructor of a type
+/// `presentations` presents.
 ///
 /// # Specification
 /// - requires: nothing — an unreadable id fails closed.
@@ -375,33 +393,38 @@ pub(crate) fn convert_values(
 ///   nor descended into. On [`Convertibility::Distinct`] `pending` holds
 ///   whatever was set aside before the separating pair.
 /// - provides: where the checker's endpoint reading looks: the type
-///   conversion's own structural walk, finding the returned endpoints it would
-///   otherwise compare by syntax. Each is then normalized and converted by
-///   [`convert_values`], never compared here.
+///   conversion's own structural walk, finding the returned endpoints and
+///   presented terms it would otherwise compare by syntax. Each is then
+///   normalized and converted by [`convert_values`], never compared here.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a returned endpoint inside a path type is set aside while
 ///   its domain still separates, so the reading is asked only the pairs
-///   structure leaves open.
+///   structure leaves open; a circle word is set aside for its normal form.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_stuck_returned_endpoint_compares_structurally`
+/// - witness: `presented::tests::a_mode_switch_reads_circle_words_by_their_normal_forms`
 #[spec(captures: before = pending.len(), ensures: |ret| pending.len() >= before
-    && (ret == Convertibility::Distinct || pending.get(before ..).is_some_and(|set_aside| set_aside.iter().all(|&(left, right)|
-        matches!(arena.value(left), Some(&Value::Returned(_))) || matches!(arena.value(right), Some(&Value::Returned(_)))))))]
+    && (ret == Convertibility::Distinct || pending.get(before ..).is_some_and(|set_aside| set_aside.iter().all(|pair|
+        <[ValueId; 2]>::from(*pair).iter().any(|&side| matches!(arena.value(side), Some(&(Value::Returned(_) | Value::Constructor { .. }))))))))]
 pub(crate) fn pending_endpoints(
     arena: &TermArena,
+    presentations: &crate::presented::Presentations,
     goal: ConversionGoal,
     pending: &mut Vec<(ValueId, ValueId)>,
 ) -> Convertibility
 {
-    converge(arena, goal, Endpoints::Deferred(pending))
+    converge(arena, goal, Endpoints::Deferred {
+        pending,
+        presentations,
+    })
 }
 
 /// Compare `goal` structurally, setting aside into `pending` every pair of
 /// path endpoints and every value pair one of whose sides is a returned
-/// endpoint.
+/// endpoint or a constructor of a type `presentations` presents.
 ///
 /// # Specification
 /// - requires: nothing — an unreadable id fails closed.
@@ -426,11 +449,15 @@ pub(crate) fn pending_endpoints(
 #[spec(captures: before = pending.len(), ensures: |ret| pending.len() >= before)]
 pub(crate) fn related_pairs(
     arena: &TermArena,
+    presentations: &crate::presented::Presentations,
     goal: ConversionGoal,
     pending: &mut Vec<(ValueId, ValueId)>,
 ) -> Convertibility
 {
-    converge(arena, goal, Endpoints::Related(pending))
+    converge(arena, goal, Endpoints::Related {
+        pending,
+        presentations,
+    })
 }
 
 /// Convert a synthesized value type against an expected one, building the
@@ -553,10 +580,11 @@ pub(crate) fn case_branch_mismatch(
 /// - ensures: [`Convertibility::Convertible`] exactly when each examined pair
 ///   has readable roots and either equal ids or matching structure, with
 ///   canonical level equality and nominal atom equality. Under
-///   [`Endpoints::Deferred`] a value pair with a returned endpoint on either
-///   side is appended to the list unexamined and closes; under
-///   [`Endpoints::Related`] so is every pair of path endpoints. The iterative
-///   heap stack does not impose a host-stack depth limit.
+///   [`Endpoints::Deferred`] a value pair with a returned endpoint, or with a
+///   constructor of a presented type, on either side is appended to the list
+///   unexamined and closes; under [`Endpoints::Related`] so is every pair of
+///   path endpoints. The iterative heap stack does not impose a host-stack
+///   depth limit.
 /// - provides: the shared engine of the conversion and term-equality faces. The
 ///   predicate checks the initial roots' readability, identity and head
 ///   separation; the graph judgement and termination argument are not replayed
@@ -599,7 +627,7 @@ pub(crate) fn case_branch_mismatch(
 /// - witness: `conv::tests::an_unreadable_id_fails_closed`
 /// - witness: `conv::tests::a_shared_composite_converts_without_expanding`
 /// - witness: `conv::tests::identity_requires_a_readable_root_in_every_family`
-#[spec(captures: deferring = matches!(endpoints, Endpoints::Deferred(_) | Endpoints::Related(_)), ensures: |ret| match initial {
+#[spec(captures: deferring = matches!(endpoints, Endpoints::Deferred { .. } | Endpoints::Related { .. }), ensures: |ret| match initial {
     ConversionGoal::ValueType(left, right) => match (arena.value_type(left), arena.value_type(right)) {
     (Some(one), Some(other)) => if left == right {
         ret == Convertibility::Convertible
@@ -723,7 +751,10 @@ fn converge(
                         },
                     ) => {
                         stack.push(ConversionGoal::ValueType(one_domain, other_domain));
-                        if let Endpoints::Related(ref mut pending) = endpoints {
+                        if let Endpoints::Related {
+                            ref mut pending, ..
+                        } = endpoints
+                        {
                             pending.push((one_left, other_left));
                             pending.push((one_right, other_right));
                         }
@@ -963,9 +994,29 @@ fn converge(
                 else {
                     return Convertibility::Distinct;
                 };
-                if let Endpoints::Deferred(ref mut pending) | Endpoints::Related(ref mut pending) =
-                    endpoints
-                    && (matches!(*left, Value::Returned(_)) || matches!(*right, Value::Returned(_)))
+                let presented = |value: &Value| match *value {
+                    | Value::Constructor { datatype, .. } => match endpoints {
+                        | Endpoints::Deferred { presentations, .. }
+                        | Endpoints::Related { presentations, .. } => matches!(
+                            arena.value_type(datatype),
+                            Some(&ValueType::Data { declaration, .. })
+                                if presentations.presented(declaration).is_some()
+                        ),
+                        | Endpoints::Structural => false,
+                    },
+                    | _ => false,
+                };
+                let set_aside = matches!(*left, Value::Returned(_))
+                    || matches!(*right, Value::Returned(_))
+                    || presented(left)
+                    || presented(right);
+                if let Endpoints::Deferred {
+                    ref mut pending, ..
+                }
+                | Endpoints::Related {
+                    ref mut pending, ..
+                } = endpoints
+                    && set_aside
                 {
                     pending.push(pair);
                     continue;
@@ -1535,6 +1586,7 @@ mod tests
         assert_eq!(
             super::related_pairs(
                 &arena,
+                &crate::presented::FREE,
                 super::ConversionGoal::ValueType(one, other),
                 &mut pending
             ),
@@ -1552,6 +1604,7 @@ mod tests
         assert_eq!(
             super::related_pairs(
                 &arena,
+                &crate::presented::FREE,
                 super::ConversionGoal::ValueType(one, apart),
                 &mut pending
             ),

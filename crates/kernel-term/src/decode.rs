@@ -317,6 +317,9 @@ struct DeclMeta
     /// The left and right endpoint roots and the dialogue of each pair a
     /// relating definition carries; empty for every other declaration.
     related: Vec<(GlobalIndex, GlobalIndex, crate::Dialogue)>,
+    /// The rules a presented data declaration carries; empty for every other
+    /// declaration.
+    rules: Vec<crate::presented::PresentedRule>,
 }
 
 /// Where the decoder found an artifact's segments, as offsets into the image it
@@ -928,12 +931,11 @@ fn build_declarations(
                     .iter()
                     .map(|fields| fields.iter().map(resolve).collect::<Result<Vec<_>, _>>())
                     .collect::<Result<Vec<_>, _>>()?;
-                DeclarationBuilder::new(&mut table.arena).data(
-                    meta.levels.clone(),
-                    parameters,
-                    constructors,
-                    declared,
-                )
+                DeclarationBuilder::new(&mut table.arena)
+                    .data(meta.levels.clone(), parameters, constructors, declared)
+                    .presented(crate::presented::Presentation::new(core::mem::take(
+                        &mut meta.rules,
+                    )))
             },
             | DeclKind::Def => {
                 let root = meta.root_body.ok_or(DecodeError::Malformed {
@@ -1576,9 +1578,10 @@ impl<'bytes> ByteReader<'bytes>
 ///   bytes may be arbitrary.
 /// - ensures: success appends this segment’s entries in wire order and returns
 ///   its mark, kind, name, level interface, family-correct live roots and
-///   definition provenance. Exactly definitions have a body root, and only a
+///   definition provenance. Exactly definitions have a body root, only a
 ///   definition under [`tags::KIND_DEF_RELATING`] carries related pairs, each
-///   two value roots and a dialogue.
+///   two value roots and a dialogue, and only a data declaration under
+///   [`tags::KIND_DATA_PRESENTED`] carries rules.
 /// - provides: segment parsing, not semantic validation of producer claims. On
 ///   failure the cursor and previously completed entries may have advanced;
 ///   this operation does not roll back an entire segment.
@@ -1603,6 +1606,7 @@ impl<'bytes> ByteReader<'bytes>
 /// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
 /// - witness: `decode::tests::declaration_assembly_preserves_claims_and_consumes_names`
 /// - witness: `decode::tests::counted_records_validate_content_and_consumption`
+/// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|meta|
     meta.root_declared < table.next_index()
         && table.families.get(meta.root_declared.offset().0) == Some(&Family::ValueType)
@@ -1643,6 +1647,7 @@ fn decode_declaration(
     let mut constructors = Vec::new();
     let mut sealed = None;
     let mut related = Vec::new();
+    let mut rules = Vec::new();
     let root_body = match kind {
         | DeclKind::Data => {
             let count = usize::from(reader.read_usize()?);
@@ -1657,6 +1662,17 @@ fn decode_declaration(
                     fields.push(decode_root(reader, table, Family::ValueType)?);
                 }
                 constructors.push(fields);
+            }
+            // A presented declaration closes with its rules. A count of none
+            // decodes, and the canonical re-encoding, which writes such a
+            // declaration under the plain kind, refuses it.
+            if kind_tag == tags::KIND_DATA_PRESENTED {
+                let count = usize::from(reader.read_usize()?);
+                for _ in 0 .. count {
+                    let left = decode_rule_side(reader)?;
+                    let right = decode_rule_side(reader)?;
+                    rules.push(crate::presented::PresentedRule::new(left, right));
+                }
             }
             None
         },
@@ -1701,7 +1717,62 @@ fn decode_declaration(
         constructors,
         provenance,
         related,
+        rules,
     })
+}
+
+/// Decode one side of a presented rule: a node count, then each node's tag
+/// and ordinal, allocating only as bytes are consumed.
+///
+/// # Specification
+/// - requires: nothing; the remaining bytes may be adversarial.
+/// - ensures: preserves every node of the side in wire order.
+/// - provides: syntax only; arities and typing are the kernel's admission
+///   obligations.
+/// - fails: [`TagSite::RuleNode`] for a node tag outside the constructor and
+///   variable alphabet, [`MalformedSite::IndexRange`] for a variable past
+///   `u32`, and the reader's truncation or varint refusals.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a presented declaration's rules round-trip; an unknown
+///   node tag refuses at its own site.
+/// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
+#[spec(captures: before = reader.position.0, ensures: |ret| ret.as_ref().map_or(true, |side| 1_usize.saturating_add(side.len().saturating_mul(2)) <= reader.position.0.saturating_sub(before)))]
+fn decode_rule_side(
+    reader: &mut ByteReader<'_>
+) -> Result<alloc::boxed::Box<[crate::presented::RuleNode]>, DecodeError>
+{
+    let count = usize::from(reader.read_usize()?);
+    let mut side = Vec::new();
+    for _ in 0 .. count {
+        let tag = reader.next_tag()?;
+        let ordinal = reader.read_usize()?;
+        let node = match tag {
+            | tags::RULE_CONSTRUCTOR => crate::presented::RuleNode::Constructor(
+                crate::term::ConstructorTag::from(usize::from(ordinal)),
+            ),
+            | tags::RULE_VARIABLE => {
+                let ordinal = u32::try_from(usize::from(ordinal)).map_err(|_overflow| {
+                    DecodeError::Malformed {
+                        site: MalformedSite::IndexRange,
+                    }
+                })?;
+                crate::presented::RuleNode::Variable(crate::presented::RuleVariable::from(ordinal))
+            },
+            | other => {
+                return Err(DecodeError::UnknownTag {
+                    site: TagSite::RuleNode,
+                    tag: other,
+                });
+            },
+        };
+        side.push(node);
+    }
+    Ok(side.into_boxed_slice())
 }
 
 /// Decode a declaration's root: a global index resolving to an already-decoded
@@ -2998,13 +3069,13 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 | 7 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 => ret.as_ref() == Ok(&DeclKind::Data), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 | 7 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 => ret.as_ref() == Ok(&DeclKind::Data), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 {
     match kind {
-        | tags::KIND_DATA => Ok(DeclKind::Data),
+        | tags::KIND_DATA | tags::KIND_DATA_PRESENTED => Ok(DeclKind::Data),
         | tags::KIND_DEF | tags::KIND_DEF_RELATING => Ok(DeclKind::Def),
         | tags::KIND_AXIOM => Ok(DeclKind::Axiom),
         // The abstract-type kind is deliberately live here: it was reserved with
@@ -4046,7 +4117,7 @@ mod tests
                 | 5 => Err(DecodeError::ReservedDeclarationKind {
                     kind: super::ReservedKind::FunctorDef,
                 }),
-                | 6 => Ok(super::DeclKind::Data),
+                | 6 | 8 => Ok(super::DeclKind::Data),
                 | _ => Err(unknown(super::TagSite::DeclarationKind)),
             };
             assert_eq!(super::declaration_kind(super::WireTag::from(byte)), kind);
@@ -4430,6 +4501,7 @@ mod tests
                     sealed: None,
                     provenance: vec![],
                     related: vec![],
+                    rules: vec![],
                 })
                 .collect();
             super::budget_report(&table, &metas)
@@ -4516,6 +4588,7 @@ mod tests
                 super::GlobalIndex::from(5_u32),
                 vec![],
             )],
+            rules: vec![],
         };
         let metrics = super::budget_report(&table, &[meta]);
         assert_eq!(u64::from(metrics.max_declaration_expanded_work()), 1);
@@ -5320,6 +5393,7 @@ mod tests
                     super::GlobalIndex::from(5_u32),
                     vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
                 )],
+                rules: vec![],
             },
             super::DeclMeta {
                 parameters: vec![],
@@ -5333,6 +5407,7 @@ mod tests
                 sealed: None,
                 provenance: vec![],
                 related: vec![],
+                rules: vec![],
             },
             super::DeclMeta {
                 parameters: vec![],
@@ -5349,6 +5424,7 @@ mod tests
                 )),
                 provenance: vec![],
                 related: vec![],
+                rules: vec![],
             },
         ];
         let arena_before = table.arena.clone();

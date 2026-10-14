@@ -625,7 +625,9 @@ pub(crate) fn reflexive_endpoints(
         (EndpointSide::Left, left, &dialogues.left),
         (EndpointSide::Right, right, &dialogues.right),
     ] {
-        if crate::conv::convert_values(arena, point, endpoint) == Convertibility::Convertible {
+        if crate::conv::convert_values(arena, unfoldings.presentations(), point, endpoint)
+            == Convertibility::Convertible
+        {
             continue;
         }
         let verdict = crate::replay::replay(
@@ -705,13 +707,16 @@ pub(crate) fn related_endpoints(
 ) -> Result<crate::replay::EndpointReading, KernelError>
 {
     let mut pairs = Vec::new();
-    if crate::conv::related_pairs(arena, goal, &mut pairs) == Convertibility::Distinct {
+    if crate::conv::related_pairs(arena, unfoldings.presentations(), goal, &mut pairs)
+        == Convertibility::Distinct
+    {
         return Ok(crate::replay::EndpointReading::Apart);
     }
     for (left, right) in pairs {
         let mut pending = Vec::new();
         if crate::conv::pending_endpoints(
             arena,
+            unfoldings.presentations(),
             crate::conv::ConversionGoal::Value(left, right),
             &mut pending,
         ) == Convertibility::Convertible

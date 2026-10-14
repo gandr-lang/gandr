@@ -326,7 +326,9 @@ fn reach_value(
         BinderDepth::from(past),
         one,
     );
-    if convert_values(arena, from, beyond) == Convertibility::Convertible {
+    // Rewriting by a presented type's rules would only relate more shifts;
+    // reading none keeps the reach conservative.
+    if convert_values(arena, &crate::presented::FREE, from, beyond) == Convertibility::Convertible {
         Reach::Clear
     }
     else {

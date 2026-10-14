@@ -150,6 +150,10 @@ pub mod ua;
 pub use gandr_kernel_term::Component;
 pub use gandr_kernel_term::ConstructorTag;
 pub use gandr_kernel_term::FieldLabel;
+pub use gandr_kernel_term::Presentation;
+pub use gandr_kernel_term::PresentedRule;
+pub use gandr_kernel_term::RuleNode;
+pub use gandr_kernel_term::RuleVariable;
 pub use gandr_kernel_term::Summand;
 
 pub use crate::arena::ArenaWatermark;

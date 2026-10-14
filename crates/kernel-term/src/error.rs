@@ -206,6 +206,8 @@ pub enum TagSite
     ProjectionSide,
     /// A composition's seam, outside the sequence and feedback alphabet.
     Seam,
+    /// A presented rule's node, outside the constructor and variable alphabet.
+    RuleNode,
 }
 
 impl fmt::Display for TagSite
@@ -250,6 +252,7 @@ impl fmt::Display for TagSite
             | Self::HigherLayer => "a higher-field layer kind",
             | Self::ProjectionSide => "a lazy projection side",
             | Self::Seam => "a composition seam",
+            | Self::RuleNode => "a presented rule's node",
         })
     }
 }
@@ -593,6 +596,7 @@ mod tests
             TagSite::LiteralKind,
             TagSite::ConstraintRelation,
             TagSite::Seam,
+            TagSite::RuleNode,
         ] {
             names.push(format!("{site}"));
             check_sink(&site);
