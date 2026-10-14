@@ -5998,8 +5998,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::Checked,
             ) => {
-                let signature = crate::former::signature(self.context, datatype)?;
-                crate::respect::respected(self.context, term, &signature, reading)?;
+                // A first run reads each nested call in place, where no
+                // conversion unfolds it; the second run judges the rule on the
+                // elaborated body, each call bound ahead of its arm.
+                if self.context.nesting().is_empty() {
+                    let signature = crate::former::signature(self.context, datatype)?;
+                    crate::respect::respected(self.context, term, &signature, reading)?;
+                }
                 Ok(Step::Ascend(Produced::Checked))
             },
             | (Frame::SigmaSplitScrutinee(term), Produced::ValueType(classifier)) => {

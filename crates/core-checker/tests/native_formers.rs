@@ -479,6 +479,77 @@ mod native_formers
     }
 
     #[test]
+    fn a_fold_nesting_its_call_is_judged_on_the_bind_it_elaborates_to()
+    {
+        let (looped, unlooped) = (ConstructorTag::from(1_usize), ConstructorTag::from(2_usize));
+        // `fix f. λy. case y { Base ⇒ return Base; Loop(x) ⇒ return
+        // Loop^n(f(x)); Unloop(x) ⇒ return Unloop(Unloop(f(x))) }`, the call
+        // written where a value is read: doubling at `n = 2`, and at `n = 1` a
+        // fold that tells `Loop(Unloop(x))` apart from `x`.
+        for (loops, respected) in [(2_usize, true), (1_usize, false)] {
+            let mut arena = CoreArena::new();
+            let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+            let motive = arena.comp_type_returner(own);
+            let base = word(&mut arena, &[]);
+            let returned = arena.computation_return(base);
+            let mut arm = |letter: ConstructorTag, count: usize| {
+                let recursive =
+                    arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+                let field = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                let forced = arena.computation_force(recursive);
+                let called = arena.computation_application(forced, field);
+                let mut built = arena.value_nested(called);
+                for _ in 0_usize .. count {
+                    built = arena.value_constructor(own, letter, vec![built]);
+                }
+                let result = arena.computation_return(built);
+                arena.computation_lambda(result)
+            };
+            let (lettered, inverted) = (arm(looped, loops), arm(unlooped, 2_usize));
+            let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let case =
+                arena.computation_data_case(argument, motive, vec![returned, lettered, inverted]);
+            let lambda = arena.computation_lambda(case);
+            let fixpoint = arena.computation_fixpoint(
+                lambda,
+                gandr_kernel_term::FixpointEvidence::StructuralDescent,
+            );
+            let fold = arena.value_thunk(fixpoint);
+            let arrow = arena.comp_type_arrow(own, motive);
+            let fold_type = arena.value_type_thunk(arrow);
+            let declarations = vec![
+                circle(&mut arena, cancellations()),
+                definition(ConstantIndex::from(1_usize), fold_type, fold),
+            ];
+            let (report, crossed) = run(&mut arena, &declarations);
+            if respected {
+                assert!(
+                    matches!(report.judged()[1].verdict(), Verdict::Checked { .. }),
+                    "the doubling fold's call, bound ahead of its arm, unfolds at the cancelled \
+                     word: {:?}",
+                    report.judged()[1].verdict()
+                );
+                assert!(
+                    matches!(crossed.readmitted()[1].outcome(), Outcome::Defined { .. }),
+                    "and the kernel re-derives the respect: {:?}",
+                    crossed.readmitted()[1].outcome()
+                );
+            }
+            else {
+                assert!(
+                    matches!(
+                        report.judged()[1].verdict(),
+                        Verdict::Refused(CheckRefusal::RuleNotRespected { rule, .. })
+                            if rule == gandr_kernel_term::RuleIndex::from(0_usize)
+                    ),
+                    "a fold the first rule tells apart is refused there: {:?}",
+                    report.judged()[1].verdict()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_loop_is_a_word_at_its_path_in_both_checkers()
     {
         use gandr_kernel_term::FreeCell;
