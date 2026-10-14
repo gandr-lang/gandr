@@ -1,0 +1,38 @@
+[package]
+name = "gandr-storage-schema"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The record plane under the C-set discipline: a schema of objects, total arrows, attributes and path equations, and a store of stably keyed parts with materialized inverses, checked against its equations on every edit and proved against one root"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["acset", "content-addressing", "gandr", "no-std", "schema"]
+categories = ["data-structures", "no-std"]
+publish.workspace = true
+autotests = false
+autobenches = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The measurement: a `harness = false` bench timing the preimage lookup, the
+# insert-and-remove round trip and the equation check on a 6400-part store.
+[[bench]]
+harness = false
+name = "store"
+path = "benches/store.rs"
+
+# The pinned anodized facade supplies core-only specification helpers; BLAKE3
+# is the schema and manifest digest; the record plane holds every table and
+# proves its records.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+gandr-storage-records.workspace = true
+
+[lints]
+workspace = true

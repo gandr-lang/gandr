@@ -656,6 +656,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-storage-schema"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "gandr-storage-records",
+ "quenchant-anodized",
+]
+
+[[package]]
 name = "gandr-storage-values"
 version = "0.0.0"
 dependencies = [

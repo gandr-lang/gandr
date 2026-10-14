@@ -16,6 +16,7 @@ members = [
   "crates/storage-artifact",
   "crates/storage-chunker",
   "crates/storage-records",
+  "crates/storage-schema",
   "crates/storage-values",
   "crates/surface-corpus",
   "crates/surface-diagnostics",
@@ -121,6 +122,7 @@ default-features = false
 # - storage-artifact
 # - storage-chunker
 # - storage-records
+# - storage-schema
 # - storage-values
 # - surface-corpus
 # - surface-diagnostics
@@ -172,6 +174,7 @@ features = ["anodized"]
 # - core-incremental
 # - storage-artifact
 # - storage-records
+# - storage-schema
 # - storage-values
 # - surface-lsp
 # - surface-parser (dev)
@@ -423,6 +426,7 @@ path = "crates/storage-chunker"
 # The authenticated ordered-record plane.
 # consumers:
 # - storage-artifact
+# - storage-schema
 # - storage-values (dev)
 # - surface-corpus (dev)
 # - surface-lsp
