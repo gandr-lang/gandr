@@ -40,6 +40,7 @@ crates/
 ├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
 ├── storage-chunker/               content-defined chunk boundaries and their committed parameters
 ├── storage-records/               the authenticated ordered-record plane
+├── storage-schema/                the record plane as C-sets with checked equations
 ├── storage-values/                the content-addressed value plane: typed chunk DAG and content pointers
 ├── surface-corpus/                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
 ├── surface-diagnostics/           the diagnostics model: a refusal, an unsettled declaration, a goal, a warning and a ledger line built once, with their loci and the rules a refusal stood inside, for every face to project
