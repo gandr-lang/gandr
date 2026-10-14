@@ -44,8 +44,9 @@
 //!   the names the sign writes. Alternatives: a nominal atom per sort, which
 //!   the core keeps for sealed abstract types alone and no constant of the
 //!   module names; and the presentation spelled as text, which bypasses the
-//!   printer every face shares. Reversal: a sign lowered to a core declaration
-//!   of its own, whose components a face then reads as it reads any other.
+//!   printer every face shares. Reversal: a sign's `Model(S)` components
+//!   lowered to core declarations of their own — beside the value `S : Sig` the
+//!   block already defines — which a face then reads as it reads any other.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -83,12 +84,13 @@ use crate::description::written::WrittenSort;
 use crate::description::written::WrittenTerm;
 use crate::model::Binder;
 use crate::model::Dependent;
+use crate::model::Members;
 use crate::model::ModelForm;
 use crate::model::Presentation;
 use crate::model::SortTerm;
 use crate::model::Tail;
 use crate::model::dependence;
-use crate::model::derive;
+use crate::model::derive_members;
 use crate::module::LoweredModule;
 
 /// What a described node is, for a face reading it.
@@ -716,7 +718,8 @@ impl Typer<'_>
     ///   operation and law at what its `Model(S)` component states, each port
     ///   at its sort, each node of a law at its sort, each written sort at its
     ///   universe, each circuit's ports and wires at their sorts.
-    /// - fails: never; a component the derivation cannot state records none of
+    /// - fails: never; a presentation whose members cannot be read records
+    ///   nothing, and a component the derivation cannot state records none of
     ///   the nodes its type would read.
     /// - panics: none.
     /// - executable: none — each node answers at a type minted into the arena,
@@ -733,16 +736,16 @@ impl Typer<'_>
         written: &WrittenMembers,
     )
     {
-        let model = derive(presentation);
-        let names: Vec<Name> = presentation
-            .sorts
-            .iter()
-            .map(|sort| sort.name.clone())
-            .collect();
+        let Ok(members) = presentation.members()
+        else {
+            return;
+        };
+        let model = derive_members(&members, &presentation.circuits);
+        let names: Vec<Name> = members.sorts.iter().map(|sort| sort.name.clone()).collect();
         let mut scope = Scope::default();
         let mut forms = model.components.iter().map(|component| &component.form);
         let closed = self.context(&Scope::default());
-        for (sort, member) in presentation.sorts.iter().zip(&written.sorts) {
+        for (sort, member) in members.sorts.iter().zip(&written.sorts) {
             if let Ok(level) = Level::zero().succ() {
                 let universe = self.universe(level);
                 self.emit(member.classifier, DescribedRole::Type, universe, closed);
@@ -766,7 +769,7 @@ impl Typer<'_>
         }
         let mut heads: BTreeMap<Name, (ValueTypeId, ContextIndex)> = BTreeMap::new();
         let mut operations: BTreeMap<Name, (&[Binder], &[SortTerm])> = BTreeMap::new();
-        for (operation, member) in presentation.operations.iter().zip(&written.operations) {
+        for (operation, member) in members.operations.iter().zip(&written.operations) {
             if let Some(&Ok(ModelForm::Operation {
                 ref telescope,
                 ref results,
@@ -800,7 +803,7 @@ impl Typer<'_>
             }
             scope.push(&operation.name, Dependent(true));
         }
-        for (law, member) in presentation.laws.iter().zip(&written.faces) {
+        for (law, member) in members.laws.iter().zip(&written.faces) {
             let form = forms.next();
             let stated = match form {
                 | Some(&Ok(ModelForm::Law {
@@ -845,7 +848,7 @@ impl Typer<'_>
             scope.binders.truncate(base);
         }
         for member in &written.circuits {
-            self.circuit(&scope, presentation, member, &heads);
+            self.circuit(&scope, &members, member, &heads);
         }
     }
 
@@ -982,22 +985,18 @@ impl Typer<'_>
     fn circuit(
         &mut self,
         scope: &Scope,
-        presentation: &Presentation,
+        members: &Members,
         circuit: &WrittenCircuit,
         heads: &BTreeMap<Name, (ValueTypeId, ContextIndex)>,
     )
     {
         let declared = |sort: &Name| {
-            presentation
+            members
                 .sorts
                 .iter()
                 .any(|held| held.name == *sort && held.indices.is_empty())
         };
-        let names: Vec<Name> = presentation
-            .sorts
-            .iter()
-            .map(|sort| sort.name.clone())
-            .collect();
+        let names: Vec<Name> = members.sorts.iter().map(|sort| sort.name.clone()).collect();
         let mut wires: BTreeMap<Name, Name> = BTreeMap::new();
         for port in &circuit.ports {
             if declared(&port.sort) {
@@ -1049,7 +1048,7 @@ impl Typer<'_>
                             .map(|_| sort.clone())
                             .collect()
                     }
-                    else if let Some(operation) = presentation
+                    else if let Some(operation) = members
                         .operations
                         .iter()
                         .find(|operation| operation.name == frame.head.name)

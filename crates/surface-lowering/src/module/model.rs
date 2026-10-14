@@ -32,14 +32,17 @@
 //! derivation rather than read from a written form. A component the
 //! derivation cannot state is refused under its name with the derivation's
 //! reason; a component its module does not define is refused as a written
-//! one is. The sign takes no core declaration: the signature is read off its
-//! presentation by name, so a sign is a template the ascription instantiates.
+//! one is. `S` is a reference to the declaration `S : Sig` the block defines,
+//! and the derivation reads that declaration's value: `Model` is a function
+//! from `Sig` the elaborator applies, not a second reading of the block.
 //!
-//! - Choice: the sign resolves by name among the descriptions declared before
-//!   the module. Alternatives: a core declaration of the signature, which the
-//!   kernel would have to read as a record of types it does not state; a
-//!   module-level import of the sign's derived components. Reversal: a sign
-//!   that must be named across separately elaborated programs.
+//! - Choice: `S` resolves by name to the definition the block declared before
+//!   the module, and `Model` runs at elaboration. Alternatives: a core function
+//!   `Model : Sig -> Type`, which needs a record of types computed from a value
+//!   the kernel does not state; a module-level import of the sign's derived
+//!   components. Reversal: a `Sig` value the elaborator cannot read off a
+//!   definition — a parameter, or a computed presentation — whose model the
+//!   core would then compute from the normal form.
 //!
 //! A derived sort states no kind (`component_kind::Absent::Derived`): its
 //! size is the model's, so `type Ob = Type` is a model whatever universe the
@@ -60,6 +63,7 @@ use super::ComponentPlace;
 use super::ComponentScope;
 use super::Container;
 use super::DeclarationSlot;
+use super::Half;
 use super::Member;
 use super::Operand;
 use super::Role;
@@ -324,21 +328,24 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `cursor` stands on the former's name, just past the
     ///   ascription's `:` or `:>` of the module form `form`.
-    /// - ensures: the cursor past `)`; the signature the last sign named `S`
-    ///   declared wholly before `form` derives, and one component per derived
-    ///   component in its order, each named by its member's name at the
-    ///   ascription's `S` tile: an unindexed sort an abstract component of no
-    ///   kind, an indexed sort a derived family, and every other component —
-    ///   one the derivation cannot state among them — a derived value.
+    /// - ensures: the cursor past `)`; the signature derived from the value of
+    ///   the declaration `S` a `sign` block defined wholly before `form`, and
+    ///   one component per derived component in its order, each named by its
+    ///   member's name at the ascription's `S` tile: an unindexed sort an
+    ///   abstract component of no kind, an indexed sort a derived family, and
+    ///   every other component — one the derivation cannot state among them — a
+    ///   derived value.
     /// - provides: the model half of [`Self::header`].
     /// - fails: a misplaced tile for a former out of shape; an unresolved head
-    ///   for a former other than `Model` or a sign nothing declares before the
-    ///   module.
+    ///   for a former other than `Model`, or for an `S` that names no
+    ///   declaration a `sign` block defined before the module; an unadmitted
+    ///   form for a value that codes no presentation.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::MalformedForm`] and
-    /// [`LoweringRefusal::UnresolvedTypeHead`].
+    /// [`LoweringRefusal::MalformedForm`],
+    /// [`LoweringRefusal::UnresolvedTypeHead`] and
+    /// [`LoweringRefusal::OutOfFragment`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the `CatShape` model and a former naming an
@@ -402,16 +409,24 @@ impl<'source> Collector<'_, 'source>
         let name = self.name_of(sign);
         let presented = self
             .collected
-            .descriptions
-            .values()
-            .filter(|entry| {
-                entry.at.span.end() <= form.span.start() && self.name_of(entry.named) == name
+            .by_name
+            .get(&(Container::TopLevel, name))
+            .and_then(|&position| self.collected.slots.get(position.0))
+            .filter(|slot| {
+                slot.introduced_by.span.end() <= form.span.start()
+                    && matches!(
+                        slot.definition,
+                        Maybe::Present(Half {
+                            operand: Operand::Presented,
+                            ..
+                        })
+                    )
             })
-            .filter_map(|entry| match entry.presentation {
+            .and_then(|slot| self.collected.descriptions.get(&slot.introduced_by.node))
+            .and_then(|entry| match entry.presentation {
                 | Maybe::Present(ref presentation) => Some(presentation),
                 | Maybe::Absent(_) => None,
-            })
-            .next_back();
+            });
         let Some(presentation) = presented
         else {
             return Err(LoweringRefusal::UnresolvedTypeHead {
@@ -420,7 +435,15 @@ impl<'source> Collector<'_, 'source>
                 arity: HeadArity::Nullary,
             });
         };
-        let model = crate::model::derive(presentation);
+        let Ok(model) = crate::model::derive(presentation)
+        else {
+            return Err(LoweringRefusal::OutOfFragment {
+                span: sign.span,
+                form: FormName::MODULE,
+                sort: FragmentSort::Declaration,
+                boundary: FragmentBoundary::Unadmitted,
+            });
+        };
         let components = model
             .components
             .iter()

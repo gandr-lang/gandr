@@ -19,15 +19,24 @@
 //! typed fields, so two models with equal operations and different laws are
 //! different models (Ahrens, North, Shulman and Tsementzis).
 //!
-//! - Choice: derive the signature from a structured presentation the sign
-//!   reader records beside the description — each port's sort as a sort name
-//!   over index terms, each rule with its name. Alternatives: deriving from the
-//!   elaborated cell store, which keeps no rule names and refuses a rule whose
-//!   producer side applies an operation to a composite, so `Model` would
-//!   inherit a cell gate that says nothing about the law; and reading the
+//! - Choice: derive the signature from the block's `Sig` value
+//!   (`gandr_theory_levitation::SigValue`), the presentation the block defines
+//!   — each port's sort a sort name over index terms, each rule with its name —
+//!   read beside the name tiles that place its members. Alternatives: deriving
+//!   from the elaborated cell store, which keeps no rule names and refuses a
+//!   rule whose producer side applies an operation to a composite, so `Model`
+//!   would inherit a cell gate that says nothing about the law; and reading the
 //!   description's sort spellings back as text. Reversal: a cell store that
 //!   keeps names and composites would let `Model` read the cells, one source
 //!   for both.
+//! - Choice: `Model` is an elaboration-stage function of the value a sign block
+//!   defines, not a core function `Sig -> Type`. A model signature is a
+//!   telescope whose components are types, families and laws, large components
+//!   no first-order code computation states, so the derivation reads the
+//!   value's normal form where the block writes it. Alternatives: a core
+//!   `Model` by large elimination over `Sig`, which the code universe rules
+//!   out. Reversal: normal forms of computed `Sig` values at elaboration time,
+//!   which would let `Model` read a value no block writes.
 //! - Choice: every rule reads as a `Path` — the invertible overlay — whatever
 //!   its arrow. Alternatives: a directed reading of rules as rewrites, which
 //!   needs a directed identity the value universe does not have. Reversal:
@@ -75,11 +84,16 @@
 //!   <https://doi.org/10.1145/321250.321253> — first-order unification.
 
 use alloc::collections::BTreeMap;
+use alloc::format;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
+use gandr_theory_levitation::SigFault;
+use gandr_theory_levitation::SigPort;
+use gandr_theory_levitation::SigValue;
 use gandr_theory_levitation::SignDesc;
 use quenchant_shape::shape::Maybe;
 
@@ -137,8 +151,8 @@ pub struct SortTerm
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: the port's name — the private name the sign reader mints for an
-///   unnamed one — and its sort.
+/// - ensures: the port's name — for an unnamed one, the placeholder `_i` its
+///   position `i` among its member's ports gives it — and its sort.
 /// - executable: none — a port is data the derivation reads.
 ///
 /// # Adequacy
@@ -241,20 +255,68 @@ pub struct PresentedCircuit
     pub named: Placed,
 }
 
-/// What a `sign` block presents: the members a model signature is derived
-/// from, each kept only when the sign reader read it.
+/// What a `sign` block presents: its `Sig` value, where each member the value
+/// codes is written, and the circuit rules `Sig` does not code yet.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: sorts, operations, faces and circuit rules, each in written
-///   order.
+/// - ensures: the value is the one source of the presented sorts, operations
+///   and faces; the placement holds one name tile per member it codes, in the
+///   value's order.
 /// - executable: none — a presentation is data the derivation reads.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the `CatShape` presentation derives the `CatShape` model.
 /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+/// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Presentation
+{
+    /// The presentation as a value of `Sig`.
+    pub value: SigValue,
+    /// Where each member the value codes is written.
+    pub placement: Placement,
+    /// The rules wired as circuits, kept beside the value.
+    pub circuits: Vec<PresentedCircuit>,
+}
+
+/// Where the members a presentation's value codes are written: one name tile
+/// per sort, per operation and per face, in the value's order, and each
+/// face's whole member.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: each list in written order.
+/// - executable: none — a placement is provenance beside a value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation`].
+/// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Placement
+{
+    /// Each sort's name tile.
+    pub sorts: Vec<Placed>,
+    /// Each operation's name tile.
+    pub operations: Vec<Placed>,
+    /// Each face's name tile.
+    pub laws: Vec<Placed>,
+    /// Each face's whole member.
+    pub faces: Vec<ByteSpan>,
+}
+
+/// The members a presentation's value codes, each at its name tile.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: sorts, operations and faces, each in written order.
+/// - executable: none — members are data the derivation reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::members`].
+/// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Members
 {
     /// The declared sorts.
     pub sorts: Vec<PresentedSort>,
@@ -262,8 +324,151 @@ pub struct Presentation
     pub operations: Vec<PresentedOperation>,
     /// The rules written as faces.
     pub laws: Vec<PresentedLaw>,
-    /// The rules wired as circuits.
-    pub circuits: Vec<PresentedCircuit>,
+}
+
+/// Why a presentation's members cannot be read.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the value's own fault, or a member no tile places.
+/// - executable: none — a fault is data.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::members`].
+/// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PresentationFault
+{
+    /// The value codes no presentation.
+    Value(SigFault),
+    /// The value codes a member its placement holds no tile for.
+    Unplaced,
+}
+
+impl Presentation
+{
+    /// The members the value codes, each at its tile; an unnamed port reads
+    /// as the placeholder its position names.
+    ///
+    /// # Specification
+    /// - ensures: one presented sort, operation and face per member the value
+    ///   codes, in its order, each at the placement's tile of the same
+    ///   position.
+    /// - fails: [`PresentationFault::Value`] for a value that codes no
+    ///   presentation; [`PresentationFault::Unplaced`] when the value codes
+    ///   more members of a kind than the placement places.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As stated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a presentation with an unnamed port reads back its
+    ///   members, the port at its placeholder, and a placement one tile short
+    ///   is refused; the `CatShape` derivation reads its members this way.
+    /// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
+    /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
+    #[inline]
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |members| {
+        members.sorts.len() <= self.placement.sorts.len()
+            && members.operations.len() <= self.placement.operations.len()
+            && members.laws.len() <= self.placement.laws.len()
+    }))]
+    pub fn members(&self) -> Result<Members, PresentationFault>
+    {
+        let parts = self.value.decode().map_err(PresentationFault::Value)?;
+        if parts.sorts.len() > self.placement.sorts.len()
+            || parts.operations.len() > self.placement.operations.len()
+            || parts.rules.len() > self.placement.laws.len()
+        {
+            return Err(PresentationFault::Unplaced);
+        }
+        let mut members = Members::default();
+        for (sort, &named) in parts.sorts.into_iter().zip(&self.placement.sorts) {
+            let names = presented_names(&sort.indices, &[]);
+            members.sorts.push(PresentedSort {
+                name: sort.name,
+                named,
+                indices: ports(sort.indices, names),
+            });
+        }
+        for (operation, &named) in parts.operations.into_iter().zip(&self.placement.operations) {
+            let mut names = presented_names(&operation.inputs, &operation.outputs).into_iter();
+            members.operations.push(PresentedOperation {
+                name: operation.name,
+                named,
+                inputs: ports(operation.inputs, names.by_ref()),
+                outputs: ports(operation.outputs, names),
+            });
+        }
+        for (law, &named) in parts.rules.into_iter().zip(&self.placement.laws) {
+            members.laws.push(PresentedLaw {
+                name: law.name,
+                named,
+                left: law.left,
+                right: law.right,
+            });
+        }
+        Ok(members)
+    }
+}
+
+/// The ports `coded`, each under the next of `names`.
+///
+/// # Specification
+/// trivial.
+fn ports<Names>(
+    coded: Vec<SigPort>,
+    names: Names,
+) -> Vec<Port>
+where
+    Names: IntoIterator<Item = Name>,
+{
+    coded
+        .into_iter()
+        .zip(names)
+        .map(|(port, name)| Port {
+            name,
+            sort: SortTerm {
+                sort: port.sort,
+                indices: port.indices,
+            },
+        })
+        .collect()
+}
+
+/// The names a member's ports present under, `inputs` then `outputs`: each
+/// port's own, or for an unnamed one the placeholder `_position` of its
+/// position among all of them, which the named-port normal form reads as
+/// anonymous.
+///
+/// # Specification
+/// - ensures: one name per port, in order; a named port's own name.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an unnamed output after one input presents as `_1`, after
+///   two as `_2`, and a named port as itself.
+/// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
+#[spec(ensures: |ref names| names.len() == inputs.len().saturating_add(outputs.len()))]
+pub(crate) fn presented_names(
+    inputs: &[SigPort],
+    outputs: &[SigPort],
+) -> Vec<Name>
+{
+    inputs
+        .iter()
+        .chain(outputs)
+        .enumerate()
+        .map(|(position, port)| {
+            if port.name.as_ref().is_empty() {
+                Name::from(format!("_{position}"))
+            }
+            else {
+                port.name.clone()
+            }
+        })
+        .collect()
 }
 
 /// One binder of a derived telescope.
@@ -437,7 +642,34 @@ pub struct ModelSignature
     pub components: Vec<ModelComponent>,
 }
 
-/// Derive the model signature of what a sign presents.
+/// Derive the model signature of what a sign presents, reading its members off
+/// its value.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`derive_members`] of the value's members and the circuit rules
+///   kept beside it.
+/// - fails: a value whose members cannot be read, as [`Presentation::members`];
+///   any other fault is kept on its component.
+/// - panics: none.
+/// - executable: none — as [`derive_members`].
+///
+/// # Errors
+/// As [`Presentation::members`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`derive_members`].
+/// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
+/// - witness: `model::tests::an_underivable_component_keeps_its_fault`
+#[inline]
+pub fn derive(presentation: &Presentation) -> Result<ModelSignature, PresentationFault>
+{
+    let members = presentation.members()?;
+    Ok(derive_members(&members, &presentation.circuits))
+}
+
+/// Derive the model signature of a presentation's members and its circuit
+/// rules.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -460,13 +692,15 @@ pub struct ModelSignature
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
 /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
 /// - witness: `model::tests::an_underivable_component_keeps_its_fault`
-#[inline]
 #[must_use]
-pub fn derive(presentation: &Presentation) -> ModelSignature
+pub(crate) fn derive_members(
+    members: &Members,
+    circuits: &[PresentedCircuit],
+) -> ModelSignature
 {
     let mut heads: BTreeMap<Name, Result<infer::Head, ModelFault>> = BTreeMap::new();
     let mut components = Vec::new();
-    for sort in &presentation.sorts {
+    for sort in &members.sorts {
         let head = infer::derive_head(&heads, infer::HeadKind::Sort, &sort.indices, &[]);
         let form = head.clone().map(|derived| ModelForm::Sort {
             indices: derived.binders,
@@ -478,7 +712,7 @@ pub fn derive(presentation: &Presentation) -> ModelSignature
             form,
         });
     }
-    for operation in &presentation.operations {
+    for operation in &members.operations {
         let head = infer::derive_head(
             &heads,
             infer::HeadKind::Operation,
@@ -496,14 +730,14 @@ pub fn derive(presentation: &Presentation) -> ModelSignature
             form,
         });
     }
-    for law in &presentation.laws {
+    for law in &members.laws {
         components.push(ModelComponent {
             name: law.name.clone(),
             named: law.named,
             form: infer::derive_law(&heads, law),
         });
     }
-    for circuit in &presentation.circuits {
+    for circuit in circuits {
         components.push(ModelComponent {
             name: circuit.name.clone(),
             named: circuit.named,
@@ -631,13 +865,16 @@ pub struct LoweredSign<'module>
 
 impl LoweredSign<'_>
 {
-    /// The signature of the sign's models, derived from its presentation.
+    /// The signature of the sign's models, derived from its presentation's
+    /// value.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Errors
+    /// As [`derive()`].
     #[inline]
-    #[must_use]
-    pub fn model(&self) -> ModelSignature
+    pub fn model(&self) -> Result<ModelSignature, PresentationFault>
     {
         derive(self.presentation)
     }

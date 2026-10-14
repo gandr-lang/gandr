@@ -101,7 +101,7 @@ fn a_lowered_sign_exposes_its_description_and_its_model()
         (vec!["Ob", "Hom"], vec!["id", "comp"]),
         "its description's sorts and generating operations"
     );
-    let model = sign.model();
+    let model = sign.model().unwrap();
     let components: Vec<&str> = model
         .components
         .iter()

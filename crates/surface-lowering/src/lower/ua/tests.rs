@@ -13,10 +13,10 @@ use gandr_theory_sites::ShapeSize;
 
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
-use crate::lower::identity::tests::assert_accepted;
-use crate::lower::identity::tests::judged;
 use crate::lower::identity::tests::lowered;
 use crate::lower::identity::tests::outcome_of;
+use crate::lower::native::tests::assert_accepted;
+use crate::lower::native::tests::judged;
 use crate::module::DeclarationOutcome;
 use crate::resolve::OperandCount;
 

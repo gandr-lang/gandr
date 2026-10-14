@@ -29,6 +29,7 @@ The first-order code universe of gandr's levitated descriptions: codes, the decl
 - `RewritePort`, `PortFace`, `InterfacePair`, `PortInstantiationError`, `WhiskeredCell`, `Whisker`, `WhiskerHead`, `ActiveCell`, `active_position`, `RedexOccurrence`, `CircuitElaborationError`, `elaborate_body`, `redex_occurrences`: rewrite-sorted ports, their instantiation at a redex line, and a block's elaboration to the boundary language's whiskered composite.
 - `DescValue`, `Payload`, `PayloadNode`, `PayloadView`, `PayloadArgs`, `Side`, `generic_eq`, `serialize_value`, `serialize_desc`: values of a description and the generic programs over them.
 - `bool_desc`, `option_desc`, `list_desc`, `pair_desc`, `sum_desc`: the primitive formers retrofitted as descriptions.
+- `sig_desc`, `SIG_CONSTRUCTORS`, `SigValue`, `SigParts`, `SigSort`, `SigOperation`, `SigPort`, `SigRule`, `SigFault`: `Sig`, the datatype whose values are presentations, a presentation's value, and its canonical bytes as the presentation's one identity.
 - `check_desc`, `WfDiagnostic`, `WfKind`, `diagnostic_span`, `RESERVED_DERIVED_MARKERS`: the well-formedness pass over a whole declaration table.
 - `PatternContext`, `TypedRuleFace`, `pattern_variable`: a face refined with a context decoded by the caller's decoder.
 - The boundary wrappers (`NameRef`, `ConstructorTag`, `NominalSerial`, `CircuitNodeBudget`, `GenericEquality`, `SerializedValueBytes`, `LeafBytes`, …): every count, verdict, text and byte string a signature here crosses.
@@ -114,6 +115,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Code equality | [`code`](src/code.rs) |
 | Circuit rules and their derived boundaries | [`circuit`](src/circuit.rs) |
 | Elaborating a circuit block | [`elaborate`](src/elaborate.rs) |
+| The presentation code `Sig` and what waits on the fragment | [`sig`](src/sig.rs) |
 | Boundary wrappers | [`boundary`](src/boundary.rs) |
 
 ## License

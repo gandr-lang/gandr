@@ -70,6 +70,23 @@
 //! table by name, each with its family, tag and arity, so a term or a pattern
 //! naming one resolves it without searching the declarations.
 //!
+//! # A `sign` block defines a value of `Sig`
+//!
+//! `sign S { … }` takes the next admission position under `S` and files a
+//! definition half lowered at the block itself: `S : Sig`, whose body is the
+//! presentation's value the description route read (`crate::model`). `Sig`,
+//! the presentation code `gandr_theory_levitation::sig_desc` describes, is
+//! minted once per module as a slot of its own, just before the first block
+//! that refuses nothing, and its constructors enter the constructor table
+//! beside the written families'; a module with no such block declares neither,
+//! so a module that presents nothing loses no name to them. A block some member
+//! of which the description route or the cell gate refused still takes its
+//! slot, refused by its first refusal, and each further refusal is held at its
+//! member's span. The alternatives were `Sig` in a prelude every module
+//! imports, which the fragment has none of, and `Sig` minted in every module,
+//! which takes eleven constructor names from modules that present nothing. The
+//! choice reverses with a prelude: `Sig` becomes one of its declarations.
+//!
 //! # A module is collected by name and resolved by position
 //!
 //! A signature pairs with its definition wherever the two sit in the module, so
@@ -233,6 +250,8 @@ use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
+use gandr_theory_levitation::SIG_CONSTRUCTORS;
+use gandr_theory_levitation::sig_desc;
 use quenchant_shape::shape::Maybe;
 
 use crate::attribute::AttributeTable;
@@ -281,6 +300,7 @@ mod sealing;
 
 pub use self::data::Constructor;
 pub use self::data::DataForm;
+pub use self::data::Generators;
 use self::functor::Applied;
 pub use self::functor::Functor;
 pub use self::functor::FunctorIndex;
@@ -917,10 +937,16 @@ pub enum Operand
     /// An operation of the data declaration that wrote this half, its body
     /// compiled from its rules by the plan the collection keeps for its slot.
     Operation,
-    /// A `sign` block or a top-level `oper`, which lowers to no core term
-    /// until a model of the signature is derived from it: the half that
-    /// carries a member refusal and the expectation stating it.
+    /// A top-level `oper`, which lowers to no core term, or a refusal held
+    /// beside a `sign` block: the half that carries a member refusal and the
+    /// expectation stating it.
     Signature,
+    /// The `sign` block that defines its name as a value of `Sig`: the
+    /// presentation it reads, minted from its value.
+    Presented,
+    /// `Sig`, the presentation code, decoded from its description rather
+    /// than read from a written form.
+    Code,
     /// The type a model signature derives for one of its value components,
     /// minted from the derivation rather than from a written form.
     Model(ModelPart),
@@ -1235,6 +1261,43 @@ pub struct Collected<'source>
     pub functors: Vec<Functor<'source>>,
     /// The applications, in source order: each an instance of a functor.
     pub instances: Vec<Instance<'source>>,
+    /// `Sig`, the presentation code, when a `sign` block that refuses
+    /// nothing has minted it.
+    pub sig: Maybe<SigSlot, sig_slot::Absent>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a module holds no `Sig`.
+    pub mod sig_slot {
+        /// The reason the module minted no `Sig`.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// No `sign` block that refuses nothing stands in the module.
+            Unminted,
+        }
+    }
+}
+
+/// `Sig`, the presentation code, as a module mints it: the slot it takes and
+/// the field count of each of its constructors, in tag order.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the slot is a declared one named `Sig`; the arities follow the
+///   description's constructor table.
+/// - executable: none — the slot index holds no table to check it against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module with a sign that refuses nothing mints `Sig`
+///   once, before the sign's own slot, and a generic program matches on it.
+/// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SigSlot
+{
+    /// The slot `Sig` takes.
+    pub slot: SlotIndex,
+    /// Each constructor's field count, in tag order.
+    pub arities: Vec<usize>,
 }
 
 /// A top-level module an attribute block decorates, with the slots of the
@@ -1825,6 +1888,7 @@ pub fn collect<'source>(
             family_checks: BTreeMap::new(),
             functors: Vec::new(),
             instances: Vec::new(),
+            sig: Maybe::Absent(sig_slot::Absent::Unminted),
         },
         pieces: Pieces::new(),
     };
@@ -1858,6 +1922,16 @@ pub fn collect<'source>(
             && let Some(&block) = decorations.first()
         {
             collector.decorated_module(child, block, &decorations)?;
+            decorations.clear();
+            continue;
+        }
+        if collector
+            .collected
+            .descriptions
+            .get(&child.node)
+            .is_some_and(|entry| matches!(entry.presentation, Maybe::Present(_)))
+        {
+            collector.sign(child, &decorations);
             decorations.clear();
             continue;
         }
@@ -2237,8 +2311,8 @@ impl<'source> Collector<'_, 'source>
             .collect()
     }
 
-    /// Whether `child` is a `sign` block or a top-level `oper` some member of
-    /// which the description route or the cell gate refused.
+    /// Whether `child` is a top-level `oper` some member of which the
+    /// description route or the cell gate refused.
     ///
     /// # Specification
     /// trivial.
@@ -2256,25 +2330,26 @@ impl<'source> Collector<'_, 'source>
         )
     }
 
-    /// File the refusals raised inside the `sign` block or top-level `oper`
-    /// at `child` as declarations an expectation states, decorated by the
-    /// attribute blocks `decorations` written before it.
+    /// File the refusals raised inside the top-level `oper` at `child` as
+    /// declarations an expectation states, decorated by the attribute blocks
+    /// `decorations` written before it.
     ///
     /// # Specification
     /// - requires: [`Self::refuses_signature`] holds of `child`; `decorations`
     ///   are attribute blocks standing on their own before it.
     /// - ensures: one held slot under the declaration's name per refusal, in
-    ///   report order, each at its member's span with the block itself as its
-    ///   signature half, so the attributes the decorations file under the block
-    ///   are read off every one of them; the first owns the block and its
+    ///   report order, each at its member's span with the declaration itself as
+    ///   its signature half, so the attributes the decorations file under it
+    ///   are read off every one of them; the first owns the declaration and its
     ///   decorations, and an unreadable decoration refuses it.
-    /// - provides: refusals inside a `sign` block an expectation can state.
+    /// - provides: refusals inside a top-level operation an expectation can
+    ///   state.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a refused sign member keeps its span, a decoration
-    ///   before its block states it, and the block's name enters no namespace.
-    /// - witness: `description::sign::tests::a_refused_sign_block_states_its_refusal`
+    /// - hypothesis: L3 — a refused operation keeps its span, a decoration
+    ///   before it states it, and its name enters no namespace.
+    /// - witness: `description::sign::tests::a_refused_top_level_operation_states_its_refusal`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: self.collected.slots.len() >= before.0 && self.collected.by_name.len() == before.1,
@@ -2330,6 +2405,197 @@ impl<'source> Collector<'_, 'source>
                 slot.refuse(child.node, refusal);
             }
         }
+    }
+
+    /// Collect the `sign` block at `child` as the definition of its name, a
+    /// value of `Sig`, decorated by the attribute blocks `decorations` before
+    /// it.
+    ///
+    /// # Specification
+    /// - requires: `child` is a root child the description route described as a
+    ///   `sign` block; `decorations` are attribute blocks standing on their own
+    ///   before it.
+    /// - ensures: a block none of whose members the description route or the
+    ///   cell gate refused mints `Sig` when the module holds none, then takes a
+    ///   declared slot under its name whose definition half is the block
+    ///   itself; a refused block takes that slot too, refused by its first
+    ///   refusal, and each further refusal one held slot at its member's span
+    ///   with the block as its signature half, so the attributes the
+    ///   decorations file under the block are read off every one of them. The
+    ///   slot owns the block and its decorations; an unreadable decoration, or
+    ///   a `Sig` the module declared otherwise, refuses it; a name declared
+    ///   before refuses the block as a duplicate.
+    /// - provides: `sign S { … }` as the declaration `S : Sig` whose body is
+    ///   the presentation's value.
+    /// - panics: none.
+    /// - executable: none — the slot it takes is chosen by the name table,
+    ///   which the call reads and writes in one step.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clean block defines its name as a value of `Sig`
+    ///   that a program matching on `Sig` reads, and a refused block's name is
+    ///   a declaration refused at its first member refusal that a decoration
+    ///   before the block states.
+    /// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
+    /// - witness: `description::sign::tests::a_refused_sign_block_states_its_refusal`
+    fn sign(
+        &mut self,
+        child: Placed,
+        decorations: &[Placed],
+    )
+    {
+        let Some(entry) = self.collected.descriptions.get(&child.node)
+        else {
+            return;
+        };
+        let named = entry.named;
+        let name = self.name_of(named);
+        let mut refusals = self.described_refusals(child).into_iter().peekable();
+        let minted = match refusals.peek() {
+            | Some(_) => Ok(()),
+            | None => self.mint_sig(named),
+        };
+        let position = self.admit(Container::TopLevel, name, child, named);
+        self.collected.own(child.node, position);
+        let mut attributes = Vec::new();
+        let mut attributed = Ok(());
+        for &block in decorations {
+            self.collected.own(block.node, position);
+            if attributed.is_ok() {
+                attributed = self.decoration(block, child.node, &mut attributes);
+            }
+        }
+        for &block in decorations {
+            self.document(position, block.node, block.span.end(), child.node);
+        }
+        self.document(position, child.node, named.span.start(), child.node);
+        if let Some(slot) = self.collected.slots.get_mut(usize::from(position)) {
+            if slot.introduced_by.node == child.node {
+                slot.definition = Maybe::Present(Half {
+                    declaration: child,
+                    operand: Operand::Presented,
+                });
+                slot.attributes.extend(attributes);
+                for refused in [attributed, minted] {
+                    if let Err(refusal) = refused {
+                        slot.refuse(child.node, refusal);
+                    }
+                }
+                if let Some((_, refusal)) = refusals.next() {
+                    slot.refuse(child.node, refusal);
+                }
+            }
+            else {
+                slot.refuse(child.node, LoweringRefusal::DuplicateDefinition {
+                    span: child.span,
+                    name,
+                    first: slot.introduced_by.span,
+                });
+            }
+        }
+        for (span, refusal) in refusals {
+            let introduced = Placed {
+                node: child.node,
+                span,
+            };
+            let held = self.held(Container::TopLevel, name, introduced, named);
+            if let Some(slot) = self.collected.slots.get_mut(held.0) {
+                slot.signature = Maybe::Present(Half {
+                    declaration: child,
+                    operand: Operand::Signature,
+                });
+                slot.refuse(child.node, refusal);
+            }
+        }
+    }
+
+    /// Admit `Sig`, the presentation code, and enter its constructors, at the
+    /// name tile `named` of the `sign` block that first needs it, unless the
+    /// module holds it already.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on the first call, a declared slot `Sig` introduced at
+    ///   `named`, whose definition half is the code, and each constructor of
+    ///   [`sig_desc`] entered by name with its tag and field count, recorded as
+    ///   the module's `Sig`; on a later call, nothing. When `Sig` or one of its
+    ///   constructors names something the module declared before, nothing is
+    ///   admitted.
+    /// - fails: [`LoweringRefusal::DuplicateDefinition`] naming the first
+    ///   declaration of a name `Sig` would take.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::DuplicateDefinition`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two clean blocks share one `Sig`, which a program
+    ///   matches on by its constructors' names.
+    /// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
+    #[spec(
+        captures: before = self.collected.sig.clone(),
+        ensures: |ret| match before {
+            | Maybe::Present(ref held) => ret.is_ok() && self.collected.sig == Maybe::Present(held.clone()),
+            | Maybe::Absent(_) => ret.is_err() || matches!(self.collected.sig, Maybe::Present(ref sig) if sig.arities.len() == SIG_CONSTRUCTORS.len()),
+        },
+    )]
+    fn mint_sig(
+        &mut self,
+        named: Placed,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        if let Maybe::Present(_) = self.collected.sig {
+            return Ok(());
+        }
+        let code = SurfaceName::from("Sig");
+        let taken = |name: SurfaceName<'source>, first: ByteSpan| {
+            Err(LoweringRefusal::DuplicateDefinition {
+                span: named.span,
+                name,
+                first,
+            })
+        };
+        if let Some(slot) = self
+            .collected
+            .by_name
+            .get(&(Container::TopLevel, code))
+            .and_then(|&position| self.collected.slots.get(position.0))
+        {
+            return taken(code, slot.introduced_by.span);
+        }
+        for constructor in SIG_CONSTRUCTORS {
+            let name = SurfaceName::from(constructor);
+            if let Some(entry) = self.collected.constructors.get(&name) {
+                return taken(name, entry.named.span);
+            }
+        }
+        let slot = self.admit(Container::TopLevel, code, named, named);
+        if let Some(entry) = self.collected.slots.get_mut(slot.0) {
+            entry.definition = Maybe::Present(Half {
+                declaration: named,
+                operand: Operand::Code,
+            });
+        }
+        let description = sig_desc(());
+        let mut arities = Vec::with_capacity(description.ctors.len());
+        for (tag, (constructor, name)) in description.ctors.iter().zip(SIG_CONSTRUCTORS).enumerate()
+        {
+            let arity = constructor.arity().inputs.len();
+            arities.push(arity);
+            let _fresh = self
+                .collected
+                .constructors
+                .insert(SurfaceName::from(name), Constructor {
+                    family: slot,
+                    form: Generators::Presentation,
+                    tag,
+                    arity,
+                    named,
+                });
+        }
+        self.collected.sig = Maybe::Present(SigSlot { slot, arities });
+
+        Ok(())
     }
 
     /// Collect one declaration form, decorated by the attribute blocks
@@ -5127,6 +5393,8 @@ impl<'source> Collector<'_, 'source>
                 | Operand::Data(_)
                 | Operand::Operation
                 | Operand::Signature
+                | Operand::Presented
+                | Operand::Code
                 | Operand::Model(_) => None,
             };
             let has_signature = matches!(prior, Maybe::Present(_));
