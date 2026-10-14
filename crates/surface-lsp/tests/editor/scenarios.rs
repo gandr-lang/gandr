@@ -18,6 +18,9 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_surface_lsp::DocumentUri;
+use gandr_surface_parser::Lexeme;
+use gandr_surface_parser::label;
+use gandr_surface_syntax::SourceFragment;
 use percent_encoding::AsciiSet;
 use percent_encoding::NON_ALPHANUMERIC;
 use percent_encoding::utf8_percent_encode;
@@ -51,8 +54,11 @@ use super::editing::panic_message;
 /// which hovering has regressed: the share measured when it was last
 /// changed. A change that answers more positions raises it; a position inside
 /// a declaration's body that no entry holds answers nothing, so the
-/// declaration's own answer is not counted there.
-const ANSWERED_FLOOR: usize = 724;
+/// declaration's own answer is not counted there. A position inside a comment
+/// is hovered but not counted: a comment is no hover target, and corpus items
+/// carry comments saying what they demonstrate, so counting them would lower
+/// the share for documentation alone.
+const ANSWERED_FLOOR: usize = 758;
 
 /// The random edit scripts each scenario generates in a whole run.
 const CASES: u32 = 32;
@@ -569,6 +575,16 @@ fn hovering_every_position_of_each_corpus_source_answers_without_fault()
             }}),
         );
         let text = Text(&source.text);
+        let comments: Vec<(usize, usize)> = label(SourceFragment::from(source.text.as_str()))
+            .into_iter()
+            .filter(|token| token.lexeme == Lexeme::Space)
+            .filter_map(|token| {
+                let start = usize::try_from(token.start).ok()?;
+                let end = usize::try_from(token.end).ok()?;
+                let layout = source.text.get(start .. end)?;
+                (layout.starts_with("//") || layout.starts_with("/*")).then_some((start, end))
+            })
+            .collect();
         let offsets = source
             .text
             .char_indices()
@@ -580,6 +596,12 @@ fn hovering_every_position_of_each_corpus_source_answers_without_fault()
                 Method("textDocument/hover"),
                 &json!({ "textDocument": { "uri": source.uri }, "position": at.json() }),
             );
+            if comments
+                .iter()
+                .any(|&(start, end)| (start .. end).contains(&offset))
+            {
+                continue;
+            }
             let _counted = positions.fetch_add(1_usize, Ordering::Relaxed);
             if !shown.is_null() {
                 let _counted = answered.fetch_add(1_usize, Ordering::Relaxed);

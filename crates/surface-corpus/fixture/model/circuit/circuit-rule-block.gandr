@@ -1,9 +1,16 @@
+// A circuit rule in a `sign` block: a rule whose inputs are a rewrite and two
+// data wires, and whose body wires two nodes. `Sig` codes no circuit rule yet,
+// so the rule is kept beside the block's value rather than in it.
+
+/// A data family whose constructors are written with the circuit arrow.
 @[ checks ]
 data Nat : Type {
   Zero : Nat;
   Succ : (n : Nat) --> Nat;
 }
 
+/// Congruence in `add`'s first argument as a circuit: `p` rewrites `x`, then
+/// `add` takes the result and `y`. The block binds `NatSum : Sig`.
 sign NatSum {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
