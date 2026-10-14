@@ -80,6 +80,18 @@
 //! rule that must name a value of another type, a literal in a pattern,
 //! takes a leaf payload in [`RuleNode`].
 //!
+//! A type of words carries, beside its rules, the free cells it is minted over
+//! ([`FreeCells`]), encoded under a kind of its own ([`KIND_DATA_WORDS`]):
+//! the presented fields, then the sort's position and each cell's endpoints as
+//! closed rule sides over the sort's table. **Choice.** A kind of its own, as
+//! a relating and a lawful definition each took one, so every presented
+//! declaration keeps its bytes and an older reader refuses the words rather
+//! than misreading them; the format version holds. **Alternatives.** The cell
+//! list appended to every presented declaration, which moves every presented
+//! artifact's bytes for a count most of them hold at zero. **Reversal.** When
+//! most presented declarations carry cells, one kind with an always-written
+//! count is the smaller format.
+//!
 //! # Specification attributes
 //!
 //! Clause-bearing items carry executable `#[spec(...)]` predicates or a local
@@ -197,8 +209,11 @@ pub use crate::identity::endpoint_words;
 pub use crate::identity::evaluation_words;
 pub use crate::identity::forward_words;
 pub use crate::identity::quantified_words;
+pub use crate::presented::CellFault;
 pub use crate::presented::Exhausted;
 pub use crate::presented::FieldCount;
+pub use crate::presented::FreeCell;
+pub use crate::presented::FreeCells;
 pub use crate::presented::Normalized;
 pub use crate::presented::Presentation;
 pub use crate::presented::PresentedRule;
@@ -227,6 +242,7 @@ pub use crate::tags::KIND_ABSTRACT_TYPE;
 pub use crate::tags::KIND_AXIOM;
 pub use crate::tags::KIND_DATA;
 pub use crate::tags::KIND_DATA_PRESENTED;
+pub use crate::tags::KIND_DATA_WORDS;
 pub use crate::tags::KIND_DEF;
 pub use crate::tags::KIND_DEF_LAWFUL;
 pub use crate::tags::KIND_DEF_RELATING;

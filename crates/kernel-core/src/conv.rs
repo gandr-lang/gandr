@@ -582,9 +582,11 @@ pub(crate) fn case_branch_mismatch(
 ///   canonical level equality and nominal atom equality. Under
 ///   [`Endpoints::Deferred`] a value pair with a returned endpoint, or with a
 ///   constructor of a presented type, on either side is appended to the list
-///   unexamined and closes; under [`Endpoints::Related`] so is every pair of
-///   path endpoints. The iterative heap stack does not impose a host-stack
-///   depth limit.
+///   unexamined and closes, and a type of words converts with the path type at
+///   the point its cells loop at ([`crate::presented::Presentations::words`]);
+///   under [`Endpoints::Related`] so does each, and every pair of path
+///   endpoints is appended too. The iterative heap stack does not impose a
+///   host-stack depth limit.
 /// - provides: the shared engine of the conversion and term-equality faces. The
 ///   predicate checks the initial roots' readability, identity and head
 ///   separation; the graph judgement and termination argument are not replayed
@@ -634,6 +636,7 @@ pub(crate) fn case_branch_mismatch(
     } else {
         ret == Convertibility::Distinct
             || core::mem::discriminant(one) == core::mem::discriminant(other)
+            || deferring
     },
     _ => ret == Convertibility::Distinct,
 },
@@ -708,6 +711,43 @@ fn converge(
                             return Convertibility::Distinct;
                         }
                         stack.extend(a.iter().zip(b).map(|(a, b)| ConversionGoal::Value(*a, *b)));
+                    },
+                    // A path at the point a type of words' cells loop at is
+                    // those words, once presented types are read.
+                    | (
+                        &ValueType::Data {
+                            declaration,
+                            ref arguments,
+                        },
+                        &ValueType::Path {
+                            domain,
+                            left: from,
+                            right: to,
+                        },
+                    )
+                    | (
+                        &ValueType::Path {
+                            domain,
+                            left: from,
+                            right: to,
+                        },
+                        &ValueType::Data {
+                            declaration,
+                            ref arguments,
+                        },
+                    ) => {
+                        let identified = match endpoints {
+                            | Endpoints::Deferred { presentations, .. }
+                            | Endpoints::Related { presentations, .. } => {
+                                arguments.is_empty()
+                                    && presentations.words(arena, domain, (from, to))
+                                        == Some(declaration)
+                            },
+                            | Endpoints::Structural => false,
+                        };
+                        if !identified {
+                            return Convertibility::Distinct;
+                        }
                     },
                     | (&ValueType::Record(ref a), &ValueType::Record(ref b)) => {
                         if a.len() != b.len() || !a.keys().eq(b.keys()) {

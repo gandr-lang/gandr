@@ -45,13 +45,17 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_term::CellFault;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::Exhausted;
 use gandr_kernel_term::FieldCount;
+use gandr_kernel_term::FreeCells;
 use gandr_kernel_term::Normalized;
 use gandr_kernel_term::Presentation;
+use gandr_kernel_term::PresentedRule;
 use gandr_kernel_term::RewriteFuel;
+use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::RuleSlot;
 use gandr_kernel_term::RuleTerm;
 use gandr_kernel_term::TermArena;
@@ -162,42 +166,286 @@ impl Presentations
         let table = self.0.as_ref()?;
         table.get(&constant)
     }
+
+    /// The type of words the path type `Path(domain, left, right)` reads as:
+    /// the one whose cells loop at a point both endpoints spell, over the
+    /// parameterless data type `domain` names.
+    ///
+    /// # Specification
+    /// - requires: nothing — unreadable ids read as no words.
+    /// - ensures: `Some(words)` exactly when `domain` is a parameterless data
+    ///   type, `words` a presented type whose cells are over it, and `left` and
+    ///   `right` each a constructor term of that type spelling the cells'
+    ///   point; admission keeps one type of words per point.
+    /// - provides: the identification every reader of a path type shares: the
+    ///   checking machine's fibre and case, and conversion at a mode switch.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's loop is a word checked at its path type,
+    ///   a case over a path reads the words' table, and a path at another point
+    ///   reads as no words.
+    /// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
+    #[spec(ensures: |ret| ret.is_none_or(|words| self.presented(words).is_some_and(|presented| presented.presentation.cells().is_some())))]
+    #[must_use]
+    pub(crate) fn words(
+        &self,
+        arena: &TermArena,
+        domain: ValueTypeId,
+        (left, right): (ValueId, ValueId),
+    ) -> Option<ConstantIndex>
+    {
+        let table = self.0.as_ref()?;
+        let Some(&ValueType::Data {
+            declaration: sort,
+            ref arguments,
+        }) = arena.value_type(domain)
+        else {
+            return None;
+        };
+        if !arguments.is_empty() {
+            return None;
+        }
+        table.iter().find_map(|(&words, presented)| {
+            let cells = presented.presentation.cells()?;
+            (cells.sort() == sort
+                && spells(arena, sort, left, cells.point())
+                && spells(arena, sort, right, cells.point()))
+            .then_some(words)
+        })
+    }
+
+    /// `ty`, or the data type of the words it reads as when it is a path type
+    /// at a looped point ([`Self::words`]).
+    ///
+    /// # Specification
+    /// - requires: `ty` lives in `arena`.
+    /// - ensures: a fresh `Data(words, [])` exactly when `ty` is `Path(domain,
+    ///   left, right)` and [`Self::words`] reads its parts as `words`; `ty`
+    ///   itself otherwise.
+    /// - provides: the checking machine's reading of a scrutinee's type and of
+    ///   the identity a word checks at.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::words`].
+    /// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
+    #[spec(ensures: |ret| ret == ty || matches!(arena.value_type(ret), Some(ValueType::Data { arguments, .. }) if arguments.is_empty()))]
+    #[must_use]
+    pub(crate) fn identified(
+        &self,
+        arena: &mut TermArena,
+        ty: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        if let Some(&ValueType::Path {
+            domain,
+            left,
+            right,
+        }) = arena.value_type(ty)
+            && let Some(words) = self.words(arena, domain, (left, right))
+        {
+            return arena.value_type_data(words, Vec::new());
+        }
+        ty
+    }
 }
 
-/// Check a data declaration's rules against its constructor table.
+/// Whether `value` is the constructor term of `sort` that the closed rule side
+/// `side` spells.
+///
+/// # Specification
+/// - requires: nothing — unreadable ids spell nothing.
+/// - ensures: `true` exactly when reading `value` in pre-order meets one
+///   constructor of `sort` per node of `side`, each with the node's tag, and no
+///   node is left over on either side; a variable node spells nothing.
+/// - provides: the endpoint comparison of [`Presentations::words`], bounded by
+///   the side's length whatever the value's depth.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` loop over `side`'s nodes, not recursion.
+/// - measure: the nodes of `side` not yet read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentations::words`].
+/// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
+#[spec(ensures: |ret| !ret || !side.is_empty())]
+fn spells(
+    arena: &TermArena,
+    sort: ConstantIndex,
+    value: ValueId,
+    side: &[RuleNode],
+) -> bool
+{
+    let mut pending = Vec::with_capacity(side.len());
+    pending.push(value);
+    for &node in side {
+        let (Some(at), RuleNode::Constructor(tag)) = (pending.pop(), node)
+        else {
+            return false;
+        };
+        let Some(&Value::Constructor {
+            datatype,
+            tag: written,
+            ref fields,
+        }) = arena.value(at)
+        else {
+            return false;
+        };
+        if written != tag
+            || !matches!(
+                arena.value_type(datatype),
+                Some(&ValueType::Data { declaration, .. }) if declaration == sort
+            )
+        {
+            return false;
+        }
+        pending.extend(fields.iter().rev());
+    }
+    pending.is_empty()
+}
+
+/// Check a data declaration's rules against its constructor table, and a type
+/// of words's cells against the sort they loop in.
 ///
 /// # Specification
 /// - requires: `constructors` is the declaration's table, its field types in
-///   `arena`, the declaration standing at `position`.
+///   `arena`, the declaration standing at `position` after `entries` and
+///   binding `parameters` parameters.
 /// - ensures: `Ok(())` exactly when `presentation` validates against the table,
 ///   a field reading [`RuleSlot::Own`] where its type is the declaration's own
-///   family and [`RuleSlot::Other`] with its type id elsewhere.
+///   family and [`RuleSlot::Other`] with its type id elsewhere, and, when it
+///   carries cells, [`words`] admits them.
 /// - provides: the admission obligation of a presented type.
-/// - fails: [`KernelError::RuleNotPresentable`] naming the first rule that does
-///   not present the type and why.
+/// - fails: [`KernelError::WordsRefused`] naming the cells' fault, checked
+///   first, or [`KernelError::RuleNotPresentable`] naming the first rule that
+///   does not present the type and why.
 /// - panics: none.
 ///
 /// # Errors
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the circle's rules admit, and a rule placing a
-///   constructor under another type's field is refused by name.
+/// - hypothesis: L3 — the circle's rules admit, a rule placing a constructor
+///   under another type's field is refused by name, and the words of the
+///   circle's loop admit where words with their rules dropped are refused.
 /// - witness: `presented::tests::admission_reads_the_own_type_from_the_table`
-#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::RuleNotPresentable(_))))]
+/// - witness: `presented::tests::words_admit_only_as_their_cells_mint_them`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::RuleNotPresentable(_) | KernelError::WordsRefused(_))))]
 pub(crate) fn admit(
     arena: &TermArena,
-    position: ConstantIndex,
+    entries: &[AdmittedDeclaration],
+    (position, parameters): (ConstantIndex, usize),
     constructors: &[Vec<ValueTypeId>],
     presentation: &Presentation,
 ) -> Result<(), KernelError>
 {
+    if let Some(cells) = presentation.cells() {
+        words(
+            arena,
+            entries,
+            (position, parameters),
+            (constructors, presentation.rules()),
+            cells,
+        )
+        .map_err(KernelError::WordsRefused)?;
+    }
     if presentation.rules().is_empty() {
         return Ok(());
     }
     presentation
         .validate(&slot_table(arena, position, constructors))
         .map_err(KernelError::RuleNotPresentable)
+}
+
+/// Check a type of words against the cells it carries: re-mint the words and
+/// compare.
+///
+/// # Specification
+/// - requires: as [`admit`].
+/// - ensures: `Ok(())` exactly when the cells' sort is a parameterless data
+///   declaration among `entries`, [`FreeCells::validate`] admits the cells
+///   against its table, the declaration binds no parameter and its table and
+///   rules are the mint — the empty word with no field, then per cell a letter
+///   and an inverse each over one field of the declaration's own type, and
+///   [`FreeCells::cancellations`] — and no earlier type of words loops at the
+///   same point of the same sort.
+/// - provides: the kernel's whole trust in a type of words: the producer's
+///   table and rules are a claim it re-derives, never reads.
+/// - fails: [`CellFault::Sort`], a fault of [`FreeCells::validate`],
+///   [`CellFault::NotMinted`] or [`CellFault::Twice`], in that order.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's loop admits, and its words refuse by name
+///   with their rules dropped, at a sort admitted later, and a second time.
+/// - witness: `presented::tests::words_admit_only_as_their_cells_mint_them`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CellFault::Sort | CellFault::Empty | CellFault::Endpoint(_) | CellFault::Open | CellFault::NotALoop | CellFault::Apart | CellFault::NotMinted | CellFault::Twice)))]
+fn words(
+    arena: &TermArena,
+    entries: &[AdmittedDeclaration],
+    (position, parameters): (ConstantIndex, usize),
+    (constructors, rules): (&[Vec<ValueTypeId>], &[PresentedRule]),
+    cells: &FreeCells,
+) -> Result<(), CellFault>
+{
+    let sort = cells.sort();
+    let Some(content) = entries
+        .get(usize::from(sort))
+        .map(AdmittedDeclaration::content)
+    else {
+        return Err(CellFault::Sort);
+    };
+    let DeclarationContent::Data {
+        parameters: ref sort_parameters,
+        constructors: ref sort_table,
+        ..
+    } = *content
+    else {
+        return Err(CellFault::Sort);
+    };
+    if !sort_parameters.is_empty() {
+        return Err(CellFault::Sort);
+    }
+    cells.validate(&slot_table(arena, sort, sort_table))?;
+    let own = |field: &ValueTypeId| {
+        matches!(
+            arena.value_type(*field),
+            Some(&ValueType::Data { declaration, ref arguments })
+                if declaration == position && arguments.is_empty()
+        )
+    };
+    let minted = parameters == 0
+        && constructors.len() == cells.constructors()
+        && constructors
+            .iter()
+            .enumerate()
+            .all(|(tag, fields)| match *fields.as_slice() {
+                | [] => tag == 0,
+                | [ref field] => tag != 0 && own(field),
+                | _ => false,
+            })
+        && rules == cells.cancellations().as_slice();
+    if !minted {
+        return Err(CellFault::NotMinted);
+    }
+    if entries.iter().any(|entry| {
+        entry
+            .declaration()
+            .presentation()
+            .cells()
+            .is_some_and(|earlier| earlier.sort() == sort && earlier.point() == cells.point())
+    }) {
+        return Err(CellFault::Twice);
+    }
+    Ok(())
 }
 
 /// A data declaration's constructor table as a rule side reads it.
@@ -466,7 +714,13 @@ mod tests
             alloc::vec![unit]
         ];
         assert_eq!(
-            super::admit(&arena, ConstantIndex::from(0_usize), &table, &circle()),
+            super::admit(
+                &arena,
+                &[],
+                (ConstantIndex::from(0_usize), 0),
+                &table,
+                &circle()
+            ),
             Ok(())
         );
         let other = Presentation::new(alloc::vec![PresentedRule::new(
@@ -474,14 +728,26 @@ mod tests
             [Letter::Base.node()].into()
         )]);
         assert_eq!(
-            super::admit(&arena, ConstantIndex::from(0_usize), &table, &other),
+            super::admit(
+                &arena,
+                &[],
+                (ConstantIndex::from(0_usize), 0),
+                &table,
+                &other
+            ),
             Err(KernelError::RuleNotPresentable(RuleRefusal {
                 rule: RuleIndex::from(0_usize),
                 fault: RuleFault::NotOwnPosition,
             }))
         );
         assert_eq!(
-            super::admit(&arena, ConstantIndex::from(1_usize), &table, &circle()),
+            super::admit(
+                &arena,
+                &[],
+                (ConstantIndex::from(1_usize), 0),
+                &table,
+                &circle()
+            ),
             Err(KernelError::RuleNotPresentable(RuleRefusal {
                 rule: RuleIndex::from(0_usize),
                 fault: RuleFault::NotOwnPosition,
@@ -654,6 +920,236 @@ mod tests
             offer(&mut presented),
             [Ok(()), Ok(())],
             "the constant's path type and its declared one meet once both are normal"
+        );
+    }
+
+    /// `base` as a closed rule side.
+    ///
+    /// # Specification
+    /// trivial.
+    fn base() -> alloc::boxed::Box<[RuleNode]>
+    {
+        [Letter::Base.node()].into()
+    }
+
+    /// One loop at `base` of the sort at `sort`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn looped(sort: usize) -> gandr_kernel_term::FreeCells
+    {
+        gandr_kernel_term::FreeCells::new(ConstantIndex::from(sort), alloc::vec![
+            gandr_kernel_term::FreeCell::new(base(), base())
+        ])
+    }
+
+    /// An environment holding the one-point sort `base` at position zero.
+    ///
+    /// # Specification
+    /// trivial.
+    fn point() -> Environment
+    {
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let staged = staging.data(
+            LevelSignature::monomorphic(),
+            Vec::new(),
+            alloc::vec![alloc::vec![]],
+            kind,
+        );
+        let _sort = environment
+            .add_decl(staged)
+            .expect("a one-point sort admits");
+        environment
+    }
+
+    /// Stage the words of one loop's table, presented by `presentation`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn words(
+        environment: &mut Environment,
+        presentation: Presentation,
+    ) -> Result<ConstantIndex, KernelError>
+    {
+        let position = ConstantIndex::from(environment.entries().len());
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = staging.arena().value_type_data(position, Vec::new());
+        let staged = staging
+            .data(
+                LevelSignature::monomorphic(),
+                Vec::new(),
+                alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                kind,
+            )
+            .presented(presentation);
+        environment
+            .add_decl(staged)
+            .map(crate::env::CheckedId::position)
+    }
+
+    #[test]
+    fn words_admit_only_as_their_cells_mint_them()
+    {
+        use gandr_kernel_term::CellFault;
+
+        let mut environment = point();
+        assert_eq!(
+            words(
+                &mut environment,
+                Presentation::new(Vec::new()).carrying(looped(0))
+            ),
+            Err(KernelError::WordsRefused(CellFault::NotMinted)),
+            "words whose cancellations were dropped are not the words their cell mints"
+        );
+        assert_eq!(
+            words(
+                &mut environment,
+                Presentation::new(circle().rules()[.. 1].to_vec()).carrying(looped(0))
+            ),
+            Err(KernelError::WordsRefused(CellFault::NotMinted)),
+            "nor are words with one cancellation of two"
+        );
+        assert_eq!(
+            words(&mut environment, Presentation::words(looped(1))),
+            Err(KernelError::WordsRefused(CellFault::Sort)),
+            "the sort must be admitted before the words"
+        );
+        let unknown = gandr_kernel_term::FreeCells::new(ConstantIndex::from(0_usize), alloc::vec![
+            gandr_kernel_term::FreeCell::new(
+                [Letter::Loop.node(), Letter::Base.node()].into(),
+                [Letter::Loop.node(), Letter::Base.node()].into(),
+            )
+        ]);
+        assert_eq!(
+            words(&mut environment, Presentation::words(unknown)),
+            Err(KernelError::WordsRefused(CellFault::Endpoint(
+                RuleFault::UnknownConstructor
+            ))),
+            "a point the sort's table does not spell"
+        );
+        assert_eq!(
+            words(&mut environment, Presentation::words(looped(0))),
+            Ok(ConstantIndex::from(1_usize)),
+            "the words the loop at `base` mints admit"
+        );
+        assert_eq!(
+            words(&mut environment, Presentation::words(looped(0))),
+            Err(KernelError::WordsRefused(CellFault::Twice)),
+            "one type of words per point"
+        );
+    }
+
+    #[test]
+    fn a_path_at_a_looped_point_reads_as_its_words()
+    {
+        let mut environment = point();
+        let words_at = words(&mut environment, Presentation::words(looped(0)))
+            .expect("the loop's words admit");
+        let sort = ConstantIndex::from(0_usize);
+        let presentations = super::Presentations::of(environment.entries());
+        let mut arena = environment.arena().clone();
+        let carrier = arena.value_type_data(sort, Vec::new());
+        let point = arena.value_constructor(carrier, Letter::Base.tag(), Vec::new());
+        let again = arena.value_constructor(carrier, Letter::Base.tag(), Vec::new());
+        let open = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let word_type = arena.value_type_data(words_at, Vec::new());
+        assert_eq!(
+            presentations.words(&arena, carrier, (point, again)),
+            Some(words_at)
+        );
+        assert_eq!(
+            presentations.words(&arena, carrier, (point, open)),
+            None,
+            "an endpoint that is no constructor term spells no point"
+        );
+        assert_eq!(
+            presentations.words(&arena, word_type, (point, again)),
+            None,
+            "no cell loops in the words themselves"
+        );
+        let path = arena.value_type_path(carrier, point, again);
+        let identified = presentations.identified(&mut arena, path);
+        assert!(matches!(
+            arena.value_type(identified),
+            Some(&gandr_kernel_term::ValueType::Data { declaration, .. }) if declaration == words_at
+        ));
+
+        // `loop : Path(S, base, base)`, the word of one letter.
+        let path_at = |arena: &mut TermArena| {
+            let carrier = arena.value_type_data(sort, Vec::new());
+            let point = arena.value_constructor(carrier, Letter::Base.tag(), Vec::new());
+            arena.value_type_path(carrier, point, point)
+        };
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let declared = path_at(arena);
+        let words = arena.value_type_data(words_at, Vec::new());
+        let empty = arena.value_constructor(words, ConstructorTag::from(0_usize), Vec::new());
+        let letter =
+            arena.value_constructor(words, ConstructorTag::from(1_usize), alloc::vec![empty]);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, letter);
+        let loop_at = environment
+            .add_decl(staged)
+            .expect("a word checks at the path of its point")
+            .position();
+
+        // The constant read back at the words' own type.
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let declared = arena.value_type_data(words_at, Vec::new());
+        let named = arena.value_constant(loop_at);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, named);
+        assert!(
+            environment.add_decl(staged).is_ok(),
+            "a path at the looped point converts with its words at a mode switch"
+        );
+
+        // `fix f. λp. case p { here ⇒ return here; g ∷ q ⇒ r ← f(q); return
+        // g ∷ r; … }` at `Path(S, base, base) → F Path(S, base, base)`: a case
+        // over a path splits its words, and each cancellation is respected.
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let path = path_at(arena);
+        let words = arena.value_type_data(words_at, Vec::new());
+        let motive = arena.comp_type_returner(path);
+        let empty = arena.value_constructor(words, ConstructorTag::from(0_usize), Vec::new());
+        let nil = arena.computation_return(empty);
+        let mut arm = |tag: usize| {
+            let recursive = arena.value_variable(DeBruijnIndex::from(2_u32));
+            let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let forced = arena.computation_force(recursive);
+            let folded = arena.computation_application(forced, field);
+            let result = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let rebuilt =
+                arena.value_constructor(words, ConstructorTag::from(tag), alloc::vec![result]);
+            let returned = arena.computation_return(rebuilt);
+            let sequenced = arena.computation_bind(folded, returned);
+            arena.computation_lambda(sequenced)
+        };
+        let letter = arm(1);
+        let inverse = arm(2);
+        let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let case = arena.computation_data_case(argument, motive, alloc::vec![nil, letter, inverse]);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(
+            lambda,
+            gandr_kernel_term::FixpointEvidence::StructuralDescent,
+        );
+        let body = arena.value_thunk(fixpoint);
+        let arrow = arena.comp_type_arrow(path, motive);
+        let declared = arena.value_type_thunk(arrow);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+        assert_eq!(
+            environment.add_decl(staged).map(|_admitted| ()),
+            Ok(()),
+            "the identity fold over the words respects both cancellations"
         );
     }
 }

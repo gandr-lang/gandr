@@ -4754,7 +4754,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 match evidence {
                     | FixpointEvidence::StructuralDescent => {
                         crate::descent::replay(self.context, term, expected, body)?;
-                        self.root = self.fold_root(term, expected, body);
+                        self.root = self.fold_root(term, expected, body)?;
                     },
                     | FixpointEvidence::Partial => {},
                 }

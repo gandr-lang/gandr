@@ -30,6 +30,26 @@
 //! order over one constructor table and tags say all of it. **Reversal.** A
 //! rule over another type's constructors, or a non-linear left side, needs a
 //! classifier per node.
+//!
+//! # Free cells and their words
+//!
+//! A `data` block may declare a cell between two closed terms of its sort,
+//! `loop : Base <-> Base;`. The cells looping at one point mint a second
+//! presented type, the words over them ([`FreeCells`]): the free group on the
+//! cells presented as a polygraph, a letter and an inverse per cell as its
+//! constructors and the two cancellations per cell as its rules. The words
+//! travel as an ordinary presented declaration that also carries its cells, so
+//! conversion modulo rules, the respect check and the replay read them as they
+//! read any presented type, one stratum up; the cells are what lets the
+//! checker and the kernel read `Path(T, a, a)` as the words at `a`, and what
+//! the kernel re-mints the table and the rules from.
+//!
+//! **Alternatives.** A primitive word node with its own conversion would
+//! duplicate the rewriting presented types already have; the cells on the
+//! sort's own declaration would leave the words no admission position of
+//! their own. **Reversal.** A cell between distinct terms takes words indexed
+//! by their endpoints, a family over pairs of points rather than one type per
+//! point.
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
@@ -254,7 +274,8 @@ impl PresentedRule
     }
 }
 
-/// A declaration's rules, in the order the producer wrote them, shared.
+/// A declaration's rules, in the order the producer wrote them, shared, and
+/// for a type of words the free cells it is minted over.
 ///
 /// Empty for a free type and for every declaration that is not a data
 /// declaration.
@@ -268,9 +289,16 @@ impl PresentedRule
 /// # Adequacy
 /// - hypothesis: L3 — as [`RuleNode`].
 /// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
-#[repr(transparent)]
+/// - witness: `encode::tests::a_type_of_words_closes_its_segment_with_its_cells`
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub struct Presentation(Arc<[PresentedRule]>);
+pub struct Presentation
+{
+    /// The rules, in written order.
+    rules: Arc<[PresentedRule]>,
+    /// The free cells a type of words is minted over; absent for every other
+    /// presentation.
+    cells: Option<Arc<FreeCells>>,
+}
 
 impl Presentation
 {
@@ -283,7 +311,54 @@ impl Presentation
     #[must_use]
     pub fn new(rules: alloc::vec::Vec<PresentedRule>) -> Self
     {
-        Self(Arc::from(rules))
+        Self {
+            rules: Arc::from(rules),
+            cells: None,
+        }
+    }
+
+    /// The type of words over `cells`: the presentation the lowering mints,
+    /// whose rules are the two cancellations of every cell.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the rules are [`FreeCells::cancellations`] of `cells`, in
+    ///   order, and the cells are `cells`.
+    /// - provides: the one way a producer states a type of words, so the
+    ///   kernel's comparison with the mint is against this very function.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's one cell mints its two cancellations.
+    /// - witness: `presented::tests::a_cell_mints_its_words_and_its_cancellations`
+    #[spec(captures: count = cells.cells().len(), ensures: |ret| ret.rules().len() == count.saturating_mul(2))]
+    #[inline]
+    #[must_use]
+    pub fn words(cells: FreeCells) -> Self
+    {
+        Self {
+            rules: Arc::from(cells.cancellations()),
+            cells: Some(Arc::new(cells)),
+        }
+    }
+
+    /// This presentation carrying `cells`, its rules as they were: a decoded
+    /// type of words, whose rules the kernel compares with the mint.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn carrying(
+        self,
+        cells: FreeCells,
+    ) -> Self
+    {
+        Self {
+            cells: Some(Arc::new(cells)),
+            ..self
+        }
     }
 
     /// The rules, in written order: none for a free type.
@@ -294,7 +369,19 @@ impl Presentation
     #[must_use]
     pub fn rules(&self) -> &[PresentedRule]
     {
-        &self.0
+        &self.rules
+    }
+
+    /// The free cells a type of words is minted over; none for every other
+    /// presentation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn cells(&self) -> Option<&FreeCells>
+    {
+        self.cells.as_deref()
     }
 
     /// Check every rule against the constructor table it presents, in written
@@ -487,6 +574,326 @@ impl Presentation
             return Ok(outcome);
         }
     }
+}
+
+/// A free invertible 1-cell of a presented type's sort: a generator between
+/// two closed terms of the sort, each a side over the sort's own constructor
+/// table holding no variable.
+///
+/// # Specification
+/// - provides: the producer's two endpoints, unchecked; admission owns their
+///   well-formedness.
+/// - panics: none.
+/// - executable: none — data declaration; [`FreeCells::validate`] checks the
+///   endpoints against the sort's table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`FreeCells::validate`].
+/// - witness: `presented::tests::cell_validation_names_each_fault`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct FreeCell
+{
+    /// The cell's source, in pre-order.
+    source: Box<[RuleNode]>,
+    /// The cell's target, in pre-order.
+    target: Box<[RuleNode]>,
+}
+
+impl FreeCell
+{
+    /// The cell from `source` to `target`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        source: Box<[RuleNode]>,
+        target: Box<[RuleNode]>,
+    ) -> Self
+    {
+        Self { source, target }
+    }
+
+    /// The source, in pre-order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn source(&self) -> &[RuleNode]
+    {
+        &self.source
+    }
+
+    /// The target, in pre-order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn target(&self) -> &[RuleNode]
+    {
+        &self.target
+    }
+}
+
+/// The free cells a type of words is minted over: the sort whose closed terms
+/// they join, by its admission position, and the cells, one generator each, in
+/// written order.
+///
+/// # The words
+///
+/// The type of words over loops at one point is the free group on the cells
+/// presented as a polygraph: the empty word, then per generator a letter and
+/// its inverse, each taking the rest of the word as its one field, and per
+/// generator the two cancellations `g ∷ back(g) ∷ p ==> p` and `back(g) ∷ g ∷
+/// p ==> p` as rules. Tag `0` is the empty word, tag `1 + 2i` generator `i`'s
+/// letter and tag `2 + 2i` its inverse. The table and the rules follow from
+/// the cells alone, so a producer states the cells and the kernel compares
+/// what the declaration carries with this mint.
+///
+/// # Specification
+/// - provides: the cells and the words they mint.
+/// - panics: none.
+/// - executable: none — data declaration.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::words`].
+/// - witness: `presented::tests::a_cell_mints_its_words_and_its_cancellations`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct FreeCells
+{
+    /// The sort's admission position.
+    sort: crate::term::ConstantIndex,
+    /// The cells, in written order.
+    cells: Box<[FreeCell]>,
+}
+
+impl FreeCells
+{
+    /// The cells `cells` of the sort admitted at `sort`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new(
+        sort: crate::term::ConstantIndex,
+        cells: Vec<FreeCell>,
+    ) -> Self
+    {
+        Self {
+            sort,
+            cells: cells.into_boxed_slice(),
+        }
+    }
+
+    /// The sort's admission position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn sort(&self) -> crate::term::ConstantIndex
+    {
+        self.sort
+    }
+
+    /// The cells, in written order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn cells(&self) -> &[FreeCell]
+    {
+        &self.cells
+    }
+
+    /// The point the words loop at: the first cell's source, empty when there
+    /// is no cell.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn point(&self) -> &[RuleNode]
+    {
+        self.cells.first().map_or(&[], FreeCell::source)
+    }
+
+    /// The empty word's tag.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn nil() -> ConstructorTag
+    {
+        ConstructorTag::from(0_usize)
+    }
+
+    /// The tag of generator `generator`'s letter.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn letter(generator: usize) -> ConstructorTag
+    {
+        ConstructorTag::from(generator.saturating_mul(2).saturating_add(1))
+    }
+
+    /// The tag of generator `generator`'s inverse.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn inverse(generator: usize) -> ConstructorTag
+    {
+        ConstructorTag::from(generator.saturating_mul(2).saturating_add(2))
+    }
+
+    /// How many constructors the words take: the empty word and a letter and
+    /// an inverse per cell.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn constructors(&self) -> usize
+    {
+        self.cells.len().saturating_mul(2).saturating_add(1)
+    }
+
+    /// The words' rules: per cell, in order, a letter then its inverse
+    /// cancelling, and an inverse then its letter.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: two rules per cell, each `[a, b, x] ==> [x]` over the cell's
+    ///   letter and inverse tags, the letter first in the first.
+    /// - provides: the mint [`Presentation::words`] and the kernel's admission
+    ///   both read.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's one cell mints the landed circle's two
+    ///   rules over tags 1 and 2.
+    /// - witness: `presented::tests::a_cell_mints_its_words_and_its_cancellations`
+    #[spec(ensures: |ret| ret.len() == self.cells.len().saturating_mul(2))]
+    #[inline]
+    #[must_use]
+    pub fn cancellations(&self) -> Vec<PresentedRule>
+    {
+        let rest = RuleNode::Variable(RuleVariable(0));
+        let mut rules = Vec::with_capacity(self.cells.len().saturating_mul(2));
+        for generator in 0 .. self.cells.len() {
+            let letter = RuleNode::Constructor(Self::letter(generator));
+            let inverse = RuleNode::Constructor(Self::inverse(generator));
+            rules.push(PresentedRule::new(
+                [letter, inverse, rest].into(),
+                [rest].into(),
+            ));
+            rules.push(PresentedRule::new(
+                [inverse, letter, rest].into(),
+                [rest].into(),
+            ));
+        }
+        rules
+    }
+
+    /// Check the cells against the sort's constructor table: at least one,
+    /// every endpoint a closed term of the sort, and every cell a loop at the
+    /// first cell's source.
+    ///
+    /// `table` lists the sort's constructors as [`Presentation::validate`]
+    /// reads them.
+    ///
+    /// # Specification
+    /// - requires: nothing — the cells may be arbitrary producer bytes.
+    /// - ensures: `Ok(())` exactly when there is a cell, every endpoint is one
+    ///   term by the table's arities with every constructor at the sort and no
+    ///   variable, and every cell's source and target are the first cell's
+    ///   source; otherwise the first fault in cell order, an endpoint's before
+    ///   its loop's.
+    /// - provides: the endpoint half of a type of words' admission; the
+    ///   distinct-endpoint and directed cells are later readings.
+    /// - fails: [`CellFault::Empty`], [`CellFault::Endpoint`],
+    ///   [`CellFault::Open`], [`CellFault::NotALoop`] or [`CellFault::Apart`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's loop passes, and one cell per fault is
+    ///   refused by that fault and no other.
+    /// - witness: `presented::tests::cell_validation_names_each_fault`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CellFault::Empty | CellFault::Endpoint(_) | CellFault::Open | CellFault::NotALoop | CellFault::Apart)))]
+    #[inline]
+    pub fn validate<T>(
+        &self,
+        table: &[Vec<RuleSlot<T>>],
+    ) -> Result<(), CellFault>
+    where
+        T: Copy + Eq,
+    {
+        if self.cells.is_empty() {
+            return Err(CellFault::Empty);
+        }
+        for cell in &self.cells {
+            for endpoint in [cell.source(), cell.target()] {
+                let reading = read_side(endpoint, table).map_err(CellFault::Endpoint)?;
+                if !reading.variables.is_empty() {
+                    return Err(CellFault::Open);
+                }
+            }
+            if cell.source() != cell.target() {
+                return Err(CellFault::NotALoop);
+            }
+            if cell.source() != self.point() {
+                return Err(CellFault::Apart);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Why free cells do not mint a type of words.
+///
+/// # Specification
+/// - provides: one variant per clause of [`FreeCells::validate`], and the
+///   kernel's admission clauses beside it.
+/// - panics: none.
+/// - executable: none — closed classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`FreeCells::validate`].
+/// - witness: `presented::tests::cell_validation_names_each_fault`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CellFault
+{
+    /// No cell: the words would be the empty word alone.
+    Empty,
+    /// An endpoint is not one term over the sort's table.
+    Endpoint(RuleFault),
+    /// An endpoint holds a variable: a cell joins closed terms.
+    Open,
+    /// A cell joins two distinct terms: endpoint-indexed words are a later
+    /// reading.
+    NotALoop,
+    /// A cell loops at another point than the first cell's.
+    Apart,
+    /// The sort is not a data declaration admitted earlier with no parameter.
+    Sort,
+    /// The declaration's table or rules are not the words the cells mint.
+    NotMinted,
+    /// An earlier type of words loops at the same point of the same sort.
+    Twice,
 }
 
 /// Build a rule side as a term, bottom up: `node` receives each node of the
@@ -977,8 +1384,11 @@ mod tests
     use alloc::string::String;
     use alloc::vec::Vec;
 
+    use super::CellFault;
     use super::Exhausted;
     use super::FieldCount;
+    use super::FreeCell;
+    use super::FreeCells;
     use super::Normalized;
     use super::Presentation;
     use super::PresentedRule;
@@ -1111,6 +1521,110 @@ mod tests
             }),
             "the second rule's right side is two terms, and it is named by position"
         );
+    }
+
+    #[test]
+    fn a_cell_mints_its_words_and_its_cancellations()
+    {
+        let base =
+            || alloc::boxed::Box::from([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
+        let sort = crate::term::ConstantIndex::from(3_usize);
+        let cells = FreeCells::new(sort, alloc::vec![FreeCell::new(base(), base())]);
+        assert_eq!(
+            (
+                cells.constructors(),
+                FreeCells::letter(0),
+                FreeCells::inverse(0)
+            ),
+            (
+                3,
+                ConstructorTag::from(1_usize),
+                ConstructorTag::from(2_usize)
+            ),
+            "the empty word, then the loop's letter and its inverse"
+        );
+        let words = Presentation::words(cells.clone());
+        assert_eq!(
+            words.rules(),
+            circle().rules(),
+            "one loop mints the landed circle's two cancellations, over tags 1 and 2"
+        );
+        assert_eq!(words.cells(), Some(&cells));
+        assert_eq!(
+            Presentation::new(circle().rules().to_vec()).carrying(cells),
+            words,
+            "the decoder's rules and cells are the mint's"
+        );
+        let twice = FreeCells::new(sort, alloc::vec![
+            FreeCell::new(base(), base()),
+            FreeCell::new(base(), base())
+        ]);
+        let second = twice.cancellations();
+        assert_eq!(
+            second.get(2).map(PresentedRule::left),
+            Some(
+                &[
+                    RuleNode::Constructor(ConstructorTag::from(3_usize)),
+                    RuleNode::Constructor(ConstructorTag::from(4_usize)),
+                    RuleNode::Variable(RuleVariable::from(0_u32))
+                ][..]
+            ),
+            "the second cell cancels over its own letter and inverse"
+        );
+    }
+
+    #[test]
+    fn cell_validation_names_each_fault()
+    {
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
+        let table = table();
+        let sort = crate::term::ConstantIndex::from(0_usize);
+        let cells = |pairs: &[(&[RuleNode], &[RuleNode])]| {
+            FreeCells::new(
+                sort,
+                pairs
+                    .iter()
+                    .map(|&(source, target)| FreeCell::new(source.into(), target.into()))
+                    .collect(),
+            )
+        };
+        assert_eq!(cells(&[(&[c(0)], &[c(0)])]).validate(&table), Ok(()));
+        assert_eq!(
+            cells(&[
+                (&[c(1), c(0)], &[c(1), c(0)]),
+                (&[c(1), c(0)], &[c(1), c(0)])
+            ])
+            .validate(&table),
+            Ok(()),
+            "two loops at one compound point"
+        );
+        for (pairs, fault) in [
+            (&[][..], CellFault::Empty),
+            (
+                &[(&[c(9)][..], &[c(9)][..])][..],
+                CellFault::Endpoint(RuleFault::UnknownConstructor),
+            ),
+            (
+                &[(&[c(1)][..], &[c(1)][..])],
+                CellFault::Endpoint(RuleFault::Arity),
+            ),
+            (
+                &[(&[c(3), c(0)][..], &[c(3), c(0)][..])],
+                CellFault::Endpoint(RuleFault::NotOwnPosition),
+            ),
+            (&[(&[c(1), v(0)][..], &[c(1), v(0)][..])], CellFault::Open),
+            (&[(&[c(0)][..], &[c(1), c(0)][..])], CellFault::NotALoop),
+            (
+                &[
+                    (&[c(0)][..], &[c(0)][..]),
+                    (&[c(1), c(0)][..], &[c(1), c(0)][..]),
+                ],
+                CellFault::Apart,
+            ),
+        ] {
+            assert_eq!(cells(pairs).validate(&table), Err(fault), "{fault:?}");
+        }
     }
 
     #[test]

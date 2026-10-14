@@ -550,6 +550,11 @@ pub enum KernelError
     /// not a linear, constructor-headed, terminating rewrite over the
     /// declaration's own constructor table.
     RuleNotPresentable(gandr_kernel_term::RuleRefusal),
+    /// A type of words is not the words its free cells mint: a cell is not a
+    /// loop at one closed point of an earlier parameterless data declaration,
+    /// or the declaration's table or rules are not the mint, or an earlier type
+    /// of words already loops at that point.
+    WordsRefused(gandr_kernel_term::CellFault),
     /// A case over a presented type is not shown to respect the named rule of
     /// its type: its arms might tell apart two terms the rule identifies.
     RuleNotRespected(gandr_kernel_term::RuleIndex),
@@ -820,6 +825,9 @@ impl core::fmt::Display for KernelError
             },
             | Self::RuleNotPresentable(_) => {
                 f.write_str("a data declaration's rule did not present its type")
+            },
+            | Self::WordsRefused(_) => {
+                f.write_str("a type of words was not the words its free cells mint")
             },
             | Self::RuleNotRespected(_) => {
                 f.write_str("a case over a presented type was not shown to respect its rules")

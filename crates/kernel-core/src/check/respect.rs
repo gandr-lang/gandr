@@ -121,17 +121,22 @@ pub(super) enum Reading
 /// - requires: `body` is the body of the fixpoint `fixpoint`, whose
 ///   structural-descent claim replayed at `expected`.
 /// - ensures: the case under the body's lambda beside [`Reading::Fold`] naming
-///   the fixpoint and the domain of `expected`, when that case's scrutinee is
-///   the lambda's argument; [`root::Absent::NotOverCase`] otherwise.
+///   the fixpoint and the domain of `expected`, read as its words where it is a
+///   path at a looped point ([`Presentations::identified`]), when that case's
+///   scrutinee is the lambda's argument; [`root::Absent::NotOverCase`]
+///   otherwise.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`]: the fold reading admits a fixpoint over
-///   the circle that a bare reading of its case would refuse.
+///   the circle that a bare reading of its case would refuse, and a fold over a
+///   path at a looped point respects its words' cancellations.
 /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+/// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
 #[spec(ensures: |ret| match ret { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, .. } if marked == fixpoint), Maybe::Absent(reason) => reason == root::Absent::NotOverCase })]
 pub(super) fn fold_root(
-    arena: &TermArena,
+    arena: &mut TermArena,
+    presentations: &Presentations,
     fixpoint: ComputationId,
     expected: CompTypeId,
     body: ComputationId,
@@ -156,7 +161,7 @@ pub(super) fn fold_root(
     }
     Maybe::Present((case, Reading::Fold {
         fixpoint,
-        domain,
+        domain: presentations.identified(arena, domain),
         arrow: expected,
     }))
 }

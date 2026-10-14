@@ -1983,6 +1983,99 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         }
     }
 
+    /// The type of words the path type `Path(carrier, left, right)` reads as:
+    /// the declaration whose free cells loop at a point both endpoints spell,
+    /// over the parameterless data type `carrier` is.
+    ///
+    /// # Specification
+    /// - requires: `carrier` is formed.
+    /// - ensures: `Some(words)` exactly when `carrier` is a parameterless data
+    ///   type as written, `words` an admitted signature whose cells are over
+    ///   it, and `left` and `right` each a constructor term of that type
+    ///   spelling the cells' point; the words' signature is then logged as
+    ///   consulted. The kernel reads the same words, the carrier as written
+    ///   (`Presentations::words`), and admission keeps one per point.
+    /// - provides: the identification every reader of a path type shares: a
+    ///   word's check at its path, a case and a descent over a path, and
+    ///   conversion between the two.
+    /// - fails: [`CheckRefusal::DanglingNode`] for a carrier that does not
+    ///   resolve, or one outside the fragment.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's loop checks at its path, a fold over a
+    ///   path splits its words, and both checkers admit the same declarations.
+    /// - witness: `native_formers::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |words| words.is_none_or(|words| self.data_signatures.get(&words).is_some_and(|signature| signature.presentation().cells().is_some()))))]
+    pub(crate) fn words(
+        &mut self,
+        carrier: ValueTypeId,
+        (left, right): (ValueId, ValueId),
+    ) -> Result<Option<ConstantIndex>, CheckRefusal>
+    {
+        let ValueTypeView::Data {
+            declaration: sort,
+            arguments,
+        } = value_type_view(self.arena, carrier)?
+        else {
+            return Ok(None);
+        };
+        if !arguments.is_empty() {
+            return Ok(None);
+        }
+        let found = self.data_signatures.iter().find_map(|(&words, signature)| {
+            let cells = signature.presentation().cells()?;
+            (cells.sort() == sort
+                && spells(self.arena, sort, left, cells.point())
+                && spells(self.arena, sort, right, cells.point()))
+            .then_some(words)
+        });
+        if let Some(words) = found {
+            let _logged = self.consult_data(words);
+        }
+        Ok(found)
+    }
+
+    /// `value_type`, or the data type of the words it reads as when its weak
+    /// head is a path type at a looped point ([`Self::words`]).
+    ///
+    /// # Specification
+    /// - requires: `value_type` is formed.
+    /// - ensures: a fresh `Data(words, [])` exactly when the weak head is
+    ///   `Path(carrier, left, right)` and [`Self::words`] reads it as `words`;
+    ///   `value_type` itself otherwise.
+    /// - provides: the reading of a scrutinee's type and of a fold's domain.
+    /// - fails: as [`Self::whnf_value_type`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::words`].
+    /// - witness: `native_formers::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|read| read == value_type || matches!(value_type_view(self.arena, read), Ok(ValueTypeView::Data { arguments: [], .. }))))]
+    pub(crate) fn identified(
+        &mut self,
+        value_type: ValueTypeId,
+    ) -> Result<ValueTypeId, CheckRefusal>
+    {
+        let head = self.whnf_value_type(value_type)?;
+        if let ValueTypeView::Path {
+            carrier,
+            left,
+            right,
+        } = value_type_view(self.arena, head)?
+            && let Some(words) = self.words(carrier, (left, right))?
+        {
+            return Ok(self.arena.value_type_data(words, Vec::new()));
+        }
+        Ok(value_type)
+    }
+
     /// The computation type `comp_type` stands for at its head, as
     /// [`Self::whnf_value_type`] reads a value type.
     ///
@@ -2335,6 +2428,62 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     {
         self.signatures.push((constant, declared));
     }
+}
+
+/// Whether `value` is the constructor term of `sort` that the closed rule side
+/// `side` spells.
+///
+/// # Specification
+/// - requires: nothing — unreadable ids spell nothing.
+/// - ensures: `true` exactly when reading `value` in pre-order meets one
+///   constructor of `sort` per node of `side`, each with the node's tag, and no
+///   node is left over on either side; a variable node spells nothing.
+/// - provides: the endpoint comparison of [`CheckingContext::words`], as the
+///   kernel's, bounded by the side's length whatever the value's depth.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` loop over `side`'s nodes, not recursion.
+/// - measure: the nodes of `side` not yet read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`CheckingContext::words`].
+/// - witness: `native_formers::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
+#[spec(ensures: |ret| !ret || !side.is_empty())]
+fn spells(
+    arena: &CoreArena,
+    sort: ConstantIndex,
+    value: ValueId,
+    side: &[gandr_core_term::RuleNode],
+) -> bool
+{
+    let mut pending = Vec::with_capacity(side.len());
+    pending.push(value);
+    for &node in side {
+        let (Some(at), gandr_core_term::RuleNode::Constructor(tag)) = (pending.pop(), node)
+        else {
+            return false;
+        };
+        let Some(&Value::Constructor {
+            datatype,
+            tag: written,
+            ref fields,
+        }) = arena.value(at)
+        else {
+            return false;
+        };
+        if written != tag
+            || !matches!(
+                value_type_view(arena, datatype),
+                Ok(ValueTypeView::Data { declaration, .. }) if declaration == sort
+            )
+        {
+            return false;
+        }
+        pending.extend(fields.iter().rev());
+    }
+    pending.is_empty()
 }
 
 #[cfg(test)]

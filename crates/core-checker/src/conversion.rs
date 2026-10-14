@@ -778,6 +778,33 @@ fn convert(
                         );
                         true
                     },
+                    // A path at the point a type of words' cells loop at is
+                    // those words, as the kernel reads them.
+                    | (
+                        ValueTypeView::Data {
+                            declaration,
+                            arguments,
+                        },
+                        ValueTypeView::Path {
+                            carrier,
+                            left: from,
+                            right: to,
+                        },
+                    )
+                    | (
+                        ValueTypeView::Path {
+                            carrier,
+                            left: from,
+                            right: to,
+                        },
+                        ValueTypeView::Data {
+                            declaration,
+                            arguments,
+                        },
+                    ) => {
+                        arguments.is_empty()
+                            && context.words(carrier, (from, to))? == Some(declaration)
+                    },
                     | (ValueTypeView::Record(a), ValueTypeView::Record(b)) => {
                         if a.len() != b.len() || !a.keys().eq(b.keys()) {
                             return Ok(Agreement::Apart);
