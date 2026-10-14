@@ -19,7 +19,9 @@
 //! ([`bool_desc`], [`option_desc`], [`list_desc`], [`pair_desc`],
 //! [`sum_desc`]), uniformly. [`check_desc`] is the host-side well-formedness
 //! pass, and [`TypedRuleFace`] pairs a face with a signature context decoded
-//! by a caller-supplied decoder.
+//! by a caller-supplied decoder. [`sig_desc`] describes `Sig`, the datatype
+//! whose values are presentations: a [`SigValue`] is one, and its canonical
+//! bytes are the presentation's identity (the decisions are in `sig`).
 //!
 //! The crate names no type of any other gandr crate. A field's grade is the
 //! type parameter `G` of [`Code`] and [`SignDesc`], and a decoded type is the
@@ -149,6 +151,7 @@ mod desc;
 mod elaborate;
 mod generic;
 mod rule;
+mod sig;
 mod termination;
 pub mod tree;
 mod typed_rule;
@@ -247,6 +250,15 @@ pub use crate::rule::TermArgs;
 pub use crate::rule::TermNode;
 pub use crate::rule::TermView;
 pub use crate::rule::Variance;
+pub use crate::sig::SIG_CONSTRUCTORS;
+pub use crate::sig::SigFault;
+pub use crate::sig::SigOperation;
+pub use crate::sig::SigParts;
+pub use crate::sig::SigPort;
+pub use crate::sig::SigRule;
+pub use crate::sig::SigSort;
+pub use crate::sig::SigValue;
+pub use crate::sig::sig_desc;
 pub use crate::termination::Precedence;
 pub use crate::termination::Termination;
 pub use crate::termination::orient_rules;

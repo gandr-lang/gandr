@@ -2672,6 +2672,9 @@ struct Lowerer<'run, 'source>
     descents: BTreeMap<NodeIndex, native::Descent>,
     /// Each callable operation's minted type and body, by slot.
     operated: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
+    /// Each `sign` block's definition, `S : Sig`, as its minted type and
+    /// value, by slot.
+    presented: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// The frame of every capability a capability scope binds.
     capabilities: BTreeSet<ScopeId>,
     /// Each application's renaming, in source order, or the refusal of the
@@ -2966,6 +2969,7 @@ pub fn lower_module<'source>(
     lowerer.check_families(&mut sink);
     lowerer.mint_data(&mut sink);
     lowerer.mint_descriptions(&mut sink)?;
+    lowerer.mint_presentations(&mut sink)?;
     lowerer.mint_operations(&mut sink);
     lowerer.mint_instances(&mut sink);
     let mut attributes = AttributeTable::new();
@@ -3154,6 +3158,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             recursions: BTreeMap::new(),
             descents: BTreeMap::new(),
             operated: BTreeMap::new(),
+            presented: BTreeMap::new(),
             renamings: Vec::new(),
             instance_types: BTreeMap::new(),
             instantiated: BTreeMap::new(),
@@ -3624,6 +3629,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Operand::Data(_)
                     | Operand::Operation
                     | Operand::Signature
+                    | Operand::Presented
+                    | Operand::Code
                     | Operand::Model(_) => {},
                 }
             }
@@ -11242,11 +11249,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   lowering run.
     /// - ensures: a stored refusal takes precedence, then a refusal a check
     ///   after minting filed; a data declaration, or a described family the
-    ///   decoder admitted, is the index of its minted signature; an abstract
-    ///   slot is the abstract type it lowered to, and a kind witness the check
-    ///   of its type member's code at the kind; otherwise the available
-    ///   signature — written, a function tail's, or the type a model derives —
-    ///   and body select Completed, Uncompleted or Bodied.
+    ///   decoder admitted, `Sig` among them, is the index of its minted
+    ///   signature; an operation, and a `sign` block's definition, is the type
+    ///   and body minted for it; an abstract slot is the abstract type it
+    ///   lowered to, and a kind witness the check of its type member's code at
+    ///   the kind; otherwise the available signature — written, a function
+    ///   tail's, or the type a model derives — and body select Completed,
+    ///   Uncompleted or Bodied.
     /// - provides: the declaration outcome without manufacturing absent halves.
     /// - fails: a refused member witness is Unminted; if neither half exists,
     ///   the signature’s absence is preserved.
@@ -11282,6 +11291,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else if let Maybe::Present(Half { operand: Operand::Operation, .. }) = slot.definition {
                 ret == self.operated.get(&position).map_or(Maybe::Absent(lowered::Absent::Unminted), |&(declared_type, body)| Maybe::Present(DeclarationOutcome::Completed { declared_type, body }))
             }
+            else if let Maybe::Present(Half { operand: Operand::Presented, .. }) = slot.definition {
+                ret == self.presented.get(&position).map_or(Maybe::Absent(lowered::Absent::Unminted), |&(declared_type, body)| Maybe::Present(DeclarationOutcome::Completed { declared_type, body }))
+            }
             else if let Some(&sealing) = self.sealings.get(&position) {
                 ret == Maybe::Present(DeclarationOutcome::Abstract(sealing))
             }
@@ -11298,7 +11310,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Operand::Written(written) => self.value_type_at(written.node),
                         | Operand::Function => self.signature_at(half.declaration.node),
                         | Operand::Model(_) => self.modelled.get(&position).copied().map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Member(_) | Operand::Data(_) | Operand::Operation | Operand::Signature => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Member(_) | Operand::Data(_) | Operand::Operation | Operand::Signature | Operand::Presented | Operand::Code => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -11311,7 +11323,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             .get(&position)
                             .copied()
                             .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Data(_) | Operand::Operation | Operand::Signature | Operand::Model(_) => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Data(_) | Operand::Operation | Operand::Signature | Operand::Presented | Operand::Code | Operand::Model(_) => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -11379,6 +11391,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 },
             );
         }
+        if let Maybe::Present(Half {
+            operand: Operand::Presented,
+            ..
+        }) = slot.definition
+        {
+            return self.presented.get(&position).map_or(
+                Maybe::Absent(lowered::Absent::Unminted),
+                |&(declared_type, body)| {
+                    Maybe::Present(DeclarationOutcome::Completed {
+                        declared_type,
+                        body,
+                    })
+                },
+            );
+        }
         if let Some(&sealing) = self.sealings.get(&position) {
             return Maybe::Present(DeclarationOutcome::Abstract(sealing));
         }
@@ -11412,7 +11439,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Operand::Member(_)
                 | Operand::Data(_)
                 | Operand::Operation
-                | Operand::Signature => Maybe::Absent(lowered::Absent::Unminted),
+                | Operand::Signature
+                | Operand::Presented
+                | Operand::Code => Maybe::Absent(lowered::Absent::Unminted),
             },
             | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
@@ -11428,6 +11457,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Operand::Data(_)
                 | Operand::Operation
                 | Operand::Signature
+                | Operand::Presented
+                | Operand::Code
                 | Operand::Model(_) => Maybe::Absent(lowered::Absent::Unminted),
             },
             | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),

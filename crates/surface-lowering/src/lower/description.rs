@@ -1,5 +1,6 @@
 //! Described families the native data reading does not own, decoded from the
-//! same descriptions exposed to cell consumers.
+//! same descriptions exposed to cell consumers, and the presentation code
+//! `Sig` with the values `sign` blocks define.
 //!
 //! A data declaration form has one producer of its signature: the native
 //! reading, which also enters its constructors and compiles its matches. Its
@@ -7,15 +8,25 @@
 //! described family — codata today — reaches the decoder here, whose refusal
 //! is reported at the family. Reversal: a description decode that agrees with
 //! the native reading on every data form can replace it as the producer.
+//!
+//! `Sig` reaches the same decoder from [`sig_desc`], and a `sign` block's
+//! definition is its presentation's value read node for node: each
+//! constructor of the value a constructor of `Sig`, each name a `String`
+//! literal, so the core term and the identity bytes are one value in two
+//! encodings.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
+use gandr_core_term::Sort;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::description::DecodeContext;
 use gandr_core_term::description::DecodeError;
@@ -25,16 +36,28 @@ use gandr_core_term::description::ParameterLevel;
 use gandr_core_term::description::TypeArity;
 use gandr_core_term::description::TypeBinding;
 use gandr_core_term::description::decode_signature;
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::Literal;
+use gandr_kernel_term::StringLiteral;
 use gandr_surface_syntax::NodeIndex;
+use gandr_theory_levitation::ConstructorTag;
+use gandr_theory_levitation::DescValue;
+use gandr_theory_levitation::LeafBytes;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NameRef;
+use gandr_theory_levitation::PayloadNode;
+use gandr_theory_levitation::PayloadView;
+use gandr_theory_levitation::SigFault;
+use gandr_theory_levitation::sig_desc;
 use quenchant_shape::shape::Maybe;
 
 use super::Lowerer;
 use super::Reading;
 use super::Sink;
+use super::Universe;
 use crate::FragmentBoundary;
 use crate::FragmentSort;
 use crate::LoweringRefusal;
@@ -45,6 +68,8 @@ use crate::form::Former;
 use crate::form::Shape;
 use crate::form::shape_of;
 use crate::module::DataIndex;
+use crate::module::Half;
+use crate::module::Operand;
 use crate::module::SlotIndex;
 use crate::resolve::Frame;
 
@@ -149,8 +174,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the ordinary mint sweep has lowered the written classifiers.
     /// - ensures: a decoded family's signature is pushed onto the module's list
     ///   and its index recorded by its slot; decoding failures remain located
-    ///   diagnostics and refuse only their slot. Newly allocated nodes receive
-    ///   provenance without replacing older origins.
+    ///   diagnostics and refuse only their slot; a `sign` block or a top-level
+    ///   `oper`, which declares no family, is left alone. Newly allocated nodes
+    ///   receive provenance without replacing older origins.
     /// - fails: the existing fuel or molded-grammar refusal remains an engine
     ///   error.
     /// - panics: none.
@@ -191,6 +217,9 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             };
             if let Maybe::Present(_) = slot.refusal {
+                continue;
+            }
+            if let Maybe::Absent(_) = entry.classifier {
                 continue;
             }
             if self.natively_read(entry)?.0 {
@@ -248,6 +277,170 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         Ok(())
+    }
+
+    /// Mint `Sig` from its description, then each `sign` block's definition
+    /// from the value its presentation holds.
+    ///
+    /// # Specification
+    /// - requires: the collection pass has run.
+    /// - ensures: when the module holds `Sig`, its signature decoded from
+    ///   [`sig_desc`] — no parameters, `Type` at the fuss-free level — is
+    ///   pushed onto the module's list with its constructors' names and
+    ///   recorded by its slot; then every unrefused slot a `sign` block defines
+    ///   takes the type `Sig` and the constructor tree [`presentation_term`]
+    ///   reads off its value. A value the walk refuses refuses its slot at the
+    ///   block. Every node minted takes the origin of the code's slot or the
+    ///   block.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk over the
+    ///   slots exhausts the allowance.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`] and
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clean sign's definition is read back out of the
+    ///   arena as the constructor tree its value encodes, and a program
+    ///   matching on it counts its operations.
+    /// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
+    #[spec(
+        captures: before = (self.data.len(), self.presented.len()),
+        ensures: |result| result.is_err() || (self.data.len() >= before.0 && self.presented.len() >= before.1),
+    )]
+    pub(super) fn mint_presentations(
+        &mut self,
+        sink: &mut Sink<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Maybe::Present(ref sig) = self.collected.sig
+        else {
+            return Ok(());
+        };
+        let code = sig.slot;
+        let Some(slot) = self.collected.slots.get(usize::from(code))
+        else {
+            return Ok(());
+        };
+        let constant = slot.constant;
+        let at = slot.introduced_by;
+        let description = sig_desc(());
+        let before = sink.arena.watermark();
+        let kind = sink.arena.value_type_universe(
+            Sort::Ground(GroundSort::Value),
+            Level::constant(Universe::FUSS_FREE.level),
+        );
+        let self_type = sink.arena.value_type_data(constant, Vec::new());
+        let types = BTreeMap::new();
+        let context = DecodeContext {
+            self_sort: NameRef::from(description.id.name.as_ref()),
+            self_type,
+            types: &types,
+            locals: &[],
+            depth: ParameterDepth(0),
+        };
+        let decoded = decode_signature(sink.arena, &description, context, Vec::new(), kind);
+        self.record_since(sink, before, at.node);
+        let Ok(signature) = decoded
+        else {
+            return Ok(());
+        };
+        let index = DataIndex::from(self.data.len());
+        self.constructors.push(
+            description
+                .ctors
+                .iter()
+                .map(|constructor| String::from(constructor.name.as_ref()))
+                .collect(),
+        );
+        self.data.push(Arc::new(signature));
+        let _first = self.described.insert(code, index);
+        for position in 0 .. self.collected.slots.len() {
+            self.fuel.spend()?;
+            let Some(slot) = self.collected.slots.get(position)
+            else {
+                break;
+            };
+            let defines = matches!(
+                slot.definition,
+                Maybe::Present(Half {
+                    operand: Operand::Presented,
+                    ..
+                })
+            );
+            if !defines || matches!(slot.refusal, Maybe::Present(_)) {
+                continue;
+            }
+            let block = slot.introduced_by;
+            let Some(entry) = self.collected.descriptions.get(&block.node)
+            else {
+                continue;
+            };
+            let Maybe::Present(ref presentation) = entry.presentation
+            else {
+                continue;
+            };
+            let before = sink.arena.watermark();
+            let declared = sink.arena.value_type_data(constant, Vec::new());
+            let body = presentation_term(sink.arena, presentation.value.as_value(), declared);
+            self.record_since(sink, before, block.node);
+            match body {
+                | Ok(body) => {
+                    let _first = self
+                        .presented
+                        .insert(SlotIndex::from(position), (declared, body));
+                },
+                | Err(_fault) => {
+                    if let Some(node) = self.tree.node(block.node)
+                        && let Shape::Form { name, .. } = shape_of(self.pbg, node)?
+                        && let Some(slot) = self.collected.slots.get_mut(position)
+                    {
+                        slot.refuse(block.node, LoweringRefusal::OutOfFragment {
+                            span: block.span,
+                            form: name,
+                            sort: FragmentSort::Declaration,
+                            boundary: FragmentBoundary::Unadmitted,
+                        });
+                    }
+                },
+            }
+        }
+        Ok(())
+    }
+
+    /// Record the origin of the form at `node` on every value and value type
+    /// minted since `before`.
+    ///
+    /// # Specification
+    /// - requires: `before` is a watermark of `sink`'s arena.
+    /// - ensures: each node minted since `before` takes the form's origin when
+    ///   the form has one; nothing otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the origin table records without exposing what it
+    ///   held before.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_presentations`].
+    /// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
+    fn record_since(
+        &self,
+        sink: &mut Sink<'_>,
+        before: gandr_core_term::ArenaWatermark,
+        node: NodeIndex,
+    )
+    {
+        let Maybe::Present(origin) = self.origin_at(node)
+        else {
+            return;
+        };
+        for id in sink.arena.values_since(before) {
+            sink.origins.record_value(id, origin);
+        }
+        for id in sink.arena.value_types_since(before) {
+            sink.origins.record_value_type(id, origin);
+        }
     }
 
     /// Interpret a family under every explicit parameter, with no carrier
@@ -330,4 +523,100 @@ impl<'source> Lowerer<'_, 'source>
         };
         decode_signature(arena, &entry.description, context, parameters, kind)
     }
+}
+
+/// One step of [`presentation_term`]'s walk.
+enum Step<'value>
+{
+    /// Read a constructor of the value and its payload.
+    Visit(ConstructorTag, PayloadNode<'value>),
+    /// Mint a name.
+    Text(&'value LeafBytes),
+    /// Mint a constructor over the last `fields` values minted.
+    Build(ConstructorTag, usize),
+}
+
+/// The core term of `value`, a value of the description of `Sig`, each node
+/// of it a constructor of `datatype`.
+///
+/// # Specification
+/// - requires: `datatype` is the nominal type `Sig`.
+/// - ensures: one constructor per constructor of `value`, at its tag, over its
+///   fields in payload order — each name field a `String` literal of the name's
+///   text, each recursive field the term of its value.
+/// - fails: [`SigFault::Payload`] for a payload that is not a product of names
+///   and recursions; [`SigFault::Text`] for a name that is not UTF-8.
+/// - panics: none.
+/// - intension: an explicit worklist; a visit pushes the constructor's build
+///   step and then its fields, so each field's term is complete before the next
+///   begins and a build pops exactly its own fields.
+///
+/// # Errors
+/// [`SigFault::Payload`] and [`SigFault::Text`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a presentation of one sort, one operation and one rule
+///   reads back as the constructor tree its value encodes, names and tags
+///   included.
+/// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
+#[spec(ensures: |result| result.is_ok() || matches!(result, Err(SigFault::Payload | SigFault::Text)))]
+fn presentation_term(
+    arena: &mut CoreArena,
+    value: &DescValue,
+    datatype: ValueTypeId,
+) -> Result<ValueId, SigFault>
+{
+    let mut steps = vec![Step::Visit(value.ctor, value.payload.to_node())];
+    let mut built: Vec<ValueId> = Vec::new();
+    while let Some(step) = steps.pop() {
+        match step {
+            | Step::Visit(tag, payload) => {
+                let mut fields = Vec::new();
+                let mut pending = vec![payload];
+                while let Some(node) = pending.pop() {
+                    match node.view() {
+                        | PayloadView::Unit => {},
+                        | PayloadView::Pair(parts) => {
+                            let first = pending.len();
+                            pending.extend(parts);
+                            if let Some(pushed) = pending.get_mut(first ..) {
+                                pushed.reverse();
+                            }
+                        },
+                        | PayloadView::Rec { ctor, mut payload } => {
+                            let Some(inner) = payload.next()
+                            else {
+                                return Err(SigFault::Payload);
+                            };
+                            fields.push(Step::Visit(ctor, inner));
+                        },
+                        | PayloadView::Leaf(bytes) => fields.push(Step::Text(bytes)),
+                        | PayloadView::Inj { .. } | PayloadView::Abs { .. } => {
+                            return Err(SigFault::Payload);
+                        },
+                    }
+                }
+                steps.push(Step::Build(tag, fields.len()));
+                steps.extend(fields.into_iter().rev());
+            },
+            | Step::Text(bytes) => {
+                let Ok(text) = core::str::from_utf8(bytes.as_ref())
+                else {
+                    return Err(SigFault::Text);
+                };
+                built.push(
+                    arena.value_literal(Literal::Text(StringLiteral::new(String::from(text)))),
+                );
+            },
+            | Step::Build(tag, count) => {
+                let fields = built.split_off(built.len().saturating_sub(count));
+                built.push(arena.value_constructor(
+                    datatype,
+                    gandr_kernel_term::ConstructorTag::from(usize::from(tag)),
+                    fields,
+                ));
+            },
+        }
+    }
+    built.pop().ok_or(SigFault::Payload)
 }

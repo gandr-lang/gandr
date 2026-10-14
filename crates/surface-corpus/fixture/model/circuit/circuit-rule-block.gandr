@@ -4,7 +4,7 @@ data Nat : Type {
   Succ : (n : Nat) --> Nat;
 }
 
-sign Nat {
+sign NatSum {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
 

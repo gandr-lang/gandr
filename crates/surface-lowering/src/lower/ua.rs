@@ -27,14 +27,15 @@
 //!   over, and attributes on the declaration, which put the statement's meaning
 //!   outside the term. Reversal: a catalogue cheap enough at every bound a
 //!   program meets lets `k` be inferred and written only to narrow it.
-//! - **Descriptions are named, translators keyed by generator.** A `sign` block
-//!   enters no term namespace, so `a` and `b` are resolved against the module's
-//!   `sign` blocks by name, and the record labels are the generator names a
+//! - **Descriptions are named, translators keyed by generator.** `a` and `b`
+//!   are resolved against the module's `sign` blocks by name — a block's name
+//!   also defines the block's value at `Sig`, but the species is read off the
+//!   block's description — and the record labels are the generator names a
 //!   reader already sees in the block. The alternative, translators listed
 //!   positionally in corolla order, makes the reader recompute the corolla
 //!   catalogue to see which translator moves which generator. Reversal: a
-//!   description namespace shared with the term namespace lets `a` and `b` be
-//!   any term that denotes a description.
+//!   species read off a `Sig` value lets `a` and `b` be any term that
+//!   normalises to a presentation.
 //! - **The lowering reads, the checker decides.** The lowering refuses only
 //!   what it can see in the syntax: a head that is not `ua` at two literals, an
 //!   operand count other than four, a name no `sign` block declares, a block

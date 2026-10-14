@@ -1,5 +1,6 @@
 //! Consumer-visible ruled-signature boundaries.
 
+use alloc::vec;
 use core::fmt::Write as _;
 
 use gandr_surface_parser::parse;
@@ -460,35 +461,89 @@ sign Wheel {
     .unwrap();
     let [ref wheel] = *module.declarations()
     else {
-        panic!("the refused block is one declaration")
+        panic!(
+            "the refused block is one declaration, and mints no `Sig`: {:?}",
+            module.declarations()
+        )
     };
     assert_eq!(wheel.name().as_ref(), "Wheel");
     assert_eq!(
         wheel.role(),
-        crate::module::Role::Held,
-        "its name enters no namespace"
+        crate::module::Role::Declared,
+        "its name is a declaration"
     );
     assert!(matches!(
         wheel.outcome(),
         crate::DeclarationOutcome::Refused(crate::LoweringRefusal::OutOfFragment {
+            span,
             boundary: crate::FragmentBoundary::Unadmitted,
             ..
-        })
+        }) if source
+            .get(usize::from(span.start()) .. usize::from(span.end()))
+            .is_some_and(|member| member.starts_with("rule spin"))
     ));
     assert!(
         source
             .get(usize::from(wheel.span().start()) .. usize::from(wheel.span().end()))
-            .is_some_and(|member| member.starts_with("rule spin")),
-        "the refusal stands at its member"
+            .is_some_and(|block| block.starts_with("sign Wheel")),
+        "the declaration is the block, refused at its member"
     );
-    let Maybe::Present(key) = wheel.signature()
+    let Maybe::Present(key) = wheel.definition()
     else {
-        panic!("the block is the declaration's half")
+        panic!("the block is the declaration's definition")
     };
     assert_eq!(
         module.attributes().entries(key).len(),
         1_usize,
         "the decoration states the block's refusal"
+    );
+}
+
+#[test]
+fn a_refused_top_level_operation_states_its_refusal()
+{
+    let source = "@[ refuses(\"OutOfFragment\") ]\noper split : (b : Bit) --> (_ : Bit, _ : Bit) {\n  node : tee(b) --> (_, _);\n}\n";
+    let grammar = grammar();
+    let tree = parse(&grammar, SourceText::from(source))
+        .unwrap()
+        .into_tree();
+    let mut arena = gandr_core_term::CoreArena::new();
+    let module = crate::lower_module(
+        &grammar,
+        &tree,
+        &mut arena,
+        crate::LoweringBudget::DEFAULT,
+        crate::namespace::Recognition::default(),
+    )
+    .unwrap();
+    let [ref split] = *module.declarations()
+    else {
+        panic!(
+            "the refused operation is one declaration: {:?}",
+            module.declarations()
+        )
+    };
+    assert_eq!(split.name().as_ref(), "split");
+    assert_eq!(
+        split.role(),
+        crate::module::Role::Held,
+        "its name enters no namespace"
+    );
+    assert!(matches!(
+        split.outcome(),
+        crate::DeclarationOutcome::Refused(crate::LoweringRefusal::OutOfFragment {
+            boundary: crate::FragmentBoundary::Unadmitted,
+            ..
+        })
+    ));
+    let Maybe::Present(key) = split.signature()
+    else {
+        panic!("the operation is the declaration's half")
+    };
+    assert_eq!(
+        module.attributes().entries(key).len(),
+        1_usize,
+        "the decoration states the operation's refusal"
     );
 }
 
@@ -719,13 +774,72 @@ fn a_doubling_body_declines_on_the_derivation_node_budget()
     assert_eq!(report.declarations[0].description.circuits.as_ref(), []);
 }
 
+/// The constructor tree `value` holds, each constructor by its name in `Sig`
+/// and each name quoted.
+///
+/// # Specification
+/// trivial.
+fn spelled(
+    arena: &gandr_core_term::CoreArena,
+    value: gandr_core_term::ValueId,
+) -> alloc::string::String
+{
+    /// One piece of the rendering.
+    enum Piece
+    {
+        /// A value to render.
+        Term(gandr_core_term::ValueId),
+        /// Fixed text.
+        Text(&'static str),
+    }
+    let mut out = alloc::string::String::new();
+    let mut pending = alloc::vec![Piece::Term(value)];
+    while let Some(piece) = pending.pop() {
+        match piece {
+            | Piece::Text(text) => out.push_str(text),
+            | Piece::Term(id) => match arena.value(id) {
+                | Some(&gandr_core_term::Value::Constructor {
+                    tag, ref fields, ..
+                }) => {
+                    out.push_str(
+                        gandr_theory_levitation::SIG_CONSTRUCTORS
+                            .get(usize::from(tag))
+                            .copied()
+                            .unwrap_or("?"),
+                    );
+                    if fields.is_empty() {
+                        continue;
+                    }
+                    pending.push(Piece::Text(")"));
+                    for (at, &field) in fields.iter().enumerate().rev() {
+                        pending.push(Piece::Term(field));
+                        if at > 0 {
+                            pending.push(Piece::Text(", "));
+                        }
+                    }
+                    pending.push(Piece::Text("("));
+                },
+                | Some(&gandr_core_term::Value::Literal(gandr_kernel_term::Literal::Text(
+                    ref text,
+                ))) => {
+                    write!(out, "\"{}\"", AsRef::<str>::as_ref(text)).unwrap();
+                },
+                | other => panic!("not a presentation node: {other:?}"),
+            },
+        }
+    }
+    out
+}
+
 #[test]
-fn a_sign_block_is_a_declaration_rather_than_an_unsupported_item()
+fn a_sign_block_defines_its_presentation()
 {
     let grammar = grammar();
     let tree = parse(
         &grammar,
-        SourceText::from("sign Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat; }"),
+        SourceText::from(
+            "sign Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat; }\nsign Pointed { sort One : Type; oper pt : () --> (p : One); }\n",
+        ),
     )
     .unwrap()
     .into_tree();
@@ -738,9 +852,170 @@ fn a_sign_block_is_a_declaration_rather_than_an_unsupported_item()
         crate::namespace::Recognition::default(),
     )
     .unwrap();
-    assert_eq!(module.declarations(), []);
-    assert_eq!(module.descriptions().declarations.len(), 1);
     assert_eq!(module.descriptions().diagnostics, []);
+    let [ref code, ref nat, ref pointed] = *module.declarations()
+    else {
+        panic!("`Sig` once, then each sign: {:?}", module.declarations())
+    };
+    assert_eq!(
+        [code, nat, pointed]
+            .map(|declaration| alloc::string::String::from(declaration.name().as_ref())),
+        ["Sig", "Nat", "Pointed"]
+    );
+    let crate::DeclarationOutcome::Data(index) = code.outcome()
+    else {
+        panic!("`Sig` is a data family: {:?}", code.outcome())
+    };
+    let Maybe::Present(signature) = module.data(index)
+    else {
+        panic!("its signature is minted")
+    };
+    assert_eq!(
+        signature
+            .constructors()
+            .iter()
+            .map(alloc::vec::Vec::len)
+            .collect::<alloc::vec::Vec<_>>(),
+        [3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2],
+        "each constructor's names, then its recursions"
+    );
+    let mut declarations = alloc::vec![gandr_core_checker::Declaration::data(
+        code.constant(),
+        alloc::sync::Arc::clone(signature),
+        gandr_core_checker::OriginToken::from(0_usize),
+    )];
+    let mut bodies = alloc::vec::Vec::new();
+    for (origin, sign) in [nat, pointed].into_iter().enumerate() {
+        let crate::DeclarationOutcome::Completed {
+            declared_type,
+            body,
+        } = sign.outcome()
+        else {
+            panic!("a sign defines a value: {:?}", sign.outcome())
+        };
+        assert_eq!(
+            arena.value_type(declared_type),
+            Some(&gandr_core_term::ValueType::Data {
+                declaration: code.constant(),
+                arguments: alloc::vec::Vec::new(),
+            }),
+            "of type `Sig`"
+        );
+        bodies.push(spelled(&arena, body));
+        declarations.push(gandr_core_checker::Declaration::new(
+            sign.constant(),
+            Maybe::Present(declared_type),
+            Maybe::Present(body),
+            gandr_core_checker::OriginToken::from(origin.saturating_add(1)),
+        ));
+    }
+    assert_eq!(
+        bodies,
+        [
+            r#"Presents(Sort("Nat", End, End), Oper("add", Port("", "Nat", End, Port("", "Nat", End, End)), Port("", "Nat", End, End), End), End)"#,
+            r#"Presents(Sort("One", End, End), Oper("pt", End, Port("p", "One", End, End), End), End)"#,
+        ],
+        "each value read node for node, an unnamed port at the empty name"
+    );
+    let report = gandr_core_checker::check_module(
+        &mut gandr_core_checker::CheckingContext::new(
+            &mut arena,
+            gandr_core_checker::CheckBudget::DEFAULT,
+        ),
+        &declarations,
+    );
+    let verdicts: alloc::vec::Vec<_> = report
+        .judged()
+        .iter()
+        .map(gandr_core_checker::Judged::verdict)
+        .collect();
+    assert!(
+        matches!(verdicts.as_slice(), [
+            gandr_core_checker::Verdict::Data,
+            gandr_core_checker::Verdict::Checked { .. },
+            gandr_core_checker::Verdict::Checked { .. }
+        ]),
+        "the checker forms `Sig` and checks each value at it: {verdicts:?}"
+    );
+}
+
+#[test]
+fn the_description_is_read_off_the_value()
+{
+    let source = "sign CatShape {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : Ob) --> Hom(a,a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp(id(a), f) ==> f;\n}\n";
+    let report = described(source);
+    assert_eq!(report.diagnostics, []);
+    let [ref sign] = *report.declarations.as_slice()
+    else {
+        panic!("one sign")
+    };
+    let Maybe::Present(ref presentation) = sign.presentation
+    else {
+        panic!("a sign presents")
+    };
+    let parts = presentation.value.decode().unwrap();
+    let description = &sign.description;
+    assert_eq!(
+        description
+            .sorts
+            .iter()
+            .map(|sort| (sort.name.clone(), sort.indices.to_vec()))
+            .collect::<Vec<_>>(),
+        [
+            (Name::from("Ob"), Vec::new()),
+            (Name::from("Hom"), vec![
+                SortIndex::new("dom", "Ob"),
+                SortIndex::new("cod", "Ob")
+            ]),
+        ],
+        "each sort the value codes, over its index telescope"
+    );
+    assert_eq!(
+        description
+            .opers
+            .iter()
+            .map(|operation| operation.name.clone())
+            .collect::<Vec<_>>(),
+        parts
+            .operations
+            .iter()
+            .map(|operation| operation.name.clone())
+            .collect::<Vec<_>>()
+    );
+    let [ref id, _] = *description.opers.as_ref()
+    else {
+        panic!("two operations")
+    };
+    assert_eq!(
+        (id.arity.inputs.to_vec(), id.arity.outputs.to_vec()),
+        (vec![SortRef::new("a", "Ob")], vec![SortRef::new(
+            "_1",
+            "Hom(a, a)"
+        )]),
+        "an unnamed port at its placeholder, its sort spelled from the value"
+    );
+    let [ref face] = *description.rules.as_ref()
+    else {
+        panic!("one face")
+    };
+    let [ref rule] = *parts.rules.as_slice()
+    else {
+        panic!("one rule")
+    };
+    let [span] = *presentation.placement.faces.as_slice()
+    else {
+        panic!("one placed face")
+    };
+    assert_eq!(
+        (&face.lhs, &face.rhs, face.provenance),
+        (&rule.left, &rule.right, surface_span(span)),
+        "the face is the value's rule at its member's span"
+    );
+    assert!(
+        source
+            .get(usize::from(span.start()) .. usize::from(span.end()))
+            .is_some_and(|member| member.starts_with("rule unitL"))
+    );
 }
 
 #[test]

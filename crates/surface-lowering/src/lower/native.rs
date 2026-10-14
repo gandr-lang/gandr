@@ -317,6 +317,7 @@ use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::module::Constructor;
 use crate::module::DataIndex;
+use crate::module::Generators;
 use crate::module::Half;
 use crate::module::Operand;
 use crate::origin::ArmOrigin;
@@ -443,11 +444,6 @@ struct PatternAt(usize);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct ArmAt(usize);
-
-/// A data declaration, by its position in the collection's data list.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct FormAt(usize);
 
 /// An arm variable, numbered in source order.
 #[repr(transparent)]
@@ -599,11 +595,12 @@ enum Matcher
     Binder(VariableAt),
     /// `?`: a pattern the author has not written.
     Hole(HoleId),
-    /// A constructor of the data declaration at `form`, with its fields.
+    /// A constructor of the family `form` reads its generators from, with its
+    /// fields.
     Constructor
     {
-        /// The family's position in the collection's data list.
-        form: FormAt,
+        /// Where the family's generators are read from.
+        form: Generators,
         /// The constructor's tag.
         tag: usize,
         /// The field patterns, in the part store.
@@ -906,9 +903,8 @@ enum Head
 {
     /// A hole: the row's match is undecided.
     Hole(HoleId),
-    /// A constructor of the data declaration at this position of the
-    /// collection's data list.
-    Data(FormAt),
+    /// A constructor of the family whose generators are read from here.
+    Data(Generators),
     /// A boolean.
     Boolean,
     /// This integer.
@@ -1206,11 +1202,14 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
         }
         let frame = self.require(site, Produced::Value)?;
-        let parameters = self
-            .collected
-            .data
-            .get(constructor.form)
-            .map_or(0_usize, |form| form.parameters.len());
+        let parameters = match constructor.form {
+            | Generators::Written(form) => self
+                .collected
+                .data
+                .get(form)
+                .map_or(0_usize, |written| written.parameters.len()),
+            | Generators::Presentation => 0_usize,
+        };
         let classifier = match self.classifiers.get(&site.at.node) {
             | Some(&written) => Maybe::Present(written),
             | None if parameters == 0 => Maybe::Absent(classified::Absent::Inserted),
@@ -1362,7 +1361,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the parameter count of the data declaration whose slot takes
-    ///   `constant`; the undeclared absence for any other declaration.
+    ///   `constant`, and none for `Sig`; the undeclared absence for any other
+    ///   declaration.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1392,6 +1392,10 @@ impl<'source> Lowerer<'_, 'source>
                 .map_or(Maybe::Absent(family::Absent::Undeclared), |written| {
                     Maybe::Present(OperandCount::from(written.parameters.len()))
                 }),
+            | Some(Maybe::Present(Half {
+                operand: Operand::Code,
+                ..
+            })) => Maybe::Present(OperandCount::from(0_usize)),
             | _ => Maybe::Absent(family::Absent::Undeclared),
         }
     }
@@ -1978,7 +1982,7 @@ impl<'source> Lowerer<'_, 'source>
             .collect();
 
         Ok(Matcher::Constructor {
-            form: FormAt(constructor.form),
+            form: constructor.form,
             tag: constructor.tag,
             fields: allocated(patterns, work, &queued),
         })
@@ -2449,22 +2453,28 @@ impl<'source> Lowerer<'_, 'source>
         patterns: &Written,
         item: &Work,
         switch: Switch<'source>,
-        form: FormAt,
+        form: Generators,
         tree: &mut Compiling,
     ) -> Result<Test, LoweringRefusal<'source>>
     {
-        let arities: Vec<usize> = self
-            .collected
-            .data
-            .get(form.0)
-            .map(|written| {
-                written
-                    .generators
-                    .iter()
-                    .map(|generator| generator.fields.len())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let arities: Vec<usize> = match form {
+            | Generators::Written(position) => self
+                .collected
+                .data
+                .get(position)
+                .map(|written| {
+                    written
+                        .generators
+                        .iter()
+                        .map(|generator| generator.fields.len())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            | Generators::Presentation => match self.collected.sig {
+                | Maybe::Present(ref sig) => sig.arities.clone(),
+                | Maybe::Absent(_) => Vec::new(),
+            },
+        };
         let mut branches = Vec::with_capacity(arities.len());
         for (tag, &arity) in arities.iter().enumerate() {
             let mut specialised = Vec::new();

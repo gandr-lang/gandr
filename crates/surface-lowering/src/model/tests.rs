@@ -3,16 +3,24 @@
 
 use alloc::format;
 use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
+use gandr_theory_levitation::ConstructorTag;
+use gandr_theory_levitation::DescValue;
+use gandr_theory_levitation::Payload;
+use gandr_theory_levitation::SigFault;
+use gandr_theory_levitation::SigValue;
 use quenchant_shape::shape::Maybe;
 
 use super::Binder;
 use super::ModelFault;
 use super::ModelForm;
 use super::ModelSignature;
+use super::Presentation;
+use super::PresentationFault;
 use super::SortTerm;
 use super::derive;
 use crate::description::elaborate_descriptions;
@@ -31,11 +39,11 @@ const CAT_SHAPE: &str = r"sign CatShape {
   rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
 }";
 
-/// The model signature of the one sign `source` declares.
+/// The presentation of the one sign `source` declares.
 ///
 /// # Specification
 /// trivial.
-fn derived<'source, Text>(source: Text) -> ModelSignature
+fn presented<'source, Text>(source: Text) -> Presentation
 where
     Text: Into<SourceText<'source>>,
 {
@@ -50,7 +58,18 @@ where
     else {
         panic!("a sign presents its members");
     };
-    derive(presentation)
+    presentation.clone()
+}
+
+/// The model signature of the one sign `source` declares.
+///
+/// # Specification
+/// trivial.
+fn derived<'source, Text>(source: Text) -> ModelSignature
+where
+    Text: Into<SourceText<'source>>,
+{
+    derive(&presented(source)).unwrap()
 }
 
 /// A sort term as the surface spells it.
@@ -242,5 +261,72 @@ fn an_underivable_component_keeps_its_fault()
             .iter()
             .all(|component| component.form != Err(ModelFault::Inherited)),
         "no component names a refused one"
+    );
+}
+
+#[test]
+fn a_presentation_reads_its_members_off_its_value()
+{
+    let presentation = presented(CAT_SHAPE);
+    let members = presentation.members().unwrap();
+    let [ref id, ref comp] = *members.operations.as_slice()
+    else {
+        panic!("two operations: {:?}", members.operations);
+    };
+    let names = |ports: &[super::Port]| -> Vec<String> {
+        ports.iter().map(|port| format!("{}", port.name)).collect()
+    };
+    assert_eq!(
+        (names(&id.inputs), names(&id.outputs)),
+        (vec![String::from("a")], vec![String::from("_1")]),
+        "an unnamed output reads as the placeholder of its position"
+    );
+    assert_eq!(
+        (names(&comp.inputs), names(&comp.outputs)),
+        (vec![String::from("f"), String::from("g")], vec![
+            String::from("_2")
+        ]),
+        "positions count the inputs first"
+    );
+    assert_eq!(
+        members
+            .laws
+            .iter()
+            .map(|law| format!("{} : {} ==> {}", law.name, law.left, law.right))
+            .collect::<Vec<_>>(),
+        [
+            "unitL : comp(id(a), f) ==> f",
+            "unitR : comp(f, id(b)) ==> f",
+            "assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h))"
+        ],
+        "each face is the value's two terms"
+    );
+
+    let mut short = presentation.clone();
+    let _dropped = short.placement.operations.pop();
+    assert_eq!(
+        short.members(),
+        Err(PresentationFault::Unplaced),
+        "a member the placement does not place"
+    );
+
+    let mut ended = presentation;
+    ended.value = SigValue::from_value(DescValue::new(
+        ConstructorTag::from(1_usize),
+        Payload::unit(),
+    ));
+    assert_eq!(
+        ended.members(),
+        Err(PresentationFault::Value(SigFault::Misplaced(
+            ConstructorTag::from(1_usize)
+        ))),
+        "a value that codes no presentation"
+    );
+    assert_eq!(
+        derive(&ended).map(|model| model.components.len()),
+        Err(PresentationFault::Value(SigFault::Misplaced(
+            ConstructorTag::from(1_usize)
+        ))),
+        "and derives no model"
     );
 }

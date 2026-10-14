@@ -3,8 +3,9 @@
 //! # Signature blocks
 //!
 //! A `sign` block is a description judgment, not an ordinary native value
-//! family: it has no family classifier and creates no placeholder core value.
-//! It retains declared sorts and their index telescopes, operation boundaries
+//! family: it has no family classifier, and it defines its name as a value of
+//! `Sig`, the presentation code (§ A presentation is a value). It retains
+//! declared sorts and their index telescopes, operation boundaries
 //! with every output port, written faces and circuit rules. An operation
 //! `f : (m : N, n : N) --> (q : N, r : N)` is one monomial per output, as a
 //! `data` member's is (Spivak, Garner and Fairbanks, _Functorial Aggregation_,
@@ -28,28 +29,52 @@
 //! `description::sign::tests::a_feed_statement_declines_naming_the_wheel_obligation`,
 //! `description::sign::tests::sign_declines_and_malformed_wiring_are_refused_apart`.
 //!
-//! **Choice.** A `sign` block or a top-level `oper` declares no core constant,
-//! so one that refuses nothing is no declaration. Each refusal raised inside it
-//! is a held declaration at its member's span whose signature half is the
-//! block, so the attribute blocks written before the block state it,
-//! `@[ refuses("OutOfFragment") ] sign …`, and every refusal of one block reads
-//! that expectation; its name enters no namespace. The alternatives were a
-//! declaration per block with an outcome of its own, which every consumer of a
-//! declaration outcome would have to learn before a block has anything to
-//! check, and refusals with no half, which no expectation can state and which
-//! kept every refused block's source pending. A decoration on a block that
-//! refuses nothing decorates no declaration and refuses the source as a stray
-//! block. A sign's models are checked against `Model(S)`, which the lowering
-//! derives from the block's presentation where a module names it, so the block
-//! still takes no slot (the decision is in `module::model`). The choice
-//! reverses when the derived signature becomes a core declaration: the block
-//! then takes its slot whether or not a member refuses.
-//! Witnesses:
+//! # A presentation is a value
+//!
+//! The reader reads a block's members once, into the parts of a presentation
+//! (`SigParts`): each sort with its index ports, each operation with its input
+//! and output ports, each face as its two terms. Those parts are encoded once,
+//! as a `SigValue`, and everything after reads the value: the block's
+//! description is decoded from it, `Model(S)` derives from it, and the core
+//! definition `S : Sig` is it, node for node. Beside the value the reader keeps
+//! only provenance — the name tile of each member and the span of each face —
+//! and the circuit rules `Sig` does not code yet. An unnamed port carries the
+//! empty name in the value, so where it was written leaves the presentation's
+//! identity unchanged; every reading names it by its position, `_1` for the
+//! second port of an operation. A port's sort is spelled from the value, so
+//! `Hom(a,a)` and `Hom(a, a)` are one sort.
+//!
+//! **Choice.** The description is a view of the value rather than replaced by
+//! it: the cell gate, the rules check and coincidence read a `SignDesc`, and a
+//! view decoded from the value keeps them one consumer of one table while the
+//! block is read once. The alternative was the value replacing the table in
+//! every consumer, which moves the cell gate and coincidence onto `Sig` before
+//! `Sig` codes what they read — circuit rules among them. The choice reverses
+//! when `Sig` codes everything a description holds: the consumers then read
+//! the value and the view retires. Witness:
+//! `description::sign::tests::the_description_is_read_off_the_value`.
+//!
+//! **Choice.** A `sign` block takes a declared slot under its name whose
+//! definition is the block's value at `Sig`, whether or not a member refuses:
+//! a refused block's slot carries its first refusal, at that member's span,
+//! and each further refusal is a held declaration at its own member's span
+//! whose signature half is the block, so the attribute blocks written before
+//! the block state every one of them, `@[ refuses("OutOfFragment") ] sign …`.
+//! A top-level `oper` declares no core constant: each refusal raised inside it
+//! is such a held declaration and its name enters no namespace. The
+//! alternatives were a refused block taking no slot, which leaves `S` naming
+//! nothing a module or a program can reach, and a block's refusals with no
+//! half, which no expectation can state. `Model(S)` derives from the value of
+//! a refused block too, as it never inherited the cell gate (the decision is
+//! in `module::model`). Witnesses:
+//! `description::sign::tests::a_sign_block_defines_its_presentation`,
 //! `description::sign::tests::a_refused_sign_block_states_its_refusal`,
+//! `description::sign::tests::a_refused_top_level_operation_states_its_refusal`,
 //! `description::sign::tests::a_top_level_operation_declines_its_filler_by_name`.
 
 use alloc::collections::BTreeMap;
 use alloc::format;
+use alloc::string::ToString as _;
 use alloc::vec::Vec;
 
 use gandr_surface_syntax::ByteSpan;
@@ -68,6 +93,12 @@ use gandr_theory_levitation::NominalSerial;
 use gandr_theory_levitation::OperDesc;
 use gandr_theory_levitation::RewritePort;
 use gandr_theory_levitation::RuleFace;
+use gandr_theory_levitation::SigOperation;
+use gandr_theory_levitation::SigParts;
+use gandr_theory_levitation::SigPort;
+use gandr_theory_levitation::SigRule;
+use gandr_theory_levitation::SigSort;
+use gandr_theory_levitation::SigValue;
 use gandr_theory_levitation::SignDesc;
 use gandr_theory_levitation::SortDesc;
 use gandr_theory_levitation::SortIndex;
@@ -80,6 +111,7 @@ use quenchant_shape::shape::Maybe;
 use super::DescribedDeclaration;
 use super::DescriptionDiagnostic;
 use super::DescriptionFault;
+use super::DescriptionGrade;
 use super::Reader;
 use super::Run;
 use super::Spelling;
@@ -104,14 +136,13 @@ use crate::circuit::OutputCount;
 use crate::circuit::SignatureFault;
 use crate::form::Piece;
 use crate::form::Placed;
-use crate::model::Port;
+use crate::model::Placement;
 use crate::model::Presentation;
+use crate::model::PresentationFault;
 use crate::model::PresentedCircuit;
-use crate::model::PresentedLaw;
-use crate::model::PresentedOperation;
-use crate::model::PresentedSort;
 use crate::model::SortTerm;
 use crate::model::presentation;
+use crate::model::presented_names;
 
 /// The two sides of a signature and its rewrite-sorted binders.
 struct Boundary
@@ -174,21 +205,26 @@ impl HeadKind
 }
 
 /// A sign block's rule member: a face it writes or a circuit it wires, each
-/// with what it presents to the model signature and where it is written.
+/// with what it presents and where it is written.
 enum RuleMember
 {
-    /// A written face `rule name : lhs ==> rhs`.
-    Face(RuleFace, PresentedLaw, WrittenFace),
+    /// A written face `rule name : lhs ==> rhs`, its name tile and its whole
+    /// member.
+    Face(SigRule, Placed, ByteSpan, WrittenFace),
     /// A circuit rule whose sphere its wiring derives.
     Circuit(CircuitRule, PresentedCircuit, WrittenCircuit),
 }
 
 impl Reader<'_, '_>
 {
-    /// Read each sign member independently, preserving its declared sort set.
+    /// Read each sign member independently, preserving its declared sort set,
+    /// into the block's `Sig` value and the description that value reads as.
     ///
     /// # Specification
-    /// - ensures: an unreadable member does not consume a following member.
+    /// - ensures: an unreadable member does not consume a following member;
+    ///   every member read enters the presentation's value, its circuits beside
+    ///   it, and the description is [`described`] of that value with the
+    ///   circuits added.
     /// - fails: a malformed signature head refuses the whole declaration.
     /// - panics: none.
     /// - executable: none — a member's independence is a relation between the
@@ -202,6 +238,7 @@ impl Reader<'_, '_>
     ///   both neighbours read, and an unreadable member keeps its own report.
     /// - witness: `description::sign::tests::a_declined_rule_member_leaves_the_members_after_it_intact`
     /// - witness: `description::sign::tests::an_unreadable_member_keeps_its_own_report`
+    /// - witness: `description::sign::tests::the_description_is_read_off_the_value`
     pub(super) fn signature(
         &self,
         at: Placed,
@@ -215,9 +252,9 @@ impl Reader<'_, '_>
             return Err(run.fault(DescriptionFault::Malformed));
         }
         let members = split_members(run.remaining());
-        let mut sorts = Vec::new();
+        let mut parts = SigParts::default();
+        let mut placement = Placement::default();
         let mut scope = BTreeMap::new();
-        let mut presentation = Presentation::default();
         let mut written = WrittenMembers::default();
         for member in &members {
             let span = member_span(member, at.span);
@@ -244,18 +281,17 @@ impl Reader<'_, '_>
                 continue;
             }
             match self.signature_sort(&mut reading) {
-                | Ok((sort, presented, member)) => {
-                    sorts.push(sort);
-                    presentation.sorts.push(presented);
+                | Ok((sort, tile, member)) => {
+                    parts.sorts.push(sort);
+                    placement.sorts.push(tile);
                     written.sorts.push(member);
                 },
                 | Err(diagnostic) => diagnostics.push(diagnostic),
             }
         }
-        let mut operations = Vec::new();
         let mut operation_spans = Vec::new();
         let mut circuits = Vec::new();
-        let mut faces = Vec::new();
+        let mut presented_circuits = Vec::new();
         for member in members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
@@ -266,26 +302,27 @@ impl Reader<'_, '_>
                 Err(reading.signature_fault(SignatureFault::RetiredDataMember))
             }
             else if reading.eat(Spelling("oper")).0 {
-                self.signature_operation(&mut reading, &sorts).map(
-                    |(operation, presented, ports)| {
-                        operations.push(operation);
+                self.signature_operation(&mut reading, &parts.sorts).map(
+                    |(operation, tile, ports)| {
+                        parts.operations.push(operation);
+                        placement.operations.push(tile);
                         operation_spans.push(span);
-                        presentation.operations.push(presented);
                         written.operations.push(ports);
                     },
                 )
             }
             else if reading.eat(Spelling("rule")).0 {
-                self.signature_rule(&mut reading, &sorts, &scope)
+                self.signature_rule(&mut reading, &parts.sorts, &scope)
                     .map(|member| match member {
                         | RuleMember::Circuit(rule, presented, wired) => {
                             circuits.push(rule);
-                            presentation.circuits.push(presented);
+                            presented_circuits.push(presented);
                             written.circuits.push(wired);
                         },
-                        | RuleMember::Face(face, presented, sides) => {
-                            faces.push(face);
-                            presentation.laws.push(presented);
+                        | RuleMember::Face(face, tile, whole, sides) => {
+                            parts.rules.push(face);
+                            placement.laws.push(tile);
+                            placement.faces.push(whole);
                             written.faces.push(sides);
                         },
                     })
@@ -297,23 +334,20 @@ impl Reader<'_, '_>
                 diagnostics.push(diagnostic);
             }
         }
-        let mut description = SignDesc::new(
-            NominalId::new(serial, self.text(named).0),
-            [],
-            [],
-            operations,
-            faces,
-            DeclPolarity::Data,
-            Attrs::empty(),
-        )
-        .with_circuits(circuits);
-        if !sorts.is_empty() {
-            description = description.with_sorts(sorts);
-        }
+        let presentation = Presentation {
+            value: SigValue::encode(&parts),
+            placement,
+            circuits: presented_circuits,
+        };
+        let description = described(&presentation, NominalId::new(serial, self.text(named).0))
+            .map_err(|_unread| DescriptionDiagnostic {
+                span: at.span,
+                fault: DescriptionFault::Malformed,
+            })?;
         Ok(DescribedDeclaration {
             at,
             named,
-            description,
+            description: description.with_circuits(circuits),
             operation_spans,
             parameters: Vec::new(),
             classifier: Maybe::Absent(family_classifier::Absent::Signature),
@@ -360,8 +394,8 @@ impl Reader<'_, '_>
         let mut operations = Vec::new();
         let mut operation_spans = Vec::new();
         match self.signature_operation(run, &[]) {
-            | Ok((operation, _presented, _written)) => {
-                operations.push(operation);
+            | Ok((operation, _tile, _written)) => {
+                operations.push(operation_desc(&operation));
                 operation_spans.push(at.span);
             },
             | Err(diagnostic) => diagnostics.push(diagnostic),
@@ -389,10 +423,10 @@ impl Reader<'_, '_>
     /// Read an indexed or unindexed sort without erasing its telescope.
     ///
     /// # Specification
-    /// - ensures: indices retain their written order and sort names, beside the
-    ///   sort as it presents itself to a model signature: its name tile and
-    ///   each index's sort read as a sort over index terms; and where its name,
-    ///   its classifier and each index are written.
+    /// - ensures: the sort as `Sig` codes it — its index ports in written
+    ///   order, each port's sort read as a sort over index terms — beside its
+    ///   name tile and where its name, its classifier and each index are
+    ///   written.
     /// - fails: an incomplete judgment earns a member-local refusal.
     /// - panics: none.
     /// - executable: none — the written telescope is source syntax the result
@@ -411,11 +445,10 @@ impl Reader<'_, '_>
     fn signature_sort(
         &self,
         run: &mut Run<'_>,
-    ) -> Result<(SortDesc, PresentedSort, WrittenSortMember), DescriptionDiagnostic>
+    ) -> Result<(SigSort, Placed, WrittenSortMember), DescriptionDiagnostic>
     {
         let name = run.take()?;
         let mut indices = Vec::new();
-        let mut presented = Vec::new();
         let mut written = Vec::new();
         if run.eat(Spelling("(")).0 {
             while !run.eat(Spelling(")")).0 {
@@ -424,11 +457,11 @@ impl Reader<'_, '_>
                     return Err(run.fault(DescriptionFault::Malformed));
                 }
                 let sort = run.take()?;
-                indices.push(SortIndex::new(self.text(index).0, self.text(sort).0));
                 let (term, at) = self.sort_term(sort)?;
-                presented.push(Port {
+                indices.push(SigPort {
                     name: self.text(index).0.into(),
-                    sort: term,
+                    sort: term.sort,
+                    indices: term.indices,
                 });
                 written.push(WrittenPort {
                     named: Maybe::Present(index.span),
@@ -448,12 +481,11 @@ impl Reader<'_, '_>
         }
         run.end()?;
         Ok((
-            SortDesc::family(self.text(name).0, DeclPolarity::Data, indices),
-            PresentedSort {
+            SigSort {
                 name: self.text(name).0.into(),
-                named: name,
-                indices: presented,
+                indices,
             },
+            name,
             WrittenSortMember {
                 named: name.span,
                 classifier: classifier.span,
@@ -466,10 +498,9 @@ impl Reader<'_, '_>
     ///
     /// # Specification
     /// - ensures: admitted operations retain every input and every output, in
-    ///   order, one monomial per output, beside the operation as it presents
-    ///   itself to a model signature: its name tile and each port's sort read
-    ///   as a sort over index terms; and where its name and each port are
-    ///   written.
+    ///   order, as `Sig` codes them — each port's sort read as a sort over
+    ///   index terms, an unnamed port at the empty name — beside the
+    ///   operation's name tile and where its name and each port are written.
     /// - fails: a filler is an explicit decline; a port name written twice on
     ///   the boundary is two ports, not one wire, and is refused by name.
     /// - panics: none.
@@ -492,8 +523,8 @@ impl Reader<'_, '_>
     fn signature_operation(
         &self,
         run: &mut Run<'_>,
-        sorts: &[SortDesc],
-    ) -> Result<(OperDesc, PresentedOperation, WrittenOperation), DescriptionDiagnostic>
+        sorts: &[SigSort],
+    ) -> Result<(SigOperation, Placed, WrittenOperation), DescriptionDiagnostic>
     {
         let name = run.take()?;
         if !run.eat(Spelling(":")).0 {
@@ -528,16 +559,13 @@ impl Reader<'_, '_>
             &boundary.output_sorts,
             &boundary.output_names,
         )?;
-        let presented = PresentedOperation {
-            name: self.text(name).0.into(),
-            named: name,
-            inputs,
-            outputs,
-        };
-        let arity = BridgeArity::tupled(boundary.inputs, boundary.outputs);
         Ok((
-            OperDesc::new(self.text(name).0, arity, Attrs::empty()),
-            presented,
+            SigOperation {
+                name: self.text(name).0.into(),
+                inputs,
+                outputs,
+            },
+            name,
             WrittenOperation {
                 named: name.span,
                 inputs: written_inputs,
@@ -546,13 +574,13 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// Each port of one side with its written sort read as a sort over index
-    /// terms, and where it is written.
+    /// Each port of one side as `Sig` codes it, its written sort read as a
+    /// sort over index terms, and where it is written.
     ///
     /// # Specification
-    /// - ensures: one port per entry of `ports`, in order, under its name, and
-    ///   one written port per port, its name tile from `names` and its sort's
-    ///   bytes and index terms.
+    /// - ensures: one port per entry of `ports`, in order, under its written
+    ///   name or, unnamed, the empty one, and one written port per port, its
+    ///   name tile from `names` and its sort's bytes and index terms.
     /// - fails: as [`Self::sort_term`].
     /// - panics: none.
     /// - executable: none — the sorts read are source syntax.
@@ -562,23 +590,31 @@ impl Reader<'_, '_>
     /// application.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::signature_operation`].
+    /// - hypothesis: L3 — as [`Self::signature_operation`]; an unnamed port
+    ///   leaves the value unchanged wherever it is written.
     /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
     /// - witness: `described::tests::a_sign_answers_at_every_member`
+    /// - witness: `description::sign::tests::the_description_is_read_off_the_value`
     fn presented_ports(
         &self,
         ports: &[SortRef],
         sorts: &[Placed],
         names: &[Maybe<ByteSpan, port_name::Absent>],
-    ) -> Result<(Vec<Port>, Vec<WrittenPort>), DescriptionDiagnostic>
+    ) -> Result<(Vec<SigPort>, Vec<WrittenPort>), DescriptionDiagnostic>
     {
         let mut presented = Vec::with_capacity(ports.len());
         let mut written = Vec::with_capacity(ports.len());
         for ((port, &sort), &named) in ports.iter().zip(sorts).zip(names) {
             let (term, at) = self.sort_term(sort)?;
-            presented.push(Port {
-                name: port.name.clone(),
-                sort: term,
+            presented.push(SigPort {
+                name: if port.name.as_ref().starts_with(FRESH_PORT) {
+                    Name::from("")
+                }
+                else {
+                    port.name.clone()
+                },
+                sort: term.sort,
+                indices: term.indices,
             });
             written.push(WrittenPort { named, sort: at });
         }
@@ -684,7 +720,7 @@ impl Reader<'_, '_>
     fn signature_rule(
         &self,
         run: &mut Run<'_>,
-        sorts: &[SortDesc],
+        sorts: &[SigSort],
         scope: &BTreeMap<Written<'_>, HeadKind>,
     ) -> Result<RuleMember, DescriptionDiagnostic>
     {
@@ -711,16 +747,14 @@ impl Reader<'_, '_>
             run.end()?;
             let (lhs, left) = self.free_term(lhs)?;
             let (rhs, right) = self.free_term(rhs)?;
-            let variables = derive_cell_var_meta(&lhs);
-            let presented = PresentedLaw {
-                name: self.text(name).0.into(),
-                named: name,
-                left: lhs.clone(),
-                right: rhs.clone(),
-            };
             return Ok(RuleMember::Face(
-                RuleFace::new(lhs, rhs, variables, surface_span(run.span)),
-                presented,
+                SigRule {
+                    name: self.text(name).0.into(),
+                    left: lhs,
+                    right: rhs,
+                },
+                name,
+                run.span,
                 WrittenFace {
                     named: Maybe::Present(name.span),
                     left,
@@ -889,7 +923,7 @@ impl Reader<'_, '_>
     fn boundary(
         &self,
         run: &mut Run<'_>,
-        sorts: &[SortDesc],
+        sorts: &[SigSort],
         row: ArrowRow,
     ) -> Result<Boundary, DescriptionDiagnostic>
     {
@@ -947,7 +981,7 @@ impl Reader<'_, '_>
     fn port_side(
         &self,
         run: &mut Run<'_>,
-        sorts: &[SortDesc],
+        sorts: &[SigSort],
         rewrites: &mut Vec<RewritePort>,
         written_rewrites: &mut Vec<WrittenRewrite>,
     ) -> Result<Side, DescriptionDiagnostic>
@@ -1198,13 +1232,128 @@ fn surface_span(span: ByteSpan) -> SurfaceSpan
     )
 }
 
+/// The prefix of the private name the reader mints for an anonymous port,
+/// which a written name cannot begin with.
+const FRESH_PORT: &str = "$port:";
+
 /// An anonymous port's collision-free, source-stable internal name.
 ///
 /// # Specification
 /// trivial.
 fn fresh_port(at: Placed) -> Name
 {
-    format!("$port:{}", usize::from(at.span.start())).into()
+    format!("{FRESH_PORT}{}", usize::from(at.span.start())).into()
+}
+
+/// The description a presentation's value reads as, under `id`: the
+/// declaration table the cell gate, the rules check and coincidence read.
+///
+/// # Specification
+/// - ensures: one data sort per sort the value codes, its index telescope each
+///   index port's name over its sort's spelling; one operation per operation,
+///   its arity the ports in order, an unnamed one at its placeholder; one face
+///   per rule, its variables derived from its left side and its provenance the
+///   whole member the placement records; no parameter, constructor or circuit.
+/// - fails: as [`Presentation::members`]: a value that codes no presentation,
+///   or a rule no member places.
+/// - panics: none.
+/// - executable: none — the table is a reading of the value; a predicate would
+///   decode the value a second time.
+///
+/// # Errors
+/// As stated.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a block's description agrees with the value it defines,
+///   member for member, an unnamed port at its placeholder and a face at its
+///   member's span.
+/// - witness: `description::sign::tests::the_description_is_read_off_the_value`
+/// - witness: `description::sign::tests::the_cat_shape_laws_are_written_faces`
+fn described(
+    presentation: &Presentation,
+    id: NominalId,
+) -> Result<SignDesc<DescriptionGrade>, PresentationFault>
+{
+    let parts = presentation
+        .value
+        .decode()
+        .map_err(PresentationFault::Value)?;
+    if parts.rules.len() > presentation.placement.faces.len() {
+        return Err(PresentationFault::Unplaced);
+    }
+    let sorts: Vec<SortDesc> = parts
+        .sorts
+        .iter()
+        .map(|sort| {
+            SortDesc::family(
+                sort.name.clone(),
+                DeclPolarity::Data,
+                sort.indices
+                    .iter()
+                    .map(|index| SortIndex::new(index.name.clone(), spelled(index)))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    let operations: Vec<OperDesc> = parts.operations.iter().map(operation_desc).collect();
+    let faces: Vec<RuleFace> = parts
+        .rules
+        .into_iter()
+        .zip(&presentation.placement.faces)
+        .map(|(rule, &span)| {
+            let variables = derive_cell_var_meta(&rule.left);
+            RuleFace::new(rule.left, rule.right, variables, surface_span(span))
+        })
+        .collect();
+    let description = SignDesc::new(
+        id,
+        [],
+        [],
+        operations,
+        faces,
+        DeclPolarity::Data,
+        Attrs::empty(),
+    );
+    Ok(if sorts.is_empty() {
+        description
+    }
+    else {
+        description.with_sorts(sorts)
+    })
+}
+
+/// The operation `operation` codes, its arity its ports in order, an unnamed
+/// one at its placeholder.
+///
+/// # Specification
+/// trivial.
+fn operation_desc(operation: &SigOperation) -> OperDesc
+{
+    let mut names = presented_names(&operation.inputs, &operation.outputs).into_iter();
+    let inputs: Vec<SortRef> = operation
+        .inputs
+        .iter()
+        .zip(names.by_ref())
+        .map(|(port, name)| SortRef::new(name, spelled(port)))
+        .collect();
+    let outputs: Vec<SortRef> = operation
+        .outputs
+        .iter()
+        .zip(names)
+        .map(|(port, name)| SortRef::new(name, spelled(port)))
+        .collect();
+    let arity = BridgeArity::tupled(inputs, outputs);
+    OperDesc::new(operation.name.clone(), arity, Attrs::empty())
+}
+
+/// A port's sort as the description spells it: its name, applied to its
+/// index terms when it has any.
+///
+/// # Specification
+/// trivial.
+fn spelled(port: &SigPort) -> Name
+{
+    Name::from(FreeTerm::op(port.sort.clone(), port.indices.iter().cloned()).to_string())
 }
 
 #[cfg(test)]

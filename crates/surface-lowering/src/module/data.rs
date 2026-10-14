@@ -144,12 +144,34 @@ pub struct DataForm
     pub operations: Vec<Placed>,
 }
 
+/// Where the generators of a constructor's family are read from.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a written family names its position in the collection's data
+///   list; `Sig` names the presentation code the collection mints.
+/// - executable: none — the tag holds no list to check its position against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constructor of a written family and one of `Sig` each
+///   apply and match through their own generators.
+/// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
+/// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Generators
+{
+    /// The data declaration at this position of the collection's data list.
+    Written(usize),
+    /// `Sig`, the presentation code, minted from its description.
+    Presentation,
+}
+
 /// A constructor, as a term or a pattern naming it resolves it.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: `form` indexes the collection's data list, `tag` that form's
-///   generators, and `arity` is that generator's field count.
+/// - ensures: `form` names the family's generators, `tag` one of them, and
+///   `arity` is that generator's field count.
 /// - executable: none — the entry holds no list to check its indices against.
 ///
 /// # Adequacy
@@ -162,13 +184,14 @@ pub struct Constructor
 {
     /// The family's slot.
     pub family: SlotIndex,
-    /// The family's position in the collection's data list.
-    pub form: usize,
+    /// Where the family's generators are read from.
+    pub form: Generators,
     /// The constructor's tag: its generator's position.
     pub tag: usize,
     /// How many fields the constructor takes.
     pub arity: usize,
-    /// The generator's name tile.
+    /// The generator's name tile; for a constructor of `Sig`, the name tile of
+    /// the `sign` block that minted it.
     pub named: Placed,
 }
 
@@ -421,7 +444,7 @@ impl<'source> Collector<'_, 'source>
                     .constructors
                     .insert(self.name_of(generator.named), Constructor {
                         family: form.slot,
-                        form: position,
+                        form: Generators::Written(position),
                         tag,
                         arity: generator.fields.len(),
                         named: generator.named,
