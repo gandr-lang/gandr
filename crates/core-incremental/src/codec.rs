@@ -3953,8 +3953,11 @@ where
         | crate::content::DeclarationRoots::Value {
             ref signature,
             ref body,
+            ref laws,
         } => {
-            writer.tag(Tag(0));
+            // A value naming no law keeps its original tag; a lawful one
+            // takes its own, with the laws after the body.
+            writer.tag(Tag(if laws.is_empty() { 0 } else { 3 }));
             match *signature {
                 | Maybe::Present(root) => {
                     writer.tag(Tag(1));
@@ -3968,6 +3971,12 @@ where
                     write_index(writer, root)?;
                 },
                 | Maybe::Absent(body::Absent::Hole) => writer.tag(Tag(0)),
+            }
+            if !laws.is_empty() {
+                writer.count(Count(laws.len()))?;
+                for law in laws {
+                    write_reference(writer, law)?;
+                }
             }
         },
         | crate::content::DeclarationRoots::Data(ref roots) => {
@@ -4060,7 +4069,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
 {
     let reference = read_reference(reader)?;
     let declaration = match reader.tag()?.0 {
-        | 0 => {
+        | tag @ (0 | 3) => {
             let signature = match reader.tag()?.0 {
                 | 0 => Maybe::Absent(signature::Absent::Unsigned),
                 | 1 => Maybe::Present(read_index(reader)?),
@@ -4071,7 +4080,21 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                 | 1 => Maybe::Present(read_index(reader)?),
                 | _ => return Err(CodecError::Corrupt),
             };
-            crate::content::DeclarationRoots::Value { signature, body }
+            let mut laws = Vec::new();
+            if tag == 3 {
+                let count = reader.count()?.0;
+                if count == 0 {
+                    return Err(CodecError::NonCanonical);
+                }
+                for _law in 0 .. count {
+                    laws.push(read_reference(reader)?);
+                }
+            }
+            crate::content::DeclarationRoots::Value {
+                signature,
+                body,
+                laws,
+            }
         },
         | 1 => crate::content::DeclarationRoots::Data(read_data_roots(reader)?),
         | 2 => {
@@ -7578,6 +7601,7 @@ mod tests
                 crate::content::DeclarationRoots::Value {
                     signature: Maybe::Absent(signature::Absent::Unsigned),
                     body: Maybe::Present(NodeIndex::from(0_usize)),
+                    laws: Vec::new(),
                 },
                 nodes,
             );
@@ -7814,6 +7838,7 @@ mod tests
                 crate::content::DeclarationRoots::Value {
                     signature: Maybe::Absent(signature::Absent::Unsigned),
                     body: Maybe::Present(NodeIndex::from(0_usize)),
+                    laws: Vec::new(),
                 },
                 nodes,
             );
@@ -7922,6 +7947,7 @@ mod tests
                 crate::content::DeclarationRoots::Value {
                     signature: Maybe::Absent(signature::Absent::Unsigned),
                     body: Maybe::Present(NodeIndex::from(0_usize)),
+                    laws: Vec::new(),
                 },
                 vec![ContentNode::Tuple(Vec::new())],
             );
@@ -7944,5 +7970,57 @@ mod tests
                 })
             );
         }
+    }
+
+    #[test]
+    fn a_lawful_value_root_round_trips_and_its_law_order_is_content()
+    {
+        let law = |key: u8| Reference::Item {
+            key: ItemKey::from([key].as_slice()),
+            occurrence: Occurrence::from(0_usize),
+        };
+        let checkpoints = |laws: Vec<Reference>| {
+            let content = ItemContent::from_parts(
+                Reference::Unoccupied,
+                crate::content::DeclarationRoots::Value {
+                    signature: Maybe::Absent(signature::Absent::Unsigned),
+                    body: Maybe::Present(NodeIndex::from(0_usize)),
+                    laws,
+                },
+                vec![ContentNode::Tuple(Vec::new())],
+            );
+            let item = ItemCheckpoint::new(
+                content,
+                Footprint::from_parts(
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    Opacity::Transparent,
+                    HoleMark::Filled,
+                ),
+                vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
+                Typing::Owed,
+            );
+            Checkpoints::new(CheckBudget::DEFAULT, vec![item])
+        };
+        let lawful = checkpoints(vec![law(1), law(2)]);
+        let bytes = encode_checkpoints(&lawful).expect("a lawful root encodes");
+        assert_eq!(
+            decode_checkpoints(Bytes(bytes.as_ref())),
+            Ok(lawful),
+            "and decodes to itself, its laws in the order the fold names them"
+        );
+        let crossed = encode_checkpoints(&checkpoints(vec![law(2), law(1)]))
+            .expect("a crossed lawful root encodes");
+        assert_ne!(
+            bytes.as_ref(),
+            crossed.as_ref(),
+            "reordering the laws changes the content"
+        );
+        let lawless = encode_checkpoints(&checkpoints(Vec::new())).expect("a lawless root encodes");
+        assert_ne!(
+            bytes.as_ref(),
+            lawless.as_ref(),
+            "and so does dropping them"
+        );
     }
 }

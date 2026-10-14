@@ -228,6 +228,7 @@ pub use crate::tags::KIND_AXIOM;
 pub use crate::tags::KIND_DATA;
 pub use crate::tags::KIND_DATA_PRESENTED;
 pub use crate::tags::KIND_DEF;
+pub use crate::tags::KIND_DEF_LAWFUL;
 pub use crate::tags::KIND_DEF_RELATING;
 pub use crate::tags::KIND_FUNCTOR_DEF;
 pub use crate::tags::KIND_MODULE_DEF;

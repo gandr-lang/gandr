@@ -561,6 +561,9 @@ pub struct Judgement<'session>
     /// The path endpoints the declaration's conversions relate, with the
     /// dialogue relating each pair: empty but for a relating definition.
     related: &'session [RelatedEndpoints],
+    /// The laws the declaration's folds rest on, one per rule of the folded
+    /// type: empty but for a lawful definition.
+    laws: &'session [ConstantIndex],
     /// The block in scope at its own position, while a data declaration's
     /// fields form.
     block: Block<'session>,
@@ -604,6 +607,7 @@ impl<'session> Judgement<'session>
             levels,
             manifest: &[],
             related: &[],
+            laws: &[],
             block: Block::Outside,
             presentations: &crate::presented::FREE,
         }
@@ -656,6 +660,21 @@ impl<'session> Judgement<'session>
     ) -> Self
     {
         Self { related, ..self }
+    }
+
+    /// The same judgement resting a fold on `laws` where it computes a rule's
+    /// sides apart.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn lawful(
+        self,
+        laws: &'session [ConstantIndex],
+    ) -> Self
+    {
+        Self { laws, ..self }
     }
 
     /// The same judgement with a data block in scope at its own position.
@@ -3325,10 +3344,10 @@ where
                 | Frame::Respect(case, reading) => {
                     respect::respected(
                         arena,
-                        judgement.entries,
-                        judgement.presentations,
+                        (judgement.entries, judgement.presentations),
                         case,
                         reading,
+                        judgement.laws,
                     )?;
                 },
                 // A dependent split forms its motive under the scrutinee's
@@ -4724,11 +4743,13 @@ where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
     let declared = declaration.declared_id();
-    // A relating definition's conversions read the pairs it relates, and
-    // every conversion rewrites the presented types admitted before it.
+    // A relating definition's conversions read the pairs it relates, a lawful
+    // one's folds rest on its laws, and every conversion rewrites the
+    // presented types admitted before it.
     let presentations = crate::presented::Presentations::of(judgement.entries);
     let judgement = judgement
         .relating(declaration.related())
+        .lawful(declaration.laws())
         .presenting(&presentations);
     // A data declaration's own position names its block while it is checked:
     // the occurrence walk refuses every non-strictly-positive or non-uniform

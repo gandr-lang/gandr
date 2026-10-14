@@ -518,6 +518,7 @@ use crate::attribute::AttributeTable;
 use crate::attribute::PayloadForm;
 use crate::attribute::PayloadVerdict;
 use crate::attribute::RegisteredAttribute;
+use crate::attribute::laws;
 use crate::attribute::payload;
 use crate::attribute::payload_form;
 use crate::attribute::payload_verdict;
@@ -2978,7 +2979,7 @@ pub fn lower_module<'source>(
     lowerer.mint_operations(&mut sink);
     lowerer.mint_instances(&mut sink);
     let mut attributes = AttributeTable::new();
-    lowerer.attribute(&mut attributes)?;
+    lowerer.attribute(&mut attributes, sink.arena)?;
     let documentation = lowerer.document()?;
     let inferred = lowerer.inferred_exits();
     let nested = lowerer.nested_sites(&origins);
@@ -10546,7 +10547,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   under the module form's content identity, its refusal offered to the
     ///   module's first member. An `explicit_exits` attribute marks the slot it
     ///   decorates, or every member slot of the module it decorates, as asking
-    ///   for written exits.
+    ///   for written exits. A `respects` attribute's laws, the constants its
+    ///   payload names, are filed beside its entry.
     /// - provides: the attribute side table of the lowered module, and the
     ///   slots the `explicit-exits` lint reads as asked.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] and
@@ -10594,13 +10596,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn attribute(
         &mut self,
         table: &mut AttributeTable,
+        arena: &CoreArena,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let mut slots = core::mem::take(&mut self.collected.slots);
         let decorated = core::mem::take(&mut self.collected.decorated);
         let outcome = self
-            .attribute_slots(&mut slots, table)
-            .and_then(|()| self.attribute_modules(&decorated, &mut slots, table));
+            .attribute_slots(&mut slots, table, arena)
+            .and_then(|()| self.attribute_modules(&decorated, &mut slots, table, arena));
         self.collected.slots = slots;
 
         outcome
@@ -10641,14 +10644,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         decorated: &[DecoratedModule<'source>],
         slots: &mut [DeclarationSlot<'source>],
         table: &mut AttributeTable,
+        arena: &CoreArena,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         for module in decorated {
             let mut seen: Vec<(RegisteredAttribute, ByteSpan)> = Vec::new();
             for written in &module.attributes {
                 self.fuel.spend()?;
-                match self.read_attribute(written, &mut seen) {
-                    | Ok(Filing::Filed(entry)) => {
+                match self.read_attribute(written, &mut seen, arena) {
+                    | Ok(Filing::Filed { entry, laws }) => {
                         if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
                             self.asked.extend(
                                 (usize::from(module.first) .. usize::from(module.end))
@@ -10660,7 +10664,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             (usize::from(module.first) .. usize::from(module.end))
                                 .map(SlotIndex::from),
                         );
-                        table.file(self.key_at(module.module.node), entry);
+                        let key = self.key_at(module.module.node);
+                        table.file(key, entry);
+                        if !laws.is_empty() {
+                            table.file_laws(key, laws);
+                        }
                     },
                     | Ok(Filing::Unlowered) => {},
                     | Err(refusal) => {
@@ -10727,19 +10735,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
         &mut self,
         slots: &mut [DeclarationSlot<'source>],
         table: &mut AttributeTable,
+        arena: &CoreArena,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         for (index, slot) in slots.iter_mut().enumerate() {
             let mut seen: Vec<(RegisteredAttribute, ByteSpan)> = Vec::new();
             for written in core::mem::take(&mut slot.attributes) {
                 self.fuel.spend()?;
-                match self.read_attribute(&written, &mut seen) {
-                    | Ok(Filing::Filed(entry)) => {
+                match self.read_attribute(&written, &mut seen, arena) {
+                    | Ok(Filing::Filed { entry, laws }) => {
                         if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
                             let _first = self.asked.insert(SlotIndex::from(index));
                         }
                         self.ask_runs(&entry, [SlotIndex::from(index)]);
-                        table.file(self.key_at(written.decorates), entry);
+                        let key = self.key_at(written.decorates);
+                        table.file(key, entry);
+                        if !laws.is_empty() {
+                            table.file_laws(key, laws);
+                        }
                     },
                     | Ok(Filing::Unlowered) => {},
                     | Err(refusal) => {
@@ -10897,7 +10910,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the wrong one; nothing is filed for a payload the mint sweep left
     ///   unlowered, which is the case of a payload that itself refused; a text
     ///   where a marker-or-option schema stands is admitted only when it spells
-    ///   the option, and is ill-typed as another text otherwise.
+    ///   the option, and is ill-typed as another text otherwise; a `respects`
+    ///   payload is admitted only when it names laws, which the filing carries,
+    ///   and is ill-typed as another value otherwise.
     /// - provides: the per-attribute half of the attribute pass.
     /// - fails: yields the unknown-attribute refusal with its bounded
     ///   suggestion, the duplicate refusal naming the first spelling, the
@@ -10916,10 +10931,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_unknown_attribute_is_refused_with_its_suggestion`
     /// - witness: `lower::tests::a_payload_of_the_wrong_form_is_refused`
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
+    /// - witness: `attribute::tests::a_respects_payload_names_its_laws_in_written_order`
     #[spec(
         captures: before = seen.len(),
         ensures: |ret| match ret.as_ref() {
-            | Ok(&Filing::Filed(ref entry)) => {
+            | Ok(&Filing::Filed { ref entry, ref laws }) => {
                 seen.len() == before.saturating_add(1_usize)
                     && seen.last() == Some(&(entry.name(), written.span))
                     && entry.span() == written.span
@@ -10932,6 +10948,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         },
                         | _ => false,
                     }
+                    && laws.is_empty() == (entry.schema() != AttributeSchema::Laws)
             },
             | Ok(&Filing::Unlowered) => {
                 seen.len() == before
@@ -10944,6 +10961,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         &self,
         written: &WrittenAttribute<'source>,
         seen: &mut Vec<(RegisteredAttribute, ByteSpan)>,
+        arena: &CoreArena,
     ) -> Result<Filing, LoweringRefusal<'source>>
     {
         let Maybe::Present((name, schema)) = AttributeRegistry::lookup(written.name)
@@ -10998,24 +11016,37 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 });
             },
         }
-        let value = match written.payload {
-            | Payload::Unwritten => Maybe::Absent(payload::Absent::Marker),
+        let (value, named) = match written.payload {
+            | Payload::Unwritten => (Maybe::Absent(payload::Absent::Marker), Vec::new()),
             | Payload::Written(placed) => {
                 let Maybe::Present(value) = self.value_at(placed.node)
                 else {
                     return Ok(Filing::Unlowered);
                 };
-                Maybe::Present(value)
+                let named = if schema == AttributeSchema::Laws {
+                    let Maybe::Present(named) = laws(arena, value)
+                    else {
+                        return Err(LoweringRefusal::IllTypedPayload {
+                            span: placed.span,
+                            name,
+                            expected: schema,
+                            written: form,
+                        });
+                    };
+                    named
+                }
+                else {
+                    Vec::new()
+                };
+                (Maybe::Present(value), named)
             },
         };
         seen.push((name, written.span));
 
-        Ok(Filing::Filed(AttributeEntry::new(
-            name,
-            schema,
-            value,
-            written.span,
-        )))
+        Ok(Filing::Filed {
+            entry: AttributeEntry::new(name, schema, value, written.span),
+            laws: named,
+        })
     }
 
     /// The form an attribute's payload was written in.
@@ -11853,11 +11884,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
 ///   a refused declaration can still retain an independently valid payload.
 /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
 /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum Filing
 {
-    /// The entry to file.
-    Filed(AttributeEntry),
+    /// The entry to file, and the laws a `respects` payload names: empty for
+    /// every other attribute, and never empty for `respects`, whose payload
+    /// names at least one.
+    Filed
+    {
+        /// The entry.
+        entry: AttributeEntry,
+        /// The laws its payload names, in written order.
+        laws: Vec<ConstantIndex>,
+    },
     /// Nothing: the payload did not lower, which only a payload that itself
     /// refused leaves behind.
     Unlowered,
@@ -16453,6 +16492,44 @@ mod tests
         assert!(
             !matches!(linked.outcome(), DeclarationOutcome::Refused(_)),
             "a link to a declared name resolves"
+        );
+    }
+
+    #[test]
+    fn a_respects_attribute_names_its_laws_through_either_form()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def p : Integer ; def q : Integer ; \
+                 @[ respects((q, p)) ] def r(n : Integer) -> -F Integer { return n } \
+                 @[ respects(p) ] def s : +U (Integer -> -F Integer) ; \
+                 def s = thunk { fn (n) { return n } } ; \
+                 def t(n : Integer) -> -F Integer { return n }",
+            ),
+            &mut arena,
+        );
+        let named = |wanted: &str| {
+            module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"))
+        };
+        let (p, q) = (named("p").constant(), named("q").constant());
+        assert_eq!(
+            module.laws(named("r")),
+            [q, p].as_slice(),
+            "a definition names its laws in the order written"
+        );
+        assert_eq!(
+            module.laws(named("s")),
+            [p].as_slice(),
+            "a signature names its law where its definition names none"
+        );
+        assert!(
+            module.laws(named("t")).is_empty(),
+            "an undecorated declaration names none"
         );
     }
 

@@ -237,6 +237,42 @@ impl StagedDeclaration
         }
     }
 
+    /// This staged definition carrying `laws` as the laws its folds rest on,
+    /// its content start and content unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the choke point instantiates each law where a fold
+    ///   needs it.
+    /// - ensures: the declaration as [`Declaration::lawful`] leaves it, at the
+    ///   same content start: a definition carries exactly `laws`, any other
+    ///   declaration is unchanged.
+    /// - provides: how a producer attaches a fold's laws before offering the
+    ///   definition.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fold admits on its laws and is refused without
+    ///   them.
+    /// - witness: `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+    #[spec(
+        captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.laws().len(), laws.len()),
+        ensures: |ret| ret.content_start == entry.0
+            && ret.declaration.laws().len() == if entry.1 { entry.3 } else { entry.2 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn lawful(
+        self,
+        laws: Vec<ConstantIndex>,
+    ) -> Self
+    {
+        Self {
+            declaration: self.declaration.lawful(laws),
+            ..self
+        }
+    }
+
     /// This staged data declaration carrying `presentation` as the rules
     /// rewriting its constructor terms, its content start and content
     /// unchanged.
@@ -1297,8 +1333,12 @@ impl Environment
                 // allocated past it.
                 self.arena.truncate_to(content_end);
                 self.admission_floor = content_end;
-                let rested_on =
-                    self.transitive_rest(declaration.content(), position, Admission::Checked);
+                let rested_on = self.transitive_rest(
+                    declaration.content(),
+                    declaration.laws(),
+                    position,
+                    Admission::Checked,
+                );
                 self.entries.push(AdmittedDeclaration {
                     declaration,
                     admission: Admission::Checked,
@@ -1370,7 +1410,12 @@ impl Environment
         // rises to the current watermark. Without this a later rejection could
         // truncate through bypassed content.
         self.admission_floor = self.arena.watermark();
-        let rested_on = self.transitive_rest(declaration.content(), position, Admission::Unchecked);
+        let rested_on = self.transitive_rest(
+            declaration.content(),
+            declaration.laws(),
+            position,
+            Admission::Unchecked,
+        );
         self.entries.push(AdmittedDeclaration {
             declaration,
             admission: Admission::Unchecked,
@@ -1680,14 +1725,16 @@ impl Environment
     /// kernel — would then be a false negative rather than a fact.
     ///
     /// # Specification
-    /// - requires: `position` is the next admission index and `content` is its
-    ///   declaration. Checked references name earlier admissions; a bypass is
-    ///   itself an audit reason even if it names an unknown position.
+    /// - requires: `position` is the next admission index and `content` and
+    ///   `laws` are its declaration's. Checked references name earlier
+    ///   admissions; a bypass is itself an audit reason even if it names an
+    ///   unknown position.
     /// - ensures: the union of the audits of every position the declared type,
-    ///   an abstract type's representation or a definition's body names, with
-    ///   `position` itself included exactly when the declaration is an axiom or
-    ///   is being bypassed. Both reference forms of the type plane are followed
-    ///   — a sealed atom directly, and a code through the term language — so a
+    ///   an abstract type's representation or a definition's body names, and of
+    ///   every law the definition's folds rest on, with `position` itself
+    ///   included exactly when the declaration is an axiom or is being
+    ///   bypassed. Both reference forms of the type plane are followed — a
+    ///   sealed atom directly, and a code through the term language — so a
     ///   declaration reachable only through a code stays in the graph.
     /// - provides: the precomputed audit an admission stores, which makes the
     ///   report a lookup rather than a walk, and which is what lets "empty on
@@ -1703,6 +1750,7 @@ impl Environment
     /// - witness: `env::tests::audit_reports_the_transitive_axiom`
     /// - witness: `env::tests::audit_reports_a_transitive_unchecked_admission`
     /// - witness: `env::tests::audit_reaches_an_axiom_named_only_inside_a_code`
+    /// - witness: `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
     #[spec(
         requires: usize::from(position) == self.entries.len(),
         ensures: |ret| ret.contains(&position)
@@ -1715,6 +1763,7 @@ impl Environment
     fn transitive_rest(
         &self,
         content: &DeclarationContent,
+        laws: &[ConstantIndex],
         position: ConstantIndex,
         admission: Admission,
     ) -> BTreeSet<ConstantIndex>
@@ -1740,6 +1789,9 @@ impl Environment
                 CodeEdges::Follow,
             ));
         }
+        // A fold rests on every law it names, as a body rests on every
+        // constant it names.
+        direct.extend(laws.iter().copied());
         let mut rested = BTreeSet::new();
         for referenced in direct {
             if let Some(entry) = self.entries.get(usize::from(referenced)) {

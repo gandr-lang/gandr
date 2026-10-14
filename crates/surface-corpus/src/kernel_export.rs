@@ -1352,7 +1352,9 @@ mod kernel_here_congruence_readmission
 /// A presented type's cancellation readmits by its normal forms; a circle
 /// without its rules, or with a rule that does not present it, is refused by
 /// name; a fold over the circle readmits when it respects the rules, and a
-/// twin whose arm breaks one is refused by name.
+/// twin whose arm breaks one is refused by name; a fold that rests on laws
+/// readmits on them, and a twin whose laws are forged — each stating the
+/// other rule's path — is refused by the first rule.
 mod kernel_presented_readmission
 {
     use alloc::vec;
@@ -1531,6 +1533,52 @@ mod kernel_presented_readmission
             *refusal.error(),
             KernelError::RuleNotRespected(RuleIndex::from(0_usize)),
             "the kernel names the rule the twin breaks"
+        );
+    }
+
+    #[test]
+    fn a_fold_resting_on_a_forged_law_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/identity/circle.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the circle lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the circle's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("`native_wind` readmits on the native model's two laws");
+        let segment = NameSegment::from_text("native_wind".into()).expect("a name segment");
+        let named = StructuredName::from(vec![segment]);
+        let wind = declarations
+            .iter()
+            .position(|marked| *marked.declaration().name() == named)
+            .expect("`native_wind` crossed");
+        let marked = &declarations[wind];
+        let &[first, second] = marked.declaration().laws()
+        else {
+            panic!(
+                "`native_wind` rests on one law per rule: {:?}",
+                marked.declaration().laws()
+            );
+        };
+        // The twin cites each law for the other's rule: `unturn(turn(n)) = n`
+        // where `Loop(Unloop(x))` computes `turn(unturn(f(x)))`.
+        let forged = marked.declaration().clone().lawful(vec![second, first]);
+        let mut twin = declarations.clone();
+        twin[wind] = MarkedDeclaration::new(marked.mark(), forged);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("a law stating another rule's path does not relate this one's sides");
+        assert_eq!(usize::from(refusal.position()), wind);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::RuleNotRespected(RuleIndex::from(0_usize)),
+            "the kernel names the rule the forged law fails"
         );
     }
 }

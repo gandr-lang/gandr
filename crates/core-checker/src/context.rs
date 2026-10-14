@@ -305,6 +305,9 @@ pub struct CheckingContext<'arena>
     /// The path endpoint pairs each accepted declaration's type conversions
     /// related, by position.
     relations: BTreeMap<ConstantIndex, Vec<crate::code::EndpointRelation>>,
+    /// The laws each lawful declaration's folds rest on, by position, in its
+    /// folded type's rule order.
+    laws: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
     /// The native universe path each univalence statement the judgement
     /// decided derives, and each path product it judged elaborates to, by
     /// node.
@@ -446,6 +449,7 @@ impl<'arena> CheckingContext<'arena>
             nesting: BTreeMap::new(),
             relating: BTreeMap::new(),
             relations: BTreeMap::new(),
+            laws: BTreeMap::new(),
             sealed: BTreeMap::new(),
             seals: SealTable::new(),
             budget,
@@ -1712,6 +1716,55 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub const fn relations(&self) -> &BTreeMap<ConstantIndex, Vec<crate::code::EndpointRelation>>
     {
         &self.relations
+    }
+
+    /// Keep `laws` as the laws the declaration at `constant` rests its folds
+    /// on, before it is judged.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `constant` has `laws` as its laws when any is named;
+    ///   otherwise nothing changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::respect::respected`]: the fold over the
+    ///   circle reads the laws its declaration names.
+    /// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+    #[spec(captures: entry = laws.len(), ensures: entry == 0 || self.laws.get(&constant).map(Vec::len) == Some(entry))]
+    pub(crate) fn keep_laws(
+        &mut self,
+        constant: ConstantIndex,
+        laws: Vec<ConstantIndex>,
+    )
+    {
+        if !laws.is_empty() {
+            self.laws.insert(constant, laws);
+        }
+    }
+
+    /// The laws the declaration under judgement rests its folds on: none
+    /// before any is admitted.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn admitted_laws(&self) -> &[ConstantIndex]
+    {
+        match self.admitted {
+            | Maybe::Present(constant) => self.laws.get(&constant).map_or(&[], Vec::as_slice),
+            | Maybe::Absent(_) => &[],
+        }
+    }
+
+    /// The laws each lawful declaration's folds rest on, by position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn laws(&self) -> &BTreeMap<ConstantIndex, Vec<ConstantIndex>>
+    {
+        &self.laws
     }
 
     /// The native universe path each univalence statement the judgement

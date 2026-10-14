@@ -38,13 +38,13 @@
 //!
 //! A declaration is settled when the verdict it produced equals the verdict it
 //! states. A verdict is one of three shapes: _checks, owing n_ — checked,
-//! synthesised, or owed, with n the obligations its verdict left in the ledger
-//! — _runs to_ a spelled value, or _refuses_ a named refusal. `checks` states
-//! _checks, owing 0_; `owes(n)` states _checks, owing n_; `runs("spelling")`
-//! states _runs to_ the spelling; `refuses("Name")` states the named refusal; a
-//! declaration carrying none of the four states _checks, owing 0_. A run is
-//! settled when every declaration in it is, which is the predicate a corpus run
-//! is gated on.
+//! synthesised, or owed, with n the obligations its verdict left in the ledger,
+//! or for a fold the owed laws it rests on — _runs to_ a spelled value, or
+//! _refuses_ a named refusal. `checks` states _checks, owing 0_; `owes(n)`
+//! states _checks, owing n_; `runs("spelling")` states _runs to_ the spelling;
+//! `refuses("Name")` states the named refusal; a declaration carrying none of
+//! the four states _checks, owing 0_. A run is settled when every declaration
+//! in it is, which is the predicate a corpus run is gated on.
 //!
 //! An obligation survives when it is unsettled, in either direction: produced
 //! with nothing declaring it (an unannotated hole), or declared with nothing
@@ -67,6 +67,7 @@ use core::error::Error;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_checker::Judged;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::ObligationCount;
 use gandr_core_checker::Verdict;
@@ -975,8 +976,7 @@ impl Error for SettleFault
                 .zip(verdicts.judged())
                 .all(|((declaration, lowered), answer)| {
                     lowered.constant() == answer.constant()
-                        && usize::from(declaration.owed)
-                            == usize::from(matches!(answer.verdict(), Verdict::Owed(_)))
+                        && usize::from(declaration.owed) == usize::from(owed_by(verdicts, answer))
                         && (declaration.produced == Produced::Judged(answer.verdict())
                             || matches!(declaration.produced, Produced::Guarded(_)))
                 })
@@ -1064,14 +1064,7 @@ pub fn settle<'source>(
                     });
                 }
                 let verdict = answer.verdict();
-                let owed = match verdict {
-                    | Verdict::Owed(_) => 1_usize,
-                    | Verdict::Data
-                    | Verdict::Checked { .. }
-                    | Verdict::Synthesised { .. }
-                    | Verdict::Refused(_) => 0_usize,
-                };
-                (Produced::Judged(verdict), ObligationCount::from(owed))
+                (Produced::Judged(verdict), owed_by(verdicts, answer))
             },
         };
         let produced = match expectations.guard {
@@ -1128,6 +1121,65 @@ pub fn settle<'source>(
         declarations,
         verdicts.ledger().count(),
     ))
+}
+
+/// The obligations `answer` owes: one for an owed declaration, and for a
+/// checked fold one per law it rests on that is itself owed. A fold's laws
+/// are its evidence, so what they still owe is owed by what rests on them;
+/// the ledger holds each law's obligation once, under the law.
+///
+/// # Specification
+/// - requires: `answer` is one of `verdicts`' judgements, whose constants
+///   ascend in admission order.
+/// - ensures: `1` for an owed verdict; for a checked or synthesised one, the
+///   number of laws `verdicts` records for its constant whose own judgement is
+///   owed; `0` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one pass over the declaration's finite laws, each looked up by
+///   binary search, not recursion.
+/// - measure: the laws left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's winding number into the native integers owes
+///   its two laws and each law owes itself.
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+#[spec(ensures: |ret| match answer.verdict() {
+    | Verdict::Owed(_) => usize::from(ret) == 1,
+    | Verdict::Checked { .. } | Verdict::Synthesised { .. } => {
+        usize::from(ret) <= verdicts.laws().get(&answer.constant()).map_or(0, Vec::len)
+    },
+    | Verdict::Data | Verdict::Refused(_) => usize::from(ret) == 0,
+})]
+fn owed_by(
+    verdicts: &ModuleReport,
+    answer: &Judged,
+) -> ObligationCount
+{
+    let owed = match answer.verdict() {
+        | Verdict::Owed(_) => 1_usize,
+        | Verdict::Checked { .. } | Verdict::Synthesised { .. } => {
+            let judged = verdicts.judged();
+            verdicts
+                .laws()
+                .get(&answer.constant())
+                .map_or(0_usize, |laws| {
+                    laws.iter()
+                        .filter(|&&law| {
+                            judged
+                                .binary_search_by_key(&law, Judged::constant)
+                                .ok()
+                                .and_then(|at| judged.get(at))
+                                .is_some_and(|held| matches!(held.verdict(), Verdict::Owed(_)))
+                        })
+                        .count()
+                })
+        },
+        | Verdict::Data | Verdict::Refused(_) => 0_usize,
+    };
+    ObligationCount::from(owed)
 }
 
 /// The line `lowered`'s block reads the call `line` states to: the call as

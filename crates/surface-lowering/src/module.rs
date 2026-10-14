@@ -7339,6 +7339,42 @@ impl<'source> LoweredModule<'source>
         &self.attributes
     }
 
+    /// The laws `declaration`'s `respects` attribute names, in the order the
+    /// rules they answer are written: what the checker's declaration carries
+    /// as the evidence a fold rests on.
+    ///
+    /// # Specification
+    /// - requires: `declaration` is one of this module's declarations.
+    /// - ensures: the laws filed under the declaration's definition form, else
+    ///   under its signature form; the empty slice for a declaration no
+    ///   `respects` attribute decorates.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is the receiver's attribute table read
+    ///   at the declaration's keys, which a clause may not compare against.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition naming two laws, a signature naming one
+    ///   and an undecorated declaration separate the three answers.
+    /// - witness: `lower::tests::a_respects_attribute_names_its_laws_through_either_form`
+    #[inline]
+    #[must_use]
+    pub fn laws(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+    ) -> &[ConstantIndex]
+    {
+        [declaration.definition(), declaration.signature()]
+            .into_iter()
+            .find_map(|key| match key {
+                | Maybe::Present(key) => {
+                    Some(self.attributes.laws(key)).filter(|laws| !laws.is_empty())
+                },
+                | Maybe::Absent(_) => None,
+            })
+            .unwrap_or_default()
+    }
+
     /// The documentation of the declaration form whose key is `key`.
     ///
     /// # Specification

@@ -210,13 +210,42 @@ fn present(
     if presentation.rules().is_empty() {
         return Ok(());
     }
-    let table: Vec<Vec<RuleSlot<ValueTypeId>>> = signature
+    presentation
+        .validate(&slot_table(context.arena(), position, signature))
+        .map_err(|refusal| CheckRefusal::RuleNotPresentable {
+            kind: signature.kind(),
+            refusal,
+        })
+}
+
+/// A data declaration's constructor table as a rule side reads it: a field
+/// reading as the declaration's own type where it is the family at
+/// `position`, and as its classifier elsewhere.
+///
+/// # Specification
+/// - requires: `signature` is the declaration's at `position`.
+/// - ensures: one row per constructor, one slot per field, as above.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`present`], and a fold's law reads each pattern
+///   variable at its slot.
+/// - witness: `native_formers::native_formers::a_misplaced_rule_is_refused_in_both_checkers`
+/// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+#[spec(ensures: |ret| ret.len() == signature.constructors().len())]
+pub fn slot_table(
+    arena: &gandr_core_term::CoreArena,
+    position: ConstantIndex,
+    signature: &DataSignature,
+) -> Vec<Vec<RuleSlot<ValueTypeId>>>
+{
+    signature
         .constructors()
         .iter()
         .map(|fields| {
             fields
                 .iter()
-                .map(|&field| match context.arena().value_type(field) {
+                .map(|&field| match arena.value_type(field) {
                     | Some(&ValueType::Data { declaration, .. }) if declaration == position => {
                         RuleSlot::Own
                     },
@@ -224,13 +253,7 @@ fn present(
                 })
                 .collect()
         })
-        .collect();
-    presentation
-        .validate(&table)
-        .map_err(|refusal| CheckRefusal::RuleNotPresentable {
-            kind: signature.kind(),
-            refusal,
-        })
+        .collect()
 }
 
 /// Form an abstract type's kind and representation: the level of the universe

@@ -1602,7 +1602,7 @@ mod tests
                 && ret.items().first().is_some_and(|checkpoint| {
                     let content = checkpoint.content();
                     content.nodes().len() == count
-                        && matches!(content.declaration(), crate::DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(root)} if *root == NodeIndex::from(0_usize))
+                        && matches!(content.declaration(), crate::DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(root),laws} if *root == NodeIndex::from(0_usize) && laws.is_empty())
                         && checkpoint.support().is_empty()
                         && matches!(checkpoint.typing(), &Typing::Owed)
                         && match *content.reference() {
@@ -1625,6 +1625,7 @@ mod tests
             crate::content::DeclarationRoots::Value {
                 signature: Maybe::Absent(signature::Absent::Unsigned),
                 body: Maybe::Present(NodeIndex::from(0_usize)),
+                laws: Vec::new(),
             },
             nodes,
         );

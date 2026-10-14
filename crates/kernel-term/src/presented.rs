@@ -208,6 +208,50 @@ impl PresentedRule
             .count();
         VariableCount(u32::try_from(count).unwrap_or(u32::MAX))
     }
+
+    /// Where each of the left side's variables stands, in variable order: the
+    /// declaration's own type or the classifier of the field it fills, as
+    /// `table` lists them.
+    ///
+    /// # Specification
+    /// - requires: nothing — the side may be unvalidated.
+    /// - ensures: `Ok` with one slot per variable node of the left side, in
+    ///   pre-order, exactly when the side is one term by `table`'s arities with
+    ///   every constructor at the own type; for a rule
+    ///   [`Presentation::validate`] admits, pre-order is variable order.
+    /// - provides: what a fold instantiates a law at: the fold of a variable
+    ///   standing at the own type, the variable itself anywhere else.
+    /// - fails: as [`Presentation::validate`] reading the left side:
+    ///   [`RuleFault::UnknownConstructor`], [`RuleFault::NotOwnPosition`] or
+    ///   [`RuleFault::Arity`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's cancellation reads its one variable at
+    ///   the own type, and a constructor with a field of another type reads its
+    ///   variable at that classifier.
+    /// - witness: `presented::tests::a_rule_side_builds_bottom_up_over_its_variables`
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|slots| slots.len() <= self.left.len())
+        || matches!(ret, Err(RuleFault::UnknownConstructor | RuleFault::NotOwnPosition | RuleFault::Arity)))]
+    #[inline]
+    pub fn slots<T>(
+        &self,
+        table: &[Vec<RuleSlot<T>>],
+    ) -> Result<Vec<RuleSlot<T>>, RuleFault>
+    where
+        T: Copy + Eq,
+    {
+        read_side(&self.left, table).map(|reading| {
+            reading
+                .variables
+                .into_iter()
+                .map(|(_, slot)| slot)
+                .collect()
+        })
+    }
 }
 
 /// A declaration's rules, in the order the producer wrote them, shared.
@@ -1172,6 +1216,22 @@ mod tests
         assert_eq!(
             super::build_side(cancellation.right(), &arities, shown),
             Ok(String::from("x0"))
+        );
+        let own = alloc::vec![RuleSlot::<u8>::Own];
+        let table = [alloc::vec![], own.clone(), own.clone(), alloc::vec![
+            RuleSlot::Other(7_u8)
+        ]];
+        assert_eq!(cancellation.slots(&table), Ok(own));
+        let marked = PresentedRule::new([c(1), c(3), v(0)].into(), [c(0)].into());
+        assert_eq!(
+            marked.slots(&table),
+            Ok(alloc::vec![RuleSlot::Other(7_u8)]),
+            "a variable under a constructor's field of another type reads that classifier"
+        );
+        assert_eq!(
+            PresentedRule::new([c(1), v(0), v(1)].into(), [v(0)].into()).slots(&table),
+            Err(RuleFault::Arity),
+            "a variable past the side's one term"
         );
         let pair = [0_usize, 2].map(FieldCount::from);
         assert_eq!(

@@ -359,11 +359,13 @@ fn encode_minted_atom_table(
 ///   completed entries, in first-completion order. Definitions write
 ///   declared/body roots and four annotation slots, and a definition relating
 ///   endpoints writes [`tags::KIND_DEF_RELATING`] and closes with the pair
-///   count and each pair's roots and dialogue; a data declaration presenting
-///   rules writes [`tags::KIND_DATA_PRESENTED`] and closes with the rule count
-///   and each rule's two sides; abstract types write their kind and
-///   representation roots and the extent of their scope, an open scope as
-///   `remaining`; the other kinds write one root and no slots.
+///   count and each pair's roots and dialogue; a definition resting on laws
+///   writes [`tags::KIND_DEF_LAWFUL`] and closes with the pair block, its count
+///   possibly zero, then the law count and each law's position; a data
+///   declaration presenting rules writes [`tags::KIND_DATA_PRESENTED`] and
+///   closes with the rule count and each rule's two sides; abstract types write
+///   their kind and representation roots and the extent of their scope, an open
+///   scope as `remaining`; the other kinds write one root and no slots.
 /// - provides: one segment with cross-declaration sharing. The predicate checks
 ///   the mark/kind bytes, root memo presence and global-counter transition;
 ///   literal segment fixtures observe field order and slot framing.
@@ -382,13 +384,14 @@ fn encode_minted_atom_table(
 /// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
 /// - witness: `encode::tests::atom_positions_and_provenance_preserve_sequence_identity`
 /// - witness: `encode::tests::a_relating_definition_closes_its_segment_with_its_pairs`
+/// - witness: `encode::tests::a_lawful_definition_closes_its_segment_with_its_laws`
 /// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
 #[spec(
     captures: entry = (out.as_image().as_ref().len(), interner.by_content.len(), interner.next),
     ensures: |ret| { let image = out.as_image();
         let bytes = image.as_ref();
         bytes.get(entry.0).copied() == Some(u8::from(match marked.mark() { AdmissionMark::Checked => tags::ADMISSION_CHECKED, AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED }))
-            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
+            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
             && interner.by_node.contains_key(&AnyNode::ValueType(marked.declaration().declared_id()))
             && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.by_node.contains_key(&AnyNode::Value(body)), _ => true }
             && marked.declaration().related().iter().all(|related| interner.by_node.contains_key(&AnyNode::Value(related.left)) && interner.by_node.contains_key(&AnyNode::Value(related.right)))
@@ -414,6 +417,7 @@ fn encode_declaration(
             tags::KIND_DATA
         },
         | DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED,
+        | DeclarationContent::Def { .. } if !declaration.laws().is_empty() => tags::KIND_DEF_LAWFUL,
         | DeclarationContent::Def { .. } if declaration.related().is_empty() => tags::KIND_DEF,
         | DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING,
         | DeclarationContent::Axiom { .. } => tags::KIND_AXIOM,
@@ -521,8 +525,11 @@ fn encode_declaration(
     }
     // The relating block closes a definition's segment: a pair count of at
     // least one, since a definition relating none wrote the plain kind, then
-    // each pair's roots and its dialogue.
-    if !related_roots.is_empty() {
+    // each pair's roots and its dialogue. A lawful definition writes the block
+    // whatever its count, and its laws after it: a count of at least one and
+    // each law's position.
+    let laws = declaration.laws();
+    if !related_roots.is_empty() || !laws.is_empty() {
         out.put_uvarint(WireU64::from(WireUsize::from(related_roots.len())));
         for (&(left, right), related) in related_roots.iter().zip(declaration.related()) {
             out.put_uvarint(WireU64::from(u64::from(u32::from(left))));
@@ -531,6 +538,12 @@ fn encode_declaration(
             for &decision in &related.dialogue {
                 out.put_uvarint(WireU64::from(crate::term::decision_word(decision).0));
             }
+        }
+    }
+    if !laws.is_empty() {
+        out.put_uvarint(WireU64::from(WireUsize::from(laws.len())));
+        for &law in laws {
+            out.put_uvarint(WireU64::from(WireUsize::from(usize::from(law))));
         }
     }
     // The rule block closes a presented data declaration's segment: a rule
@@ -2238,6 +2251,63 @@ mod tests
         }
         assert_eq!(
             crate::decode::decode(ArtifactImage::from(plain.as_slice())),
+            Err(crate::error::DecodeError::Malformed {
+                site: crate::error::MalformedSite::TrailingBytes,
+            })
+        );
+    }
+
+    #[test]
+    fn a_lawful_definition_closes_its_segment_with_its_laws()
+    {
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let unit_type = builder.arena().value_type_unit();
+        let unit = builder.arena().value_unit();
+        let laws = alloc::vec![ConstantIndex::from(5_usize), ConstantIndex::from(2_usize)];
+        let definition = builder
+            .def(LevelSignature::monomorphic(), unit_type, unit)
+            .lawful(laws.clone());
+        let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, definition)];
+        // The lawful kind, then the plain definition's fields: the unit type
+        // and the unit as entries, the declared and body roots and the four
+        // empty slots; then no related pair, and the two laws in written order.
+        let expected = [
+            b'G', b'K', b'X', b'1', 5, 0, 0, 1, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
+            0, 0, 2, 5, 2,
+        ];
+        let bytes = super::encode(&arena, &declarations);
+        assert_eq!(bytes.as_image().as_ref(), expected);
+        let decoded = crate::decode::decode(ArtifactImage::from(expected.as_slice()))
+            .expect("the literal artifact is structurally admissible");
+        let declaration = decoded.declarations().first().expect("one definition");
+        assert_eq!(declaration.declaration().laws(), laws.as_slice());
+        assert_eq!(
+            super::encode(decoded.arena(), decoded.declarations())
+                .as_image()
+                .as_ref(),
+            expected
+        );
+        // A lawful kind closing with no law decodes to a plain definition,
+        // whose canonical bytes carry the plain kind.
+        let empty = [
+            b'G', b'K', b'X', b'1', 5, 0, 0, 1, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
+            0, 0, 0,
+        ];
+        assert_eq!(
+            crate::decode::decode(ArtifactImage::from(empty.as_slice())),
+            Err(crate::error::DecodeError::Malformed {
+                site: crate::error::MalformedSite::NonCanonical,
+            })
+        );
+        // The relating kind over the same bytes reads the pair count and leaves
+        // the laws unread.
+        let mut relating = expected;
+        if let Some(kind) = relating.get_mut(9) {
+            *kind = 7;
+        }
+        assert_eq!(
+            crate::decode::decode(ArtifactImage::from(relating.as_slice())),
             Err(crate::error::DecodeError::Malformed {
                 site: crate::error::MalformedSite::TrailingBytes,
             })

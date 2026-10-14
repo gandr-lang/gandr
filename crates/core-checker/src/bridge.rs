@@ -1131,6 +1131,7 @@ where
         directed: report.directed(),
         reflexivities: report.reflexivities(),
         relations: report.relations(),
+        laws: report.laws(),
         natives: report.natives(),
         definitions: report.definitions(),
     };
@@ -1203,6 +1204,7 @@ where
                     declared,
                     body,
                     relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
+                    laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
                 },
                 &vouch,
             ),
@@ -1344,6 +1346,8 @@ struct Source<'source>
     /// The path endpoint pairs each accepted declaration's conversions
     /// related, by position.
     relations: &'source BTreeMap<ConstantIndex, Vec<EndpointRelation>>,
+    /// The laws each lawful declaration's folds rest on, by position.
+    laws: &'source BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
     /// The native path each univalence statement the judgement decided
     /// derives, and each path product it judged elaborates to, by node.
     natives: &'source BTreeMap<ValueId, ValueId>,
@@ -1369,6 +1373,8 @@ enum Offer<'signature>
         body: ValueId,
         /// The path endpoint pairs its conversions related.
         relations: &'signature [EndpointRelation],
+        /// The laws its folds rest on, by module position.
+        laws: &'signature [ConstantIndex],
     },
     /// An axiom: the type an owed hole owes.
     Axiom
@@ -1401,6 +1407,8 @@ enum Erased
         body: gandr_kernel_term::ValueId,
         /// The related endpoint pairs' images, each with its dialogue.
         related: Vec<RelatedEndpoints>,
+        /// The kernel positions of the laws its folds rest on.
+        laws: Vec<ConstantIndex>,
     },
     /// An axiom's declared type.
     Axiom
@@ -1530,9 +1538,11 @@ where
             declared,
             body,
             related,
+            laws,
         } => staging
             .def(LevelSignature::monomorphic(), declared, body)
-            .relating(related),
+            .relating(related)
+            .lawful(laws),
         | Erased::Axiom { declared } => staging.axiom(LevelSignature::monomorphic(), declared),
         | Erased::Abstract {
             kind,
@@ -2811,8 +2821,8 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
     #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (offer, &ret);
 if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref parameters,ref constructors,ref kind }) = *matched_right_value { parameters.len() == signature.parameters().len() && constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len)) && target.value_type(*kind).is_some() && parameters.iter().chain(constructors.iter().flatten()).all(|&field| target.value_type(field).is_some()) }
- else if matches!(matched_left_value, Offer::Definition { .. }) && let Ok(Erased::Definition { ref declared, ref body, ref related }) = *matched_right_value { target.value_type(*declared).is_some() && target.value(*body).is_some()
-    && matches!(matched_left_value, Offer::Definition { relations, .. } if relations.len() == related.len())
+ else if matches!(matched_left_value, Offer::Definition { .. }) && let Ok(Erased::Definition { ref declared, ref body, ref related, ref laws }) = *matched_right_value { target.value_type(*declared).is_some() && target.value(*body).is_some()
+    && matches!(matched_left_value, Offer::Definition { relations, laws: named, .. } if relations.len() == related.len() && named.len() == laws.len())
     && related.iter().all(|pair| target.value(pair.left).is_some() && target.value(pair.right).is_some()) }
  else if matches!(matched_left_value, Offer::Axiom { .. }) && let Ok(Erased::Axiom { ref declared }) = *matched_right_value { target.value_type(*declared).is_some() }
  else if matches!(matched_left_value, Offer::Abstract(_)) && let Ok(Erased::Abstract { ref kind, ref representation }) = *matched_right_value { target.value_type(*kind).is_some() && target.value_type(*representation).is_some() }
@@ -2852,7 +2862,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 declared,
                 body,
                 relations,
+                laws,
             } => {
+                let offered = body;
                 let declared = self.value_type(target, declared)?;
                 let body = self.value(target, body)?;
                 // The relations after the body, so their endpoints reuse the
@@ -2871,10 +2883,26 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                             .collect(),
                     });
                 }
+                // A law crossed before the fold that rests on it, at its
+                // kernel position.
+                let laws = laws
+                    .iter()
+                    .map(|&law| {
+                        self.positions
+                            .admitted
+                            .get(&law)
+                            .copied()
+                            .ok_or(Refusal::Withheld {
+                                at: offered,
+                                constant: law,
+                            })
+                    })
+                    .collect::<Result<_, _>>()?;
                 Ok(Erased::Definition {
                     declared,
                     body,
                     related,
+                    laws,
                 })
             },
             | Offer::Axiom { declared } => {
@@ -6107,6 +6135,7 @@ mod tests
             directed: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
             relations: &BTreeMap::new(),
+            laws: &BTreeMap::new(),
             natives: &BTreeMap::new(),
             definitions: &definitions,
         };
@@ -8746,6 +8775,7 @@ mod tests
             directed: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
             relations: &BTreeMap::new(),
+            laws: &BTreeMap::new(),
             natives: &BTreeMap::new(),
             definitions: &definitions,
         };
@@ -9452,6 +9482,7 @@ mod tests
             directed: &BTreeMap::new(),
             reflexivities: &BTreeMap::new(),
             relations: &BTreeMap::new(),
+            laws: &BTreeMap::new(),
             natives: &BTreeMap::new(),
             definitions: &definitions,
         };

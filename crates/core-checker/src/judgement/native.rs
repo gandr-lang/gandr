@@ -437,9 +437,9 @@ impl Machine<'_, '_>
     /// - requires: `body` is the body of the fixpoint `fixpoint`, whose
     ///   structural-descent claim replayed at `expected`.
     /// - ensures: the case under the body's lambda beside [`Reading::Fold`]
-    ///   naming the fixpoint and the domain of `expected`, when that case's
-    ///   scrutinee is the lambda's argument; [`root::Absent::NotOverCase`]
-    ///   otherwise.
+    ///   naming the fixpoint, the domain of `expected` and `expected` itself,
+    ///   when that case's scrutinee is the lambda's argument;
+    ///   [`root::Absent::NotOverCase`] otherwise.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -479,7 +479,11 @@ impl Machine<'_, '_>
         if arena.value(scrutinee) != Some(&argument) {
             return not_over_case;
         }
-        Maybe::Present((case, Reading::Fold { fixpoint, domain }))
+        Maybe::Present((case, Reading::Fold {
+            fixpoint,
+            domain,
+            arrow: expected,
+        }))
     }
 
     /// Synthesize the returner of the exact projected field or component.

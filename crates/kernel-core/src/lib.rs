@@ -310,12 +310,39 @@
 //! of it, decided by conversion. **Alternatives.** Refusing every case over a
 //! presented type, which left it without an eliminator; a recorded dialogue
 //! per rule, which the checker's decision makes redundant. **Reversal.** A
-//! respect that holds only up to a path, as `(n - 1) + 1` and `n` over the
-//! integers, takes that path as an owed obligation instead of a conversion.
-//! The witnesses are
+//! respect that holds only up to a path is the next paragraph's. The
+//! witnesses are
 //! `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
 //! and, on readmission,
 //! `kernel_export::kernel_presented_readmission::a_fold_whose_arm_breaks_a_rule_is_refused_by_name`
+//! in the surface corpus.
+//!
+//! **A fold whose sides meet only up to a path rests on laws.** The winding
+//! number sends `Loop(Unloop(x))` to `turn(unturn(f(x)))`, which no
+//! conversion reduces to `f(x)` on a variable. A definition may name one law
+//! per rule (kernel-term's `Declaration::laws`, the additive declaration kind
+//! `0x09`): a declaration whose type is `Path(C, a, b)` behind one parameter
+//! per pattern variable. Where the δ-free test fails for rule `i`, law `i` is
+//! instantiated at the rule's variables as the fold reads them — `F(x)`
+//! returned where a variable stands at the folded type, the variable
+//! elsewhere — and its endpoints must convert with `F(l)` and `F(r)`, each
+//! read with its runs in place or bound ahead as elaboration binds them
+//! ([`mod@check`]'s respect module). Nothing is searched and no trace is
+//! recorded: the rule, the fold and the law's declared type re-derive the
+//! claim, and the fold's audit names each law it rests on as it names an
+//! operation it calls, so a law that is owed keeps the fold's verdict owed.
+//!
+//! **Choice.** Laws named by the definition, in rule order, each its own
+//! declaration — owed, proved or assumed — so the obligation is a constant
+//! the ledger already counts. **Alternatives.** A goal minted per rule beside
+//! the fold, which would hide the model's laws behind anonymous holes and
+//! repeat them for every fold out of the same model; laws found by searching
+//! the environment, which makes admission depend on what else is declared.
+//! **Reversal.** Arms generated from a model's signature, which would carry
+//! the laws with the model rather than with each fold. The witnesses are
+//! `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+//! and, on readmission,
+//! `kernel_export::kernel_presented_readmission::a_fold_resting_on_a_forged_law_is_refused_by_name`
 //! in the surface corpus.
 //!
 //! # Contract boundaries

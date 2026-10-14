@@ -36,6 +36,8 @@
 //! check at the representation and every later declaration sees the atom
 //! alone.
 
+use alloc::vec::Vec;
+
 use anodized::spec;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -218,6 +220,9 @@ pub struct Declaration
     content: DeclarationContent,
     /// The producer's handle, echoed back.
     origin: OriginToken,
+    /// The laws a definition's folds rest on, one per rule of the folded
+    /// type in written order; empty for every other declaration.
+    laws: Vec<ConstantIndex>,
 }
 
 impl Declaration
@@ -255,6 +260,7 @@ impl Declaration
             constant,
             content: DeclarationContent::Value { signature, body },
             origin,
+            laws: Vec::new(),
         }
     }
 
@@ -299,6 +305,7 @@ impl Declaration
             constant,
             origin,
             content: DeclarationContent::Data(signature),
+            laws: Vec::new(),
         }
     }
 
@@ -318,6 +325,7 @@ impl Declaration
             constant,
             origin,
             content: DeclarationContent::Abstract(sealed),
+            laws: Vec::new(),
         }
     }
 
@@ -330,5 +338,52 @@ impl Declaration
     pub const fn origin(&self) -> OriginToken
     {
         self.origin
+    }
+
+    /// The laws a definition's folds rest on, in its folded type's rule
+    /// order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn laws(&self) -> &[ConstantIndex]
+    {
+        &self.laws
+    }
+
+    /// This value declaration carrying `laws` as the laws its folds rest on,
+    /// everything else unchanged; any other declaration unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — a fold's respect for its type's rules consults law
+    ///   `i` only where its two sides of rule `i` do not convert, and checks
+    ///   the law's statement against them there.
+    /// - ensures: a value declaration carries exactly `laws`; a data or
+    ///   abstract declaration is returned unchanged.
+    /// - provides: how a producer attaches the laws a `respects` attribute
+    ///   names.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fold over the circle is admitted on its laws and
+    ///   refused without them or with a law stating another path.
+    /// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+    #[spec(
+        captures: entry = (self.constant, self.origin, matches!(self.content, DeclarationContent::Value { .. }), self.laws.len(), laws.len()),
+        ensures: |ret| ret.constant == entry.0 && ret.origin == entry.1
+            && ret.laws.len() == if entry.2 { entry.4 } else { entry.3 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn lawful(
+        self,
+        laws: Vec<ConstantIndex>,
+    ) -> Self
+    {
+        match self.content {
+            | DeclarationContent::Value { .. } => Self { laws, ..self },
+            | DeclarationContent::Data(_) | DeclarationContent::Abstract(_) => self,
+        }
     }
 }
