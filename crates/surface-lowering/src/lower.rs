@@ -2002,6 +2002,11 @@ enum Plan
     /// is the head applied statically to the arguments in the lowerer's
     /// operand store, none for a bare name.
     Decode(Code, Stretch, Universe),
+    /// The type the code a dynamic function returns denotes: the function at
+    /// this admission position called on the arguments in the lowerer's
+    /// operand store, its returned code decoded in the universe the position
+    /// reads.
+    Unquote(ConstantIndex, Stretch, Universe),
     /// A static application of the head to the arguments in the lowerer's
     /// operand store, left to right.
     StaticApplication(Code, Stretch),
@@ -7266,7 +7271,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Flow(..)))
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Flow(..)))
                 )
         },
     )]
@@ -7368,9 +7373,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   application, in the universe the code's written type reaches after one
     ///   arrow per argument, and else in the universe the position reads — the
     ///   computation types where only a computation type is read, the value
-    ///   types everywhere else, at the fuss-free level. Every argument is read
-    ///   as a value under the site's frame, and a binder so named is recorded
-    ///   as mentioned.
+    ///   types everywhere else, at the fuss-free level. A declaration defined
+    ///   by a function tail is a dynamic function, not a static operator: where
+    ///   a type is read, its application is the unquote of the code the call
+    ///   returns, in the universe the position reads. Every argument is read as
+    ///   a value under the site's frame, and a binder so named is recorded as
+    ///   mentioned.
     /// - provides: the one reading of a type operator's use, bare or applied,
     ///   as a value or as the type it denotes.
     /// - fails: yields the arity refusal for a data family applied to other
@@ -7389,12 +7397,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a bare head and an applied one, each where a value is
     ///   read and where a type is read, the decode's universe written by the
-    ///   operator and left to the position, each asserted as the exact core
-    ///   node read back out of the arena.
+    ///   operator and left to the position, and a function called where a type
+    ///   is read, each asserted as the exact core node read back out of the
+    ///   arena.
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
     /// - witness: `lower::native::tests::a_data_family_applies_to_its_parameters`
+    /// - witness: `lower::tests::a_function_to_a_universe_unquotes_where_a_type_is_read`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -7402,7 +7412,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Some(&Plan::StaticApplication(_, planned)) => {
                         planned == applied && matches!(site.reading, Reading::Value(_))
                     },
-                    | Some(&Plan::Decode(_, planned, _)) => {
+                    | Some(&Plan::Decode(_, planned, _) | &Plan::Unquote(_, planned, _)) => {
                         planned == applied && !matches!(site.reading, Reading::Value(_))
                     },
                     | Some(&Plan::Data(_, planned)) => planned == applied,
@@ -7444,7 +7454,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | GroundSort::Value => Produced::ValueType,
                 | GroundSort::Computation => Produced::CompType,
             };
-            (Plan::Decode(code, applied, universe), produced)
+            let plan = match code {
+                | Code::Constant(constant)
+                    if matches!(
+                        self.collected
+                            .slots
+                            .get(usize::from(constant))
+                            .map(|slot| slot.definition),
+                        Some(Maybe::Present(Half {
+                            operand: Operand::Function,
+                            ..
+                        }))
+                    ) =>
+                {
+                    Plan::Unquote(constant, applied, universe)
+                },
+                | Code::Constant(_) | Code::Bound { .. } => Plan::Decode(code, applied, universe),
+            };
+            (plan, produced)
         };
         let frame = self.require(site, produced)?;
         if let Code::Bound { binder, .. } = code {
@@ -8754,7 +8781,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(_) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
                     Some(Produced::CompType)
                 },
-                | Plan::Decode(_, _, universe) => Some(match universe.sort {
+                | Plan::Decode(_, _, universe) | Plan::Unquote(_, _, universe) => Some(match universe.sort {
                     | GroundSort::Value => Produced::ValueType,
                     | GroundSort::Computation => Produced::CompType,
                 }),
@@ -8904,6 +8931,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             | Plan::Decode(code, arguments, universe) => {
                 self.mint_decode(code, arguments, universe, sink, origin)
+            },
+            | Plan::Unquote(function, arguments, universe) => {
+                self.mint_unquote(function, arguments, universe, sink, origin)
             },
             | Plan::StaticApplication(code, arguments) => self
                 .mint_code(code, arguments, sink, origin)
@@ -9194,6 +9224,96 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             | GroundSort::Computation => {
                 let id = sink.arena.comp_type_element(value, level);
+                sink.origins.record_comp_type(id, decoded);
+                Maybe::Present(Lowered::CompType(id))
+            },
+        }
+    }
+
+    /// Carry out an unquote's plan: the call of a dynamic function, the code
+    /// it returns, and the type that code denotes.
+    ///
+    /// # Specification
+    /// - requires: every argument is already minted or absent.
+    /// - ensures: `f(v1, …, vn)` where a type is read mints as the decode of
+    ///   `returned(app(… app(force f, v1) …, vn))` at the universe's level, a
+    ///   value type for the value sort and a computation type for the
+    ///   computation sort. The head and the applications carry the written
+    ///   origin; the force, the returned code and the decode are marked
+    ///   inserted. Nothing is minted when an argument did not lower.
+    /// - provides: `El` as unquote: a function from values to a universe is a
+    ///   first-order function to a code, and the type it denotes is the decode
+    ///   of what the call returns, which the checker reduces by running it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Both loops run once per entry of the finite stretch `arguments`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function of one argument called where a type is
+    ///   read, asserted as the exact core type read back out of the arena, with
+    ///   each node's origin.
+    /// - witness: `lower::tests::a_function_to_a_universe_unquotes_where_a_type_is_read`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(Lowered::ValueType(id)) => universe.sort == GroundSort::Value
+                && matches!(
+                    sink.arena.value_type(id),
+                    Some(&gandr_core_term::ValueType::Element { code, .. })
+                        if matches!(sink.arena.value(code), Some(&gandr_core_term::Value::Returned(_)))
+                ),
+            | Maybe::Present(Lowered::CompType(id)) => universe.sort == GroundSort::Computation
+                && matches!(
+                    sink.arena.comp_type(id),
+                    Some(&gandr_core_term::CompType::Element { code, .. })
+                        if matches!(sink.arena.value(code), Some(&gandr_core_term::Value::Returned(_)))
+                ),
+            | Maybe::Present(_) => false,
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    fn mint_unquote(
+        &self,
+        function: ConstantIndex,
+        arguments: Stretch,
+        universe: Universe,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let written = stretch(&self.operands, arguments);
+        for &argument in written {
+            if let Maybe::Absent(reason) = self.value_at(argument) {
+                return Maybe::Absent(reason);
+            }
+        }
+        let head = sink.arena.value_constant(function);
+        sink.origins.record_value(head, origin);
+        let mut called = sink.arena.computation_force(head);
+        sink.origins
+            .record_computation(called, origin.inserted(Insertion::Force));
+        for &argument in written {
+            let Maybe::Present(passed) = self.value_at(argument)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            called = sink.arena.computation_application(called, passed);
+            sink.origins.record_computation(called, origin);
+        }
+        let code = sink.arena.value_returned(called);
+        sink.origins
+            .record_value(code, origin.inserted(Insertion::Endpoint));
+        let level = Level::constant(universe.level);
+        let decoded = origin.inserted(Insertion::Decode);
+        match universe.sort {
+            | GroundSort::Value => {
+                let id = sink.arena.value_type_element(code, level);
+                sink.origins.record_value_type(id, decoded);
+                Maybe::Present(Lowered::ValueType(id))
+            },
+            | GroundSort::Computation => {
+                let id = sink.arena.comp_type_element(code, level);
                 sink.origins.record_comp_type(id, decoded);
                 Maybe::Present(Lowered::CompType(id))
             },
@@ -9689,6 +9809,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Instantiated(..)
             | Plan::Universe(_)
             | Plan::Decode(..)
+            | Plan::Unquote(..)
             | Plan::StaticApplication(..)
             | Plan::Tuple(_)
             | Plan::Record(_)
@@ -15423,6 +15544,72 @@ mod tests
                     if arena.value(code) == Some(&variable(0_u32))
             ),
             "and an untyped binder where a value type is read decodes at the value types"
+        );
+    }
+
+    #[test]
+    fn a_function_to_a_universe_unquotes_where_a_type_is_read()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def zero = 0 ; def pick(t : Integer) -> -F Type { return Integer } def two : \
+                 pick(zero) ;",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let declared = declared_of(lowered[2]);
+        let Some(&ValueType::Element { code, ref target }) = arena.value_type(declared)
+        else {
+            panic!("a function called where a type is read decodes");
+        };
+        assert_eq!(
+            *target,
+            Level::constant(LevelConstant::ZERO),
+            "at the universe the position reads"
+        );
+        let Some(&Value::Returned(called)) = arena.value(code)
+        else {
+            panic!("the code is what the call returns: {:?}", arena.value(code));
+        };
+        let Some(&Computation::Application(forced, argument)) = arena.computation(called)
+        else {
+            panic!("the call applies the function to its argument");
+        };
+        let Some(&Computation::Force(head)) = arena.computation(forced)
+        else {
+            panic!("the function is forced");
+        };
+        assert_eq!(
+            (arena.value(head).cloned(), arena.value(argument).cloned()),
+            (
+                Some(Value::Constant(ConstantIndex::from(1_usize))),
+                Some(Value::Constant(ConstantIndex::from(0_usize)))
+            ),
+            "the function is the declaration, the argument read as a value"
+        );
+        let provenance =
+            |origin: Maybe<crate::Origin, _>| origin.map(|held: crate::Origin| held.provenance());
+        assert_eq!(
+            (
+                provenance(module.origins().value_type(declared)),
+                provenance(module.origins().value(code)),
+                provenance(module.origins().computation(forced)),
+            ),
+            (
+                Maybe::Present(Provenance::Inserted(Insertion::Decode)),
+                Maybe::Present(Provenance::Inserted(Insertion::Endpoint)),
+                Maybe::Present(Provenance::Inserted(Insertion::Force)),
+            ),
+            "the decode, the returned code and the force are the lowering's"
+        );
+        assert!(
+            matches!(
+                provenance(module.origins().computation(called)),
+                Maybe::Present(Provenance::Written)
+            ),
+            "the call is the source's"
         );
     }
 

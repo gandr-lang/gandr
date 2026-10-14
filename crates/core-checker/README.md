@@ -119,7 +119,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Records | [`judgement::native`](src/judgement/native.rs) |
 | The three bridges, consistency, smallness and variance; the fourth, a nested computation run or suspended | [`conversion`](src/conversion.rs), [`nested`](src/nested.rs) |
 | Formation, the classifier, universes, quotes and decodes | [`formation`](src/formation.rs) |
-| Code unfolding and its certificates | [`code`](src/code.rs) |
+| Code unfolding, `El` as unquote, and their certificates | [`code`](src/code.rs) |
 | The fragment's type views | [`view`](src/view.rs) |
 | The context, resolution by admission position, adoption | [`context`](src/context.rs) |
 | Declaration input | [`declaration`](src/declaration.rs) |

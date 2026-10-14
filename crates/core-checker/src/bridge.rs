@@ -3016,7 +3016,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let unfolded = certificate.unfolded();
         let crossed = match unfolded {
             | Unfolded::Definition(constant) => self.positions.admitted.get(&constant).copied(),
-            | Unfolded::Abstraction(_) => None,
+            | Unfolded::Abstraction(_) | Unfolded::Returned(_) => None,
         };
         let left = match crossed {
             | Some(position) => target.value_constant(position),
@@ -4608,12 +4608,14 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - requires: `code` was checked at the universe of `sort` at `level`.
     /// - ensures: for a quote of a type of `sort`, the descent into that type;
     ///   for a variable or a constant, the kernel's decode of its image at
-    ///   `level`; for a static application, the descent into its image with the
-    ///   decode awaiting it. Read normalizing, a constant with a body or a
-    ///   reducible static application first takes its certified step, and the
-    ///   reduct is decoded in its place — the judgement defined a constant's
-    ///   body at the constant's own universe, and a step preserves the type, so
-    ///   at `level` still. A minted decode is of `sort`'s family.
+    ///   `level`; for a static application or a returned code, the descent into
+    ///   its image with the decode awaiting it. Read normalizing, a constant
+    ///   with a body, a reducible static application or a closed returned code
+    ///   first takes its certified step, and the reduct is decoded in its place
+    ///   — the judgement defined a constant's body at the constant's own
+    ///   universe, a step preserves the type, and a returned code's run returns
+    ///   a code of the universe its call returns, so at `level` still. A minted
+    ///   decode is of `sort`'s family.
     /// - fails: [`Refusal::CertificateDeclined`] for a step the normaliser does
     ///   not certify; [`Refusal::Withheld`] for a constant that did not cross;
     ///   [`Refusal::Session`]; [`Refusal::DanglingNode`];
@@ -4632,10 +4634,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// # Adequacy
     /// - hypothesis: L3 — the arms, separated by a quote, a rigid constant, a
     ///   code constant unfolded, a saturated instance reduced, a rigid instance
-    ///   decoded, and a code of the wrong sort.
+    ///   decoded, a closed returned code run, and a code of the wrong sort.
     /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
     /// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+    /// - witness: `bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
     #[spec(ensures: |ret| match ret {
         | Err(_) | Ok(Step::Descend(_)) => true,
         | Ok(Step::Ascend(AnyNode::ValueType(_))) => sort == GroundSort::Value,
@@ -4659,7 +4662,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
             };
             if self.mode == Mode::Normalizing
-                && let Value::Constant(_) | Value::StaticApplication(..) = node
+                && let Value::Constant(_) | Value::StaticApplication(..) | Value::Returned(_) = node
                 && let Maybe::Present(reduct) = self.step(code)?
             {
                 code = reduct;
@@ -4699,7 +4702,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     let position = self.constant_position(code, constant)?;
                     target.value_constant(position)
                 },
-                | (Value::StaticApplication(..), _) => {
+                | (Value::StaticApplication(..) | Value::Returned(_), _) => {
                     self.frames.push(Frame::DecodeOf { level, sort });
                     return Ok(Step::Descend(CoreNode::Term(TermNode::Value(code))));
                 },
@@ -4721,7 +4724,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     | Value::Funext(..)
                     | Value::Equiv(..)
                     | Value::Ua { .. }
-                    | Value::Returned(_)
                     | Value::Nested(_)
                     | Value::Run(_)
                     | Value::Constructor { .. }
@@ -6718,6 +6720,132 @@ mod tests
             [convertible(At(0))],
             "the argument unfolds in term position and the declared type at its decode: \
              one instance, certified once"
+        );
+    }
+
+    /// `El` as unquote: a function to a universe, called where a type is read,
+    /// stands for the type its call returns the quote of. The checker runs
+    /// the closed call under a certificate that holds each δ-step, the kernel
+    /// replays it reading the returned code as its computation, a call that
+    /// returns another quote is refused at the type it does return, a call on
+    /// a binder stays a decode that converts with another node of the same
+    /// call, and a trace stripped of its steps is declined.
+    #[test]
+    fn an_unquoted_function_call_crosses_with_its_run_certified()
+    {
+        // def pick : U (Integer + Unit -> F Type) =
+        //     thunk λ. case x { _ => return ⌜Integer⌝ ; _ => return ⌜Unit⌝ } ;
+        // def n : El (returned ((force pick) (Inj0 0))) = 0 ;
+        // def m : El (returned ((force pick) (Inj1 unit))) = 0 ;
+        // def keep : U ((t : Integer + Unit) -> El (returned ((force pick) t))
+        //     -> F El (returned ((force pick) t))) = thunk λ λ. return x ;
+        let mut arena = CoreArena::new();
+        let small = small(&mut arena);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let unit_type = arena.value_type_unit();
+        let tagged = arena.value_type_sum(&[integer, unit_type]);
+        let returns_code = arena.comp_type_returner(small);
+        let picking = arena.comp_type_arrow(tagged, returns_code);
+        let picking = arena.value_type_thunk(picking);
+        let integer_code = arena.value_quote(integer);
+        let unit_code = arena.value_quote(unit_type);
+        let to_integer = arena.computation_return(integer_code);
+        let to_unit = arena.computation_return(unit_code);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = arena.computation_case(bound, &[to_integer, to_unit]);
+        let pick = arena.computation_lambda(case);
+        let pick = arena.value_thunk(pick);
+        let zero = arena.value_literal(integer_literal());
+        let unit = arena.value_unit();
+        let call = |arena: &mut CoreArena, argument: ValueId| {
+            let head = arena.value_constant(ConstantIndex::from(0_usize));
+            let forced = arena.computation_force(head);
+            let applied = arena.computation_application(forced, argument);
+            arena.value_returned(applied)
+        };
+        let first = arena.value_injection(gandr_core_term::Summand::from(0_usize), zero);
+        let integer_call = call(&mut arena, first);
+        let picked_integer = arena.value_type_element(integer_call, Level::zero());
+        let second = arena.value_injection(gandr_core_term::Summand::from(1_usize), unit);
+        let unit_call = call(&mut arena, second);
+        let picked_unit = arena.value_type_element(unit_call, Level::zero());
+        let held_call = call(&mut arena, bound);
+        let held = arena.value_type_element(held_call, Level::zero());
+        let returned_call = call(&mut arena, bound);
+        let returned = arena.value_type_element(returned_call, Level::zero());
+        let returns_held = arena.comp_type_returner(returned);
+        let keeping = arena.comp_type_arrow(held, returns_held);
+        let keeping = arena.comp_type_pi(tagged, keeping);
+        let keeping = arena.value_type_thunk(keeping);
+        let kept = arena.computation_return(bound);
+        let kept = arena.computation_lambda(kept);
+        let kept = arena.computation_lambda(kept);
+        let kept = arena.value_thunk(kept);
+        assert_ne!(held_call, returned_call, "the two calls are two nodes");
+        let module = [
+            declaration(At(0), Maybe::Present(picking), Maybe::Present(pick)),
+            declaration(At(1), Maybe::Present(picked_integer), Maybe::Present(zero)),
+            declaration(At(2), Maybe::Present(picked_unit), Maybe::Present(zero)),
+            declaration(At(3), Maybe::Present(keeping), Maybe::Present(kept)),
+        ];
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            check_module(&mut context, &module)
+        };
+        let [ref function, ref selected, ref other, ref keep] = *report.judged()
+        else {
+            panic!("one verdict per declaration");
+        };
+        assert!(matches!(function.verdict(), Verdict::Checked { .. }));
+        assert!(
+            matches!(selected.verdict(), Verdict::Checked { .. }),
+            "the call runs to the integer quote and `0` checks at it: {:?}",
+            selected.verdict()
+        );
+        assert!(
+            matches!(other.verdict(), Verdict::Refused(_)),
+            "the other call runs to the unit quote, where `0` does not check: {:?}",
+            other.verdict()
+        );
+        assert!(
+            matches!(keep.verdict(), Verdict::Checked { .. }),
+            "a call on a binder is rigid, and two nodes of it convert: {:?}",
+            keep.verdict()
+        );
+        let readmission = readmit_with(&mut arena, &report, |certificate| certificate);
+        let [ref function_entry, ref selected_entry, _, ref keep_entry] = *readmission.readmitted()
+        else {
+            panic!("one outcome per declaration");
+        };
+        assert!(matches!(*function_entry.outcome(), Outcome::Defined { .. }));
+        assert!(
+            matches!(*selected_entry.outcome(), Outcome::Defined { .. }),
+            "the kernel admits the declaration at the type the call returns: {:?}",
+            selected_entry.outcome()
+        );
+        assert_eq!(
+            steps(selected_entry),
+            [(Unfolded::Returned(integer_call), KernelVerdict::Convertible)],
+            "one run, certified once, replayed convertible"
+        );
+        assert!(
+            matches!(*keep_entry.outcome(), Outcome::Defined { .. }),
+            "the kernel admits the decode of the held call: {:?}",
+            keep_entry.outcome()
+        );
+        let stripped = readmit_with(&mut arena, &report, |certificate| {
+            certificate.with_decisions(Vec::new())
+        });
+        assert!(
+            matches!(
+                stripped.readmitted()[1].outcome(),
+                Outcome::Refused(Refusal::CertificateDeclined {
+                    unfolded: Unfolded::Returned(at),
+                    ..
+                }) if *at == integer_call
+            ),
+            "the replay needs the held unfolding the trace records: {:?}",
+            stripped.readmitted()[1].outcome()
         );
     }
 

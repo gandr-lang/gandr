@@ -24,3 +24,24 @@ def arity(presented : Sig) -> -F Integer {
 @[ runs("2") ]
 def counted : +U (-F Integer) ;
 def counted = thunk { become arity(Monoid) } ;
+
+@[ checks ]
+def counted_at(presented : Sig) -> -F Type {
+  case presented {
+    Presents(sorts, opers, rules) => return Integer,
+    _ => return Unit
+  }
+}
+
+@[ runs("2") ]
+def typed : +U (-F counted_at(Monoid)) ;
+def typed = thunk { become arity(Monoid) } ;
+
+@[ checks ]
+def kept(presented : Sig, n : counted_at(presented)) -> -F counted_at(presented) {
+  return n
+}
+
+@[ refuses("TypeMismatch") ]
+def text : counted_at(Monoid) ;
+def text = "two" ;
