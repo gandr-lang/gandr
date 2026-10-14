@@ -97,6 +97,32 @@
 //! is the direct one; growing it is a change to this crate's walk, not to the
 //! cell layer.
 //!
+//! # A presented type's rules
+//!
+//! A face whose left-hand side is a constructor application — `Loop(Unloop(x))
+//! ==> x`, a rule of a presented type — is no operation redex, and the sequent
+//! reading has no cut to put it at: it rewrites a value wherever the value
+//! stands. [`elaborate_data_desc`] reads it over the term alphabet instead
+//! ([`TermAlphabet`]), where every subterm is a position. A description that
+//! writes one has a presented reading ([`PresentedRules`]): every face that
+//! passed the operation gate — its constructor-headed faces and its admitted
+//! operation faces — as a term cell, in rule order, so a constructor rule and
+//! an operation rule that overlap meet in one store. A constructor-headed face
+//! enters no sequent cell; an operation face keeps its own. A face applying a
+//! declined operation is declined before either reading.
+//!
+//! - **Choice.** The term reading is added where the sequent one has nothing to
+//!   say; a description writing no constructor-headed face has none, and its
+//!   cells are exactly the sequent ones.
+//! - **Alternatives.** Every description read over terms as well, which costs a
+//!   second store and a second check for every family whose rules the sequent
+//!   reading already decides; or a constructor-headed face declined, which
+//!   leaves a presented type no rule at all.
+//! - **Reversal.** A sequent alphabet with command positions inside a producer
+//!   holds both readings in one store, and the presented one is retired.
+//!
+//! [`TermAlphabet`]: crate::TermAlphabet
+//!
 //! # The declaration's polarity
 //!
 //! Every cell a declaration contributes cuts at one polarity: positive for
@@ -257,6 +283,8 @@ use crate::boundary::DeclinedFaceIndex;
 use crate::boundary::DeclinedOpIndex;
 use crate::boundary::InverseFacePresence;
 use crate::boundary::OperationInputCount;
+use crate::term::TermAlphabet;
+use crate::term::face_cell;
 
 /// The reserved return-continuation hole a rule's cut binds; the `$` prefix
 /// keeps it apart from every conventionally spelled pattern variable.
@@ -337,8 +365,11 @@ const DELIVER: &str = "$deliver";
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ElaborateError
 {
-    /// The rule's left-hand side is not an operation application; a rule
-    /// rewrites an operation redex `f(…)`.
+    /// The rule's left-hand side is not an operation application; a sequent
+    /// cell rewrites an operation redex `f(…)`. A description's
+    /// constructor-headed face is read by its presented reading instead, so
+    /// through [`elaborate_data_desc`] this names a variable or a results
+    /// tuple on the left.
     LhsNotOperation,
     /// An operation application carries no arguments, so there is no matched
     /// producer to cut against.
@@ -715,16 +746,60 @@ pub struct DescElaboration
     /// Each declined operation, by index into the description's operations,
     /// with its reason.
     pub declined_opers: Vec<(DeclinedOpIndex, OpElaborateError)>,
-    /// Each admitted face, by index into the description's rules, with the
-    /// cell it became; two faces equal up to their spelling share one cell.
+    /// Each face admitted to the sequent reading, by index into the
+    /// description's rules, with the cell it became; two faces equal up to
+    /// their spelling share one cell.
     pub admitted_faces: Vec<(AdmittedFaceIndex, CellId)>,
     /// Each declined face, by index into the description's rules, with its
     /// reason.
     pub declined_faces: Vec<(DeclinedFaceIndex, ElaborateError)>,
+    /// The rules read over terms, when the description writes a
+    /// constructor-headed face; its constructor-headed faces are in neither
+    /// list above.
+    pub presented: Maybe<PresentedRules, presented_reading::Absent>,
     /// One entry per circuit rule member, in declaration order.
     pub circuits: Vec<CircuitElaboration>,
     /// The η cells the declaration licensed, or why it licensed none.
     pub eta: EtaElaboration,
+}
+
+/// A description's rules read over terms: its presented reading.
+///
+/// # Specification
+/// - provides: one term cell per face that passed the operation gate, written
+///   as the face is, and each face's index beside its cell, so a critical pair
+///   between two cells names the rules it came from.
+/// - executable: none — the record lacks the originating description needed to
+///   validate that every face it should read is read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's two cancellations and a description mixing a
+///   constructor rule with an operation rule are read face for face in rule
+///   order, and a description with no constructor rule has no reading; a face
+///   left out, a face in the wrong order or a reading where none is due changes
+///   the observed record.
+/// - witness: `elaborate::tests::a_presented_types_rules_are_read_over_terms`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PresentedRules
+{
+    /// The term cells; two faces equal as written share one cell.
+    pub store: CellStore<TermAlphabet>,
+    /// Each face read, by index into the description's rules, with its cell,
+    /// in rule order.
+    pub faces: Vec<(AdmittedFaceIndex, CellId)>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a description has no presented reading.
+    pub mod presented_reading {
+        /// The reason no rule is read over terms.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// No face that passed the operation gate has a constructor
+            /// application on its left.
+            NoConstructorRule,
+        }
+    }
 }
 
 /// Elaborate a whole description's operations, rules, circuit rules and η
@@ -741,10 +816,16 @@ pub struct DescElaboration
 ///   `data`, negative for `codata`.
 /// - ensures: `opers` holds one [`OpFrame`] per admitted operation and
 ///   `declined_opers` the rest, both in declaration order; `admitted_faces`
-///   pairs each admitted face with its cell and `declined_faces` each declined
-///   face with its [`ElaborateError`], between them every face once, in rule
-///   order; a face applying a declined operation is declined with
-///   [`ElaborateError::UnrepresentableOperation`] and never reaches the store.
+///   pairs each operation face the sequent reading admitted with its cell,
+///   `declined_faces` each declined face with its [`ElaborateError`], and
+///   `presented` holds the constructor-headed faces, between them every face
+///   once, in rule order; a face applying a declined operation is declined with
+///   [`ElaborateError::UnrepresentableOperation`] and never reaches either
+///   store.
+/// - ensures: `presented` is present exactly when a constructor-headed face
+///   passed the operation gate, and then holds every face that passed it and,
+///   if an operation face, was admitted — as [`face_cell`] builds it, in rule
+///   order.
 /// - ensures: `circuits` holds one [`CircuitElaboration`] per circuit rule, in
 ///   declaration order; a rule whose body denotes no single composite is
 ///   declined with [`ElaborateError::NoCircuitComposite`] before its derived
@@ -775,6 +856,7 @@ pub struct DescElaboration
 /// - witness: `elaborate::tests::a_single_redex_circuit_rule_reaches_the_store`
 /// - witness: `elaborate::tests::a_two_redex_circuit_rule_is_declined_its_composite`
 /// - witness: `elaborate::tests::empty_descriptions_and_mixed_reports_preserve_declaration_indices`
+/// - witness: `elaborate::tests::a_presented_types_rules_are_read_over_terms`
 #[spec(
     ensures: |ret| {
     ret.opers.len().saturating_add(ret.declined_opers.len()) == desc.opers.len()
@@ -787,7 +869,16 @@ pub struct DescElaboration
             .declined_faces
             .iter()
             .all(|&(index, _)| usize::from(index) < desc.rules.len())
-        && ret.admitted_faces.len().saturating_add(ret.declined_faces.len()) == desc.rules.len()
+        && ret.admitted_faces.len().saturating_add(ret.declined_faces.len()).saturating_add(match ret.presented {
+            Maybe::Present(ref presented) => presented.faces.len().saturating_sub(ret.admitted_faces.len()),
+            Maybe::Absent(_) => 0,
+        }) == desc.rules.len()
+        && match ret.presented {
+            Maybe::Present(ref presented) => presented.faces.iter().all(|&(index, cell)| desc.rules.get(usize::from(index))
+                .is_some_and(|face| matches!(presented.store.get(cell), Maybe::Present(stored) if *stored == face_cell(face))))
+                && presented.faces.iter().zip(presented.faces.iter().skip(1)).all(|(left, right)| left.0 < right.0),
+            Maybe::Absent(presented_reading::Absent::NoConstructorRule) => ret.admitted_faces.len().saturating_add(ret.declined_faces.len()) == desc.rules.len(),
+        }
         && ret
             .admitted_faces
             .iter()
@@ -837,12 +928,41 @@ pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
     }
     let mut admitted_faces = Vec::with_capacity(desc.rules.len());
     let mut declined_faces = Vec::new();
+    // Every face either reading holds, in rule order, and whether one of them
+    // is constructor-headed, which is what calls for the term reading.
+    let mut read: Vec<(AdmittedFaceIndex, &RuleFace)> = Vec::with_capacity(desc.rules.len());
+    let mut presents = false;
     for (index, face) in desc.rules.iter().enumerate() {
-        match admit_face(&mut store, face, desc.polarity, &opers, &unrepresentable) {
-            | Ok(cell) => admitted_faces.push((AdmittedFaceIndex::from(index), cell)),
+        let constructor_headed = matches!(face.lhs.view(), TermView::Ctor { .. });
+        let outcome = if constructor_headed {
+            declined_operation(face, &unrepresentable)
+        }
+        else {
+            admit_face(&mut store, face, desc.polarity, &opers, &unrepresentable)
+                .map(|cell| admitted_faces.push((AdmittedFaceIndex::from(index), cell)))
+        };
+        match outcome {
+            | Ok(()) => {
+                presents |= constructor_headed;
+                read.push((AdmittedFaceIndex::from(index), face));
+            },
             | Err(error) => declined_faces.push((DeclinedFaceIndex::from(index), error)),
         }
     }
+    let presented = if presents {
+        let mut terms = CellStore::new();
+        let faces = read
+            .into_iter()
+            .map(|(index, face)| (index, terms.insert(face_cell(face))))
+            .collect();
+        Maybe::Present(PresentedRules {
+            store: terms,
+            faces,
+        })
+    }
+    else {
+        Maybe::Absent(presented_reading::Absent::NoConstructorRule)
+    };
     let circuits = desc
         .circuits
         .iter()
@@ -855,6 +975,7 @@ pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
         declined_opers,
         admitted_faces,
         declined_faces,
+        presented,
         circuits,
         eta,
     }
@@ -3372,21 +3493,142 @@ mod tests
             );
         }
 
-        // A left-hand side that is not an operation is outside the fragment
-        // too, so the face is declined as well: the η licence and the
-        // elaboration gate are separate verdicts on one shape.
+        // A constructor-headed face is no η licence either, and the sequent
+        // reading holds no cell for it: the η licence and the two readings are
+        // separate verdicts on one shape.
         let elaborated = elaborate_data_desc(&wrapper_with(
             "unwrap",
             mk(FreeTerm::var("x")),
             FreeTerm::var("x"),
         ));
         assert_eq!(
+            EtaElaboration::Declined(EtaElaborateError::NoInverseFace),
+            elaborated.eta,
+            "no η cell"
+        );
+        assert!(
+            elaborated.admitted_faces.is_empty() && elaborated.declined_faces.is_empty(),
+            "the face is in neither sequent list"
+        );
+        let Maybe::Present(presented) = elaborated.presented
+        else {
+            panic!("the face is read over terms");
+        };
+        assert_eq!(
+            vec![(AdmittedFaceIndex::from(0_usize), CellId::from(0_usize))],
+            presented.faces,
+            "against its own index"
+        );
+    }
+
+    #[test]
+    fn a_presented_types_rules_are_read_over_terms()
+    {
+        let x = || FreeTerm::var("x");
+        let turn = |name: &str, inner: FreeTerm| FreeTerm::ctor(name, [inner]);
+        let circle = SignDesc::<Ungraded>::new(
+            NominalId::new(NominalSerial::from(0_u64), "Circle"),
+            Vec::new(),
+            [
+                CtorDesc::new("Base", Code::unit(), "Circle", Attrs::empty()),
+                CtorDesc::new("Loop", Code::var("Circle"), "Circle", Attrs::empty()),
+                CtorDesc::new("Unloop", Code::var("Circle"), "Circle", Attrs::empty()),
+            ],
+            Vec::<OperDesc>::new(),
+            [
+                face(turn("Loop", turn("Unloop", x())), x()),
+                face(turn("Unloop", turn("Loop", x())), x()),
+            ],
+            DeclPolarity::Data,
+            Attrs::empty(),
+        );
+        let elaborated = elaborate_data_desc(&circle);
+        assert!(
+            elaborated.admitted_faces.is_empty() && elaborated.declined_faces.is_empty(),
+            "no cancellation is a sequent cell, and none is declined"
+        );
+        assert_eq!(
+            CellCount::from(3_usize),
+            elaborated.store.len(),
+            "the sequent store holds the three frame cells alone"
+        );
+        let Maybe::Present(presented) = elaborated.presented
+        else {
+            panic!("the circle is read over terms");
+        };
+        assert_eq!(
+            vec![
+                (AdmittedFaceIndex::from(0_usize), CellId::from(0_usize)),
+                (AdmittedFaceIndex::from(1_usize), CellId::from(1_usize)),
+            ],
+            presented.faces,
+            "each cancellation its own cell, in rule order"
+        );
+        for &(index, cell) in &presented.faces {
+            let written = circle
+                .rules
+                .get(usize::from(index))
+                .expect("a written face");
+            assert_eq!(
+                Maybe::Present(&face_cell(written)),
+                presented.store.get(cell),
+                "the cell is the face as written"
+            );
+        }
+        // A constructor rule beside an operation rule: the operation face
+        // keeps its sequent cell and joins the term reading in rule order.
+        let mixed = nat_with([add_op()], [
+            add_zero_face(),
+            face(turn("Succ", turn("Succ", x())), x()),
+        ]);
+        let elaborated = elaborate_data_desc(&mixed);
+        assert_eq!(
+            vec![AdmittedFaceIndex::from(0_usize)],
+            elaborated
+                .admitted_faces
+                .iter()
+                .map(|&(index, _)| index)
+                .collect::<Vec<_>>(),
+            "the operation face is a sequent cell"
+        );
+        let Maybe::Present(presented) = elaborated.presented
+        else {
+            panic!("the constructor rule calls for the term reading");
+        };
+        assert_eq!(
+            vec![
+                (AdmittedFaceIndex::from(0_usize), CellId::from(0_usize)),
+                (AdmittedFaceIndex::from(1_usize), CellId::from(1_usize)),
+            ],
+            presented.faces,
+            "both faces are read over terms"
+        );
+        // The operation gate binds first: a constructor rule applying a
+        // declined operation is declined, and with it the term reading.
+        let outputless =
+            OperDesc::new("sink", BridgeArity::new([], [], [], [], []), Attrs::empty());
+        let gated = nat_with([outputless], [face(
+            turn("Succ", FreeTerm::op("sink", [])),
+            FreeTerm::ctor("Zero", []),
+        )]);
+        let elaborated = elaborate_data_desc(&gated);
+        assert_eq!(
             vec![(
                 DeclinedFaceIndex::from(0_usize),
-                ElaborateError::LhsNotOperation
+                ElaborateError::UnrepresentableOperation
             )],
             elaborated.declined_faces,
-            "the face is declined against its own index, naming the shape"
+            "the gate declines the constructor rule"
+        );
+        assert_eq!(
+            Maybe::Absent(presented_reading::Absent::NoConstructorRule),
+            elaborated.presented,
+            "no constructor rule passed the gate"
+        );
+        assert_eq!(
+            Maybe::Absent(presented_reading::Absent::NoConstructorRule),
+            elaborate_data_desc(&nat_with([add_op()], [add_zero_face()])).presented,
+            "a family of operation rules has no term reading"
         );
     }
 

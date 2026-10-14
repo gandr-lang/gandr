@@ -16,11 +16,14 @@ use gandr_theory_coherent_resolutions::CompletionBudget;
 use gandr_theory_coherent_resolutions::CompletionCellBudget;
 use gandr_theory_coherent_resolutions::CompletionOutcome;
 use gandr_theory_coherent_resolutions::CompletionStepBudget;
+use gandr_theory_coherent_resolutions::Joinability;
 use gandr_theory_coherent_resolutions::NormalizationBudget;
 use gandr_theory_coherent_resolutions::OverlapKind;
 use gandr_theory_coherent_resolutions::complete;
 use gandr_theory_coherent_resolutions::derive_fused;
 use gandr_theory_coherent_resolutions::enumerate_overlaps;
+use gandr_theory_coherent_resolutions::interior_overlaps_between;
+use gandr_theory_coherent_resolutions::join_critical_pairs;
 use gandr_theory_coherent_resolutions::normalize;
 
 /// (add-Z): `Add(Zero, x) ~> x`.
@@ -70,15 +73,15 @@ fn budget(
     CompletionBudget::new(steps, cells, norm)
 }
 
-/// Every confluence entry carries the root seam, over an alphabet that has
-/// interior command positions.
+/// Every confluence entry of the store-wide sweep carries the root seam, over
+/// an alphabet that has interior command positions.
 ///
 /// The sequent alphabet's only command position is the root, so the same
 /// assertion there cannot fail. The toy alphabet nests commands, so interior
-/// positions exist and a confluence entry must still carry the root, because
-/// the confluence branch unifies whole left-hand sides and never descends. The
-/// completeness exception rests on this: a confluence entry at an interior
-/// position would be a self-overlap the diagonal exclusion would then drop.
+/// positions exist and a sweep entry must still carry the root, because the
+/// sweep's confluence branch unifies whole left-hand sides and never descends;
+/// the interior family is a second pair query, which the sweep's consumers do
+/// not schedule.
 #[test]
 fn every_toy_confluence_entry_carries_the_root_seam()
 {
@@ -110,6 +113,105 @@ fn every_toy_confluence_entry_carries_the_root_seam()
     assert!(
         seen > 0_usize,
         "the fixture produces confluence entries, so the check is not vacuous"
+    );
+}
+
+#[test]
+fn interior_overlaps_reach_below_the_root_and_join_or_diverge()
+{
+    // A successor below an addition, overlapped by a rule on that successor:
+    // the peak `Add(Succ(Zero), y)` reduces to `Zero` at the root and to
+    // `Add(Zero, y)` at the seam, and no rule joins them.
+    let peel = toy_cell(
+        Toy::add(Toy::succ(Toy::var("x")), Toy::var("y")),
+        Toy::var("x"),
+    );
+    let drop = toy_cell(Toy::succ(Toy::zero()), Toy::zero());
+    let mut divergent: CellStore<ToyAlphabet> = CellStore::new();
+    let peel_id = divergent.insert(peel.clone());
+    let drop_id = divergent.insert(drop.clone());
+    let seam = ToyAlphabet::position_at_path(&[0_usize.into()]);
+    let family = interior_overlaps_between((peel_id, &peel), (drop_id, &drop));
+    assert_eq!(1, family.len(), "one interior seam unifies");
+    let entry = family.first().expect("the entry");
+    assert_eq!(
+        OverlapKind::Confluence,
+        entry.kind,
+        "an interior entry is a confluence"
+    );
+    assert_eq!(seam, entry.seam, "seamed at the successor");
+    assert_eq!(
+        Toy::add(Toy::succ(Toy::zero()), Toy::var("y")),
+        entry.peak,
+        "the peak"
+    );
+    assert_eq!(
+        Ok(Toy::add(Toy::zero(), Toy::var("y"))),
+        entry.right_reduct(),
+        "the right reduct keeps the addition around the contractum"
+    );
+    assert!(
+        interior_overlaps_between((peel_id, &peel), (peel_id, &peel)).is_empty(),
+        "the rule does not overlap its own successor"
+    );
+    assert!(
+        enumerate_overlaps(&divergent)
+            .iter()
+            .all(|overlap| overlap.kind != OverlapKind::Confluence),
+        "the root sweep sees no confluence here"
+    );
+    assert_eq!(
+        Joinability::Diverges {
+            overlap: entry.clone(),
+            left: Toy::zero(),
+            right: Toy::add(Toy::zero(), Toy::var("y")),
+        },
+        join_critical_pairs(&divergent, NormalizationBudget::from(16_usize)),
+        "the interior pair diverges"
+    );
+    // A rule overlapping itself one position down: both reducts are
+    // `Succ(x')`, so the pair joins in no step past the two contractions.
+    let halve = toy_cell(Toy::succ(Toy::succ(Toy::var("x"))), Toy::var("x"));
+    let mut joinable: CellStore<ToyAlphabet> = CellStore::new();
+    let halve_id = joinable.insert(halve);
+    let Joinability::Joined(certificates) =
+        join_critical_pairs(&joinable, NormalizationBudget::from(16_usize))
+    else {
+        panic!("the self-overlap joins");
+    };
+    assert_eq!(1, certificates.len(), "one interior pair, the diagonal");
+    let certificate = certificates.first().expect("the certificate");
+    assert_eq!(
+        (halve_id, halve_id, seam.clone()),
+        (
+            certificate.overlap.left,
+            certificate.overlap.right,
+            certificate.overlap.seam.clone()
+        ),
+        "the cell against itself at the successor"
+    );
+    assert_eq!(
+        Some(&seam),
+        certificate.path_b.first().map(|step| &step.at),
+        "the right path's first step fires at the seam"
+    );
+    assert_eq!(
+        Some(&ToyAlphabet::root_position()),
+        certificate.path_a.first().map(|step| &step.at),
+        "the left path's first step fires at the root"
+    );
+    assert!(
+        bool::from(certificate.replay(&joinable)),
+        "the certificate replays"
+    );
+    // Left-hand sides whose interior positions are all metavariables overlap
+    // nothing below the root.
+    let project = toy_cell(Toy::add(Toy::var("a"), Toy::var("b")), Toy::var("a"));
+    let mut flat: CellStore<ToyAlphabet> = CellStore::new();
+    let project_id = flat.insert(project.clone());
+    assert!(
+        interior_overlaps_between((project_id, &project), (project_id, &project)).is_empty(),
+        "variable positions are skipped"
     );
 }
 

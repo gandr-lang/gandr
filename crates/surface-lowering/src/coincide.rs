@@ -59,6 +59,24 @@
 //! rules with each one's earlier overlaps subtracted, and this check reads
 //! that.
 //!
+//! # A presented type
+//!
+//! A `data` family whose rules rewrite its own constructor words — the
+//! circle's `Loop(Unloop(x)) ==> x` and `Unloop(Loop(x)) ==> x` — has no
+//! operation for the decision tree to compile and no sequent cell for its
+//! rules: its reading is the rewriting of the words, over terms
+//! (`DeclarationCells::presented`). Step 2 decides that reading's critical
+//! pairs as well, and there a rule overlaps another inside its left-hand side,
+//! not only at the root (`interior_overlaps_between`): the circle's
+//! cancellations meet at `Loop(Unloop(Loop(x)))` and at
+//! `Unloop(Loop(Unloop(x)))`, and both join, while a third rule `Loop(Loop(x))
+//! ==> x` meets the second at `Unloop(Loop(Loop(x)))`, which it leaves at
+//! `Unloop(x)` and the second at `Loop(x)`, and is refused. A divergence is
+//! located at the later of the two rules whichever of them the overlap reads
+//! first. Witnesses:
+//! `coincide::tests::the_circles_cancellations_join_below_the_root`,
+//! `coincide::tests::a_third_cancellation_parts_the_circles_readings`.
+//!
 //! # The normal form a call reaches
 //!
 //! [`normal_form`] reads a call written in the inspection notation —
@@ -66,10 +84,12 @@
 //! operation's faces match, normalizes it under the block's rewriting, replays
 //! the path it took to certify the normal form, and reads the normal form back
 //! as a first-order term (`read_command`): a constructor term for one output,
-//! the results tuple for several. It is the engine's reading of a call, the one
-//! the corpus's `normalizes` attribute states and the differential test holds
-//! the machine's run of the same call to. Only a block the check admitted is
-//! read; a call into any other is [`NormalFormFault::Incoherent`].
+//! the results tuple for several. A presented type's word —
+//! `Loop(Unloop(Base))` — is read as a term and normalized under the term
+//! store instead. It is the engine's reading of a call, the one the corpus's
+//! `normalizes` attribute states and the differential test holds the machine's
+//! run of the same call to. Only a block the check admitted is read; a call
+//! into any other is [`NormalFormFault::Incoherent`].
 //!
 //! # What the kernel would need
 //!
@@ -80,7 +100,8 @@
 //! certificate — every overlapping cell pair with its unifier, and the check
 //! that no other pair's left-hand sides unify, which for the root-only
 //! overlaps of linear left-hand sides the cell gate admits is first-order
-//! unification over the pairs left out; one join certificate per pair, which
+//! unification over the pairs left out, and for a presented type the same over
+//! every subterm of a left-hand side; one join certificate per pair, which
 //! exists and replays by ground rewriting (`Tracelet::replay`); and the path
 //! order's precedence with a checker for it. The certificates are kept on
 //! [`Coincidence::Joined`]; the enumeration's completeness, the order and the
@@ -97,6 +118,7 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
+use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::CmdPat;
@@ -109,9 +131,14 @@ use gandr_theory_coherent_resolutions::normalize;
 use gandr_theory_coherent_resolutions::replay_path;
 use gandr_theory_computads::AdmittedFaceIndex;
 use gandr_theory_computads::ElaborateError;
+use gandr_theory_computads::PresentedRules;
+use gandr_theory_computads::Term;
+use gandr_theory_computads::TermAlphabet;
 use gandr_theory_computads::command_reading;
 use gandr_theory_computads::elaborate_call;
+use gandr_theory_computads::presented_reading;
 use gandr_theory_computads::read_command;
+use gandr_theory_computads::term_reading;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::SignDesc;
@@ -144,11 +171,33 @@ pub enum Coincidence
     /// The rules terminate and no two of them overlap.
     Orthogonal,
     /// The rules terminate and every critical pair joins: one certificate per
-    /// pair, each replaying over [`DeclarationCells::rewriting`].
-    Joined(Vec<Tracelet>),
+    /// pair, in the reading the pair was decided in.
+    Joined(Certificates),
     /// The rules' two readings part, or the check could not tell: the report's
     /// diagnostic at this index says why.
     Refused(CellDiagnosticIndex),
+}
+
+/// The join certificates of a block's critical pairs, by reading.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Certificates
+{
+    /// One per critical pair of the sequent reading, each replaying over
+    /// [`DeclarationCells::rewriting`].
+    pub commands: Vec<Tracelet>,
+    /// One per critical pair of the presented reading, interior overlaps
+    /// included, each replaying over its term store.
+    pub terms: Vec<Tracelet<TermAlphabet>>,
+}
+
+/// A term a coherence fault names, in the reading whose pair it is.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PairTerm
+{
+    /// A command of the sequent reading.
+    Command(CmdPat),
+    /// A term of the presented reading.
+    Term(Term),
 }
 
 /// Why a block's rules are refused as one rewriting system.
@@ -165,11 +214,11 @@ pub enum CoherenceFault
         /// The earlier rule's written interval.
         first: ByteSpan,
         /// The term both rules match.
-        peak: Box<CmdPat>,
+        peak: Box<PairTerm>,
         /// The earlier rule's normal form of it.
-        left: Box<CmdPat>,
+        left: Box<PairTerm>,
         /// This rule's normal form of it.
-        right: Box<CmdPat>,
+        right: Box<PairTerm>,
     },
     /// The rule and an earlier one overlap at `peak`, and a reduct reaches no
     /// normal form within [`JOIN_STEPS`] steps.
@@ -178,7 +227,7 @@ pub enum CoherenceFault
         /// The earlier rule's written interval.
         first: ByteSpan,
         /// The term both rules match.
-        peak: Box<CmdPat>,
+        peak: Box<PairTerm>,
     },
 }
 
@@ -221,10 +270,11 @@ impl fmt::Display for CoherenceFault
     /// Propagates a refusal from the formatting sink.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a divergent pair is written with its peak and both
-    ///   normal forms in order; swapping them or dropping the peak changes the
-    ///   witnessed text.
+    /// - hypothesis: L3 — a divergent pair of either reading is written with
+    ///   its peak and both normal forms in order; swapping them or dropping the
+    ///   peak changes the witnessed text.
     /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
+    /// - witness: `coincide::tests::a_third_cancellation_parts_the_circles_readings`
     #[inline]
     fn fmt(
         &self,
@@ -258,13 +308,15 @@ impl fmt::Display for CoherenceFault
     }
 }
 
-/// A command spelled as the term it denotes.
+/// A pair's term spelled as the term it denotes.
 #[repr(transparent)]
-struct Spelled<'command>(&'command CmdPat);
+struct Spelled<'term>(&'term PairTerm);
 
 impl fmt::Display for Spelled<'_>
 {
-    /// Writes the term the command reads as, or the reason it reads as none.
+    /// Writes the term a command or a term reads as, or the reason it reads as
+    /// none: a terminal as `★`, split results as `…`, and a replay's constant,
+    /// which no pair holds, as `★` too.
     ///
     /// # Specification
     /// trivial.
@@ -274,26 +326,37 @@ impl fmt::Display for Spelled<'_>
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        match read_command(self.0) {
-            | Maybe::Present(term) => f.write_str(&spell(&term)),
-            | Maybe::Absent(command_reading::Absent::Terminal) => f.write_str("★"),
-            | Maybe::Absent(command_reading::Absent::SplitResults) => f.write_str("…"),
+        let read = match *self.0 {
+            | PairTerm::Command(ref command) => match read_command(command) {
+                | Maybe::Present(written) => Ok(written),
+                | Maybe::Absent(command_reading::Absent::Terminal) => Err("★"),
+                | Maybe::Absent(command_reading::Absent::SplitResults) => Err("…"),
+            },
+            | PairTerm::Term(ref term) => match term.read() {
+                | Maybe::Present(written) => Ok(written),
+                | Maybe::Absent(term_reading::Absent::Skolem) => Err("★"),
+            },
+        };
+        match read {
+            | Ok(written) => f.write_str(&spell(&written)),
+            | Err(sign) => f.write_str(sign),
         }
     }
 }
 
 /// Decide whether a description's rules are one rewriting system: termination
 /// by the path order, then joinability of every critical pair over its
-/// rewriting store.
+/// rewriting store and, for a presented type, over its term store.
 ///
 /// # Specification
-/// - requires: `store`, `faces` and `circuits` are the cell gate's elaboration
-///   of `description`, which declined none of its operations, faces or circuit
-///   rules; `at` is the declaration's interval.
+/// - requires: `store`, `faces`, `presented` and `circuits` are the cell gate's
+///   elaboration of `description`, which declined none of its operations, faces
+///   or circuit rules; `at` is the declaration's interval.
 /// - ensures: the first unoriented rule as [`CoherenceFault::Unoriented`] at
-///   its span; else the first critical pair that does not join, at the later
-///   rule's span naming the earlier one's; else [`Coincidence::Orthogonal`]
-///   when no two cells overlap and [`Coincidence::Joined`] with every pair's
+///   its span; else the first critical pair of the sequent reading, then of the
+///   presented one, that does not join, at the later rule's span naming the
+///   earlier one's; else [`Coincidence::Orthogonal`] when no two cells overlap
+///   in either reading and [`Coincidence::Joined`] with every pair's
 ///   certificate otherwise.
 /// - panics: none.
 ///
@@ -304,13 +367,18 @@ impl fmt::Display for Spelled<'_>
 /// - hypothesis: L3 — the addition family is orthogonal, the family adding a
 ///   right unit is joined with one certificate per overlap, a right unit
 ///   returning a successor diverges at the later rule, and a rule rebuilding
-///   its own call is unoriented before any pair is read; reporting the earlier
-///   rule's span, or deciding joinability first, changes one of them.
+///   its own call is unoriented before any pair is read; the circle's two
+///   cancellations join over terms at the two words they overlap in, and a
+///   third cancellation diverges at itself naming the one before; reporting the
+///   earlier rule's span, deciding joinability first, or reading the circle in
+///   the sequent store alone changes one of them.
 /// - witness: `coincide::tests::an_overlap_that_joins_is_certified_and_runs_either_way`
 /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
 /// - witness: `coincide::tests::a_rule_that_rebuilds_its_own_call_refuses_the_block`
+/// - witness: `coincide::tests::the_circles_cancellations_join_below_the_root`
+/// - witness: `coincide::tests::a_third_cancellation_parts_the_circles_readings`
 #[spec(ensures: |ret| match ret {
-    Ok(Coincidence::Joined(ref certificates)) => !certificates.is_empty(),
+    Ok(Coincidence::Joined(ref certificates)) => !certificates.commands.is_empty() || !certificates.terms.is_empty(),
     Ok(Coincidence::Orthogonal) => true,
     Ok(Coincidence::Unexamined | Coincidence::Refused(_)) => false,
     Err((span, CoherenceFault::Unoriented)) => matches!(orient_rules(description), Termination::Unoriented(_))
@@ -322,6 +390,7 @@ pub(crate) fn decide<G>(
     at: ByteSpan,
     store: &CellStore,
     faces: &[(AdmittedFaceIndex, CellId)],
+    presented: &Maybe<PresentedRules, presented_reading::Absent>,
     circuits: &[CircuitCell],
 ) -> Result<Coincidence, (ByteSpan, CoherenceFault)>
 {
@@ -334,32 +403,112 @@ pub(crate) fn decide<G>(
     if let Termination::Unoriented(index) = orient_rules(description) {
         return Err((rule_span(usize::from(index)), CoherenceFault::Unoriented));
     }
-    let cell_span = |cell: CellId| {
+    let budget = NormalizationBudget::from(JOIN_STEPS);
+    let rewriting = rewriting_store(store, faces, circuits);
+    let commands = certified(
+        join_critical_pairs(&rewriting, budget),
+        faces,
+        &rule_span,
+        at,
+        PairTerm::Command,
+    )?;
+    let terms = match *presented {
+        | Maybe::Present(ref presented) => certified(
+            join_critical_pairs(&presented.store, budget),
+            &presented.faces,
+            &rule_span,
+            at,
+            PairTerm::Term,
+        )?,
+        | Maybe::Absent(presented_reading::Absent::NoConstructorRule) => Vec::new(),
+    };
+    if commands.is_empty() && terms.is_empty() {
+        return Ok(Coincidence::Orthogonal);
+    }
+    Ok(Coincidence::Joined(Certificates { commands, terms }))
+}
+
+/// The certificates of one reading's critical pairs, or the fault of its first
+/// pair that does not join, at the later rule's span naming the earlier one's.
+///
+/// # Specification
+/// - requires: `faces` pairs each face with its cell in the store `joinability`
+///   was decided over; `rule_span` locates a face by index.
+/// - ensures: every certificate when every pair joins; otherwise the pair's two
+///   cells located at their faces — `at` for a cell no face wrote — the later
+///   face carrying the fault and the earlier one named in it, a pair whose
+///   faces are written out of store order read in face order.
+/// - panics: none.
+///
+/// # Errors
+/// The fault and the span it stands at, as the ensures clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sequent pair is located at its later rule, and an
+///   interior pair of the circle whose later rule is the overlap's left cell is
+///   located at that rule all the same; swapping the two spans changes the
+///   witnessed text.
+/// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
+/// - witness: `coincide::tests::a_third_cancellation_parts_the_circles_readings`
+#[spec(captures: joined = match joinability {
+    Joinability::Joined(ref all) => Some(all.len()),
+    Joinability::Diverges { .. } | Joinability::Undecided(_) => None,
+}, ensures: |ret| ret.as_ref().map_or_else(|_| joined.is_none(), |certificates| joined == Some(certificates.len())))]
+fn certified<A, S, W>(
+    joinability: Joinability<A>,
+    faces: &[(AdmittedFaceIndex, CellId)],
+    rule_span: &S,
+    at: ByteSpan,
+    wrap: W,
+) -> Result<Vec<Tracelet<A>>, (ByteSpan, CoherenceFault)>
+where
+    A: CellAlphabet,
+    S: Fn(usize) -> ByteSpan,
+    W: Fn(A::Cmd) -> PairTerm,
+{
+    let face_of = |cell: CellId| {
         faces
             .iter()
             .find(|&&(_, admitted)| admitted == cell)
-            .map_or(at, |&(index, _)| rule_span(usize::from(index)))
+            .map(|&(index, _)| usize::from(index))
     };
-    let rewriting = rewriting_store(store, faces, circuits);
-    match join_critical_pairs(&rewriting, NormalizationBudget::from(JOIN_STEPS)) {
-        | Joinability::Joined(certificates) if certificates.is_empty() => {
-            Ok(Coincidence::Orthogonal)
-        },
-        | Joinability::Joined(certificates) => Ok(Coincidence::Joined(certificates)),
+    // The span of the later face, the span of the earlier one, and whether the
+    // overlap read the later face first.
+    let located = |left: CellId, right: CellId| {
+        let span = |face: Option<usize>| face.map_or(at, rule_span);
+        match (face_of(left), face_of(right)) {
+            | (Some(written_left), Some(written_right)) if written_left > written_right => {
+                (span(Some(written_left)), span(Some(written_right)), true)
+            },
+            | (written_left, written_right) => (span(written_right), span(written_left), false),
+        }
+    };
+    match joinability {
+        | Joinability::Joined(certificates) => Ok(certificates),
         | Joinability::Diverges {
             overlap,
             left,
             right,
-        } => Err((cell_span(overlap.right), CoherenceFault::Diverges {
-            first: cell_span(overlap.left),
-            peak: Box::new(overlap.peak),
-            left: Box::new(left),
-            right: Box::new(right),
-        })),
+        } => {
+            let (span, first, swapped) = located(overlap.left, overlap.right);
+            let (earlier, later) = if swapped {
+                (right, left)
+            }
+            else {
+                (left, right)
+            };
+            Err((span, CoherenceFault::Diverges {
+                first,
+                peak: Box::new(wrap(overlap.peak)),
+                left: Box::new(wrap(earlier)),
+                right: Box::new(wrap(later)),
+            }))
+        },
         | Joinability::Undecided(overlap) => {
-            Err((cell_span(overlap.right), CoherenceFault::Undecided {
-                first: cell_span(overlap.left),
-                peak: Box::new(overlap.peak),
+            let (span, first, _) = located(overlap.left, overlap.right);
+            Err((span, CoherenceFault::Undecided {
+                first,
+                peak: Box::new(wrap(overlap.peak)),
             }))
         },
     }
@@ -444,13 +593,33 @@ pub struct NormalForm
 {
     /// The call, as read.
     pub call: FreeTerm,
-    /// The steps from the call's command to its normal form, replayed before
-    /// the normal form is returned.
-    pub path: Vec<CellApp>,
+    /// The steps from the call to its normal form, replayed before the normal
+    /// form is returned.
+    pub path: NormalPath,
     /// The normal form, read back as a term: a constructor term for one
     /// output, the results tuple for several, or the call that no rule
     /// covers.
     pub normal: FreeTerm,
+}
+
+/// The steps a call took, in the reading the block's rules are read in.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NormalPath
+{
+    /// Steps of the sequent reading, from the call's command.
+    Commands(Vec<CellApp>),
+    /// Steps of a presented type's reading, from the call as a term.
+    Terms(Vec<CellApp<TermAlphabet>>),
+}
+
+/// Why a normal form writes no term.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Unwriting
+{
+    /// The command reads as no term.
+    Command(command_reading::Absent),
+    /// The term holds what no free term spells.
+    Term(term_reading::Absent),
 }
 
 impl NormalForm
@@ -490,7 +659,7 @@ pub enum NormalFormFault
     /// The recorded path does not replay to the normal form.
     Uncertified,
     /// The normal form writes no term.
-    Unwritable(command_reading::Absent),
+    Unwritable(Unwriting),
 }
 
 impl fmt::Display for NormalFormFault
@@ -540,10 +709,11 @@ impl fmt::Display for NormalFormFault
 /// # Specification
 /// - requires: `cells` is the cell gate's elaboration of `description`.
 /// - ensures: the call read in the inspection notation against the block's
-///   constructors and operations, elaborated to the command its faces match,
-///   normalized under [`DeclarationCells::rewriting`] within
-///   [`NORMAL_FORM_STEPS`] steps, its path replayed to the normal form, and the
-///   normal form read back as a term.
+///   constructors and operations; for a presented type, read as a term and
+///   normalized under its term store, and otherwise elaborated to the command
+///   its faces match and normalized under [`DeclarationCells::rewriting`];
+///   within [`NORMAL_FORM_STEPS`] steps, its path replayed to the normal form,
+///   and the normal form read back as a term.
 /// - fails: [`NormalFormFault::Incoherent`] for a block the coincidence check
 ///   did not admit; otherwise the first step that fails, in that order.
 /// - panics: none.
@@ -553,16 +723,19 @@ impl fmt::Display for NormalFormFault
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a one-output and a two-output call read back their
-///   values, a call into a refused block is incoherent before it is read, and
-///   an unknown symbol and an unreadable text are told apart; reading the
-///   normal form before the replay, or normalizing under the store with its
-///   congruences, changes one of them.
+///   values, a word of the circle reads back the word its cancellations leave,
+///   a call into a refused block is incoherent before it is read, and an
+///   unknown symbol and an unreadable text are told apart; reading the normal
+///   form before the replay, normalizing under the store with its congruences,
+///   or reading the circle's word in the sequent store changes one of them.
 /// - witness: `coincide::tests::a_call_reads_its_normal_form_or_says_why_not`
 /// - witness: `coincide::tests::an_overlap_that_joins_is_certified_and_runs_either_way`
+/// - witness: `coincide::tests::the_circles_cancellations_join_below_the_root`
 #[spec(ensures: |ret| {
     let admitted = matches!(cells.coincidence, Coincidence::Orthogonal | Coincidence::Joined(_));
     match ret.as_ref() {
-        Ok(normal) => admitted && read_call(description, call).as_ref() == Ok(&normal.call),
+        Ok(normal) => admitted && read_call(description, call).as_ref() == Ok(&normal.call)
+            && matches!(normal.path, NormalPath::Terms(_)) == matches!(cells.presented, Maybe::Present(_)),
         Err(&NormalFormFault::Incoherent) => !admitted,
         Err(&NormalFormFault::Undescribed) => false,
         Err(_) => admitted,
@@ -582,33 +755,75 @@ pub fn normal_form<G>(
         return Err(NormalFormFault::Incoherent);
     }
     let call = read_call(description, call)?;
-    let command = elaborate_call(&call, description.polarity, &cells.operations)
-        .map_err(NormalFormFault::NotACall)?;
-    let rewriting = cells.rewriting();
-    let normalized = normalize(
-        &rewriting,
-        &command,
-        NormalizationBudget::from(NORMAL_FORM_STEPS),
-    );
+    let (path, normal) = match cells.presented {
+        | Maybe::Present(ref presented) => {
+            let (path, normal) = certified_normal(&presented.store, &Term::from(&call), |term| {
+                match term.read() {
+                    | Maybe::Present(written) => Ok(written),
+                    | Maybe::Absent(reason) => Err(Unwriting::Term(reason)),
+                }
+            })?;
+            (NormalPath::Terms(path), normal)
+        },
+        | Maybe::Absent(presented_reading::Absent::NoConstructorRule) => {
+            let command = elaborate_call(&call, description.polarity, &cells.operations)
+                .map_err(NormalFormFault::NotACall)?;
+            let (path, normal) = certified_normal(&cells.rewriting(), &command, |command| {
+                match read_command(command) {
+                    | Maybe::Present(written) => Ok(written),
+                    | Maybe::Absent(reason) => Err(Unwriting::Command(reason)),
+                }
+            })?;
+            (NormalPath::Commands(path), normal)
+        },
+    };
+    Ok(NormalForm { call, path, normal })
+}
+
+/// The normal form `start` reaches under `store`, its path replayed, read back
+/// by `read`.
+///
+/// # Specification
+/// - ensures: the path [`normalize`] takes within [`NORMAL_FORM_STEPS`] steps
+///   and the normal form `read` writes.
+/// - fails: [`NormalFormFault::Exhausted`] when the budget runs out,
+///   [`NormalFormFault::Uncertified`] when the path does not replay, then
+///   [`NormalFormFault::Unwritable`] with `read`'s reason.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sequent call and a circle word each reach their normal
+///   form along a path that replays; reading before the replay or dropping the
+///   budget check changes them.
+/// - witness: `coincide::tests::an_overlap_that_joins_is_certified_and_runs_either_way`
+/// - witness: `coincide::tests::the_circles_cancellations_join_below_the_root`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.0.len() <= NORMAL_FORM_STEPS))]
+fn certified_normal<A, R>(
+    store: &CellStore<A>,
+    start: &A::Cmd,
+    read: R,
+) -> Result<(Vec<CellApp<A>>, FreeTerm), NormalFormFault>
+where
+    A: CellAlphabet,
+    R: FnOnce(&A::Cmd) -> Result<FreeTerm, Unwriting>,
+{
+    let normalized = normalize(store, start, NormalizationBudget::from(NORMAL_FORM_STEPS));
     if bool::from(normalized.exhausted) {
         return Err(NormalFormFault::Exhausted);
     }
     if !bool::from(replay_path(
-        &rewriting,
-        &command,
+        store,
+        start,
         &normalized.normal,
         &normalized.path,
     )) {
         return Err(NormalFormFault::Uncertified);
     }
-    match read_command(&normalized.normal) {
-        | Maybe::Present(normal) => Ok(NormalForm {
-            call,
-            path: normalized.path,
-            normal,
-        }),
-        | Maybe::Absent(reason) => Err(NormalFormFault::Unwritable(reason)),
-    }
+    let normal = read(&normalized.normal).map_err(NormalFormFault::Unwritable)?;
+    Ok((normalized.path, normal))
 }
 
 /// Read `text` as a term of the inspection notation over `description`'s

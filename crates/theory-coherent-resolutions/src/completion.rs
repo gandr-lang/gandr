@@ -67,8 +67,9 @@
 //!
 //! Every supplied entry is validated before any reaches the loop: it must be a
 //! confluence, both its identifiers must address stored cells, and its unifier
-//! must send both legs — the stored left cell's left-hand side and the renamed
-//! right cell's — to its peak. The first invalid entry declines with
+//! must send both legs — the stored left cell's left-hand side to its peak and
+//! the renamed right cell's to the peak's subterm at its seam. The first
+//! invalid entry declines with
 //! `DeclineReason::InvalidSuppliedOverlap`, naming its batch and position, with
 //! every supplied batch pending and nothing derived. An invalid-input decline
 //! is terminal under `resume`, and a budget decline's pending work is
@@ -85,16 +86,20 @@
 //!
 //! # Joinability without derivation
 //!
-//! `join_critical_pairs` reads each unordered pair of distinct cells once —
-//! the enumerator's confluence entry for a pair and for its mirror share a
-//! peak, and their certificates are one transformation — normalizes both
-//! reducts as completion does, and keeps the certificate of each pair that
-//! joins. A pair that diverges is reported with both normal forms, never
-//! oriented: the caller is asking whether the rules it was given are
-//! confluent, and a derived cell would answer a different question, whether
-//! some extension of them is. A store whose rewriting terminates and whose
-//! pairs all join is confluent (Newman's lemma with the critical-pair lemma),
-//! so a caller holding the termination half asks this for the other.
+//! `join_critical_pairs` reads each unordered pair of distinct cells' root
+//! entry once — the enumerator's confluence entry for a pair and for its
+//! mirror share a peak, and their certificates are one transformation — and
+//! every ordered pair's interior entries, a cell's pair with itself included,
+//! since an interior overlap and its mirror are different peaks. Over an
+//! alphabet whose only command position is the root the interior family is
+//! empty. It normalizes both reducts as completion does, and keeps the
+//! certificate of each pair that joins. A pair that diverges is reported with
+//! both normal forms, never oriented: the caller is asking whether the rules it
+//! was given are confluent, and a derived cell would answer a different
+//! question, whether some extension of them is. A store whose rewriting
+//! terminates and whose pairs all join is confluent (Newman's lemma with the
+//! critical-pair lemma), so a caller holding the termination half asks this
+//! for the other.
 //! **Alternative.** Running `complete` and reading its derived cells: a
 //! completed run that derived nothing says the same, but a divergence is
 //! oriented into a cell and the loop continues past it, so the pair that
@@ -121,6 +126,7 @@ use crate::overlap::Overlap;
 use crate::overlap::OverlapKind;
 use crate::overlap::OverlapSupport;
 use crate::overlap::enumerate_overlaps;
+use crate::overlap::interior_overlaps_between;
 use crate::overlap::overlaps_between;
 use crate::rewrite::normalize;
 use crate::tracelet::Tracelet;
@@ -506,8 +512,8 @@ where
 ///   the same ceilings as [`complete`].
 /// - ensures: a supplied entry is valid when it is a confluence, both its
 ///   identifiers address cells of `store`, and its unifier sends the stored
-///   left cell's left-hand side and the renamed right cell's left-hand side
-///   both to its peak.
+///   left cell's left-hand side to its peak and the renamed right cell's
+///   left-hand side to the peak's subterm at its seam.
 /// - ensures: otherwise [`CompletionOutcome::Declined`] with
 ///   [`DeclineReason::InvalidSuppliedOverlap`] naming the first invalid entry
 ///   in batch order, every supplied batch pending, nothing derived and nothing
@@ -635,18 +641,19 @@ where
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LegAgreement
 {
-    /// Both left-hand sides instantiate to the peak.
+    /// Both left-hand sides instantiate to the peak, the right one at the seam.
     Meet,
     /// At least one does not.
     Miss,
 }
 
-/// Whether `overlap`'s unifier sends `left`'s left-hand side and the renamed
-/// right cell's left-hand side both to the peak.
+/// Whether `overlap`'s unifier sends `left`'s left-hand side to the peak and
+/// the renamed right cell's left-hand side to the peak's subterm at the seam.
 ///
 /// # Specification
-/// - ensures: positive exactly when both substituted left-hand sides equal the
-///   peak.
+/// - ensures: positive exactly when the substituted left left-hand side equals
+///   the peak and the substituted right one equals the peak's subterm at the
+///   seam, which at the root is the peak.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -655,7 +662,8 @@ enum LegAgreement
 ///   reversed conjunction changes acceptance.
 /// - witness: `tests::completion::a_supplied_overlap_naming_another_left_cell_is_declined`
 /// - witness: `tests::completion::supplied_non_unifying_decline_is_typed`
-#[spec(ensures: |output| (output == LegAgreement::Meet) == (A::apply_subst(&overlap.unifier, left.lhs()) == overlap.peak && A::apply_subst(&overlap.unifier, overlap.right_renamed().lhs()) == overlap.peak))]
+#[spec(ensures: |output| (output == LegAgreement::Meet) == (A::apply_subst(&overlap.unifier, left.lhs()) == overlap.peak
+    && A::subterm_cmd_at(&overlap.peak, &overlap.seam) == Maybe::Present(A::apply_subst(&overlap.unifier, overlap.right_renamed().lhs()))))]
 fn legs_meet_peak<A>(
     overlap: &Overlap<A>,
     left: &Cell<A>,
@@ -663,11 +671,17 @@ fn legs_meet_peak<A>(
 where
     A: CellAlphabet,
 {
-    let meets = |lhs: &A::Cmd| A::apply_subst(&overlap.unifier, lhs) == overlap.peak;
-    if meets(left.lhs()) && meets(overlap.right_renamed().lhs()) {
-        return LegAgreement::Meet;
+    if A::apply_subst(&overlap.unifier, left.lhs()) != overlap.peak {
+        return LegAgreement::Miss;
     }
-    LegAgreement::Miss
+    match A::subterm_cmd_at(&overlap.peak, &overlap.seam) {
+        | Maybe::Present(at_seam)
+            if at_seam == A::apply_subst(&overlap.unifier, overlap.right_renamed().lhs()) =>
+        {
+            LegAgreement::Meet
+        },
+        | Maybe::Present(_) | Maybe::Absent(_) => LegAgreement::Miss,
+    }
 }
 
 /// The pending residue of a decline: the interrupted batch from `index` on,
@@ -753,14 +767,16 @@ where
                 };
             }
             steps = steps.saturating_add(1);
-            // Validation, or the enumerator, guarantees the left cell; an
-            // overlap naming one the store lost is left in place.
-            let Ok(left_reduct) = overlap.left_reduct(&store)
+            // Validation, or the enumerator, guarantees the left cell and a
+            // seam the peak holds; an overlap naming a cell the store lost is
+            // left in place.
+            let (Ok(left_reduct), Ok(right_reduct)) =
+                (overlap.left_reduct(&store), overlap.right_reduct())
             else {
                 continue;
             };
             let left = normalize(&store, &left_reduct, budget.norm_budget);
-            let right = normalize(&store, &overlap.right_reduct(), budget.norm_budget);
+            let right = normalize(&store, &right_reduct, budget.norm_budget);
             if bool::from(left.exhausted) || bool::from(right.exhausted) {
                 // Undecided within the normalization budget: neither certified
                 // nor oriented.
@@ -856,8 +872,8 @@ where
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Joinability<A: CellAlphabet = SequentAlphabet>
 {
-    /// Every pair joins: one certificate per unordered pair, in enumeration
-    /// order, and none when no two cells overlap.
+    /// Every pair joins: one certificate per pair, in enumeration order, and
+    /// none when no two cells overlap.
     Joined(Vec<Tracelet<A>>),
     /// The first pair whose two reducts reach different normal forms.
     Diverges
@@ -883,15 +899,17 @@ pub enum Joinability<A: CellAlphabet = SequentAlphabet>
 /// caller that has the termination half asks this for the other.
 ///
 /// # Specification
-/// - ensures: the pairs are the confluence entries of [`overlaps_between`] over
-///   each unordered pair of distinct cells, left before right in store order,
-///   so a pair and its mirror are decided once; each pair's two reducts are
-///   normalized under `budget`; [`Joinability::Joined`] carries one replaying
-///   certificate per pair when every pair joins; otherwise the first pair that
-///   does not, as [`Joinability::Undecided`] when a reduct ran out of budget
-///   and as [`Joinability::Diverges`] with both normal forms when they differ.
+/// - ensures: the pairs are, for each ordered pair of cells in store order, the
+///   root confluence entries of [`overlaps_between`] when the left cell
+///   precedes the right, so a pair and its mirror are decided once, then the
+///   entries of [`interior_overlaps_between`], the diagonal included; each
+///   pair's two reducts are normalized under `budget`; [`Joinability::Joined`]
+///   carries one replaying certificate per pair when every pair joins;
+///   otherwise the first pair that does not, as [`Joinability::Undecided`] when
+///   a reduct ran out of budget and as [`Joinability::Diverges`] with both
+///   normal forms when they differ.
 /// - panics: none.
-/// - intension: one pair query per unordered cell pair, stopping at the first
+/// - intension: two pair queries per ordered cell pair, stopping at the first
 ///   pair that does not join.
 ///
 /// # Adequacy
@@ -899,13 +917,17 @@ pub enum Joinability<A: CellAlphabet = SequentAlphabet>
 ///   `add(Zero, Zero)` and agree there join with a certificate that replays,
 ///   the same pair with one side made `Succ` diverges with both normal forms, a
 ///   reduct needing a step under a zero budget is undecided, and a store with
-///   no overlap joins with no certificate; deciding a mirrored pair twice,
-///   reporting a starved pair as divergent or dropping a certificate changes
-///   one of them.
+///   no overlap joins with no certificate; a rule overlapping a successor below
+///   an addition diverges at that interior seam and a rule overlapping itself
+///   one position down joins with a certificate stepping at the seam; deciding
+///   a mirrored root pair twice, skipping an interior pair, reporting a starved
+///   pair as divergent or dropping a certificate changes one of them.
 /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
+/// - witness: `tests::second_inhabitant::interior_overlaps_reach_below_the_root_and_join_or_diverge`
 #[spec(ensures: |output| match output {
     Joinability::Joined(ref certificates) => certificates.iter().all(|certificate|
-        certificate.overlap.kind == OverlapKind::Confluence && certificate.overlap.left < certificate.overlap.right
+        certificate.overlap.kind == OverlapKind::Confluence
+            && (certificate.overlap.seam != A::root_position() || certificate.overlap.left < certificate.overlap.right)
             && bool::from(certificate.replay(store))),
     Joinability::Diverges { ref overlap, ref left, ref right } => overlap.kind == OverlapKind::Confluence && left != right,
     Joinability::Undecided(ref overlap) => overlap.kind == OverlapKind::Confluence,
@@ -921,17 +943,26 @@ where
 {
     let mut certificates = Vec::new();
     for (left_id, left_cell) in store.iter() {
-        for (right_id, right_cell) in store.iter().filter(|&(right_id, _)| right_id > left_id) {
-            for overlap in overlaps_between((left_id, left_cell), (right_id, right_cell)) {
-                if overlap.kind != OverlapKind::Confluence {
-                    continue;
-                }
-                let Ok(left_reduct) = overlap.left_reduct(store)
+        for (right_id, right_cell) in store.iter() {
+            let root = if right_id > left_id {
+                overlaps_between((left_id, left_cell), (right_id, right_cell))
+            }
+            else {
+                Vec::new()
+            };
+            let interior = interior_overlaps_between((left_id, left_cell), (right_id, right_cell));
+            let pairs = root
+                .into_iter()
+                .filter(|overlap| overlap.kind == OverlapKind::Confluence)
+                .chain(interior);
+            for overlap in pairs {
+                let (Ok(left_reduct), Ok(right_reduct)) =
+                    (overlap.left_reduct(store), overlap.right_reduct())
                 else {
                     continue;
                 };
                 let left = normalize(store, &left_reduct, budget);
-                let right = normalize(store, &overlap.right_reduct(), budget);
+                let right = normalize(store, &right_reduct, budget);
                 if bool::from(left.exhausted) || bool::from(right.exhausted) {
                     return Joinability::Undecided(overlap);
                 }

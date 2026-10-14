@@ -14,10 +14,14 @@
 //! side as a cut of a value against an operation frame, so a law whose
 //! left-hand side applies an operation where that value stands,
 //! `comp(id(a), f) ==> f`, is carried in the description and has no cell yet:
-//! it is refused at its span as a shape the elaboration does not read. A `data`
-//! operation whose rules compile runs as a declaration of the module, returning
-//! its results as one tuple (`operation`). Identical faces share one cell
-//! identity. Witnesses:
+//! it is refused at its span as a shape the elaboration does not read. A face
+//! whose left-hand side is a constructor application — a presented type's
+//! rule, `Loop(Unloop(x)) ==> x` — is no operation redex and has no sequent
+//! cell; it is read over terms instead (`DeclarationCells::presented`), where
+//! it rewrites a value wherever the value stands. A `data` operation whose
+//! rules compile runs as a declaration of the module, returning its results as
+//! one tuple (`operation`). Identical faces share one cell identity.
+//! Witnesses:
 //! `desc_cells::tests::ordinary_lowering_executes_the_cell_gate_and_preserves_later_values`,
 //! `desc_cells::tests::a_face_declared_twice_is_one_cell`,
 //! `desc_cells::tests::a_single_redex_block_reaches_the_cell_layer_behind_the_gate`,
@@ -55,9 +59,12 @@ use gandr_theory_computads::ElaborateError;
 use gandr_theory_computads::EtaElaboration;
 use gandr_theory_computads::OpElaborateError;
 use gandr_theory_computads::OpFrame;
+use gandr_theory_computads::PresentedRules;
 use gandr_theory_computads::elaborate_data_desc;
+use gandr_theory_computads::presented_reading;
 use gandr_theory_levitation::SurfaceSpan;
 use gandr_theory_levitation::WhiskeredCell;
+use quenchant_shape::shape::Maybe;
 
 use crate::coincide::CoherenceFault;
 use crate::coincide::Coincidence;
@@ -147,9 +154,12 @@ pub struct DeclarationCells
     /// The written faces the cell gate declined, by their position among the
     /// description's rules; the cause is owned by the report's diagnostics.
     pub declined_faces: Vec<DeclinedFaceIndex>,
-    /// The written faces the cell gate admitted, by their position among the
-    /// description's rules, each with its cell.
+    /// The written faces the cell gate admitted to the sequent reading, by
+    /// their position among the description's rules, each with its cell.
     pub faces: Vec<(AdmittedFaceIndex, CellId)>,
+    /// The rules read over terms, when the description writes a
+    /// constructor-headed face: a presented type's reading.
+    pub presented: Maybe<PresentedRules, presented_reading::Absent>,
     /// One result per circuit rule, in declaration order.
     pub circuits: Vec<CircuitCell>,
     /// The declaration's eta cells or their explicit absence.
@@ -229,6 +239,7 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             declined_opers,
             admitted_faces,
             declined_faces,
+            presented,
             circuits,
             eta,
         } = elaborate_data_desc(&declaration.description);
@@ -299,6 +310,7 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
                 declaration.at.span,
                 &store,
                 &admitted_faces,
+                &presented,
                 &outcomes,
             ) {
                 | Ok(coincidence) => coincidence,
@@ -318,6 +330,7 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             operations: opers,
             declined_faces: declined,
             faces: admitted_faces,
+            presented,
             circuits: outcomes,
             eta,
             coincidence,

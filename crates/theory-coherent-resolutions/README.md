@@ -23,6 +23,7 @@ Coherent resolution of a cell rewriting system: firing a cell under the alphabet
 
 - `rewrite_at`, `apply_once`, `normalize`, `CellApp`, `Rewrite`, `Normalization`, `firing`, `redex_search`: one firing under the alphabet's discipline, and budgeted normalization that tells a normal form from a spent budget.
 - `enumerate_overlaps`, `overlaps_between`, `Overlap`, `OverlapKind`, `OverlapRefusal`, `peak_legs`, `PeakLegs`: the multi-sum family with its seam data, complete up to the root diagonal.
+- `interior_overlaps_between`: the confluence family below the root of a left-hand side, a cell paired with itself included, which the joinability check reads over a first-order presentation.
 - `OverlapSupport`: the memoized overlap relation on cells and certificates, and independent batches.
 - `Tracelet`, `replay_equivalent`, `confluence_tracelet`, `derive_fused`, `ReplayTrace`, `ReplayPath`, `ReplayStep`, `ReplayPathOutcome`, `StuckStep`, `confluence_join`: certificates checked by replay, their identity, and the observable replay.
 - `replay_from_peak`: the replay of two recorded paths from a supplied peak to a supplied join, for a boundary that is not a critical pair; `Tracelet::replay` is this replay on its overlap's peak.

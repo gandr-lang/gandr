@@ -43,13 +43,34 @@
 //! coincide once unified, and that joinable pair is work completion certifies.
 //! This is not the Knuth–Bendix exclusion of self-overlaps: completion over
 //! first-order terms also needs a rule's overlaps with itself at interior
-//! positions of its left-hand side, and this enumerator unifies whole left-hand
-//! sides at the root for every pair. A consumer needing interior overlaps needs
-//! a different enumerator; the reversal is the first presentation whose
-//! completion they decide.
+//! positions of its left-hand side, and this enumerator unifies whole
+//! left-hand sides at the root for every pair.
 //!
 //! `overlaps_between` is the pair query the store-wide sweep iterates, exposed
 //! so a consumer asking about two cells pays for two.
+//!
+//! # Interior overlaps
+//!
+//! `interior_overlaps_between` is the second enumerator: the right cell's
+//! left-hand side unified with each subterm of the left cell's left-hand side
+//! below the root that is not a bare metavariable, a cell paired with itself
+//! included, since a rule whose left-hand side overlaps its own subterm is a
+//! genuine critical pair (`Loop(Loop(x))` against itself at `Loop(x)`). Its
+//! entries are confluences seamed below the root; their right reduct is the
+//! right cell's contractum spliced into the peak at the seam, which at the
+//! root is the contractum itself, so one reduct serves both families.
+//! Variable positions are skipped as Knuth–Bendix skips them: an overlap
+//! there joins by firing the inner cell at every copy of the variable.
+//!
+//! - **Choice.** A separate pair query, read by the joinability check over a
+//!   first-order presentation; the store-wide sweep, completion's scheduling
+//!   and the overlap support relation keep the root family.
+//! - **Alternative.** Interior entries in `overlaps_between` itself: every
+//!   consumer of the sweep would then schedule them, and over an alphabet with
+//!   interior positions the support relation and completion's batches would
+//!   change for stores that check none of them.
+//! - **Reversal.** Completion over first-order terms: the first presentation
+//!   completed rather than checked reads both families.
 //!
 //! # Overlap support
 //!
@@ -521,8 +542,9 @@ pub struct Overlap<A: CellAlphabet = SequentAlphabet>
     pub kind: OverlapKind,
     /// The most general unifier at the seam.
     pub unifier: A::Subst,
-    /// The seam: the root for a confluence, a command position of the left
-    /// right-hand side for a composition.
+    /// The seam: the root for a root confluence, a position of the left
+    /// left-hand side below the root for an interior confluence, a command
+    /// position of the left right-hand side for a composition.
     pub seam: A::Pos,
     /// The superposition `σ(l_left)` the overlap is rooted at.
     pub peak: A::Cmd,
@@ -619,30 +641,42 @@ impl<A: CellAlphabet> Overlap<A>
         }
     }
 
-    /// The right reduct of a confluence: the peak contracted at the root by
+    /// The right reduct of a confluence: the peak contracted at the seam by
     /// the right cell.
     ///
     /// # Specification
     /// - requires: [`Overlap::kind`] is [`OverlapKind::Confluence`]; for a
     ///   composition the term is the right cell's contractum at the seam, not a
     ///   reduct of the peak.
-    /// - ensures: the unifier applied to the renamed right cell's right-hand
-    ///   side; the critical pair is `(left_reduct, right_reduct)`.
+    /// - ensures: the peak with the seam's subterm replaced by the unifier
+    ///   applied to the renamed right cell's right-hand side, which at the root
+    ///   is that image itself; the critical pair is `(left_reduct,
+    ///   right_reduct)`.
+    /// - fails: [`OverlapRefusal::SeamSplice`] when the alphabet refuses the
+    ///   splice at the seam.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — completion normalizes this reduct against the left
-    ///   one and either certifies the join or orients the divergence. Equal and
-    ///   differing reducts separate joining from orientation; changing the
-    ///   image changes that outcome.
+    ///   one and either certifies the join or orients the divergence; an
+    ///   interior overlap's reduct keeps the peak around the seam, and a seam
+    ///   off the peak refuses. Equal and differing reducts separate joining
+    ///   from orientation; dropping the context or the refusal changes that
+    ///   outcome.
     /// - witness: `tests::completion::completion_processes_within_budget`
     /// - witness: `tests::second_inhabitant::completion_orients_and_certifies_over_the_toy_alphabet`
+    /// - witness: `tests::second_inhabitant::interior_overlaps_reach_below_the_root_and_join_or_diverge`
+    /// - witness: `overlap::tests::overlap_reducts_preserve_refusal_precedence`
     #[inline]
-    #[must_use]
-    #[spec(requires: self.kind == OverlapKind::Confluence, ensures: |output| output == A::apply_subst(&self.unifier, self.right_renamed.rhs()))]
-    pub fn right_reduct(&self) -> A::Cmd
+    #[spec(requires: self.kind == OverlapKind::Confluence, ensures: |output| output
+        == A::splice_cmd_at(&self.peak, &self.seam, A::apply_subst(&self.unifier, self.right_renamed.rhs())).map_err(OverlapRefusal::SeamSplice))]
+    pub fn right_reduct(&self) -> Result<A::Cmd, OverlapRefusal>
     {
-        A::apply_subst(&self.unifier, self.right_renamed.rhs())
+        let contractum = A::apply_subst(&self.unifier, self.right_renamed.rhs());
+        A::splice_cmd_at(&self.peak, &self.seam, contractum).map_err(OverlapRefusal::SeamSplice)
     }
 
     /// The right cell renamed apart from the left: the span's right leg.
@@ -784,9 +818,8 @@ where
 /// self-overlaps: completion over first-order terms needs a rule's overlaps
 /// with itself at interior positions of its left-hand side, and the confluence
 /// branch here unifies whole left-hand sides at the root for every pair, so
-/// its family is the root-shared peaks. A consumer needing interior
-/// self-overlaps needs a different enumerator, not this one with the guard
-/// removed.
+/// its family is the root-shared peaks. The interior family is
+/// [`interior_overlaps_between`].
 ///
 /// # Specification
 /// - ensures: the concatenation of [`overlaps_between`] over every ordered pair
@@ -905,6 +938,85 @@ where
                 left: left_id,
                 right: right_id,
                 kind: OverlapKind::Composition,
+                unifier,
+                seam,
+                peak,
+                right_renamed: renamed.clone(),
+            });
+        }
+    }
+    out
+}
+
+/// The interior confluence family of one ordered cell pair: the right cell's
+/// left-hand side unified with each subterm of the left cell's left-hand side
+/// below the root.
+///
+/// # Specification
+/// - requires: `left` and `right` are `(id, cell)` pairs one store handed out,
+///   so the emitted identifiers address the cells they name.
+/// - ensures: one confluence entry per command position of the left left-hand
+///   side other than the root, in the alphabet's position order, whose subterm
+///   is not a bare metavariable and unifies with the right left-hand side
+///   renamed apart from the left cell; its seam is that position and its peak
+///   the unifier applied to the left left-hand side. A cell is paired with
+///   itself like any other.
+/// - panics: none.
+/// - intension: the positions are read before the right cell is renamed apart,
+///   so a pair whose left-hand side has no interior position pays for no
+///   renaming; over an alphabet whose only command position is the root the
+///   family is always empty.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over the toy alphabet a rule overlapping a successor
+///   below an addition yields one entry at that position whose reducts diverge,
+///   a rule overlapping itself one position down joins in no step, and
+///   left-hand sides whose interior positions are all metavariables yield none.
+///   A root entry, a skipped diagonal, a variable seam or a wrong peak changes
+///   those families.
+/// - witness: `tests::second_inhabitant::interior_overlaps_reach_below_the_root_and_join_or_diverge`
+#[inline]
+#[must_use]
+#[spec(ensures: |output| output.iter().all(|overlap| overlap.left == left.0 && overlap.right == right.0
+        && overlap.kind == OverlapKind::Confluence && overlap.seam != A::root_position()
+        && A::command_positions(left.1.lhs()).contains(&overlap.seam)
+        && overlap.peak == A::apply_subst(&overlap.unifier, left.1.lhs())
+        && matches!(A::subterm_cmd_at(&overlap.peak, &overlap.seam), Maybe::Present(ref sub) if *sub == A::apply_subst(&overlap.unifier, overlap.right_renamed.lhs()))))]
+pub fn interior_overlaps_between<A>(
+    left: (CellId, &Cell<A>),
+    right: (CellId, &Cell<A>),
+) -> Vec<Overlap<A>>
+where
+    A: CellAlphabet,
+{
+    let (left_id, left_cell) = left;
+    let (right_id, right_cell) = right;
+    let root = A::root_position();
+    let seams: Vec<(A::Pos, A::Cmd)> = A::command_positions(left_cell.lhs())
+        .into_iter()
+        .filter(|seam| *seam != root)
+        .filter_map(|seam| match A::subterm_cmd_at(left_cell.lhs(), &seam) {
+            | Maybe::Present(sub)
+                if A::metavariables(&sub).len() != 1 || A::command_positions(&sub).len() != 1 =>
+            {
+                Some((seam, sub))
+            },
+            | Maybe::Present(_) | Maybe::Absent(_) => None,
+        })
+        .collect();
+    if seams.is_empty() {
+        return Vec::new();
+    }
+    let renamed = renamed_apart(left_cell, right_cell);
+    let mut out = Vec::new();
+    for (seam, sub) in seams {
+        let mut unifier = A::Subst::default();
+        if bool::from(A::unify_cmd(&sub, renamed.lhs(), &mut unifier)) {
+            let peak = A::apply_subst(&unifier, left_cell.lhs());
+            out.push(Overlap {
+                left: left_id,
+                right: right_id,
+                kind: OverlapKind::Confluence,
                 unifier,
                 seam,
                 peak,
@@ -1107,6 +1219,23 @@ mod tests
         assert_eq!(
             Err(OverlapRefusal::NotAComposition),
             confluence.composite(&empty)
+        );
+        assert_eq!(
+            Ok(Toy::succ(Toy::zero())),
+            confluence.right_reduct(),
+            "at the root the right reduct is the contractum"
+        );
+        confluence.seam = ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]);
+        assert_eq!(
+            Ok(Toy::succ(Toy::succ(Toy::zero()))),
+            confluence.right_reduct(),
+            "below the root the peak keeps its context around the contractum"
+        );
+        confluence.seam = ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]);
+        assert_eq!(
+            Err(OverlapRefusal::SeamSplice(CommandSpliceRefusal::OffTerm)),
+            confluence.right_reduct(),
+            "a seam off the peak refuses"
         );
         let mut off_term = composition;
         off_term.seam = ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]);

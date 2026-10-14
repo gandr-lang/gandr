@@ -482,15 +482,16 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - ensures: when both reducts normalize within `budget` to one term, the
 ///   certificate with `path_a` the left cell at the root then the left reduct's
-///   normalization, `path_b` likewise for the right, and that normal form as
-///   the join.
+///   normalization, `path_b` the right cell at the seam then the right reduct's
+///   normalization, and that normal form as the join.
 /// - provides: [`confluence_join::Absent::BudgetExhausted`] when a reduct does
 ///   not reach a normal form within `budget`;
 ///   [`confluence_join::Absent::NormalFormsDiffer`] when the normal forms
 ///   differ.
 /// - fails: [`OverlapRefusal::NotAConfluence`] for a composition;
 ///   [`OverlapRefusal::UnissuedCell`] when `store` holds no cell under the
-///   overlap's left identifier.
+///   overlap's left identifier; [`OverlapRefusal::SeamSplice`] when the
+///   alphabet refuses the right reduct's splice at the seam.
 /// - panics: none.
 ///
 /// # Errors
@@ -500,15 +501,15 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L1 — every certificate completion emits for a joinable pair is
 ///   this certificate, and replays over the completed store. L3 — wrong kind
 ///   precedes missing identity, either starved reduct precedes unequal normal
-///   forms, and exact joins preserve both root steps. Wrong refusal precedence
+///   forms, and exact joins preserve both first steps. Wrong refusal precedence
 ///   or one-sided normalization changes the outcome.
 /// - witness: `tests::differential::completion_certificates_replay`
 /// - witness: `tests::second_inhabitant::completion_orients_and_certifies_over_the_toy_alphabet`
 /// - witness: `tracelet::tests::joining_refusals_and_fusion_retries_preserve_boundaries`
 #[inline]
-#[spec(ensures: |output| if overlap.kind == OverlapKind::Confluence { match overlap.left_reduct(store) {
-    Err(reason) => output == Err(reason),
-    Ok(reduct) => output == Ok(joined(overlap, normalize(store, &reduct, budget), normalize(store, &overlap.right_reduct(), budget))),
+#[spec(ensures: |output| if overlap.kind == OverlapKind::Confluence { match (overlap.left_reduct(store), overlap.right_reduct()) {
+    (Err(reason), _) | (Ok(_), Err(reason)) => output == Err(reason),
+    (Ok(left), Ok(right)) => output == Ok(joined(overlap, normalize(store, &left, budget), normalize(store, &right, budget))),
 } } else { output == Err(OverlapRefusal::NotAConfluence) })]
 pub fn confluence_tracelet<A>(
     overlap: &Overlap<A>,
@@ -522,8 +523,9 @@ where
         return Err(OverlapRefusal::NotAConfluence);
     }
     let left_reduct = overlap.left_reduct(store)?;
+    let right_reduct = overlap.right_reduct()?;
     let left = normalize(store, &left_reduct, budget);
-    let right = normalize(store, &overlap.right_reduct(), budget);
+    let right = normalize(store, &right_reduct, budget);
     Ok(joined(overlap, left, right))
 }
 
@@ -542,10 +544,11 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — both orientations of a joinable critical pair preserve
-///   the exact root-prefixed paths; either exhausted normalization wins before
-///   unequal terms. A missing prefix, swapped reason or one-sided exhaustion
-///   check changes the result.
+///   the exact paths, the left one rooted and the right one at the seam; either
+///   exhausted normalization wins before unequal terms. A missing prefix,
+///   swapped reason or one-sided exhaustion check changes the result.
 /// - witness: `tracelet::tests::joining_refusals_and_fusion_retries_preserve_boundaries`
+/// - witness: `tests::second_inhabitant::interior_overlaps_reach_below_the_root_and_join_or_diverge`
 #[spec(captures: before = (left.clone(), right.clone()), ensures: |output| match output {
     Maybe::Absent(confluence_join::Absent::BudgetExhausted) => bool::from(before.0.exhausted) || bool::from(before.1.exhausted),
     Maybe::Absent(confluence_join::Absent::NormalFormsDiffer) => !bool::from(before.0.exhausted) && !bool::from(before.1.exhausted) && before.0.normal != before.1.normal,
@@ -553,7 +556,7 @@ where
         && certificate.overlap == *overlap && certificate.joins_at == before.0.normal
         && certificate.path_a.len() == before.0.path.len().saturating_add(1) && certificate.path_b.len() == before.1.path.len().saturating_add(1)
         && certificate.path_a.first().is_some_and(|head| head.cell == overlap.left && head.at == A::root_position())
-        && certificate.path_b.first().is_some_and(|head| head.cell == overlap.right && head.at == A::root_position())
+        && certificate.path_b.first().is_some_and(|head| head.cell == overlap.right && head.at == overlap.seam)
         && certificate.path_a.iter().skip(1).eq(before.0.path.iter()) && certificate.path_b.iter().skip(1).eq(before.1.path.iter()),
 })]
 pub fn joined<A>(
@@ -572,28 +575,26 @@ where
     }
     Maybe::Present(Tracelet {
         overlap: overlap.clone(),
-        path_a: rooted_path(overlap.left, left.path),
-        path_b: rooted_path(overlap.right, right.path),
+        path_a: seamed_path(overlap.left, A::root_position(), left.path),
+        path_b: seamed_path(overlap.right, overlap.seam.clone(), right.path),
         joins_at: left.normal,
     })
 }
 
-/// `cell` at the root, then `rest`.
+/// `cell` at `at`, then `rest`.
 ///
 /// # Specification
 /// trivial.
-fn rooted_path<A>(
+fn seamed_path<A>(
     cell: CellId,
+    at: A::Pos,
     rest: Vec<CellApp<A>>,
 ) -> Vec<CellApp<A>>
 where
     A: CellAlphabet,
 {
     let mut path = Vec::with_capacity(rest.len().saturating_add(1));
-    path.push(CellApp {
-        cell,
-        at: A::root_position(),
-    });
+    path.push(CellApp { cell, at });
     path.extend(rest);
     path
 }

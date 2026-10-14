@@ -78,13 +78,15 @@ fn an_overlap_that_joins_is_certified_and_runs_either_way()
             panic!("the overlaps join: {:?}", cells.coincidence)
         };
         assert_eq!(
-            certificates.len(),
+            certificates.commands.len(),
             2,
             "`add(Zero, Zero)` and `add(Succ(m), Zero)` are the two critical pairs"
         );
+        assert!(certificates.terms.is_empty(), "no rule is read over terms");
         let rewriting = cells.rewriting();
         assert!(
             certificates
+                .commands
                 .iter()
                 .all(|certificate| bool::from(certificate.replay(&rewriting))),
             "every certificate replays over the rewriting it was decided over"
@@ -114,10 +116,146 @@ fn an_overlap_that_joins_is_certified_and_runs_either_way()
                 .unwrap_or_else(|fault| panic!("{call}: {fault}"));
             assert_eq!(reached.spelling(), normal, "{call}");
             assert!(
-                !reached.path.is_empty(),
-                "{call}: the normal form is reached by a path that replayed"
+                matches!(reached.path, NormalPath::Commands(ref path) if !path.is_empty()),
+                "{call}: the normal form is reached by a path of commands that replayed"
             );
         }
+    });
+}
+
+/// The circle presented by its two cancellations.
+const CIRCLE: &str = r#"data Circle : Type {
+    Base : Circle;
+    Loop : (c : Circle) --> Circle;
+    Unloop : (c : Circle) --> Circle;
+    rule Loop(Unloop(x)) ==> x;
+    rule Unloop(Loop(x)) ==> x;
+}"#;
+
+#[test]
+fn the_circles_cancellations_join_below_the_root()
+{
+    lowered(SourceText::from(CIRCLE), |module| {
+        assert!(
+            module.cells().diagnostics.is_empty(),
+            "{:?}",
+            module.cells().diagnostics
+        );
+        let [ref cells] = *module.cells().declarations.as_slice()
+        else {
+            panic!("one family")
+        };
+        assert!(
+            cells.faces.is_empty() && cells.declined_faces.is_empty(),
+            "no cancellation is a sequent cell"
+        );
+        let Maybe::Present(ref presented) = cells.presented
+        else {
+            panic!("the circle is read over terms")
+        };
+        let Coincidence::Joined(ref certificates) = cells.coincidence
+        else {
+            panic!("the cancellations join: {:?}", cells.coincidence)
+        };
+        assert!(certificates.commands.is_empty(), "no sequent pair");
+        let peaks: Vec<String> = certificates
+            .terms
+            .iter()
+            .map(|certificate| match certificate.overlap.peak.read() {
+                | Maybe::Present(term) => term.to_string(),
+                | Maybe::Absent(reason) => panic!("a peak spells a term: {reason:?}"),
+            })
+            .collect();
+        assert_eq!(
+            peaks,
+            ["Loop(Unloop(Loop(x')))", "Unloop(Loop(Unloop(x')))"],
+            "each cancellation meets the other inside its left-hand side"
+        );
+        assert!(
+            certificates
+                .terms
+                .iter()
+                .all(|certificate| bool::from(certificate.replay(&presented.store))),
+            "every certificate replays over the term store"
+        );
+        let family = &module.declarations()[0];
+        assert!(
+            matches!(family.outcome(), DeclarationOutcome::Data(_)),
+            "the family stands"
+        );
+        for (call, normal, steps) in [
+            ("Loop(Unloop(Loop(Base)))", "Loop(Base)", 1_usize),
+            ("Unloop(Loop(Base))", "Base", 1),
+            ("Loop(Loop(Unloop(Unloop(Loop(Base)))))", "Loop(Base)", 2),
+            ("Loop(Loop(Base))", "Loop(Loop(Base))", 0),
+        ] {
+            let reached = module
+                .normal_form(family, CallText::from(call))
+                .unwrap_or_else(|fault| panic!("{call}: {fault}"));
+            assert_eq!(reached.spelling(), normal, "{call}");
+            assert!(
+                matches!(reached.path, NormalPath::Terms(ref path) if path.len() == steps),
+                "{call}: {steps} steps over terms, replayed"
+            );
+        }
+    });
+}
+
+#[test]
+fn a_third_cancellation_parts_the_circles_readings()
+{
+    let source = SourceText::from(
+        r#"@[ checks ]
+data Circle : Type {
+    Base : Circle;
+    Loop : (c : Circle) --> Circle;
+    Unloop : (c : Circle) --> Circle;
+    rule Loop(Unloop(x)) ==> x;
+    rule Unloop(Loop(x)) ==> x;
+    rule Loop(Loop(x)) ==> x;
+}"#,
+    );
+    lowered(source, |module| {
+        let [ref diagnostic] = *module.cells().diagnostics.as_slice()
+        else {
+            panic!("one cell diagnostic: {:?}", module.cells().diagnostics)
+        };
+        let CellFault::Coherence(ref fault @ CoherenceFault::Diverges { first, .. }) =
+            diagnostic.fault
+        else {
+            panic!("the pair diverges: {:?}", diagnostic.fault)
+        };
+        assert_eq!(
+            text(source, diagnostic.span).as_ref(),
+            "rule Loop(Loop(x)) ==> x",
+            "the refusal stands at the third rule"
+        );
+        assert_eq!(
+            text(source, first).as_ref(),
+            "rule Unloop(Loop(x)) ==> x",
+            "and names the cancellation it parts from"
+        );
+        assert_eq!(
+            fault.to_string(),
+            "both rules rewrite `Unloop(Loop(Loop(x')))`, one to `Loop(x')` and the other to \
+             `Unloop(x')`"
+        );
+        let [ref family] = *module.declarations()
+        else {
+            panic!("the refused family")
+        };
+        assert_eq!(
+            family.outcome(),
+            DeclarationOutcome::Refused(LoweringRefusal::RulesDiverge {
+                span: diagnostic.span,
+                first
+            }),
+            "the family is refused under its own name"
+        );
+        assert_eq!(
+            module.normal_form(family, CallText::from("Loop(Loop(Base))")),
+            Err(NormalFormFault::Incoherent)
+        );
     });
 }
 

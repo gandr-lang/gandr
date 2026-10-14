@@ -7,7 +7,10 @@
 //! at the declaration's polarity, admitting each cell through one seam that
 //! refuses a copied hole and a hole worn at both polarities apart, and
 //! reporting every declined member beside the store ([`DescElaboration`]).
-//! [`elaborate_rule`] is the face-to-cell step on its own.
+//! [`elaborate_rule`] is the face-to-cell step on its own. A description that
+//! writes a constructor-headed rule — a presented type's, `Loop(Unloop(x)) ==>
+//! x` — is also read over terms ([`PresentedRules`]), in the term alphabet
+//! where every subterm is a position a rule fires at ([`TermAlphabet`]).
 //!
 //! [`instantiate_two_redex_rule`] applies a two-redex circuit rule: the
 //! positions come from the body's occurrence record, the cells from the
@@ -46,6 +49,7 @@
 //! | Eta licensing | Missing licences preserve the store; several inverse operations mint in operation order and reuse identifiers. | `elaborate::tests::eta_licences_preserve_operation_order_and_decline_atomically` |
 //! | Instantiation | Earliest repeated bindings, occurrence-count precedence, exact missing ports and distinct sequentializations. | `instantiate::tests::environment_refuses_the_earliest_repeat_even_for_identical_cells`, `instantiate::tests::zero_and_three_occurrences_precede_missing_bindings`, `instantiate::tests::exercise_reports_both_distinct_sequentializations` |
 //! | Supplied convexity | Discharged stores bypass the supplier; withheld stores retain the requested pair and its warrant or refusal. | `tests::convexity_supply::a_withheld_discharge_is_rechecked_by_the_supply_point`, `tests::convexity_supply::a_refused_recheck_refuses_the_instantiation_with_its_evidence` |
+//! | Term reading | Constructor-headed faces leave the sequent lists for the term store, in rule order behind the operation gate; their cells fire below the root and replay. | `elaborate::tests::a_presented_types_rules_are_read_over_terms`, `term::tests::the_circles_rules_fire_below_the_root` |
 //!
 //! These are finite L3 boundary observations; the positive frame-cell
 //! comparison also uses an L2 cell-layer reference. They do not prove unbounded
@@ -101,6 +105,10 @@
 //!   `arXiv:2111.10968` — the bridge-diagram arity `Σ_t ∘ Π_π ∘ Δ_s` whose
 //!   product layer an operation frame's continuations carry, one per output
 //!   port.
+//! - Franz Baader and Tobias Nipkow. _Term Rewriting and All That_. Cambridge
+//!   University Press, 1998. `doi:10.1017/CBO9781139172752` — first-order
+//!   rewriting at every position of a term, and the critical pairs of rules
+//!   overlapping inside a left-hand side, which the term reading's check reads.
 
 #![no_std]
 
@@ -109,6 +117,7 @@ extern crate alloc;
 mod boundary;
 mod elaborate;
 mod instantiate;
+mod term;
 
 pub use crate::boundary::AdmittedFaceIndex;
 pub use crate::boundary::ConstructorCount;
@@ -124,10 +133,12 @@ pub use crate::elaborate::EtaElaboration;
 pub use crate::elaborate::MixedPolarityHole;
 pub use crate::elaborate::OpElaborateError;
 pub use crate::elaborate::OpFrame;
+pub use crate::elaborate::PresentedRules;
 pub use crate::elaborate::command_reading;
 pub use crate::elaborate::elaborate_call;
 pub use crate::elaborate::elaborate_data_desc;
 pub use crate::elaborate::elaborate_rule;
+pub use crate::elaborate::presented_reading;
 pub use crate::elaborate::read_command;
 pub use crate::instantiate::CellInstantiationError;
 pub use crate::instantiate::CircuitShift;
@@ -137,3 +148,12 @@ pub use crate::instantiate::ConvexitySupply;
 pub use crate::instantiate::RewriteBinding;
 pub use crate::instantiate::instantiate_cell;
 pub use crate::instantiate::instantiate_two_redex_rule;
+pub use crate::term::Term;
+pub use crate::term::TermAlphabet;
+pub use crate::term::TermMeta;
+pub use crate::term::TermOrient;
+pub use crate::term::TermPos;
+pub use crate::term::TermProv;
+pub use crate::term::TermSubst;
+pub use crate::term::face_cell;
+pub use crate::term::term_reading;

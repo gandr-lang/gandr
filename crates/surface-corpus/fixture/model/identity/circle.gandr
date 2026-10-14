@@ -1,0 +1,16 @@
+@[ normalizes("Loop(Loop(Unloop(Unloop(Loop(Base))))) ~> Loop(Base)") ]
+data Circle : Type {
+  Base : Circle;
+  Loop : (x : Circle) --> Circle;
+  Unloop : (x : Circle) --> Circle;
+  rule Loop(Unloop(x)) ==> x;
+  rule Unloop(Loop(x)) ==> x;
+}
+
+def around(c : Circle) -> -F Circle {
+  return Loop(c)
+}
+
+@[ runs("Loop(Loop(Base))") ]
+def twice : +U (-F Circle) ;
+def twice = thunk { become around(Loop(Base)) } ;
