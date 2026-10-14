@@ -210,6 +210,8 @@ pub use crate::presented::RuleRefusal;
 pub use crate::presented::RuleSlot;
 pub use crate::presented::RuleTerm;
 pub use crate::presented::RuleVariable;
+pub use crate::presented::VariableCount;
+pub use crate::presented::build_side;
 pub use crate::tags::ADMISSION_CHECKED;
 pub use crate::tags::ADMISSION_UNCHECKED;
 pub use crate::tags::BASE_INTEGER;

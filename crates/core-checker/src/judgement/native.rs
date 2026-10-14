@@ -21,6 +21,7 @@ use gandr_core_term::instantiate_comp_type;
 use gandr_core_term::shift_comp_type_under;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::DeBruijnIndex;
+use quenchant_shape::shape::Maybe;
 
 use super::Direction;
 use super::Frame;
@@ -34,6 +35,9 @@ use crate::ExpectedShape;
 use crate::TermNode;
 use crate::TypeNode;
 use crate::former;
+use crate::respect::Reading;
+use crate::respect::obligation;
+use crate::respect::root;
 use crate::view::ValueTypeView;
 use crate::view::value_type_view;
 
@@ -295,10 +299,10 @@ impl Machine<'_, '_>
     /// - requires: `term` is a case whose scrutinee synthesized `datatype`.
     /// - ensures: exhaustive coverage before motive checking; branches remain
     ///   ordinary ambient functions and are not given implicit field binders.
-    /// - fails: non-data scrutinee, wrong coverage or absent declaration; a
-    ///   case over a presented type with rules refuses
-    ///   [`CheckRefusal::RuleNotRespected`] at its first rule, the kernel's
-    ///   refusal of the same case.
+    ///   The root a structural fixpoint marked is taken whichever case this is;
+    ///   over a presented type with rules the case is read as that fixpoint
+    ///   when it is the marked case, and as itself otherwise.
+    /// - fails: non-data scrutinee, wrong coverage or absent declaration.
     /// - panics: none.
     ///
     /// # Errors
@@ -306,18 +310,18 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — empty, missing and surplus branches distinguish exact
-    ///   coverage; a dependent motive distinguishes its binder's scope; a case
-    ///   over the circle is refused where the same case over a free type
-    ///   checks.
+    ///   coverage; a dependent motive distinguishes its binder's scope; over
+    ///   the circle a fixpoint's root case and a bare case are read apart.
     /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
-    /// - witness: `native_formers::native_formers::a_case_over_a_presented_type_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Computation(_))))))]
+    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+    #[spec(ensures: |ret| matches!(self.root, Maybe::Absent(root::Absent::Unmarked)) && (ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Computation(_)))))))]
     pub(super) fn native_case(
         &mut self,
         term: ComputationId,
         datatype: ValueTypeId,
     ) -> Result<Step, CheckRefusal>
     {
+        let root = core::mem::replace(&mut self.root, Maybe::Absent(root::Absent::Unmarked));
         let datatype = self.context.whnf_value_type(datatype)?;
         if !matches!(
             self.context.arena().value_type(datatype),
@@ -341,27 +345,33 @@ impl Machine<'_, '_>
         if count != signature.constructors().len() {
             return Err(CheckRefusal::NonExhaustiveDataCase(term));
         }
-        // A rule identifies two constructor terms, and a case reads its
-        // scrutinee's constructor as it stands, so its arms could tell the two
-        // apart. No case is shown to respect the rules yet: each is refused at
-        // the first.
-        if !signature.presentation().rules().is_empty() {
-            return Err(CheckRefusal::RuleNotRespected {
-                at: term,
-                rule: gandr_kernel_term::RuleIndex::from(0_usize),
-            });
+        let respect = if signature.presentation().rules().is_empty() {
+            Maybe::Absent(obligation::Absent::Free)
         }
-        self.wait(Frame::NativeMotive { term, datatype });
+        else {
+            Maybe::Present(match root {
+                | Maybe::Present((case, reading)) if case == term => reading,
+                | Maybe::Present(_) | Maybe::Absent(_) => Reading::Case { datatype },
+            })
+        };
+        self.wait(Frame::NativeMotive {
+            term,
+            datatype,
+            respect,
+        });
         self.context.binders().open(Zone::Intuitionistic, datatype);
         Ok(Step::Descend(Goal::Form(TypeNode::Computation(motive))))
     }
 
-    /// Check every branch at the motive specialized to its own constructor.
+    /// Check every branch at the motive specialized to its own constructor,
+    /// and then, over a presented type, the case's respect for its rules.
     ///
     /// # Specification
     /// - requires: the motive has formed under its one open scrutinee binder.
     /// - ensures: that binder closes before branch functions check; the final
-    ///   type substitutes the actual scrutinee into the motive.
+    ///   type substitutes the actual scrutinee into the motive; with `respect`
+    ///   present the rules are decided after every branch has checked and
+    ///   before the type is yielded.
     /// - fails: the internal scope guard or telescope instantiation.
     /// - panics: none.
     ///
@@ -370,13 +380,17 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — dependent motives and unequal fields distinguish
-    ///   capture, branch order and an incorrectly ambient result type.
+    ///   capture, branch order and an incorrectly ambient result type; an
+    ///   ill-typed branch of a case over the circle is refused by its own
+    ///   mismatch before any rule is decided.
     /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
     #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
     pub(super) fn native_branches(
         &mut self,
         term: ComputationId,
         datatype: ValueTypeId,
+        respect: Maybe<Reading, obligation::Absent>,
     ) -> Result<Step, CheckRefusal>
     {
         self.close()?;
@@ -391,6 +405,13 @@ impl Machine<'_, '_>
         let result =
             gandr_core_term::instantiate_comp_type(self.context.arena_mut(), motive, scrutinee);
         self.wait(Frame::NativeYield(Produced::CompType(result)));
+        if let Maybe::Present(reading) = respect {
+            self.wait(Frame::NativeRespect {
+                term,
+                datatype,
+                reading,
+            });
+        }
         for index in (0 .. count).rev() {
             let expected =
                 former::branch_type(self.context, datatype, ConstructorTag::from(index), motive)?;
@@ -407,6 +428,58 @@ impl Machine<'_, '_>
             }));
         }
         Ok(Step::Ascend(Produced::Checked))
+    }
+
+    /// The case a structural fixpoint opens with, read as the fixpoint
+    /// against its type's rules.
+    ///
+    /// # Specification
+    /// - requires: `body` is the body of the fixpoint `fixpoint`, whose
+    ///   structural-descent claim replayed at `expected`.
+    /// - ensures: the case under the body's lambda beside [`Reading::Fold`]
+    ///   naming the fixpoint and the domain of `expected`, when that case's
+    ///   scrutinee is the lambda's argument; [`root::Absent::NotOverCase`]
+    ///   otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::respect::respected`]: the fold reading
+    ///   admits a fixpoint over the circle that a bare reading of its case
+    ///   would refuse.
+    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+    #[spec(ensures: |ret| match ret { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, .. } if marked == fixpoint), Maybe::Absent(reason) => reason == root::Absent::NotOverCase })]
+    pub(super) fn fold_root(
+        &self,
+        fixpoint: ComputationId,
+        expected: gandr_core_term::CompTypeId,
+        body: ComputationId,
+    ) -> Maybe<(ComputationId, Reading), root::Absent>
+    {
+        let arena = self.context.arena();
+        let not_over_case = Maybe::Absent(root::Absent::NotOverCase);
+        let Some(
+            &(gandr_core_term::CompType::Arrow { domain, .. }
+            | gandr_core_term::CompType::Pi { domain, .. }),
+        ) = arena.comp_type(expected)
+        else {
+            return not_over_case;
+        };
+        let Some(&Computation::Lambda(case)) = arena.computation(body)
+        else {
+            return not_over_case;
+        };
+        let Some(&Computation::DataCase { scrutinee, .. }) = arena.computation(case)
+        else {
+            return not_over_case;
+        };
+        let argument = gandr_core_term::Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32),
+        };
+        if arena.value(scrutinee) != Some(&argument) {
+            return not_over_case;
+        }
+        Maybe::Present((case, Reading::Fold { fixpoint, domain }))
     }
 
     /// Synthesize the returner of the exact projected field or component.

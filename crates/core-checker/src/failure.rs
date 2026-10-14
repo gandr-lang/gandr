@@ -105,6 +105,9 @@ pub enum FrameRole
     NativeCase,
     /// A data case waits on its motive's formation.
     NativeMotive,
+    /// A data case over a presented type, its branches checked, is shown to
+    /// respect its type's rules.
+    NativeRespect,
     /// A dependent split waits on its scrutinee's type.
     SigmaSplitScrutinee,
     /// A dependent split waits on its motive's formation.
@@ -326,6 +329,7 @@ impl fmt::Display for FrameRole
             | Self::NativeRecord => "NativeRecord",
             | Self::NativeCase => "NativeCase",
             | Self::NativeMotive => "NativeMotive",
+            | Self::NativeRespect => "NativeRespect",
             | Self::SigmaSplitScrutinee => "SigmaSplitScrutinee",
             | Self::SigmaSplitMotive => "SigmaSplitMotive",
             | Self::NativeProjection => "NativeProjection",
@@ -774,6 +778,7 @@ mod tests
             FrameRole::NativeRecord,
             FrameRole::NativeCase,
             FrameRole::NativeMotive,
+            FrameRole::NativeRespect,
             FrameRole::SigmaSplitScrutinee,
             FrameRole::SigmaSplitMotive,
             FrameRole::NativeProjection,

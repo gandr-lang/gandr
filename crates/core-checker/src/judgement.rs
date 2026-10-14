@@ -1205,6 +1205,20 @@ enum Frame
         term: ComputationId,
         /// Its scrutinee classifier.
         datatype: ValueTypeId,
+        /// How the case is read against its type's rules, when the type has
+        /// any.
+        respect: Maybe<crate::respect::Reading, crate::respect::obligation::Absent>,
+    },
+    /// Show a case over a presented type respects the type's rules, once its
+    /// branches have checked.
+    NativeRespect
+    {
+        /// The case.
+        term: ComputationId,
+        /// Its scrutinee classifier.
+        datatype: ValueTypeId,
+        /// How the case is read against the rules.
+        reading: crate::respect::Reading,
     },
     /// Await a dependent split scrutinee's classifier, which must be a
     /// dependent pair.
@@ -2006,6 +2020,7 @@ impl Frame
             | Self::NativeRecord { .. } => FrameRole::NativeRecord,
             | Self::NativeCase(_) => FrameRole::NativeCase,
             | Self::NativeMotive { .. } => FrameRole::NativeMotive,
+            | Self::NativeRespect { .. } => FrameRole::NativeRespect,
             | Self::SigmaSplitScrutinee(_) => FrameRole::SigmaSplitScrutinee,
             | Self::SigmaSplitMotive { .. } => FrameRole::SigmaSplitMotive,
             | Self::NativeProjection(_) => FrameRole::NativeProjection,
@@ -2145,6 +2160,7 @@ impl Frame
             | Self::NativeTuple { .. }
             | Self::NativeRecord { .. }
             | Self::NativeCase(_)
+            | Self::NativeRespect { .. }
             | Self::SigmaSplitScrutinee(_)
             | Self::NativeProjection(_)
             | Self::PerformPayload { .. }
@@ -2305,6 +2321,10 @@ struct Machine<'context, 'arena>
     marks: Vec<MarkEntry>,
     /// The endpoints the run bound and the zones its offers keep.
     sessions: Sessions,
+    /// The case a structural fixpoint checked last opens with, beside how it
+    /// reads against its type's rules: taken by the next case the run meets,
+    /// which is that one, since the fixpoint's body is `λy. case y`.
+    root: Maybe<(ComputationId, crate::respect::Reading), crate::respect::root::Absent>,
 }
 
 impl<'context, 'arena> Machine<'context, 'arena>
@@ -3124,6 +3144,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             anchors: Vec::new(),
             marks: Vec::new(),
             sessions: Sessions::new(base),
+            root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
         };
         let scope = machine.session_scope();
         match machine.drive(goal) {
@@ -4733,6 +4754,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 match evidence {
                     | FixpointEvidence::StructuralDescent => {
                         crate::descent::replay(self.context, term, expected, body)?;
+                        self.root = self.fold_root(term, expected, body);
                     },
                     | FixpointEvidence::Partial => {},
                 }
@@ -5960,8 +5982,25 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | (Frame::NativeCase(term), Produced::ValueType(datatype)) => {
                 self.native_case(term, datatype)
             },
-            | (Frame::NativeMotive { term, datatype }, Produced::Checked) => {
-                self.native_branches(term, datatype)
+            | (
+                Frame::NativeMotive {
+                    term,
+                    datatype,
+                    respect,
+                },
+                Produced::Checked,
+            ) => self.native_branches(term, datatype, respect),
+            | (
+                Frame::NativeRespect {
+                    term,
+                    datatype,
+                    reading,
+                },
+                Produced::Checked,
+            ) => {
+                let signature = crate::former::signature(self.context, datatype)?;
+                crate::respect::respected(self.context, term, &signature, reading)?;
+                Ok(Step::Ascend(Produced::Checked))
             },
             | (Frame::SigmaSplitScrutinee(term), Produced::ValueType(classifier)) => {
                 self.sigma_split(term, classifier)
@@ -5981,6 +6020,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::NativeRecord { .. }
                 | Frame::NativeCase(_)
                 | Frame::NativeMotive { .. }
+                | Frame::NativeRespect { .. }
                 | Frame::SigmaSplitScrutinee(_)
                 | Frame::SigmaSplitMotive { .. }
                 | Frame::NativeProjection(_),
@@ -9837,6 +9877,7 @@ mod tests
             anchors: Vec::new(),
             marks: Vec::new(),
             sessions: Sessions::new(BinderDepth::default()),
+            root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
         };
         let refusal = machine
             .resume(Frame::LambdaBody, Produced::ValueType(unit_type))
@@ -9875,6 +9916,7 @@ mod tests
             anchors: Vec::new(),
             marks: Vec::new(),
             sessions: Sessions::new(BinderDepth::default()),
+            root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
         };
         assert_eq!(machine.charge(), Ok(()));
         assert_eq!(machine.remaining, 0);

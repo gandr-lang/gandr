@@ -361,8 +361,43 @@ mod native_formers
         );
     }
 
+    /// `fix f. λy. case y { Base ⇒ return (); Loop(x) ⇒ f(x); Unloop(x) ⇒
+    /// f(x) }` at `Circle → F Unit`, its descent claimed, and the case at its
+    /// root.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unwinding(arena: &mut CoreArena) -> (ValueId, ValueTypeId, gandr_core_term::ComputationId)
+    {
+        let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+        let unit_type = arena.value_type_unit();
+        let unit = arena.value_unit();
+        let motive = arena.comp_type_returner(unit_type);
+        let returned = arena.computation_return(unit);
+        // Under the self binder, the argument and the field: `f` is two out.
+        let recursive = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let field = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let forced = arena.computation_force(recursive);
+        let called = arena.computation_application(forced, field);
+        let recursing = arena.computation_lambda(called);
+        let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case =
+            arena.computation_data_case(argument, motive, vec![returned, recursing, recursing]);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(
+            lambda,
+            gandr_kernel_term::FixpointEvidence::StructuralDescent,
+        );
+        let arrow = arena.comp_type_arrow(own, motive);
+        (
+            arena.value_thunk(fixpoint),
+            arena.value_type_thunk(arrow),
+            case,
+        )
+    }
+
     #[test]
-    fn a_case_over_a_presented_type_is_refused()
+    fn a_case_respects_its_type_s_rules_or_is_refused_by_the_rule()
     {
         let looped = ConstructorTag::from(1_usize);
         let unlooped = ConstructorTag::from(2_usize);
@@ -375,24 +410,62 @@ mod native_formers
             let motive = arena.comp_type_returner(unit_type);
             let returned = arena.computation_return(unit);
             let lettered = arena.computation_lambda(returned);
+            // A bare case: its arms return at once, so at `Loop(Unloop(x))`
+            // it returns while at `x` it is stuck on the variable.
             let case =
                 arena.computation_data_case(scrutinee, motive, vec![returned, lettered, lettered]);
             let body = arena.value_thunk(case);
             let declared = arena.value_type_thunk(motive);
+            let (unwound, unwinding_type, _root) = unwinding(&mut arena);
             let declarations = vec![
                 circle(&mut arena, rules),
                 definition(ConstantIndex::from(1_usize), declared, body),
+                definition(ConstantIndex::from(2_usize), unwinding_type, unwound),
             ];
             let (report, crossed) = run(&mut arena, &declarations);
             assert_eq!(report.judged()[0].verdict(), Verdict::Data);
+            assert!(
+                matches!(report.judged()[2].verdict(), Verdict::Checked { .. }),
+                "a fixpoint recursing through both letters meets itself at the cancelled word: \
+                 {:?}",
+                report.judged()[2].verdict()
+            );
+            assert!(
+                matches!(crossed.readmitted()[2].outcome(), Outcome::Defined { .. }),
+                "and the kernel re-derives the respect: {:?}",
+                crossed.readmitted()[2].outcome()
+            );
             if presented {
+                let Verdict::Refused(CheckRefusal::RuleNotRespected {
+                    at,
+                    rule,
+                    left,
+                    right,
+                }) = report.judged()[1].verdict()
+                else {
+                    panic!(
+                        "a bare case over the circle is refused: {:?}",
+                        report.judged()[1].verdict()
+                    );
+                };
                 assert_eq!(
-                    report.judged()[1].verdict(),
-                    Verdict::Refused(CheckRefusal::RuleNotRespected {
-                        at: case,
-                        rule: gandr_kernel_term::RuleIndex::from(0_usize),
-                    }),
-                    "a case over the circle is refused at its first rule"
+                    (at, rule),
+                    (case, gandr_kernel_term::RuleIndex::from(0_usize)),
+                    "at the first rule"
+                );
+                assert!(
+                    matches!(
+                        arena.value(left),
+                        Some(gandr_core_term::Value::Constructor { tag, .. }) if *tag == looped
+                    ),
+                    "naming its left side, `Loop(Unloop(x))`"
+                );
+                assert!(
+                    matches!(
+                        arena.value(right),
+                        Some(gandr_core_term::Value::Variable { .. })
+                    ),
+                    "and its right side, `x`"
                 );
             }
             else {

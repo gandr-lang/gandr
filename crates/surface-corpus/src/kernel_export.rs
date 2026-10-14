@@ -1351,7 +1351,8 @@ mod kernel_here_congruence_readmission
 
 /// A presented type's cancellation readmits by its normal forms; a circle
 /// without its rules, or with a rule that does not present it, is refused by
-/// name; a case over a type once it is presented is refused by name.
+/// name; a fold over the circle readmits when it respects the rules, and a
+/// twin whose arm breaks one is refused by name.
 mod kernel_presented_readmission
 {
     use alloc::vec;
@@ -1361,7 +1362,10 @@ mod kernel_presented_readmission
     use gandr_kernel_core::Environment;
     use gandr_kernel_core::IdentityError;
     use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::Computation;
     use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
     use gandr_kernel_term::MarkedDeclaration;
     use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::Presentation;
@@ -1372,6 +1376,7 @@ mod kernel_presented_readmission
     use gandr_kernel_term::RuleRefusal;
     use gandr_kernel_term::RuleVariable;
     use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
     use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
@@ -1457,54 +1462,75 @@ mod kernel_presented_readmission
     }
 
     #[test]
-    fn a_case_over_a_type_once_presented_is_refused_by_name()
+    fn a_fold_whose_arm_breaks_a_rule_is_refused_by_name()
     {
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/data/data-recursive.gandr"
+            "/fixture/model/identity/circle.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
-            panic!("the naturals lower");
+            panic!("the circle lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the naturals' export decodes");
+        let decoded = decode(exported.artifact.as_image()).expect("the circle's export decodes");
         let declarations = decoded.declarations().to_vec();
-        let arena = decoded.arena().clone();
+        let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
-            .expect("a case over the free naturals readmits");
-        let position = |name: &str| {
-            let segment = NameSegment::from_text(name.into()).expect("a name segment");
-            let named = StructuredName::from(vec![segment]);
-            declarations
-                .iter()
-                .position(|marked| *marked.declaration().name() == named)
-                .unwrap_or_else(|| panic!("`{name}` crossed"))
-        };
-        let nat = position("Nat");
-        let plus = position("plus");
-        // `Succ(Succ(x)) ~> x` presents the naturals modulo two, and `plus`
-        // reads its argument's constructor as written.
-        let x = RuleNode::Variable(RuleVariable::from(0_u32));
-        let succ = RuleNode::Constructor(ConstructorTag::from(1_usize));
-        let modulo =
-            Presentation::new(vec![PresentedRule::new([succ, succ, x].into(), [x].into())]);
-        let mut presented = declarations;
-        let Some(marked) = presented.get_mut(nat)
+            .expect("`mirror` readmits: it respects both cancellations");
+        let segment = NameSegment::from_text("mirror".into()).expect("a name segment");
+        let named = StructuredName::from(vec![segment]);
+        let mirror = declarations
+            .iter()
+            .position(|marked| *marked.declaration().name() == named)
+            .expect("`mirror` crossed");
+        let marked = &declarations[mirror];
+        let DeclarationContent::Def { declared, body } = *marked.declaration().content()
         else {
-            panic!("the naturals are a declaration");
+            panic!("`mirror` is a definition");
         };
-        *marked = MarkedDeclaration::new(
-            marked.mark(),
-            marked.declaration().clone().presented(modulo),
-        );
-        let refusal = Environment::replay(arena, &presented)
-            .expect_err("a case over a presented type is not shown to respect its rule");
-        assert_eq!(usize::from(refusal.position()), plus);
+        let Some(&Value::Thunk(fixpoint)) = arena.value(body)
+        else {
+            panic!("`mirror` is a thunk");
+        };
+        let Some(&Computation::Fixpoint {
+            body: lambda,
+            evidence,
+        }) = arena.computation(fixpoint)
+        else {
+            panic!("`mirror` is a fixpoint");
+        };
+        let Some(&Computation::Lambda(case)) = arena.computation(lambda)
+        else {
+            panic!("`mirror` opens with a lambda");
+        };
+        let Some(Computation::DataCase {
+            scrutinee,
+            motive,
+            branches,
+        }) = arena.computation(case).cloned()
+        else {
+            panic!("`mirror` cases on its argument");
+        };
+        // The twin reads `Unloop(x)` with the `Loop(x)` arm: both letters
+        // become `Unloop`, so `Loop(Unloop(x))` is sent two letters from `x`.
+        let broken = vec![branches[0], branches[1], branches[1]];
+        let case = arena.computation_data_case(scrutinee, motive, broken);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(lambda, evidence);
+        let body = arena.value_thunk(fixpoint);
+        let twin_declaration = DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, body)
+            .named(named);
+        let mut twin = declarations.clone();
+        twin[mirror] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("the broken arm does not respect the circle's rules");
+        assert_eq!(usize::from(refusal.position()), mirror);
         assert_eq!(
             *refusal.error(),
             KernelError::RuleNotRespected(RuleIndex::from(0_usize)),
-            "the kernel names the rule the case is not shown to respect"
+            "the kernel names the rule the twin breaks"
         );
     }
 }

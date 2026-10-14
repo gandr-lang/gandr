@@ -583,6 +583,7 @@ pub fn type_value(
         anchors: Vec::new(),
         marks: Vec::new(),
         sessions: super::Sessions::new(base),
+        root: quenchant_shape::shape::Maybe::Absent(crate::respect::root::Absent::Unmarked),
     };
     let scope = machine.session_scope();
     let _outcome = machine.drive(goal);

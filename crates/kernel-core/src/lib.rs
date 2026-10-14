@@ -294,11 +294,29 @@
 //! A case reads its scrutinee's constructor as written, so over a presented
 //! type its arms could tell apart two terms the rules identify — `Base` from
 //! `Loop(Unloop(Base))` — and `cong` would carry the path between them to a
-//! path between distinct results. Until a case is shown to respect each rule,
-//! every case over a presented type with rules is refused
-//! `RuleNotRespected`, at its first rule; the checker refuses the same case
-//! by the same name. The witness is
-//! `native_formers::native_formers::a_case_over_a_presented_type_is_refused`.
+//! path between distinct results. Each rule `l ==> r` is therefore an
+//! obligation on every case over the type, decided once its branches check:
+//! `F(l)` converts with `F(r)`, `l` and `r` built over one fresh variable per
+//! pattern variable, by the same forced replay. `F` is the structural fixpoint
+//! itself when the case is its root, `fix f. λy. case y { … }`, so a recursive
+//! call unfolds at a constructor field and meets its twin stuck at a variable;
+//! any other case is `F` with each side in its scrutinee's place. A case that
+//! fails is refused `RuleNotRespected`, naming the first such rule; the
+//! checker decides the same obligation δ-free and refuses by the same name,
+//! with both sides. The obligation is re-derived on readmission, so no trace
+//! records it and the artifact format is unchanged.
+//!
+//! **Choice.** The fold form, the obligation a quotient puts on any map out
+//! of it, decided by conversion. **Alternatives.** Refusing every case over a
+//! presented type, which left it without an eliminator; a recorded dialogue
+//! per rule, which the checker's decision makes redundant. **Reversal.** A
+//! respect that holds only up to a path, as `(n - 1) + 1` and `n` over the
+//! integers, takes that path as an owed obligation instead of a conversion.
+//! The witnesses are
+//! `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+//! and, on readmission,
+//! `kernel_export::kernel_presented_readmission::a_fold_whose_arm_breaks_a_rule_is_refused_by_name`
+//! in the surface corpus.
 //!
 //! # Contract boundaries
 //!
