@@ -1,8 +1,8 @@
 // The circle and the integers without a higher inductive type. The circle is
 // presented by a point, a loop and its inverse, with the two cancellations
 // as rules; its shape is a signature, and the integers are a model of it.
-// The winding number folds the circle into the integers, and the
-// equivalence between them is owed.
+// The winding number, written as a bare `case`, is refused until the fold
+// into the integers lands, and the equivalence between them is owed.
 
 /// The circle as a presented type: its rules rewrite constructor terms, so a
 /// word normalizes to the loops it winds.
@@ -44,6 +44,24 @@ def nested = here(Base) ;
 @[ refuses("EndpointMismatch") ]
 def around_once : Path(Circle, Loop(Base), Base) ;
 def around_once = here(Base) ;
+
+/// A case that tells a loop from its inverse, refused: `Unloop(Loop(Base))`
+/// and `Loop(Unloop(Base))` are one word, which it would read as 2 and 1.
+@[ refuses("RuleNotRespected") ]
+def tell(c : Circle) -> -F Integer {
+  case c {
+    Base => return 0,
+    Loop(x) => return 1,
+    Unloop(x) => return 2
+  }
+}
+
+/// The path from 2 to 1 that `tell` would carry `nested` to; with `tell`
+/// refused its applications do not compute, and the endpoints differ.
+@[ refuses("EndpointMismatch") ]
+def two_is_one() -> -F Path(Integer, 2, 1) {
+  become cong(tell, nested)
+}
 
 /// The circle's shape: the same presentation as a signature models interpret.
 /// `Model` reads a `sign` block, so the shape is spelled apart from `Circle`.
@@ -105,8 +123,10 @@ module Winding : Model(CircleShape) {
   }
 }
 
-/// The winding number, the fold out of the circle into the integers. `case`
-/// admits its arms without checking that they respect the rules; these do.
+/// The winding number as a bare `case` over the circle, refused: its arms
+/// add and subtract one, and `(n - 1) + 1` is not `n` by conversion on a
+/// variable, so they are not shown to respect `Loop(Unloop(x)) ==> x`.
+@[ refuses("RuleNotRespected") ]
 def rec wind(c : Circle) -> -F Integer {
   case c {
     Base => return 0,
@@ -115,13 +135,15 @@ def rec wind(c : Circle) -> -F Integer {
   }
 }
 
-/// Two loops wind twice.
-@[ runs("2") ]
+/// Two loops wind twice. With `wind` refused the run waits; the row checks
+/// against `wind`'s declared type.
+@[ checks ]
 def twice_wound : +U (-F Integer) ;
 def twice_wound = thunk { become wind(Loop(Loop(Base))) } ;
 
-/// A cancelled word winds as its normal form does: not at all.
-@[ runs("0") ]
+/// A cancelled word winds as its normal form does: not at all. The run
+/// waits on `wind` as `twice_wound`'s does.
+@[ checks ]
 def unwound : +U (-F Integer) ;
 def unwound = thunk { become wind(Loop(Unloop(Base))) } ;
 

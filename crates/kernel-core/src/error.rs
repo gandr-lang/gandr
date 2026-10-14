@@ -550,6 +550,9 @@ pub enum KernelError
     /// not a linear, constructor-headed, terminating rewrite over the
     /// declaration's own constructor table.
     RuleNotPresentable(gandr_kernel_term::RuleRefusal),
+    /// A case over a presented type is not shown to respect the named rule of
+    /// its type: its arms might tell apart two terms the rule identifies.
+    RuleNotRespected(gandr_kernel_term::RuleIndex),
     /// A fixpoint's structural-descent claim did not replay.
     DescentNotReplayed(gandr_kernel_term::DescentRefusal),
     /// A required record field is absent.
@@ -817,6 +820,9 @@ impl core::fmt::Display for KernelError
             },
             | Self::RuleNotPresentable(_) => {
                 f.write_str("a data declaration's rule did not present its type")
+            },
+            | Self::RuleNotRespected(_) => {
+                f.write_str("a case over a presented type was not shown to respect its rules")
             },
             | Self::DescentNotReplayed(_) => {
                 f.write_str("a fixpoint's structural-descent claim did not replay")

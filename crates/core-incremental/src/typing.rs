@@ -265,6 +265,14 @@ pub enum Refusal
         /// The first rule that does not present the type, and why.
         refusal: gandr_kernel_term::RuleRefusal,
     },
+    /// A case over a presented type is not shown to respect a rule.
+    RuleNotRespected
+    {
+        /// The case.
+        at: Site,
+        /// The first rule the case is not shown to respect.
+        rule: gandr_kernel_term::RuleIndex,
+    },
     /// A nominal application has the wrong parameter count.
     DataArgumentArity(Site),
     /// A constructor tag is absent from its declaration.
@@ -992,6 +1000,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::DataArgumentArity(at) = matched_left_value && let Refusal::DataArgumentArity(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(at)) }
  else if let CheckRefusal::DataFieldLevel {field,kind} = matched_left_value && let Refusal::DataFieldLevel {field:projected,kind:ref stored} = *matched_right_value { projected == self.site(ArenaNode::ValueType(field)) && *stored == self.value_type(kind) }
  else if let CheckRefusal::RuleNotPresentable {kind,refusal} = matched_left_value && let Refusal::RuleNotPresentable {kind:projected,refusal:stored} = *matched_right_value { projected == self.site(ArenaNode::ValueType(kind)) && stored == refusal }
+ else if let CheckRefusal::RuleNotRespected {at,rule} = matched_left_value && let Refusal::RuleNotRespected {at:projected,rule:stored} = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && stored == rule }
  else if let CheckRefusal::UnknownConstructor {at,tag} = matched_left_value && let Refusal::UnknownConstructor {at:projected,tag:stored} = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == tag }
  else if let CheckRefusal::ConstructorArity(at) = matched_left_value && let Refusal::ConstructorArity(projected) = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::NonExhaustiveDataCase(at) = matched_left_value && let Refusal::NonExhaustiveDataCase(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
@@ -1152,6 +1161,10 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             | CheckRefusal::RuleNotPresentable { kind, refusal } => Refusal::RuleNotPresentable {
                 kind: self.site(ArenaNode::ValueType(kind)),
                 refusal,
+            },
+            | CheckRefusal::RuleNotRespected { at, rule } => Refusal::RuleNotRespected {
+                at: self.site(ArenaNode::Computation(at)),
+                rule,
             },
             | CheckRefusal::AbstractKindNotUniverse(at) => {
                 Refusal::AbstractKindNotUniverse(self.site(ArenaNode::ValueType(at)))

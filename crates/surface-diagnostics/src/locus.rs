@@ -849,6 +849,7 @@ fn checked(
         | CheckRefusal::CapabilityOutsideAuthority { at, .. }
         | CheckRefusal::DescentNotReplayed { at, .. }
         | CheckRefusal::NonExhaustiveDataCase(at)
+        | CheckRefusal::RuleNotRespected { at, .. }
         | CheckRefusal::AbsentRecordField(at)
         | CheckRefusal::AbsentTupleComponent(at)
         | CheckRefusal::NonCovariantMotive { at }
@@ -1090,6 +1091,7 @@ impl fmt::Display for Checked
                 gandr_kernel_term::RuleFault::SlotMismatch => "its right side moves a variable to a field of another type",
                 gandr_kernel_term::RuleFault::NotDecreasing => "its right side is not smaller than its left",
             }),
+            CheckRefusal::RuleNotRespected { rule, .. } => write!(f, "the case is not shown to respect rule {} of its datatype", usize::from(rule)),
             CheckRefusal::AbstractKindNotUniverse(_) => f.write_str("an abstract type's kind must be a value universe"),
             CheckRefusal::RepresentationAboveKind {..} => f.write_str("a sealed representation exceeds its abstract type's universe"),
             CheckRefusal::NotAnAbstractType(constant) => write!(f,"declaration {} is not an abstract type",usize::from(constant)),

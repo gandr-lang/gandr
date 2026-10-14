@@ -291,6 +291,15 @@
 //! `presented::tests::the_forced_loop_converts_circle_words_by_their_normal_forms`
 //! and `presented::tests::a_mode_switch_reads_circle_words_by_their_normal_forms`.
 //!
+//! A case reads its scrutinee's constructor as written, so over a presented
+//! type its arms could tell apart two terms the rules identify — `Base` from
+//! `Loop(Unloop(Base))` — and `cong` would carry the path between them to a
+//! path between distinct results. Until a case is shown to respect each rule,
+//! every case over a presented type with rules is refused
+//! `RuleNotRespected`, at its first rule; the checker refuses the same case
+//! by the same name. The witness is
+//! `native_formers::native_formers::a_case_over_a_presented_type_is_refused`.
+//!
 //! # Contract boundaries
 //!
 //! The source `# Specification` is authoritative; `#[spec(...)]` checks

@@ -384,17 +384,22 @@ pub(super) fn branch_type(
 /// - requires: the scrutinee has the supplied data classifier; motive formation
 ///   is checked by the surrounding judgement.
 /// - ensures: exactly one branch obligation per constructor, in table order.
-/// - fails: wrong shape or a non-exhaustive branch vector.
+/// - fails: wrong shape or a non-exhaustive branch vector; a case over a
+///   presented type with rules refuses [`KernelError::RuleNotRespected`] at its
+///   first rule, as the checker does.
 /// - panics: none.
 /// The executable postcondition classifies every returned computation check.
 ///
 /// # Errors
-/// Returns native shape, coverage, instantiation or arena refusals.
+/// Returns native shape, coverage, instantiation, rule-respect or arena
+/// refusals.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — omitted and surplus arms both refuse before branch
-///   checking.
+///   checking; a case over the naturals modulo two refuses where the same case
+///   over the free naturals admits.
 /// - witness: `native_formers::native_formers::data_case_checks_coverage_and_motive`
+/// - witness: `native_formers::native_formers::a_case_over_a_presented_type_is_refused`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|result| result.1.iter().all(|goal| matches!(goal, &Goal::CheckComp(..)))))]
 pub(super) fn case(
     arena: &mut TermArena,
@@ -432,6 +437,18 @@ pub(super) fn case(
     }
     if signature.constructors.len() != count {
         return Err(KernelError::NonExhaustiveDataCase);
+    }
+    // A rule identifies two constructor terms, and a case reads its
+    // scrutinee's constructor as it stands, so its arms could tell the two
+    // apart. No case is shown to respect the rules yet: each is refused at the
+    // first.
+    let presented = entries
+        .get(usize::from(declaration))
+        .is_some_and(|entry| !entry.declaration().presentation().rules().is_empty());
+    if presented {
+        return Err(KernelError::RuleNotRespected(
+            gandr_kernel_term::RuleIndex::from(0_usize),
+        ));
     }
     let mut goals = Vec::with_capacity(count);
     for (index, fields) in signature.constructors.iter().enumerate() {

@@ -295,7 +295,10 @@ impl Machine<'_, '_>
     /// - requires: `term` is a case whose scrutinee synthesized `datatype`.
     /// - ensures: exhaustive coverage before motive checking; branches remain
     ///   ordinary ambient functions and are not given implicit field binders.
-    /// - fails: non-data scrutinee, wrong coverage or absent declaration.
+    /// - fails: non-data scrutinee, wrong coverage or absent declaration; a
+    ///   case over a presented type with rules refuses
+    ///   [`CheckRefusal::RuleNotRespected`] at its first rule, the kernel's
+    ///   refusal of the same case.
     /// - panics: none.
     ///
     /// # Errors
@@ -303,8 +306,11 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — empty, missing and surplus branches distinguish exact
-    ///   coverage; a dependent motive distinguishes its binder's scope.
+    ///   coverage; a dependent motive distinguishes its binder's scope; a case
+    ///   over the circle is refused where the same case over a free type
+    ///   checks.
     /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `native_formers::native_formers::a_case_over_a_presented_type_is_refused`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Computation(_))))))]
     pub(super) fn native_case(
         &mut self,
@@ -334,6 +340,16 @@ impl Machine<'_, '_>
         };
         if count != signature.constructors().len() {
             return Err(CheckRefusal::NonExhaustiveDataCase(term));
+        }
+        // A rule identifies two constructor terms, and a case reads its
+        // scrutinee's constructor as it stands, so its arms could tell the two
+        // apart. No case is shown to respect the rules yet: each is refused at
+        // the first.
+        if !signature.presentation().rules().is_empty() {
+            return Err(CheckRefusal::RuleNotRespected {
+                at: term,
+                rule: gandr_kernel_term::RuleIndex::from(0_usize),
+            });
         }
         self.wait(Frame::NativeMotive { term, datatype });
         self.context.binders().open(Zone::Intuitionistic, datatype);

@@ -1752,6 +1752,7 @@ mod tests
             | Typing::Refused(Refusal::DataKindNotUniverse(_)) => "data-kind-not-universe",
             | Typing::Refused(Refusal::DataFieldLevel { .. }) => "data-field-level",
             | Typing::Refused(Refusal::RuleNotPresentable { .. }) => "rule-not-presentable",
+            | Typing::Refused(Refusal::RuleNotRespected { .. }) => "rule-not-respected",
             | Typing::Refused(Refusal::DataArgumentArity(_)) => "data-argument-arity",
             | Typing::Refused(Refusal::UnknownConstructor { .. }) => "unknown-constructor",
             | Typing::Refused(Refusal::ConstructorArity(_)) => "constructor-arity",

@@ -311,6 +311,69 @@ mod native_formers
     }
 
     #[test]
+    fn a_case_over_a_presented_type_is_refused()
+    {
+        use gandr_kernel_term::Presentation;
+        use gandr_kernel_term::PresentedRule;
+        use gandr_kernel_term::RuleNode;
+        let x = RuleNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32));
+        let succ = RuleNode::Constructor(ConstructorTag::from(1_usize));
+        // `Succ(Succ(x)) ~> x`: the naturals modulo two, where a case could
+        // tell `Succ(Succ(Zero))` from `Zero`.
+        let modulo =
+            Presentation::new(vec![PresentedRule::new([succ, succ, x].into(), [x].into())]);
+        for (presentation, presented) in [(Presentation::default(), false), (modulo, true)] {
+            let mut environment = Environment::new();
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+            let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+            let naturals = staging
+                .data(
+                    LevelSignature::monomorphic(),
+                    vec![],
+                    vec![vec![], vec![own]],
+                    kind,
+                )
+                .presented(presentation);
+            let nominal = environment
+                .add_decl(naturals)
+                .expect("the naturals admit, presented or free")
+                .position();
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let datatype = arena.value_type_data(nominal, vec![]);
+            let zero = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![]);
+            let unit_type = arena.value_type_unit();
+            let unit = arena.value_unit();
+            let motive = arena.comp_type_returner(unit_type);
+            let returned = arena.computation_return(unit);
+            let successor = arena.computation_lambda(returned);
+            let case = arena.computation_data_case(zero, motive, vec![returned, successor]);
+            let body = arena.value_thunk(case);
+            let declared = arena.value_type_thunk(motive);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            let admitted = environment.add_decl(declaration).map(|_admitted| ());
+            if presented {
+                assert_eq!(
+                    admitted,
+                    Err(KernelError::RuleNotRespected(
+                        gandr_kernel_term::RuleIndex::from(0_usize)
+                    )),
+                    "a case over the presented naturals is refused at their rule"
+                );
+            }
+            else {
+                assert_eq!(
+                    admitted,
+                    Ok(()),
+                    "the same case over the free naturals admits"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn empty_nominal_case_eliminates_only_an_empty_declaration()
     {
         let mut environment = Environment::new();

@@ -1351,7 +1351,7 @@ mod kernel_here_congruence_readmission
 
 /// A presented type's cancellation readmits by its normal forms; a circle
 /// without its rules, or with a rule that does not present it, is refused by
-/// name.
+/// name; a case over a type once it is presented is refused by name.
 mod kernel_presented_readmission
 {
     use alloc::vec;
@@ -1453,6 +1453,58 @@ mod kernel_presented_readmission
                 fault: RuleFault::NotDecreasing,
             }),
             "the kernel names the rule and its fault"
+        );
+    }
+
+    #[test]
+    fn a_case_over_a_type_once_presented_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/data/data-recursive.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the naturals lower");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the naturals' export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("a case over the free naturals readmits");
+        let position = |name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(vec![segment]);
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"))
+        };
+        let nat = position("Nat");
+        let plus = position("plus");
+        // `Succ(Succ(x)) ~> x` presents the naturals modulo two, and `plus`
+        // reads its argument's constructor as written.
+        let x = RuleNode::Variable(RuleVariable::from(0_u32));
+        let succ = RuleNode::Constructor(ConstructorTag::from(1_usize));
+        let modulo =
+            Presentation::new(vec![PresentedRule::new([succ, succ, x].into(), [x].into())]);
+        let mut presented = declarations;
+        let Some(marked) = presented.get_mut(nat)
+        else {
+            panic!("the naturals are a declaration");
+        };
+        *marked = MarkedDeclaration::new(
+            marked.mark(),
+            marked.declaration().clone().presented(modulo),
+        );
+        let refusal = Environment::replay(arena, &presented)
+            .expect_err("a case over a presented type is not shown to respect its rule");
+        assert_eq!(usize::from(refusal.position()), plus);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::RuleNotRespected(RuleIndex::from(0_usize)),
+            "the kernel names the rule the case is not shown to respect"
         );
     }
 }
