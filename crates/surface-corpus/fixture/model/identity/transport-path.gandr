@@ -1,0 +1,9 @@
+/// A reflexive transport at a path-type motive returns a path.
+@[ checks ]
+def moved_end : Path(Path(Integer, 2, 2), transport(\x. Path(Integer, x, x), here(2), here(2)), here(2)) ;
+def moved_end = here(here(2)) ;
+
+/// A transported unit is no path between integers.
+@[ refuses("TypeMismatch") ]
+def unit_end : Path(Path(Integer, 2, 2), transport(\x. Unit, here(2), unit), here(2)) ;
+def unit_end = here(here(2)) ;

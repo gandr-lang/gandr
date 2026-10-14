@@ -25,13 +25,13 @@
 //! the two laws of bind among them (the crate's trusted-equality section), and
 //! a refusal names both endpoints by content digest. An iterated identity reads
 //! its inner identity's fibre first and treats a `here` endpoint as that
-//! fibre's diagonal evidence. A neutral, a variable or a constant, inhabits an
-//! identity by the type it synthesizes: type conversion stays structural, so a
-//! neutral of the fibre type does not inhabit the identity. `here(c)`
-//! synthesizes the diagonal at the type `c` synthesizes, so like every
-//! annotation-free introduction it is inferable only where its point is; an
-//! eliminator whose path is the `here` of an injection or a λ takes it through
-//! a binder or a constant.
+//! fibre's diagonal evidence. A neutral — a variable, a constant or a returned
+//! endpoint — inhabits an identity by the type it synthesizes: type conversion
+//! stays structural, so a neutral of the fibre type does not inhabit the
+//! identity. `here(c)` synthesizes the diagonal at the type `c` synthesizes,
+//! so like every annotation-free introduction it is inferable only where its
+//! point is; an eliminator whose path is the `here` of an injection or a λ
+//! takes it through a binder or a constant.
 //!
 //! - alternatives: an inductive identity family eliminated by J, which needs a
 //!   computation rule on reflexivity that the fold's Sum and universe fibres do
@@ -45,13 +45,15 @@
 //!
 //! **A path between dependent pairs is a pair of paths.** At `Σ (x : A). B`
 //! the identity between `l` and `r` is [`sigma_fibre`]'s `Σ (p : Path(A, l₀,
-//! r₀)). Path(B[r₀], ⟨tr(x. B, p, l₁)⟩, r₁)`, the components read from a
-//! written pair or as the projections `⟨l.0⟩`, `⟨l.1⟩` of any other
-//! endpoint. A pair checked at such an identity checks at that Σ, so the
-//! first path joins the first components and the second ends at the right
-//! second component over it. The rule reads only the Σ's factors, so an
-//! open Σ has the same fibre. Transport along it reduces by the first two
-//! rows of the table below and is neutral otherwise.
+//! r₀)). Path(B[r₀], ⟨tr(x. B, p, l₁)⟩, r₁)`. Its components are read from
+//! the written pair an endpoint is, or the one a declared constant's admitted
+//! body is, so a declared endpoint unfolds here as an endpoint at every other
+//! former does; any other endpoint is read as its projections `⟨l.0⟩`,
+//! `⟨l.1⟩`. A pair checked at such an identity checks at that Σ, so the first
+//! path joins the first components and the second ends at the right second
+//! component over it. The rule reads only the Σ's factors, so an open Σ has
+//! the same fibre. Transport along it reduces by the first two rows of the
+//! table below and is neutral otherwise.
 //!
 //! - alternatives: a fold clause for the Σ, whose fibre graph would need a
 //!   coordinate typed by the transport of another; the identity at a Σ left
@@ -102,6 +104,28 @@
 //!   kernel, a second equality beside the replayed one.
 //! - reversal: an effectful kernel computation type would need its own refusal
 //!   beside the non-returner one.
+//!
+//! **A returned endpoint inhabits an identity as a neutral does.** Checked at
+//! an identity type, `⟨c⟩` is read by the type `c` returns and converted with
+//! the identity as written, never redirected to the fold's fibre: it is an
+//! elimination, not an introduction of the fibre, and the checker's value
+//! bridge reads it the same way. So a reflexive transport at a path-type
+//! motive, `Path(Path(A, a, a), ⟨tr(x. Path(A, x, x), here(a), here(a))⟩,
+//! here(a))`, forms: its left endpoint returns `Path(A, a, a)`, the motive at
+//! the path's target, and `here(here(a))` relates its point to that endpoint
+//! by the transport table's first row below. Read as fibre evidence, the
+//! endpoint would be compared with the unit fibre and refused where the checker
+//! accepts it.
+//!
+//! - alternatives: the checker's reduction of the transport recorded as a
+//!   dialogue the kernel replays, which carries a step the kernel's own
+//!   transport row already takes and leaves untouched the endpoint's type,
+//!   where the two disagreed; the checker reading a returned endpoint as fibre
+//!   evidence too, which puts the fold into its value bridge, a second equality
+//!   beside its structural conversion.
+//! - reversal: a fibre whose evidence only a computation produces needs a
+//!   returned endpoint read at the fibre; the reading then moves into the fold,
+//!   for the checker and the kernel together.
 //!
 //! **Reflexivity replays the engine's conversion.** `here(c)` checks at
 //! `Path(A, a, b)` when `c` converts with each endpoint. The forced conversion
@@ -261,6 +285,7 @@ use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::EndpointDialogues;
 use gandr_kernel_term::EvaluationComponent;
 use gandr_kernel_term::EvaluationDialogues;
@@ -280,6 +305,7 @@ use crate::conv::Convertibility;
 use crate::conv::equal_values;
 use crate::encoding::ContentTable;
 use crate::encoding::content_digest;
+use crate::env::AdmittedDeclaration;
 use crate::error::CompTypeWitness;
 use crate::error::ExpectedValueShape;
 use crate::error::KernelError;
@@ -772,11 +798,11 @@ pub(crate) fn fibre(
 /// # Specification
 /// - requires: `second` stands under one binder of `first`; both endpoints
 ///   inhabit the pair. The checking machine discharges those goals itself.
+///   `entries` is the admission log the endpoints were checked under.
 /// - ensures: `Σ (p : Path(first, l₀, r₀)). Path(second[r₀], ⟨tr(x. second, p,
-///   l₁)⟩, r₁)`, reading the components of a written pair and the two
-///   projections, each the value it returns, of any other endpoint. Nothing
-///   about the pair's factors is read beyond their place, so an open pair has
-///   the same fibre.
+///   l₁)⟩, r₁)`, each endpoint's components read by [`pair_components`].
+///   Nothing about the pair's factors is read beyond their place, so an open
+///   pair has the same fibre.
 /// - provides: the type the checking machine redirects a pair checked at an
 ///   identity of a dependent pair to.
 /// - fails: never.
@@ -784,20 +810,23 @@ pub(crate) fn fibre(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a pair of reflexivities inhabits the identity of a pair
-///   with itself, and one whose second path ends elsewhere is refused.
+///   with itself, one whose second path ends elsewhere is refused, and the
+///   reflexivities of a declared pair's body's components inhabit its identity
+///   with itself.
 /// - witness: `element_identity::tests::a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair`
 #[spec(ensures: |ret| arena.value_type(ret).is_some())]
 pub(crate) fn sigma_fibre<M>(
     arena: &mut TermArena,
     (table, memo): (&mut ContentTable, &mut M),
+    entries: &[AdmittedDeclaration],
     (first, second): (ValueTypeId, ValueTypeId),
     (left, right): (ValueId, ValueId),
 ) -> ValueTypeId
 where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
-    let [left_first, left_second] = pair_components(arena, left);
-    let [right_first, right_second] = pair_components(arena, right);
+    let [left_first, left_second] = pair_components(arena, entries, left);
+    let [right_first, right_second] = pair_components(arena, entries, right);
     let paths = arena.value_type_path(first, left_first, right_first);
     let past = BinderDepth::from(1_u32);
     let at_right = substitute_value_type(arena, table, memo, second, right_first);
@@ -816,11 +845,22 @@ where
 /// The two components of a dependent pair's inhabitant.
 ///
 /// # Specification
-/// - requires: `pair` inhabits a dependent pair.
-/// - ensures: the components of a written pair of two; the projections
-///   `⟨pair.0⟩` and `⟨pair.1⟩`, each the value it returns, otherwise.
+/// - requires: `pair` inhabits a dependent pair; `entries` is the admission log
+///   it was checked under.
+/// - ensures: the components of the written pair of two that `pair` is, or that
+///   a declared constant's admitted body is, through a chain of definitions
+///   whose bodies name a constant; the projections `⟨pair.0⟩` and `⟨pair.1⟩`,
+///   each the value it returns, otherwise.
+/// - provides: the kernel's own δ-step at an endpoint, the one the checker's
+///   reading of a declared pair takes: a body is admitted, so it is read, never
+///   searched for.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` loop takes one δ-step per turn, not recursion.
+/// - measure: the admission position of the constant unfolded, which each step
+///   must lower: a body names only declarations admitted before its own.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`sigma_fibre`].
@@ -828,10 +868,22 @@ where
 #[spec(ensures: |ret| ret.iter().all(|&component| arena.value(component).is_some()))]
 fn pair_components(
     arena: &mut TermArena,
+    entries: &[AdmittedDeclaration],
     pair: ValueId,
 ) -> [ValueId; 2]
 {
-    if let Some(&[first, second]) = arena.value(pair).and_then(Value::components) {
+    let mut head = pair;
+    let mut below = entries.len();
+    while let Some(&Value::Constant(constant)) = arena.value(head)
+        && usize::from(constant) < below
+        && let Some(&DeclarationContent::Def { body, .. }) = entries
+            .get(usize::from(constant))
+            .map(AdmittedDeclaration::content)
+    {
+        head = body;
+        below = usize::from(constant);
+    }
+    if let Some(&[first, second]) = arena.value(head).and_then(Value::components) {
         return [first, second];
     }
     [0_usize, 1_usize].map(|index| {
@@ -1251,8 +1303,8 @@ pub enum GoalReading
 /// - ensures: [`GoalReading::Fibre`] exactly when `expected` is an identity
 ///   type and `value` is an introduction form of the fold's fibres: neither an
 ///   identity form (`here`, a higher field, a higher evaluation) nor a neutral
-///   that synthesizes its own type (a variable, a constant, a static
-///   application).
+///   that synthesizes its own type (a variable, a constant, a returned
+///   endpoint, a static application).
 /// - provides: the checking machine's redirect of fibre evidence. A neutral
 ///   inhabits an identity by its synthesized type, so conversion stays
 ///   structural and never computes a fibre.
@@ -1261,7 +1313,8 @@ pub enum GoalReading
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the empty tuple inhabits identity at Bool between equal
-///   endpoints and a variable of identity type checks by its own type.
+///   endpoints, a variable of identity type checks by its own type, and a
+///   returned path checks at its identity type where a returned unit does not.
 /// - witness: `element_identity::tests::native_evidence_checks_against_the_fold_fibre`
 #[spec(ensures: |ret| ret == GoalReading::Written || matches!(arena.value_type(expected), Some(&ValueType::Path { .. })))]
 #[must_use]
@@ -1281,6 +1334,7 @@ pub(crate) fn goal_reading(
                     | Value::QuantifiedEvaluation { .. }
                     | Value::Variable(_)
                     | Value::Constant(_)
+                    | Value::Returned(_)
                     | Value::StaticApplication(..))
             )
         );

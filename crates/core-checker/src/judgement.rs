@@ -1113,35 +1113,43 @@ fn telescope_instance(
     instantiate_value_type(arena, fibre, element)
 }
 
-/// The two components of a dependent pair's inhabitant: a written pair's
-/// own, and any other value's two projections, each read as the value it
-/// returns.
+/// The two components of a dependent pair's inhabitant: those of the written
+/// pair it reduces to at its head, and otherwise its two projections, each
+/// read as the value it returns.
 ///
 /// # Specification
 /// - requires: `pair` inhabits a dependent pair.
-/// - ensures: the components of a written pair of two; `⟨pair.0⟩` and
-///   `⟨pair.1⟩` otherwise.
-/// - fails: never.
+/// - ensures: the components of the written pair of two that `pair` reaches by
+///   [`CheckingContext::whnf_code`] — `pair` itself when written, the body a
+///   declared constant unfolds to, as an endpoint at every other former
+///   unfolds; `⟨pair.0⟩` and `⟨pair.1⟩` when its head is no written pair.
+/// - fails: the unfolding's refusal.
 /// - panics: none.
 ///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
 /// # Adequacy
-/// - hypothesis: L3 — the identity of a written pair reads its components, and
-///   the identity of a declared pair reads its projections.
+/// - hypothesis: L3 — the identity of a written pair reads its components, the
+///   identity of a declared pair those of the pair it unfolds to, and the
+///   identity of a pair without a body its projections.
 /// - witness: `judgement::tests::a_pair_of_paths_checks_at_the_identity_of_a_dependent_pair`
-#[spec(ensures: |ret| ret.iter().all(|&component| arena.value(component).is_some()))]
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |components| components.iter().all(|&component| context.arena().value(component).is_some())))]
 fn pair_components(
-    arena: &mut gandr_core_term::CoreArena,
+    context: &mut CheckingContext<'_>,
     pair: ValueId,
-) -> [ValueId; 2]
+) -> Result<[ValueId; 2], CheckRefusal>
 {
-    if let Some(&[first, second]) = arena.value(pair).and_then(Value::components) {
-        return [first, second];
+    let head = context.whnf_code(pair)?;
+    let arena = context.arena_mut();
+    if let Some(&[first, second]) = arena.value(head).and_then(Value::components) {
+        return Ok([first, second]);
     }
-    [0_usize, 1_usize].map(|index| {
+    Ok([0_usize, 1_usize].map(|index| {
         let projected =
             arena.computation_tuple_projection(pair, gandr_kernel_term::Component::from(index));
         arena.value_returned(projected)
-    })
+    }))
 }
 
 /// The completed premise of a native List fold rule.
@@ -4036,7 +4044,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     if let ValueTypeView::Sigma { first, second } =
                         value_type_view(self.context.arena(), base)?
                     {
-                        let (paths, over) = self.sigma_identity(first, second, left, right);
+                        let (paths, over) = self.sigma_identity(first, second, left, right)?;
                         return self.dependent_pair(term, expected, paths, over);
                     }
                 }
@@ -5030,28 +5038,32 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - requires: `first` and `second` are a dependent pair's factors,
     ///   `second` under one binder of `first`; `left` and `right` inhabit it.
     /// - ensures: `Path(first, l₀, r₀)` and, under one binder `p` of it,
-    ///   `Path(second[r₀], ⟨tr(x. second, p, l₁)⟩, r₁)`: the components of a
-    ///   written pair, and `⟨e.0⟩`, `⟨e.1⟩` of any other endpoint `e`.
-    /// - fails: never.
+    ///   `Path(second[r₀], ⟨tr(x. second, p, l₁)⟩, r₁)`, each endpoint's
+    ///   components read by [`pair_components`].
+    /// - fails: as [`pair_components`].
     /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a pair of reflexivities at the identity of a written
-    ///   pair with itself checks, and one whose second path ends elsewhere is
-    ///   refused.
+    ///   pair with itself checks, one whose second path ends elsewhere is
+    ///   refused, and the identity of a declared pair with itself checks with
+    ///   the reflexivities of its body's components.
     /// - witness: `judgement::tests::a_pair_of_paths_checks_at_the_identity_of_a_dependent_pair`
-    #[spec(ensures: |ret| self.context.arena().value_type(ret.0).is_some() && self.context.arena().value_type(ret.1).is_some())]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(paths, over)| self.context.arena().value_type(paths).is_some() && self.context.arena().value_type(over).is_some()))]
     fn sigma_identity(
         &mut self,
         first: ValueTypeId,
         second: ValueTypeId,
         left: ValueId,
         right: ValueId,
-    ) -> (ValueTypeId, ValueTypeId)
+    ) -> Result<(ValueTypeId, ValueTypeId), CheckRefusal>
     {
+        let [left_first, left_second] = pair_components(self.context, left)?;
+        let [right_first, right_second] = pair_components(self.context, right)?;
         let arena = self.context.arena_mut();
-        let [left_first, left_second] = pair_components(arena, left);
-        let [right_first, right_second] = pair_components(arena, right);
         let paths = arena.value_type_path(first, left_first, right_first);
         let at_right = instantiate_value_type(arena, second, right_first);
         let at_right = shift_value_type(arena, at_right, Binders::ONE);
@@ -5063,7 +5075,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let target = shift_value(arena, right_second, Binders::ONE);
         let over = arena.value_type_path(at_right, transported, target);
 
-        (paths, over)
+        Ok((paths, over))
     }
 
     /// The domain and codomain a static lambda's body checks against: the
@@ -10922,6 +10934,17 @@ mod tests
         let here_first = arena.value_here(first);
         let here_second = arena.value_here(second);
         let projections = arena.value_tuple(&[here_first, here_second]);
+        // `ring : Σ… = #{0, here(0)}`, and its identity with itself from the
+        // reflexivities of another `0`.
+        let ring = arena.value_constant(ConstantIndex::from(6_usize));
+        let zero = arena.value_literal(integer_literal());
+        let here_zero = arena.value_here(zero);
+        let body = arena.value_tuple(&[zero, here_zero]);
+        let around = arena.value_type_path(scene.sigma, ring, ring);
+        let point = arena.value_literal(integer_literal());
+        let here_point = arena.value_here(point);
+        let here_here_point = arena.value_here(here_point);
+        let unfolded = arena.value_tuple(&[here_point, here_here_point]);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         seed(&mut context, &scene.types);
         let identity = form_value_type(&mut context, identity).unwrap();
@@ -10950,6 +10973,21 @@ mod tests
         assert!(
             checked.is_ok(),
             "an endpoint that is no written pair is read through its projections: {checked:?}"
+        );
+        let sigma = form_value_type(&mut context, scene.sigma).unwrap();
+        context
+            .adopt(
+                ConstantIndex::from(6_usize),
+                Maybe::Present(sigma),
+                Maybe::Present(body),
+            )
+            .unwrap();
+        let around = form_value_type(&mut context, around).unwrap();
+        let checked = check_value(&mut context, unfolded, around);
+        assert!(
+            checked.is_ok(),
+            "a declared pair's endpoint is read through the pair it unfolds to, as an endpoint \
+             at every other former unfolds: {checked:?}"
         );
     }
 

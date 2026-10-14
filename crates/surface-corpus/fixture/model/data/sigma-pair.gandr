@@ -61,6 +61,15 @@ def middle(t : #{a : Integer, b : Integer, c : Path(Integer, a, a)}) -> -F Integ
 def both : Path(#{n : Integer, v : Path(Integer, n, n)}, #{2, here(2)}, #{2, here(2)}) ;
 def both = #{here(2), here(here(2))} ;
 
+/// A declared pair's path reads the pair it unfolds to.
+@[ checks ]
+def ring_around : Path(#{n : Integer, v : Path(Integer, n, n)}, ring, ring) ;
+def ring_around = #{here(2), here(here(2))} ;
+
+@[ checks ]
+def tagged_around : Path(#{n : Integer, w : Ix(n)}, tagged, tagged) ;
+def tagged_around = #{here(3), here((MkIx : Ix(3)))} ;
+
 @[ checks ]
 def moved : +U (-F Integer) ;
 def moved = thunk { transport(\s. Integer, both, 5) } ;

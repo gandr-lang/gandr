@@ -7540,6 +7540,44 @@ mod tests
     }
 
     #[test]
+    fn a_reflexive_transport_at_a_path_motive_is_readmitted()
+    {
+        // def moved_end : Path(Path(Integer, 0, 0),
+        //                      ⟨tr(x. Path(Integer, x, x), here(0), here(0))⟩, here(0))
+        //               = here(here(0)) ;
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let zero = arena.value_literal(integer_literal());
+        let here = arena.value_here(zero);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let motive = arena.value_type_path(integer, bound, bound);
+        let transport = arena.computation_path_transport(motive, here, here);
+        let moved = arena.value_returned(transport);
+        let looped = arena.value_type_path(integer, zero, zero);
+        let declared = arena.value_type_path(looped, moved, here);
+        let here_here = arena.value_here(here);
+        let (report, readmission) = judge_and_readmit(&mut arena, &[declaration(
+            At(0),
+            Maybe::Present(declared),
+            Maybe::Present(here_here),
+        )]);
+        let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+        assert!(
+            matches!(*verdicts, [Verdict::Checked { .. }]),
+            "the checker reduces the reflexive transport: {verdicts:?}"
+        );
+        let [ref entry] = *readmission.readmitted()
+        else {
+            panic!("one outcome");
+        };
+        assert!(
+            matches!(*entry.outcome(), Outcome::Defined { .. }),
+            "and the kernel re-derives it: {:?}",
+            entry.outcome()
+        );
+    }
+
+    #[test]
     fn a_dependent_pair_and_its_identity_are_readmitted()
     {
         // def ring   : Σ (n : Integer). Path(Integer, n, n) = #{0, here(0)} ;
