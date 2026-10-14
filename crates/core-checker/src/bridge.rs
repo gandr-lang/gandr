@@ -1528,9 +1528,29 @@ where
                 kind,
             );
             // The rules name constructor tags and pattern variables only, so
-            // they cross unchanged.
+            // they cross unchanged. A type of words names its sort by
+            // position, so the sort crosses at its kernel position; a sort
+            // that did not cross is named by the words' own position, which
+            // the kernel refuses as no earlier sort.
             match offer {
-                | Offer::Data(signature) => staged.presented(signature.presentation().clone()),
+                | Offer::Data(signature) => {
+                    let presentation = signature.presentation();
+                    staged.presented(match presentation.cells() {
+                        | Some(cells) => {
+                            let sort = positions
+                                .admitted
+                                .get(&cells.sort())
+                                .copied()
+                                .unwrap_or(next);
+                            gandr_kernel_term::Presentation::new(presentation.rules().to_vec())
+                                .carrying(gandr_kernel_term::FreeCells::new(
+                                    sort,
+                                    cells.cells().to_vec(),
+                                ))
+                        },
+                        | None => presentation.clone(),
+                    })
+                },
                 | Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => staged,
             }
         },

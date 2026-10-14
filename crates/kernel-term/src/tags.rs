@@ -752,6 +752,19 @@ pub const KIND_DATA_PRESENTED: WireTag = WireTag(0x08);
 /// reader predating this kind refuses it as an unknown declaration kind rather
 /// than misreading it, which is why the format version holds.
 pub const KIND_DEF_LAWFUL: WireTag = WireTag(0x09);
+/// Declaration tag: a type of words, a presented datatype whose segment closes
+/// with the free cells it is minted over.
+///
+/// After the [`KIND_DATA_PRESENTED`] fields, its rule count here possibly
+/// zero, comes the sort's admission position, then a cell count and per cell
+/// its source and its target, each a rule side as the rules write theirs. The
+/// kernel re-mints the constructor table and the rules from the cells and
+/// reads `Path(T, a, a)` as the words where the sort `T`'s cells loop at `a`.
+/// A presented datatype with no cell writes [`KIND_DATA_PRESENTED`], so every
+/// other artifact keeps its bytes, and a reader predating this kind refuses it
+/// as an unknown declaration kind rather than misreading it, which is why the
+/// format version holds.
+pub const KIND_DATA_WORDS: WireTag = WireTag(0x0A);
 /// Rule node tag: a constructor of the declaration's own table.
 pub const RULE_CONSTRUCTOR: WireTag = WireTag(0);
 /// Rule node tag: a pattern variable.

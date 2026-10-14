@@ -371,6 +371,14 @@ fn lowered(
             "a path cannot be matched against `here`; use it by transport, through `back`, \
              `then` or `cong`",
         ),
+        | LoweringRefusal::DirectedCell { .. } => f.write_str(
+            "a cell between two terms is written `<->`; a directed cell `-->` between terms is \
+             not supported yet",
+        ),
+        | LoweringRefusal::CellNotALoop { .. } => f.write_str(
+            "a cell `<->` is a loop: write the same term on both sides; a cell between two \
+             distinct terms is not supported yet",
+        ),
         | LoweringRefusal::RulesUnoriented { .. } => f.write_str(
             "this rule may rewrite forever: its right side is not smaller than its left in the \
              order the block's calls induce, so the block's rules are refused",
@@ -943,6 +951,8 @@ mod tests
             },
             LoweringRefusal::ForNeedsListCase { span },
             LoweringRefusal::WithoutK { span },
+            LoweringRefusal::DirectedCell { span },
+            LoweringRefusal::CellNotALoop { span },
             LoweringRefusal::RulesUnoriented { span },
             LoweringRefusal::RulesDiverge { span, first: span },
             LoweringRefusal::RulesUndecided { span, first: span },

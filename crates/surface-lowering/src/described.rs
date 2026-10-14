@@ -1436,6 +1436,11 @@ impl LoweredModule<'_>
         let unit = typer.arena.value_type_unit();
         let _first = families.insert(Name::from("Unit"), (unit, base));
         for declaration in self.declarations() {
+            // The words of a family's loops are minted under the family's
+            // name, never written: the name is the family's.
+            if declaration.role() == crate::module::Role::Words {
+                continue;
+            }
             let DeclarationOutcome::Data(index) = declaration.outcome()
             else {
                 continue;

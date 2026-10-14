@@ -480,6 +480,27 @@ mod diagnostics
     }
 
     #[test]
+    fn a_word_spells_by_its_letters()
+    {
+        let mismatch = only(
+            Path::new("worded.gandr"),
+            SourceText::from(
+                "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\ndef wound : \
+                 Path(Path(Circle, Base, Base), back(loop) ∷ here(Base), here(Base)) ;\ndef \
+                 wound = 1 ;\n",
+            ),
+        );
+        assert_eq!(
+            mismatch.detail.compared.expected,
+            Maybe::Present(String::from(
+                "Path(Path(Circle, Base, Base), back(loop) ∷ here(Base), here(Base))"
+            )),
+            "a word's type is its path type, a letter conses before the rest, and the empty \
+             word is `here` at the point"
+        );
+    }
+
+    #[test]
     fn a_refusal_keeps_its_failure_and_spells_its_types()
     {
         let text = SourceText::from(MISMATCH);

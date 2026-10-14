@@ -322,7 +322,10 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         let root = core::mem::replace(&mut self.root, Maybe::Absent(root::Absent::Unmarked));
+        // A scrutinee at a looped point's path is split over the words its
+        // free cells mint.
         let datatype = self.context.whnf_value_type(datatype)?;
+        let datatype = self.context.identified(datatype)?;
         if !matches!(
             self.context.arena().value_type(datatype),
             Some(ValueType::Data { .. })
@@ -437,26 +440,33 @@ impl Machine<'_, '_>
     /// - requires: `body` is the body of the fixpoint `fixpoint`, whose
     ///   structural-descent claim replayed at `expected`.
     /// - ensures: the case under the body's lambda beside [`Reading::Fold`]
-    ///   naming the fixpoint, the domain of `expected` and `expected` itself,
-    ///   when that case's scrutinee is the lambda's argument;
+    ///   naming the fixpoint, the domain of `expected`, read as its words where
+    ///   it is a path at a looped point, and `expected` itself, when that
+    ///   case's scrutinee is the lambda's argument;
     ///   [`root::Absent::NotOverCase`] otherwise.
+    /// - fails: as [`crate::context::CheckingContext::identified`].
     /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::respect::respected`]: the fold reading
     ///   admits a fixpoint over the circle that a bare reading of its case
-    ///   would refuse.
+    ///   would refuse, and a fold over a path at a looped point respects its
+    ///   words' cancellations.
     /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
-    #[spec(ensures: |ret| match ret { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, .. } if marked == fixpoint), Maybe::Absent(reason) => reason == root::Absent::NotOverCase })]
+    /// - witness: `native_formers::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |root| match *root { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, .. } if marked == fixpoint), Maybe::Absent(reason) => reason == root::Absent::NotOverCase }))]
     pub(super) fn fold_root(
-        &self,
+        &mut self,
         fixpoint: ComputationId,
         expected: gandr_core_term::CompTypeId,
         body: ComputationId,
-    ) -> Maybe<(ComputationId, Reading), root::Absent>
+    ) -> Result<Maybe<(ComputationId, Reading), root::Absent>, CheckRefusal>
     {
         let arena = self.context.arena();
-        let not_over_case = Maybe::Absent(root::Absent::NotOverCase);
+        let not_over_case = Ok(Maybe::Absent(root::Absent::NotOverCase));
         let Some(
             &(gandr_core_term::CompType::Arrow { domain, .. }
             | gandr_core_term::CompType::Pi { domain, .. }),
@@ -479,11 +489,11 @@ impl Machine<'_, '_>
         if arena.value(scrutinee) != Some(&argument) {
             return not_over_case;
         }
-        Maybe::Present((case, Reading::Fold {
+        Ok(Maybe::Present((case, Reading::Fold {
             fixpoint,
-            domain,
+            domain: self.context.identified(domain)?,
             arrow: expected,
-        }))
+        })))
     }
 
     /// Synthesize the returner of the exact projected field or component.

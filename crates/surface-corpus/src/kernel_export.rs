@@ -74,6 +74,14 @@
 //! loop arms still respects the circle's rules and readmits, and is refused at
 //! `unfolded`, naming the endpoint the point no longer reaches.
 //!
+//! `kernel_export::kernel_presented_readmission::a_loop_readmits_as_its_words_and_dropped_cancellations_are_refused_by_name`
+//! readmits `fixture/model/identity/circle-loop.gandr`, whose `loop : Base <->
+//! Base` crosses as one type of words over the circle's point and whose
+//! `cancelled` relates `then(loop, back(loop))` to `here(Base)` by reflexivity
+//! alone: the kernel re-mints the words from their cell and reads the path type
+//! at the point as them. A twin whose words keep their cell but drop the
+//! cancellations is refused at the words, naming the fault.
+//!
 //! The suite derives its expectations from admission and storage semantics
 //! rather than checked-in sizes, identities, class thresholds or corpus
 //! cardinalities. Exact kernel format goldens belong to `gandr-kernel-term`;
@@ -1361,16 +1369,20 @@ mod kernel_here_congruence_readmission
 /// name; a fold over the circle readmits when it respects the rules, and a
 /// twin whose arm breaks one is refused by name; a fold that rests on laws
 /// readmits on them, and a twin whose laws are forged — each stating the
-/// other rule's path — is refused by the first rule.
+/// other rule's path — is refused by the first rule; a loop's words readmit
+/// as their cell mints them, and a twin without the cancellations is refused
+/// by name.
 mod kernel_presented_readmission
 {
     use alloc::vec;
+    use alloc::vec::Vec;
     use std::path::PathBuf;
 
     use gandr_kernel_core::EndpointSide;
     use gandr_kernel_core::Environment;
     use gandr_kernel_core::IdentityError;
     use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::CellFault;
     use gandr_kernel_term::Computation;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeclarationBuilder;
@@ -1467,6 +1479,60 @@ mod kernel_presented_readmission
                 fault: RuleFault::NotDecreasing,
             }),
             "the kernel names the rule and its fault"
+        );
+    }
+
+    #[test]
+    fn a_loop_readmits_as_its_words_and_dropped_cancellations_are_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/identity/circle-loop.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the circle with a loop lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations).expect(
+            "the words readmit as their loop mints them, and `cancelled` by the cancellation",
+        );
+        let worded: Vec<usize> = declarations
+            .iter()
+            .enumerate()
+            .filter(|&(_, marked)| marked.declaration().presentation().cells().is_some())
+            .map(|(position, _)| position)
+            .collect();
+        let [words] = *worded
+        else {
+            panic!("one type of words crosses, the loops at the circle's point: {worded:?}");
+        };
+        let mut dropped = declarations;
+        let Some(marked) = dropped.get_mut(words)
+        else {
+            panic!("the words are a declaration");
+        };
+        let Some(cells) = marked.declaration().presentation().cells().cloned()
+        else {
+            panic!("the words carry their cells");
+        };
+        *marked = MarkedDeclaration::new(
+            marked.mark(),
+            marked
+                .declaration()
+                .clone()
+                .presented(Presentation::default().carrying(cells)),
+        );
+        let refusal = Environment::replay(arena, &dropped)
+            .expect_err("words without their cancellations are not the words the loop mints");
+        assert_eq!(usize::from(refusal.position()), words);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::WordsRefused(CellFault::NotMinted),
+            "the kernel names the words and their fault"
         );
     }
 

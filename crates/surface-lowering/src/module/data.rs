@@ -13,13 +13,54 @@
 //! its own span, so the family's generators stay native. An `oper` member's
 //! name is kept, and once the family is read each operation whose rules
 //! compile is admitted as a declaration of its own (`crate::operation`).
+//!
+//! # A cell between terms
+//!
+//! A member whose arrow stands between two closed terms of the family, `loop
+//! : Base <-> Base`, is a cell between them. The single-shaft arrows build
+//! data — `-->` a constructor between types, or a directed cell between terms,
+//! `<->` an invertible cell — and the double-shaft arrows compute: `==>` a
+//! rule run as conversion, `<=>` an invertible rule. This fragment admits one
+//! of the four places: an invertible cell from a point to itself, a loop. Each
+//! loop of a family without parameters is read into a [`CellForm`], and the
+//! loops at one point mint their words: a declaration of their own,
+//! [`Role::Words`], entered in no namespace, whose constructors are the empty
+//! word, then each loop's letter and its inverse consing onto a word, and
+//! whose rules are the two cancellations per loop. The checkers and the kernel
+//! read `Path(T, a, a)` at the point as those words; each loop is bound at it
+//! as the word of its one letter.
+//!
+//! - **Refusals.** A directed cell, `-->` between terms, is
+//!   `LoweringRefusal::DirectedCell`; a cell between distinct terms is
+//!   `LoweringRefusal::CellNotALoop` — the free groupoid on a graph, whose
+//!   words are indexed by their endpoints. A rule arrow between terms, a cell
+//!   of a parameterised family and a side that is no closed term of the
+//!   family's generators are declined by the cell member's name. A cell's fault
+//!   refuses the family once its form is filed, as a fault of its rules does,
+//!   so the attributes stating what the family is expected to do stay with it.
+//! - **Alternatives.** The words could have been the family's own presentation,
+//!   the loop a term constructor with a written inverse and written
+//!   cancellations; that lowers the book's circle one stratum down, where the
+//!   equivalence it computes is the type's with the integers rather than its
+//!   loop space's. The words could have been a surface name of their own
+//!   (`Circle.Loops`), which the path type would then convert to; reading the
+//!   path type as them needs no name a reader writes.
+//! - **Reversal.** A cell between distinct points needs its words indexed by
+//!   both endpoints, which a declaration of words per point cannot hold; a
+//!   family with parameters needs its words at each instance.
 
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::ConstructorTag;
+use gandr_core_term::RuleNode;
 use gandr_kernel_term::ConstantIndex;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::SourceFragment;
+use gandr_surface_syntax::SyntaxTree;
 use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::TermView;
@@ -59,6 +100,7 @@ use crate::operation::RouteConstructor;
 use crate::operation::RouteTable;
 use crate::operation::Width;
 use crate::operation::plan_operation;
+use crate::resolve::SurfaceName;
 
 quenchant_shape::reason_enum! {
     /// Why a data declaration states no universe.
@@ -142,6 +184,87 @@ pub struct DataForm
     /// The name tile of each `oper` member, in source order: the operations
     /// the description route reads and the module may call.
     pub operations: Vec<Placed>,
+    /// The loops the block declares, `name : a <-> a`, in source order.
+    pub cells: Vec<CellForm>,
+}
+
+/// One loop of a data declaration, `name : a <-> a`: a free invertible cell
+/// from the closed term `a` to itself.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the point is a closed constructor term of the declaration's own
+///   generators, in pre-order, which both sides of the cell spelled.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a loop at a point keeps its name and point; a cell
+///   between distinct terms and a directed one never become a cell form.
+/// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
+/// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CellForm
+{
+    /// The cell's name tile, its node the binding's own and its span the
+    /// whole member.
+    pub at: Placed,
+    /// The cell's name tile.
+    pub named: Placed,
+    /// The point the cell loops at, over the declaration's generators.
+    pub point: Box<[RuleNode]>,
+    /// Each written node of the cell's two sides, in pre-order, the source's
+    /// first: no core node holds them, so each answers at the family.
+    pub sides: Vec<ByteSpan>,
+}
+
+/// The words of the loops a data declaration declares at one point: the
+/// presented type a path at that point reads as.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: every loop is the declaration's, at the point, in the order its
+///   letters take their tags.
+/// - executable: none — the indices hold no list to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`CellForm`].
+/// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct WordsForm
+{
+    /// The declaration's position in the collection's data list.
+    pub family: usize,
+    /// The slot the words take, entered in no namespace.
+    pub slot: SlotIndex,
+    /// The point, over the declaration's generators.
+    pub point: Box<[RuleNode]>,
+    /// Each loop's slot, the binding its name declares, in generator order.
+    pub loops: Vec<SlotIndex>,
+}
+
+/// A data declaration's form as [`Collector::data_form`] reads it, and the
+/// first fault among its cell members.
+///
+/// A cell's fault refuses the declaration only once its form is filed, as a
+/// fault of the family's rules does, so the attributes stating what the
+/// declaration is expected to do stay with it.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the form holds no cell when a cell member is faulted.
+/// - executable: none — the fault holds no form to check it against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`CellForm`].
+/// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+#[derive(Clone, Debug)]
+struct Formed<'source>
+{
+    /// The declaration's form.
+    form: DataForm,
+    /// The first cell member's fault, offered to the declaration's slot once
+    /// the form is filed.
+    cells: Result<(), LoweringRefusal<'source>>,
 }
 
 /// Where the generators of a constructor's family are read from.
@@ -149,7 +272,8 @@ pub struct DataForm
 /// # Specification
 /// - requires: nothing to construct this data.
 /// - ensures: a written family names its position in the collection's data
-///   list; `Sig` names the presentation code the collection mints.
+///   list; `Sig` names the presentation code the collection mints; words name
+///   their position in the collection's words list.
 /// - executable: none — the tag holds no list to check its position against.
 ///
 /// # Adequacy
@@ -164,6 +288,9 @@ pub enum Generators
     Written(usize),
     /// `Sig`, the presentation code, minted from its description.
     Presentation,
+    /// The words at this position of the collection's words list: the empty
+    /// word, then each loop's letter and its inverse.
+    Words(usize),
 }
 
 /// A constructor, as a term or a pattern naming it resolves it.
@@ -239,7 +366,9 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: the family's name takes its slot, which owns the declaration
     ///   and its decorations; a clean form is pushed onto the data list, its
     ///   constructors entered by name, and its definition half and attributes
-    ///   filed; the form's first fault is offered to the slot instead.
+    ///   filed; the form's first fault is offered to the slot instead. A cell
+    ///   member's fault refuses the slot once the form is filed, so the
+    ///   attributes stating what the declaration expects stay with it.
     /// - provides: the data half of [`super::collect`].
     /// - fails: when the form has no name to file a refusal under.
     /// - panics: none.
@@ -316,6 +445,7 @@ impl<'source> Collector<'_, 'source>
                 attributed = self.decoration(block, declaration.node, &mut attributes);
             }
         }
+        let mut cells = Ok(());
         let tail = if let Maybe::Present(repaired) = pieces.repair {
             Tail::Refused(repaired.refusal(FormName::DATA))
         }
@@ -324,7 +454,7 @@ impl<'source> Collector<'_, 'source>
         }
         else {
             match self.data_form(declaration, slot, &mut cursor) {
-                | Ok(form) => match self
+                | Ok(formed) => match self
                     .collected
                     .slots
                     .get(slot.0)
@@ -337,12 +467,24 @@ impl<'source> Collector<'_, 'source>
                             first: first.declaration.span,
                         })
                     },
-                    | Some(Maybe::Absent(_)) | None => self.enter(form),
+                    | Some(Maybe::Absent(_)) | None => {
+                        cells = formed.cells;
+                        self.enter(formed.form)
+                    },
                 },
                 | Err(refusal) => Tail::Refused(refusal),
             }
         };
         self.file(slot, declaration, tail, attributes);
+        match (tail, cells) {
+            | (Tail::Data(_), Ok(())) => self.mint_words(declaration),
+            | (Tail::Data(_), Err(refusal)) => {
+                if let Some(entry) = self.collected.slots.get_mut(slot.0) {
+                    entry.refuse(declaration.node, refusal);
+                }
+            },
+            | _ => {},
+        }
 
         Ok(())
     }
@@ -455,14 +597,123 @@ impl<'source> Collector<'_, 'source>
         Tail::Data(position)
     }
 
-    /// Read a data declaration's parameters, universe and generators, the
-    /// cursor standing just past the family's name.
+    /// Admit the words of the loops the data declaration entered last
+    /// declares, one words slot per point, and a binding per loop.
+    ///
+    /// # Specification
+    /// - requires: the declaration `declaration` was the last one entered on
+    ///   the data list.
+    /// - ensures: for each point a loop of the declaration is at, in the order
+    ///   its first loop is written, one [`Role::Words`] slot entered in no
+    ///   namespace and, after it, one declared slot per loop at the point,
+    ///   named by the loop and entered in the top level's name table, whose
+    ///   definition is the loop's letter; one [`WordsForm`] per point. A
+    ///   declaration without loops changes nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block with a loop mints its words and binds the
+    ///   loop by name; a block without one mints nothing.
+    /// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
+    #[spec(
+        captures: before = (self.collected.slots.len(), self.collected.words.len()),
+        ensures: self.collected.slots.len().saturating_sub(before.0)
+            == self.collected.data.last().map_or(0, |form| form.cells.len())
+                .saturating_add(self.collected.words.len().saturating_sub(before.1)),
+    )]
+    fn mint_words(
+        &mut self,
+        declaration: Placed,
+    )
+    {
+        let position = self.collected.data.len().saturating_sub(1);
+        let Some(form) = self.collected.data.get(position)
+        else {
+            return;
+        };
+        let family = form.slot;
+        let mut points: Vec<(Box<[RuleNode]>, Vec<CellForm>)> = Vec::new();
+        for cell in &form.cells {
+            match points
+                .iter_mut()
+                .find(|&&mut (ref point, _)| *point == cell.point)
+            {
+                | Some(&mut (_, ref mut loops)) => loops.push(cell.clone()),
+                | None => points.push((cell.point.clone(), Vec::from([cell.clone()]))),
+            }
+        }
+        let name = self
+            .collected
+            .slots
+            .get(family.0)
+            .map_or_else(|| SurfaceName::from(""), |slot| slot.name);
+        for (point, cells) in points {
+            let index = self.collected.words.len();
+            let words = SlotIndex(self.collected.slots.len());
+            self.collected.slots.push(DeclarationSlot {
+                name,
+                container: Container::TopLevel,
+                role: Role::Words,
+                constant: ConstantIndex::from(words.0),
+                introduced_by: declaration,
+                named: cells.first().map_or(declaration, |cell| cell.named),
+                signature: Maybe::Absent(declaration_half::Absent::Unwritten),
+                definition: Maybe::Present(Half {
+                    declaration,
+                    operand: Operand::Words(index),
+                }),
+                attributes: Vec::new(),
+                docs: Vec::new(),
+                refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
+            });
+            let mut loops = Vec::with_capacity(cells.len());
+            for (generator, cell) in cells.iter().enumerate() {
+                let bound = SlotIndex(self.collected.slots.len());
+                let named = self.name_of(cell.named);
+                self.collected.slots.push(DeclarationSlot {
+                    name: named,
+                    container: Container::TopLevel,
+                    role: Role::Declared,
+                    constant: ConstantIndex::from(bound.0),
+                    introduced_by: cell.at,
+                    named: cell.named,
+                    signature: Maybe::Absent(declaration_half::Absent::Unwritten),
+                    definition: Maybe::Present(Half {
+                        declaration: cell.at,
+                        operand: Operand::Loop {
+                            words: index,
+                            generator,
+                        },
+                    }),
+                    attributes: Vec::new(),
+                    docs: Vec::new(),
+                    refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
+                });
+                let _fresh = self
+                    .collected
+                    .by_name
+                    .insert((Container::TopLevel, named), bound);
+                loops.push(bound);
+            }
+            self.collected.words.push(WordsForm {
+                family: position,
+                slot: words,
+                point,
+                loops,
+            });
+        }
+    }
+
+    /// Read a data declaration's parameters, universe, generators and cells,
+    /// the cursor standing just past the family's name.
     ///
     /// # Specification
     /// - requires: `cursor` stands past the name tile of the declaration at
     ///   `declaration`.
     /// - ensures: the parameters in order, the universe when one is written,
-    ///   and every generator, the cursor exhausted.
+    ///   every generator and every loop, the cursor exhausted; the first cell
+    ///   member's fault, as [`cell`] and [`Self::loops`] state them, kept
+    ///   beside a form with no cell, the member passed over.
     /// - fails: a tile out of place or an operand missing or extra; a generator
     ///   whose result is not the family over its parameters.
     /// - panics: none.
@@ -473,18 +724,21 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the witnesses below read each member shape the
-    ///   pending corpus writes, pass over the description route's members and
-    ///   decline an indexed generator.
+    ///   pending corpus writes, pass over the description route's members,
+    ///   decline an indexed generator and keep a cell's fault beside the form.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
     /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
     /// - witness: `lower::native::tests::operation_and_rule_members_are_left_to_the_description_route`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |form| form.declaration == declaration && form.slot == slot))]
+    /// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |formed| formed.form.declaration == declaration
+        && formed.form.slot == slot
+        && (formed.cells.is_ok() || formed.form.cells.is_empty())))]
     fn data_form(
         &self,
         declaration: Placed,
         slot: SlotIndex,
         cursor: &mut Cursor<'_>,
-    ) -> Result<DataForm, LoweringRefusal<'source>>
+    ) -> Result<Formed<'source>, LoweringRefusal<'source>>
     {
         let mut parameters = Vec::new();
         if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
@@ -525,6 +779,8 @@ impl<'source> Collector<'_, 'source>
         }
         let mut generators = Vec::new();
         let mut operations = Vec::new();
+        let mut written = Vec::new();
+        let mut faulted = Ok(());
         loop {
             match cursor.read() {
                 | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::BRACE_CLOSE => {
@@ -546,6 +802,18 @@ impl<'source> Collector<'_, 'source>
                     pass_over_member(cursor);
                     continue;
                 },
+                | Maybe::Present(Piece::Tile { label, at }) if label == TileName::IDENTIFIER => {
+                    match cell(at, cursor) {
+                        | Ok(member) => written.push(member),
+                        | Err(refusal) => {
+                            if faulted.is_ok() {
+                                faulted = Err(refusal);
+                            }
+                            pass_over_member(cursor);
+                            continue;
+                        },
+                    }
+                },
                 | Maybe::Present(Piece::Tile { at, .. }) => {
                     return Err(misplaced_in(FormName::DATA, at.span));
                 },
@@ -561,14 +829,112 @@ impl<'source> Collector<'_, 'source>
         if let Maybe::Present(piece) = cursor.peek() {
             return Err(misplaced_in(FormName::DATA, piece.placed().span));
         }
-        Ok(DataForm {
-            declaration,
-            slot,
-            parameters,
-            kind,
-            generators,
-            operations,
+        let (cells, faulted) =
+            match faulted.and_then(|()| self.loops(&written, &generators, &parameters)) {
+                | Ok(cells) => (cells, Ok(())),
+                | Err(refusal) => (Vec::new(), Err(refusal)),
+            };
+        Ok(Formed {
+            form: DataForm {
+                declaration,
+                slot,
+                parameters,
+                kind,
+                generators,
+                operations,
+                cells,
+            },
+            cells: faulted,
         })
+    }
+
+    /// Read each written cell `written` as a loop of the declaration whose
+    /// generators are `generators` and parameters `parameters`.
+    ///
+    /// # Specification
+    /// - requires: `generators` are every generator of the declaration.
+    /// - ensures: one loop per cell, in order, its point the closed term both
+    ///   its sides spell over `generators`.
+    /// - fails: a cell of a parameterised declaration, and a side that is no
+    ///   closed term of the declaration's generators, as outside the fragment
+    ///   by the cell member's name; a cell named as an earlier cell or an
+    ///   earlier declaration is; [`LoweringRefusal::CellNotALoop`] for sides
+    ///   that spell distinct terms.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As stated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a loop, a cell between distinct terms and a cell at
+    ///   an open side separate the loop from the refusals.
+    /// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |cells| cells.len() == written.len()))]
+    fn loops(
+        &self,
+        written: &[WrittenCell],
+        generators: &[GeneratorForm],
+        parameters: &[DataParameter],
+    ) -> Result<Vec<CellForm>, LoweringRefusal<'source>>
+    {
+        let names: Vec<SurfaceName<'source>> = generators
+            .iter()
+            .map(|generator| self.name_of(generator.named))
+            .collect();
+        let tag_of = |name: SourceFragment<'source>| {
+            let tag = names
+                .iter()
+                .position(|&written| written.as_ref() == name.as_ref())?;
+            Some((tag, generators.get(tag)?.fields.len()))
+        };
+        let mut cells = Vec::with_capacity(written.len());
+        for (index, cell) in written.iter().enumerate() {
+            if !parameters.is_empty() {
+                return Err(declined(cell.named, FormName::CELL_MEMBER));
+            }
+            let name = self.name_of(cell.named);
+            let earlier = written
+                .iter()
+                .take(index)
+                .find(|prior| self.name_of(prior.named) == name)
+                .map(|prior| prior.named.span);
+            let declared = self
+                .collected
+                .by_name
+                .get(&(Container::TopLevel, name))
+                .and_then(|&slot| self.collected.slots.get(slot.0))
+                .map(|slot| slot.named.span);
+            if let Some(first) = declared.or(earlier) {
+                return Err(LoweringRefusal::DuplicateDefinition {
+                    span: cell.named.span,
+                    name,
+                    first,
+                });
+            }
+            let side = |at: Placed| -> Result<ClosedTerm, LoweringRefusal<'source>> {
+                match closed_term(self.pbg, self.tree, at, &tag_of)? {
+                    | Maybe::Present(term) => Ok(term),
+                    | Maybe::Absent(_) => Err(declined(at, FormName::CELL_MEMBER)),
+                }
+            };
+            let (source, target) = (side(cell.source)?, side(cell.target)?);
+            if source.nodes != target.nodes {
+                return Err(LoweringRefusal::CellNotALoop { span: cell.at.span });
+            }
+            cells.push(CellForm {
+                at: cell.at,
+                named: cell.named,
+                sides: source
+                    .written
+                    .iter()
+                    .chain(&target.written)
+                    .map(|written| written.span)
+                    .collect(),
+                point: source.nodes,
+            });
+        }
+
+        Ok(cells)
     }
 
     /// Read one generator, `C : (x : B, …) --> T(a, …)` or `C : T(a, …)`, its
@@ -940,6 +1306,219 @@ fn pass_over_member(cursor: &mut Cursor<'_>)
             | Maybe::Absent(_) => return,
         }
     }
+}
+
+/// One cell member as written, `name : a <-> b`, before its sides are read
+/// as terms.
+#[derive(Clone, Copy, Debug)]
+struct WrittenCell
+{
+    /// The cell's name tile, spanning the whole member.
+    at: Placed,
+    /// The cell's name tile.
+    named: Placed,
+    /// The side before the arrow.
+    source: Placed,
+    /// The side after the arrow.
+    target: Placed,
+}
+
+/// Read one cell member, `name : a <-> b`, its name tile `named` already
+/// read.
+///
+/// # Specification
+/// - requires: `cursor` stands just past the cell's name tile.
+/// - ensures: the cell's two sides, the cursor past the second.
+/// - fails: [`LoweringRefusal::DirectedCell`] for the arrow `-->`; the rule
+///   arrows `==>` and `<=>` as outside the fragment by the cell member's name;
+///   a tile out of place or an operand missing or extra.
+/// - panics: none.
+///
+/// # Errors
+/// As stated.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the invertible arrow reads, the directed one and a rule
+///   arrow are each refused by name.
+/// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |cell| cell.named == named && cell.at.node == named.node))]
+fn cell<'source>(
+    named: Placed,
+    cursor: &mut Cursor<'_>,
+) -> Result<WrittenCell, LoweringRefusal<'source>>
+{
+    if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
+        return Err(misplaced_in(FormName::CELL_MEMBER, cursor.here()));
+    }
+    let source = one_in(FormName::CELL_MEMBER, cursor.operands())?;
+    let arrow = match cursor.read() {
+        | Maybe::Present(Piece::Tile { label, at }) => (label, at),
+        | Maybe::Present(Piece::Operand(operand)) => {
+            return Err(extra_operand(FormName::CELL_MEMBER, operand));
+        },
+        | Maybe::Absent(_) => return Err(misplaced_in(FormName::CELL_MEMBER, cursor.here())),
+    };
+    match arrow {
+        | (label, _) if label == TileName::INVERTIBLE => {},
+        | (label, at) if label == TileName::GENERATOR => {
+            return Err(LoweringRefusal::DirectedCell { span: at.span });
+        },
+        | (label, at) if label == TileName::REWRITE || label == TileName::REVERSIBLE => {
+            return Err(declined(at, FormName::CELL_MEMBER));
+        },
+        | (_, at) => return Err(misplaced_in(FormName::CELL_MEMBER, at.span)),
+    }
+    let target = one_in(FormName::CELL_MEMBER, cursor.operands())?;
+    let span = ByteSpan::new(named.span.start(), target.span.end()).unwrap_or(named.span);
+
+    Ok(WrittenCell {
+        at: Placed {
+            node: named.node,
+            span,
+        },
+        named,
+        source,
+        target,
+    })
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a written term is no closed term over a family's generators.
+    pub mod closed_term {
+        /// The reason the term spells no closed constructor term.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// A node of the term is no constructor `tag_of` reads, or a
+            /// constructor applied to other than its field count.
+            Foreign,
+        }
+    }
+}
+
+/// A closed constructor term as written: its nodes over the family's tags,
+/// and the written node each spells.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: one written node per term node, both in pre-order.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`closed_term()`].
+/// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClosedTerm
+{
+    /// The term's nodes, in pre-order.
+    pub nodes: Box<[RuleNode]>,
+    /// The written node each spells, in the same order.
+    pub written: Vec<Placed>,
+}
+
+/// The closed constructor term written at `at`, in pre-order, each
+/// constructor's tag and field count read by `tag_of` off its name.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one node per constructor written, in pre-order, beside the
+///   written node it spells: a nullary constructor is its bare name, an applied
+///   one a call headed by its name with one argument per field.
+/// - fails: [`closed_term::Absent::Foreign`] for a node that is no such
+///   constructor, a call at other than its field count, and a repaired call;
+///   the shape refusals of a mold the grammar does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// [`LoweringRefusal::UnknownMold`].
+///
+/// # Termination
+/// - reason: the `while let` worklist, not recursion.
+/// - measure: the written nodes still to visit, each a strict subterm of the
+///   one that queued it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a nullary point and a call at its point read, an open
+///   side does not.
+/// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+/// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
+#[spec(ensures: |ret| match ret {
+    Ok(Maybe::Present(ref term)) => !term.nodes.is_empty() && term.nodes.len() == term.written.len(),
+    _ => true,
+})]
+pub fn closed_term<'source, F>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    at: Placed,
+    tag_of: &F,
+) -> Result<Maybe<ClosedTerm, closed_term::Absent>, LoweringRefusal<'source>>
+where
+    F: Fn(SourceFragment<'source>) -> Option<(usize, usize)>,
+{
+    let foreign = Ok(Maybe::Absent(closed_term::Absent::Foreign));
+    let mut nodes = Vec::new();
+    let mut visited = Vec::new();
+    let mut pending = Vec::from([at]);
+    let mut pieces = Pieces::new();
+    while let Some(written) = pending.pop() {
+        let Some(node) = tree.node(written.node)
+        else {
+            return foreign;
+        };
+        let (head, fields) = match shape_of(pbg, node)? {
+            | Shape::Form {
+                former: Former::Constructor,
+                ..
+            } => (written, Vec::new()),
+            | Shape::Form {
+                former: Former::Call,
+                ..
+            } => {
+                read_pieces(pbg, tree, written.node, &mut pieces)?;
+                if let Maybe::Present(_) = pieces.repair {
+                    return foreign;
+                }
+                let mut operands = pieces.pieces.iter().filter_map(|piece| match *piece {
+                    | Piece::Operand(operand) => Some(operand),
+                    | Piece::Tile { .. } => None,
+                });
+                let Some(head) = operands.next()
+                else {
+                    return foreign;
+                };
+                let fields: Vec<Placed> = operands.collect();
+                let Some(headed) = tree.node(head.node)
+                else {
+                    return foreign;
+                };
+                let Shape::Form {
+                    former: Former::Constructor,
+                    ..
+                } = shape_of(pbg, headed)?
+                else {
+                    return foreign;
+                };
+                (head, fields)
+            },
+            | Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+                return foreign;
+            },
+        };
+        let Some((tag, arity)) = tree.fragment(head.node).and_then(tag_of)
+        else {
+            return foreign;
+        };
+        if arity != fields.len() {
+            return foreign;
+        }
+        nodes.push(RuleNode::Constructor(ConstructorTag::from(tag)));
+        visited.push(written);
+        pending.extend(fields.into_iter().rev());
+    }
+
+    Ok(Maybe::Present(ClosedTerm {
+        nodes: nodes.into_boxed_slice(),
+        written: visited,
+    }))
 }
 
 /// The refusal a member the fragment does not read earns, by its own name.

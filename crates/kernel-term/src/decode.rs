@@ -323,6 +323,9 @@ struct DeclMeta
     /// The rules a presented data declaration carries; empty for every other
     /// declaration.
     rules: Vec<crate::presented::PresentedRule>,
+    /// The free cells a type of words carries; absent for every other
+    /// declaration.
+    cells: Option<crate::presented::FreeCells>,
 }
 
 /// Where the decoder found an artifact's segments, as offsets into the image it
@@ -934,11 +937,15 @@ fn build_declarations(
                     .iter()
                     .map(|fields| fields.iter().map(resolve).collect::<Result<Vec<_>, _>>())
                     .collect::<Result<Vec<_>, _>>()?;
+                let presentation =
+                    crate::presented::Presentation::new(core::mem::take(&mut meta.rules));
+                let presentation = match meta.cells.take() {
+                    | Some(cells) => presentation.carrying(cells),
+                    | None => presentation,
+                };
                 DeclarationBuilder::new(&mut table.arena)
                     .data(meta.levels.clone(), parameters, constructors, declared)
-                    .presented(crate::presented::Presentation::new(core::mem::take(
-                        &mut meta.rules,
-                    )))
+                    .presented(presentation)
             },
             | DeclKind::Def => {
                 let root = meta.root_body.ok_or(DecodeError::Malformed {
@@ -1585,8 +1592,10 @@ impl<'bytes> ByteReader<'bytes>
 ///   definition provenance. Exactly definitions have a body root, only a
 ///   definition under [`tags::KIND_DEF_RELATING`] or [`tags::KIND_DEF_LAWFUL`]
 ///   carries related pairs, each two value roots and a dialogue, only a
-///   definition under [`tags::KIND_DEF_LAWFUL`] carries laws, and only a data
-///   declaration under [`tags::KIND_DATA_PRESENTED`] carries rules.
+///   definition under [`tags::KIND_DEF_LAWFUL`] carries laws, only a data
+///   declaration under [`tags::KIND_DATA_PRESENTED`] or
+///   [`tags::KIND_DATA_WORDS`] carries rules, and only one under the latter
+///   carries cells.
 /// - provides: segment parsing, not semantic validation of producer claims. On
 ///   failure the cursor and previously completed entries may have advanced;
 ///   this operation does not roll back an entire segment.
@@ -1612,6 +1621,7 @@ impl<'bytes> ByteReader<'bytes>
 /// - witness: `decode::tests::declaration_assembly_preserves_claims_and_consumes_names`
 /// - witness: `decode::tests::counted_records_validate_content_and_consumption`
 /// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
+/// - witness: `encode::tests::a_type_of_words_closes_its_segment_with_its_cells`
 /// - witness: `encode::tests::a_lawful_definition_closes_its_segment_with_its_laws`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|meta|
     meta.root_declared < table.next_index()
@@ -1655,6 +1665,7 @@ fn decode_declaration(
     let mut related = Vec::new();
     let mut laws = Vec::new();
     let mut rules = Vec::new();
+    let mut cells = None;
     let root_body = match kind {
         | DeclKind::Data => {
             let count = usize::from(reader.read_usize()?);
@@ -1670,16 +1681,30 @@ fn decode_declaration(
                 }
                 constructors.push(fields);
             }
-            // A presented declaration closes with its rules. A count of none
-            // decodes, and the canonical re-encoding, which writes such a
-            // declaration under the plain kind, refuses it.
-            if kind_tag == tags::KIND_DATA_PRESENTED {
+            // A presented declaration closes with its rules, and a type of
+            // words with its rules and then its sort and cells. A rule count
+            // of none under the presented kind decodes, and the canonical
+            // re-encoding, which writes such a declaration under the plain
+            // kind, refuses it; under the words kind it is the kernel's to
+            // refuse, against the rules the cells mint.
+            if kind_tag == tags::KIND_DATA_PRESENTED || kind_tag == tags::KIND_DATA_WORDS {
                 let count = usize::from(reader.read_usize()?);
                 for _ in 0 .. count {
                     let left = decode_rule_side(reader)?;
                     let right = decode_rule_side(reader)?;
                     rules.push(crate::presented::PresentedRule::new(left, right));
                 }
+            }
+            if kind_tag == tags::KIND_DATA_WORDS {
+                let sort = ConstantIndex::from(usize::from(reader.read_usize()?));
+                let count = usize::from(reader.read_usize()?);
+                let mut written = Vec::new();
+                for _ in 0 .. count {
+                    let source = decode_rule_side(reader)?;
+                    let target = decode_rule_side(reader)?;
+                    written.push(crate::presented::FreeCell::new(source, target));
+                }
+                cells = Some(crate::presented::FreeCells::new(sort, written));
             }
             None
         },
@@ -1733,6 +1758,7 @@ fn decode_declaration(
         related,
         laws,
         rules,
+        cells,
     })
 }
 
@@ -3084,13 +3110,13 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 => ret.as_ref() == Ok(&DeclKind::Data), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 => ret.as_ref() == Ok(&DeclKind::Data), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 {
     match kind {
-        | tags::KIND_DATA | tags::KIND_DATA_PRESENTED => Ok(DeclKind::Data),
+        | tags::KIND_DATA | tags::KIND_DATA_PRESENTED | tags::KIND_DATA_WORDS => Ok(DeclKind::Data),
         | tags::KIND_DEF | tags::KIND_DEF_RELATING | tags::KIND_DEF_LAWFUL => Ok(DeclKind::Def),
         | tags::KIND_AXIOM => Ok(DeclKind::Axiom),
         // The abstract-type kind is deliberately live here: it was reserved with
@@ -4132,7 +4158,7 @@ mod tests
                 | 5 => Err(DecodeError::ReservedDeclarationKind {
                     kind: super::ReservedKind::FunctorDef,
                 }),
-                | 6 | 8 => Ok(super::DeclKind::Data),
+                | 6 | 8 | 10 => Ok(super::DeclKind::Data),
                 | _ => Err(unknown(super::TagSite::DeclarationKind)),
             };
             assert_eq!(super::declaration_kind(super::WireTag::from(byte)), kind);
@@ -4518,6 +4544,7 @@ mod tests
                     related: vec![],
                     laws: vec![],
                     rules: vec![],
+                    cells: None,
                 })
                 .collect();
             super::budget_report(&table, &metas)
@@ -4606,6 +4633,7 @@ mod tests
             )],
             laws: vec![],
             rules: vec![],
+            cells: None,
         };
         let metrics = super::budget_report(&table, &[meta]);
         assert_eq!(u64::from(metrics.max_declaration_expanded_work()), 1);
@@ -5412,6 +5440,7 @@ mod tests
                 )],
                 laws: vec![],
                 rules: vec![],
+                cells: None,
             },
             super::DeclMeta {
                 parameters: vec![],
@@ -5427,6 +5456,7 @@ mod tests
                 related: vec![],
                 laws: vec![],
                 rules: vec![],
+                cells: None,
             },
             super::DeclMeta {
                 parameters: vec![],
@@ -5445,6 +5475,7 @@ mod tests
                 related: vec![],
                 laws: vec![],
                 rules: vec![],
+                cells: None,
             },
         ];
         let arena_before = table.arena.clone();

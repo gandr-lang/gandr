@@ -1662,3 +1662,295 @@ fn sum_patterns_case_on_the_stated_arity()
         "a scrutinee no name types states no sum, so a label has no index"
     );
 }
+
+#[test]
+fn a_loop_mints_the_words_at_its_point()
+{
+    use gandr_core_term::PresentedRule;
+    use gandr_core_term::RuleNode;
+    use gandr_core_term::RuleVariable;
+
+    use crate::module::Role;
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Circle : Type {\n  Base : Circle;\n  Next : (x : Circle) --> Circle;\n  loop : Next(Base) <-> Next(Base);\n  turn : Next(Base) <-> Next(Base);\n}\ndata Flag : Type { On : Flag; }\n",
+        ),
+        &mut arena,
+    );
+    let [ref circle, ref words, ref looped, ref turned, ref flag] = *module.declarations()
+    else {
+        panic!(
+            "the family, its words, a binding per loop, then the next family: {:?}",
+            module.declarations()
+        );
+    };
+    assert_eq!(words.role(), Role::Words);
+    assert_eq!(
+        [looped.name(), turned.name(), flag.name()],
+        ["loop", "turn", "Flag"].map(SurfaceName::from),
+        "each loop is bound by its name, after the words its letter is in"
+    );
+    let (DeclarationOutcome::Data(family), DeclarationOutcome::Data(minted)) =
+        (circle.outcome(), words.outcome())
+    else {
+        panic!("the family and its words lower to signatures");
+    };
+    let (Maybe::Present(family), Maybe::Present(minted)) =
+        (module.data(family), module.data(minted))
+    else {
+        panic!("each index names a signature");
+    };
+    assert!(
+        family.presentation().rules().is_empty() && family.presentation().cells().is_none(),
+        "the family itself stays free: its loops are no constructors"
+    );
+    assert_eq!(
+        minted
+            .constructors()
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>(),
+        [0_usize, 1, 1, 1, 1],
+        "the empty word, then a letter and its inverse per loop, each a cons"
+    );
+    assert_eq!(
+        module.constructors(match words.outcome() {
+            | DeclarationOutcome::Data(index) => index,
+            | _ => panic!("the words are data"),
+        }),
+        ["here", "loop", "back(loop)", "turn", "back(turn)"].map(String::from),
+        "each constructor is named as the printer writes it"
+    );
+    let Some(cells) = minted.presentation().cells()
+    else {
+        panic!("the words carry their cells");
+    };
+    let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+    let x = RuleNode::Variable(RuleVariable::from(0_u32));
+    assert_eq!(cells.sort(), circle.constant());
+    assert_eq!(
+        cells.point(),
+        [c(1), c(0)],
+        "both loops are at `Next(Base)`"
+    );
+    assert_eq!(
+        minted.presentation().rules(),
+        [
+            PresentedRule::new([c(1), c(2), x].into(), [x].into()),
+            PresentedRule::new([c(2), c(1), x].into(), [x].into()),
+            PresentedRule::new([c(3), c(4), x].into(), [x].into()),
+            PresentedRule::new([c(4), c(3), x].into(), [x].into()),
+        ],
+        "two cancellations per loop, the letter first in the first"
+    );
+    for (generator, bound) in [looped, turned].into_iter().enumerate() {
+        let DeclarationOutcome::Completed {
+            declared_type,
+            body,
+        } = bound.outcome()
+        else {
+            panic!("`{}` is bound with its type", bound.name());
+        };
+        let Some(&ValueType::Path { left, right, .. }) = arena.value_type(declared_type)
+        else {
+            panic!("`{}` is a path", bound.name());
+        };
+        assert_eq!(left, right, "a loop is a path from its point to itself");
+        let Some(&Value::Constructor {
+            tag, ref fields, ..
+        }) = arena.value(body)
+        else {
+            panic!("`{}` is a word", bound.name());
+        };
+        assert_eq!(
+            usize::from(tag),
+            generator.saturating_mul(2).saturating_add(1),
+            "`{}` is its own letter",
+            bound.name()
+        );
+        let [rest] = **fields
+        else {
+            panic!("a letter conses onto one word");
+        };
+        assert!(
+            matches!(arena.value(rest), Some(&Value::Constructor { tag, ref fields, .. }) if usize::from(tag) == 0 && fields.is_empty()),
+            "the letter conses onto the empty word"
+        );
+    }
+    let sides = module
+        .origins()
+        .labels()
+        .iter()
+        .filter(|label| {
+            matches!(label.labelled, crate::origin::Labelled::ValueType { ty, .. }
+                if matches!(arena.value_type(ty), Some(&ValueType::Data { declaration, .. }) if declaration == circle.constant()))
+        })
+        .count();
+    assert_eq!(
+        sides, 8_usize,
+        "each written node of both sides of both cells, `Next(Base)` and `Base`, answers at the family"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_cell_between_terms_is_a_loop_or_refused_by_name()
+{
+    let source = "data Directed : Type { One : Directed; loop : One --> One; }\ndata Segment : Type { Start : Segment; End : Segment; seg : Start <-> End; }\ndata Ruled : Type { Two : Ruled; cell : Two ==> Two; }\ndata Open : Type { Three : Open; Next : (x : Open) --> Open; cell : Next(x) <-> Next(x); }\ndata Indexed(a : Type) : Type { Four : Indexed(a); cell : Four <-> Four; }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let spelled = |refusal: &LoweringRefusal<'_>| {
+        let Maybe::Present(span) = refusal.span()
+        else {
+            panic!("the refusal is located: {refusal:?}");
+        };
+        source
+            .get(usize::from(span.start()) .. usize::from(span.end()))
+            .unwrap_or_default()
+    };
+    let directed = refusal_of(&module, SurfaceName::from("Directed"));
+    assert!(matches!(directed, LoweringRefusal::DirectedCell { .. }));
+    assert_eq!(spelled(&directed), "-->", "at the directed arrow");
+    let segment = refusal_of(&module, SurfaceName::from("Segment"));
+    assert!(matches!(segment, LoweringRefusal::CellNotALoop { .. }));
+    assert_eq!(
+        spelled(&segment),
+        "seg : Start <-> End",
+        "at the whole cell"
+    );
+    for (name, at) in [("Ruled", "==>"), ("Open", "Next(x)"), ("Indexed", "cell")] {
+        let refusal = refusal_of(&module, SurfaceName::from(name));
+        assert!(
+            matches!(refusal, LoweringRefusal::OutOfFragment {
+                form: FormName::CELL_MEMBER,
+                sort: FragmentSort::Declaration,
+                boundary: FragmentBoundary::Unadmitted,
+                ..
+            }),
+            "`{name}` is declined by the cell member's name: {refusal:?}"
+        );
+        assert_eq!(spelled(&refusal), at, "`{name}` is declined at its fault");
+    }
+    assert!(
+        !module.declarations().iter().any(|declaration| {
+            ["loop", "seg", "cell"]
+                .map(SurfaceName::from)
+                .contains(&declaration.name())
+        }),
+        "a refused cell binds no name"
+    );
+}
+
+#[test]
+fn a_word_conses_its_letters_and_matches_them()
+{
+    let source = "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef empty : Path(Circle, Base, Base) ;\ndef empty = here(Base) ;\ndef word : Path(Circle, Base, Base) ;\ndef word = back(loop) ∷ loop ;\ndef rec size(p : Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    here => return 0,\n    loop ∷ q => become size[<](q),\n    back(loop) ∷ q => become size[<](q)\n  }\n}\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let words = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.role() == crate::module::Role::Words)
+        .map(crate::module::LoweredDeclaration::constant)
+        .expect("the circle's loop mints its words");
+    let is_words = |datatype| {
+        matches!(arena.value_type(datatype), Some(&ValueType::Data { declaration, ref arguments })
+            if declaration == words && arguments.is_empty())
+    };
+    let Some(&Value::Constructor {
+        datatype,
+        tag,
+        ref fields,
+    }) = arena.value(body_named(&module, SurfaceName::from("empty")))
+    else {
+        panic!("`here(Base)` at the loop's point is a word");
+    };
+    assert!(is_words(datatype));
+    assert_eq!(
+        (usize::from(tag), fields.len()),
+        (0_usize, 0_usize),
+        "the empty word"
+    );
+    let Some(&Value::Constructor {
+        datatype,
+        tag,
+        ref fields,
+    }) = arena.value(body_named(&module, SurfaceName::from("word")))
+    else {
+        panic!("a cons is a word");
+    };
+    assert!(is_words(datatype));
+    assert_eq!(
+        (usize::from(tag), fields.len()),
+        (2_usize, 1_usize),
+        "`back(loop)` is the loop's inverse letter, consed onto one word"
+    );
+    // No core node holds a letter or the point of an empty word: each is
+    // labelled at its type, the inverse letter's name inside it too.
+    let labelled = |text: &str, from: usize| {
+        let start = source
+            .get(from ..)
+            .and_then(|rest| rest.find(text))
+            .map_or_else(
+                || panic!("`{text}` is written"),
+                |at| at.saturating_add(from),
+            );
+        module
+            .origins()
+            .labels()
+            .iter()
+            .find(|label| {
+                usize::from(label.span.start()) == start
+                    && usize::from(label.span.end()) == start.saturating_add(text.len())
+            })
+            .map(|label| match label.labelled {
+                | crate::origin::Labelled::ValueType { ty, .. } => arena.value_type(ty).cloned(),
+                | _ => None,
+            })
+    };
+    let after_word = source.find("def word =").expect("the word is written");
+    let after_empty = source
+        .find("def empty =")
+        .expect("the empty word is written");
+    for (text, from) in [
+        ("back(loop)", after_word),
+        ("loop", after_word.saturating_add(16)),
+    ] {
+        assert!(
+            matches!(labelled(text, from), Some(Some(ValueType::Path { left, right, .. })) if left == right),
+            "`{text}` answers at the path type at the point"
+        );
+    }
+    assert!(
+        matches!(labelled("Base", after_empty), Some(Some(ValueType::Data { arguments, .. })) if arguments.is_empty()),
+        "the point of the empty word answers at the family"
+    );
+    let Some(&Computation::Fixpoint { body, .. }) = arena.computation(tail_of(
+        &arena,
+        body_named(&module, SurfaceName::from("size")),
+    ))
+    else {
+        panic!("a recursive function is a fixpoint");
+    };
+    let Some(&Computation::Lambda(cased)) = arena.computation(body)
+    else {
+        panic!("the fixpoint closes its parameter's lambda");
+    };
+    let Some(branches) =
+        reachable(&arena, cased)
+            .into_iter()
+            .find_map(|id| match arena.computation(id) {
+                | Some(&Computation::DataCase { ref branches, .. }) => Some(branches),
+                | _ => None,
+            })
+    else {
+        panic!("a case over a word is a data case");
+    };
+    assert_eq!(
+        branches.len(),
+        3_usize,
+        "one branch per constructor: the empty word, the letter and its inverse"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}

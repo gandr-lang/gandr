@@ -118,6 +118,7 @@ mod entries
             "Expression {",
             Standing::Design("a block: the computation it holds answers"),
         ),
+        ("Expression ∷", Standing::Owed(0)),
         ("Pattern #{", Standing::Design(MATCHED)),
         ("Pattern (", Standing::Design(MATCHED)),
         ("Pattern +", Standing::Design(MATCHED)),

@@ -140,7 +140,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 50_usize] = [
+    pub const ALL: [Self; 52_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -171,9 +171,11 @@ impl FormName
         Self::DATA,
         Self::DATA_GENERATOR,
         Self::CONSTRUCTOR_BLOCK_MEMBER,
+        Self::CELL_MEMBER,
         Self::CASE,
         Self::CASE_WITH_VIEW,
         Self::CONSTRUCTOR_PATTERN,
+        Self::CONS_PATTERN,
         Self::WILDCARD,
         Self::LITERAL_PATTERN,
         Self::OR_PATTERN,
@@ -260,6 +262,9 @@ impl FormName
     /// The declined constructor member `C(fields) : T`, inlined into the data
     /// block so it is declined by name.
     pub const CONSTRUCTOR_BLOCK_MEMBER: Self = Self("constructor_block_member");
+    /// A data block's cell member `name : a <-> b` between two terms,
+    /// inlined into the declaration.
+    pub const CELL_MEMBER: Self = Self("cell_member");
     /// The match `case e -> T? { p => c, … }`.
     pub const CASE: Self = Self("case_expression");
     /// A match's view `with e`, folded into the match, and the absurd match
@@ -267,6 +272,9 @@ impl FormName
     pub const CASE_WITH_VIEW: Self = Self("case_with_view");
     /// The constructor pattern `C(p, …)` or `C`.
     pub const CONSTRUCTOR_PATTERN: Self = Self("constructor_pattern");
+    /// The word pattern `g ∷ p` or `back(g) ∷ p`: a loop's letter, or its
+    /// inverse, consed onto the rest of a word.
+    pub const CONS_PATTERN: Self = Self("cons_pattern");
     /// The wildcard pattern `_`.
     pub const WILDCARD: Self = Self("wildcard");
     /// The tuple pattern `(p, q, …)`: a bind statement's binder splits the
@@ -499,6 +507,15 @@ impl TileName
     pub const FALSE: Self = Self("false");
     /// A generator's result arrow `-->`.
     pub const GENERATOR: Self = Self("-->");
+    /// A cell's invertible arrow `<->`.
+    pub const INVERTIBLE: Self = Self("<->");
+    /// A rule's arrow `==>`, written between two terms of a cell member.
+    pub const REWRITE: Self = Self("==>");
+    /// The invertible rule arrow `<=>`, written between two terms of a cell
+    /// member.
+    pub const REVERSIBLE: Self = Self("<=>");
+    /// The cons `g ∷ p` of a word and of a word's pattern.
+    pub const CONS: Self = Self("∷");
     /// The reserved operation-member keyword `op` of a data block.
     pub const OP: Self = Self("op");
     /// The reserved operation-member keyword `oper` of a data block, which

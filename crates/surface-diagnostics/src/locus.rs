@@ -550,6 +550,8 @@ impl Annotations
             | LoweringRefusal::AcrossHandler { .. }
             | LoweringRefusal::ForNeedsListCase { .. }
             | LoweringRefusal::WithoutK { .. }
+            | LoweringRefusal::DirectedCell { .. }
+            | LoweringRefusal::CellNotALoop { .. }
             | LoweringRefusal::RulesUnoriented { .. }
             | LoweringRefusal::BudgetExceeded { .. }
             | LoweringRefusal::GrammarMismatch { .. }

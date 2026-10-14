@@ -1,0 +1,10 @@
+// The circle's loop with the single directed shaft: a cell that only runs one
+// way, which the lowering does not mint.
+
+/// `loop : Base --> Base` is a directed cell between two terms, refused by
+/// name: only an invertible cell `<->` at a point mints its words.
+@[ refuses("DirectedCell") ]
+data Circle : Type {
+  Base : Circle;
+  loop : Base --> Base;
+}

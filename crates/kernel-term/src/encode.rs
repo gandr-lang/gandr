@@ -363,9 +363,12 @@ fn encode_minted_atom_table(
 ///   writes [`tags::KIND_DEF_LAWFUL`] and closes with the pair block, its count
 ///   possibly zero, then the law count and each law's position; a data
 ///   declaration presenting rules writes [`tags::KIND_DATA_PRESENTED`] and
-///   closes with the rule count and each rule's two sides; abstract types write
-///   their kind and representation roots and the extent of their scope, an open
-///   scope as `remaining`; the other kinds write one root and no slots.
+///   closes with the rule count and each rule's two sides; a type of words
+///   writes [`tags::KIND_DATA_WORDS`] and closes with the rule block, its count
+///   possibly zero, then the sort's position, the cell count and each cell's
+///   two endpoints as rule sides; abstract types write their kind and
+///   representation roots and the extent of their scope, an open scope as
+///   `remaining`; the other kinds write one root and no slots.
 /// - provides: one segment with cross-declaration sharing. The predicate checks
 ///   the mark/kind bytes, root memo presence and global-counter transition;
 ///   literal segment fixtures observe field order and slot framing.
@@ -386,12 +389,13 @@ fn encode_minted_atom_table(
 /// - witness: `encode::tests::a_relating_definition_closes_its_segment_with_its_pairs`
 /// - witness: `encode::tests::a_lawful_definition_closes_its_segment_with_its_laws`
 /// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
+/// - witness: `encode::tests::a_type_of_words_closes_its_segment_with_its_cells`
 #[spec(
     captures: entry = (out.as_image().as_ref().len(), interner.by_content.len(), interner.next),
     ensures: |ret| { let image = out.as_image();
         let bytes = image.as_ref();
         bytes.get(entry.0).copied() == Some(u8::from(match marked.mark() { AdmissionMark::Checked => tags::ADMISSION_CHECKED, AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED }))
-            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
+            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
             && interner.by_node.contains_key(&AnyNode::ValueType(marked.declaration().declared_id()))
             && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.by_node.contains_key(&AnyNode::Value(body)), _ => true }
             && marked.declaration().related().iter().all(|related| interner.by_node.contains_key(&AnyNode::Value(related.left)) && interner.by_node.contains_key(&AnyNode::Value(related.right)))
@@ -413,6 +417,9 @@ fn encode_declaration(
     let declaration = marked.declaration();
     let content = declaration.content();
     out.put_tag(match *content {
+        | DeclarationContent::Data { .. } if declaration.presentation().cells().is_some() => {
+            tags::KIND_DATA_WORDS
+        },
         | DeclarationContent::Data { .. } if declaration.presentation().rules().is_empty() => {
             tags::KIND_DATA
         },
@@ -548,29 +555,65 @@ fn encode_declaration(
     }
     // The rule block closes a presented data declaration's segment: a rule
     // count of at least one, since a free type wrote the plain kind, then each
-    // rule's left and right sides, a node count and the nodes in pre-order.
-    let rules = declaration.presentation().rules();
-    if !rules.is_empty() {
+    // rule's left and right sides, a node count and the nodes in pre-order. A
+    // type of words writes the block whatever its count, then its sort's
+    // position and its cells, each endpoint a side as a rule's are.
+    let presentation = declaration.presentation();
+    let rules = presentation.rules();
+    let cells = presentation.cells();
+    if !rules.is_empty() || cells.is_some() {
         out.put_uvarint(WireU64::from(WireUsize::from(rules.len())));
         for rule in rules {
-            for side in [rule.left(), rule.right()] {
-                out.put_uvarint(WireU64::from(WireUsize::from(side.len())));
-                for &node in side {
-                    let (tag, ordinal) = match node {
-                        | crate::presented::RuleNode::Constructor(tag) => (
-                            tags::RULE_CONSTRUCTOR,
-                            WireU64::from(WireUsize::from(usize::from(tag))),
-                        ),
-                        | crate::presented::RuleNode::Variable(variable) => (
-                            tags::RULE_VARIABLE,
-                            WireU64::from(u64::from(u32::from(variable))),
-                        ),
-                    };
-                    out.put_tag(tag);
-                    out.put_uvarint(ordinal);
-                }
-            }
+            encode_rule_side(out, rule.left());
+            encode_rule_side(out, rule.right());
         }
+    }
+    if let Some(cells) = cells {
+        out.put_uvarint(WireU64::from(WireUsize::from(usize::from(cells.sort()))));
+        out.put_uvarint(WireU64::from(WireUsize::from(cells.cells().len())));
+        for cell in cells.cells() {
+            encode_rule_side(out, cell.source());
+            encode_rule_side(out, cell.target());
+        }
+    }
+}
+
+/// Write one rule side: its node count, then each node's tag and ordinal in
+/// pre-order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the count and every node are written, in order, and nothing else.
+/// - provides: the one spelling of a side, a rule's and a cell's endpoint
+///   alike, that `decode_rule_side` reads back.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a presented declaration and a type of words round-trip
+///   every side.
+/// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
+/// - witness: `encode::tests::a_type_of_words_closes_its_segment_with_its_cells`
+#[spec(captures: before = out.as_image().as_ref().len(), ensures: out.as_image().as_ref().len() > before)]
+fn encode_rule_side(
+    out: &mut EncodedArtifact,
+    side: &[crate::presented::RuleNode],
+)
+{
+    out.put_uvarint(WireU64::from(WireUsize::from(side.len())));
+    for &node in side {
+        let (tag, ordinal) = match node {
+            | crate::presented::RuleNode::Constructor(tag) => (
+                tags::RULE_CONSTRUCTOR,
+                WireU64::from(WireUsize::from(usize::from(tag))),
+            ),
+            | crate::presented::RuleNode::Variable(variable) => (
+                tags::RULE_VARIABLE,
+                WireU64::from(u64::from(u32::from(variable))),
+            ),
+        };
+        out.put_tag(tag);
+        out.put_uvarint(ordinal);
     }
 }
 
@@ -2411,6 +2454,88 @@ mod tests
             Err(crate::error::DecodeError::Malformed {
                 site: crate::error::MalformedSite::TrailingBytes,
             })
+        );
+    }
+
+    #[test]
+    fn a_type_of_words_closes_its_segment_with_its_cells()
+    {
+        use crate::presented::FreeCell;
+        use crate::presented::FreeCells;
+        use crate::presented::Presentation;
+        use crate::presented::RuleNode;
+
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let kind = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = builder
+            .arena()
+            .value_type_data(crate::ConstantIndex::from(0_usize), alloc::vec![]);
+        let base = || {
+            alloc::boxed::Box::from([RuleNode::Constructor(crate::ConstructorTag::from(0_usize))])
+        };
+        let cells = FreeCells::new(crate::ConstantIndex::from(0_usize), alloc::vec![
+            FreeCell::new(base(), base())
+        ]);
+        let data = builder
+            .data(
+                LevelSignature::monomorphic(),
+                alloc::vec![],
+                alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                kind,
+            )
+            .presented(Presentation::words(cells.clone()));
+        let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, data)];
+        // The words kind, then the presented declaration's fields as the
+        // circle writes them; then the sort's position, one cell, and its two
+        // endpoints, each the one constructor `base`.
+        let expected = [
+            b'G', b'K', b'X', b'1', 5, 0, 0, 1, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
+            0, 1, 1, 1, 1, 2, 3, 0, 1, 0, 2, 1, 0, 1, 1, 0, 3, 0, 2, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1,
+            0, 0, 1, 0, 0,
+        ];
+        let bytes = super::encode(&arena, &declarations);
+        assert_eq!(bytes.as_image().as_ref(), expected);
+        let decoded = crate::decode::decode(ArtifactImage::from(expected.as_slice()))
+            .expect("the literal artifact is structurally admissible");
+        let declaration = decoded
+            .declarations()
+            .first()
+            .expect("one data declaration");
+        assert_eq!(
+            declaration.declaration().presentation(),
+            &Presentation::words(cells.clone())
+        );
+        assert_eq!(
+            super::encode(decoded.arena(), decoded.declarations())
+                .as_image()
+                .as_ref(),
+            expected
+        );
+        // Words whose rules were dropped still decode, to be refused by the
+        // kernel against the mint, and keep their canonical bytes.
+        let dropped = [
+            b'G', b'K', b'X', b'1', 5, 0, 0, 1, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
+            0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0,
+        ];
+        let decoded = crate::decode::decode(ArtifactImage::from(dropped.as_slice()))
+            .expect("a rule count of none decodes under the words kind");
+        let declaration = decoded
+            .declarations()
+            .first()
+            .expect("one data declaration");
+        assert!(declaration.declaration().presentation().rules().is_empty());
+        assert_eq!(
+            declaration.declaration().presentation().cells(),
+            Some(&cells)
+        );
+        assert_eq!(
+            super::encode(decoded.arena(), decoded.declarations())
+                .as_image()
+                .as_ref(),
+            dropped
         );
     }
 

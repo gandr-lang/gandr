@@ -953,6 +953,24 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
     },
 
+    /// A `data` block's member `name : a --> b` between two terms: a directed
+    /// cell, which builds no word a path type reads, so only the invertible
+    /// `<->` is a cell between terms.
+    DirectedCell
+    {
+        /// The bytes the arrow covers.
+        span: ByteSpan,
+    },
+
+    /// A `data` block's cell `name : a <-> b` between two distinct terms:
+    /// only a loop, a cell from a point to itself, mints the words of the
+    /// path type at that point.
+    CellNotALoop
+    {
+        /// The bytes the cell covers.
+        span: ByteSpan,
+    },
+
     /// A rule of a `data` or `sign` block whose right-hand side the path order
     /// does not put below its left-hand side, so the block's rules are not
     /// known to terminate.
@@ -1153,6 +1171,14 @@ impl fmt::Display for LoweringRefusal<'_>
                 "a path is matched against `here`, which is axiom K; a path is used by \
                  transport, and `back`, `then` and `cong` derive what a match would",
             ),
+            | Self::DirectedCell { .. } => f.write_str(
+                "a directed cell `-->` between two terms builds no word of a path type; a cell \
+                 between terms is the invertible `<->`",
+            ),
+            | Self::CellNotALoop { .. } => f.write_str(
+                "this cell joins two distinct terms; a cell `<->` is a loop at one point, \
+                 written with the same term on both sides",
+            ),
             | Self::RulesUnoriented { .. } => f.write_str(
                 "this rule's right-hand side is not below its left-hand side in the path order, \
                  so the block's rules may never end",
@@ -1254,6 +1280,8 @@ impl LoweringRefusal<'_>
             | Self::AcrossHandler { span, .. }
             | Self::ForNeedsListCase { span }
             | Self::WithoutK { span }
+            | Self::DirectedCell { span }
+            | Self::CellNotALoop { span }
             | Self::RulesUnoriented { span }
             | Self::RulesDiverge { span, .. }
             | Self::RulesUndecided { span, .. }

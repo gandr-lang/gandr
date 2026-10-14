@@ -479,6 +479,122 @@ mod native_formers
     }
 
     #[test]
+    fn a_loop_is_a_word_at_its_path_in_both_checkers()
+    {
+        use gandr_kernel_term::FreeCell;
+        use gandr_kernel_term::FreeCells;
+        use gandr_kernel_term::Presentation;
+        use gandr_kernel_term::RuleNode;
+
+        let mut arena = CoreArena::new();
+        let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let (sort, words) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
+        let carrier = arena.value_type_data(sort, vec![]);
+        let own = arena.value_type_data(words, vec![]);
+        let point = arena.value_constructor(carrier, ConstructorTag::from(0_usize), vec![]);
+        let path = arena.value_type_path(carrier, point, point);
+        let base =
+            || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
+        let cells = FreeCells::new(sort, vec![FreeCell::new(base(), base())]);
+        let table = || vec![vec![], vec![own], vec![own]];
+        // The one-point sort, and the words of one loop at its point.
+        let one_point = Declaration::data(
+            sort,
+            DataSignature::new(vec![], vec![vec![]], kind).into(),
+            OriginToken::from(0_usize),
+        );
+        let loops = Declaration::data(
+            words,
+            DataSignature::new(vec![], table(), kind)
+                .presented(Presentation::words(cells.clone()))
+                .into(),
+            OriginToken::from(1_usize),
+        );
+        // `loop : Path(S, base, base)`, the word of its one letter.
+        let empty = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![]);
+        let letter = arena.value_constructor(own, ConstructorTag::from(1_usize), vec![empty]);
+        // Read back at the words' own type.
+        let named = arena.value_constant(ConstantIndex::from(2_usize));
+        // `fix f. λp. case p { here ⇒ return here; g ∷ q ⇒ r ← f(q); return
+        // g ∷ r; … }` at `Path(S, base, base) → F Path(S, base, base)`.
+        let motive = arena.comp_type_returner(path);
+        let nil = arena.computation_return(empty);
+        let mut arm = |tag: usize| {
+            let recursive = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+            let field = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let forced = arena.computation_force(recursive);
+            let folded = arena.computation_application(forced, field);
+            let result = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let rebuilt = arena.value_constructor(own, ConstructorTag::from(tag), vec![result]);
+            let returned = arena.computation_return(rebuilt);
+            let sequenced = arena.computation_bind(folded, returned);
+            arena.computation_lambda(sequenced)
+        };
+        let (lettered, inverted) = (arm(1), arm(2));
+        let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = arena.computation_data_case(argument, motive, vec![nil, lettered, inverted]);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(
+            lambda,
+            gandr_kernel_term::FixpointEvidence::StructuralDescent,
+        );
+        let fold = arena.value_thunk(fixpoint);
+        let arrow = arena.comp_type_arrow(path, motive);
+        let fold_type = arena.value_type_thunk(arrow);
+        // The same words with their cancellations dropped.
+        let tampered = Declaration::data(
+            ConstantIndex::from(5_usize),
+            DataSignature::new(vec![], table(), kind)
+                .presented(Presentation::new(vec![]).carrying(cells))
+                .into(),
+            OriginToken::from(5_usize),
+        );
+        let declarations = vec![
+            one_point,
+            loops,
+            definition(ConstantIndex::from(2_usize), path, letter),
+            definition(ConstantIndex::from(3_usize), own, named),
+            definition(ConstantIndex::from(4_usize), fold_type, fold),
+            tampered,
+        ];
+        let (report, crossed) = run(&mut arena, &declarations);
+        for (position, what) in [
+            (2, "a word checks at the path of its point"),
+            (3, "a path at the looped point converts with its words"),
+            (
+                4,
+                "a fold over a path splits its words and respects both cancellations",
+            ),
+        ] {
+            assert!(
+                matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+                "{what}: {:?}",
+                report.judged()[position].verdict()
+            );
+            assert!(
+                matches!(
+                    crossed.readmitted()[position].outcome(),
+                    Outcome::Defined { .. }
+                ),
+                "and the kernel agrees: {:?}",
+                crossed.readmitted()[position].outcome()
+            );
+        }
+        assert!(
+            matches!(crossed.readmitted()[1].outcome(), Outcome::Data { .. }),
+            "the words admit as their cells mint them: {:?}",
+            crossed.readmitted()[1].outcome()
+        );
+        assert_eq!(
+            crossed.readmitted()[5].outcome(),
+            &Outcome::Rejected(gandr_kernel_core::KernelError::WordsRefused(
+                gandr_kernel_term::CellFault::NotMinted
+            )),
+            "the kernel re-mints the words and refuses a twin whose cancellations were dropped"
+        );
+    }
+
+    #[test]
     fn a_fold_rests_on_the_laws_of_the_rules_it_computes_apart()
     {
         let (turn, unturn) = (ConstantIndex::from(1_usize), ConstantIndex::from(2_usize));

@@ -194,6 +194,8 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         | LoweringRefusal::AcrossHandler { .. } => "an exit across a live handler",
         | LoweringRefusal::ForNeedsListCase { .. } => "a `for` loop",
         | LoweringRefusal::WithoutK { .. } => "a path matched against reflexivity",
+        | LoweringRefusal::DirectedCell { .. } => "a directed cell between terms",
+        | LoweringRefusal::CellNotALoop { .. } => "a cell between two distinct terms",
         | LoweringRefusal::RulesUnoriented { .. } => "a rule that may not end",
         | LoweringRefusal::RulesDiverge { .. } => "rewrites a term to another normal form",
         | LoweringRefusal::RulesUndecided { .. } => "a pair the step budget left undecided",

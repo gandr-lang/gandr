@@ -1279,6 +1279,13 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 let second_right = self.atom(Node::Code(d, there))?;
                                 Ok([(first_left, first_right), (second_left, second_right)])
                             }).map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 1, 2) }),
+                        (&ValueType::Path { left: a, right: b, .. }, &ValueType::Path { left: c, right: d, .. }) =>
+                            self.atom(Node::Code(a, here)).and_then(|first_left| {
+                                let first_right = self.atom(Node::Code(c, there))?;
+                                let second_left = self.atom(Node::Code(b, here))?;
+                                let second_right = self.atom(Node::Code(d, there))?;
+                                Ok([(first_left, first_right), (second_left, second_right)])
+                            }).map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 1, 2) }),
                         (&ValueType::Run(a), &ValueType::Run(b)) =>
                             self.atom(Node::Code(a, here)).and_then(|left| Ok([(left, self.atom(Node::Code(b, there))?)]))
                                 .map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 0, 1) }),
@@ -3196,6 +3203,10 @@ mod tests
         let path = core.value_quote(path);
         let reverse = core.value_type_path_universe(target, source);
         let reverse = core.value_quote(reverse);
+        let along = core.value_type_path(unit, source, target);
+        let along = core.value_quote(along);
+        let against = core.value_type_path(unit, target, source);
+        let against = core.value_quote(against);
         let mut foreign = core.clone();
         for _ in 0 .. 4_u8 {
             foreign.value_unit();
@@ -3208,6 +3219,8 @@ mod tests
         let left = code_of(&core, &mut domain, path, &[]);
         let right = code_of(&core, &mut domain, path, &[]);
         let reverse = code_of(&core, &mut domain, reverse, &[]);
+        let [along_left, along_right, against] =
+            [along, along, against].map(|code| code_of(&core, &mut domain, code, &[]));
         let broken = code_of(&core, &mut domain, broken, &[]);
         assert_eq!(
             Ok(CodeComparison::Equal),
@@ -3220,6 +3233,27 @@ mod tests
         assert_eq!(
             Err(crate::ConversionFault::MachineInvariant),
             compare_codes(&core, &domain, ConstantReading::Unread, left, broken)
+        );
+        assert_eq!(
+            Ok(CodeComparison::Equal),
+            compare_codes(
+                &core,
+                &domain,
+                ConstantReading::Unread,
+                along_left,
+                along_right
+            ),
+            "a path type compares its carrier and its endpoints"
+        );
+        assert_eq!(
+            Ok(CodeComparison::Apart),
+            compare_codes(&core, &domain, ConstantReading::Unread, along_left, against),
+            "in order"
+        );
+        assert_eq!(
+            Ok(CodeComparison::Apart),
+            compare_codes(&core, &domain, ConstantReading::Unread, along_left, left),
+            "and is apart from a universe path"
         );
     }
 

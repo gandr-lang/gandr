@@ -190,6 +190,7 @@ use super::Produced;
 use super::Reading;
 use super::Sink;
 use super::Site;
+use super::Stretch;
 use super::arguments;
 use super::closed;
 use super::exhausted;
@@ -219,6 +220,10 @@ pub(super) mod tests;
 
 /// Reflexivity's spelling, which no pattern may take.
 pub(super) const HERE: &str = "here";
+
+/// The inverse's spelling: of a path, and of a loop where a word's letter is
+/// written.
+pub(super) const BACK: &str = "back";
 
 /// The empty native list's spelling, a name resolved after every binder and
 /// earlier declaration.
@@ -330,7 +335,7 @@ const SPELLED: [(&str, Operation); 16] = [
     ("equiv", Operation::Equiv),
     ("pathProduct", Operation::PathProduct),
     ("transport", Operation::Transport),
-    ("back", Operation::Back),
+    (BACK, Operation::Back),
     ("cong", Operation::Cong),
     ("cons", Operation::Cons),
     ("bisim", Operation::Bisim),
@@ -638,17 +643,18 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `operation` is what the call's head spells.
     /// - ensures: `here(a)` and `stay(a)` stand as values reading their point
-    ///   as a value at an endpoint; `funext(f, g)`, `equiv(f, g)`,
-    ///   `pathProduct(p, q)`, `flowProduct(p, q)`, `cons(h, t)`, `bisim(A, B)`
-    ///   and `sim(A, B)` stand as values reading both operands as values;
-    ///   `transport(\X. T, p, v)` and `ride(\X. T, f, v)` stand as computations
-    ///   reading their motive, path or flow and value as values, and
-    ///   `transport(M, p, z₀, q, v)` as a computation reading its motive as a
-    ///   value type and the other four as values; `back(p)` and `cong(f, p)`
-    ///   stand as computations derived as [`Self::derive`] does; `recorded(m₀,
-    ///   …, mₙ)` stands as a value over its moves, each read as
-    ///   [`Self::recorded_move`] reads it. Every operand is read under the
-    ///   site's frame.
+    ///   as a value at an endpoint, but `here(a)` at the point of a family's
+    ///   loops is the empty word of their words, as [`Self::looped_point`]
+    ///   reads it; `funext(f, g)`, `equiv(f, g)`, `pathProduct(p, q)`,
+    ///   `flowProduct(p, q)`, `cons(h, t)`, `bisim(A, B)` and `sim(A, B)` stand
+    ///   as values reading both operands as values; `transport(\X. T, p, v)`
+    ///   and `ride(\X. T, f, v)` stand as computations reading their motive,
+    ///   path or flow and value as values, and `transport(M, p, z₀, q, v)` as a
+    ///   computation reading its motive as a value type and the other four as
+    ///   values; `back(p)` and `cong(f, p)` stand as computations derived as
+    ///   [`Self::derive`] does; `recorded(m₀, …, mₙ)` stands as a value over
+    ///   its moves, each read as [`Self::recorded_move`] reads it. Every
+    ///   operand is read under the site's frame.
     /// - fails: the wrong-sort refusal where the operation's sort is not read;
     ///   the arity refusal for other than one argument to `here`, `stay`,
     ///   `forward` or `back`, two to `funext`, `equiv`, `pathProduct`,
@@ -675,6 +681,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::a_move_out_of_shape_is_refused`
     /// - witness: `lower::identity::tests::a_path_product_lowers_to_its_former`
     /// - witness: `lower::identity::tests::a_flow_product_lowers_to_its_former`
+    /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| {
@@ -695,7 +702,8 @@ impl<'source> Lowerer<'_, 'source>
                         | (Operation::Arrow, Some(&Plan::FunctionFlow(..)))
                         | (Operation::Recorded, Some(&Plan::Recorded(_)))
                         | (Operation::Transport, Some(&(Plan::Transport(..) | Plan::TelescopeTransport(_))))
-                        | (Operation::Back | Operation::Cong, Some(&Plan::Derived(_))) => true,
+                        | (Operation::Back | Operation::Cong, Some(&Plan::Derived(_)))
+                        | (Operation::Here, Some(&Plan::Constructor(_))) => true,
                         | _ => false,
                     })
         },
@@ -757,6 +765,16 @@ impl<'source> Lowerer<'_, 'source>
         read?;
         match (operation, count, first, second, third) {
             | (Operation::Here | Operation::Stay, 1_usize, Some(point), ..) => {
+                if operation == Operation::Here
+                    && let Some(node) = self.tree.node(point)
+                    && let Maybe::Present(empty) = self.looped_point(Placed::of(point, node))?
+                {
+                    let none = Stretch {
+                        start: self.operands.len(),
+                        end: self.operands.len(),
+                    };
+                    return self.construct(site, empty, none);
+                }
                 self.read(point, Reading::Value(frame));
                 let _marked = self.at_endpoint.insert(point);
                 let plan = match operation {

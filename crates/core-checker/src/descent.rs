@@ -40,6 +40,8 @@ use quenchant_shape::shape::Maybe;
 use crate::CheckRefusal;
 use crate::CheckingContext;
 use crate::occurrence::AnyNode;
+use crate::view::ValueTypeView;
+use crate::view::value_type_view;
 
 /// The binder level of the fixpoint's self reference, counted from the
 /// fixpoint's body.
@@ -820,11 +822,12 @@ fn walk(
 /// - requires: `body` is the fixpoint's body, scoped under its self binder, and
 ///   `expected` the type the fixpoint is checked at.
 /// - ensures: success exactly when the type is a function out of a nominal data
-///   application whose signature is in scope, the body is a lambda whose body
-///   is a case on that lambda's variable with one branch per constructor, each
-///   branch opens exactly its constructor's fields by lambdas, and every
-///   occurrence of the self variable in the motive and the branches is a call
-///   at a field of the scrutinised constructor or at a function field's result.
+///   application whose signature is in scope, or out of a path its words read
+///   ([`CheckingContext::words`]), the body is a lambda whose body is a case on
+///   that lambda's variable with one branch per constructor, each branch opens
+///   exactly its constructor's fields by lambdas, and every occurrence of the
+///   self variable in the motive and the branches is a call at a field of the
+///   scrutinised constructor or at a function field's result.
 /// - provides: the checker's half of the claim the kernel replays on its own; a
 ///   refusal here names the reason the kernel's walk would meet.
 /// - fails: the first reason the walk meets, in the order above.
@@ -862,9 +865,19 @@ pub fn replay(
             return Err(refuse(DescentRefusal::NotOverData));
         },
     };
-    let Some(&ValueType::Data { declaration, .. }) = context.arena().value_type(domain)
-    else {
-        return Err(refuse(DescentRefusal::NotOverData));
+    // A path at a point free cells loop at descends over the words they mint.
+    let declaration = match value_type_view(context.arena(), domain) {
+        | Ok(ValueTypeView::Data { declaration, .. }) => declaration,
+        | Ok(ValueTypeView::Path {
+            carrier,
+            left,
+            right,
+        }) => context
+            .words(carrier, (left, right))
+            .ok()
+            .flatten()
+            .ok_or_else(|| refuse(DescentRefusal::NotOverData))?,
+        | _ => return Err(refuse(DescentRefusal::NotOverData)),
     };
     let signature = context
         .consult_data(declaration)

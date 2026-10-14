@@ -2648,15 +2648,21 @@ where
                 },
                 // An introduction form checked at an identity checks at the
                 // fibre the identity fold computes for its domain and
-                // endpoints, or at a dependent pair's at a Σ domain; `here`,
-                // the higher forms and the neutrals take their own arms.
+                // endpoints, or at a dependent pair's at a Σ domain, or at the
+                // words a looped point's free cells mint; `here`, the higher
+                // forms and the neutrals take their own arms.
                 | Goal::CheckValue(id, expected)
                     if crate::element_identity::goal_reading(arena, id, expected)
                         == crate::element_identity::GoalReading::Fibre =>
                 {
                     let (domain, left, right) =
                         crate::element_identity::path_parts(arena, expected)?;
-                    let fibre = if let Some(&ValueType::Sigma { first, second }) =
+                    let fibre = if let Some(words) =
+                        judgement.presentations.words(arena, domain, (left, right))
+                    {
+                        arena.value_type_data(words, Vec::new())
+                    }
+                    else if let Some(&ValueType::Sigma { first, second }) =
                         arena.value_type(domain)
                     {
                         crate::element_identity::sigma_fibre(
@@ -3122,7 +3128,13 @@ where
                             | FixpointEvidence::Partial => {},
                             | FixpointEvidence::StructuralDescent => {
                                 descent::replay(arena, judgement, expected, body)?;
-                                root = respect::fold_root(arena, id, expected, body);
+                                root = respect::fold_root(
+                                    arena,
+                                    judgement.presentations,
+                                    id,
+                                    expected,
+                                    body,
+                                );
                             },
                         }
                         let recursive = arena.value_type_thunk(expected);
@@ -3292,7 +3304,11 @@ where
                     produced = Produced::CompType(arena.comp_type_returner(part));
                 },
                 | Frame::DataCase(case) => {
-                    let datatype = produced.value_type()?;
+                    // A scrutinee at a looped point's path is split over the
+                    // words its free cells mint.
+                    let datatype = judgement
+                        .presentations
+                        .identified(arena, produced.value_type()?);
                     let Some(matched_native_node) = arena.computation(case)
                     else {
                         return Err(KernelError::ArenaFault);
@@ -4828,10 +4844,15 @@ where
             }
             // A presented type's rules are checked against the table its
             // fields just formed: linear, constructor-headed over the own
-            // type, and shrinking, so its conversion terminates.
+            // type, and shrinking, so its conversion terminates. A type of
+            // words is re-minted from its cells and compared.
             crate::presented::admit(
                 arena,
-                ConstantIndex::from(judgement.entries.len()),
+                judgement.entries,
+                (
+                    ConstantIndex::from(judgement.entries.len()),
+                    parameters.as_slice(),
+                ),
                 constructors,
                 declaration.presentation(),
             )?;

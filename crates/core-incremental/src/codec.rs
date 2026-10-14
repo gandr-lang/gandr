@@ -2704,19 +2704,23 @@ fn read_linearity(reader: &mut Reader<'_>) -> Result<Linearity, CodecError>
     })
 }
 
-/// Write every root of a nominal signature, then the rules presenting it.
+/// Write every root of a nominal signature, then the rules presenting it, then
+/// the free cells of a type of words.
 ///
 /// # Specification
-/// - ensures: parameters, constructor rows, kind and rules retain their order;
-///   a rule side writes its node count, then per node a tag and either a
-///   constructor ordinal or a variable word.
+/// - ensures: parameters, constructor rows, kind, rules and cells retain their
+///   order; a rule side writes its node count, then per node a tag and either a
+///   constructor ordinal or a variable word; the cells write tag `0` when the
+///   signature carries none, and otherwise tag `1`, the sort's position, the
+///   cell count and each cell's two endpoints as rule sides.
 /// - fails: an unrepresentable count or index.
 /// - executable: none — a generic sink exposes no byte observer.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — signatures with equal kinds but unequal constructors stay
-///   distinct.
+///   distinct, and a type of words round-trips its cells.
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+/// - witness: `codec::tests::a_type_of_words_round_trips_its_cells`
 fn write_data_roots<Out>(
     writer: &mut Writer<'_, Out>,
     roots: &crate::content::DataRoots,
@@ -2733,38 +2737,74 @@ where
     let rules = roots.presentation.rules();
     writer.count(Count(rules.len()))?;
     for rule in rules {
-        for side in [rule.left(), rule.right()] {
-            writer.count(Count(side.len()))?;
-            for &node in side {
-                match node {
-                    | gandr_core_term::RuleNode::Constructor(tag) => {
-                        writer.tag(Tag(0));
-                        writer.count(Count(usize::from(tag)))?;
-                    },
-                    | gandr_core_term::RuleNode::Variable(variable) => {
-                        writer.tag(Tag(1));
-                        writer.word(Word(u64::from(u32::from(variable))));
-                    },
-                }
+        write_rule_side(writer, rule.left())?;
+        write_rule_side(writer, rule.right())?;
+    }
+    match roots.presentation.cells() {
+        | None => writer.tag(Tag(0)),
+        | Some(cells) => {
+            writer.tag(Tag(1));
+            writer.count(Count(usize::from(cells.sort())))?;
+            writer.count(Count(cells.cells().len()))?;
+            for cell in cells.cells() {
+                write_rule_side(writer, cell.source())?;
+                write_rule_side(writer, cell.target())?;
             }
+        },
+    }
+    Ok(())
+}
+
+/// Write one rule side: its node count, then per node a tag and either a
+/// constructor ordinal or a variable word.
+///
+/// # Specification
+/// - ensures: the count and every node are written in order, as
+///   [`read_rule_side`] reads them.
+/// - fails: an unrepresentable count.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_data_roots`].
+/// - witness: `codec::tests::a_type_of_words_round_trips_its_cells`
+fn write_rule_side<Out>(
+    writer: &mut Writer<'_, Out>,
+    side: &[gandr_core_term::RuleNode],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(side.len()))?;
+    for &node in side {
+        match node {
+            | gandr_core_term::RuleNode::Constructor(tag) => {
+                writer.tag(Tag(0));
+                writer.count(Count(usize::from(tag)))?;
+            },
+            | gandr_core_term::RuleNode::Variable(variable) => {
+                writer.tag(Tag(1));
+                writer.word(Word(u64::from(u32::from(variable))));
+            },
         }
     }
     Ok(())
 }
 
-/// Read all nominal roots and rules without allocating from untrusted counts.
+/// Read all nominal roots, rules and cells without allocating from untrusted
+/// counts.
 ///
 /// # Specification
-/// - ensures: successful reads consume parameters, constructor rows, kind and
-///   rules.
-/// - fails: truncated or malformed root frames, an unknown rule-node tag and a
-///   variable past `u32`.
+/// - ensures: successful reads consume parameters, constructor rows, kind,
+///   rules and the cells' frame.
+/// - fails: truncated or malformed root frames, an unknown rule-node tag, a
+///   variable past `u32` and a cells tag other than `0` or `1`.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — nominal round trips retain the complete constructor
-///   table.
+///   table, and a type of words its cells.
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+/// - witness: `codec::tests::a_type_of_words_round_trips_its_cells`
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(32))]
 fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots, CodecError>
 {
@@ -2782,11 +2822,27 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
         let right = read_rule_side(reader)?;
         rules.push(gandr_core_term::PresentedRule::new(left, right));
     }
+    let presentation = gandr_core_term::Presentation::new(rules);
+    let presentation = match reader.tag()?.0 {
+        | 0 => presentation,
+        | 1 => {
+            let sort = gandr_kernel_term::ConstantIndex::from(reader.count()?.0);
+            let count = reader.count()?;
+            let mut cells = Vec::new();
+            for _ in 0 .. count.0 {
+                let source = read_rule_side(reader)?;
+                let target = read_rule_side(reader)?;
+                cells.push(gandr_kernel_term::FreeCell::new(source, target));
+            }
+            presentation.carrying(gandr_kernel_term::FreeCells::new(sort, cells))
+        },
+        | _ => return Err(CodecError::Corrupt),
+    };
     Ok(crate::content::DataRoots {
         parameters,
         constructors,
         kind,
-        presentation: gandr_core_term::Presentation::new(rules),
+        presentation,
     })
 }
 
@@ -8021,6 +8077,76 @@ mod tests
             bytes.as_ref(),
             lawless.as_ref(),
             "and so does dropping them"
+        );
+    }
+
+    #[test]
+    fn a_type_of_words_round_trips_its_cells()
+    {
+        use gandr_core_term::RuleNode;
+        use gandr_kernel_term::ConstantIndex;
+        use gandr_kernel_term::ConstructorTag;
+        use gandr_kernel_term::FreeCell;
+        use gandr_kernel_term::FreeCells;
+
+        let point = |tag: usize| -> alloc::boxed::Box<[RuleNode]> {
+            [RuleNode::Constructor(ConstructorTag::from(tag))].into()
+        };
+        let checkpoints = |presentation: gandr_core_term::Presentation| {
+            let content = ItemContent::from_parts(
+                Reference::Unoccupied,
+                crate::content::DeclarationRoots::Data(crate::content::DataRoots {
+                    parameters: Vec::new(),
+                    constructors: vec![Vec::new(), vec![NodeIndex::from(0_usize)], vec![
+                        NodeIndex::from(0_usize),
+                    ]],
+                    kind: NodeIndex::from(0_usize),
+                    presentation,
+                }),
+                vec![ContentNode::Product(Vec::new())],
+            );
+            let item = ItemCheckpoint::new(
+                content,
+                Footprint::from_parts(
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    Opacity::Transparent,
+                    HoleMark::Filled,
+                ),
+                vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
+                Typing::Owed,
+            );
+            Checkpoints::new(CheckBudget::DEFAULT, vec![item])
+        };
+        let cells = |tag: usize| {
+            FreeCells::new(ConstantIndex::from(3_usize), vec![FreeCell::new(
+                point(tag),
+                point(tag),
+            )])
+        };
+        let words = checkpoints(gandr_core_term::Presentation::words(cells(0)));
+        let bytes = encode_checkpoints(&words).expect("a type of words encodes");
+        assert_eq!(
+            decode_checkpoints(Bytes(bytes.as_ref())),
+            Ok(words),
+            "and decodes to itself, its cells beside its rules"
+        );
+        let elsewhere =
+            encode_checkpoints(&checkpoints(gandr_core_term::Presentation::words(cells(1))))
+                .expect("words at another point encode");
+        assert_ne!(
+            bytes.as_ref(),
+            elsewhere.as_ref(),
+            "the point the cells loop at is content"
+        );
+        let bare = encode_checkpoints(&checkpoints(gandr_core_term::Presentation::new(
+            cells(0).cancellations(),
+        )))
+        .expect("the same rules with no cell encode");
+        assert_ne!(
+            bytes.as_ref(),
+            bare.as_ref(),
+            "and so is whether the rules were minted from cells"
         );
     }
 }

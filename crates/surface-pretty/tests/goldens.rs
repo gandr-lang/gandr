@@ -1507,7 +1507,9 @@ mod tests
     /// cannot see, is `<thunk>` and approximate. A constructor spells by the
     /// name its family's table gives its tag, bare when nullary and applied
     /// to its fields otherwise; a source without the table spells its head
-    /// `?` and still spells its fields.
+    /// `?` and still spells its fields. A word's letter conses before the rest
+    /// of the word, nested to the right, and inside a call it needs no
+    /// parentheses.
     #[test]
     fn every_value_leaf_spells_as_the_surface_writes_it()
     {
@@ -1515,6 +1517,7 @@ mod tests
             Name::from("Accumulator"),
             Name::from("Carry"),
             Name::from("Nat"),
+            Name::from("Loops"),
         ];
         let mut core = CoreArena::new();
         let negative = integer(&mut core, Sign::Negative, Written("42"));
@@ -1554,10 +1557,20 @@ mod tests
         let nat = core.value_type_data(ConstantIndex::from(2_usize), Vec::new());
         let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
         let one = core.value_constructor(nat, ConstructorTag::from(1_usize), vec![zero]);
+        let loops = core.value_type_data(ConstantIndex::from(3_usize), Vec::new());
+        let nil = core.value_constructor(loops, ConstructorTag::from(0_usize), Vec::new());
+        let once = core.value_constructor(loops, ConstructorTag::from(1_usize), vec![nil]);
+        let word = core.value_constructor(loops, ConstructorTag::from(2_usize), vec![once]);
+        let counted = core.value_constructor(nat, ConstructorTag::from(1_usize), vec![word]);
         let mut constructors = Constructors::default();
         constructors.family(Name::from("Nat"), [
             (Name::from("Zero"), Arity::from(0_usize)),
             (Name::from("Succ"), Arity::from(1_usize)),
+        ]);
+        constructors.words(Name::from("Loops"), [
+            (Name::from("here(Base)"), Arity::from(0_usize)),
+            (Name::from("loop"), Arity::from(1_usize)),
+            (Name::from("back(loop)"), Arity::from(1_usize)),
         ]);
         let unnamed = CoreSource::new(&core, &names);
         let named = CoreSource::new(&core, &names).naming(&constructors);
@@ -1565,6 +1578,18 @@ mod tests
             (&named, zero, faithful(Written("Zero"))),
             (&named, one, faithful(Written("Succ(Zero)"))),
             (&unnamed, one, approximate(Written("?(?)"))),
+            (&named, nil, faithful(Written("here(Base)"))),
+            (
+                &named,
+                word,
+                faithful(Written("back(loop) ∷ loop ∷ here(Base)")),
+            ),
+            (
+                &named,
+                counted,
+                faithful(Written("Succ(back(loop) ∷ loop ∷ here(Base))")),
+            ),
+            (&unnamed, word, approximate(Written("?(?(?))"))),
         ] {
             assert_eq!(
                 spelled(source, Root::Value(CoreNode::Value(root))),

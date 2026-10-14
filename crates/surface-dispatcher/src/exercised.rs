@@ -763,6 +763,8 @@ fn lowering_row(
         | LoweringRefusal::AcrossHandler { .. }
         | LoweringRefusal::ForNeedsListCase { .. }
         | LoweringRefusal::WithoutK { .. }
+        | LoweringRefusal::DirectedCell { .. }
+        | LoweringRefusal::CellNotALoop { .. }
         | LoweringRefusal::RulesUnoriented { .. }
         | LoweringRefusal::RulesDiverge { .. }
         | LoweringRefusal::RulesUndecided { .. }

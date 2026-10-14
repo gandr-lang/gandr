@@ -1,0 +1,11 @@
+// An invertible cell between two distinct points: a segment, whose paths
+// would be words indexed by their endpoints, which the lowering does not mint.
+
+/// `seg : Start <-> End` joins two distinct terms, refused by name: only a
+/// cell from a point to itself mints its words.
+@[ refuses("CellNotALoop") ]
+data Interval : Type {
+  Start : Interval;
+  End : Interval;
+  seg : Start <-> End;
+}

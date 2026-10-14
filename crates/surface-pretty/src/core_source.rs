@@ -3,6 +3,7 @@
 //! through its [`Restoration`].
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -139,7 +140,9 @@ const UNRESTORED: &Restoration = &Restoration(BTreeMap::new());
 /// matches by tag alone, so neither holds a constructor's name. A source
 /// reads them here: a family's constructors by the family's name, in tag
 /// order with each one's field count, and a data case's family by the case.
-/// Two families of one name keep the first one recorded.
+/// Two families of one name keep the first one recorded. A family of words
+/// is recorded consed: each of its one-field constructors is a letter, written
+/// before the rest of the word.
 ///
 /// # Specification
 /// - requires: the families are named as the source names a family and the
@@ -161,6 +164,8 @@ pub struct Constructors<'text>
 {
     /// Each family's constructors in tag order, with their field counts.
     families: BTreeMap<Name<'text>, Vec<(Name<'text>, Arity)>>,
+    /// The families whose one-field constructors are letters of a word.
+    consed: BTreeSet<Name<'text>>,
     /// The family each data case eliminates.
     cases: BTreeMap<ComputationId, Name<'text>>,
 }
@@ -193,6 +198,33 @@ impl<'text> Constructors<'text>
             .families
             .entry(family)
             .or_insert_with(|| constructors.into_iter().collect());
+    }
+
+    /// The family `family` of words, its constructors in tag order with
+    /// their field counts: each one-field constructor is a letter, consed
+    /// onto the rest of the word.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::family`]; the family is consed.
+    /// - provides: the letters a source spells a word with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Placement`](crate::Placement).
+    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    #[spec(ensures: self.families.contains_key(&family) && self.consed.contains(&family))]
+    #[inline]
+    pub fn words<I>(
+        &mut self,
+        family: Name<'text>,
+        constructors: I,
+    ) where
+        I: IntoIterator<Item = (Name<'text>, Arity)>,
+    {
+        self.family(family, constructors);
+        let _fresh = self.consed.insert(family);
     }
 
     /// The data case `case` eliminates a value of `family`.
@@ -235,11 +267,34 @@ impl<'text> Constructors<'text>
             .get(usize::from(tag))
             .copied()
     }
+
+    /// How a constructor of `family` taking `arity` fields is laid out: consed
+    /// when it is a letter of a word — one field, of a family registered by
+    /// [`Self::words`] — and applied otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn placement(
+        &self,
+        family: Name<'_>,
+        arity: Arity,
+    ) -> crate::Placement
+    {
+        if usize::from(arity) == 1 && self.consed.contains(family.as_ref()) {
+            crate::Placement::Consed
+        }
+        else {
+            crate::Placement::Applied
+        }
+    }
 }
 
 /// The constructor table that names nothing.
 const UNNAMED: &Constructors<'static> = &Constructors {
     families: BTreeMap::new(),
+    consed: BTreeSet::new(),
     cases: BTreeMap::new(),
 };
 
@@ -461,10 +516,11 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&Value::Constant(index)), Former::Unreadable(Unreadable::Unnamed)) => usize::from(index) >= self.names.len(),
-        | (Some(&Value::Constructor { datatype, tag, ref fields }), Former::Constructor { name, arity }) =>
+        | (Some(&Value::Constructor { datatype, tag, ref fields }), Former::Constructor { name, arity, placement }) =>
             usize::from(arity) == fields.len() && name == self.family(datatype)
                 .and_then(|family| self.constructors.constructor(family, Component::from(usize::from(tag))))
-                .map(|(held, _)| held),
+                .map(|(held, _)| held)
+                && placement == self.family(datatype).map_or(crate::Placement::Applied, |family| self.constructors.placement(family, arity)),
         | (Some(&Value::Recorded(ref moves)), Former::Recorded { payloads, .. }) =>
             usize::from(payloads) == moves.iter().filter(|step| matches!(step.payload(), Maybe::Present(_))).count(),
         (Some(&Value::Hole(_)), Former::Unreadable(Unreadable::Hole)) | (Some(&Value::Mark { .. }), Former::Unreadable(Unreadable::Mark))
@@ -505,15 +561,21 @@ impl<'arena> CoreSource<'arena>
                 datatype,
                 tag,
                 ref fields,
-            } => Former::Constructor {
-                name: self
-                    .family(datatype)
-                    .and_then(|family| {
+            } => {
+                let family = self.family(datatype);
+                Former::Constructor {
+                    name: family
+                        .and_then(|family| {
+                            self.constructors
+                                .constructor(family, Component::from(usize::from(tag)))
+                        })
+                        .map(|(name, _)| name),
+                    arity: Arity::from(fields.len()),
+                    placement: family.map_or(crate::Placement::Applied, |family| {
                         self.constructors
-                            .constructor(family, Component::from(usize::from(tag)))
-                    })
-                    .map(|(name, _)| name),
-                arity: Arity::from(fields.len()),
+                            .placement(family, Arity::from(fields.len()))
+                    }),
+                }
             },
             | Value::Hole(_) => Former::Unreadable(Unreadable::Hole),
             | Value::Mark { .. } => Former::Unreadable(Unreadable::Mark),

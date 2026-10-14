@@ -236,6 +236,7 @@ pub use crate::former::Arity;
 pub use crate::former::Component;
 pub use crate::former::Former;
 pub use crate::former::Name;
+pub use crate::former::Placement;
 pub use crate::former::Source;
 pub use crate::former::Unreadable;
 pub use crate::former::Unspelled;

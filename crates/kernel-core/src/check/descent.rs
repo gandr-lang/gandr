@@ -720,11 +720,12 @@ fn walk(
 /// - requires: `body` is the fixpoint's body, scoped under its self binder, and
 ///   `expected` its classifier.
 /// - ensures: success exactly when the classifier is a function out of a
-///   nominal data application, the body is a lambda whose body is a case on
-///   that lambda's variable with one branch per constructor, each branch opens
-///   exactly its constructor's fields by lambdas, and every occurrence of the
-///   self variable in the motive and the branches is a call at a field of the
-///   scrutinised constructor or at a function field's result.
+///   nominal data application, or out of a path its words read
+///   ([`crate::presented::Presentations::words`]), the body is a lambda whose
+///   body is a case on that lambda's variable with one branch per constructor,
+///   each branch opens exactly its constructor's fields by lambdas, and every
+///   occurrence of the self variable in the motive and the branches is a call
+///   at a field of the scrutinised constructor or at a function field's result.
 /// - provides: the ladder's first rung — a fixpoint whose claim replays unfolds
 ///   in conversion; the claim is checked, never searched for.
 /// - fails: the first reason the walk meets, in the order above.
@@ -756,9 +757,18 @@ pub(super) fn replay(
             return Err(refuse(DescentRefusal::NotOverData));
         },
     };
-    let Some(&ValueType::Data { declaration, .. }) = arena.value_type(domain)
-    else {
-        return Err(refuse(DescentRefusal::NotOverData));
+    // A path at a point free cells loop at descends over the words they mint.
+    let declaration = match arena.value_type(domain) {
+        | Some(&ValueType::Data { declaration, .. }) => declaration,
+        | Some(&ValueType::Path {
+            domain,
+            left,
+            right,
+        }) => judgement
+            .presentations
+            .words(arena, domain, (left, right))
+            .ok_or_else(|| refuse(DescentRefusal::NotOverData))?,
+        | _ => return Err(refuse(DescentRefusal::NotOverData)),
     };
     let signature = former::resolve(judgement, declaration)
         .map_err(|_not_data| refuse(DescentRefusal::NotOverData))?;

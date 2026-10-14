@@ -301,6 +301,8 @@ mod sealing;
 pub use self::data::Constructor;
 pub use self::data::DataForm;
 pub use self::data::Generators;
+pub use self::data::WordsForm;
+pub use self::data::closed_term;
 use self::functor::Applied;
 pub use self::functor::Functor;
 pub use self::functor::FunctorIndex;
@@ -633,6 +635,10 @@ pub enum Role
     /// entered in no name table, and named through the namespace as the atom
     /// it mints.
     Abstract,
+    /// The words of a `data` family's loops at one point: the presented type a
+    /// path at that point reads as, minted from the family's form and entered
+    /// in no namespace.
+    Words,
     /// A component of a functor's parameter: the template's stand-in for the
     /// argument's component, which each application renames and which
     /// declares nothing.
@@ -934,6 +940,18 @@ pub enum Operand
     /// The data declaration `data T … { … }` at this position of the
     /// collection's data list, lowered at the declaration form itself.
     Data(usize),
+    /// The words at this position of the collection's words list, minted
+    /// from the loops of the data declaration that wrote this half.
+    Words(usize),
+    /// The loop of the words at `words` whose letter is the `generator`-th:
+    /// the word of that one letter, at the path type of its point.
+    Loop
+    {
+        /// The words' position in the collection's words list.
+        words: usize,
+        /// The loop's position among the words' loops.
+        generator: usize,
+    },
     /// An operation of the data declaration that wrote this half, its body
     /// compiled from its rules by the plan the collection keeps for its slot.
     Operation,
@@ -1231,6 +1249,9 @@ pub struct Collected<'source>
     pub imports: ModuleImports<'source>,
     /// The data declarations, in source order.
     pub data: Vec<DataForm>,
+    /// The words of the data declarations' loops, one per point, in the order
+    /// they are admitted.
+    pub words: Vec<WordsForm>,
     /// Every constructor a data declaration declares, by name.
     pub constructors: BTreeMap<SurfaceName<'source>, Constructor>,
     /// Each callable operation's plan, by its slot.
@@ -1877,6 +1898,7 @@ pub fn collect<'source>(
             scopes: Vec::new(),
             imports: ModuleImports::new(),
             data: Vec::new(),
+            words: Vec::new(),
             constructors: BTreeMap::new(),
             operations: BTreeMap::new(),
             operation_names: BTreeMap::new(),
@@ -5391,6 +5413,8 @@ impl<'source> Collector<'_, 'source>
                 | Operand::Function
                 | Operand::Member(_)
                 | Operand::Data(_)
+                | Operand::Words(_)
+                | Operand::Loop { .. }
                 | Operand::Operation
                 | Operand::Signature
                 | Operand::Presented
