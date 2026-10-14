@@ -73,10 +73,13 @@
 //! recursive call at a field, `f[<](x)`, then answers the motive at `x`, and
 //! the `Loop(x)` arm the motive at `Loop(x)`; a leaf under such a root reads
 //! the scrutinee's variable as the constructor its branch matched, over the
-//! root's fields. Only a parameterless family is refined so: a family with
-//! parameters, the presentation's own and the words over a looped point keep
-//! the answer as written under the fields, and an answer that does not read
-//! the scrutinee is unchanged, its motive ignoring its binder.
+//! root's fields. A parameterless family is refined so, and so are the words
+//! over a looped point: a case over `p : Path(Circle, Base, Base)` answers
+//! its motive at `here(Base)`, `loop ∷ q` and `back(loop) ∷ q`, each the
+//! words' own constructor, which both checkers read at the path type. A
+//! family with parameters and the presentation's own keep the answer as
+//! written under the fields, and an answer that does not read the scrutinee
+//! is unchanged, its motive ignoring its binder.
 //!
 //! - Alternatives: a motive clause written on the case, a second spelling of
 //!   what the result type already states.
@@ -440,9 +443,6 @@ quenchant_shape::reason_enum! {
             /// The family has parameters, or is the presentation's own, so a
             /// constructor needs a written classifier the switch does not hold.
             Parameterised,
-            /// The words over a looped point: a case over them reads its
-            /// motive at no word yet, the path stratum's step.
-            Words,
         }
     }
 }
@@ -2888,7 +2888,14 @@ impl<'source> Lowerer<'_, 'source>
                 | _ => Maybe::Absent(bare::Absent::Parameterised),
             },
             | Generators::Presentation => Maybe::Absent(bare::Absent::Parameterised),
-            | Generators::Words(_) => Maybe::Absent(bare::Absent::Words),
+            | Generators::Words(words) => self
+                .collected
+                .words
+                .get(words)
+                .and_then(|written| self.collected.slots.get(usize::from(written.slot)))
+                .map_or(Maybe::Absent(bare::Absent::Parameterised), |slot| {
+                    Maybe::Present(slot.constant)
+                }),
         };
         let mut branches = Vec::with_capacity(arities.len());
         for (tag, &arity) in arities.iter().enumerate() {

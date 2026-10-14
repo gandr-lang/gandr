@@ -1,0 +1,365 @@
+// The circle's loop space, presented at the term stratum: `Loop(x)` is "x,
+// then the loop" and `Unloop(x)` "x, then its inverse", with the two
+// cancellations as rules, so these terms are, one stratum down, the words
+// that `Path(Circle, Base, Base)` is in `circle.gandr`, the book's circle.
+// Here the mechanism is stated on terms: the presented integers model the
+// circle's shape with laws that are conversion (`Winding`), a model over the
+// native integers owes its laws and a fold into it rests on them under
+// `respects` (`NativeWinding`), and the winding number and spinning are an
+// equivalence `Circle ≃ Int` whose round trips, `sect` and `retr`, are proved
+// by induction over each presented type.
+
+/// The circle as a presented type: its rules rewrite constructor terms, so a
+/// word normalizes to the loops it winds.
+@[ normalizes("Loop(Loop(Unloop(Unloop(Loop(Base))))) ~> Loop(Base)") ]
+data Circle : Type {
+  Base : Circle;
+  Loop : (x : Circle) --> Circle;
+  Unloop : (x : Circle) --> Circle;
+  rule Loop(Unloop(x)) ==> x;
+  rule Unloop(Loop(x)) ==> x;
+}
+
+/// A function that builds a word: one more loop.
+def around(c : Circle) -> -F Circle {
+  return Loop(c)
+}
+
+/// A run returns the word it builds.
+@[ runs("Loop(Loop(Base))") ]
+def twice : +U (-F Circle) ;
+def twice = thunk { become around(Loop(Base)) } ;
+
+/// Conversion reads a word by its normal form: a cancelled loop is a loop.
+@[ checks ]
+def cancelled : Path(Circle, Loop(Unloop(Loop(Base))), Loop(Base)) ;
+def cancelled = here(Loop(Base)) ;
+
+/// A path between words stands at the path between their normal forms.
+@[ checks ]
+def respelled : Path(Circle, Loop(Base), Loop(Base)) ;
+def respelled = cancelled ;
+
+/// Two words that both cancel to the point are one point.
+@[ checks ]
+def nested : Path(Circle, Unloop(Loop(Base)), Loop(Unloop(Base))) ;
+def nested = here(Base) ;
+
+/// No rule identifies a loop with the point.
+@[ refuses("EndpointMismatch") ]
+def around_once : Path(Circle, Loop(Base), Base) ;
+def around_once = here(Base) ;
+
+/// A case that tells a loop from its inverse, refused: `Unloop(Loop(Base))`
+/// and `Loop(Unloop(Base))` are one word, which it would read as 2 and 1.
+@[ refuses("RuleNotRespected") ]
+def tell(c : Circle) -> -F Integer {
+  case c {
+    Base => return 0,
+    Loop(x) => return 1,
+    Unloop(x) => return 2
+  }
+}
+
+/// The path from 2 to 1 that `tell` would carry `nested` to; with `tell`
+/// refused its applications do not compute, and the endpoints differ.
+@[ refuses("EndpointMismatch") ]
+def two_is_one() -> -F Path(Integer, 2, 1) {
+  become cong(tell, nested)
+}
+
+/// The mirror: a loop for an inverse and an inverse for a loop. At
+/// `Loop(Unloop(x))` it builds `Unloop(Loop(mirror(x)))`, which the second
+/// rule reads as `mirror(x)`, so it respects both rules and is admitted.
+def rec mirror(c : Circle) -> -F Circle {
+  case c {
+    Base => return Base,
+    Loop(x) => { run m <- mirror[<](x); return Unloop(m) },
+    Unloop(x) => { run m <- mirror[<](x); return Loop(m) }
+  }
+}
+
+/// The mirror of a loop is its inverse.
+@[ runs("Unloop(Base)") ]
+def mirrored : +U (-F Circle) ;
+def mirrored = thunk { become mirror(Loop(Base)) } ;
+
+/// Conversion runs an admitted fold at a closed word. Read by its normal
+/// form, `Loop(Unloop(Base))` is `Base`, whose mirror is `Base`; unfolded
+/// letter by letter, the mirror is `Unloop(Loop(Base))`, which is `Base`
+/// again. The two readings agree because the mirror respects the rules.
+@[ checks ]
+def mirror_cancelled : Path(Circle, mirror(Loop(Unloop(Base))), Base) ;
+def mirror_cancelled = here(Base) ;
+
+/// The mirror of a respelled loop is the inverse of the loop.
+@[ checks ]
+def mirror_respelled : Path(Circle, mirror(Loop(Unloop(Loop(Base)))), Unloop(Base)) ;
+def mirror_respelled = here(Unloop(Base)) ;
+
+/// The circle's shape: the same presentation as a signature models interpret.
+/// `Model` reads a `sign` block, so the shape is spelled apart from `Circle`.
+sign CircleShape {
+  sort Pt : Type;
+
+  oper base : Pt;
+  oper turn : (x : Pt) --> Pt;
+  oper unturn : (x : Pt) --> Pt;
+
+  rule turnUnturn : turn(unturn(x)) ==> x;
+  rule unturnTurn : unturn(turn(x)) ==> x;
+}
+
+/// The number of laws in a presentation's rule chain.
+def rec laws(chain : Sig) -> -F Integer {
+  case chain {
+    Rule(name, left, right, rest) => { run r <- laws[<](rest); return r + 1 },
+    _ => return 0
+  }
+}
+
+/// The number of laws a presentation states.
+def counted(presented : Sig) -> -F Integer {
+  case presented {
+    Presents(sorts, opers, rules) => become laws(rules),
+    _ => return 0
+  }
+}
+
+/// The shape's laws join, so its `Sig` value carries both as `Rule` entries.
+@[ runs("2") ]
+def shape_laws : +U (-F Integer) ;
+def shape_laws = thunk { become counted(CircleShape) } ;
+
+/// The integers, presented: zero, successor and predecessor, with the two
+/// cancellations as rules. Their critical pairs join, so a word normalizes to
+/// the successors or predecessors it counts.
+@[ normalizes("S(S(P(P(S(Z))))) ~> S(Z)") ]
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) ==> x;
+  rule P(S(x)) ==> x;
+}
+
+/// The presented integers as a model of the shape: `turn` the successor and
+/// `unturn` the predecessor. Each law is proved by `here`: conversion reads
+/// the inner call under the constructor the outer one builds, and the
+/// integers' rules cancel the pair.
+module Winding : Model(CircleShape) {
+  type Pt = Int;
+
+  def base() -> -F Int { return Z }
+
+  def turn(n : Int) -> -F Int { return S(n) }
+
+  def unturn(n : Int) -> -F Int { return P(n) }
+
+  @[ checks ]
+  def turnUnturn(n : Int) -> -F Path(Int, turn(unturn(n)), n) {
+    return here(n)
+  }
+
+  @[ checks ]
+  def unturnTurn(n : Int) -> -F Path(Int, unturn(turn(n)), n) {
+    return here(n)
+  }
+
+  @[ runs("S(S(Z))") ]
+  def wound() -> -F Int {
+    run b <- base() ;
+    run n <- turn(b) ;
+    become turn(n)
+  }
+}
+
+/// The same shape modelled over the native integers. The laws hold by
+/// arithmetic, which conversion leaves to the runtime, so each is owed, and
+/// a fold into this model rests on them.
+module NativeWinding : Model(CircleShape) {
+  type Pt = Integer;
+
+  def base() -> -F Integer { return 0 }
+
+  def turn(n : Integer) -> -F Integer { return n + 1 }
+
+  def unturn(n : Integer) -> -F Integer { return n - 1 }
+
+  @[ owes(1) ]
+  def turnUnturn : (n : Integer) => Path(Integer, turn(unturn(n)), n) ;
+
+  @[ owes(1) ]
+  def unturnTurn : (n : Integer) => Path(Integer, unturn(turn(n)), n) ;
+
+  @[ runs("2") ]
+  def wound() -> -F Integer {
+    run b <- base() ;
+    run n <- turn(b) ;
+    become turn(n)
+  }
+}
+
+/// The winding number, the fold out of the circle into the presented
+/// integers. At `Loop(Unloop(x))` it builds `S(P(wind(x)))`, whose normal form
+/// is `wind(x)`, so it respects both rules and is admitted.
+def rec wind(c : Circle) -> -F Int {
+  case c {
+    Base => return Z,
+    Loop(x) => { run n <- wind[<](x); return S(n) },
+    Unloop(x) => { run n <- wind[<](x); return P(n) }
+  }
+}
+
+/// Two loops wind twice.
+@[ runs("S(S(Z))") ]
+def twice_wound : +U (-F Int) ;
+def twice_wound = thunk { become wind(Loop(Loop(Base))) } ;
+
+/// A run builds the count letter by letter: a cancelled word winds to
+/// `S(P(Z))`, which conversion reads as `Z` (`wound_never`).
+@[ runs("S(P(Z))") ]
+def unwound : +U (-F Int) ;
+def unwound = thunk { become wind(Loop(Unloop(Base))) } ;
+
+/// Conversion runs the fold at a closed word: two loops are two successors.
+@[ checks ]
+def wound_twice : Path(Int, wind(Loop(Loop(Base))), S(S(Z))) ;
+def wound_twice = here(S(S(Z))) ;
+
+/// A cancelled word winds to zero in conversion.
+@[ checks ]
+def wound_never : Path(Int, wind(Loop(Unloop(Base))), Z) ;
+def wound_never = here(Z) ;
+
+/// The winding number into the native integers, a fold that rests on the
+/// native model's laws. At `Loop(Unloop(x))` it computes
+/// `turn(unturn(native_wind(x)))`, which conversion does not reduce to
+/// `native_wind(x)` on a variable; the law `turnUnturn` states exactly that
+/// path, so `respects` names it for the first rule and `unturnTurn` for the
+/// second. The loop arms call the model's operations rather than spelling
+/// `n + 1`, so each side the rule relates is the law's own endpoint. The fold
+/// checks and owes what its two laws owe.
+@[ respects((NativeWinding.turnUnturn, NativeWinding.unturnTurn)), owes(2) ]
+def rec native_wind(c : Circle) -> -F Integer {
+  case c {
+    Base => return 0,
+    Loop(x) => become NativeWinding.turn(native_wind[<](x)),
+    Unloop(x) => become NativeWinding.unturn(native_wind[<](x))
+  }
+}
+
+/// Two loops wind twice into the native integers.
+@[ runs("2") ]
+def native_twice : +U (-F Integer) ;
+def native_twice = thunk { become native_wind(Loop(Loop(Base))) } ;
+
+/// A cancelled word winds as its normal form does: not at all.
+@[ runs("0") ]
+def native_unwound : +U (-F Integer) ;
+def native_unwound = thunk { become native_wind(Loop(Unloop(Base))) } ;
+
+/// Spinning, the fold out of the presented integers into the circle: a
+/// successor is a loop and a predecessor an inverse. It recurses structurally
+/// and respects both rules as the winding number does.
+def rec spin(n : Int) -> -F Circle {
+  case n {
+    Z => return Base,
+    S(x) => { run c <- spin[<](x); return Loop(c) },
+    P(x) => { run c <- spin[<](x); return Unloop(c) }
+  }
+}
+
+/// Two successors spin twice around.
+@[ runs("Loop(Loop(Base))") ]
+def spun : +U (-F Circle) ;
+def spun = thunk { become spin(S(S(Z))) } ;
+
+/// Conversion runs spinning at a closed word: two successors are two loops.
+@[ checks ]
+def spun_twice : Path(Circle, spin(S(S(Z))), Loop(Loop(Base))) ;
+def spun_twice = here(Loop(Loop(Base))) ;
+
+/// A cancelled count spins to the point.
+@[ checks ]
+def spun_back : Path(Circle, spin(S(P(Z))), Base) ;
+def spun_back = here(Base) ;
+
+/// A predecessor spins to the inverse loop.
+@[ checks ]
+def spun_under : Path(Circle, spin(P(Z)), Unloop(Base)) ;
+def spun_under = here(Unloop(Base)) ;
+
+/// The round trip at a closed word: winding a loop and spinning the count
+/// gives the loop back. The inner call stands as the outer one's argument,
+/// and conversion runs both.
+@[ checks ]
+def spun_wound : Path(Circle, spin(wind(Loop(Base))), Loop(Base)) ;
+def spun_wound = here(Loop(Base)) ;
+
+/// The other round trip at a closed count: spinning two successors and
+/// winding the word counts two.
+@[ checks ]
+def wound_spun : Path(Int, wind(spin(S(S(Z)))), S(S(Z))) ;
+def wound_spun = here(S(S(Z))) ;
+
+/// A round trip returns the normal form, not the word it started from: a
+/// cancelled loop comes back as the loop.
+@[ checks ]
+def spun_wound_cancelled : Path(Circle, spin(wind(Loop(Unloop(Loop(Base))))), Loop(Base)) ;
+def spun_wound_cancelled = here(Loop(Base)) ;
+
+/// A respelled count comes back as its normal form, one predecessor.
+@[ checks ]
+def wound_spun_respelled : Path(Int, wind(spin(S(P(P(Z))))), P(Z)) ;
+def wound_spun_respelled = here(P(Z)) ;
+
+/// The round trip does not lose the loop: it is not the point.
+@[ refuses("EndpointMismatch") ]
+def spun_wound_lost : Path(Circle, spin(wind(Loop(Base))), Base) ;
+def spun_wound_lost = here(Base) ;
+
+/// One inverse loop more: the function the inverse letter applies, as
+/// `around` applies the loop.
+def unaround(c : Circle) -> -F Circle {
+  return Unloop(c)
+}
+
+/// Spinning undoes winding at every word: the round trip at a variable, by
+/// induction over the presented circle. The result type reads the word the
+/// fold descends on, so each arm answers it at its constructor and the
+/// recursive call at the field: `sect[<](x)` relates `spin(wind(x))` to `x`,
+/// and carried along `around` it relates `Loop(spin(wind(x)))`, which
+/// `spin(wind(Loop(x)))` runs to, to `Loop(x)`. The case respects both
+/// rules: at `Loop(Unloop(x))` the arms compose to `cong(around,
+/// cong(unaround, p))`, whose functions compose to the identity under the
+/// rules, so the chain is `p` itself, the answer at `x`.
+@[ checks ]
+def rec sect(c : Circle) -> -F Path(Circle, spin(wind(c)), c) {
+  case c {
+    Base => return here(Base),
+    Loop(x) => { run p <- sect[<](x); become cong(around, p) },
+    Unloop(x) => { run p <- sect[<](x); become cong(unaround, p) }
+  }
+}
+
+/// Winding undoes spinning at every count: the other round trip, by
+/// induction over the presented integers, a successor carried along the
+/// model's `turn` and a predecessor along its `unturn`.
+@[ checks ]
+def rec retr(n : Int) -> -F Path(Int, wind(spin(n)), n) {
+  case n {
+    Z => return here(Z),
+    S(x) => { run p <- retr[<](x); become cong(Winding.turn, p) },
+    P(x) => { run p <- retr[<](x); become cong(Winding.unturn, p) }
+  }
+}
+
+/// The circle's words and the presented integers are equivalent, by `wind`
+/// and `spin` with the two round trips at a variable. The later entries read
+/// `to` and `back`, so the record is their dependent pairs nested to the
+/// right, and its value nests the same way: `sect` and `retr` are checked at
+/// the types the record states once `to` is `wind` and `back` is `spin`.
+@[ checks ]
+def winding : #{to : +U (Circle -> -F Int), back : +U (Int -> -F Circle), sect : (c : Circle) => Path(Circle, back(to(c)), c), retr : (n : Int) => Path(Int, to(back(n)), n)} ;
+def winding = #{wind, #{spin, #{sect, retr}}} ;

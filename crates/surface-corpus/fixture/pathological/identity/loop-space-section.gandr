@@ -1,0 +1,78 @@
+// Two proofs by induction over the presented circle that prove nothing. The
+// first forgets to carry the loop: its loop arm answers with the field's
+// path, whose endpoints are not the loop's. The second carries the loop but
+// answers the inverse apart, so the two sides of a cancellation are two
+// different paths.
+
+/// The circle, presented by its two cancellations.
+data Circle : Type {
+  Base : Circle;
+  Loop : (x : Circle) --> Circle;
+  Unloop : (x : Circle) --> Circle;
+  rule Loop(Unloop(x)) ==> x;
+  rule Unloop(Loop(x)) ==> x;
+}
+
+/// The integers, presented the same way.
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) ==> x;
+  rule P(S(x)) ==> x;
+}
+
+/// The winding number: a loop counts one up, an inverse one down.
+def rec wind(c : Circle) -> -F Int {
+  case c {
+    Base => return Z,
+    Loop(x) => { run n <- wind[<](x); return S(n) },
+    Unloop(x) => { run n <- wind[<](x); return P(n) }
+  }
+}
+
+/// Spinning: a successor is a loop, a predecessor an inverse.
+def rec spin(n : Int) -> -F Circle {
+  case n {
+    Z => return Base,
+    S(x) => { run c <- spin[<](x); return Loop(c) },
+    P(x) => { run c <- spin[<](x); return Unloop(c) }
+  }
+}
+
+/// One loop more.
+def around(c : Circle) -> -F Circle {
+  return Loop(c)
+}
+
+/// One inverse loop more.
+def unaround(c : Circle) -> -F Circle {
+  return Unloop(c)
+}
+
+/// A forged section: the loop arm answers with the field's path unchanged,
+/// typed at the motive at `x`, where the arm owes the motive at `Loop(x)`:
+/// a path from `Loop(spin(wind(x)))` to `Loop(x)`. The two path types do not
+/// convert, and the arm is refused.
+@[ refuses("TypeMismatch") ]
+def rec forged(c : Circle) -> -F Path(Circle, spin(wind(c)), c) {
+  case c {
+    Base => return here(Base),
+    Loop(x) => become forged[<](x),
+    Unloop(x) => { run p <- forged[<](x); become cong(unaround, p) }
+  }
+}
+
+/// A path at every word whose inverse arm drops its field's path: each arm
+/// checks at its constructor, but at `Loop(Unloop(x))` the loop arm carries
+/// the inverse arm's reflexivity to `here(x)`, which is not the path at `x`
+/// the rule's right side reads. Read as a set, the circle would identify
+/// the two; a presented type is not read as one.
+@[ refuses("RuleNotRespected") ]
+def rec rewound(c : Circle) -> -F Path(Circle, c, c) {
+  case c {
+    Base => return here(Base),
+    Loop(x) => { run p <- rewound[<](x); become cong(around, p) },
+    Unloop(x) => return here(Unloop(x))
+  }
+}

@@ -30,7 +30,9 @@
 //! side of the goal mentions, is `y` itself: each `rᵢ` evaluated through every
 //! manifest definition ([`Definitions::manifest`]), and the last taken to its
 //! presented normal form ([`normal_form`]). A fused chain converts with
-//! `return p`.
+//! `return p`. The words over a looped point are a presented type too, their
+//! cancellations its rules, so the same reading fuses a chain of conses one
+//! stratum up: `loop ∷ back(loop) ∷ y` is `y` in normal form.
 //!
 //! The conversion machine reads each side of a pair this way before it plans
 //! the pair — a computation, or a returned endpoint by the computation it
