@@ -1,6 +1,8 @@
 // The circle and the integers without a higher inductive type. The circle is
 // presented by a point, a loop and its inverse, with the two cancellations
 // as rules; its shape is a signature, and the integers are a model of it.
+// The winding number folds the circle into the integers, and the
+// equivalence between them is owed.
 
 /// The circle as a presented type: its rules rewrite constructor terms, so a
 /// word normalizes to the loops it winds.
@@ -102,3 +104,29 @@ module Winding : Model(CircleShape) {
     become turn(n)
   }
 }
+
+/// The winding number, the fold out of the circle into the integers. `case`
+/// admits its arms without checking that they respect the rules; these do.
+def rec wind(c : Circle) -> -F Integer {
+  case c {
+    Base => return 0,
+    Loop(x) => { run n <- wind[<](x); return n + 1 },
+    Unloop(x) => { run n <- wind[<](x); return n - 1 }
+  }
+}
+
+/// Two loops wind twice.
+@[ runs("2") ]
+def twice_wound : +U (-F Integer) ;
+def twice_wound = thunk { become wind(Loop(Loop(Base))) } ;
+
+/// A cancelled word winds as its normal form does: not at all.
+@[ runs("0") ]
+def unwound : +U (-F Integer) ;
+def unwound = thunk { become wind(Loop(Unloop(Base))) } ;
+
+/// The circle's words and the integers are equivalent. Each round trip is
+/// proved by induction over the presented type, which needs its eliminator
+/// with dependent elimination, so the record is owed until then.
+@[ owes(1) ]
+def winding : #{to : +U (Circle -> -F Integer), back : +U (Integer -> -F Circle), sect : (c : Circle) => Path(Circle, back(to(c)), c), retr : (n : Integer) => Path(Integer, to(back(n)), n)} ;
