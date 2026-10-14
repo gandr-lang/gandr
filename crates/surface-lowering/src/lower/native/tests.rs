@@ -1534,14 +1534,16 @@ fn a_pattern_at_a_dependent_record_splits_it_under_its_motive()
 /// constructor: the data case's motive reads its scrutinee, a leaf reads the
 /// scrutinee as its branch's constructor over the branch's fields, and a
 /// recursive call at a field answers the motive there, so a cong of it
-/// answers the successor's branch. A case whose answer names another
-/// variable keeps its scrutinee in the leaves.
+/// answers the successor's branch. The words over a looped point are such a
+/// family, so a case over a path at the point reads its empty-word leaf at
+/// the empty word. A case whose answer names another variable keeps its
+/// scrutinee in the leaves.
 #[test]
 fn a_case_over_a_variable_answers_its_motive_at_each_constructor()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def next(n : Nat) -> -F Nat {{ return Succ(n) }}\ndef rec still(n : Nat) -> -F Path(Nat, n, n) {{ case n {{ Zero => return here(n), Succ(p) => {{ run q <- still[<](p); become cong(next, q) }} }} }}\ndef kept(n : Nat, m : Nat) -> -F Path(Nat, m, m) {{ case n {{ Zero => return here(m), Succ(p) => return here(m) }} }}\n"
+        "{NAT}def next(n : Nat) -> -F Nat {{ return Succ(n) }}\ndef rec still(n : Nat) -> -F Path(Nat, n, n) {{ case n {{ Zero => return here(n), Succ(p) => {{ run q <- still[<](p); become cong(next, q) }} }} }}\ndef kept(n : Nat, m : Nat) -> -F Path(Nat, m, m) {{ case n {{ Zero => return here(m), Succ(p) => return here(m) }} }}\ndata Circle : Type {{ Base : Circle; loop : Base <-> Base; }}\ndef loopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {{ return loop ∷ p }}\ndef unloopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {{ return back(loop) ∷ p }}\ndef rec looped(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p, p) {{ case p {{ here => return here(p), loop ∷ q => {{ run r <- looped[<](q); become cong(loopOn, r) }}, back(loop) ∷ q => {{ run r <- looped[<](q); become cong(unloopOn, r) }} }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let cased = |arena: &CoreArena, name: &str| {
@@ -1588,6 +1590,31 @@ fn a_case_over_a_variable_answers_its_motive_at_each_constructor()
     assert!(
         matches!(returned_at_zero(&arena, &branches), Value::Constructor { tag, .. } if tag == ConstructorTag::from(0_usize)),
         "the zero leaf reads the scrutinee as `Zero`"
+    );
+
+    let words = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.role() == crate::module::Role::Words)
+        .map(crate::module::LoweredDeclaration::constant)
+        .expect("the circle's loop mints its words");
+    let (motive, branches) = cased(&arena, "looped");
+    assert!(
+        matches!(
+            gandr_core_term::strengthen_comp_type(&mut arena, motive),
+            Maybe::Absent(_)
+        ),
+        "the motive over a word reads the word it abstracts"
+    );
+    let Value::Constructor { datatype, tag, .. } = returned_at_zero(&arena, &branches)
+    else {
+        panic!("the empty-word leaf reads the scrutinee as a word");
+    };
+    assert!(
+        tag == ConstructorTag::from(0_usize)
+            && matches!(arena.value_type(datatype), Some(&ValueType::Data { declaration, ref arguments })
+                if declaration == words && arguments.is_empty()),
+        "the empty-word leaf reads the scrutinee as the empty word"
     );
 
     let (motive, branches) = cased(&arena, "kept");
