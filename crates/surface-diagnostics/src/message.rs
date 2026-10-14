@@ -432,6 +432,9 @@ fn checked(
         | CheckRefusal::RuleNotPresentable { .. } => {
             f.write_str("these rules do not present the datatype")
         },
+        | CheckRefusal::RuleNotRespected { .. } => {
+            f.write_str("this case might tell apart terms its datatype's rules identify")
+        },
         | CheckRefusal::AbstractKindNotUniverse(_) => {
             f.write_str("an abstract type's kind must be a universe")
         },
@@ -969,6 +972,10 @@ mod tests
                     rule: gandr_kernel_term::RuleIndex::from(0_usize),
                     fault: gandr_kernel_term::RuleFault::NotDecreasing,
                 },
+            },
+            CheckRefusal::RuleNotRespected {
+                at: computation,
+                rule: gandr_kernel_term::RuleIndex::from(0_usize),
             },
             CheckRefusal::AbstractKindNotUniverse(value_type),
             CheckRefusal::RepresentationAboveKind {

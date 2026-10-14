@@ -4841,6 +4841,11 @@ where
             writer.count(Count(usize::from(refusal.rule)))?;
             write_listed(writer, &RULE_FAULTS, &refusal.fault)?;
         },
+        | Refusal::RuleNotRespected { at, rule } => {
+            writer.tag(Tag(73));
+            write_site(writer, at)?;
+            writer.count(Count(usize::from(rule)))?;
+        },
         | Refusal::AbstractKindNotUniverse(at) => {
             writer.tag(Tag(48));
             write_site(writer, at)?;
@@ -5386,6 +5391,7 @@ where
                     Refusal::DataKindNotUniverse(_) => 20,
                     Refusal::DataFieldLevel {..} => 21,
                     Refusal::RuleNotPresentable {..} => 72,
+                    Refusal::RuleNotRespected {..} => 73,
                     Refusal::DataArgumentArity(_) => 22,
                     Refusal::UnknownConstructor {..} => 23,
                     Refusal::ConstructorArity(_) => 24,
@@ -5481,6 +5487,10 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 kind,
                 refusal: gandr_kernel_term::RuleRefusal { rule, fault },
             }
+        },
+        | 73 => Refusal::RuleNotRespected {
+            at: read_site(reader)?,
+            rule: gandr_kernel_term::RuleIndex::from(reader.count()?.0),
         },
         | 22 => Refusal::DataArgumentArity(read_site(reader)?),
         | 23 => Refusal::UnknownConstructor {

@@ -362,6 +362,50 @@ mod native_formers
     }
 
     #[test]
+    fn a_case_over_a_presented_type_is_refused()
+    {
+        let looped = ConstructorTag::from(1_usize);
+        let unlooped = ConstructorTag::from(2_usize);
+        for (rules, presented) in [(cancellations(), true), (vec![], false)] {
+            let mut arena = CoreArena::new();
+            // `Loop(Unloop(Base))`, which the rules identify with `Base`.
+            let scrutinee = word(&mut arena, &[looped, unlooped]);
+            let unit_type = arena.value_type_unit();
+            let unit = arena.value_unit();
+            let motive = arena.comp_type_returner(unit_type);
+            let returned = arena.computation_return(unit);
+            let lettered = arena.computation_lambda(returned);
+            let case =
+                arena.computation_data_case(scrutinee, motive, vec![returned, lettered, lettered]);
+            let body = arena.value_thunk(case);
+            let declared = arena.value_type_thunk(motive);
+            let declarations = vec![
+                circle(&mut arena, rules),
+                definition(ConstantIndex::from(1_usize), declared, body),
+            ];
+            let (report, crossed) = run(&mut arena, &declarations);
+            assert_eq!(report.judged()[0].verdict(), Verdict::Data);
+            if presented {
+                assert_eq!(
+                    report.judged()[1].verdict(),
+                    Verdict::Refused(CheckRefusal::RuleNotRespected {
+                        at: case,
+                        rule: gandr_kernel_term::RuleIndex::from(0_usize),
+                    }),
+                    "a case over the circle is refused at its first rule"
+                );
+            }
+            else {
+                assert!(
+                    matches!(crossed.readmitted()[1].outcome(), Outcome::Defined { .. }),
+                    "the same case over a free circle checks and readmits: {:?}",
+                    crossed.readmitted()[1].outcome()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn dependent_data_parameters_and_case_motives()
     {
         let mut arena = CoreArena::new();

@@ -534,6 +534,7 @@ fn checking_row(
         | CheckRefusal::DataKindNotUniverse(_)
         | CheckRefusal::DataFieldLevel { .. }
         | CheckRefusal::RuleNotPresentable { .. }
+        | CheckRefusal::RuleNotRespected { .. }
         | CheckRefusal::AbstractKindNotUniverse(_)
         | CheckRefusal::RepresentationAboveKind { .. }
         | CheckRefusal::NotAnAbstractType(_)
