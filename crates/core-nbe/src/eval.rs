@@ -638,7 +638,8 @@ impl LoweredChain
 /// The three travel together because the answer to "is this definition manifest
 /// here" needs all three, and splitting them across parameters is how a call
 /// site ends up asking the root scope by accident. The endpoint stance travels
-/// with them because it, too, decides where a definition unfolds.
+/// with them because it, too, decides where a definition unfolds, and so does
+/// the constant stance.
 #[derive(Clone, Copy, Debug)]
 pub struct Definitions<'run>
 {
@@ -650,6 +651,20 @@ pub struct Definitions<'run>
     scope: ScopeId,
     /// How a compound endpoint's computation reads.
     endpoints: Endpoints,
+    /// Whether a manifest definition unfolds at all.
+    constants: Constants,
+}
+
+/// Whether a run unfolds the definitions its scope reads as manifest.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Constants
+{
+    /// A definition the scope reads as manifest unfolds.
+    Unfold,
+    /// No definition unfolds: every constant is compared by name, as the
+    /// kernel's own conversion compares it. A presented type's terms still
+    /// read by their normal forms.
+    Rigid,
 }
 
 /// How a run reads a compound endpoint's computation.
@@ -692,7 +707,8 @@ impl<'run> Definitions<'run>
     #[spec(
         ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret.chain), core::ptr::from_ref(chain))
             && core::ptr::eq(core::ptr::from_ref(ret.environment), core::ptr::from_ref(environment))
-            && ret.scope == scope && ret.endpoints == Endpoints::Run,
+            && ret.scope == scope && ret.endpoints == Endpoints::Run
+            && ret.constants == Constants::Unfold,
     )]
     pub fn new(
         chain: &'run LoweredChain,
@@ -705,6 +721,7 @@ impl<'run> Definitions<'run>
             environment,
             scope,
             endpoints: Endpoints::Run,
+            constants: Constants::Unfold,
         }
     }
 
@@ -739,6 +756,39 @@ impl<'run> Definitions<'run>
     ) -> Self
     {
         Self { endpoints, ..self }
+    }
+
+    /// The same definitions, unfolding none of them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the chain, the environment, the scope and the endpoint stance
+    ///   unchanged; the constant stance [`Constants::Rigid`], so
+    ///   [`Self::unfolding`] answers [`Unfolding::Rigid`] for every constant.
+    /// - provides: the δ-free conversion a case's respect for its type's rules
+    ///   is decided by, the one the kernel re-derives with no engine trace.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one manifest definition carries its body unforced
+    ///   under the unfolding stance and is rigid under this one; a stance that
+    ///   does not reach the lookup loses the distinction.
+    /// - witness: `eval::tests::a_rigid_run_unfolds_no_definition`
+    #[inline]
+    #[must_use]
+    #[spec(
+        ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret.chain), core::ptr::from_ref(self.chain))
+            && core::ptr::eq(core::ptr::from_ref(ret.environment), core::ptr::from_ref(self.environment))
+            && ret.scope == self.scope && ret.endpoints == self.endpoints
+            && ret.constants == Constants::Rigid,
+    )]
+    pub fn rigid(self) -> Self
+    {
+        Self {
+            constants: Constants::Rigid,
+            ..self
+        }
     }
 
     /// How this run reads a compound endpoint's computation.
@@ -813,8 +863,9 @@ impl<'run> Definitions<'run>
     /// - requires: nothing — an unknown constant and an unknown scope are both
     ///   admissible input.
     /// - ensures: [`Unfolding::Unforced`] naming the body's content id exactly
-    ///   when the chain holds a body for `constant` **and** this scope reads it
-    ///   as manifest; [`Unfolding::Rigid`] otherwise, which covers an axiom, a
+    ///   when the run unfolds definitions, the chain holds a body for
+    ///   `constant` **and** this scope reads it as manifest;
+    ///   [`Unfolding::Rigid`] otherwise, which covers a rigid run, an axiom, a
     ///   sealed atom, a definition sealed by an enclosing scope, and a scope
     ///   this environment never opened.
     /// - provides: the one place a scope's transparency reaches the domain, so
@@ -826,28 +877,33 @@ impl<'run> Definitions<'run>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decision surfaces are the chain lookup, the
-    ///   transparency lookup and the unknown-scope degradation, separated by a
-    ///   manifest definition, the same definition sealed in an enclosing scope,
-    ///   an admission position with no body, and a scope that was never opened.
+    /// - hypothesis: L3 — the decision surfaces are the constant stance, the
+    ///   chain lookup, the transparency lookup and the unknown-scope
+    ///   degradation, separated by a manifest definition read rigidly, the same
+    ///   definition sealed in an enclosing scope, an admission position with no
+    ///   body, and a scope that was never opened.
     /// - witness: `eval::tests::a_manifest_definition_carries_its_body_unforced`
     /// - witness: `eval::tests::a_sealed_definition_is_rigid`
+    /// - witness: `eval::tests::a_rigid_run_unfolds_no_definition`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match self.chain.chain().entry(constant) {
-        | Some(entry) => {
+        | Some(entry) if self.constants == Constants::Unfold => {
             match self.environment.transparency(self.scope, constant, entry.declared()) {
                 | Ok(Transparency::Manifest) => ret == Unfolding::Unforced(entry.body()),
                 | Ok(Transparency::Opaque) | Err(_) => ret == Unfolding::Rigid,
             }
         },
-        | None => ret == Unfolding::Rigid,
+        | Some(_) | None => ret == Unfolding::Rigid,
     })]
     pub fn unfolding(
         &self,
         constant: ConstantIndex,
     ) -> Unfolding
     {
+        if self.constants == Constants::Rigid {
+            return Unfolding::Rigid;
+        }
         let Some(entry) = self.chain.chain().entry(constant)
         else {
             return Unfolding::Rigid;
@@ -7043,6 +7099,42 @@ mod tests
         assert!(
             held.spine().is_empty(),
             "and stands in a value position, so it carries no spine"
+        );
+    }
+
+    #[test]
+    fn a_rigid_run_unfolds_no_definition()
+    {
+        let mut core = CoreArena::new();
+        let constant = ConstantIndex::from(0_usize);
+        let reference = core.value_constant(constant);
+        let mut chain = DefinitionChain::new();
+        let body = GlobalIndex::from(9_u32);
+        let defined = chain.define(constant, body, Transparency::Manifest, &[]);
+        assert!(defined.is_ok());
+        let chain = lowered_to(chain, reference);
+        let environment = DefinitionalEnvironment::new();
+        let unfolding = Definitions::new(&chain, &environment, environment.root());
+        assert_eq!(unfolding.unfolding(constant), Unfolding::Unforced(body));
+        let rigid = unfolding.rigid();
+        assert_eq!(
+            rigid.unfolding(constant),
+            Unfolding::Rigid,
+            "the same manifest definition is compared by name"
+        );
+        let mut domain = DomainArena::new();
+        let evaluated = eval_value(&core, &mut domain, rigid, ample(), reference)
+            .expect("a constant evaluates to a neutral");
+        let Some(&DomainValue::Neutral { neutral, .. }) = domain.value(evaluated)
+        else {
+            panic!("a constant is stuck");
+        };
+        assert_eq!(
+            domain
+                .neutral(neutral)
+                .map(super::super::domain::Neutral::unfolding),
+            Some(Unfolding::Rigid),
+            "and the evaluator reads it there"
         );
     }
 

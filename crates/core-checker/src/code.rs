@@ -78,8 +78,10 @@ use anodized::spec;
 use gandr_core_nbe::BinderLevel;
 use gandr_core_nbe::Definitions;
 use gandr_core_nbe::DomainArena;
+use gandr_core_nbe::DomainCompId;
 use gandr_core_nbe::Endpoints;
 use gandr_core_nbe::Environment;
+use gandr_core_nbe::EvalFault;
 use gandr_core_nbe::Fuel;
 use gandr_core_nbe::LoweredChain;
 use gandr_core_nbe::MachineSettings;
@@ -1228,11 +1230,6 @@ impl CodeDefinitions
     /// # Errors
     /// - [`CheckRefusal::Undecided`] — as above.
     ///
-    /// # Termination
-    /// - reason: the `for` loop binds one rigid variable per open binder, not
-    ///   recursion; the machine runs under its own fuel.
-    /// - measure: the binders left to bind.
-    ///
     /// # Adequacy
     /// - hypothesis: L3 — negation after negation returns its input at both
     ///   injections and the trace replays in the kernel; the identity after
@@ -1253,38 +1250,8 @@ impl CodeDefinitions
         let definitions =
             Definitions::new(&self.lowered, &self.environment, self.environment.root());
         let mut domain = DomainArena::new();
-        let mut environment = Environment::new();
-        for level in 0 .. open.0 {
-            let neutral = domain
-                .neutral_node(
-                    NeutralHead::Variable {
-                        zone: Zone::Intuitionistic,
-                        level: BinderLevel::from(level),
-                    },
-                    Vec::new(),
-                    Unfolding::Rigid,
-                )
-                .map_err(|_fault| undecided)?;
-            let bound = domain
-                .value_neutral(neutral, TermFace::Reduced)
-                .map_err(|_fault| undecided)?;
-            environment.extend(Zone::Intuitionistic, bound);
-        }
-        let fuel = Fuel::from(CODE_FUEL);
-        let evaluate = |domain: &mut DomainArena, term: ComputationId| {
-            gandr_core_nbe::eval_comp_within(
-                core,
-                domain,
-                definitions,
-                fuel,
-                term,
-                environment.clone(),
-            )
-            .map(|(produced, _remaining)| produced)
-            .map_err(|_fault| undecided)
-        };
-        let one = evaluate(&mut domain, left)?;
-        let other = evaluate(&mut domain, right)?;
+        let (one, other) = evaluated_pair(core, &mut domain, definitions, (left, right), open)
+            .map_err(|_fault| undecided)?;
         let mut log = TraceLog::new();
         let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
             core,
@@ -1306,6 +1273,71 @@ impl CodeDefinitions
                 Maybe::Absent(converted::Absent::Apart)
             },
         })
+    }
+
+    /// Decide whether two computations standing under the same binders
+    /// convert with no definition unfolding: each evaluated with the binders
+    /// either reaches read as rigid variables and every constant compared by
+    /// name, a presented type's terms read by their normal forms.
+    ///
+    /// # Specification
+    /// - requires: both computations live in `core` and stand under the same
+    ///   binders.
+    /// - ensures: `Present` exactly when the machine finds the pair convertible
+    ///   under [`gandr_core_nbe::Constants::Rigid`];
+    ///   [`converted::Absent::Apart`] when it refutes or declines the pair, and
+    ///   when either side does not evaluate or the machine faults.
+    /// - provides: the δ-free conversion a case's respect for its type's rules
+    ///   is decided by, the one the kernel re-derives by its own forced rules,
+    ///   where no constant unfolds either. A pair it cannot decide is not shown
+    ///   convertible, which refuses rather than admits.
+    /// - fails: never — a fault is an apart answer.
+    /// - panics: none.
+    /// - executable: none — the verdict is the machine's on terms it evaluates;
+    ///   the witnesses observe both answers through the case rule.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fixpoint over the circle that recurses through both
+    ///   inverse letters meets itself at the cancelled word, and a case reading
+    ///   the letter as written does not.
+    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+    #[inline]
+    pub fn convert_rigidly(
+        &self,
+        core: &CoreArena,
+        (left, right): (ComputationId, ComputationId),
+    ) -> Maybe<(), converted::Absent>
+    {
+        let apart = Maybe::Absent(converted::Absent::Apart);
+        let reach = |side| loose_reach(core, CoreNode::Term(TermNode::Computation(side)));
+        let (Ok(one), Ok(other)) = (reach(left), reach(right))
+        else {
+            return apart;
+        };
+        let Ok(open) = u32::try_from(usize::from(one).max(usize::from(other)))
+        else {
+            return apart;
+        };
+        let open = OpenBinders(open);
+        let definitions =
+            Definitions::new(&self.lowered, &self.environment, self.environment.root()).rigid();
+        let mut domain = DomainArena::new();
+        let Ok((one, other)) = evaluated_pair(core, &mut domain, definitions, (left, right), open)
+        else {
+            return apart;
+        };
+        let decided = decide::<NullSink, ResharingMemo>(
+            core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::computations(one, other).under(BinderLevel::from(open.0)),
+            &mut NullSink,
+        );
+        match decided.map(|report| report.verdict()) {
+            | Ok(MachineVerdict::Convertible) => Maybe::Present(()),
+            | Ok(MachineVerdict::NotConvertible | MachineVerdict::Declined(_)) | Err(_) => apart,
+        }
     }
 
     /// Evaluate the closed claim `claim`, `thunk (λⁿ. M)`, to the value its
@@ -1685,6 +1717,69 @@ fn rigid_problem(
     let one = evaluate(left)?;
     let other = evaluate(right)?;
     Ok(Problem::values(one, other).under(BinderLevel::from(open)))
+}
+
+/// Evaluate two computations standing under `open` binders, each binder read
+/// as a rigid variable, in one environment.
+///
+/// # Specification
+/// - requires: both computations live in `core`; neither reaches past `open`
+///   binders.
+/// - ensures: both evaluations, in the order given, over one environment of
+///   `open` rigid intuitionistic variables, the innermost binder the newest.
+/// - provides: the shared preamble of [`CodeDefinitions::trace_conversion`] and
+///   [`CodeDefinitions::convert_rigidly`], which differ in what unfolds and in
+///   the sink.
+/// - fails: the evaluator's fault, for a side that does not evaluate or a
+///   neutral the domain cannot mint.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `for` loop binds one rigid variable per open binder, not
+///   recursion; evaluation runs under its own fuel.
+/// - measure: the binders left to bind.
+///
+/// # Adequacy
+/// - hypothesis: L3 — negation after negation returns its input under the
+///   pattern's binders and traces, which needs the rigid environment.
+/// - witness: `equiv::tests::an_involution_is_its_own_inverse_by_computation`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(one, other)| domain.computation(one).is_some() && domain.computation(other).is_some()))]
+fn evaluated_pair(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    (left, right): (ComputationId, ComputationId),
+    open: OpenBinders,
+) -> Result<(DomainCompId, DomainCompId), EvalFault>
+{
+    let mut environment = Environment::new();
+    for level in 0 .. open.0 {
+        let neutral = domain
+            .neutral_node(
+                NeutralHead::Variable {
+                    zone: Zone::Intuitionistic,
+                    level: BinderLevel::from(level),
+                },
+                Vec::new(),
+                Unfolding::Rigid,
+            )
+            .map_err(EvalFault::Domain)?;
+        let bound = domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .map_err(EvalFault::Domain)?;
+        environment.extend(Zone::Intuitionistic, bound);
+    }
+    let fuel = Fuel::from(CODE_FUEL);
+    let mut evaluate = |term: ComputationId| {
+        gandr_core_nbe::eval_comp_within(core, domain, definitions, fuel, term, environment.clone())
+            .map(|(produced, _remaining)| produced)
+    };
+    let one = evaluate(left)?;
+    let other = evaluate(right)?;
+    Ok((one, other))
 }
 
 /// How many binders outside `root` its free intuitionistic variables reach:

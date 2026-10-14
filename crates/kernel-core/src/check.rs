@@ -1548,6 +1548,9 @@ enum Frame
     /// Check a motive and constructor-specific branches after scrutinee
     /// synthesis.
     DataCase(ComputationId),
+    /// Decide that a case over a presented type respects the type's rules,
+    /// once its branches have checked.
+    Respect(ComputationId, respect::Reading),
     /// Form a dependent split's motive and check its body after scrutinee
     /// synthesis.
     SigmaSplit(ComputationId),
@@ -2207,6 +2210,14 @@ where
     } = recording;
     let mut frames: Vec<Frame> = Vec::new();
     let mut goal = initial;
+    // The case a structural fixpoint opens with, read as that fixpoint against
+    // its type's rules, until the case is met. The goals between the two —
+    // the fixpoint's lambda and the case itself — are neither recalled nor
+    // memoized: a bare `λg. λy. case y` in a context of the same types is the
+    // same goal, and it owes the case's own obligation, which the root does
+    // not.
+    let mut root: Maybe<(ComputationId, respect::Reading), respect::root::Absent> =
+        Maybe::Absent(respect::root::Absent::Unmarked);
     'expand: loop {
         // Consult the memo for this goal's support before reading the node.
         // When the memo is inactive this whole block — the support
@@ -2214,7 +2225,7 @@ where
         // monomorphization removes, so the memoless path compiles to the code
         // it would have with no memo at all.
         let mut recalled: Option<Produced> = None;
-        if matches!(M::ACTIVITY, MemoActivity::Active) {
+        if matches!(M::ACTIVITY, MemoActivity::Active) && matches!(root, Maybe::Absent(_)) {
             let support = NodeSupport::build(arena, session, goal.support(), context.as_slice());
             if let Some(hit) = memo.recall(&support) {
                 recalled = match Produced::of_outcome(hit.outcome()) {
@@ -3092,6 +3103,7 @@ where
                             | FixpointEvidence::Partial => {},
                             | FixpointEvidence::StructuralDescent => {
                                 descent::replay(arena, judgement, expected, body)?;
+                                root = respect::fold_root(arena, id, expected, body);
                             },
                         }
                         let recursive = arena.value_type_thunk(expected);
@@ -3286,8 +3298,22 @@ where
                     );
                     let _bound = context.pop();
                     let _level = formed?;
+                    let reading = match core::mem::replace(
+                        &mut root,
+                        Maybe::Absent(respect::root::Absent::Unmarked),
+                    ) {
+                        | Maybe::Present((marked, reading)) if marked == case => reading,
+                        | Maybe::Present(_) | Maybe::Absent(_) => {
+                            respect::Reading::Case { datatype }
+                        },
+                    };
                     let (result, mut goals) =
                         former::case(arena, judgement.entries, session, case, datatype)?;
+                    if let Maybe::Present(reading) =
+                        respect::obliged(arena, judgement.entries, datatype, reading)
+                    {
+                        frames.push(Frame::Respect(case, reading));
+                    }
                     goals.reverse();
                     if let Some(next) = goals.pop() {
                         frames.push(Frame::Pending(goals, Produced::CompType(result)));
@@ -3295,6 +3321,15 @@ where
                         continue 'expand;
                     }
                     produced = Produced::CompType(result);
+                },
+                | Frame::Respect(case, reading) => {
+                    respect::respected(
+                        arena,
+                        judgement.entries,
+                        judgement.presentations,
+                        case,
+                        reading,
+                    )?;
                 },
                 // A dependent split forms its motive under the scrutinee's
                 // binder, checks its body under the two components against the
@@ -6918,5 +6953,7 @@ mod tests
 mod descent;
 
 mod former;
+
+mod respect;
 
 mod occurrence;

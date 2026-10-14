@@ -976,6 +976,8 @@ mod tests
             CheckRefusal::RuleNotRespected {
                 at: computation,
                 rule: gandr_kernel_term::RuleIndex::from(0_usize),
+                left: value,
+                right: value,
             },
             CheckRefusal::AbstractKindNotUniverse(value_type),
             CheckRefusal::RepresentationAboveKind {

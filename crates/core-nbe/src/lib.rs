@@ -403,6 +403,7 @@ pub use crate::domain::Unfolding;
 pub use crate::duplicate::DuplicationFault;
 pub use crate::duplicate::duplicate_computation;
 pub use crate::duplicate::duplicate_value;
+pub use crate::eval::Constants;
 pub use crate::eval::Definitions;
 pub use crate::eval::Endpoints;
 pub use crate::eval::EvalFault;

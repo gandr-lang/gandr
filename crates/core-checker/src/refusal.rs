@@ -425,13 +425,19 @@ pub enum CheckRefusal
         refusal: gandr_kernel_term::RuleRefusal,
     },
     /// A case over a presented type is not shown to respect one of the type's
-    /// rules: its arms might tell apart two terms the rule identifies.
+    /// rules: under its arms the rule's two sides do not convert, so it might
+    /// tell apart two terms the rule identifies.
     RuleNotRespected
     {
         /// The case.
         at: ComputationId,
         /// The first rule the case is not shown to respect.
         rule: gandr_kernel_term::RuleIndex,
+        /// The rule's left side, built over one fresh variable per pattern
+        /// variable.
+        left: ValueId,
+        /// The rule's right side, over the same variables.
+        right: ValueId,
     },
     /// An abstract type's kind is not a value universe.
     AbstractKindNotUniverse(ValueTypeId),

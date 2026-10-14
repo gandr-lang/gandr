@@ -311,7 +311,7 @@ mod native_formers
     }
 
     #[test]
-    fn a_case_over_a_presented_type_is_refused()
+    fn a_case_respects_its_type_s_rules_or_is_refused_by_the_rule()
     {
         use gandr_kernel_term::Presentation;
         use gandr_kernel_term::PresentedRule;
@@ -349,6 +349,7 @@ mod native_formers
             let motive = arena.comp_type_returner(unit_type);
             let returned = arena.computation_return(unit);
             let successor = arena.computation_lambda(returned);
+            // A bare case: at `Succ(Succ(x))` it returns, at `x` it is stuck.
             let case = arena.computation_data_case(zero, motive, vec![returned, successor]);
             let body = arena.value_thunk(case);
             let declared = arena.value_type_thunk(motive);
@@ -360,7 +361,7 @@ mod native_formers
                     Err(KernelError::RuleNotRespected(
                         gandr_kernel_term::RuleIndex::from(0_usize)
                     )),
-                    "a case over the presented naturals is refused at their rule"
+                    "a bare case over the presented naturals is refused at their rule"
                 );
             }
             else {
@@ -370,6 +371,36 @@ mod native_formers
                     "the same case over the free naturals admits"
                 );
             }
+            // `fix f. λy. case y { Zero ⇒ return (); Succ(x) ⇒ f(x) }`: at
+            // `Succ(Succ(x))` it descends twice to the call stuck at `x`.
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let datatype = arena.value_type_data(nominal, vec![]);
+            let unit_type = arena.value_type_unit();
+            let unit = arena.value_unit();
+            let motive = arena.comp_type_returner(unit_type);
+            let returned = arena.computation_return(unit);
+            let recursive = arena.value_variable(DeBruijnIndex::from(2_u32));
+            let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let forced = arena.computation_force(recursive);
+            let called = arena.computation_application(forced, field);
+            let descending = arena.computation_lambda(called);
+            let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let case = arena.computation_data_case(argument, motive, vec![returned, descending]);
+            let lambda = arena.computation_lambda(case);
+            let fixpoint = arena.computation_fixpoint(
+                lambda,
+                gandr_kernel_term::FixpointEvidence::StructuralDescent,
+            );
+            let body = arena.value_thunk(fixpoint);
+            let arrow = arena.comp_type_arrow(datatype, motive);
+            let declared = arena.value_type_thunk(arrow);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            assert_eq!(
+                environment.add_decl(declaration).map(|_admitted| ()),
+                Ok(()),
+                "a fixpoint meeting itself at both sides admits, presented or free"
+            );
         }
     }
 

@@ -74,6 +74,27 @@ impl From<RuleVariable> for u32
     }
 }
 
+/// How many pattern variables a rule binds.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct VariableCount(u32);
+
+impl From<VariableCount> for u32
+{
+    /// The count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: VariableCount) -> Self
+    {
+        count.0
+    }
+}
+
 /// One node of a rule side, in pre-order.
 ///
 /// # Specification
@@ -154,6 +175,38 @@ impl PresentedRule
     pub fn right(&self) -> &[RuleNode]
     {
         &self.right
+    }
+
+    /// How many pattern variables the rule binds: its left side's variable
+    /// nodes, each written once.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the number of [`RuleNode::Variable`] nodes on the left side,
+    ///   saturating at the ordinal ceiling.
+    /// - provides: how many fresh binders the rule's sides stand under when
+    ///   they are built as terms. A rule [`Presentation::validate`] admits
+    ///   numbers its left side's variables `0, 1, 2, …` and reuses only those
+    ///   on its right, so every ordinal on either side lies below the count.
+    ///   The clause checks the count against the side's length; the exact count
+    ///   is the witness's, since a clause may not walk the receiver.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a cancellation over one variable binds one, a rule
+    ///   between ground words binds none.
+    /// - witness: `presented::tests::a_rule_side_builds_bottom_up_over_its_variables`
+    #[spec(ensures: |ret| usize::try_from(ret.0).is_ok_and(|count| count <= self.left.len()))]
+    #[inline]
+    #[must_use]
+    pub fn variables(&self) -> VariableCount
+    {
+        let count = self
+            .left
+            .iter()
+            .filter(|node| matches!(node, RuleNode::Variable(_)))
+            .count();
+        VariableCount(u32::try_from(count).unwrap_or(u32::MAX))
     }
 }
 
@@ -389,6 +442,69 @@ impl Presentation
             }
             return Ok(outcome);
         }
+    }
+}
+
+/// Build a rule side as a term, bottom up: `node` receives each node of the
+/// side with the terms already built for its fields, in field order.
+///
+/// # Specification
+/// - requires: nothing — the side may be unvalidated.
+/// - ensures: `Ok` with what `node` built at the side's root exactly when every
+///   constructor's tag lies in `arities` and the nodes form exactly one
+///   pre-order term under those arities; `node` is called once per node read, a
+///   variable with no fields, every child before its parent.
+/// - provides: a rule's two sides as terms over whatever the caller binds for
+///   the pattern's variables, for a conversion to compare under a case's arms.
+/// - fails: [`RuleFault::UnknownConstructor`] for a tag past `arities`;
+///   [`RuleFault::Arity`] when the nodes do not form exactly one term.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: one `for` loop over the side, not recursion.
+/// - measure: the nodes left to read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's `loop(unloop(x))` builds `unloop` over the
+///   variable and `loop` over that; a side one field short and a tag past the
+///   table are refused by their own faults.
+/// - witness: `presented::tests::a_rule_side_builds_bottom_up_over_its_variables`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(RuleFault::UnknownConstructor | RuleFault::Arity)))]
+#[inline]
+pub fn build_side<T, F>(
+    side: &[RuleNode],
+    arities: &[FieldCount],
+    mut node: F,
+) -> Result<T, RuleFault>
+where
+    F: FnMut(RuleNode, Vec<T>) -> T,
+{
+    let mut built: Vec<T> = Vec::new();
+    for &written in side.iter().rev() {
+        let fields = match written {
+            | RuleNode::Variable(_) => Vec::new(),
+            | RuleNode::Constructor(tag) => {
+                let arity = arities
+                    .get(usize::from(tag))
+                    .copied()
+                    .ok_or(RuleFault::UnknownConstructor)?;
+                let start = built
+                    .len()
+                    .checked_sub(usize::from(arity))
+                    .ok_or(RuleFault::Arity)?;
+                let mut fields = built.split_off(start);
+                fields.reverse();
+                fields
+            },
+        };
+        built.push(node(written, fields));
+    }
+    match (built.pop(), built.is_empty()) {
+        | (Some(root), true) => Ok(root),
+        | (Some(_) | None, _) => Err(RuleFault::Arity),
     }
 }
 
@@ -814,6 +930,7 @@ fn matched<C, L>(
 #[cfg(test)]
 mod tests
 {
+    use alloc::string::String;
     use alloc::vec::Vec;
 
     use super::Exhausted;
@@ -1030,5 +1147,53 @@ mod tests
             Err(Exhausted)
         );
         assert_eq!(u64::from(starved), 0);
+    }
+
+    #[test]
+    fn a_rule_side_builds_bottom_up_over_its_variables()
+    {
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
+        let shown = |node: RuleNode, fields: Vec<String>| match node {
+            | RuleNode::Variable(variable) => alloc::format!("x{}", u32::from(variable)),
+            | RuleNode::Constructor(tag) => {
+                alloc::format!("c{}({})", usize::from(tag), fields.join(","))
+            },
+        };
+        let arities = [0_usize, 1, 1, 1].map(FieldCount::from);
+        let circle = circle();
+        let cancellation = &circle.rules()[0];
+        assert_eq!(u32::from(cancellation.variables()), 1);
+        assert_eq!(
+            super::build_side(cancellation.left(), &arities, shown),
+            Ok(String::from("c1(c2(x0))")),
+            "`unloop` is built over the variable, `loop` over that"
+        );
+        assert_eq!(
+            super::build_side(cancellation.right(), &arities, shown),
+            Ok(String::from("x0"))
+        );
+        let pair = [0_usize, 2].map(FieldCount::from);
+        assert_eq!(
+            super::build_side(&[c(1), v(0), v(1)], &pair, shown),
+            Ok(String::from("c1(x0,x1)")),
+            "fields reach their constructor in field order"
+        );
+        let ground = PresentedRule::new([c(1), c(0)].into(), [c(0)].into());
+        assert_eq!(u32::from(ground.variables()), 0);
+        assert_eq!(
+            super::build_side(&[c(1)], &arities, shown),
+            Err(RuleFault::Arity),
+            "a loop missing its field"
+        );
+        assert_eq!(
+            super::build_side(&[c(0), c(0)], &arities, shown),
+            Err(RuleFault::Arity),
+            "two terms where one is owed"
+        );
+        assert_eq!(
+            super::build_side(&[c(9)], &arities, shown),
+            Err(RuleFault::UnknownConstructor)
+        );
     }
 }

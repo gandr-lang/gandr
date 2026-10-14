@@ -1,8 +1,10 @@
 // The circle and the integers without a higher inductive type. The circle is
 // presented by a point, a loop and its inverse, with the two cancellations
 // as rules; its shape is a signature, and the integers are a model of it.
-// The winding number, written as a bare `case`, is refused until the fold
-// into the integers lands, and the equivalence between them is owed.
+// A case over the circle is admitted when it computes one result from both
+// sides of each rule; the winding number does so only up to arithmetic, so
+// it is refused until the fold into the integers lands, and the equivalence
+// between them is owed.
 
 /// The circle as a presented type: its rules rewrite constructor terms, so a
 /// word normalizes to the loops it winds.
@@ -62,6 +64,22 @@ def tell(c : Circle) -> -F Integer {
 def two_is_one() -> -F Path(Integer, 2, 1) {
   become cong(tell, nested)
 }
+
+/// The mirror: a loop for an inverse and an inverse for a loop. At
+/// `Loop(Unloop(x))` it builds `Unloop(Loop(mirror(x)))`, which the second
+/// rule reads as `mirror(x)`, so it respects both rules and is admitted.
+def rec mirror(c : Circle) -> -F Circle {
+  case c {
+    Base => return Base,
+    Loop(x) => { run m <- mirror[<](x); return Unloop(m) },
+    Unloop(x) => { run m <- mirror[<](x); return Loop(m) }
+  }
+}
+
+/// The mirror of a loop is its inverse.
+@[ runs("Unloop(Base)") ]
+def mirrored : +U (-F Circle) ;
+def mirrored = thunk { become mirror(Loop(Base)) } ;
 
 /// The circle's shape: the same presentation as a signature models interpret.
 /// `Model` reads a `sign` block, so the shape is spelled apart from `Circle`.
@@ -123,9 +141,10 @@ module Winding : Model(CircleShape) {
   }
 }
 
-/// The winding number as a bare `case` over the circle, refused: its arms
-/// add and subtract one, and `(n - 1) + 1` is not `n` by conversion on a
-/// variable, so they are not shown to respect `Loop(Unloop(x)) ==> x`.
+/// The winding number as a fixpoint over the circle, refused: at
+/// `Loop(Unloop(x))` it computes `(wind(x) - 1) + 1`, which is not `wind(x)`
+/// by conversion on a variable, so it is not shown to respect
+/// `Loop(Unloop(x)) ==> x`.
 @[ refuses("RuleNotRespected") ]
 def rec wind(c : Circle) -> -F Integer {
   case c {
