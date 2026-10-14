@@ -93,9 +93,9 @@
 //! continuation, a wrapping constructor `K(…)` becoming the return-side frame
 //! `K⁻` on it. Anything else — an operation in producer position, a
 //! several-argument constructor around an operation — is declined with
-//! `ElaborateError::UnsupportedShape` rather than mis-elaborated. The fragment
-//! is the direct one; growing it is a change to this crate's walk, not to the
-//! cell layer.
+//! `ElaborateError::UnsupportedShape` rather than mis-elaborated, except under
+//! the shape reading below. The fragment is the direct one; growing it is a
+//! change to this crate's walk, not to the cell layer.
 //!
 //! # A presented type's rules
 //!
@@ -111,15 +111,34 @@
 //! enters no sequent cell; an operation face keeps its own. A face applying a
 //! declined operation is declined before either reading.
 //!
+//! A `sign` block's laws call for the same reading when the sequent one cannot
+//! shape them. A law `turn(unturn(x)) ==> x` applies an operation where an
+//! argument stands; a family's operation rule of that shape is declined,
+//! because the operation's body is compiled from its rules and no producer
+//! pattern matches a call. A presentation's laws compile to nothing — a model
+//! satisfies them — so [`elaborate_sign_desc`] reads such a law over terms
+//! ([`DescReading::Shape`]), where it rewrites a call wherever the call stands,
+//! and [`elaborate_data_desc`] declines it ([`DescReading::Generative`]). Over
+//! unindexed sorts a critical pair of well-sorted laws is well sorted: two
+//! subterms unify only under one operation, whose argument sorts are fixed.
+//! Over an indexed sort that fails, so such a law stays declined: in
+//! `comp(id(a), f) ==> f` and `comp(f, id(b)) ==> f` the objects `a` and `b`
+//! are fixed by the types `f` stands at, which a term does not carry, and the
+//! untyped overlap `comp(id(a), id(b))` parts into `id(a)` and `id(b)` where
+//! the typing makes them one.
+//!
 //! - **Choice.** The term reading is added where the sequent one has nothing to
-//!   say; a description writing no constructor-headed face has none, and its
+//!   say; a description writing no face that calls for terms has none, and its
 //!   cells are exactly the sequent ones.
 //! - **Alternatives.** Every description read over terms as well, which costs a
 //!   second store and a second check for every family whose rules the sequent
-//!   reading already decides; or a constructor-headed face declined, which
-//!   leaves a presented type no rule at all.
+//!   reading already decides; or a constructor-headed face, or a law nesting an
+//!   operation, declined, which leaves a presented type no rule at all and a
+//!   presentation's laws unchecked as one rewriting system.
 //! - **Reversal.** A sequent alphabet with command positions inside a producer
-//!   holds both readings in one store, and the presented one is retired.
+//!   holds every reading in one store, and the presented one is retired; laws
+//!   over an indexed sort are read when the term alphabet carries the index
+//!   terms each variable's type fixes.
 //!
 //! [`TermAlphabet`]: crate::TermAlphabet
 //!
@@ -753,8 +772,8 @@ pub struct DescElaboration
     /// Each declined face, by index into the description's rules, with its
     /// reason.
     pub declined_faces: Vec<(DeclinedFaceIndex, ElaborateError)>,
-    /// The rules read over terms, when the description writes a
-    /// constructor-headed face; its constructor-headed faces are in neither
+    /// The rules read over terms, when a face calls for them
+    /// ([`presented_reading`]); a face only that reading holds is in neither
     /// list above.
     pub presented: Maybe<PresentedRules, presented_reading::Absent>,
     /// One entry per circuit rule member, in declaration order.
@@ -795,15 +814,67 @@ quenchant_shape::reason_enum! {
         /// The reason no rule is read over terms.
         #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub enum Absent {
-            /// No face that passed the operation gate has a constructor
-            /// application on its left.
-            NoConstructorRule,
+            /// No face that passed the operation gate calls for terms: none
+            /// has a constructor application on its left, and under the shape
+            /// reading over unindexed sorts every operation face has a sequent
+            /// cell.
+            NoTermFace,
         }
     }
 }
 
+/// Which reading a description's rules are elaborated under.
+///
+/// # Specification
+/// - provides: the generative reading of a `data` or `codata` block, whose
+///   operations run by their rules, and the shape reading of a `sign` block,
+///   whose rules are laws a model satisfies and run nowhere.
+/// - executable: none — a reading is a tag the elaboration branches on.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the same law nesting an operation on its left is declined
+///   under the generative reading, read over terms under the shape reading, and
+///   declined under the shape reading once a sort is indexed.
+/// - witness: `elaborate::tests::a_presented_types_rules_are_read_over_terms`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum DescReading
+{
+    /// A family's own rules: an operation face compiles to the operation's
+    /// body, so a face the sequent reading cannot shape is declined.
+    Generative,
+    /// A presentation's laws: over unindexed sorts, a face the sequent reading
+    /// cannot shape — an operation applied where an argument stands,
+    /// `turn(unturn(x))` — is read over terms; over an indexed sort it is
+    /// declined as under the generative reading.
+    Shape,
+}
+
+/// Elaborate a family's operations, rules, circuit rules and η laws into one
+/// store, under the generative reading.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
+{
+    elaborate_desc(desc, DescReading::Generative)
+}
+
+/// Elaborate a presentation's operations, laws, circuit rules and η laws into
+/// one store, under the shape reading.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn elaborate_sign_desc<G>(desc: &SignDesc<G>) -> DescElaboration
+{
+    elaborate_desc(desc, DescReading::Shape)
+}
+
 /// Elaborate a whole description's operations, rules, circuit rules and η
-/// laws into one store.
+/// laws into one store, under `reading`.
 ///
 /// The grade a description's fields carry is never read: elaboration reads
 /// names, arities, faces and the declaration's polarity.
@@ -818,14 +889,18 @@ quenchant_shape::reason_enum! {
 ///   `declined_opers` the rest, both in declaration order; `admitted_faces`
 ///   pairs each operation face the sequent reading admitted with its cell,
 ///   `declined_faces` each declined face with its [`ElaborateError`], and
-///   `presented` holds the constructor-headed faces, between them every face
+///   `presented` the faces only the term reading holds, between them every face
 ///   once, in rule order; a face applying a declined operation is declined with
 ///   [`ElaborateError::UnrepresentableOperation`] and never reaches either
 ///   store.
-/// - ensures: `presented` is present exactly when a constructor-headed face
-///   passed the operation gate, and then holds every face that passed it and,
-///   if an operation face, was admitted — as [`face_cell`] builds it, in rule
-///   order.
+/// - ensures: a face calls for terms when it passed the operation gate and is
+///   constructor-headed, or, under [`DescReading::Shape`] with every sort
+///   unindexed, when its sequent elaboration fails with
+///   [`ElaborateError::UnsupportedShape`]; otherwise that failure declines the
+///   face.
+/// - ensures: `presented` is present exactly when a face calls for terms, and
+///   then holds every face that passed the operation gate and, if it does not
+///   call for terms, was admitted — as [`face_cell`] builds it, in rule order.
 /// - ensures: `circuits` holds one [`CircuitElaboration`] per circuit rule, in
 ///   declaration order; a rule whose body denotes no single composite is
 ///   declined with [`ElaborateError::NoCircuitComposite`] before its derived
@@ -877,7 +952,7 @@ quenchant_shape::reason_enum! {
             Maybe::Present(ref presented) => presented.faces.iter().all(|&(index, cell)| desc.rules.get(usize::from(index))
                 .is_some_and(|face| matches!(presented.store.get(cell), Maybe::Present(stored) if *stored == face_cell(face))))
                 && presented.faces.iter().zip(presented.faces.iter().skip(1)).all(|(left, right)| left.0 < right.0),
-            Maybe::Absent(presented_reading::Absent::NoConstructorRule) => ret.admitted_faces.len().saturating_add(ret.declined_faces.len()) == desc.rules.len(),
+            Maybe::Absent(presented_reading::Absent::NoTermFace) => ret.admitted_faces.len().saturating_add(ret.declined_faces.len()) == desc.rules.len(),
         }
         && ret
             .admitted_faces
@@ -903,9 +978,10 @@ quenchant_shape::reason_enum! {
             })
 },
 )]
-#[inline]
-#[must_use]
-pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
+fn elaborate_desc<G>(
+    desc: &SignDesc<G>,
+    reading: DescReading,
+) -> DescElaboration
 {
     let polarity = cut_polarity(desc.polarity);
     let mut store = CellStore::new();
@@ -929,21 +1005,30 @@ pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
     let mut admitted_faces = Vec::with_capacity(desc.rules.len());
     let mut declined_faces = Vec::new();
     // Every face either reading holds, in rule order, and whether one of them
-    // is constructor-headed, which is what calls for the term reading.
+    // calls for the term reading. A law over an indexed sort stays declined:
+    // its indices are bound by the types its variables stand at, which terms
+    // do not carry.
+    let laws_over_terms =
+        reading == DescReading::Shape && desc.sorts.iter().all(|sort| sort.indices.is_empty());
     let mut read: Vec<(AdmittedFaceIndex, &RuleFace)> = Vec::with_capacity(desc.rules.len());
     let mut presents = false;
     for (index, face) in desc.rules.iter().enumerate() {
-        let constructor_headed = matches!(face.lhs.view(), TermView::Ctor { .. });
-        let outcome = if constructor_headed {
-            declined_operation(face, &unrepresentable)
+        let outcome = if matches!(face.lhs.view(), TermView::Ctor { .. }) {
+            declined_operation(face, &unrepresentable).map(|()| true)
         }
         else {
-            admit_face(&mut store, face, desc.polarity, &opers, &unrepresentable)
-                .map(|cell| admitted_faces.push((AdmittedFaceIndex::from(index), cell)))
+            match admit_face(&mut store, face, desc.polarity, &opers, &unrepresentable) {
+                | Ok(cell) => {
+                    admitted_faces.push((AdmittedFaceIndex::from(index), cell));
+                    Ok(false)
+                },
+                | Err(ElaborateError::UnsupportedShape) if laws_over_terms => Ok(true),
+                | Err(error) => Err(error),
+            }
         };
         match outcome {
-            | Ok(()) => {
-                presents |= constructor_headed;
+            | Ok(terms) => {
+                presents |= terms;
                 read.push((AdmittedFaceIndex::from(index), face));
             },
             | Err(error) => declined_faces.push((DeclinedFaceIndex::from(index), error)),
@@ -961,7 +1046,7 @@ pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
         })
     }
     else {
-        Maybe::Absent(presented_reading::Absent::NoConstructorRule)
+        Maybe::Absent(presented_reading::Absent::NoTermFace)
     };
     let circuits = desc
         .circuits
@@ -2457,6 +2542,8 @@ mod tests
     use gandr_theory_levitation::FreeTerm;
     use gandr_theory_levitation::NominalId;
     use gandr_theory_levitation::NominalSerial;
+    use gandr_theory_levitation::SortDesc;
+    use gandr_theory_levitation::SortIndex;
     use gandr_theory_levitation::SortRef;
     use gandr_theory_levitation::SurfaceSpan;
     use gandr_theory_levitation::TermPositionIndex;
@@ -3621,14 +3708,96 @@ mod tests
             "the gate declines the constructor rule"
         );
         assert_eq!(
-            Maybe::Absent(presented_reading::Absent::NoConstructorRule),
+            Maybe::Absent(presented_reading::Absent::NoTermFace),
             elaborated.presented,
             "no constructor rule passed the gate"
         );
         assert_eq!(
-            Maybe::Absent(presented_reading::Absent::NoConstructorRule),
+            Maybe::Absent(presented_reading::Absent::NoTermFace),
             elaborate_data_desc(&nat_with([add_op()], [add_zero_face()])).presented,
             "a family of operation rules has no term reading"
+        );
+        // A law applying an operation where an argument stands: declined by a
+        // family, read over terms by a presentation, beside a law the sequent
+        // reading shapes and a law no reading admits.
+        let input = || [SortRef::new("x", "Nat")];
+        let call = |name: &str, inner: FreeTerm| FreeTerm::op(name, [inner]);
+        let laws = nat_with([add_op(), op("turn", input()), op("unturn", input())], [
+            face(call("turn", call("unturn", x())), x()),
+            add_zero_face(),
+            face(call("unturn", call("turn", x())), x()),
+            face(FreeTerm::op("turn", []), x()),
+        ]);
+        let family = elaborate_data_desc(&laws);
+        assert_eq!(
+            vec![
+                (
+                    DeclinedFaceIndex::from(0_usize),
+                    ElaborateError::UnsupportedShape
+                ),
+                (
+                    DeclinedFaceIndex::from(2_usize),
+                    ElaborateError::UnsupportedShape
+                ),
+                (
+                    DeclinedFaceIndex::from(3_usize),
+                    ElaborateError::EmptyOperation
+                ),
+            ],
+            family.declined_faces,
+            "a family declines the nested laws"
+        );
+        assert_eq!(
+            Maybe::Absent(presented_reading::Absent::NoTermFace),
+            family.presented,
+            "and has no term reading"
+        );
+        let presentation = elaborate_sign_desc(&laws);
+        assert_eq!(
+            vec![(
+                DeclinedFaceIndex::from(3_usize),
+                ElaborateError::EmptyOperation
+            )],
+            presentation.declined_faces,
+            "a presentation declines only the law no reading admits"
+        );
+        assert_eq!(
+            family.admitted_faces, presentation.admitted_faces,
+            "the law the sequent reading shapes keeps its cell under either reading"
+        );
+        let Maybe::Present(presented) = presentation.presented
+        else {
+            panic!("the nested laws are read over terms");
+        };
+        assert_eq!(
+            vec![
+                AdmittedFaceIndex::from(0_usize),
+                AdmittedFaceIndex::from(1_usize),
+                AdmittedFaceIndex::from(2_usize),
+            ],
+            presented
+                .faces
+                .iter()
+                .map(|&(index, _)| index)
+                .collect::<Vec<_>>(),
+            "every law that passed is read over terms, in rule order"
+        );
+        // Over an indexed sort the same laws stay declined: a term does not
+        // carry the indices its variables' types fix.
+        let mut indexed = laws;
+        indexed.sorts = [SortDesc::family("Nat", DeclPolarity::Data, [
+            SortIndex::new("n", "Nat"),
+        ])]
+        .into();
+        let presentation = elaborate_sign_desc(&indexed);
+        assert_eq!(
+            family.declined_faces, presentation.declined_faces,
+            "an indexed presentation declines what a family does"
+        );
+        assert_eq!(
+            Maybe::Absent(presented_reading::Absent::NoTermFace),
+            presentation.presented,
+            "and has no term reading"
         );
     }
 

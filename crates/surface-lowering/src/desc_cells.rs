@@ -11,16 +11,21 @@
 //! operation elaborates to one frame with a return continuation per output
 //! port, and its rules elaborate over that frame; a rule returning a different
 //! number of results is refused at its own span. A face reads its left-hand
-//! side as a cut of a value against an operation frame, so a law whose
-//! left-hand side applies an operation where that value stands,
-//! `comp(id(a), f) ==> f`, is carried in the description and has no cell yet:
-//! it is refused at its span as a shape the elaboration does not read. A face
-//! whose left-hand side is a constructor application — a presented type's
-//! rule, `Loop(Unloop(x)) ==> x` — is no operation redex and has no sequent
-//! cell; it is read over terms instead (`DeclarationCells::presented`), where
-//! it rewrites a value wherever the value stands. A `data` operation whose
-//! rules compile runs as a declaration of the module, returning its results as
-//! one tuple (`operation`). Identical faces share one cell identity.
+//! side as a cut of a value against an operation frame, so a family's rule
+//! whose left-hand side applies an operation where that value stands,
+//! `add(add(m, n), k)`, has no cell: it is refused at its span as a shape the
+//! elaboration does not read. A `sign` block's law of that shape over
+//! unindexed sorts, `turn(unturn(x)) ==> x`, compiles to no operation body, and
+//! is read over terms (`elaborate_sign_desc`): a presentation's laws are
+//! elaborated under the shape reading, a family's rules under the generative
+//! one. Over an indexed sort, `comp(id(a), f) ==> f`, the law stays refused at
+//! its span: its indices are fixed by types a term does not carry. A face whose
+//! left-hand side is a constructor application — a presented type's rule,
+//! `Loop(Unloop(x)) ==> x` — is no operation redex and has no sequent cell
+//! either; it is read over terms too (`DeclarationCells::presented`), where it
+//! rewrites a value wherever the value stands. A `data` operation whose rules
+//! compile runs as a declaration of the module, returning its results as one
+//! tuple (`operation`). Identical faces share one cell identity.
 //! Witnesses:
 //! `desc_cells::tests::ordinary_lowering_executes_the_cell_gate_and_preserves_later_values`,
 //! `desc_cells::tests::a_face_declared_twice_is_one_cell`,
@@ -61,6 +66,7 @@ use gandr_theory_computads::OpElaborateError;
 use gandr_theory_computads::OpFrame;
 use gandr_theory_computads::PresentedRules;
 use gandr_theory_computads::elaborate_data_desc;
+use gandr_theory_computads::elaborate_sign_desc;
 use gandr_theory_computads::presented_reading;
 use gandr_theory_levitation::SurfaceSpan;
 use gandr_theory_levitation::WhiskeredCell;
@@ -157,8 +163,8 @@ pub struct DeclarationCells
     /// The written faces the cell gate admitted to the sequent reading, by
     /// their position among the description's rules, each with its cell.
     pub faces: Vec<(AdmittedFaceIndex, CellId)>,
-    /// The rules read over terms, when the description writes a
-    /// constructor-headed face: a presented type's reading.
+    /// The rules read over terms, when a face calls for them: a presented
+    /// type's constructor rules, or a presentation's laws nesting an operation.
     pub presented: Maybe<PresentedRules, presented_reading::Absent>,
     /// One result per circuit rule, in declaration order.
     pub circuits: Vec<CircuitCell>,
@@ -242,7 +248,10 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             presented,
             circuits,
             eta,
-        } = elaborate_data_desc(&declaration.description);
+        } = match declaration.presentation {
+            | Maybe::Present(_) => elaborate_sign_desc(&declaration.description),
+            | Maybe::Absent(_) => elaborate_data_desc(&declaration.description),
+        };
         let examined = declined_opers.is_empty()
             && declined_faces.is_empty()
             && circuits

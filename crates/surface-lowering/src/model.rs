@@ -23,12 +23,12 @@
 //!   (`gandr_theory_levitation::SigValue`), the presentation the block defines
 //!   — each port's sort a sort name over index terms, each rule with its name —
 //!   read beside the name tiles that place its members. Alternatives: deriving
-//!   from the elaborated cell store, which keeps no rule names and refuses a
-//!   rule whose producer side applies an operation to a composite, so `Model`
-//!   would inherit a cell gate that says nothing about the law; and reading the
-//!   description's sort spellings back as text. Reversal: a cell store that
-//!   keeps names and composites would let `Model` read the cells, one source
-//!   for both.
+//!   from the elaborated cell store, which keeps no rule names and declines a
+//!   law over an indexed sort whose producer side applies an operation to a
+//!   composite, so `Model` would inherit a cell gate that says nothing about
+//!   the law; and reading the description's sort spellings back as text.
+//!   Reversal: a cell store that keeps names and composites would let `Model`
+//!   read the cells, one source for both.
 //! - Choice: `Model` is an elaboration-stage function of the value a sign block
 //!   defines, not a core function `Sig -> Type`. A model signature is a
 //!   telescope whose components are types, families and laws, large components

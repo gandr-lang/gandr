@@ -940,6 +940,96 @@ fn a_sign_block_defines_its_presentation()
 }
 
 #[test]
+fn a_rule_bearing_sign_defines_its_presentation_with_its_laws()
+{
+    let grammar = grammar();
+    let tree = parse(
+        &grammar,
+        SourceText::from(
+            "sign CircleShape { sort Pt : Type; oper base : Pt; oper turn : (x : Pt) --> Pt; oper unturn : (x : Pt) --> Pt; rule turnUnturn : turn(unturn(x)) ==> x; rule unturnTurn : unturn(turn(x)) ==> x; }\nsign CatShape { sort Ob : Type; sort Hom(dom: Ob, cod: Ob) : Type; oper id : (a : Ob) --> Hom(a,a); oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c); rule unitL : comp(id(a), f) ==> f; }\n",
+        ),
+    )
+    .unwrap()
+    .into_tree();
+    let mut arena = gandr_core_term::CoreArena::new();
+    let module = crate::lower_module(
+        &grammar,
+        &tree,
+        &mut arena,
+        crate::LoweringBudget::DEFAULT,
+        crate::namespace::Recognition::default(),
+    )
+    .unwrap();
+    let [ref code, ref circle, ref cat] = *module.declarations()
+    else {
+        panic!("`Sig` once, then each sign: {:?}", module.declarations())
+    };
+    let crate::DeclarationOutcome::Data(index) = code.outcome()
+    else {
+        panic!("`Sig` is a data family: {:?}", code.outcome())
+    };
+    let Maybe::Present(signature) = module.data(index)
+    else {
+        panic!("its signature is minted")
+    };
+    let crate::DeclarationOutcome::Completed {
+        declared_type,
+        body,
+    } = circle.outcome()
+    else {
+        panic!(
+            "laws over an unindexed sort are read over terms, so the block is clean: {:?}",
+            circle.outcome()
+        )
+    };
+    assert_eq!(
+        spelled(&arena, body),
+        r#"Presents(Sort("Pt", End, End), Oper("base", End, Port("", "Pt", End, End), Oper("turn", Port("x", "Pt", End, End), Port("", "Pt", End, End), Oper("unturn", Port("x", "Pt", End, End), Port("", "Pt", End, End), End))), Rule("turnUnturn", App("turn", Arg(App("unturn", Arg(Var("x"), End)), End)), Var("x"), Rule("unturnTurn", App("unturn", Arg(App("turn", Arg(Var("x"), End)), End)), Var("x"), End)))"#,
+        "the value carries each law as a `Rule`, read node for node"
+    );
+    assert!(
+        matches!(
+            cat.outcome(),
+            crate::DeclarationOutcome::Refused(crate::LoweringRefusal::OutOfFragment { .. })
+        ),
+        "a law over an indexed sort stays declined, so its block defines no value: {:?}",
+        cat.outcome()
+    );
+    let declarations = [
+        gandr_core_checker::Declaration::data(
+            code.constant(),
+            alloc::sync::Arc::clone(signature),
+            gandr_core_checker::OriginToken::from(0_usize),
+        ),
+        gandr_core_checker::Declaration::new(
+            circle.constant(),
+            Maybe::Present(declared_type),
+            Maybe::Present(body),
+            gandr_core_checker::OriginToken::from(1_usize),
+        ),
+    ];
+    let report = gandr_core_checker::check_module(
+        &mut gandr_core_checker::CheckingContext::new(
+            &mut arena,
+            gandr_core_checker::CheckBudget::DEFAULT,
+        ),
+        &declarations,
+    );
+    let verdicts: alloc::vec::Vec<_> = report
+        .judged()
+        .iter()
+        .map(gandr_core_checker::Judged::verdict)
+        .collect();
+    assert!(
+        matches!(verdicts.as_slice(), [
+            gandr_core_checker::Verdict::Data,
+            gandr_core_checker::Verdict::Checked { .. }
+        ]),
+        "the checker checks the rule-bearing value at `Sig`: {verdicts:?}"
+    );
+}
+
+#[test]
 fn the_description_is_read_off_the_value()
 {
     let source = "sign CatShape {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : Ob) --> Hom(a,a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp(id(a), f) ==> f;\n}\n";

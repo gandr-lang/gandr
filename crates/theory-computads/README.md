@@ -21,9 +21,9 @@ The elaborator seam of the cell-rewriting stack: a levitated description's rules
 
 ## Provided features
 
-- `elaborate_data_desc`, `DescElaboration`, `OpFrame`, `OpElaborateError`, `CircuitElaboration`: a whole description into one store, the operation gate first, every decline reported; a many-out operation's frame carries one return continuation per output port.
+- `elaborate_data_desc`, `elaborate_sign_desc`, `DescReading`, `DescElaboration`, `OpFrame`, `OpElaborateError`, `CircuitElaboration`: a whole description into one store under its reading — a family's generative one or a presentation's shape one — the operation gate first, every decline reported; a many-out operation's frame carries one return continuation per output port.
 - `elaborate_rule`, `ElaborateError`: one face into one cell at the declaration's polarity; a results tuple leaves by one delivery frame, and a result count other than the output count is refused.
-- `PresentedRules`, `presented_reading`, `TermAlphabet`, `Term`, `face_cell`: a presented type's constructor-headed rules, with the operation rules beside them, read over first-order terms where every subterm is a position, so a rule fires below the root and two rules overlap inside a left-hand side.
+- `PresentedRules`, `presented_reading`, `TermAlphabet`, `Term`, `face_cell`: a presented type's constructor-headed rules, and a presentation's laws that apply an operation where an argument stands, with the operation rules beside them, read over first-order terms where every subterm is a position, so a rule fires below the root and two rules overlap inside a left-hand side.
 - Every cell a declaration contributes — frame, rule, circuit and η — cuts at the polarity its η law requires, and a `codata` declaration's η critical pair joins.
 - The admission seam's two refusals, `ElaborateError::NonLinear` and `ElaborateError::MixedPolarity` with `MixedPolarityHole`, distinct in variant and diagnostic, the copy decided first.
 - `EtaElaboration`, `EtaElaborateError`: the η cells a declaration licenses, at its polarity, or the missing half of the licence.

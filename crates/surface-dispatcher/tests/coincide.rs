@@ -33,6 +33,7 @@ mod coincide
     use gandr_surface_lowering::coincide::CallText;
     use gandr_surface_syntax::SourceFragment;
     use gandr_surface_syntax::SourceText;
+    use quenchant_shape::shape::Maybe;
 
     /// Every corpus source under the strict and fixture roots, the pending
     /// set aside: a pending source is not yet read whole.
@@ -185,10 +186,13 @@ mod coincide
             else {
                 continue;
             };
+            // A presentation's operations are interpreted by its models and
+            // run nowhere; only a family's operations have runs to compare.
             let operations: Vec<String> = module
                 .descriptions()
                 .declarations
                 .iter()
+                .filter(|described| matches!(described.presentation, Maybe::Absent(_)))
                 .flat_map(|described| described.description.opers.iter())
                 .map(|operation| String::from(operation.name.as_ref()))
                 .collect();
