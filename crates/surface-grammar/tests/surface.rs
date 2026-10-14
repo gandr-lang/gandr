@@ -55,6 +55,8 @@ const EXPECTED_PRECEDENCE_GROUPS: &[(&str, Assoc)] = &[
     ("type.intersection", Assoc::Right),
     ("type.lazy_product", Assoc::Right),
     ("type.arrow", Assoc::Right),
+    ("expression.cons", Assoc::Right),
+    ("pattern.cons", Assoc::Right),
 ];
 
 /// The built-in tighter-than edges, in the DAG's edge order.
@@ -63,11 +65,11 @@ const EXPECTED_PRECEDENCE_EDGES: &[(&str, &str)] = &[
     ("expression.postfix", "expression.unary"),
     ("expression.unary", "expression.mul"),
     ("expression.mul", "expression.add"),
-    ("expression.add", "expression.cmp"),
+    ("expression.add", "expression.cons"),
     ("expression.cmp", "expression.and"),
     ("expression.and", "expression.or"),
     ("expression.or", "expression.pure"),
-    ("pattern.atom", "pattern.as"),
+    ("pattern.atom", "pattern.cons"),
     ("pattern.as", "pattern.or"),
     ("type.atom", "type.path"),
     ("type.path", "type.application"),
@@ -79,6 +81,8 @@ const EXPECTED_PRECEDENCE_EDGES: &[(&str, &str)] = &[
     ("type.union", "type.arrow"),
     ("type.intersection", "type.arrow"),
     ("type.lazy_product", "type.arrow"),
+    ("expression.cons", "expression.cmp"),
+    ("pattern.cons", "pattern.as"),
 ];
 
 /// The group of `dag` named `name`.
@@ -308,6 +312,7 @@ fn built_in_precedence_bands_are_exact() -> Result<(), Box<dyn Error>>
         PrecName("expression.unary"),
         PrecName("expression.mul"),
         PrecName("expression.add"),
+        PrecName("expression.cons"),
         PrecName("expression.cmp"),
         PrecName("expression.and"),
         PrecName("expression.or"),
@@ -315,6 +320,7 @@ fn built_in_precedence_bands_are_exact() -> Result<(), Box<dyn Error>>
     ]);
     assert_chain(dag, &[
         PrecName("pattern.atom"),
+        PrecName("pattern.cons"),
         PrecName("pattern.as"),
         PrecName("pattern.or"),
     ]);

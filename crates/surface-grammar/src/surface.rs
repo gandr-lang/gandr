@@ -228,19 +228,27 @@ const PREC_GROUPS: &[(&str, Assoc)] = &[
     ("type.intersection", Assoc::Right),
     ("type.lazy_product", Assoc::Right),
     ("type.arrow", Assoc::Right),
+    ("expression.cons", Assoc::Right),
+    ("pattern.cons", Assoc::Right),
 ];
 
-/// The tighter-than edges between named groups.
+/// The tighter-than edges between named groups, in the order the DAG lists
+/// them: by the tighter group's id, then the looser's.
+///
+/// The word cons `∷` sits between the additive and comparison bands of the
+/// expression chain and between the atom and `as` bands of the pattern chain,
+/// right-associative in both, so `g ∷ h ∷ p` is `g ∷ (h ∷ p)`. Its two groups
+/// come last in [`PREC_GROUPS`], so every earlier group keeps its id.
 const PREC_EDGES: &[(&str, &str)] = &[
     ("expression.atom", "expression.postfix"),
     ("expression.postfix", "expression.unary"),
     ("expression.unary", "expression.mul"),
     ("expression.mul", "expression.add"),
-    ("expression.add", "expression.cmp"),
+    ("expression.add", "expression.cons"),
     ("expression.cmp", "expression.and"),
     ("expression.and", "expression.or"),
     ("expression.or", "expression.pure"),
-    ("pattern.atom", "pattern.as"),
+    ("pattern.atom", "pattern.cons"),
     ("pattern.as", "pattern.or"),
     ("type.atom", "type.path"),
     ("type.path", "type.application"),
@@ -252,6 +260,8 @@ const PREC_EDGES: &[(&str, &str)] = &[
     ("type.union", "type.arrow"),
     ("type.intersection", "type.arrow"),
     ("type.lazy_product", "type.arrow"),
+    ("expression.cons", "expression.cmp"),
+    ("pattern.cons", "pattern.as"),
 ];
 
 /// The named node kinds of the surface's tree-sitter grammar, ascending.
@@ -400,6 +410,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "break_value_expression",
     "capability_type",
     "codata_declaration",
+    "cons_pattern",
     "continue_expression",
     "data_declaration",
     "for_expression",
@@ -436,6 +447,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "braced_variable_expansion",
     "case_answer_type",
     "case_with_view",
+    "cell_member",
     "circuit_body",
     "circuit_member",
     "circuit_signature",

@@ -46,17 +46,19 @@ use gandr_theory_graphs::WalkChainLength;
 
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
-/// group moves it; a deliberate change re-pins it and says why.
-const BUILT_IN_FINGERPRINT: u64 = 0x0206_309d_bbf9_36a5;
+/// group moves it; a deliberate change re-pins it and says why. Last moved by
+/// the cell member between terms of a `data` block and the word cons `∷` in
+/// expressions and patterns, with their two precedence groups.
+const BUILT_IN_FINGERPRINT: u64 = 0x6737_59cf_17e1_83b6;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2728);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2746);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 82;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 83;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
@@ -70,8 +72,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("&", 4),
     ("&&", 2),
     ("'", 2),
-    ("(", 201),
-    (")", 204),
+    ("(", 202),
+    (")", 205),
     ("*", 2),
     ("*/", 1),
     ("+", 6),
@@ -79,26 +81,26 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("+U", 1),
     (",", 220),
     ("-", 3),
-    ("-->", 24),
+    ("-->", 26),
     ("->", 15),
     ("-F", 2),
     (".", 18),
     ("..", 3),
     ("/*", 1),
     ("/\\", 1),
-    (":", 255),
+    (":", 257),
     (":>", 2),
     (";", 237),
     ("<", 4),
     ("<&", 1),
     ("<-", 21),
-    ("<->", 22),
+    ("<->", 24),
     ("<=", 1),
-    ("<=>", 22),
+    ("<=>", 24),
     ("<>", 1),
     ("=", 96),
     ("==", 1),
-    ("==>", 26),
+    ("==>", 28),
     ("=>", 23),
     (">", 3),
     (">&", 1),
@@ -165,7 +167,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
-    ("identifier", 372),
+    ("identifier", 376),
     ("if", 2),
     ("import", 1),
     ("in", 1),
@@ -234,6 +236,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("}", 60),
     ("~>", 4),
     ("ω", 17),
+    ("∷", 2),
 ];
 
 /// A grammar of one group, with the infix form `E + E` and the atom `x`.

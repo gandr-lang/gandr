@@ -107,17 +107,19 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 108 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=18 => Sort::Item, 19..=22 => Sort::ModuleMember, 23..=33 | 92..=98 => Sort::Pattern, 34..=39 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 110 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=18 => Sort::Item, 19..=22 => Sort::ModuleMember, 23..=34 | 94..=100 => Sort::Pattern, 35..=40 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
     let pat_or = precs.prec(PrecName("pattern.or"))?;
     let pat_as = precs.prec(PrecName("pattern.as"))?;
+    let pat_cons = precs.prec(PrecName("pattern.cons"))?;
     let pat_atom = precs.prec(PrecName("pattern.atom"))?;
     let pure = precs.prec(PrecName("expression.pure"))?;
     let or = precs.prec(PrecName("expression.or"))?;
     let and = precs.prec(PrecName("expression.and"))?;
     let cmp = precs.prec(PrecName("expression.cmp"))?;
+    let cons = precs.prec(PrecName("expression.cons"))?;
     let add = precs.prec(PrecName("expression.add"))?;
     let mul = precs.prec(PrecName("expression.mul"))?;
     let unary = precs.prec(PrecName("expression.unary"))?;
@@ -130,13 +132,19 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
     attributes_parameters_externs(&mut out, item);
     statements(&mut out, item);
     module_members(&mut out, item);
-    patterns(&mut out, pat_or, pat_as, pat_atom);
+    patterns(&mut out, PatternPrecs {
+        or: pat_or,
+        as_p: pat_as,
+        cons: pat_cons,
+        atom: pat_atom,
+    });
     instantiations(&mut out, atom);
     expressions(&mut out, ExprPrecs {
         pure,
         or,
         and,
         cmp,
+        cons,
         add,
         mul,
         unary,
@@ -305,6 +313,11 @@ fn declarations(
         RuleName("data_declaration"),
         SurfaceForm("grade_prefix"),
         AdaptationReason("the reserved grade prefix on a constructor field is restricted to `{ number, ω }`, without the bare identifier spelling, so a graded field `Cons(1 x: a)` stays first-token-distinct from an ungraded field `Some(x: a)`: an identifier grade would be indistinguishable from a field name"),
+    ));
+    data.adaptations.push(Adaptation::new(
+        RuleName("data_declaration"),
+        SurfaceForm("cell_member"),
+        AdaptationReason("the cell member `name : a <-> b` is inlined in the data block, first-token-discriminated by its lowercase name, which no other member opens on; every glyph of the arrow grid parses between its two terms so the elaborator refuses each one the fragment does not lower by its own name"),
     ));
     out.push(data);
 
@@ -848,7 +861,8 @@ fn head_params() -> Regex
 
 /// Build an inline `data` member: a **generator** judgment (the one form), the
 /// declined field-tuple constructor (admissible for the elaborator's decline),
-/// a reserved `op` operation, or a reserved `rule` 2-cell.
+/// a reserved `op` operation, a reserved `rule` 2-cell, or a **cell** between
+/// two terms of the block's sort.
 ///
 /// The constructor-led tails share the `constructor` tile and discriminate one
 /// tile later: `:` leads the generator judgment, anything else the declined
@@ -856,9 +870,15 @@ fn head_params() -> Regex
 /// family's factored tails are. The declined tail annotates a result only after
 /// its field tuple, so no fieldless member reads its `:` a second way.
 ///
+/// A cell is named by a lowercase identifier, which no other member opens on:
+/// `loop : Base <-> Base` relates two terms by one glyph of the arrow grid.
+/// The grammar admits the whole grid between terms so the elaborator refuses
+/// each glyph the fragment does not lower by its own name, as the circuit
+/// grid's rows are refused, rather than the parser by repair.
+///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: constructor, operation and rewrite-member branches; the
+/// - ensures: constructor, operation, rewrite-member and cell branches; the
 ///   constructor owns one shared leading tile.
 /// - panics: none.
 ///
@@ -871,7 +891,7 @@ fn head_params() -> Regex
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::walk::a_data_member_colon_after_a_constructor_name_reads_one_way`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "constructor")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rule")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && sequence.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "constructor")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rule")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && sequence.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && sequence.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression))))))]
 fn data_member() -> Regex
 {
     alt([
@@ -908,6 +928,20 @@ fn data_member() -> Regex
             t(TileLabel("rule")),
             h(Sort::Expression),
             rule_face_arrow(),
+            h(Sort::Expression),
+        ]),
+        // a cell `name : a <-> b` between two terms of the block's sort, its
+        // glyph any of the arrow grid's.
+        seq([
+            t(TileLabel("identifier")),
+            t(TileLabel(":")),
+            h(Sort::Expression),
+            alt([
+                t(TileLabel("-->")),
+                t(TileLabel("<->")),
+                t(TileLabel("==>")),
+                t(TileLabel("<=>")),
+            ]),
             h(Sort::Expression),
         ]),
     ])
@@ -1448,10 +1482,17 @@ fn statements(
 
 /// Append pattern forms.
 ///
+/// The word cons `g ∷ p` matches a word of a path type a `data` block's cells
+/// present, its first letter `g` — a cell's name, or `back(g)` its inverse —
+/// and the rest `p`. The letter is read by its shape, never as a pattern of
+/// its own: `back(g)` is spelled as a call and stands nowhere else in a
+/// pattern, so the form opens on the name and discriminates on the tile after
+/// it, `∷` or `(`, where the bare pattern variable takes neither.
+///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: appends the ordered pattern forms, assigning the or and as forms
-///   their own bands and every other form the atom band.
+/// - ensures: appends the ordered pattern forms, assigning the cons, or and as
+///   forms their own bands and every other form the atom band.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1462,14 +1503,18 @@ fn statements(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 11 && added.iter().zip(["wildcard", "constructor_pattern", "tuple_pattern", "telescope_pattern", "labelled_sum_pattern", "list_pattern", "rest_pattern", "literal_pattern", "hole.pattern", "or_pattern", "as_pattern"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Pattern && rule.prec() == match name { "or_pattern" => or, "as_pattern" => as_p, _ => atom } && rule.provenance().0 == if name == "hole.pattern" { "hole" } else { name })))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 12 && added.iter().zip(["wildcard", "constructor_pattern", "tuple_pattern", "telescope_pattern", "labelled_sum_pattern", "list_pattern", "rest_pattern", "literal_pattern", "hole.pattern", "cons_pattern", "or_pattern", "as_pattern"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Pattern && rule.prec() == match name { "or_pattern" => precs.or, "as_pattern" => precs.as_p, "cons_pattern" => precs.cons, _ => precs.atom } && rule.provenance().0 == if name == "hole.pattern" { "hole" } else { name })))]
 fn patterns(
     out: &mut Vec<Rule>,
-    or: Prec,
-    as_p: Prec,
-    atom: Prec,
+    precs: PatternPrecs,
 )
 {
+    let PatternPrecs {
+        or,
+        as_p,
+        cons,
+        atom,
+    } = precs;
     let s = Sort::Pattern;
     out.push(r(
         RuleName("wildcard"),
@@ -1601,6 +1646,22 @@ fn patterns(
     ));
     out.push(hole);
     out.push(r(
+        RuleName("cons_pattern"),
+        Provenance("cons_pattern"),
+        s,
+        cons,
+        seq([
+            t(TileLabel("identifier")),
+            opt(seq([
+                t(TileLabel("(")),
+                t(TileLabel("identifier")),
+                t(TileLabel(")")),
+            ])),
+            t(TileLabel("∷")),
+            h(s),
+        ]),
+    ));
+    out.push(r(
         RuleName("or_pattern"),
         Provenance("or_pattern"),
         s,
@@ -1710,7 +1771,7 @@ fn instantiations(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 52 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.then", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "run_expression", "hold_expression", "pack_expression", "call_expression", "instantiation_expression", "projection_expression", "hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "co_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "pack_expression" => p.pure, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == if name.starts_with("binary_expression.") { "binary_expression" } else { name })))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 53 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.then", "binary_expression.cons", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "run_expression", "hold_expression", "pack_expression", "call_expression", "instantiation_expression", "projection_expression", "hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "co_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "pack_expression" => p.pure, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.cons" => p.cons, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == if name.starts_with("binary_expression.") { "binary_expression" } else { name })))]
 fn expressions(
     out: &mut Vec<Rule>,
     p: ExprPrecs,
@@ -1804,6 +1865,13 @@ fn expressions(
         TileLabel("then"),
         s,
         p.cmp,
+    );
+    binary(
+        out,
+        RuleName("binary_expression.cons"),
+        TileLabel("∷"),
+        s,
+        p.cons,
     );
     binary(
         out,
@@ -2113,6 +2181,8 @@ struct ExprPrecs
     and: Prec,
     /// Comparison precedence.
     cmp: Prec,
+    /// The word cons `∷`, right-associative, between comparison and addition.
+    cons: Prec,
     /// Additive precedence.
     add: Prec,
     /// Multiplicative precedence.
@@ -2122,6 +2192,20 @@ struct ExprPrecs
     /// Postfix precedence.
     postfix: Prec,
     /// Atomic-expression precedence.
+    atom: Prec,
+}
+
+/// Pattern precedence bundle.
+#[derive(Clone, Copy)]
+struct PatternPrecs
+{
+    /// The alternation `p | q`.
+    or: Prec,
+    /// The binding `p as x`.
+    as_p: Prec,
+    /// The word cons `g ∷ p`, right-associative, between `as` and the atoms.
+    cons: Prec,
+    /// Every atomic pattern.
     atom: Prec,
 }
 

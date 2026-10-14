@@ -760,6 +760,12 @@ impl Token
 /// a comment lead in this language — the repo comments with `//` and `/* … */`
 /// — so no comment convention is disturbed.
 ///
+/// **`∷` is the word cons**: `g ∷ p` puts the letter `g` — a free cell, or
+/// its inverse `back(g)` — before the word `p` of a path type a `data`
+/// block's cells present. It is the one non-ASCII operator here; its UTF-8
+/// bytes extend no other tile, so its place in the table is free, and a byte
+/// sequence that spelled it before was a stray scalar the molder refused.
+///
 /// **`:>` is the opaque-ascription tile**: `module M :> #{ …
 /// }` against transparent `module M : #{ … }`, the ML-family spelling. It
 /// extends the live single tile `:`, so it sits in this table for the maximal
@@ -768,8 +774,8 @@ impl Token
 /// meaning: `:` is only ever followed by a type or a signature, and neither can
 /// begin with `>`, so no existing byte sequence re-munches.
 const MULTI_PUNCT: &[&str] = &[
-    "-->", "<->", "==>", "<=>", "/\\", "~>", "->", "<-", "=>", "==", "!=", "<=", ">=", "++", "&&",
-    "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>",
+    "-->", "<->", "==>", "<=>", "∷", "/\\", "~>", "->", "<-", "=>", "==", "!=", "<=", ">=", "++",
+    "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>",
 ];
 
 /// UTF-8 bytes for U+00A0 NO-BREAK SPACE.
@@ -2966,7 +2972,7 @@ mod tests
             );
         }
         for operator in [
-            "-->", "<->", "==>", "<=>", "/\\", "~>", "->", "<-", "=>", "==", "!=", "<=", ">=",
+            "-->", "<->", "==>", "<=>", "∷", "/\\", "~>", "->", "<-", "=>", "==", "!=", "<=", ">=",
             "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>",
         ] {
             assert_eq!(

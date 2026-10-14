@@ -838,11 +838,16 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// The fold-in globally reserves the thirteen new
 /// keyword-led forms' leads — `data` / `codata` declarations, `def rec`
 /// (`rec`), `data` / `codata` operation and 2-cell members (`op` / `rule`),
-/// the `for … in` / `while` / `loop` / `break` / `continue` control forms,
-/// the `case … with …` view, the `import` declaration, and the `module`
-/// declaration. A corpus + fixture sweep found no collision with any existing
-/// identifier, so all reserve globally (the keyword table is provisional; a
-/// real collision would move the offender to a contextual keyword). `codata`
+/// the `for … in` / `while` / `break` / `continue` control forms, the `case …
+/// with …` view, the `import` declaration, and the `module` declaration. A
+/// corpus + fixture sweep found no collision with any existing identifier, so
+/// all reserve globally (the keyword table is provisional; a real collision
+/// would move the offender to a contextual keyword). `loop` met that collision
+/// first: the book's circle names its cell `loop` (`loop : Base <-> Base`),
+/// so `loop` is contextual — its tile molds where `loop { … }` opens an
+/// expression, the identifier everywhere else, and the window after the word
+/// tells the two apart at an expression slot (`{` against anything else).
+/// `codata`
 /// reserves as one whole word — the labeler munches the maximal
 /// `[A-Za-z0-9_]` run, so `codata` never lexes as `co` + `data` (the
 /// longest-match hazard is a non-issue here). The operator-declaration fixity
@@ -874,8 +879,8 @@ const KEYWORDS: &[&str] = &[
     "def", "val", "run", "leta", "as", "extern", "from", "type", "fn", "pure", "return", "become",
     "thunk", "force", "case", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
-    "forall", "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "loop",
-    "break", "continue", "with", "import", "module", "sign", "oper", "handle",
+    "forall", "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break",
+    "continue", "with", "import", "module", "sign", "oper", "handle",
 ];
 
 /// Return the grammar tile labels to enumerate for a labeled token.
