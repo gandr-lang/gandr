@@ -448,6 +448,7 @@ pub(crate) fn convert_values(
 /// - witness: `element_identity::tests::a_stuck_returned_endpoint_compares_structurally`
 /// - witness: `presented::tests::a_mode_switch_reads_circle_words_by_their_normal_forms`
 /// - witness: `conv::tests::a_decode_of_a_returned_code_is_set_aside_against_another_former`
+/// - witness: `conv::tests::a_presented_constructor_is_set_aside_on_either_side`
 #[spec(captures: before = pending.len(), ensures: |ret| pending.len() >= before
     && (ret == Convertibility::Distinct || pending.get(before ..).is_some_and(|set_aside| set_aside.iter().all(|pair| match *pair {
         SetAside::Values(left, right) => [left, right].iter().any(|&side| matches!(arena.value(side), Some(&(Value::Returned(_) | Value::Constructor { .. })))),

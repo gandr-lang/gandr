@@ -687,6 +687,7 @@ pub(crate) fn reflexive_endpoints(
 ///   name; a definition relating nothing keeps the forced reading's verdict.
 /// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits`
 /// - witness: `element_identity::tests::a_corrupted_relation_is_refused_by_name`
+/// - witness: `element_identity::tests::a_decoded_endpoint_passes_exactly_where_its_code_reads_as_the_other_type`
 #[spec(
     captures: before = arena.watermark(),
     ensures: |ret| arena.watermark() == before && ret.as_ref().err().is_none_or(|error| matches!(

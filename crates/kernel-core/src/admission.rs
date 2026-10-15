@@ -899,6 +899,7 @@ impl Schema
     /// # Adequacy
     /// - hypothesis: L3 — poisoned rows distinguish each independent premise.
     /// - witness: `admission::tests::schema_and_instance_refusals`
+    /// - witness: `admission::tests::rows_absent_from_the_binding_refuse`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
