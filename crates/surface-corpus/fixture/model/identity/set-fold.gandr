@@ -1,0 +1,158 @@
+// A fold into the paths of a set respects its type's rules however its arms
+// compose those paths (#427). The integers, presented by successor and
+// predecessor with the two cancellations as rules, have no cells: two paths
+// between the same two integers are one path. So addition's commutativity,
+// whose arms run the recursive call through a lemma that nothing reduces,
+// meets each rule once its two sides' endpoints convert, and the kernel
+// re-derives it. The circle's words, presented by the two cancellations of
+// the loop and its inverse, form a set the same way, so a path at every word
+// whose arms disagree on the nose agrees by its endpoints. A fold into the
+// circle's loops, which are no set's paths, is still held to its arms as
+// written.
+
+/// The circle: one point and one loop at it.
+@[ checks ]
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+/// The integers, presented by successor and predecessor.
+@[ checks ]
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
+}
+
+/// Addition, by recursion on its second argument.
+@[ checks ]
+def rec plus(a : Int, b : Int) -> -F Int {
+  case b {
+    Z => a,
+    S(x) => S(plus[<](a, x)),
+    P(x) => P(plus[<](a, x))
+  }
+}
+
+/// The successor as a function, for `cong`.
+@[ checks ]
+def up(n : Int) -> -F Int {
+  S(n)
+}
+
+/// The predecessor as a function, for `cong`.
+@[ checks ]
+def down(n : Int) -> -F Int {
+  P(n)
+}
+
+/// Zero is a left unit: each arm is one `cong` of the recursive call.
+@[ checks ]
+def rec plusZ(b : Int) -> -F Path(Int, plus(Z, b), b) {
+  case b {
+    Z => here(Z),
+    S(x) => cong(up, plusZ[<](x)),
+    P(x) => cong(down, plusZ[<](x))
+  }
+}
+
+/// The successor moves out of the first argument, owed here.
+@[ owes(1) ]
+def plusS : (a : Int, b : Int) => Path(Int, plus(S(a), b), S(plus(a, b))) ;
+
+/// The predecessor moves out of the first argument, owed here.
+@[ owes(1) ]
+def plusP : (a : Int, b : Int) => Path(Int, plus(P(a), b), P(plus(a, b))) ;
+
+/// `plusS` read backwards.
+@[ checks ]
+def flipS(x : Int, a : Int) -> -F Path(Int, S(plus(x, a)), plus(S(x), a)) {
+  back(plusS(x, a))
+}
+
+/// `plusP` read backwards.
+@[ checks ]
+def flipP(x : Int, a : Int) -> -F Path(Int, P(plus(x, a)), plus(P(x), a)) {
+  back(plusP(x, a))
+}
+
+/// The successor of a commuting pair of sums commutes.
+@[ checks ]
+def upOf(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> -F Path(Int, S(plus(a, x)), S(plus(x, a))) {
+  cong(up, e)
+}
+
+/// The predecessor of a commuting pair of sums commutes.
+@[ checks ]
+def downOf(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> -F Path(Int, P(plus(a, x)), P(plus(x, a))) {
+  cong(down, e)
+}
+
+/// One successor step of commutativity: the call's image, then the lemma.
+@[ checks ]
+def upAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> -F Path(Int, S(plus(a, x)), plus(S(x), a)) {
+  upOf(a, x, e) then flipS(x, a)
+}
+
+/// One predecessor step of commutativity: the call's image, then the lemma.
+@[ checks ]
+def downAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> -F Path(Int, P(plus(a, x)), plus(P(x), a)) {
+  downOf(a, x, e) then flipP(x, a)
+}
+
+/// Addition commutes. At `S(P(x))` the arms compute a chain through
+/// `flipP` and `flipS` against the call at `x`; both are paths in the
+/// integers between the same two sums, so they are one path.
+@[ checks ]
+def rec plusComm(a : Int, b : Int) -> -F Path(Int, plus(a, b), plus(b, a)) {
+  case b {
+    Z => back(plusZ(a)),
+    S(x) => upAlong(a, x, plusComm[<](a, x)),
+    P(x) => downAlong(a, x, plusComm[<](a, x))
+  }
+}
+
+/// A fold into the circle's loops is held to its arms as written: at
+/// `S(P(x))` it computes `turned(x) then loop` against `turned(x)`, two
+/// loops the circle tells apart, so the case is refused.
+@[ refuses("RuleNotRespected") ]
+def rec turned(b : Int) -> -F Path(Circle, Base, Base) {
+  case b {
+    Z => here(Base),
+    S(x) => turned[<](x) then loop,
+    P(x) => turned[<](x)
+  }
+}
+
+/// The circle's words: the loop and its inverse as letters, presented by
+/// their two cancellations.
+@[ checks ]
+data Words : Type {
+  Empty : Words;
+  Loop : (x : Words) --> Words;
+  Unloop : (x : Words) --> Words;
+  rule Loop(Unloop(x)) <=> x;
+  rule Unloop(Loop(x)) <=> x;
+}
+
+/// One loop more.
+@[ checks ]
+def around(w : Words) -> -F Words {
+  Loop(w)
+}
+
+/// A path at every word whose inverse arm drops its field's path. At
+/// `Loop(Unloop(x))` the loop arm carries the inverse arm's reflexivity where
+/// the rule's right side reads the path at `x`; the words form a set, so the
+/// two agree by their endpoints and the case respects its rules.
+@[ checks ]
+def rec rewound(w : Words) -> -F Path(Words, w, w) {
+  case w {
+    Empty => here(Empty),
+    Loop(x) => cong(around, rewound[<](x)),
+    Unloop(x) => here(Unloop(x))
+  }
+}

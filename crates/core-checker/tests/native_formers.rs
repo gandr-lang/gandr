@@ -1229,6 +1229,101 @@ mod native_formers
     }
 
     #[test]
+    fn a_fold_into_the_paths_of_a_set_respects_its_rules()
+    {
+        let first = gandr_kernel_term::RuleIndex::from(0_usize);
+        let (lemma, fold) = (ConstantIndex::from(1_usize), ConstantIndex::from(2_usize));
+        // The presented integers are a set: no cells, no loop at them. The
+        // native integers are no data type, so nothing reads them as one.
+        for set in [true, false] {
+            let mut arena = CoreArena::new();
+            let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+            let (carrier, point) = if set {
+                (own, word(&mut arena, &[]))
+            }
+            else {
+                let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+                let zero = arena.value_literal(gandr_kernel_term::Literal::Integer(
+                    gandr_kernel_term::IntegerLiteral::new(
+                        gandr_kernel_term::Sign::NonNegative,
+                        gandr_kernel_term::Magnitude::zero(),
+                    ),
+                ));
+                (integer, zero)
+            };
+            let path = arena.value_type_path(carrier, point, point);
+            let returner = arena.comp_type_returner(path);
+            // A lemma conversion cannot see through, from a loop at the point
+            // to a loop at the point.
+            let step = arena.comp_type_arrow(path, returner);
+            let step = arena.value_type_thunk(step);
+            // `fix f. λy. case y { Base ⇒ return here(p); Loop(x) ⇒
+            // lemma(f(x)); Unloop(x) ⇒ lemma(f(x)) }`: at `Loop(Unloop(x))`
+            // it computes `lemma(lemma(f(x)))`, which conversion never meets
+            // with `f(x)`; both are loops at `p`.
+            let reflexivity = arena.value_here(point);
+            let base = arena.computation_return(reflexivity);
+            let mut arm = || {
+                let recursive =
+                    arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+                let field = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                let forced = arena.computation_force(recursive);
+                let folded = arena.computation_application(forced, field);
+                let folded = arena.value_returned(folded);
+                let operation = arena.value_constant(lemma);
+                let operation = arena.computation_force(operation);
+                let applied = arena.computation_application(operation, folded);
+                arena.computation_lambda(applied)
+            };
+            let looping = arm();
+            let unlooping = arm();
+            let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let case =
+                arena.computation_data_case(argument, returner, vec![base, looping, unlooping]);
+            let lambda = arena.computation_lambda(case);
+            let fixpoint = arena.computation_fixpoint(
+                lambda,
+                gandr_kernel_term::FixpointEvidence::StructuralDescent,
+            );
+            let body = arena.value_thunk(fixpoint);
+            let arrow = arena.comp_type_arrow(own, returner);
+            let declared = arena.value_type_thunk(arrow);
+            let declarations = vec![
+                circle(&mut arena, cancellations()),
+                Declaration::new(
+                    lemma,
+                    Maybe::Present(step),
+                    Maybe::Absent(gandr_core_checker::body::Absent::Hole),
+                    OriginToken::from(usize::from(lemma)),
+                ),
+                definition(fold, declared, body),
+            ];
+            let (report, crossed) = run(&mut arena, &declarations);
+            let verdict = report.judged()[2].verdict();
+            if set {
+                assert!(
+                    matches!(verdict, Verdict::Checked { .. }),
+                    "two loops at one point of a set are one loop: {verdict:?}"
+                );
+                assert!(
+                    matches!(crossed.readmitted()[2].outcome(), Outcome::Defined { .. }),
+                    "and the kernel re-derives the fold: {:?}",
+                    crossed.readmitted()[2].outcome()
+                );
+            }
+            else {
+                assert!(
+                    matches!(
+                        verdict,
+                        Verdict::Refused(CheckRefusal::RuleNotRespected { rule, .. }) if rule == first
+                    ),
+                    "loops in a type not read as a set are compared as written: {verdict:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn dependent_data_parameters_and_case_motives()
     {
         let mut arena = CoreArena::new();
