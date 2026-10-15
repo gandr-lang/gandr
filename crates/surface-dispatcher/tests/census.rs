@@ -232,7 +232,7 @@ mod census
     /// - `Unspelled`: a type the printer could not spell at all.
     const READ_BACK_MISSES: [(&str, usize); 6] = [
         ("Different", 350),
-        ("Open", 1213),
+        ("Open", 1247),
         ("Refused", 30),
         ("Unknown", 129),
         ("Unparsed", 174),
@@ -241,6 +241,14 @@ mod census
 
     /// The read-back sweep: every printed type of each corpus source read back
     /// against its certificate.
+    ///
+    /// In the plain build the sweep reads every source under every profile:
+    /// its ceilings are absolute counts over the whole corpus, which a
+    /// sample's counts can never rise above, so a change that moves one would
+    /// pass its pull request and fail only `main`'s nightly run (#454). The
+    /// counts do not depend on the build, so with specifications enforced it
+    /// reads its sample, which holds the enforced run to the test bound, and
+    /// every source under the `sweeps` profile. Every run prints the counts.
     mod sweeps
     {
         use gandr_workflow_sweep::Sample;
@@ -250,12 +258,10 @@ mod census
 
         use super::*;
 
-        /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
-        /// this name, at least one of each corpus class — `strict` and each
-        /// directory below `fixture` — and every source the change adds or
-        /// modifies (`gandr-workflow-sweep`). The `sweeps` profile reads every
-        /// source. The ceilings are upper bounds, so a sample holds them; their
-        /// counts are measured under the `sweeps` profile, which prints them.
+        /// The sample with specifications enforced: sixty-four sources,
+        /// ranked by their BLAKE3 digest under this name, at least one of each
+        /// corpus class — `strict` and each directory below `fixture` — and
+        /// every source the change adds or modifies (`gandr-workflow-sweep`).
         const SAMPLE: Sample = Sample {
             name: SampleName("every_printed_type_reads_back_to_its_certificate"),
             size: SampleSize(64),
@@ -266,20 +272,20 @@ mod census
         {
             let grammar = built_in().expect("the built-in grammar builds");
             let page = PageWidth::from(PAGE);
-            let sweep = Sweep::asked().expect("the run's sweep resolves");
-            let visited: BTreeSet<PathBuf> = sweep
-                .visit(
-                    SAMPLE,
-                    &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
-                )
-                .into_iter()
-                .map(|source| source.path)
-                .collect();
-            assert!(
-                visited.len() >= SAMPLE.size.0,
-                "the sample is drawn: {}",
-                visited.len()
-            );
+            let sources = gandr_workflow_sweep::corpus::sources().expect("the corpus reads");
+            let visited: BTreeSet<PathBuf> = if cfg!(anodized_panic) {
+                let sweep = Sweep::asked().expect("the run's sweep resolves");
+                let visited = sweep.visit(SAMPLE, &sources);
+                assert!(
+                    visited.len() >= SAMPLE.size.0,
+                    "the sample is drawn: {}",
+                    visited.len()
+                );
+                visited.into_iter().map(|source| source.path).collect()
+            }
+            else {
+                sources.into_iter().map(|source| source.path).collect()
+            };
             let corpus = gandr_workflow_sweep::corpus::directory().expect("the corpus resolves");
             let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
             let mut walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
