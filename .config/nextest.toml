@@ -32,12 +32,15 @@ inherits = "ci"
 # sits in a `sweeps` module, which is all this filter names: a new sweep joins
 # by where it is written. Under every other profile a sweep visits its stated
 # sample, so it never leaves the pull-request lanes; under this one it visits
-# every source (`gandr-workflow-sweep` reads the profile's name). The nightly
-# workflow runs it plain and enforced (`mise run ci:sweeps`), where the limit
-# is the nightly budget, not the 30 s bound. The slowest whole sweep, the
-# typing, measured 756 s enforced on four hosted cores (the table verdicts,
-# 371 s plain); twenty minutes holds it with the margin a slow runner needs,
-# and each lane's whole run, 14 and 7 minutes, sits inside its 60.
+# every source (`gandr-workflow-sweep` reads the profile's name). The hover
+# sweep states the whole corpus as its sample under every profile, since its
+# ceilings count the whole corpus and a sample cannot push them over (4.1 s
+# enforced on the Linux lane). The nightly workflow runs it plain and enforced
+# (`mise run ci:sweeps`), where the limit is the nightly budget, not the 30 s
+# bound. The slowest whole sweep, the typing, measured 756 s enforced on four
+# hosted cores (the table verdicts, 371 s plain); twenty minutes holds it with
+# the margin a slow runner needs, and each lane's whole run, 14 and 7 minutes,
+# sits inside its 60.
 [profile.sweeps]
 default-filter = "test(/(^|::)sweeps::/)"
 status-level = "pass"

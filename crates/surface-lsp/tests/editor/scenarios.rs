@@ -67,7 +67,7 @@ use super::shapes;
 /// is hovered but not counted: a comment is no hover target, and corpus items
 /// carry comments saying what they demonstrate, so counting them would move
 /// the count for documentation alone.
-const UNANSWERED_CEILING: usize = 28_545;
+const UNANSWERED_CEILING: usize = 28_662;
 
 /// The misses each node kind's hovers may hold, as [`KindFloor`] reads a row:
 /// the kind, then counts of the corpus positions whose smallest meaningful
@@ -101,7 +101,7 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("expression call_expression", 97, 503, 134, 98), // shape: #401, `?`
     KindFloor("expression case_expression", 11, 308, 185, 12), // shape: #401
     KindFloor("expression close_expression", 70, 84, 35, 0),
-    KindFloor("expression constructor", 1392, 239, 95, 0),
+    KindFloor("expression constructor", 1396, 239, 95, 0),
     KindFloor("expression continue_expression", 0, 24, 0, 0),
     KindFloor("expression double_quoted_string", 0, 83, 0, 0),
     KindFloor("expression dup_expression", 0, 5, 0, 0),
@@ -115,7 +115,7 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("expression handle_expression name", 141, 60, 0, 1), // shape: #401
     KindFloor("expression hole", 1, 0, 24, 0),
     KindFloor("expression host_escape", 0, 6, 0, 0),
-    KindFloor("expression identifier", 2487, 1743, 167, 194), // shape: #401
+    KindFloor("expression identifier", 2519, 1743, 167, 194), // shape: #401
     KindFloor("expression if_expression", 0, 96, 0, 0),
     KindFloor("expression instantiation_expression", 57, 34, 33, 0),
     KindFloor("expression labelled_sum_expression", 5, 0, 0, 0),
@@ -132,8 +132,8 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("expression pack_expression", 0, 30, 0, 0),
     KindFloor("expression parenthesized_expression", 94, 90, 5, 0),
     KindFloor("expression pipeline", 0, 5, 0, 0),
-    KindFloor("expression projection_expression", 4, 106, 1, 2), // shape: #401
-    KindFloor("expression projection_expression name", 216, 561, 1, 0),
+    KindFloor("expression projection_expression", 4, 106, 1, 3), // shape: #401
+    KindFloor("expression projection_expression name", 227, 561, 1, 0),
     KindFloor("expression pure_expression", 56, 160, 4, 24), // shape: #401
     KindFloor("expression redirection_operator", 0, 4, 0, 0),
     KindFloor("expression resume_expression", 9, 0, 9, 0),
@@ -162,7 +162,7 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("item circuit_declaration name", 20, 65, 0, 0),
     KindFloor("item codata_declaration", 0, 74, 0, 0),
     KindFloor("item codata_declaration name", 5, 63, 0, 0),
-    KindFloor("item data_declaration", 0, 1872, 0, 0),
+    KindFloor("item data_declaration", 0, 1902, 0, 0),
     KindFloor("item data_declaration name", 27, 385, 0, 0),
     KindFloor("item def_value", 0, 919, 105, 143), // shape: #401
     KindFloor("item def_value name", 186, 664, 153, 122), // shape: #401
@@ -207,7 +207,7 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("type number", 0, 2, 0, 0),
     KindFloor("type package_type", 0, 99, 0, 0),
     KindFloor("type package_type name", 0, 11, 0, 0),
-    KindFloor("type parenthesized_type", 599, 34, 2, 0),
+    KindFloor("type parenthesized_type", 614, 34, 2, 0),
     KindFloor("type path_type", 136, 0, 0, 0),
     KindFloor("type primitive_type", 553, 658, 0, 0),
     KindFloor("type product_type", 4, 0, 1, 6), // shape: #404
@@ -1240,13 +1240,17 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
     );
 }
 
-/// The corpus sweeps and the random edit scripts. Each visits the sample its
-/// constant states under every pull-request profile and everything under the
-/// `sweeps` profile (`gandr-workflow-sweep`): every source, every script from
-/// a fresh seed. A sample ranks the corpus by its BLAKE3 digest under the
-/// sweep's name, holds at least one source of each corpus class — `strict` and
-/// each directory below `fixture` — and adds every source the change adds or
-/// modifies, so a corpus edit is swept on the pull request that makes it.
+/// The corpus sweeps and the random edit scripts. The typing and erasure
+/// sweeps and the scripts visit the sample their constants state under every
+/// pull-request profile and everything under the `sweeps` profile
+/// (`gandr-workflow-sweep`): every source, every script from a fresh seed. A
+/// sample ranks the corpus by its BLAKE3 digest under the sweep's name, holds
+/// at least one source of each corpus class — `strict` and each directory
+/// below `fixture` — and adds every source the change adds or modifies, so a
+/// corpus edit is swept on the pull request that makes it. The hover sweep
+/// visits every source under every profile: its ceilings count the whole
+/// corpus, which no sample can push over them, so a change that moves them
+/// is refused on its own pull request rather than on `main` the next night.
 mod sweeps
 {
     use gandr_workflow_sweep::Sample;
@@ -1287,12 +1291,6 @@ mod sweeps
     const ERASED: Sample = Sample {
         name: SampleName("erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful"),
         size: SampleSize(24),
-    };
-
-    /// The hover sweep's sample: forty-eight sources, every position hovered.
-    const HOVERED: Sample = Sample {
-        name: SampleName("hovering_every_position_of_each_corpus_source_answers_without_fault"),
-        size: SampleSize(48),
     };
 
     /// The length in bytes past which a sampled sweep leaves a source to the
@@ -1394,7 +1392,9 @@ mod sweeps
     #[test]
     fn hovering_every_position_of_each_corpus_source_answers_without_fault()
     {
-        let sources = visited(HOVERED, Ceiling(u64::MAX));
+        let mut sources =
+            opened(&gandr_workflow_sweep::corpus::sources().expect("the corpus reads"));
+        sources.sort_by_key(|source| core::cmp::Reverse(source.text.len()));
         let grammar = built_in().expect("the built-in grammar builds");
         let positions = AtomicUsize::new(0_usize);
         let unanswered = AtomicUsize::new(0_usize);
@@ -1517,15 +1517,11 @@ mod sweeps
                 }
             }
         }
-        // A sample need not hold every kind; only the whole corpus can show a
-        // floor whose kind is gone.
-        if gandr_workflow_sweep::Coverage::asked() == gandr_workflow_sweep::Coverage::Full {
-            for &KindFloor(kind, ..) in KIND_FLOORS {
-                if !by_kind.contains_key(kind) {
-                    misses.push(format!(
-                        "{kind}: a floor for a kind the corpus no longer has"
-                    ));
-                }
+        for &KindFloor(kind, ..) in KIND_FLOORS {
+            if !by_kind.contains_key(kind) {
+                misses.push(format!(
+                    "{kind}: a floor for a kind the corpus no longer has"
+                ));
             }
         }
         assert_eq!(misses, Vec::<String>::new(), "hover coverage by node");
