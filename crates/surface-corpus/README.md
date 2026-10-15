@@ -7,6 +7,7 @@ The expectation language over a lowered module and its verdicts — the `checks`
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
+- [Writing to the corpus](#writing-to-the-corpus)
 - [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 <!-- tocstop -->
@@ -109,6 +110,20 @@ assert_eq!(tally.seal(), Seal::Unsealed);
 The same example is the crate-level doctest. `cargo nextest run -p gandr-surface-corpus` runs the crate's tests. Source-level settlement witnesses parse, lower and check their modules; counter and formatter boundary witnesses also construct values directly to reach saturation and sink failures.
 
 Five headline sources — `fixture/model/higher-cells/ua-corolla.gandr`, `fixture/model/identity/transport-dependent.gandr`, `fixture/model/identity/transport-path.gandr`, `fixture/model/identity/funext.gandr` and `fixture/model/identity/circle.gandr` — keep a golden of every hover beside their role goldens, as `crates/surface-grammar/tests/highlight/<source>.hover`: one line per run of positions answered alike, its span, the text, the hover text and its range. A change that moves a hover moves a line; `UPDATE_EXPECT=1 cargo nextest run -p gandr-surface-lsp --test editor -E 'test(the_headline_sources_hover_as_their_goldens)'` rewrites them, and the diff is the review.
+
+## Writing to the corpus
+
+The corpus is a proof library and a test suite at once, and it grows by subject, not by accretion (#435). A change that adds a source or an item is held to these rules in review.
+
+- **One subject, one directory, one base.** A subject (`identity`, `data`, `universe`, …) is one directory under `fixture/model/`; its shared declarations — `Circle`, `Int`, `Empty`, an isomorphism every file uses — live in one base source the others import (#434; until an import resolves, a copy says `// shared with <base>` in its head and #436 folds it). A new directory only when no subject owns the claim.
+- **One file, one claim.** A source states one theorem family or one feature, in the order the argument runs: definitions, then laws, then what refuses. Its head says what it proves and names the source it follows — a cubical file and line, a book section — and an item that follows a named lemma keeps that name in its comment. A lemma two files need is written in the file that owns it and imported, never restated; a new item goes to the file that owns its subject before a new file is opened.
+- **Every item carries its comment and its attribute.** `///` before the attribute block (`check:corpus-comments` refuses otherwise), one of `checks`, `runs`, `normalizes`, `owes`, `refuses`. A refused item names its issue (`#n`) in the comment and sits beside the item it blocks; there is no `declined` fixture — a refusal the record admits is a defect to file and fix. A fix's regression is an item in the subject's file, named by its issue.
+- **A refusal has a twin.** What a model source proves, `pathological/<subject>/` refuses by name, one refusal per item, the same subject directory on both sides.
+- **Size follows the sweeps.** A source stays within the per-source bounds the sweeps enforce (#416: typed when at most a kibibyte, erased within the test bound); split by claim, never by count.
+- **Names say the claim.** Files are kebab-case by subject and claim (`circle-group`, not `circle2`); items are the language's camelCase; a name that coincides with cubical's or the book's is kept.
+- **The strict root is strict.** `strict/` admits only `checks` and its `runs` and `normalizes` refinements.
+
+The test suite follows the same shape: one witness per behaviour, in the crate that owns it, named as the sentence it proves; a corpus-wide property is a `sweeps` module test, and nothing else walks the corpus; a setup two crates share is one function called twice; a duplicate witness is deleted when found and the survivor named in the commit.
 
 ## Where the detail lives
 
