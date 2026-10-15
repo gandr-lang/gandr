@@ -1248,9 +1248,12 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
 /// at least one source of each corpus class — `strict` and each directory
 /// below `fixture` — and adds every source the change adds or modifies, so a
 /// corpus edit is swept on the pull request that makes it. The hover sweep
-/// visits every source under every profile: its ceilings count the whole
-/// corpus, which no sample can push over them, so a change that moves them
-/// is refused on its own pull request rather than on `main` the next night.
+/// visits every source in the plain build under every profile: its ceilings
+/// count the whole corpus, which no sample can push over them, so a change
+/// that moves them is refused on its own pull request rather than on `main`
+/// the next night. The ceilings do not depend on the build, so with
+/// specifications enforced it visits its sample, which holds the enforced
+/// run to the test bound.
 mod sweeps
 {
     use gandr_workflow_sweep::Sample;
@@ -1291,6 +1294,13 @@ mod sweeps
     const ERASED: Sample = Sample {
         name: SampleName("erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful"),
         size: SampleSize(24),
+    };
+
+    /// The hover sweep's sample with specifications enforced: forty-eight
+    /// sources, every position hovered.
+    const HOVERED: Sample = Sample {
+        name: SampleName("hovering_every_position_of_each_corpus_source_answers_without_fault"),
+        size: SampleSize(48),
     };
 
     /// The length in bytes past which a sampled sweep leaves a source to the
@@ -1392,9 +1402,19 @@ mod sweeps
     #[test]
     fn hovering_every_position_of_each_corpus_source_answers_without_fault()
     {
-        let mut sources =
-            opened(&gandr_workflow_sweep::corpus::sources().expect("the corpus reads"));
-        sources.sort_by_key(|source| core::cmp::Reverse(source.text.len()));
+        // The plain build holds the whole corpus to the ceilings; the enforced
+        // build, whose counts are the same, holds its sample to the bound.
+        let whole = !cfg!(anodized_panic)
+            || gandr_workflow_sweep::Coverage::asked() == gandr_workflow_sweep::Coverage::Full;
+        let sources = if whole {
+            let mut sources =
+                opened(&gandr_workflow_sweep::corpus::sources().expect("the corpus reads"));
+            sources.sort_by_key(|source| core::cmp::Reverse(source.text.len()));
+            sources
+        }
+        else {
+            visited(HOVERED, Ceiling(u64::MAX))
+        };
         let grammar = built_in().expect("the built-in grammar builds");
         let positions = AtomicUsize::new(0_usize);
         let unanswered = AtomicUsize::new(0_usize);
@@ -1517,11 +1537,15 @@ mod sweeps
                 }
             }
         }
-        for &KindFloor(kind, ..) in KIND_FLOORS {
-            if !by_kind.contains_key(kind) {
-                misses.push(format!(
-                    "{kind}: a floor for a kind the corpus no longer has"
-                ));
+        // A sample need not hold every kind; only the whole corpus can show a
+        // floor whose kind is gone.
+        if whole {
+            for &KindFloor(kind, ..) in KIND_FLOORS {
+                if !by_kind.contains_key(kind) {
+                    misses.push(format!(
+                        "{kind}: a floor for a kind the corpus no longer has"
+                    ));
+                }
             }
         }
         assert_eq!(misses, Vec::<String>::new(), "hover coverage by node");
