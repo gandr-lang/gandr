@@ -814,6 +814,31 @@ mod native_formers
         }
     }
 
+    /// A case over a sort with loops takes one branch per constructor, or one
+    /// more per loop, and no other count: over the one-loop circle, three
+    /// branches are refused as non-exhaustive.
+    #[test]
+    fn a_case_over_the_circle_takes_its_constructors_and_loops_only()
+    {
+        let mut arena = CoreArena::new();
+        let (mut declarations, circle) = one_loop(&mut arena);
+        let kept = arena.comp_type_returner(circle.carrier);
+        let (declared, body) = case_over(&mut arena, (circle.carrier, kept), circle.point, &[
+            circle.point,
+            circle.point,
+        ]);
+        declarations.push(definition(ConstantIndex::from(3_usize), declared, body));
+        let (report, _) = run(&mut arena, &declarations);
+        assert!(
+            matches!(
+                report.judged()[3].verdict(),
+                Verdict::Refused(CheckRefusal::NonExhaustiveDataCase(_))
+            ),
+            "one constructor and one loop admit one or two branches, not three: {:?}",
+            report.judged()[3].verdict()
+        );
+    }
+
     /// `thunk (λa. λb. case a { Base ⇒ case b { Base ⇒ answer } })` at `(a b
     /// : S) → motive`, `motive` read under both binders and the outer case's
     /// motive the same family over its own binder.

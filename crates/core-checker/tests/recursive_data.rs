@@ -1156,6 +1156,32 @@ mod recursive_data
         );
     }
 
+    /// A function field into another type is a plain field: `Box(U (Integer
+    /// → F Integer))` takes no hypothesis there, so a motive naming its
+    /// scrutinee derives, where at a function field into the family it is
+    /// refused.
+    #[test]
+    fn a_function_field_into_another_type_takes_no_hypothesis()
+    {
+        let mut arena = CoreArena::new();
+        let kind = kind(&mut arena);
+        let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let returns = arena.comp_type_returner(integer);
+        let arrow = arena.comp_type_arrow(integer, returns);
+        let field = arena.value_type_thunk(arrow);
+        let position = ConstantIndex::from(0_usize);
+        let signature = DataSignature::new(vec![], vec![vec![field]], kind);
+        let own = arena.value_type_data(position, vec![]);
+        let scrutinee = var(&mut arena, DeBruijnIndex::from(0));
+        let naming = arena.value_type_path(own, scrutinee, scrutinee);
+        let naming = arena.comp_type_returner(naming);
+        let derived = eliminator::derive(&mut arena, position, &signature, naming);
+        assert!(
+            derived.is_ok(),
+            "a function into the integers is no recursive field: {derived:?}"
+        );
+    }
+
     #[test]
     fn definitions_by_eliminator_normalise()
     {

@@ -259,3 +259,22 @@ fn what_the_rule_cannot_show_it_refuses_by_name()
         "{report:?}"
     );
 }
+
+#[test]
+fn the_empty_sum_has_no_coverage()
+{
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let void = arena.value_type_sum(&[]);
+    let hollow = arena.value_type_product(&[unit, void]);
+    let at = arena.value_unit();
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for code in [void, hollow] {
+        let covered = super::coverage(&mut context, at, code);
+        assert!(
+            matches!(covered, Ok(Maybe::Absent(super::uncovered::Absent::Former))),
+            "a sum of no summand covers nothing the rule decides over, alone or in a product: \
+             {covered:?}"
+        );
+    }
+}

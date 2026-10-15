@@ -541,6 +541,53 @@ fn a_nullary_argument_needs_a_value_below_the_stage()
     );
 }
 
+#[test]
+fn a_constructor_of_plain_fields_needs_a_value_below_the_stage()
+{
+    // `T = Leaf Integer | Node T`, and `fix f. λt. case t { Leaf n ⇒ f (Leaf
+    // n) ; Node c ⇒ return c }`: `Leaf n` holds no recursive field, so it
+    // stands at no stage below `t`'s, and under `Leaf` nothing in scope
+    // stands below the fixpoint's stage.
+    let mut arena = CoreArena::new();
+    let kind = kind(&mut arena);
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let own = data(&mut arena, ConstantIndex::from(0), vec![]);
+    let signature = DataSignature::new(vec![], vec![vec![integer], vec![own]], kind);
+    let returner = arena.comp_type_returner(own);
+    let arrow = arena.comp_type_arrow(own, returner);
+    let declared = arena.value_type_thunk(arrow);
+    // Under `Leaf`'s field: `n` 0, `t` 1, `f` 2.
+    let n = var(&mut arena, DeBruijnIndex::from(0));
+    let leaf = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![n]);
+    let recursive = var(&mut arena, DeBruijnIndex::from(2));
+    let on_leaf = call(&mut arena, recursive, &[leaf]);
+    let on_leaf = arena.computation_lambda(on_leaf);
+    let child = var(&mut arena, DeBruijnIndex::from(0));
+    let on_node = arena.computation_return(child);
+    let on_node = arena.computation_lambda(on_node);
+    let scrutinee = var(&mut arena, DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(scrutinee, returner, vec![on_leaf, on_node]);
+    let lambda = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+    let body = arena.value_thunk(fixpoint);
+    let declarations = vec![
+        declare_data(ConstantIndex::from(0), signature),
+        define(ConstantIndex::from(1), declared, body),
+    ];
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(
+            verdicts[1],
+            Verdict::Refused(CheckRefusal::StageNotBelow {
+                found: Standing::Top,
+                ..
+            })
+        ),
+        "{:?}",
+        verdicts[1]
+    );
+}
+
 /// `List a`, at position 1: `Nil`, `Cons (El a) (List a)`.
 ///
 /// # Specification
