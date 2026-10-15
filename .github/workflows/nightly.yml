@@ -217,6 +217,14 @@ jobs:
   # shape, in the same commit; the name is the job's display name. Each budget
   # is about 1.5 times the lane's median once build state was pruned, the
   # toolchain installed once and Clippy given its own state.
+  #
+  # The enforcing lanes are held by the cone a landing touched: deep when it
+  # changed a file under crates/kernel-* or crates/core-*, Cargo.lock,
+  # rust-toolchain.toml or .cargo/, surface otherwise. A deep landing
+  # rebuilds the whole enforcing graph and takes longer than a surface one,
+  # so one budget is wrong on both sides; each class is held to its own.
+  # The deep budget is the surface one plus the measured cost of the extra
+  # units a deep landing rebuilds.
   lane-budget:
     name: hold each CI lane to its budget
     needs: ci-image-ref
@@ -241,7 +249,9 @@ jobs:
         run: >-
           mise run ci:lane-budget --issue "CI lane budgets"
           --budget "test enforcing targets (linux)=360"
+          --budget "test enforcing targets (linux):deep=540"
           --budget "test enforcing targets (macos-arm64)=420"
+          --budget "test enforcing targets (macos-arm64):deep=600"
           --budget "test plain-only targets (linux)=150"
           --budget "check quenchant compiler policy=180"
           --budget "check Clippy wall=150"

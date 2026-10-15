@@ -7,6 +7,7 @@ use core::str::FromStr;
 
 use anodized::spec;
 
+use crate::cone::Cone;
 use crate::error::BudgetError;
 
 /// Seconds in a minute, for the report's `9m 41s`.
@@ -108,7 +109,8 @@ impl fmt::Display for Seconds
     }
 }
 
-/// One row of the budget table: a job and the seconds its median may take.
+/// One row of the budget table: a job, the cone it bounds, and the seconds
+/// its median may take.
 ///
 /// # Specification
 /// - provides: what the report compares a lane's median against.
@@ -117,6 +119,9 @@ pub struct Budget
 {
     /// The job, by its display name.
     pub lane: Lane,
+    /// The cone this budget bounds; a lane without a deep budget is not
+    /// cone-classified and its single row is held to this budget.
+    pub cone: Cone,
     /// The most its median may take.
     pub limit: Seconds,
 }
@@ -125,15 +130,21 @@ impl FromStr for Budget
 {
     type Err = BudgetError;
 
-    /// Reads `NAME=SECONDS`: the job's display name, `=`, and whole seconds.
+    /// Reads `NAME=SECONDS` or `NAME:CONE=SECONDS`: the job's display name,
+    /// an optional `:deep` or `:surface` cone, `=`, and whole seconds. A
+    /// bare name is the surface budget; `:deep` names the deep budget of a
+    /// cone-classified lane.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success the name is the text before the last `=`, trimmed
-    ///   and not empty, and the limit the decimal after it.
+    /// - ensures: on success the name is the text before the last `=`, minus
+    ///   any `:deep` or `:surface` cone, trimmed and not empty, the cone the
+    ///   suffix names (surface without one), and the limit the decimal after
+    ///   the `=`.
     /// - provides: the budget table's rows from the workflow's arguments.
     /// - fails: [`BudgetError::Budget`] when no `=` is present, the name is
-    ///   empty, or the seconds are not a whole number.
+    ///   empty, the cone is not `deep` or `surface`, or the seconds are not a
+    ///   whole number.
     /// - panics: none.
     /// - executable: none — the outcome is the parse itself.
     ///
@@ -142,9 +153,11 @@ impl FromStr for Budget
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a name with parentheses and spaces, a name holding
-    ///   `=`, an empty name, a fraction and a missing `=`; splitting at the
-    ///   first `=` or accepting an empty name changes a parse.
-    /// - witness: `budget::tests::a_budget_reads_name_and_seconds`
+    ///   `=`, a `:deep` and a `:surface` suffix, an unknown cone, an empty
+    ///   name, a fraction and a missing `=`; splitting at the first `=`,
+    ///   reading the cone before the name, or accepting an empty name changes a
+    ///   parse.
+    /// - witness: `budget::tests::a_budget_reads_name_cone_and_seconds`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
@@ -152,6 +165,18 @@ impl FromStr for Budget
             text: text.to_owned(),
         };
         let (name, seconds) = text.rsplit_once('=').ok_or_else(refuse)?;
+        let (name, cone) = if let Some(lane) = name.strip_suffix(":deep") {
+            (lane, Cone::Deep)
+        }
+        else if let Some(lane) = name.strip_suffix(":surface") {
+            (lane, Cone::Surface)
+        }
+        else if name.contains(':') {
+            return Err(refuse());
+        }
+        else {
+            (name, Cone::Surface)
+        };
         let name = name.trim();
         if name.is_empty() {
             return Err(refuse());
@@ -159,6 +184,7 @@ impl FromStr for Budget
         let limit = seconds.trim().parse::<Seconds>().ok().ok_or_else(refuse)?;
         Ok(Self {
             lane: Lane::from(name),
+            cone,
             limit,
         })
     }
@@ -204,26 +230,42 @@ mod tests
     use super::Budget;
     use super::Lane;
     use super::Seconds;
+    use crate::cone::Cone;
     use crate::error::BudgetError;
 
     #[test]
-    fn a_budget_reads_name_and_seconds()
+    fn a_budget_reads_name_cone_and_seconds()
     {
         assert_eq!(
             "test enforcing targets (linux)=600".parse::<Budget>(),
             Ok(Budget {
                 lane: Lane::from("test enforcing targets (linux)"),
+                cone: Cone::Surface,
                 limit: Seconds::from(600),
+            })
+        );
+        assert_eq!(
+            "test enforcing targets (linux):deep=540".parse::<Budget>(),
+            Ok(Budget {
+                lane: Lane::from("test enforcing targets (linux)"),
+                cone: Cone::Deep,
+                limit: Seconds::from(540),
             })
         );
         assert_eq!(
             "a=b = 7".parse::<Budget>(),
             Ok(Budget {
                 lane: Lane::from("a=b"),
+                cone: Cone::Surface,
                 limit: Seconds::from(7),
             })
         );
-        for text in ["=600", "check Clippy wall", "check Clippy wall=1.5"] {
+        for text in [
+            "=600",
+            "check Clippy wall",
+            "check Clippy wall=1.5",
+            "check Clippy wall:wide=600",
+        ] {
             assert_eq!(
                 text.parse::<Budget>(),
                 Err(BudgetError::Budget { text: text.into() }),

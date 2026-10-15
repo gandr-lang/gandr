@@ -4,8 +4,10 @@
 //!
 //! - [`budget`] reads the budget table: a job's display name and the whole
 //!   seconds its median may take.
+//! - [`cone`] names the cone a landing touched: deep when it reaches the kernel
+//!   or core stack, surface otherwise.
 //! - [`report`] summarises each budgeted lane by the lower median of its
-//!   successful jobs and renders the Markdown table.
+//!   successful jobs, per cone, and renders the Markdown table.
 //! - [`github`] samples the runs and jobs through `gh` and keeps the one issue
 //!   in step with the report.
 //!
@@ -25,6 +27,14 @@
 //! cold run drags, and a percentile over a longer window, which reports a
 //! regression days late.
 //!
+//! **Two cones, two budgets.** A landing that touches the kernel or core
+//! stack — a file under `crates/kernel-*` or `crates/core-*`, `Cargo.lock`,
+//! `rust-toolchain.toml` or `.cargo/` — rebuilds the whole enforcing graph
+//! and takes longer than one that touches only the surface. One budget is
+//! wrong on both sides: tight enough to miss a surface regression, loose
+//! enough to excuse a deep one. Each sampled run is classified by the cone
+//! its changed files touched, and each class is held to its own budget.
+//!
 //! **One issue, found by its exact title.** It opens or reopens while any
 //! lane is over and closes once all are within, so the repository holds one
 //! record of the current drift, never one issue per night.
@@ -35,12 +45,14 @@
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-lane-budget/README.md).
 
 pub mod budget;
+pub mod cone;
 pub mod error;
 pub mod github;
 pub mod report;
 
 pub use crate::budget::Budget;
 pub use crate::budget::RunCount;
+pub use crate::cone::Cone;
 pub use crate::error::BudgetError;
 pub use crate::github::Filed;
 pub use crate::github::IssueTitle;
