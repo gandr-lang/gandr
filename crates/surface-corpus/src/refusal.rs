@@ -58,6 +58,7 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
@@ -541,6 +542,22 @@ pub enum RefusalName
     UnrestrictedEndpoint,
     /// An action naming a linear index no fork bound.
     UnboundEndpoint,
+    /// An access naming a linear slot that holds no value.
+    NotHeld,
+    /// A held value read, or accessed again, while an access lends it.
+    HeldLent,
+    /// A held value named where its holding may run other than once.
+    HeldCaptured,
+    /// A view named where it would outlive its access's body.
+    ViewEscaped,
+    /// An access's body ending with its view neither resumed nor aborted.
+    ViewUnended,
+    /// A view used after its resume or abort.
+    ViewSpent,
+    /// A resume or an abort naming a linear slot that is no view.
+    NotAView,
+    /// An access's unwind performing an effect.
+    UnwindEffect,
 }
 
 impl RefusalName
@@ -560,7 +577,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 131_usize] = [
+    pub const VOCABULARY: [Self; 139_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -692,6 +709,14 @@ impl RefusalName
         Self::ArmsDisagree,
         Self::UnrestrictedEndpoint,
         Self::UnboundEndpoint,
+        Self::NotHeld,
+        Self::HeldLent,
+        Self::HeldCaptured,
+        Self::ViewEscaped,
+        Self::ViewUnended,
+        Self::ViewSpent,
+        Self::NotAView,
+        Self::UnwindEffect,
     ];
 
     /// The name as a `refuses` payload spells it: the name of the variant it
@@ -816,6 +841,14 @@ impl RefusalName
         | (Self::ArmsDisagree, b"ArmsDisagree")
         | (Self::UnrestrictedEndpoint, b"UnrestrictedEndpoint")
         | (Self::UnboundEndpoint, b"UnboundEndpoint")
+        | (Self::NotHeld, b"NotHeld")
+        | (Self::HeldLent, b"HeldLent")
+        | (Self::HeldCaptured, b"HeldCaptured")
+        | (Self::ViewEscaped, b"ViewEscaped")
+        | (Self::ViewUnended, b"ViewUnended")
+        | (Self::ViewSpent, b"ViewSpent")
+        | (Self::NotAView, b"NotAView")
+        | (Self::UnwindEffect, b"UnwindEffect")
         | (Self::CapabilityForged, b"CapabilityForged")
         | (Self::CapabilityAmplified, b"CapabilityAmplified")
         | (Self::CapabilityOutsideAuthority, b"CapabilityOutsideAuthority")
@@ -905,6 +938,14 @@ impl RefusalName
             Self::ArmsDisagree => "ArmsDisagree",
             Self::UnrestrictedEndpoint => "UnrestrictedEndpoint",
             Self::UnboundEndpoint => "UnboundEndpoint",
+            Self::NotHeld => "NotHeld",
+            Self::HeldLent => "HeldLent",
+            Self::HeldCaptured => "HeldCaptured",
+            Self::ViewEscaped => "ViewEscaped",
+            Self::ViewUnended => "ViewUnended",
+            Self::ViewSpent => "ViewSpent",
+            Self::NotAView => "NotAView",
+            Self::UnwindEffect => "UnwindEffect",
             Self::CapabilityForged => "CapabilityForged",
             Self::CapabilityAmplified => "CapabilityAmplified",
             Self::CapabilityOutsideAuthority => "CapabilityOutsideAuthority",
@@ -1227,6 +1268,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::UnenclosedRun { .. }), RefusalName::UnenclosedRun)
         | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
         | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::Delegation | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint)
+        | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::UnwindEffect)
         | (Self::Checking(CheckRefusal::CapabilityForged { .. }), RefusalName::CapabilityForged)
         | (Self::Checking(CheckRefusal::CapabilityAmplified(_)), RefusalName::CapabilityAmplified)
         | (Self::Checking(CheckRefusal::CapabilityOutsideAuthority { .. }), RefusalName::CapabilityOutsideAuthority)
@@ -1495,6 +1537,14 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Linearity { defect: LinearityDefect::ArmsDisagree { .. }, .. }, RefusalName::ArmsDisagree)
         | (CheckRefusal::Linearity { defect: LinearityDefect::Unrestricted, .. }, RefusalName::UnrestrictedEndpoint)
         | (CheckRefusal::Linearity { defect: LinearityDefect::Unbound { .. }, .. }, RefusalName::UnboundEndpoint)
+        | (CheckRefusal::Access { defect: AccessDefect::NotHeld, .. }, RefusalName::NotHeld)
+        | (CheckRefusal::Access { defect: AccessDefect::Lent, .. }, RefusalName::HeldLent)
+        | (CheckRefusal::Access { defect: AccessDefect::HeldCaptured { .. }, .. }, RefusalName::HeldCaptured)
+        | (CheckRefusal::Access { defect: AccessDefect::Escaped { .. }, .. }, RefusalName::ViewEscaped)
+        | (CheckRefusal::Access { defect: AccessDefect::Unended, .. }, RefusalName::ViewUnended)
+        | (CheckRefusal::Access { defect: AccessDefect::Spent, .. }, RefusalName::ViewSpent)
+        | (CheckRefusal::Access { defect: AccessDefect::NotAView, .. }, RefusalName::NotAView)
+        | (CheckRefusal::Access { defect: AccessDefect::UnwindEffect, .. }, RefusalName::UnwindEffect)
         | (CheckRefusal::CapabilityForged { .. }, RefusalName::CapabilityForged)
         | (CheckRefusal::CapabilityAmplified(_), RefusalName::CapabilityAmplified)
         | (CheckRefusal::CapabilityOutsideAuthority { .. }, RefusalName::CapabilityOutsideAuthority)
@@ -1580,6 +1630,16 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
             LinearityDefect::ArmsDisagree { .. } => RefusalName::ArmsDisagree,
             LinearityDefect::Unrestricted => RefusalName::UnrestrictedEndpoint,
             LinearityDefect::Unbound { .. } => RefusalName::UnboundEndpoint,
+        },
+        CheckRefusal::Access { defect, .. } => match defect {
+            AccessDefect::NotHeld => RefusalName::NotHeld,
+            AccessDefect::Lent => RefusalName::HeldLent,
+            AccessDefect::HeldCaptured { .. } => RefusalName::HeldCaptured,
+            AccessDefect::Escaped { .. } => RefusalName::ViewEscaped,
+            AccessDefect::Unended => RefusalName::ViewUnended,
+            AccessDefect::Spent => RefusalName::ViewSpent,
+            AccessDefect::NotAView => RefusalName::NotAView,
+            AccessDefect::UnwindEffect => RefusalName::UnwindEffect,
         },
         CheckRefusal::CapabilityEscaped { .. } => RefusalName::CapabilityEscaped,
         CheckRefusal::CapabilityConsumable(_) => RefusalName::CapabilityConsumable,

@@ -1108,6 +1108,7 @@ Computation::Resume(..) | Computation::With(..) | Computation::Application(..) |
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 Computation::Session(ref action) => action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count()),
+Computation::Memory(ref form) => form.values().count().saturating_add(form.computations().count()),
 }),
         | Node::ValueType(id) => self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
@@ -1489,6 +1490,20 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                             .value_types()
                             .rev()
                             .map(|child| open(Node::ValueType(child), depth)),
+                    );
+                },
+                // A memory form binds only into the linear zone: every child
+                // stands at the form's own intuitionistic depth.
+                Some(&Computation::Memory(ref form)) => {
+                    self.tasks.extend(
+                        form.computations()
+                            .rev()
+                            .map(|child| open(Node::Computation(child), depth)),
+                    );
+                    self.tasks.extend(
+                        form.values()
+                            .rev()
+                            .map(|child| open(Node::Value(child), depth)),
                     );
                 },
             },
@@ -2278,6 +2293,7 @@ Computation::Resume(..) | Computation::With(..) | Computation::Application(..) |
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 Computation::Session(ref action) => action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count()),
+Computation::Memory(ref form) => form.values().count().saturating_add(form.computations().count()),
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.computation(id).is_some_and(|original| self.arena.computation(ret).is_some_and(|rewritten|
@@ -2762,6 +2778,25 @@ Computation::Session(ref action) => action.values().count().saturating_add(actio
                 }
                 else {
                     self.arena.computation_session(rewritten)
+                }
+            },
+            Computation::Memory(ref form) => {
+                let rewritten = match form.try_map(
+                    crate::session::ChildOrder::Reverse,
+                    &mut self.results,
+                    |results, value| {
+                        Ok::<_, core::convert::Infallible>(Self::value(results, value))
+                    },
+                    |results, computation| Ok(Self::computation(results, computation)),
+                ) {
+                    Ok(rewritten) => rewritten,
+                    Err(never) => match never {},
+                };
+                if rewritten == *form {
+                    id
+                }
+                else {
+                    self.arena.computation_memory(rewritten)
                 }
             },
         }
@@ -3994,6 +4029,13 @@ fn survey_computation(
             next.extend(
                 action
                     .computations()
+                    .map(|body| Position::Computation(body, own)),
+            );
+        },
+        Computation::Memory(ref form) => {
+            next.extend(form.values().map(|value| Position::Value(value, region)));
+            next.extend(
+                form.computations()
                     .map(|body| Position::Computation(body, own)),
             );
         },
@@ -6199,7 +6241,8 @@ mod tests
                             | crate::Computation::Shift(_)
                             | crate::Computation::With(..)
                             | crate::Computation::Project(..)
-                            | crate::Computation::Session(_) => {
+                            | crate::Computation::Session(_)
+                            | crate::Computation::Memory(_) => {
                                 panic!("the golden uses binding computations and return")
                             },
                         }

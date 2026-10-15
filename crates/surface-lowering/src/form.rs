@@ -140,7 +140,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 52_usize] = [
+    pub const ALL: [Self; 53_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -161,6 +161,7 @@ impl FormName
         Self::VAL_STATEMENT,
         Self::UNPACK_STATEMENT,
         Self::LETA_STATEMENT,
+        Self::HOLD_STATEMENT,
         Self::RECV_STATEMENT,
         Self::ACQUIRE_STATEMENT,
         Self::RELEASE_STATEMENT,
@@ -217,6 +218,8 @@ impl FormName
     pub const FUNCTION: Self = Self("def_function");
     /// A grade annotation `[r]`, folded into the thunk and its type.
     pub const GRADE: Self = Self("grade");
+    /// The statement `hold x = e ;`, inlined into its block.
+    pub const HOLD_STATEMENT: Self = Self("hold_statement");
     /// An interpolation `${ e }`, folded into the string.
     pub const INTERPOLATION: Self = Self("string_interpolation");
     /// The instantiation `e[i, …]`, a recursive call's claim among its
@@ -369,6 +372,10 @@ impl TileName
     pub const ACQUIRE: Self = Self("acquire");
     /// The arrow `->` of a function type and of a function's result.
     pub const ARROW: Self = Self("->");
+    /// The temporary-access eliminator `abort`.
+    pub const ABORT: Self = Self("abort");
+    /// The temporary-access lead `access`.
+    pub const ACCESS: Self = Self("access");
     /// The alias keyword `as` of an import.
     pub const AS: Self = Self("as");
     /// The lazy product's `&`, and the opener of the lazy record over labels
@@ -442,6 +449,8 @@ impl TileName
     pub const CAP: Self = Self("Cap");
     /// The capability scope's lead `handle`.
     pub const HANDLE: Self = Self("handle");
+    /// The keyword `hold`, opening a statement that holds a value.
+    pub const HOLD: Self = Self("hold");
     /// The sort literal `+` of a universe: the value types.
     pub const PLUS: Self = Self("+");
     /// A double quote opening or closing a string written among a form's own
@@ -459,6 +468,8 @@ impl TileName
     pub const PURE: Self = Self("pure");
     /// The function exit `return`.
     pub const RETURN: Self = Self("return");
+    /// The temporary-access eliminator `resume`.
+    pub const RESUME: Self = Self("resume");
     /// The tail-call exit `become`.
     pub const BECOME: Self = Self("become");
     /// The loop exit `break`.
@@ -494,6 +505,8 @@ impl TileName
     pub const UNIVERSE: Self = Self("Type");
     /// The unpack keyword `unpack`, opening a statement.
     pub const UNPACK: Self = Self("unpack");
+    /// The unwind of a temporary access, `unwind`.
+    pub const UNWIND: Self = Self("unwind");
     /// The keyword `val`, opening a statement.
     pub const VAL: Self = Self("val");
     /// The match keyword `case`.
@@ -740,6 +753,10 @@ pub enum Former
     /// The offer `offer(c) { l => t, … }`: the arm of the label the peer
     /// chose.
     Offer,
+    /// Temporary access to a held value: the access `access x as v { t }
+    /// unwind { u }` and the eliminators `resume(v, e)` and `abort(v)` that
+    /// end its view.
+    Access,
     /// A form parsed so it is declined by name until the engine has it:
     /// `dup`, which waits on shared sessions.
     Reserved,
@@ -765,7 +782,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 58_usize] = [
+    pub const ALL: [Self; 59_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -822,6 +839,7 @@ impl Former
         Self::SessionType,
         Self::Action,
         Self::Offer,
+        Self::Access,
         Self::Reserved,
         Self::Unadmitted,
     ];
@@ -846,7 +864,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 65_usize] = [
+pub const FORMERS: [(&str, Former); 68_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -911,6 +929,9 @@ pub const FORMERS: [(&str, Former); 65_usize] = [
     ("select_expression", Former::Action),
     ("close_expression", Former::Action),
     ("offer_expression", Former::Offer),
+    ("access_expression", Former::Access),
+    ("resume_expression", Former::Access),
+    ("abort_expression", Former::Access),
     ("dup_expression", Former::Reserved),
 ];
 

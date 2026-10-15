@@ -385,6 +385,7 @@ fn operand_of(
         | Former::SessionType
         | Former::Action
         | Former::Offer
+        | Former::Access
         | Former::Reserved => RunOperand::Tight,
     }
 }

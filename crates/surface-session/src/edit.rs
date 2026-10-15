@@ -2408,9 +2408,9 @@ enum Agreement
 /// - requires: nothing.
 /// - ensures: agrees exactly on the former, the non-child payload and the
 ///   number of children: leaf values, injection side, classifier targets, path
-///   evidence and a tuple's or product's component count matter; child indices
-///   do not. The walk pairs children by slot, so two nodes it descends into
-///   have every child paired.
+///   evidence, a memory form's kind and slot, and a tuple's or product's
+///   component count matter; child indices do not. The walk pairs children by
+///   slot, so two nodes it descends into have every child paired.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2427,6 +2427,7 @@ enum Agreement
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `edit::tests::child_mapping_preserves_payloads_without_replaying_the_callback`
+/// - witness: `edit::tests::a_memory_form_agrees_on_its_kind_and_slot`
 #[spec(
     ensures: |ret| {
     (ret == Agreement::Same)
@@ -2481,6 +2482,7 @@ enum Agreement
                         if left == right
                     )
                 }
+                ContentNode::Memory(ref left) => matches!(*new, ContentNode::Memory(ref right) if left.shape() == right.shape()),
                 _ if children(old).next().is_none() => old == new,
                 ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::UnknownComputationType | ContentNode::Unresolved(_) => true,
             })
@@ -2727,6 +2729,9 @@ fn agreement(
                 target: ref right, ..
             },
         ) => left == right,
+        (&ContentNode::Memory(ref left), &ContentNode::Memory(ref right)) => {
+            left.shape() == right.shape()
+        },
         _ if children(old).next().is_none() => old == new,
         _ => mem::discriminant(old) == mem::discriminant(new),
     };
@@ -3229,6 +3234,7 @@ where
                 }
                 Computation::ListFold { .. } => matches!(ret, ContentNode::ListFold { .. }),
                 Computation::Session(ref action) => matches!(ret, ContentNode::Session(ref found) if found.shape() == action.shape()),
+                Computation::Memory(ref form) => matches!(ret, ContentNode::Memory(ref found) if found.shape() == form.shape()),
             },
         )
 },
@@ -3491,6 +3497,15 @@ where
                     |child, ty| Ok(child(Root::ValueType(ty))),
                 )
                 .unwrap_or_else(|never| match never {}),
+        ),
+        Some(&Computation::Memory(ref form)) => ContentNode::Memory(
+            form.try_map(
+                gandr_core_term::session::ChildOrder::Forward,
+                child,
+                |child, value| Ok::<_, core::convert::Infallible>(child(Root::Value(value))),
+                |child, body| Ok(child(Root::Computation(body))),
+            )
+            .unwrap_or_else(|never| match never {}),
         ),
         None => ContentNode::Unresolved(Sort::Computation),
     }
@@ -4188,6 +4203,45 @@ def body = 1 ;
                 "a leaf has no child"
             )),
             ContentNode::Tuple(Vec::new())
+        );
+    }
+
+    #[test]
+    fn a_memory_form_agrees_on_its_kind_and_slot()
+    {
+        use gandr_core_term::memory::MemoryForm;
+        use gandr_kernel_term::DeBruijnIndex;
+
+        use super::Agreement;
+        use super::ContentNode;
+        use super::NodeIndex;
+        let (first, second) = (NodeIndex::from(3_usize), NodeIndex::from(5_usize));
+        let access = |held| {
+            ContentNode::Memory(MemoryForm::Access {
+                held,
+                body: first,
+                unwind: second,
+            })
+        };
+        let hold = ContentNode::Memory(MemoryForm::Hold {
+            value: first,
+            body: second,
+        });
+        let slot = DeBruijnIndex::from(0_u32);
+        assert_eq!(
+            super::agreement(&access(slot), &access(slot)),
+            Agreement::Same,
+            "one access over one slot agrees"
+        );
+        assert_eq!(
+            super::agreement(&access(slot), &hold),
+            Agreement::Differs,
+            "an access and a hold of one arity are two formers"
+        );
+        assert_eq!(
+            super::agreement(&access(slot), &access(DeBruijnIndex::from(1_u32))),
+            Agreement::Differs,
+            "an access over another slot is another payload"
         );
     }
 

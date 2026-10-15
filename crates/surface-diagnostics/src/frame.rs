@@ -246,6 +246,11 @@ pub fn sentence(role: FrameRole) -> Sentence
         FrameRole::ForkProtocol => "forming the session type this fork opens",
         FrameRole::ForkChild => "checking the child this forks",
         FrameRole::ForkParent => "checking the rest of this fork's parent",
+        FrameRole::HoldValue => "synthesising the value this holds",
+        FrameRole::HoldBody => "checking the scope of this hold",
+        FrameRole::AccessBody => "checking the body of this access",
+        FrameRole::AccessUnwind => "checking the unwind of this access under the empty row",
+        FrameRole::ResumeValue => "checking the value this resume writes back",
     })
 }
 
@@ -520,6 +525,11 @@ mod tests
             FrameRole::ForkProtocol,
             FrameRole::ForkChild,
             FrameRole::ForkParent,
+            FrameRole::HoldValue,
+            FrameRole::HoldBody,
+            FrameRole::AccessBody,
+            FrameRole::AccessUnwind,
+            FrameRole::ResumeValue,
         ];
         let mut sentences: Vec<super::Sentence> =
             roles.iter().map(|&role| sentence(role)).collect();

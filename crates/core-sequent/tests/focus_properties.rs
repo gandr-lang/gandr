@@ -50,6 +50,7 @@ fn hand_built_control_cases_cover_every_former()
     use gandr_core_term::control::StackFrame;
     use gandr_core_term::effect::EffectOp;
     use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::memory::MemoryForm;
     let mut core = CoreArena::new();
     let unit = core.value_unit();
     let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
@@ -100,6 +101,25 @@ fn hand_built_control_cases_cover_every_former()
     let under = core.computation_lambda(pair);
     let pair = core.computation_with(returned, returned);
     let projected = core.computation_project(Side::Right, pair);
+    let view = 0_u32.into();
+    let resumed_view = core.computation_memory(MemoryForm::Resume { view, value: unit });
+    let ended = core.computation_bind(resumed_view, returned);
+    let accessed = core.computation_memory(MemoryForm::Access {
+        held: view,
+        body: ended,
+        unwind: returned,
+    });
+    let aborted_view = core.computation_memory(MemoryForm::Abort { view });
+    let aborting = core.computation_memory(MemoryForm::Access {
+        held: view,
+        body: aborted_view,
+        unwind: identity,
+    });
+    let both = core.computation_bind(accessed, aborting);
+    let held = core.computation_memory(MemoryForm::Hold {
+        value: unit,
+        body: both,
+    });
     for program in [
         stack_return,
         performed,
@@ -109,6 +129,7 @@ fn hand_built_control_cases_cover_every_former()
         reset,
         under,
         projected,
+        held,
     ] {
         let expected = core.value_thunk(program);
         let mut arena = CommandArena::new();

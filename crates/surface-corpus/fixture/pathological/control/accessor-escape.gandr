@@ -1,0 +1,15 @@
+/// A view captured by a thunk: the thunk may be forced after the access that
+/// lent the view has ended, so the view would outlive its access.
+@[ refuses("ViewEscaped") ]
+def leak() -> -F Integer {
+  hold c = 0;
+  access c as v { force thunk { resume(v, 1) } };
+  pure c
+}
+
+/// A held value captured by a thunk would outlive its hold the same way.
+@[ refuses("HeldCaptured") ]
+def stash() -> -F Integer {
+  hold c = 0;
+  force thunk { pure c }
+}

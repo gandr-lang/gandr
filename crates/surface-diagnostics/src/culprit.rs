@@ -52,6 +52,7 @@ use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
 use gandr_core_checker::Mismatch;
 use gandr_core_checker::RunFault;
+use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
@@ -153,6 +154,8 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             FragmentBoundary::EmptyList => "an empty list, not the unit",
             FragmentBoundary::Endpoint => "not an endpoint a fork binds",
             FragmentBoundary::NonContractive => "recurses before any action",
+            FragmentBoundary::Held => "not a value a hold holds",
+            FragmentBoundary::View => "not a view an access binds",
         },
         LoweringRefusal::GradedBridge { .. } => "a grade other than `ω`",
         LoweringRefusal::MalformedLiteral { .. } => "not this literal's lexeme",
@@ -303,6 +306,16 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             LinearityDefect::ArmsDisagree { .. } => "an arm that leaves the endpoints otherwise",
             LinearityDefect::Unrestricted => "an endpoint outside a fork",
             LinearityDefect::Unbound { .. } => "no endpoint bound here",
+        },
+        CheckRefusal::Access { defect, .. } => match defect {
+            AccessDefect::NotHeld => "no held value here",
+            AccessDefect::Lent => "a held value lent to an access",
+            AccessDefect::HeldCaptured { .. } => "a held value that may be held other than once",
+            AccessDefect::Escaped { .. } => "a view outliving its access",
+            AccessDefect::Unended => "a view neither resumed nor aborted",
+            AccessDefect::Spent => "a view already ended",
+            AccessDefect::NotAView => "no view here",
+            AccessDefect::UnwindEffect => "an effect in an unwind",
         },
         CheckRefusal::CapabilityForged { .. } => "no capability hypothesis",
         CheckRefusal::CapabilityAmplified(_) => "a capability granting less",

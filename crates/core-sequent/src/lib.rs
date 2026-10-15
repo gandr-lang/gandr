@@ -166,6 +166,7 @@ pub use crate::store::ContinuationMark;
 pub use crate::store::Covalue;
 pub use crate::store::CovalueBindingId;
 pub use crate::store::CovalueScope;
+pub use crate::store::Ending;
 pub use crate::store::Environment;
 pub use crate::store::ForceEntry;
 pub use crate::store::Frame;

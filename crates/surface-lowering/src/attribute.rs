@@ -789,6 +789,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::SessionType
         | Former::Action
         | Former::Offer
+        | Former::Access
         | Former::Reserved
         | Former::Unadmitted => PayloadForm::OtherValue,
     }

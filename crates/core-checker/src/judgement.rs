@@ -500,6 +500,8 @@ use crate::view::ValueTypeView;
 use crate::view::comp_type_view;
 use crate::view::value_type_view;
 
+mod access;
+
 mod elaboration;
 
 mod native;
@@ -1969,6 +1971,48 @@ enum Frame
         /// The fork's own direction.
         direction: Direction<CompTypeId>,
     },
+    /// A hold waits on its value's synthesis; the held slot then opens.
+    HoldValue
+    {
+        /// The hold.
+        at: ComputationId,
+        /// The hold's own direction, which its scope takes.
+        direction: Direction<CompTypeId>,
+    },
+    /// A hold's scope is being judged with the held slot bound.
+    HoldBody
+    {
+        /// The hold.
+        at: ComputationId,
+        /// The hold's own direction.
+        direction: Direction<CompTypeId>,
+    },
+    /// An access's body is being judged with its view bound and its held
+    /// slot lent.
+    AccessBody
+    {
+        /// The access.
+        at: ComputationId,
+        /// The access's own direction.
+        direction: Direction<CompTypeId>,
+    },
+    /// An access's unwind is being checked against the pure returner of the
+    /// unit; the body's result then ascends.
+    AccessUnwind
+    {
+        /// The access.
+        at: ComputationId,
+        /// What the body produced.
+        produced: Produced,
+    },
+    /// A resume waits on its value's check; its view is then spent.
+    ResumeValue
+    {
+        /// The resume.
+        at: ComputationId,
+        /// The view it ends.
+        view: DeBruijnIndex,
+    },
 }
 
 /// A frame beside the goal under way when its rule pushed it: the node the
@@ -2133,6 +2177,11 @@ impl Frame
             Self::ArrowCodomain { .. } => FrameRole::ArrowCodomain,
             Self::ArrowAgainst { .. } => FrameRole::ArrowAgainst,
             Self::StayEndpoints { .. } => FrameRole::StayEndpoints,
+            Self::HoldValue { .. } => FrameRole::HoldValue,
+            Self::HoldBody { .. } => FrameRole::HoldBody,
+            Self::AccessBody { .. } => FrameRole::AccessBody,
+            Self::AccessUnwind { .. } => FrameRole::AccessUnwind,
+            Self::ResumeValue { .. } => FrameRole::ResumeValue,
         }
     }
 
@@ -2251,7 +2300,12 @@ impl Frame
             | Self::ArrowDomain { .. }
             | Self::ArrowCodomain { .. }
             | Self::ArrowAgainst { .. }
-            | Self::StayEndpoints { .. } => 0_usize,
+            | Self::StayEndpoints { .. }
+            | Self::HoldValue { .. }
+            | Self::HoldBody { .. }
+            | Self::AccessBody { .. }
+            | Self::AccessUnwind { .. }
+            | Self::ResumeValue { .. } => 0_usize,
         })
     }
 }
@@ -2664,7 +2718,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | Frame::OfferArm { .. }
                     | Frame::ForkProtocol { .. }
                     | Frame::ForkChild { .. }
-                    | Frame::ForkParent { .. } => None,
+                    | Frame::ForkParent { .. }
+                    | Frame::HoldValue { .. }
+                    | Frame::HoldBody { .. }
+                    | Frame::AccessBody { .. }
+                    | Frame::AccessUnwind { .. }
+                    | Frame::ResumeValue { .. } => None,
                 })
         else {
             return Err(CheckRefusal::ShiftWithoutReset { at });
@@ -3411,9 +3470,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
             };
             step = match next {
                 Ok(next) => next,
-                Err(refusal) => match self.recover(refusal) {
-                    Ok(next) => next,
-                    Err(refusal) => return Err(Halt { refusal, control }),
+                Err(refusal) => {
+                    let refusal = self.unwinding(refusal, control);
+                    match self.recover(refusal) {
+                        Ok(next) => next,
+                        Err(refusal) => return Err(Halt { refusal, control }),
+                    }
                 },
             };
         }
@@ -3756,7 +3818,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Value::Variable {
                 zone: Zone::Linear,
                 index,
-            } => self.endpoint_as_value(term, index),
+            } => self.linear_read(term, index),
             Value::Variable {
                 zone: Zone::Intuitionistic,
                 index,
@@ -4772,6 +4834,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 form: CheckingForm::Split(term),
             }),
             Computation::Session(_) => self.session(term, Direction::Synthesise),
+            Computation::Memory(_) => self.memory(term, Direction::Synthesise),
             Computation::Hole(_) | Computation::Mark { .. } => {
                 let unknown = self.context.arena_mut().comp_type_unknown();
                 Ok(Step::Ascend(Produced::CompType(unknown)))
@@ -4909,6 +4972,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | SessionAction::Receive { .. }
                 | SessionAction::Select { .. }
                 | SessionAction::Close { .. },
+            )
+            | Computation::Memory(
+                gandr_core_term::memory::MemoryForm::Resume { .. }
+                | gandr_core_term::memory::MemoryForm::Abort { .. },
             ) => {
                 self.wait(Frame::CompBridge { at: term, expected });
                 Ok(Step::Descend(Goal::Computation {
@@ -4944,6 +5011,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Computation::Session(SessionAction::Offer { .. } | SessionAction::Fork { .. }) => {
                 self.session(term, Direction::Check(expected))
             },
+            Computation::Memory(
+                gandr_core_term::memory::MemoryForm::Hold { .. }
+                | gandr_core_term::memory::MemoryForm::Access { .. },
+            ) => self.memory(term, Direction::Check(expected)),
             Computation::Hole(_) | Computation::Mark { .. } => Ok(Step::Ascend(Produced::Checked)),
         }
     }
@@ -7190,7 +7261,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::RideUnsupported { .. }
                     | CheckRefusal::RunNotAdmitted { .. }
                     | CheckRefusal::ForwardUnsupported { .. }
-                    | CheckRefusal::Boundary { .. }) => other,
+                    | CheckRefusal::Boundary { .. }
+                    | CheckRefusal::Access { .. }) => other,
                 })?;
                 Ok(Step::Ascend(Produced::ValueType(codomain)))
             },
@@ -7230,6 +7302,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Produced::Checked,
             ) => self.forked(at, direction, session),
             (Frame::ForkParent { at, direction }, produced) => self.joined(at, direction, produced),
+            (Frame::HoldValue { at, direction }, Produced::ValueType(held)) => {
+                self.held(at, direction, held)
+            },
+            (Frame::HoldBody { at, direction }, produced) => self.dropped(at, direction, produced),
+            (Frame::AccessBody { at, .. }, produced) => self.accessed(at, produced),
+            (Frame::AccessUnwind { produced, .. }, Produced::Checked) => Ok(Step::Ascend(produced)),
+            (Frame::ResumeValue { at, view }, Produced::Checked) => self.resumed(at, view),
             (
                 Frame::PathProductFirst { .. }
                 | Frame::Resume { .. }
@@ -7258,7 +7337,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ForwardTranslator { .. }
                 | Frame::ArrowDomain { .. }
                 | Frame::ArrowCodomain { .. }
-                | Frame::ArrowAgainst { .. },
+                | Frame::ArrowAgainst { .. }
+                | Frame::HoldValue { .. },
                 Produced::CompType(_) | Produced::Checked,
             )
             | (
@@ -7319,7 +7399,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::SessionStatement { .. }
                 | Frame::RideMotive { .. }
                 | Frame::RideValue { .. }
-                | Frame::StayEndpoints { .. },
+                | Frame::StayEndpoints { .. }
+                | Frame::AccessUnwind { .. }
+                | Frame::ResumeValue { .. },
                 Produced::ValueType(_) | Produced::CompType(_),
             )
             | (Frame::BindBody { .. }, Produced::ValueType(_)) => {
@@ -11472,7 +11554,7 @@ mod tests
                     | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..)
                     | Computation::Exercise { .. } | Computation::Scope { .. }
                     | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..)
-                    | Computation::Hole(_) | Computation::Mark { .. } | Computation::Session(_) => {
+                    | Computation::Hole(_) | Computation::Mark { .. } | Computation::Session(_) | Computation::Memory(_) => {
                         prop_assert!(false, "the recipe mints no former outside the fragment, no hole and no mark");
                     },
                 }

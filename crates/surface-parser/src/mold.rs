@@ -874,13 +874,16 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 ///
 /// The capability scope reserves its lead `handle`: it opens an expression,
 /// where an unreserved lead would tie its own tile against `identifier` at
-/// every expression slot.
+/// every expression slot. Temporary access reserves its leads `access`,
+/// `resume` and `abort` for the same reason, and `unwind`, the tile after an
+/// access's body, so a name there is never read as the next statement.
 const KEYWORDS: &[&str] = &[
     "def", "val", "run", "leta", "as", "extern", "from", "type", "fn", "pure", "return", "become",
     "thunk", "force", "case", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
     "forall", "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break",
-    "continue", "with", "import", "module", "sign", "oper", "handle",
+    "continue", "with", "import", "module", "sign", "oper", "handle", "access", "unwind", "resume",
+    "abort",
 ];
 
 /// Return the grammar tile labels to enumerate for a labeled token.

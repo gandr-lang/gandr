@@ -38,6 +38,7 @@ use super::Ordinal;
 use super::Produced;
 use super::Step;
 use super::Typing;
+use crate::access::AccessDefect;
 use crate::context::Atom;
 use crate::context::Recording;
 use crate::refusal::CheckRefusal;
@@ -57,27 +58,51 @@ use crate::view::ValueTypeView;
 use crate::view::comp_type_view;
 use crate::view::value_type_view;
 
-/// An endpoint the run bound: which fork and side, and the intuitionistic
-/// depth its session type was formed at.
+/// Who bound a linear slot: a fork's endpoint, a hold's held value, or an
+/// access's view.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct Opened
+pub(super) enum Resident
 {
-    /// The endpoint.
-    endpoint: Endpoint,
-    /// The intuitionistic depth at the fork.
-    depth: BinderDepth,
+    /// An endpoint a fork bound.
+    Endpoint(Endpoint),
+    /// A value the hold `at` holds.
+    Held
+    {
+        /// The hold.
+        at: ComputationId,
+    },
+    /// The view the access `at` lends.
+    View
+    {
+        /// The access.
+        at: ComputationId,
+    },
 }
 
-/// The session state of one run: who bound each linear slot it opened, the
-/// zones its offers restore and compare, and the free linear indices of the
-/// terms it read.
+/// A linear slot the run bound: who bound it, and the intuitionistic depth
+/// its declared type was formed at.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Opened
+{
+    /// Who bound it.
+    pub resident: Resident,
+    /// The intuitionistic depth at the binder.
+    pub depth: BinderDepth,
+}
+
+/// The linear state of one run: who bound each linear slot it opened, the
+/// held slots its accesses lend, the zones its offers restore and compare,
+/// and the free linear indices of the terms it read.
 #[derive(Debug)]
 pub(super) struct Sessions
 {
     /// The linear depth the run began at; slots below it are not the run's.
     base: BinderDepth,
     /// One entry per linear slot above `base`, outermost first.
-    opened: Vec<Opened>,
+    pub opened: Vec<Opened>,
+    /// The position above `base` of each held slot an access lends, the
+    /// innermost access last.
+    pub lent: Vec<usize>,
     /// Each open offer's zone as the offer found it, then as its first arm
     /// left it, innermost offer last.
     zones: Vec<LinearZone>,
@@ -87,7 +112,7 @@ pub(super) struct Sessions
 
 impl Sessions
 {
-    /// The session state of a run that begins with `base` linear slots open.
+    /// The linear state of a run that begins with `base` linear slots open.
     ///
     /// # Specification
     /// trivial.
@@ -96,19 +121,22 @@ impl Sessions
         Self {
             base,
             opened: Vec::new(),
+            lent: Vec::new(),
             zones: Vec::new(),
             free: FreeIndices::default(),
         }
     }
 }
 
-/// How far a run's linear zone and its offers' zones stood: what a recovered
-/// or refused run falls back to.
+/// How far a run's linear zone, its lendings and its offers' zones stood:
+/// what a recovered or refused run falls back to.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) struct Scope
 {
     /// The linear depth.
     linear: BinderDepth,
+    /// The lendings held.
+    lent: usize,
     /// The offers' zones held.
     zones: usize,
 }
@@ -119,8 +147,25 @@ pub(super) struct Scope
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct ZoneMark(usize);
 
-/// One linear slot, read: its endpoint, session type, remaining use and the
-/// depth its type stands at.
+/// One linear slot, read: who bound it, its declared type, its remaining
+/// use, the depth its type stands at and its position above the run's base.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Resided
+{
+    /// Who bound it.
+    pub resident: Resident,
+    /// Its declared type, at `depth`.
+    pub state: ValueTypeId,
+    /// Its remaining use.
+    pub use_state: LinearUse,
+    /// The intuitionistic depth `state` stands at.
+    pub depth: BinderDepth,
+    /// Its position above the run's base.
+    pub position: usize,
+}
+
+/// One endpoint's slot, read: its endpoint, session type, remaining use and
+/// the depth its type stands at.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct Slot
 {
@@ -136,7 +181,7 @@ struct Slot
 
 impl Machine<'_, '_>
 {
-    /// Where the linear zone and the offers' zones stand.
+    /// Where the linear zone, the lendings and the offers' zones stand.
     ///
     /// # Specification
     /// trivial.
@@ -144,13 +189,14 @@ impl Machine<'_, '_>
     {
         Scope {
             linear: self.context.depth(Zone::Linear),
+            lent: self.sessions.lent.len(),
             zones: self.sessions.zones.len(),
         }
     }
 
-    /// Drop every endpoint bound and every offer zone kept since `scope`,
-    /// spent or not: the session half of unwinding a refused or recovered
-    /// judgement.
+    /// Drop every linear slot bound, every lending made and every offer zone
+    /// kept since `scope`, spent or not: the linear half of unwinding a
+    /// refused or recovered judgement.
     ///
     /// # Specification
     /// - requires: the zones stand at or above `scope`.
@@ -161,7 +207,9 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — a refusal inside a fork leaves the context's linear
     ///   zone as the run found it.
     /// - witness: `judgement::session::tests::a_leftover_endpoint_is_reported_by_name`
-    #[spec(ensures: self.context.depth(Zone::Linear) <= scope.linear && self.sessions.zones.len() <= scope.zones)]
+    #[spec(ensures: self.context.depth(Zone::Linear) <= scope.linear
+        && self.sessions.lent.len() <= scope.lent
+        && self.sessions.zones.len() <= scope.zones)]
     pub(super) fn close_sessions(
         &mut self,
         scope: Scope,
@@ -170,6 +218,7 @@ impl Machine<'_, '_>
         self.context.binders().truncate(Zone::Linear, scope.linear);
         let kept = usize::from(scope.linear).saturating_sub(usize::from(self.sessions.base));
         self.sessions.opened.truncate(kept);
+        self.sessions.lent.truncate(scope.lent);
         self.sessions.zones.truncate(scope.zones);
     }
 
@@ -177,8 +226,9 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one entry per linear slot above the run's base, with its
-    ///   endpoint, session type and remaining use.
+    /// - ensures: one entry per endpoint's slot above the run's base, with its
+    ///   endpoint, session type and remaining use; held values and views are
+    ///   left out.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -195,19 +245,22 @@ impl Machine<'_, '_>
             .linear_slots()
             .skip(base)
             .zip(opened)
-            .map(|((state, use_state), opened)| LiveEndpoint {
-                endpoint: opened.endpoint,
-                state,
-                use_state,
+            .filter_map(|((state, use_state), opened)| match opened.resident {
+                Resident::Endpoint(endpoint) => Some(LiveEndpoint {
+                    endpoint,
+                    state,
+                    use_state,
+                }),
+                Resident::Held { .. } | Resident::View { .. } => None,
             })
             .collect()
     }
 
-    /// The linear slot `index` names, read at `at`.
+    /// The linear slot `index` names, read at `at`, whoever bound it.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the slot's endpoint, session type, use and depth.
+    /// - ensures: the slot's resident, declared type, use, depth and position.
     /// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Unbound`]
     ///   at `at` for an index past the zone; [`CheckRefusal::MachineInvariant`]
     ///   for a slot the run did not bind.
@@ -217,9 +270,11 @@ impl Machine<'_, '_>
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every action reads its endpoint here, so the seat
-    ///   exchange and every refusal by endpoint observe it.
+    /// - hypothesis: L3 — every action, access and eliminator reads its slot
+    ///   here, so the seat exchange, the counter and every refusal by resident
+    ///   observe it.
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    /// - witness: `judgement::access::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
     #[spec(ensures: |ret| match ret {
         | Ok(_) | Err(CheckRefusal::MachineInvariant) => true,
         | Err(CheckRefusal::Linearity { at: refused, defect: LinearityDefect::Unbound { index: unbound } }) => {
@@ -227,11 +282,11 @@ impl Machine<'_, '_>
         },
         | Err(_) => false,
     })]
-    fn slot(
+    pub(super) fn resided(
         &mut self,
         at: CoreNode,
         index: DeBruijnIndex,
-    ) -> Result<Slot, CheckRefusal>
+    ) -> Result<Resided, CheckRefusal>
     {
         let unbound = CheckRefusal::Linearity {
             at,
@@ -243,18 +298,72 @@ impl Machine<'_, '_>
             .declared(Zone::Linear, index)
             .map_err(|_fault| unbound)?;
         let use_state = binders.linear_use(index).map_err(|_fault| unbound)?;
-        let opened = usize::try_from(u32::from(index))
+        let position = usize::try_from(u32::from(index))
             .ok()
             .and_then(|index| depth.checked_sub(index)?.checked_sub(1))
             .and_then(|position| position.checked_sub(usize::from(self.sessions.base)))
-            .and_then(|position| self.sessions.opened.get(position))
             .ok_or(CheckRefusal::MachineInvariant)?;
-        Ok(Slot {
-            endpoint: opened.endpoint,
+        let opened = self
+            .sessions
+            .opened
+            .get(position)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        Ok(Resided {
+            resident: opened.resident,
             state,
             use_state,
             depth: opened.depth,
+            position,
         })
+    }
+
+    /// The endpoint's slot `index` names, read at `at`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slot's endpoint, session type, use and depth.
+    /// - fails: as [`Self::resided`]; [`CheckRefusal::ShapeMismatch`] wanting
+    ///   [`ExpectedShape::Session`] at a term `at` whose slot holds a value or
+    ///   a view, and [`CheckRefusal::MachineInvariant`] at a type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every action reads its endpoint here, so the seat
+    ///   exchange and every refusal by endpoint observe it.
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    #[spec(ensures: |ret| match ret {
+        | Ok(_) | Err(CheckRefusal::MachineInvariant | CheckRefusal::ShapeMismatch { .. }) => true,
+        | Err(CheckRefusal::Linearity { at: refused, defect: LinearityDefect::Unbound { index: unbound } }) => {
+            refused == at && unbound == index
+        },
+        | Err(_) => false,
+    })]
+    fn slot(
+        &mut self,
+        at: CoreNode,
+        index: DeBruijnIndex,
+    ) -> Result<Slot, CheckRefusal>
+    {
+        let resided = self.resided(at, index)?;
+        match resided.resident {
+            Resident::Endpoint(endpoint) => Ok(Slot {
+                endpoint,
+                state: resided.state,
+                use_state: resided.use_state,
+                depth: resided.depth,
+            }),
+            Resident::Held { .. } | Resident::View { .. } => match at {
+                CoreNode::Term(term) => Err(CheckRefusal::ShapeMismatch {
+                    at: term,
+                    wanted: ExpectedShape::Session,
+                    found: TypeNode::Value(resided.state),
+                }),
+                CoreNode::Type(_) => Err(CheckRefusal::MachineInvariant),
+            },
+        }
     }
 
     /// The available linear slot `index` names, read at the action `at`.
@@ -314,7 +423,7 @@ impl Machine<'_, '_>
         ensures: |ret| (current != depth || ret == Ok(ty))
             && (current >= depth || ret == Err(CheckRefusal::MachineInvariant)),
     )]
-    fn here(
+    pub(super) fn here(
         &mut self,
         ty: ValueTypeId,
         depth: BinderDepth,
@@ -338,7 +447,7 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// trivial.
-    fn unit_returner(&mut self) -> CompTypeId
+    pub(super) fn unit_returner(&mut self) -> CompTypeId
     {
         let unit = self.context.atom(Atom::Unit).id();
         self.context.arena_mut().comp_type_returner(unit)
@@ -365,7 +474,7 @@ impl Machine<'_, '_>
         | Ok(ref indices) => indices.is_sorted(),
         | Err(ref refusal) => matches!(*refusal, CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant),
     })]
-    fn free_linear(
+    pub(super) fn free_linear(
         &mut self,
         term: CoreTerm,
     ) -> Result<Vec<DeBruijnIndex>, CheckRefusal>
@@ -384,9 +493,11 @@ impl Machine<'_, '_>
             })
     }
 
-    /// Refuse an endpoint named where its use may run other than once: a
-    /// thunk, a fixpoint, a branching former, a first-class stack, a handler
-    /// or a shift, while the run holds an endpoint.
+    /// Refuse a linear resident named where its use may run other than once:
+    /// a thunk, a fixpoint, a branching former, a first-class stack, a
+    /// handler or a shift, while the run holds one. A branch may read a held
+    /// value: a read copies, and each branch lends it at most for its own
+    /// extent.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -394,9 +505,11 @@ impl Machine<'_, '_>
     ///   the run holds no endpoint, passes without its free indices read.
     /// - fails: [`CheckRefusal::Linearity`] naming
     ///   [`LinearityDefect::Captured`] at the goal's term, with the first
-    ///   endpoint it names and what may run it; a shift names the innermost
-    ///   endpoint the run holds, which its captured continuation may resume
-    ///   twice.
+    ///   endpoint it names and what may run it; [`CheckRefusal::Access`] naming
+    ///   [`AccessDefect::Escaped`] for a view and
+    ///   [`AccessDefect::HeldCaptured`] for a held value; a shift names the
+    ///   innermost resident the run holds, which its captured continuation may
+    ///   resume twice.
     /// - panics: none.
     ///
     /// # Errors
@@ -474,14 +587,8 @@ impl Machine<'_, '_>
                     Computation::Handle { .. } => Capture::Continuation,
                     Computation::Shift(_) => {
                         let node = CoreNode::Term(TermNode::Computation(term));
-                        let endpoint = self.slot(node, DeBruijnIndex::from(0_u32))?.endpoint;
-                        return Err(CheckRefusal::Linearity {
-                            at: node,
-                            defect: LinearityDefect::Captured {
-                                endpoint,
-                                by: Capture::Continuation,
-                            },
-                        });
+                        let innermost = self.resided(node, DeBruijnIndex::from(0_u32))?;
+                        return captured(node, innermost.resident, Capture::Continuation);
                     },
                     Computation::Primitive { .. }
                     | Computation::Transport(..)
@@ -504,7 +611,8 @@ impl Machine<'_, '_>
                     | Computation::Resume(..)
                     | Computation::Reset(_)
                     | Computation::Project(..)
-                    | Computation::Session(_) => return Ok(()),
+                    | Computation::Session(_)
+                    | Computation::Memory(_) => return Ok(()),
                 };
                 (
                     CoreTerm::Computation(term),
@@ -514,15 +622,11 @@ impl Machine<'_, '_>
             },
             Goal::Form(_) | Goal::Stack { .. } => return Ok(()),
         };
-        let Some(&first) = self.free_linear(term)?.first()
-        else {
-            return Ok(());
-        };
-        let endpoint = self.slot(node, first)?.endpoint;
-        Err(CheckRefusal::Linearity {
-            at: node,
-            defect: LinearityDefect::Captured { endpoint, by },
-        })
+        for index in self.free_linear(term)? {
+            let named = self.resided(node, index)?;
+            captured(node, named.resident, by)?;
+        }
+        Ok(())
     }
 
     /// The refusal of a linear variable read as a value.
@@ -633,7 +737,8 @@ impl Machine<'_, '_>
             | CheckRefusal::RideUnsupported { .. }
             | CheckRefusal::RunNotAdmitted { .. }
             | CheckRefusal::ForwardUnsupported { .. }
-            | CheckRefusal::Boundary { .. }) => other,
+            | CheckRefusal::Boundary { .. }
+            | CheckRefusal::Access { .. }) => other,
         })?;
         Err(CheckRefusal::Linearity {
             at: node,
@@ -1234,17 +1339,24 @@ impl Machine<'_, '_>
             if same {
                 continue;
             }
-            let endpoint = position
+            let resident = position
                 .checked_sub(base)
                 .and_then(|position| self.sessions.opened.get(position))
                 .ok_or(CheckRefusal::MachineInvariant)?
-                .endpoint;
-            return Err(CheckRefusal::Linearity {
-                at: CoreNode::Term(TermNode::Computation(other)),
-                defect: LinearityDefect::ArmsDisagree {
-                    endpoint,
-                    first,
-                    other,
+                .resident;
+            let at = CoreNode::Term(TermNode::Computation(other));
+            return Err(match resident {
+                Resident::Endpoint(endpoint) => CheckRefusal::Linearity {
+                    at,
+                    defect: LinearityDefect::ArmsDisagree {
+                        endpoint,
+                        first,
+                        other,
+                    },
+                },
+                Resident::Held { .. } | Resident::View { .. } => CheckRefusal::Access {
+                    at,
+                    defect: AccessDefect::Unended,
                 },
             });
         }
@@ -1360,11 +1472,21 @@ impl Machine<'_, '_>
         let node = CoreNode::Term(TermNode::Computation(at));
         let shared = self.free_linear(CoreTerm::Computation(parent))?;
         for index in self.free_linear(CoreTerm::Computation(child))? {
-            if u32::from(index) == 0 || !shared.contains(&index) {
+            if u32::from(index) == 0 {
                 continue;
             }
             let outer = DeBruijnIndex::from(u32::from(index).saturating_sub(1));
-            let endpoint = self.slot(node, outer)?.endpoint;
+            // A child runs as its own continuation: a held value or a view
+            // it names would be shared with the parent.
+            let named = self.resided(node, outer)?;
+            let Resident::Endpoint(endpoint) = named.resident
+            else {
+                captured(node, named.resident, Capture::Continuation)?;
+                continue;
+            };
+            if !shared.contains(&index) {
+                continue;
+            }
             return Err(CheckRefusal::Linearity {
                 at: node,
                 defect: LinearityDefect::UsedTwice { endpoint },
@@ -1373,10 +1495,10 @@ impl Machine<'_, '_>
         let depth = self.context.depth(Zone::Intuitionistic);
         self.context.binders().open(Zone::Linear, head);
         self.sessions.opened.push(Opened {
-            endpoint: Endpoint {
+            resident: Resident::Endpoint(Endpoint {
                 fork: at,
                 side: ForkSide::Child,
-            },
+            }),
             depth,
         });
         let unit = self.unit_returner();
@@ -1482,10 +1604,10 @@ impl Machine<'_, '_>
         let depth = self.context.depth(Zone::Intuitionistic);
         self.context.binders().open(Zone::Linear, dual);
         self.sessions.opened.push(Opened {
-            endpoint: Endpoint {
+            resident: Resident::Endpoint(Endpoint {
                 fork: at,
                 side: ForkSide::Parent,
-            },
+            }),
             depth,
         });
         self.wait(Frame::ForkParent { at, direction });
@@ -1569,6 +1691,55 @@ impl Machine<'_, '_>
             }
         }
         Ok(Step::Ascend(Produced::Checked))
+    }
+}
+
+/// Refuse the resident `resident`, named at `node` by a former that may run
+/// its use other than once, as `by` says; a held value a branch reads
+/// passes.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: success for a held value named by a branch.
+/// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Captured`]
+///   for an endpoint; [`CheckRefusal::Access`] naming
+///   [`AccessDefect::HeldCaptured`] for a held value and
+///   [`AccessDefect::Escaped`] for a view, each at `node` with `by`.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a thunk naming an endpoint, a view and a held value is
+///   refused by each name, and a branch reading a held value checks.
+/// - witness: `judgement::session::tests::an_endpoint_captured_by_a_thunk_is_refused`
+/// - witness: `judgement::access::tests::a_view_escaping_its_access_is_refused`
+#[spec(ensures: |ret| match (resident, ret) {
+    | (Resident::Held { .. }, Ok(())) => by == Capture::Branch,
+    | (Resident::Endpoint(_) | Resident::View { .. }, Ok(())) => false,
+    | (_, Err(_)) => true,
+})]
+fn captured(
+    node: CoreNode,
+    resident: Resident,
+    by: Capture,
+) -> Result<(), CheckRefusal>
+{
+    match resident {
+        Resident::Endpoint(endpoint) => Err(CheckRefusal::Linearity {
+            at: node,
+            defect: LinearityDefect::Captured { endpoint, by },
+        }),
+        Resident::Held { .. } if by == Capture::Branch => Ok(()),
+        Resident::Held { .. } => Err(CheckRefusal::Access {
+            at: node,
+            defect: AccessDefect::HeldCaptured { by },
+        }),
+        Resident::View { .. } => Err(CheckRefusal::Access {
+            at: node,
+            defect: AccessDefect::Escaped { by },
+        }),
     }
 }
 

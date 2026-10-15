@@ -156,13 +156,13 @@ const CLOSERS: &[&str] = &[")", "]", "subshell_close", "}"];
 /// The words the surface reads as keywords where a form molds them, the
 /// compound bridge tiles included.
 const KEYWORDS: &[&str] = &[
-    "+U", "-F", "acquire", "as", "at", "become", "break", "case", "close", "co", "codata",
-    "continue", "data", "def", "drop", "dup", "else", "end", "extern", "feed", "fn", "for",
-    "forall", "force", "fork", "from", "glob", "handle", "hold", "if", "import", "in", "infix",
-    "infixl", "infixr", "leta", "loop", "migrate", "module", "mu", "node", "offer", "op", "oper",
-    "pack", "package", "postfix", "prefix", "pure", "rec", "recv", "release", "return", "rule",
-    "run", "select", "send", "sign", "sort", "tail", "then", "thunk", "type", "unit", "unpack",
-    "val", "while", "with",
+    "+U", "-F", "abort", "access", "acquire", "as", "at", "become", "break", "case", "close", "co",
+    "codata", "continue", "data", "def", "drop", "dup", "else", "end", "extern", "feed", "fn",
+    "for", "forall", "force", "fork", "from", "glob", "handle", "hold", "if", "import", "in",
+    "infix", "infixl", "infixr", "leta", "loop", "migrate", "module", "mu", "node", "offer", "op",
+    "oper", "pack", "package", "postfix", "prefix", "pure", "rec", "recv", "release", "resume",
+    "return", "rule", "run", "select", "send", "sign", "sort", "tail", "then", "thunk", "type",
+    "unit", "unpack", "unwind", "val", "while", "with",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
@@ -216,7 +216,7 @@ const DEFINERS: &[&str] = &["data", "def", "op", "oper", "rec", "rule"];
 
 /// The keywords whose next identifier binds a name.
 const BINDERS: &[&str] = &[
-    "as", "feed", "for", "handle", "leta", "module", "node", "unpack",
+    "as", "feed", "for", "handle", "hold", "leta", "module", "node", "unpack",
 ];
 
 /// The bracket a tile occurrence stands inside within its own form.
@@ -879,18 +879,19 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 /// # Specification
 /// - requires: `facts` is an `identifier` mold's.
 /// - ensures: the reference atom's identifier is a variable, and so is each
-///   name of a cons pattern's letter, `g` and `back(g)`. A member: in a
-///   projection, after `.`, inside a record bracket `#{`, and inside a block
-///   `{` of fields or observations. A label: a world and the label a `select`
-///   names. A named instantiation argument is a parameter, and an attribute
-///   name is [`HlRole::Other`]. The operation a circuit node applies, between
-///   `:` and `(`, is a call. A name after a defining keyword is a function
-///   definition and after a binding keyword a variable definition, either one a
-///   parameter inside a parenthesised list. Inside `@[…]` a binder before `:`
-///   is a parameter and any other name an attribute; inside `[…]` a grade word
-///   is a number, a migration's world a label, and a decoration
-///   [`HlRole::Other`]; every other identifier inside a parenthesised list is a
-///   parameter. An identifier none of these reach is a variable.
+///   name of a cons pattern's letter, `g` and `back(g)`, and the view a
+///   `resume` or an `abort` ends. A member: in a projection, after `.`, inside
+///   a record bracket `#{`, and inside a block `{` of fields or observations. A
+///   label: a world and the label a `select` names. A named instantiation
+///   argument is a parameter, and an attribute name is [`HlRole::Other`]. The
+///   operation a circuit node applies, between `:` and `(`, is a call. A name
+///   after a defining keyword is a function definition and after a binding
+///   keyword a variable definition, either one a parameter inside a
+///   parenthesised list. Inside `@[…]` a binder before `:` is a parameter and
+///   any other name an attribute; inside `[…]` a grade word is a number, a
+///   migration's world a label, and a decoration [`HlRole::Other`]; every other
+///   identifier inside a parenthesised list is a parameter. An identifier none
+///   of these reach is a variable.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -902,7 +903,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `highlight::tests::role_priorities_distinguish_competing_contexts`
 #[spec(requires: facts.label.0 == "identifier", ensures: |ret| ret == match facts.kind.0 {
-    "identifier" | "cons_pattern" => HlRole::Variable,
+    "identifier" | "cons_pattern" | "resume_expression" | "abort_expression" => HlRole::Variable,
     "projection_expression" => HlRole::Member,
     "at_type" => HlRole::Label,
     "attribute_block" => HlRole::Other,
@@ -929,7 +930,9 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
 {
     let kind = facts.kind.0;
     match kind {
-        "identifier" | "cons_pattern" => return HlRole::Variable,
+        "identifier" | "cons_pattern" | "resume_expression" | "abort_expression" => {
+            return HlRole::Variable;
+        },
         "projection_expression" => return HlRole::Member,
         "at_type" => return HlRole::Label,
         "attribute_block" => return HlRole::Other,

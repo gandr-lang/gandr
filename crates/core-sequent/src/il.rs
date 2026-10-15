@@ -680,6 +680,21 @@ pub enum CommandNode
         /// The consumer it is sent to.
         consumer: ConsumerId,
     },
+    /// A memory form `𝓜` with its continuation. A hold runs its body with
+    /// the held value bound as the innermost linear producer; an access
+    /// pushes the frame that writes its view back on a resume and runs its
+    /// unwind on an abort, then runs its body with the view bound so; an
+    /// eliminator records how its view ends on that frame and returns the
+    /// unit.
+    Memory
+    {
+        /// The form. A hold's and an access's body each bind one linear
+        /// producer and one return covariable; an access's unwind binds one
+        /// return covariable.
+        form: gandr_core_term::memory::MemoryForm<ProducerId, CommandId>,
+        /// The continuation outside the form.
+        continuation: ConsumerId,
+    },
 }
 
 /// The three node families of the arena.
@@ -1182,6 +1197,18 @@ impl CommandArena
             CommandNode::Reset { body, continuation }
             | CommandNode::Shift { body, continuation } => {
                 self.command_resolves(body)?;
+                self.consumer_resolves(continuation)?;
+            },
+            CommandNode::Memory {
+                ref form,
+                continuation,
+            } => {
+                for value in form.values() {
+                    self.producer_resolves(value)?;
+                }
+                for body in form.computations() {
+                    self.command_resolves(body)?;
+                }
                 self.consumer_resolves(continuation)?;
             },
         }

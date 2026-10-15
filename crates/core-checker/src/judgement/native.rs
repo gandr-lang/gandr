@@ -465,7 +465,8 @@ impl Machine<'_, '_>
             | &Computation::Shift(_)
             | &Computation::With(..)
             | &Computation::Project(..)
-            | &Computation::Session(_) => return Err(CheckRefusal::MachineInvariant),
+            | &Computation::Session(_)
+            | &Computation::Memory(_) => return Err(CheckRefusal::MachineInvariant),
         };
         let constructors = signature.constructors().len();
         // A case carries one branch per constructor, and then either no loop
@@ -557,7 +558,8 @@ impl Machine<'_, '_>
             | &Computation::Shift(_)
             | &Computation::With(..)
             | &Computation::Project(..)
-            | &Computation::Session(_) => return Err(CheckRefusal::MachineInvariant),
+            | &Computation::Session(_)
+            | &Computation::Memory(_) => return Err(CheckRefusal::MachineInvariant),
         };
         let result =
             gandr_core_term::instantiate_comp_type(self.context.arena_mut(), motive, scrutinee);
@@ -624,7 +626,8 @@ impl Machine<'_, '_>
                     | &Computation::Shift(_)
                     | &Computation::With(..)
                     | &Computation::Project(..)
-                    | &Computation::Session(_) => return Err(CheckRefusal::MachineInvariant),
+                    | &Computation::Session(_)
+                    | &Computation::Memory(_) => return Err(CheckRefusal::MachineInvariant),
                 };
                 self.wait(Frame::NativeNext(Goal::Computation {
                     term: arm,
@@ -667,7 +670,8 @@ impl Machine<'_, '_>
                 | &Computation::Shift(_)
                 | &Computation::With(..)
                 | &Computation::Project(..)
-                | &Computation::Session(_) => return Err(CheckRefusal::MachineInvariant),
+                | &Computation::Session(_)
+                | &Computation::Memory(_) => return Err(CheckRefusal::MachineInvariant),
             };
             self.wait(Frame::NativeNext(Goal::Computation {
                 term: branch,

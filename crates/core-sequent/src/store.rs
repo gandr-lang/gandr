@@ -237,13 +237,17 @@ pub enum CovalueScope
     Innermost(CovalueBindingId),
 }
 
-/// An environment: the producer chain and the covalue chain a command runs
-/// under.
+/// An environment: the producer chain, the linear chain and the covalue chain
+/// a command runs under.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Environment
 {
     /// The producer bindings, innermost first.
     values: ValueScope,
+    /// The linear producer bindings — held values and views — innermost
+    /// first. They share the producer bindings' family; a linear binding's
+    /// value is the one cell of the machine a write changes.
+    linears: ValueScope,
     /// The covalue bindings, innermost first.
     covalues: CovalueScope,
 }
@@ -253,6 +257,7 @@ impl Environment
     /// The environment binding nothing.
     pub const EMPTY: Self = Self {
         values: ValueScope::Empty,
+        linears: ValueScope::Empty,
         covalues: CovalueScope::Empty,
     };
 
@@ -265,6 +270,17 @@ impl Environment
     pub const fn values(self) -> ValueScope
     {
         self.values
+    }
+
+    /// The linear producer chain.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn linears(self) -> ValueScope
+    {
+        self.linears
     }
 
     /// The covalue chain.
@@ -381,6 +397,21 @@ pub enum Introduced
     Capability(HeapValueId),
 }
 
+/// How an access's view has ended, as its frame records it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Ending
+{
+    /// Neither eliminator has run.
+    Open,
+    /// A resume ran, with the value the frame's pop writes back.
+    Resumed(HeapValueId),
+    /// An abort ran: the frame's pop runs the unwind and writes nothing.
+    Aborted,
+}
+
 /// A continuation frame.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Frame
@@ -445,6 +476,28 @@ pub enum Frame
         /// The cell in progress.
         cell: CellId,
     },
+    /// An access: the value arriving here is the access's answer. A resumed
+    /// view writes its value back into the held binding; an aborted one runs
+    /// the unwind, which [`Self::Answer`] then discards.
+    Access
+    {
+        /// The held binding the access lends.
+        held: ValueBindingId,
+        /// The view binding the eliminators name.
+        view: ValueBindingId,
+        /// The unwind, binding one return covariable.
+        unwind: CommandId,
+        /// The environment the unwind runs under.
+        environment: Environment,
+        /// How the view has ended.
+        ending: Ending,
+    },
+    /// The answer of an aborted access, waiting on its unwind's unit.
+    Answer
+    {
+        /// The access's answer, which passes on in the unwind's place.
+        value: HeapValueId,
+    },
 }
 
 /// How many reset and handler delimiters a frame contributes to its region.
@@ -469,7 +522,9 @@ impl Frame
             | Self::Case { .. }
             | Self::ListFold { .. }
             | Self::Select { .. }
-            | Self::Update { .. } => 0,
+            | Self::Update { .. }
+            | Self::Access { .. }
+            | Self::Answer { .. } => 0,
         })
     }
 }
@@ -520,6 +575,18 @@ pub enum StoreFault
     },
     /// A continuation mark names a frame no longer on the region.
     StaleMark(ContinuationMark),
+    /// A view names no access frame on the region: its access has ended.
+    NoAccess(ValueBindingId),
+    /// A view whose access frame records an ending already.
+    Ended
+    {
+        /// The view.
+        view: ValueBindingId,
+        /// The ending found.
+        found: Ending,
+    },
+    /// A linear binding address names no binding of this store.
+    DanglingBinding(ValueBindingId),
 }
 
 impl fmt::Display for StoreFault
@@ -553,6 +620,9 @@ impl fmt::Display for StoreFault
                 "the continuation at height {} names a popped frame",
                 mark.height
             ),
+            Self::NoAccess(view) => write!(f, "view {view} names no live access"),
+            Self::Ended { view, .. } => write!(f, "view {view} has ended already"),
+            Self::DanglingBinding(id) => write!(f, "binding {id} is not in the store"),
         }
     }
 }
@@ -961,6 +1031,7 @@ impl Store
         });
         Ok(Environment {
             values: ValueScope::Innermost(id),
+            linears: environment.linears,
             covalues: environment.covalues,
         })
     }
@@ -1015,8 +1086,223 @@ impl Store
         });
         Ok(Environment {
             values: environment.values,
+            linears: environment.linears,
             covalues: CovalueScope::Innermost(id),
         })
+    }
+
+    /// Extend an environment's linear chain with one binding.
+    ///
+    /// # Specification
+    /// - requires: `value` and the chain were allocated by this store.
+    /// - ensures: on success the environment whose linear index `0` reads the
+    ///   fresh binding, holding `value`, and whose index `i + 1` reads what
+    ///   index `i` read in `environment`, beside the binding's address; the
+    ///   producer and covalue chains are unchanged.
+    /// - provides: the one way a held value or a view is bound.
+    /// - fails: [`StoreFault::RegionFull`], the store unchanged.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a linear binding is read at its own index past an
+    ///   intuitionistic one, and a write through it is read back while the
+    ///   other chain is unchanged.
+    /// - witness: `store::tests::a_linear_binding_is_written_in_place`
+    #[inline]
+    #[spec(
+        captures: [entry = self.value_bindings.len()],
+        ensures: |ret| match ret {
+            | Ok((extended, id)) => extended.values == environment.values
+                && extended.covalues == environment.covalues
+                && extended.linears == ValueScope::Innermost(id)
+                && entry.checked_add(1) == Some(self.value_bindings.len())
+                && self.linear(id) == Some(value),
+            | Err(error) => error == StoreFault::RegionFull(HeapFamily::ValueBindings)
+                && self.value_bindings.len() == entry,
+        },
+    )]
+    pub fn bind_linear(
+        &mut self,
+        environment: Environment,
+        value: HeapValueId,
+    ) -> Result<(Environment, ValueBindingId), StoreFault>
+    {
+        let id = ValueBindingId::next_in(&self.value_bindings)
+            .ok_or(StoreFault::RegionFull(HeapFamily::ValueBindings))?;
+        self.value_bindings.push(ValueBinding {
+            value,
+            outer: environment.linears,
+        });
+        Ok((
+            Environment {
+                values: environment.values,
+                linears: ValueScope::Innermost(id),
+                covalues: environment.covalues,
+            },
+            id,
+        ))
+    }
+
+    /// The linear binding an index reads in an environment, or `None` when
+    /// the index counts past its chain.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the binding `index` links out from the innermost of the
+    ///   linear chain; `None` past the chain or at a dangling link.
+    /// - provides: linear variable lookup, iterative over the chain.
+    /// - fails: `None`, the one reason an unbound index.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a linear binding is read at its own index past an
+    ///   intuitionistic one, and a write through it is read back while the
+    ///   other chain is unchanged.
+    /// - witness: `store::tests::a_linear_binding_is_written_in_place`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.is_none_or(|id| self.linear(id).is_some()))]
+    pub fn lookup_linear(
+        &self,
+        environment: Environment,
+        index: DeBruijnIndex,
+    ) -> Option<ValueBindingId>
+    {
+        let mut scope = environment.linears;
+        let mut remaining = u32::from(index);
+        loop {
+            let ValueScope::Innermost(id) = scope
+            else {
+                return None;
+            };
+            let binding = id.read_in(&self.value_bindings)?;
+            let Some(next) = remaining.checked_sub(1)
+            else {
+                return Some(id);
+            };
+            remaining = next;
+            scope = binding.outer;
+        }
+    }
+
+    /// The value a linear binding holds now.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn linear(
+        &self,
+        id: ValueBindingId,
+    ) -> Option<HeapValueId>
+    {
+        id.read_in(&self.value_bindings)
+            .map(|binding| binding.value)
+    }
+
+    /// Write `value` into a linear binding: an access's write-back.
+    ///
+    /// # Specification
+    /// - requires: `value` was allocated by this store.
+    /// - ensures: on success the binding holds `value`, which every environment
+    ///   sharing it reads; nothing else changes.
+    /// - fails: [`StoreFault::DanglingBinding`], the store unchanged.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a linear binding is read at its own index past an
+    ///   intuitionistic one, and a write through it is read back while the
+    ///   other chain is unchanged.
+    /// - witness: `store::tests::a_linear_binding_is_written_in_place`
+    #[inline]
+    #[spec(ensures: |ret| ret.is_err() || self.linear(id) == Some(value))]
+    pub fn write_linear(
+        &mut self,
+        id: ValueBindingId,
+        value: HeapValueId,
+    ) -> Result<(), StoreFault>
+    {
+        let binding = usize::try_from(u32::from(id))
+            .ok()
+            .and_then(|offset| self.value_bindings.get_mut(offset))
+            .ok_or(StoreFault::DanglingBinding(id))?;
+        binding.value = value;
+        Ok(())
+    }
+
+    /// Record how a view ends on its access's frame: the nearest
+    /// [`Frame::Access`] naming `view`, searched from the top of the region.
+    /// Returns that frame's position, counted from the bottom.
+    ///
+    /// # Specification
+    /// - requires: `ending` is not [`Ending::Open`].
+    /// - ensures: on success the frame at the returned position names `view`
+    ///   and records `ending`; nothing else changes. A replayed stack's copy of
+    ///   the frame is found the same way, so a resumed capture still ends its
+    ///   own access.
+    /// - fails: [`StoreFault::NoAccess`] when no frame names `view`;
+    ///   [`StoreFault::Ended`] when the frame records an ending already; the
+    ///   store is then unchanged.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a view ends once, a second ending and an ending with
+    ///   no frame are refused by name, and of two accesses the inner view ends
+    ///   the upper frame.
+    /// - witness: `store::tests::a_view_ends_once_on_its_own_frame`
+    #[inline]
+    #[spec(captures: height = self.frames.len(), ensures: |ret| self.frames.len() == height
+        && ret.as_ref().map_or(true, |&at| matches!(
+            self.frames.get(usize::from(at)),
+            Some(entry) if matches!(entry.frame, Frame::Access { view: found, ending: recorded, .. } if found == view && recorded == ending)
+        )))]
+    pub fn settle(
+        &mut self,
+        view: ValueBindingId,
+        ending: Ending,
+    ) -> Result<FrameHeight, StoreFault>
+    {
+        let (at, recorded) = self
+            .frames
+            .iter_mut()
+            .enumerate()
+            .rev()
+            .find_map(|(at, entry)| match entry.frame {
+                Frame::Access {
+                    view: found,
+                    ref mut ending,
+                    ..
+                } if found == view => Some((at, ending)),
+                Frame::Reset
+                | Frame::Handler { .. }
+                | Frame::DeclinedUpdate
+                | Frame::Destructor { .. }
+                | Frame::Bind { .. }
+                | Frame::Case { .. }
+                | Frame::ListFold { .. }
+                | Frame::Select { .. }
+                | Frame::Update { .. }
+                | Frame::Access { .. }
+                | Frame::Answer { .. } => None,
+            })
+            .ok_or(StoreFault::NoAccess(view))?;
+        if *recorded != Ending::Open {
+            return Err(StoreFault::Ended {
+                view,
+                found: *recorded,
+            });
+        }
+        *recorded = ending;
+        Ok(FrameHeight::from(at))
     }
 
     /// The value a producer index reads in an environment, or `None` when the
@@ -1934,6 +2220,7 @@ mod tests
         );
         let dangling = Environment {
             values: ValueScope::Innermost(ValueBindingId::from(u32::MAX)),
+            linears: ValueScope::Innermost(ValueBindingId::from(u32::MAX)),
             covalues: CovalueScope::Innermost(CovalueBindingId::from(u32::MAX)),
         };
         assert_eq!(
@@ -1945,6 +2232,107 @@ mod tests
             store.lookup_covalue(dangling, CovariableIndex::from(0_u32))
         );
         assert_eq!(None, store.bound_values(dangling).next());
+    }
+
+    /// A linear binding is read at its own index past an intuitionistic one,
+    /// and a write through it is read back while the other chain is
+    /// unchanged.
+    #[test]
+    fn a_linear_binding_is_written_in_place()
+    {
+        let mut store = Store::new();
+        let zero = store.allocate(integer(Digits("0"))).expect("room");
+        let one = store.allocate(integer(Digits("1"))).expect("room");
+        let (held, cell) = store.bind_linear(Environment::EMPTY, zero).expect("room");
+        let inner = store.bind_value(held, one).expect("room");
+        assert_eq!(
+            Some(cell),
+            store.lookup_linear(inner, DeBruijnIndex::from(0_u32)),
+            "an intuitionistic binding does not shift the linear chain"
+        );
+        assert_eq!(
+            None,
+            store.lookup_linear(inner, DeBruijnIndex::from(1_u32)),
+            "past the linear chain"
+        );
+        store.write_linear(cell, one).expect("live binding");
+        let read = |store: &Store, environment| {
+            let id = store.lookup_linear(environment, DeBruijnIndex::from(0_u32))?;
+            store.linear(id)
+        };
+        assert_eq!(
+            (Some(one), Some(one)),
+            (read(&store, held), read(&store, inner)),
+            "the write is read through every environment sharing the binding"
+        );
+        assert_eq!(
+            None,
+            store.lookup_value(held, DeBruijnIndex::from(0_u32)),
+            "the producer chain binds nothing of the linear one"
+        );
+        assert_eq!(
+            Err(StoreFault::DanglingBinding(ValueBindingId::from(u32::MAX))),
+            store.write_linear(ValueBindingId::from(u32::MAX), one)
+        );
+    }
+
+    /// A view ends once, on its own access's frame: a second ending and an
+    /// ending with no frame are refused by name.
+    #[test]
+    fn a_view_ends_once_on_its_own_frame()
+    {
+        let mut store = Store::new();
+        let zero = store.allocate(integer(Digits("0"))).expect("room");
+        let (held, cell) = store.bind_linear(Environment::EMPTY, zero).expect("room");
+        let (_, outer) = store.bind_linear(held, zero).expect("room");
+        let (_, inner) = store.bind_linear(held, zero).expect("room");
+        let unwind = CommandId::from(0_u32);
+        for view in [outer, inner] {
+            store
+                .push_frame(Frame::Access {
+                    held: cell,
+                    view,
+                    unwind,
+                    environment: held,
+                    ending: Ending::Open,
+                })
+                .expect("room");
+        }
+        assert_eq!(
+            Ok(FrameHeight::from(0_usize)),
+            store.settle(outer, Ending::Aborted),
+            "the outer view ends the lower frame"
+        );
+        assert_eq!(
+            Err(StoreFault::Ended {
+                view: outer,
+                found: Ending::Aborted,
+            }),
+            store.settle(outer, Ending::Resumed(zero)),
+            "a view ends once"
+        );
+        assert_eq!(
+            Ok(FrameHeight::from(1_usize)),
+            store.settle(inner, Ending::Resumed(zero)),
+            "the inner view ends the upper frame"
+        );
+        assert_eq!(
+            Some(Frame::Access {
+                held: cell,
+                view: inner,
+                unwind,
+                environment: held,
+                ending: Ending::Resumed(zero),
+            }),
+            store.pop_frame(),
+            "each view ends its own frame"
+        );
+        store.pop_frame().expect("outer frame");
+        assert_eq!(
+            Err(StoreFault::NoAccess(outer)),
+            store.settle(outer, Ending::Aborted),
+            "a view whose access has ended names no frame"
+        );
     }
 
     /// Exhausting serials refuses a push without popping or reusing a frame.

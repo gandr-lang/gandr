@@ -218,6 +218,8 @@ pub enum FocusOrigin
     Bind,
     /// A declaration's value, cut against `★`.
     TopValue,
+    /// A memory form: a hold, an access or one of a view's eliminators.
+    Memory,
 }
 
 /// The provenance table: the [`FocusOrigin`] of every command focusing
@@ -981,7 +983,7 @@ impl<'run> Focusing<'run>
                 Computation::Resume(..) => !self.producers.is_empty() && !self.commands.is_empty(),
                 Computation::Reset(_) | Computation::Shift(_) => !self.commands.is_empty(),
                 Computation::With(..) => self.commands.len() >= 2,
-                Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Project(..) | Computation::Session(_) => true,
+                Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) => true,
             }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
             | &Task::ListCons | &Task::Combinator { .. } => self.producers.len() >= 2,
@@ -1428,7 +1430,8 @@ impl<'run> Focusing<'run>
                     | Computation::Shift(_)
                     | Computation::With(..)
                     | Computation::Project(..)
-                    | Computation::Session(_) => (Introduces::Nothing, FocusOrigin::Handle),
+                    | Computation::Session(_)
+                    | Computation::Memory(_) => (Introduces::Nothing, FocusOrigin::Handle),
                 };
                 let signature = self.signature(signature)?;
                 let mut translated = Vec::with_capacity(clauses.len());
@@ -1478,6 +1481,18 @@ impl<'run> Focusing<'run>
                     continuation,
                 },
                 FocusOrigin::Shift,
+            ),
+            Computation::Memory(ref form) => (
+                crate::il::CommandNode::Memory {
+                    form: form.try_map(
+                        gandr_core_term::session::ChildOrder::Reverse,
+                        self,
+                        |focus, _| focus.pop_producer(),
+                        |focus, _| focus.pop_command(),
+                    )?,
+                    continuation,
+                },
+                FocusOrigin::Memory,
             ),
             Computation::With(..) => {
                 let right = self.pop_command()?;
@@ -1936,6 +1951,22 @@ impl<'run> Focusing<'run>
                     computation: body,
                     continuation: return_point,
                 });
+            },
+            Computation::Memory(ref form) => {
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                for body in form.computations().rev() {
+                    let return_point = self.innermost_covariable()?;
+                    self.tasks.push(Task::Computation {
+                        computation: body,
+                        continuation: return_point,
+                    });
+                }
+                for value in form.values() {
+                    self.tasks.push(Task::Value(value));
+                }
             },
             Computation::With(left, right) => {
                 let return_point = self.innermost_covariable()?;

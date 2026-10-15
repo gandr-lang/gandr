@@ -594,6 +594,8 @@ impl Unfocusing<'_>
                 CommandNode::Resume { .. } => !self.values.is_empty() && !self.computations.is_empty(),
                 CommandNode::Reset { .. } | CommandNode::Shift { .. } => !self.computations.is_empty(),
                 CommandNode::Cut { .. } => true,
+                CommandNode::Memory { ref form, .. } => self.values.len() >= form.values().count()
+                    && self.computations.len() >= form.computations().count(),
             }),
             | &Task::With | &Task::Bind => self.computations.len() >= 2,
             | &Task::Project(_) | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda | &Task::Spine(..) => !self.computations.is_empty(),
@@ -1020,6 +1022,15 @@ impl Unfocusing<'_>
                 let body = self.pop_computation()?;
                 self.core.computation_shift(body)
             },
+            CommandNode::Memory { ref form, .. } => {
+                let form = form.try_map(
+                    gandr_core_term::session::ChildOrder::Reverse,
+                    self,
+                    |decoder, _| decoder.pop_value(),
+                    |decoder, _| decoder.pop_computation(),
+                )?;
+                self.core.computation_memory(form)
+            },
             CommandNode::Cut { .. } => {
                 return Err(UnfocusRefusal::CommandOutsideTheImage(source));
             },
@@ -1112,6 +1123,20 @@ impl Unfocusing<'_>
                 self.tasks.push(Task::Control(source, depth));
                 self.tasks
                     .push(Task::Command(body, depth.under_function_arm()));
+            },
+            CommandNode::Memory {
+                ref form,
+                continuation,
+            } => {
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::Control(source, depth));
+                for body in form.computations().rev() {
+                    self.tasks
+                        .push(Task::Command(body, depth.under_covariable()));
+                }
+                for value in form.values() {
+                    self.tasks.push(Task::Value(value, depth));
+                }
             },
         }
         Ok(())

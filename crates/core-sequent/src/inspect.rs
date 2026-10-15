@@ -163,6 +163,7 @@ pub fn origin_histogram(provenance: &Provenance) -> BTreeMap<FocusOrigin, NodeCo
         | Some(FocusOrigin::ListFold) => "root [list-fold]: ",
         | Some(FocusOrigin::Bind) => "root [bind]: ",
         | Some(FocusOrigin::TopValue) => "root [top-value]: ",
+        | Some(FocusOrigin::Memory) => "root [memory]: ",
         | None => "root [unrecorded]: ",
     })
 )]
@@ -191,6 +192,7 @@ pub fn dump(
         Some(FocusOrigin::ListFold) => "list-fold",
         Some(FocusOrigin::Bind) => "bind",
         Some(FocusOrigin::TopValue) => "top-value",
+        Some(FocusOrigin::Memory) => "memory",
         None => "unrecorded",
     };
     alloc::format!(

@@ -117,6 +117,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Function extensionality, universe equivalence, the product of universe paths, `ua_n` | [`funext`](src/funext.rs), [`equiv`](src/equiv.rs), [`product`](src/product.rs), [`ua`](src/ua.rs) |
 | Total elaboration and the typed run | [`judgement::elaboration`](src/judgement/elaboration.rs) |
 | Records | [`judgement::native`](src/judgement/native.rs) |
+| Temporary access | [`access`](src/access.rs), [`judgement::access`](src/judgement/access.rs) |
 | The three bridges, consistency, smallness and variance; the fourth, a nested computation run or suspended | [`conversion`](src/conversion.rs), [`nested`](src/nested.rs) |
 | Formation, the classifier, universes, quotes and decodes | [`formation`](src/formation.rs) |
 | Code unfolding, `El` as unquote, and their certificates | [`code`](src/code.rs) |

@@ -163,7 +163,8 @@ impl Erasure<'_, '_>
                     | Computation::Shift(_)
                     | Computation::With(..)
                     | Computation::Project(..)
-                    | Computation::Session(_) => return Err(Refusal::MachineInvariant),
+                    | Computation::Session(_)
+                    | Computation::Memory(_) => return Err(Refusal::MachineInvariant),
                 }
             },
             CoreNode::Type(TypeNode::Value(at)) => {
@@ -378,7 +379,8 @@ impl Erasure<'_, '_>
                     | Computation::Shift(_)
                     | Computation::With(..)
                     | Computation::Project(..)
-                    | Computation::Session(_) => return Err(Refusal::MachineInvariant),
+                    | Computation::Session(_)
+                    | Computation::Memory(_) => return Err(Refusal::MachineInvariant),
                 };
                 Ok(self.erased_computation(at, image))
             },

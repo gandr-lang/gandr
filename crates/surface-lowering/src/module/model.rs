@@ -988,6 +988,7 @@ pub fn spine_domains<'source>(
             | Former::SessionType
             | Former::Action
             | Former::Offer
+            | Former::Access
             | Former::Reserved
             | Former::Unadmitted => return Ok(domains),
         };

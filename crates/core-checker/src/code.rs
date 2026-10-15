@@ -2188,6 +2188,18 @@ pub fn loose_reach(
                                 .map(|child| (CoreNode::Term(TermNode::Computation(child)), depth)),
                         );
                     },
+                    Computation::Memory(ref form) => {
+                        // A memory form binds linearly, which this
+                        // intuitionistic reach does not count.
+                        work.extend(
+                            form.values()
+                                .map(|value| (CoreNode::Term(TermNode::Value(value)), depth)),
+                        );
+                        work.extend(
+                            form.computations()
+                                .map(|child| (CoreNode::Term(TermNode::Computation(child)), depth)),
+                        );
+                    },
                     Computation::Hole(_) => {},
                 }
             },

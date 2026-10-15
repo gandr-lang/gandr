@@ -988,7 +988,8 @@ impl<'source> Program<'source>
                     | Stuck::CyclicConstant(_)
                     | Stuck::IllFormedCommand(_)
                     | Stuck::IllFormedProducer(_)
-                    | Stuck::IllFormedConsumer(_) => None,
+                    | Stuck::IllFormedConsumer(_)
+                    | Stuck::Unended(_) => None,
                 };
                 match observed {
                     Some(&HeapValue::Opaque(constant)) => Err(self.met(constant)),
@@ -1422,6 +1423,10 @@ fn references(
                 Some(&Computation::Session(ref action)) => {
                     pending.extend(action.values().map(Node::Value));
                     pending.extend(action.computations().map(Node::Computation));
+                },
+                Some(&Computation::Memory(ref form)) => {
+                    pending.extend(form.values().map(Node::Value));
+                    pending.extend(form.computations().map(Node::Computation));
                 },
                 Some(&Computation::Hole(_)) | None => {},
             },

@@ -235,8 +235,8 @@ mod census
         ("Different", 466),
         ("Open", 1142),
         ("Refused", 30),
-        ("Unknown", 114),
-        ("Unparsed", 173),
+        ("Unknown", 121),
+        ("Unparsed", 174),
         ("Unspelled", 0),
     ];
 

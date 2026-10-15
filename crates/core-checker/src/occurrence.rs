@@ -792,6 +792,13 @@ fn worst(
                             .map(|child| (AnyNode::Computation(child), reach)),
                     );
                 },
+                Some(&Computation::Memory(ref form)) => {
+                    pending.extend(form.values().map(|value| (AnyNode::Value(value), reach)));
+                    pending.extend(
+                        form.computations()
+                            .map(|child| (AnyNode::Computation(child), reach)),
+                    );
+                },
                 Some(&Computation::Hole(_)) | None => {},
             },
         }

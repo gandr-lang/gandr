@@ -17,6 +17,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Side;
@@ -931,6 +932,16 @@ impl<'arena> CoreSource<'arena>
             | (&SessionAction::Fork { .. }, Former::Fork { .. }) => true,
             | _ => false,
         },
+        | (Some(&Computation::Memory(ref form)), _) => match (form, ret) {
+            | (&MemoryForm::Hold { value, body }, Former::Hold { value: held, body: scope }) =>
+                held == CoreNode::Value(value) && scope == CoreNode::Computation(body),
+            | (&MemoryForm::Access { held, body, unwind }, Former::Access { held: actual, body: lent, unwind: unwound }) =>
+                held == actual && lent == CoreNode::Computation(body) && unwound == CoreNode::Computation(unwind),
+            | (&MemoryForm::Resume { view, value }, Former::ResumeView { view: actual, value: written }) =>
+                view == actual && written == CoreNode::Value(value),
+            | (&MemoryForm::Abort { view }, Former::AbortView(actual)) => view == actual,
+            | _ => false,
+        },
         | (Some(_), _) => !matches!(ret, Former::Unreadable(_)),
         | (None, _) => false,
     })]
@@ -1119,6 +1130,25 @@ impl<'arena> CoreSource<'arena>
                     child: computation(child),
                     parent: computation(parent),
                 },
+            },
+            Computation::Memory(ref form) => match *form {
+                MemoryForm::Hold { value: held, body } => Former::Hold {
+                    value: value(held),
+                    body: computation(body),
+                },
+                MemoryForm::Access { held, body, unwind } => Former::Access {
+                    held,
+                    body: computation(body),
+                    unwind: computation(unwind),
+                },
+                MemoryForm::Resume {
+                    view,
+                    value: written,
+                } => Former::ResumeView {
+                    view,
+                    value: value(written),
+                },
+                MemoryForm::Abort { view } => Former::AbortView(view),
             },
         }
     }
@@ -1342,6 +1372,7 @@ impl Source for CoreSource<'_>
                     | SessionAction::Close { .. }
                     | SessionAction::Fork { .. },
                 )
+                | Computation::Memory(_)
                 | Computation::Transport(..)
                 | Computation::PathTransport { .. }
                 | Computation::TelescopeTransport { .. }
@@ -1491,6 +1522,7 @@ impl Source for CoreSource<'_>
                     | SessionAction::Close { .. }
                     | SessionAction::Fork { .. },
                 )
+                | Computation::Memory(_)
                 | Computation::Primitive { .. }
                 | Computation::Transport(..)
                 | Computation::PathTransport { .. }

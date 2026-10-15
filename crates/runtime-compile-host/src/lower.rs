@@ -104,6 +104,9 @@ pub enum Form
     Session,
     /// A session statement: a certificate with no runtime content.
     SessionIdentity,
+    /// A memory form — a hold, an access or a view's eliminator: the image
+    /// has no store to write back to.
+    Memory,
     /// A flow — a stay, a composite, a forward or a function flow: the image
     /// has no translator closures.
     Flow,
@@ -180,6 +183,7 @@ impl core::fmt::Display for Form
             Self::Fixpoint => "a fixpoint",
             Self::Session => "a session action",
             Self::SessionIdentity => "a session identity",
+            Self::Memory => "a memory form",
             Self::Flow => "a flow",
             Self::RecordedRun => "a recorded run",
             Self::Ride => "a ride along a flow",
@@ -464,6 +468,9 @@ pub fn lower_computation(
                     },
                     Computation::Session(_) => {
                         return Err(LowerError::OutsideSlice(Form::Session));
+                    },
+                    Computation::Memory(_) => {
+                        return Err(LowerError::OutsideSlice(Form::Memory));
                     },
                     Computation::Ride { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Ride));

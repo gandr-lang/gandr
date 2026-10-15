@@ -256,6 +256,9 @@ pub enum UnadmittedFormer
     /// A flow at a universe above level zero: the kernel's flows between codes
     /// are classified at the level-zero value universe.
     HigherFlow,
+    /// A memory form: the kernel has no store, so a held value and its
+    /// accesses stay on the checker's side.
+    Memory,
 }
 
 /// A count of static arguments: how many a static application passes, or how
@@ -865,6 +868,17 @@ pub enum CheckRefusal
         /// How it breaks.
         defect: crate::session::LinearityDefect,
     },
+    /// A held value or a view broke the access discipline: a held value
+    /// read or accessed while lent, or captured; a view escaped, left live,
+    /// used after its end, or named where no view stands; an unwind that
+    /// performs an effect (see [`crate::access`]).
+    Access
+    {
+        /// The node the discipline breaks at.
+        at: CoreNode,
+        /// How it breaks.
+        defect: crate::access::AccessDefect,
+    },
     /// A computation written where a value is read and run there, with no
     /// computation enclosing it to run before: one in a definition's own
     /// value, or under static content.
@@ -1056,7 +1070,7 @@ impl CheckRefusal
         | Self::StaticLambdaArgument { .. }
         | Self::StaticClassifierExpected { .. }
         | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::DescentNotReplayed { .. } | Self::UnenclosedRun { .. }
-        | Self::SessionMismatch { .. } | Self::Linearity { .. }
+        | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
         | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
@@ -1114,6 +1128,7 @@ impl CheckRefusal
             | Self::UnenclosedRun { .. }
             | Self::SessionMismatch { .. }
             | Self::Linearity { .. }
+            | Self::Access { .. }
             | Self::CapabilityForged { .. }
             | Self::CapabilityAmplified(_)
             | Self::CapabilityOutsideAuthority { .. }
@@ -1319,6 +1334,7 @@ impl CheckRefusal
             | Self::DescentNotReplayed { .. }
             | Self::UnenclosedRun { .. }
             | Self::Linearity { .. }
+            | Self::Access { .. }
             | Self::SessionNotEquivalent { .. }
             | Self::SessionNotSubtype { .. }
             | Self::SessionCodeExpected { .. }

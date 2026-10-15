@@ -57,6 +57,7 @@ use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -364,13 +365,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: nothing; the survey reads the tree alone.
     /// - ensures: every node holds its [`Leaves`], children before parents:
     ///   `return`, `become`, `break` and `continue` always leave; a function, a
-    ///   lambda, a thunk, a copattern block and a capability scope never do,
-    ///   since an exit inside one leaves it or unwinds past it; a `loop`
-    ///   sometimes does when a `break` of its own stands in it and always does
-    ///   otherwise, and a `while` or a `for` sometimes does; a form holding no
-    ///   exit outside such a body never does; a block or a grouping does what
-    ///   the child that leaves most does; a match always leaves when every arm
-    ///   does; every other form holding an exit sometimes does.
+    ///   lambda, a thunk, a copattern block, a capability scope and a temporary
+    ///   access never do, since an exit inside one leaves it, unwinds past it
+    ///   or is refused there; a `loop` sometimes does when a `break` of its own
+    ///   stands in it and always does otherwise, and a `while` or a `for`
+    ///   sometimes does; a form holding no exit outside such a body never does;
+    ///   a block or a grouping does what the child that leaves most does; a
+    ///   match always leaves when every arm does; every other form holding an
+    ///   exit sometimes does.
     /// - provides: what the classification of a block reads to decide where the
     ///   rest of the block goes, before any statement in it is classified.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the sweep outruns the
@@ -431,8 +433,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: as [`Self::survey`] states it, for one node; a node that is
     ///   no form sometimes leaves when a child does and never otherwise; a
     ///   `break` holds one, a loop, a function, a lambda, a thunk, a copattern
-    ///   block and a capability scope hold none, and every other node holds one
-    ///   when a child does; a node holding a `break` leaves at least sometimes.
+    ///   block, a capability scope and a temporary access hold none, and every
+    ///   other node holds one when a child does; a node holding a `break`
+    ///   leaves at least sometimes.
     /// - provides: the per-node half of [`Self::survey`].
     /// - fails: never.
     /// - panics: none.
@@ -473,6 +476,7 @@ impl<'source> Lowerer<'_, 'source>
             | Former::Lambda
             | Former::LazyRecord
             | Former::Scope
+            | Former::Access
             | Former::Declaration
             | Former::Module => (Leaves::Never, Breaks::Never),
             Former::Loop if broken == Breaks::Never => (Leaves::Always, Breaks::Never),
@@ -1199,6 +1203,10 @@ pub(super) fn commute(
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(parent, ends, depth));
                     },
+                    Some(Computation::Memory(MemoryForm::Hold { body: scope, .. })) => {
+                        steps.push(Step::Close(node));
+                        steps.push(Step::Open(scope, ends, depth));
+                    },
                     _ => match ends.rests {
                         Maybe::Absent(_) => results.push(node),
                         Maybe::Present(at) => match settled.get(at.0) {
@@ -1659,8 +1667,9 @@ impl Sources
 ///
 /// # Specification
 /// - requires: `node` is a bind, a case, a data case, a split, a lambda, an
-///   offer, a fork or a loop's fixpoint whose every commuted child — a fork's
-///   parent alone — stands on top of `results`, in order.
+///   offer, a fork, a hold or a loop's fixpoint whose every commuted child — a
+///   fork's parent alone, a hold's scope alone — stands on top of `results`, in
+///   order.
 /// - ensures: those results popped; `node` itself when each is the child it
 ///   stands for; else a node of the same former over them, recorded at `node`'s
 ///   origin, or `fallback`, and its match record, a loop's fixpoint keeping its
@@ -1691,7 +1700,8 @@ fn rebuild(
         Computation::Bind(..)
         | Computation::Split { .. }
         | Computation::Lambda(_)
-        | Computation::Session(SessionAction::Fork { .. }) => 1_usize,
+        | Computation::Session(SessionAction::Fork { .. })
+        | Computation::Memory(MemoryForm::Hold { .. }) => 1_usize,
         Computation::Fixpoint { .. } if sink.loops.contains(&node) => 1_usize,
         Computation::Primitive { .. }
         | Computation::Transport(..)
@@ -1716,7 +1726,8 @@ fn rebuild(
         | Computation::Shift(_)
         | Computation::With(..)
         | Computation::Project(..)
-        | Computation::Session(_) => 0_usize,
+        | Computation::Session(_)
+        | Computation::Memory(_) => 0_usize,
     };
     let commuted = results.split_off(results.len().saturating_sub(count));
     let rebuilt = match (held, commuted.as_slice()) {
@@ -1777,6 +1788,14 @@ fn rebuild(
             child,
             parent: commuted,
         }),
+        (Computation::Memory(MemoryForm::Hold { value, body }), &[commuted])
+            if commuted != body =>
+        {
+            sink.arena.computation_memory(MemoryForm::Hold {
+                value,
+                body: commuted,
+            })
+        },
         (Computation::Fixpoint { body, evidence }, &[commuted]) if commuted != body => {
             let looped = sink.arena.computation_fixpoint(commuted, evidence);
             let _first = sink.loops.insert(looped);

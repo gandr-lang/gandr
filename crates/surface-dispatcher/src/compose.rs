@@ -1476,8 +1476,8 @@ enum Residence
 /// - requires: nothing.
 /// - ensures: the checker's side for an effect row, a stack and its literal, a
 ///   request, a handler, a resumption, a delimiter, a capture, a capability, an
-///   exercise, a scope, a recorded run or ride and a flow at a universe above
-///   level zero; the kernel's for every pure former.
+///   exercise, a scope, a recorded run or ride, a flow at a universe above
+///   level zero and a memory form; the kernel's for every pure former.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1506,7 +1506,8 @@ fn residence(former: UnadmittedFormer) -> Residence
         | UnadmittedFormer::Exercise
         | UnadmittedFormer::Scope
         | UnadmittedFormer::Run
-        | UnadmittedFormer::HigherFlow => Residence::Checker,
+        | UnadmittedFormer::HigherFlow
+        | UnadmittedFormer::Memory => Residence::Checker,
         UnadmittedFormer::ValueLift
         | UnadmittedFormer::NumericLiteral
         | UnadmittedFormer::NumericAtom

@@ -116,6 +116,17 @@
 //! declaration holding an endpoint stays on the checker's side. The rules,
 //! the frames and the decisions are in [`session`].
 //!
+//! # Temporary access
+//!
+//! `hold x = v; t` binds a value held exclusively into the linear zone, and
+//! `access x as w { t } unwind { u }` lends it to a view for the body's
+//! extent: the view is a one-shot accessor whose two eliminators are
+//! `resume(w, v)`, which writes `v` back when the access ends, and
+//! `abort(w)`, which runs the unwind under the empty row and writes nothing.
+//! Every way a view or a held value breaks the discipline is refused by name
+//! as [`CheckRefusal::Access`]. The rules, the frames, the decisions and what
+//! later work may assume are in [`access`].
+//!
 //! # Session identity
 //!
 //! `bisim(A, B)` states that two session codes are bisimilar, at `Path(Type,
@@ -323,6 +334,7 @@
 
 extern crate alloc;
 
+pub mod access;
 pub mod bridge;
 mod capability;
 mod code;
