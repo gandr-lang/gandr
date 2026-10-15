@@ -690,6 +690,51 @@ fn back_then_and_cong_unfold_to_transports()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// The transport `cong` unfolds to reads its map only lifted under the
+/// motive's binder; a parameter map's lift is the written map's copy, so it
+/// answers at the map's bytes (#443).
+#[test]
+fn a_parameter_map_under_cong_answers_at_its_bytes()
+{
+    let source = "def mapped(f: Integer => Integer, a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(Integer, f(a), f(b)) {\n  become cong(f, p)\n}\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let Some(&Computation::PathTransport { motive, .. }) =
+        arena.computation(tail_of(&module, &arena, "mapped".into()))
+    else {
+        panic!("`cong` unfolds to a transport");
+    };
+    let lifted = match arena.value_type(motive) {
+        Some(&ValueType::Path { right, .. }) => match arena.value(right) {
+            Some(&Value::Returned(applied)) => match arena.computation(applied) {
+                Some(&Computation::Application(forced, _)) => match arena.computation(forced) {
+                    Some(&Computation::Force(lifted)) => lifted,
+                    other => panic!("the image forces the map: {other:?}"),
+                },
+                other => panic!("the image applies the map: {other:?}"),
+            },
+            other => panic!("the moving endpoint is the map's image: {other:?}"),
+        },
+        other => panic!("the motive is a path type: {other:?}"),
+    };
+    let at = source
+        .find("cong(f")
+        .expect("the body writes `cong(f`")
+        .saturating_add(5);
+    assert_eq!(
+        module
+            .origins()
+            .value(lifted)
+            .map(|origin| (origin.span(), origin.provenance())),
+        Maybe::Present((
+            span(ByteOffset::from(at), ByteOffset::from(at.saturating_add(1))),
+            Provenance::Written
+        )),
+        "the lifted map answers at the written `f`"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn a_derived_operation_needs_a_written_path_answer()
 {

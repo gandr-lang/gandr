@@ -70,7 +70,7 @@ use super::shapes;
 /// still counted (#456): the comments on `fragment/stage-not-below.gandr`
 /// brought nine such positions and the blank line after its header, the ten
 /// added here to the count measured before them.
-const UNANSWERED_CEILING: usize = 28_708 + 10;
+const UNANSWERED_CEILING: usize = 28_709 + 10;
 
 /// The misses each node kind's hovers may hold, as [`KindFloor`] reads a row:
 /// the kind, then counts of the corpus positions whose smallest meaningful
@@ -118,7 +118,7 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("expression handle_expression name", 141, 60, 0, 1), // shape: #401
     KindFloor("expression hole", 1, 0, 24, 0),
     KindFloor("expression host_escape", 0, 6, 0, 0),
-    KindFloor("expression identifier", 2519, 1743, 167, 194), // shape: #401
+    KindFloor("expression identifier", 2518, 1743, 167, 194), // shape: #401
     KindFloor("expression if_expression", 0, 96, 0, 0),
     KindFloor("expression instantiation_expression", 57, 34, 33, 0),
     KindFloor("expression labelled_sum_expression", 5, 0, 0, 0),

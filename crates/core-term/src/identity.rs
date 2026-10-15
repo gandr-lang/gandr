@@ -248,10 +248,48 @@ pub fn cong(
     path: ValueId,
 ) -> ComputationId
 {
+    let lifted_function = shift_value(arena, function, Binders::ONE);
+    cong_lifted(arena, codomain, lifted_function, start, path)
+}
+
+/// [`cong`] over a map its caller already lifted under the motive's binder,
+/// so a caller that records where each node came from holds the one copy of
+/// the map the transport reads.
+///
+/// # Specification
+/// - requires: `codomain`, `start` and `path` are read in the context the
+///   result stands in, and `lifted` is the map read one binder deeper, as
+///   [`shift_value`] by one lifts it.
+/// - ensures: the transport `tr(y. Path(B↑, start↑, ⟨force lifted y⟩), path,
+///   here(start))`, whose motive forces `lifted` itself.
+/// - provides: the action of a function on a path, its map's lift chosen by the
+///   caller.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`cong`], which lifts its map and calls this.
+/// - witness: `identity::tests::cong_applies_the_map_to_the_moving_endpoint`
+#[spec(ensures: |ret| matches!(arena.computation(ret), Some(&crate::syntax::Computation::PathTransport { motive, path: along, value })
+    if along == path
+        && arena.value(value) == Some(&crate::syntax::Value::Here(start))
+        && matches!(arena.value_type(motive), Some(&crate::syntax::ValueType::Path { right, .. })
+            if matches!(arena.value(right), Some(&crate::syntax::Value::Returned(applied))
+                if matches!(arena.computation(applied), Some(&crate::syntax::Computation::Application(forced, _))
+                    if arena.computation(forced) == Some(&crate::syntax::Computation::Force(lifted)))))))]
+#[inline]
+#[must_use]
+pub fn cong_lifted(
+    arena: &mut CoreArena,
+    codomain: ValueTypeId,
+    lifted: ValueId,
+    start: ValueId,
+    path: ValueId,
+) -> ComputationId
+{
     let lifted_codomain = shift_value_type(arena, codomain, Binders::ONE);
     let lifted_start = shift_value(arena, start, Binders::ONE);
-    let lifted_function = shift_value(arena, function, Binders::ONE);
-    let forced = arena.computation_force(lifted_function);
+    let forced = arena.computation_force(lifted);
     let endpoint = moving(arena);
     let applied = arena.computation_application(forced, endpoint);
     let image = arena.value_returned(applied);

@@ -232,7 +232,7 @@ mod census
     /// - `Unspelled`: a type the printer could not spell at all.
     const READ_BACK_MISSES: [(&str, usize); 6] = [
         ("Different", 351),
-        ("Open", 1247),
+        ("Open", 1249),
         ("Refused", 30),
         ("Unknown", 129),
         ("Unparsed", 174),

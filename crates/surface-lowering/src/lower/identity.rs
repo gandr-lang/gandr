@@ -1766,9 +1766,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   ⟨force f y⟩), p, here(a))`; `back(f)` under a flow answer is the
     ///   symmetry ride `ride(y. Flow(A, y, b), f, stay(b))`. The path type an
     ///   operation stands at is recorded against its transport when both its
-    ///   endpoints are read. The operation carries the written origin and every
-    ///   other node minted for it the inserted identity origin. Nothing when an
-    ///   operand, the answer or the codomain did not lower.
+    ///   endpoints are read. The operation carries the written origin, the lift
+    ///   of `cong`'s map under the motive's binder the map's own, as the copy
+    ///   of the one the transport reads, and every other node minted for it the
+    ///   inserted identity origin. Nothing when an operand, the answer or the
+    ///   codomain did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1777,6 +1779,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   checked, answered and synthesised.
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    /// - witness: `lower::identity::tests::a_parameter_map_under_cong_answers_at_its_bytes`
     #[spec(
         ensures: |ret| match ret {
             | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
@@ -1807,7 +1810,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
             },
         };
-        let mark = sink.arena.watermark();
+        let mut mark = sink.arena.watermark();
         let inserted = origin.inserted(Insertion::Identity);
         let stood = match derived.stance {
             Stance::Answered(answer) => self.answered_at(answer, derived.frame, sink),
@@ -1843,7 +1846,13 @@ impl<'source> Lowerer<'_, 'source>
                 gandr_core_term::identity::then(sink.arena, carrier, left, first, second)
             },
             (Answered::Path, Derivation::Cong { .. }, _) => {
-                gandr_core_term::identity::cong(sink.arena, carrier, first, left, second)
+                // The transport reads the map only lifted under its motive's
+                // binder: the lift is the written map's copy, so it answers
+                // at the map's bytes.
+                let lifted = gandr_core_term::shift_value(sink.arena, first, Binders::ONE);
+                record_copies(sink, mark, &[Carried::Value(first, lifted)], inserted);
+                mark = sink.arena.watermark();
+                gandr_core_term::identity::cong_lifted(sink.arena, carrier, lifted, left, second)
             },
             (Answered::Path | Answered::Flow, Derivation::Back { .. }, Maybe::Absent(_))
             | (Answered::Flow, Derivation::Then { .. } | Derivation::Cong { .. }, _) => {
