@@ -6,12 +6,12 @@
 # </critical>
 name: Nightly
 
-# The whole runs the merge queue samples: the language server's corpus
-# sweeps over every source in both modes (`mise run ci:sweeps`) and the
-# one-token-drop recovery matrix over every token (`mise run ci:recovery`).
-# Daily on main when main moved since the last successful run; a failure is
-# a red run on main, never a blocked queue. A dispatch always runs. Beside
-# them, every day, each CI lane's median job time against its budget.
+# Every sweep over its whole input, which the merge queue samples: the
+# `sweeps` nextest profile, plain and with specifications enforced (`mise run
+# ci:sweeps-plain`, `mise run ci:sweeps-enforcing`). Daily on main when main
+# moved since the last successful run; a failure is a red run on main, never
+# a blocked queue. A dispatch always runs. Beside them, every day, each CI
+# lane's median job time against its budget.
 on:
   schedule:
     - cron: "0 4 * * *"
@@ -169,11 +169,11 @@ jobs:
         run: gh run list --workflow nightly.yml --branch main --status success --limit 1 --json headSha --jq '"stale=" + ((.[0].headSha // "") != env.GITHUB_SHA | tostring)' >> "$GITHUB_OUTPUT"
 
   # Each lane restores the ci.yml test state its task builds on and runs the
-  # task; the job sets which. The sweeps' enforcing half reuses main's
-  # enforcing state and the plain half builds the language server's plain
-  # test graph; the recovery matrix reuses the plain-only lane's state.
-  sweeps:
-    name: sweep the corpus through the language server
+  # task; the job sets which. The enforcing half reuses main's enforcing
+  # state; the plain half starts from the plain-only lane's state and builds
+  # the rest of the plain test graph.
+  sweeps-enforcing:
+    name: sweep every input, specifications enforced
     needs: &nightly-needs [ci-image-ref, freshness]
     if: &nightly-lane ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') }}
     runs-on: *linux
@@ -182,8 +182,7 @@ jobs:
     timeout-minutes: 60
     env:
       CI_BUILD_STATE: cargo-test-enforcing
-      NIGHTLY_TASK: ci:sweeps
-      NEXTEST_PROFILE: ci-enforcing
+      NIGHTLY_TASK: ci:sweeps-enforcing
     steps: &nightly-steps
       - *git-checkout
       - *trust-workspace
@@ -196,8 +195,8 @@ jobs:
       - name: run the whole lane
         run: mise run "$NIGHTLY_TASK"
 
-  recovery:
-    name: drop every token of the corpus
+  sweeps-plain:
+    name: sweep every input
     needs: *nightly-needs
     if: *nightly-lane
     runs-on: *linux
@@ -206,8 +205,7 @@ jobs:
     timeout-minutes: 60
     env:
       CI_BUILD_STATE: cargo-test-plain-only
-      NIGHTLY_TASK: ci:recovery
-      NEXTEST_PROFILE: ci
+      NIGHTLY_TASK: ci:sweeps-plain
     steps: *nightly-steps
 
   # Each lane's median job time over the newest ten merge-queue and

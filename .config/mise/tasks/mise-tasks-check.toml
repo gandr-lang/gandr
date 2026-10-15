@@ -133,7 +133,7 @@ run = "cargo nextest run --locked --package gandr-surface-parser --test tests --
 
 ["check:tests-plain-only"]
 description = "The tests that exist only without specification enforcement"
-run = "cargo nextest run --locked --package gandr-surface-parser --test tests --profile {{ env.NEXTEST_PROFILE | default(value='default') }} -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget) or test(=acceptance::dropped_tokens_recover_no_worse_than_the_record)'"
+run = "cargo nextest run --locked --package gandr-surface-parser --test tests --profile {{ env.NEXTEST_PROFILE | default(value='default') }} -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)'"
 
 # Flags and target directory match the enforcing test gate.
 ["build:tests-enforcing"]

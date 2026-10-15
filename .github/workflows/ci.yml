@@ -63,6 +63,10 @@ env:
   # own checkout. A tag that is not published yet is built inside the run that
   # first needs it, and the image jobs wait for it.
   GANDR_CI_IMAGE: ${{ vars.GANDR_CI_IMAGE }}
+  # The corpus sweeps sample the corpus and add every source the change adds
+  # or modifies; a queue entry's first parent is the base it lands on. The
+  # lanes that run sweeps fetch that parent.
+  GANDR_SWEEP_BASE: HEAD^
 
 jobs:
   # Definitions only: aliases run in each consuming job's context.
@@ -551,6 +555,7 @@ jobs:
       CI_ENFORCING: "true"
       CI_WITNESSES: "true"
       CI_SPEC_COST_RATIO: "true"
+      CI_FETCH_DEPTH: "2"
     steps: *workspace-test-steps
 
   # The plain baseline: every workspace test without enforcement, timed daily
@@ -568,6 +573,7 @@ jobs:
     env:
       CI_BUILD_STATE: cargo-test-plain-only
       CI_PLAIN_BASELINE: "true"
+      CI_FETCH_DEPTH: "2"
     steps: *workspace-test-steps
 
   # Windows and big-endian lanes have no local surface under act; macOS arm64
@@ -586,6 +592,7 @@ jobs:
       CI_INSTALL_TOOLCHAIN: "true"
       CI_BUILD_STATE: cargo-test-macos-enforcing
       CI_ENFORCING: "true"
+      CI_FETCH_DEPTH: "2"
     steps: *workspace-test-steps
 
   # Preserve the required gate identities. These must run after a failed,

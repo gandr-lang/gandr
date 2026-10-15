@@ -194,38 +194,39 @@ run = "cargo run --locked --quiet --package gandr-workflow-spec-cost -- --tests 
 
 # The one-token-drop recovery matrix in full: some forty thousand parses
 # against the per-source records under crates/surface-parser/tests/recovery,
-# where `check` samples every sixteenth token. UPDATE_EXPECT=1 re-records from
-# the full matrix; GANDR_RECOVERY_SOURCE=<path in the corpus> narrows either
-# run to one source.
+# where every other profile visits the sweep's sample. UPDATE_EXPECT=1
+# re-records from the full matrix; GANDR_RECOVERY_SOURCE=<path in the corpus>
+# narrows either run to one source.
 ["ci:recovery"]
 description = "Every corpus source cut short and with each token dropped, against its recovery record"
-env.GANDR_RECOVERY_WHOLE = "1"
-run = "cargo nextest run --locked --package gandr-surface-parser --test tests --profile {{ env.NEXTEST_PROFILE | default(value='default') }} -E 'test(=acceptance::dropped_tokens_recover_no_worse_than_the_record)'"
+run = "cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::dropped_tokens_recover_no_worse_than_the_record)'"
 
-# The language server's corpus sweeps whole: every corpus source typed,
-# erased and read for ghost texts, and every random edit script, plain and
-# then with specifications enforced, where `check` visits the samples
-# crates/surface-lsp/src/lib.rs describes. The enforcing half builds into the
-# enforcing gate's target directory and reuses its state.
+# Every sweep over its whole input — the `sweeps` nextest profile, which
+# selects the tests in a `sweeps` module (.config/nextest.toml) — plain and
+# with specifications enforced, the halves side by side. Every other profile
+# visits each sweep's stated sample. The nightly workflow runs each half on
+# the build state it restores; the enforcing half builds into the enforcing
+# gate's target directory.
 ["ci:sweeps"]
-description = "The language server's corpus sweeps over every source, plain and specifications enforced"
-env.GANDR_SWEEPS_WHOLE = "1"
-run = '''
-#!/usr/bin/env bash
-set -euo pipefail
-profile="{{ env.NEXTEST_PROFILE | default(value='default') }}"
-sweeps='test(editor::scenarios::) or test(=inline::tests::every_corpus_cursor_has_a_ghost_text)'
-cargo nextest run --locked --package gandr-surface-lsp --profile "$profile" -E "$sweeps"
-RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR="{{ config_root }}/target/enforcing" \
-  cargo nextest run --locked --package gandr-surface-lsp --profile "$profile" -E "$sweeps"
-'''
+description = "Every sweep over its whole input, plain and specifications enforced"
+depends = ["ci:sweeps-plain", "ci:sweeps-enforcing"]
+
+["ci:sweeps-plain"]
+description = "Every sweep over its whole input"
+run = "cargo nextest run --workspace --locked --profile sweeps"
+
+["ci:sweeps-enforcing"]
+description = "Every sweep over its whole input, specifications enforced"
+env.RUSTFLAGS = "--cfg anodized_panic"
+env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
+run = "cargo nextest run --workspace --locked --profile sweeps"
 
 # The enforcing suite, instrumented into target/coverage so it never shares
-# the cached enforcing state, under the `coverage` nextest profile (the
-# enforcing limits, the editor's corpus sweeps left out — .config/nextest.toml
-# says why). The plain-only parser tests are cfg(not(anodized_panic)), so they
-# are a second instrumented run; a line is covered when either run executed
-# it. llvm-tools already supplies llvm-cov.
+# the cached enforcing state, under the `coverage` nextest profile (its own
+# limit, each sweep over its sample — .config/nextest.toml says why). The
+# plain-only parser test is cfg(not(anodized_panic)), so it is a second
+# instrumented run; a line is covered when either run executed it.
+# llvm-tools already supplies llvm-cov.
 ["ci:coverage"]
 description = "Enforcing line coverage, with the plain-only parser witness merged in, as coverage.lcov"
 run = '''
@@ -238,7 +239,7 @@ RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR="$root/target/coverage" \
 CARGO_TARGET_DIR="$root/target/coverage-plain" \
   cargo llvm-cov nextest --locked --no-report \
   -p gandr-surface-parser --test tests \
-  -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget) or test(=acceptance::dropped_tokens_recover_no_worse_than_the_record)'
+  -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)'
 CARGO_TARGET_DIR="$root/target/coverage-plain" \
   cargo llvm-cov report --lcov --output-path "$root/coverage-plain.lcov"
 awk '
