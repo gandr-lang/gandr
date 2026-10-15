@@ -695,6 +695,8 @@ pub struct Definitions<'run>
     endpoints: Endpoints,
     /// Whether a manifest definition unfolds at all.
     constants: Constants,
+    /// How a readback names a definition's own recursion.
+    recursion: Recursion,
 }
 
 /// Whether a run unfolds the definitions its scope reads as manifest.
@@ -720,6 +722,21 @@ pub enum Endpoints
     /// the endpoint stays a neutral until a conversion unfolds that
     /// definition, as a step its trace records.
     Hold,
+}
+
+/// How a readback names a fixpoint that is a definition's own recursion.
+///
+/// That fixpoint is the one a definition's body suspends, closed over
+/// nothing, which an unfolding of that definition binds for its recursive
+/// calls.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Recursion
+{
+    /// As the fixpoint it is.
+    Unrolled,
+    /// As the definition forced: a recursive call stuck at a variable reads
+    /// back as the call its source wrote, `el(a)`, not the fixpoint applied.
+    Refolded,
 }
 
 impl<'run> Definitions<'run>
@@ -750,7 +767,7 @@ impl<'run> Definitions<'run>
         ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret.chain), core::ptr::from_ref(chain))
             && core::ptr::eq(core::ptr::from_ref(ret.environment), core::ptr::from_ref(environment))
             && ret.scope == scope && ret.endpoints == Endpoints::Run
-            && ret.constants == Constants::Unfold,
+            && ret.constants == Constants::Unfold && ret.recursion == Recursion::Unrolled,
     )]
     pub fn new(
         chain: &'run LoweredChain,
@@ -764,7 +781,82 @@ impl<'run> Definitions<'run>
             scope,
             endpoints: Endpoints::Run,
             constants: Constants::Unfold,
+            recursion: Recursion::Unrolled,
         }
+    }
+
+    /// The same definitions, naming a definition's own recursion in
+    /// `recursion`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every stance unchanged but the recursion stance, which is
+    ///   `recursion`.
+    /// - provides: the reading of an open code's run under
+    ///   [`Recursion::Refolded`]: the quote a decoder returns over a binder
+    ///   names its recursive calls as its source wrote them, so the decode
+    ///   `el(a)` it holds is the one a signature writes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recursive decoder's arm read back under a binder
+    ///   names its stuck call `el(a)` under the refolding stance and the
+    ///   fixpoint applied under the unrolling one; a stance that does not reach
+    ///   the readback loses the distinction.
+    /// - witness: `readback::tests::a_definition_s_own_recursion_reads_back_as_the_definition`
+    #[inline]
+    #[must_use]
+    #[spec(
+        ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret.chain), core::ptr::from_ref(self.chain))
+            && core::ptr::eq(core::ptr::from_ref(ret.environment), core::ptr::from_ref(self.environment))
+            && ret.scope == self.scope && ret.endpoints == self.endpoints
+            && ret.constants == self.constants && ret.recursion == recursion,
+    )]
+    pub fn reading_recursion(
+        self,
+        recursion: Recursion,
+    ) -> Self
+    {
+        Self { recursion, ..self }
+    }
+
+    /// The definition whose own recursion the fixpoint `source` is, closed
+    /// over nothing, when this run refolds recursion.
+    ///
+    /// # Specification
+    /// - requires: nothing — any computation id is admissible input.
+    /// - ensures: under [`Recursion::Refolded`], the first constant in
+    ///   admission order whose body this scope reads as manifest and which
+    ///   suspends `source`; `None` under [`Recursion::Unrolled`] and for a
+    ///   fixpoint no definition suspends.
+    /// - provides: the name a readback gives a definition's recursion.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::reading_recursion`].
+    /// - witness: `readback::tests::a_definition_s_own_recursion_reads_back_as_the_definition`
+    #[inline]
+    #[spec(ensures: |ret| self.recursion == Recursion::Refolded || ret.is_none())]
+    pub(crate) fn recursion_of(
+        &self,
+        core: &CoreArena,
+        source: ComputationId,
+    ) -> Option<ConstantIndex>
+    {
+        if self.recursion == Recursion::Unrolled {
+            return None;
+        }
+        self.chain
+            .chain()
+            .entries()
+            .iter()
+            .map(DefinitionEntry::constant)
+            .find(|&constant| {
+                self.definition(constant)
+                    .is_some_and(|body| core.value(body) == Some(&Value::Thunk(source)))
+            })
     }
 
     /// The same definitions, reading compound endpoints in `endpoints`.
@@ -1242,16 +1334,48 @@ enum Task
     FixpointClosure(CompClosureId),
     /// Finish reading a held computation through its bind at `bind`, once
     /// that bind's continuation has run with the call before it: what the
-    /// continuation returned, under the eliminations past the bind, or, when
-    /// it did not return, the computation read from the next position
-    /// ([`read_from`]).
+    /// continuation returned, under the eliminations past the bind; or, when
+    /// it sticks at a bind of its own, that continuation read first, beneath
+    /// [`Task::ReadContinued`]; or, when it did not return, the computation
+    /// read from the next position ([`read_from`]).
     ReadThrough
     {
         /// The held computation.
         computation: DomainCompId,
         /// The position of the bind in the computation's spine.
         bind: SpinePosition,
+        /// Where the reading leaves what it reads to.
+        delivery: Delivery,
     },
+    /// Finish reading a held computation through its bind at `bind`, once
+    /// the continuation, stuck at a bind of its own, has been read: what that
+    /// reading returned, under the eliminations past the bind, or, when it did
+    /// not return, the computation read from the next position.
+    ReadContinued
+    {
+        /// The held computation.
+        computation: DomainCompId,
+        /// The position of the bind in the computation's spine.
+        bind: SpinePosition,
+        /// Where the reading leaves what it reads to.
+        delivery: Delivery,
+    },
+    /// Read the computation on the stack again from its first position, for
+    /// a continuation's reading whose bind just returned.
+    Reread,
+}
+
+/// Where a reading of a held computation leaves what it reads to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Delivery
+{
+    /// An endpoint's own reading: delivered as the value it returns, on the
+    /// value stack.
+    Value,
+    /// The reading of a continuation stuck at a bind of its own: left on the
+    /// computation stack, for the [`Task::ReadContinued`] beneath it to judge
+    /// whether it returned.
+    Continuation,
 }
 
 /// The position of an elimination in a neutral's spine, innermost first.
@@ -3053,10 +3177,13 @@ fn run(
             Task::Returned => entry_comps.checked_sub(1_usize) == Some(machine.comps.len())
                 && ((machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
                     || machine.tasks.len() > entry_tasks),
-            Task::ReadThrough { .. } => (machine.comps.len() == entry_comps && machine.tasks.len() > entry_tasks)
+            Task::ReadThrough { .. } | Task::ReadContinued { .. } => (machine.comps.len() == entry_comps && machine.tasks.len() >= entry_tasks)
                 || (entry_comps.checked_sub(1_usize) == Some(machine.comps.len())
                     && ((machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
                         || machine.tasks.len() > entry_tasks)),
+            Task::Reread => machine.values.len() == entry_values
+                && ((machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks)
+                    || (entry_comps.checked_sub(1_usize) == Some(machine.comps.len()) && machine.tasks.len() > entry_tasks)),
             Task::Value { .. } => machine.comps.len() == entry_comps
                 && ((machine.values.len() == entry_values.saturating_add(1_usize) && machine.tasks.len() >= entry_tasks)
                     || (machine.values.len() == entry_values && machine.tasks.len() > entry_tasks)),
@@ -3658,31 +3785,53 @@ fn step(
                 .push(domain.comp_fixpoint(recursive, CompTermFace::Reduced));
             step_apply(core, domain, machine)
         },
-        Task::ReadThrough { computation, bind } => {
+        Task::ReadThrough {
+            computation,
+            bind,
+            delivery,
+        } => {
             let continued = machine.pop_comp()?;
-            if !matches!(
+            if matches!(
                 domain.computation(continued),
                 Some(&DomainComp::Return { .. })
             ) {
-                return read_from(domain, machine, computation, bind.outward());
+                return continue_past(domain, machine, computation, bind, delivery, continued);
             }
-            let DomainComp::Neutral { neutral, .. } = *domain
-                .computation(computation)
-                .ok_or(EvalFault::Domain(DomainFault::Dangling))?
-            else {
-                return Err(EvalFault::MachineInvariant);
-            };
-            let held = domain
-                .neutral(neutral)
-                .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
-            let past = held
-                .spine()
-                .get(bind.outward().0 ..)
-                .ok_or(EvalFault::MachineInvariant)?;
-            machine.tasks.push(Task::Returned);
-            let _answer = push_eliminations(machine, past);
-            machine.comps.push(continued);
-            Ok(())
+            // A continuation stuck at a bind of its own is read before it is
+            // judged; one stuck otherwise comes back whole.
+            machine.tasks.push(Task::ReadContinued {
+                computation,
+                bind,
+                delivery,
+            });
+            read_from(
+                domain,
+                machine,
+                continued,
+                SpinePosition::INNERMOST,
+                Delivery::Continuation,
+            )
+        },
+        Task::ReadContinued {
+            computation,
+            bind,
+            delivery,
+        } => {
+            let read = machine.pop_comp()?;
+            if matches!(domain.computation(read), Some(&DomainComp::Return { .. })) {
+                return continue_past(domain, machine, computation, bind, delivery, read);
+            }
+            read_from(domain, machine, computation, bind.outward(), delivery)
+        },
+        Task::Reread => {
+            let produced = machine.pop_comp()?;
+            read_from(
+                domain,
+                machine,
+                produced,
+                SpinePosition::INNERMOST,
+                Delivery::Continuation,
+            )
         },
     }
 }
@@ -6151,7 +6300,13 @@ fn resume_returned(
             return Ok(());
         }
     }
-    read_from(domain, machine, produced, SpinePosition::INNERMOST)
+    read_from(
+        domain,
+        machine,
+        produced,
+        SpinePosition::INNERMOST,
+        Delivery::Value,
+    )
 }
 
 /// Deliver `computation` as an endpoint, read through the first bind at or
@@ -6163,8 +6318,11 @@ fn resume_returned(
 /// S(n)` and reads as `S(wind(x))`. The reading takes the continuation only
 /// when it returns, so an arm that cases on the call stays stuck at the
 /// bind; a call a definition heads waits for the conversion to unfold it as
-/// a recorded step. The kernel mirrors the reading in its replay of an
-/// endpoint, by the same forced run, so it records no decision of its own.
+/// a recorded step. A continuation stuck at a bind of its own is read the same
+/// way before it is judged, so a decoder's arm `run x <- el(a); run y <-
+/// el(b); return (x => y)` reads as `⟨el(a)⟩ => ⟨el(b)⟩`. The kernel mirrors
+/// the reading in its replay of an endpoint, by the same forced run, so it
+/// records no decision of its own.
 ///
 /// # Specification
 /// - requires: nothing; a dangling id is refused.
@@ -6172,7 +6330,9 @@ fn resume_returned(
 ///   continuation is queued over the call before it, beneath
 ///   [`Task::ReadThrough`], which delivers what it returns under the
 ///   eliminations past the bind or reads on from the next position; with no
-///   such bind, [`returned_value`] of `computation` is delivered at once.
+///   such bind, `computation` is delivered at once: [`returned_value`] of it on
+///   the value stack for [`Delivery::Value`], itself on the computation stack
+///   for [`Delivery::Continuation`].
 /// - provides: a held call's reading under the binds of a compound endpoint.
 /// - fails: as [`read_through`] and [`returned_value`].
 /// - panics: none.
@@ -6182,21 +6342,29 @@ fn resume_returned(
 ///
 /// # Termination
 /// - reason: no loop or recursion here; a failed reading re-enters through
-///   [`Task::ReadThrough`] at a later position of the same spine.
+///   [`Task::ReadContinued`] at a later position of the same spine, and a
+///   continuation's reading through [`Task::ReadThrough`] at the first position
+///   of the continuation's own spine.
 /// - measure: the positions past `from`, which fall at every re-entry; each
-///   continuation run spends the driver's fuel.
+///   continuation run spends the driver's fuel, which bounds the nesting.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a bind over a fixpoint stuck at a variable reads as its
 ///   arm's constructor over the call, and the kernel replays that endpoint
 ///   without a decision; a bind whose continuation cases on the call stays
-///   whole, and skipping the reading leaves the first apart.
+///   whole, and skipping the reading leaves the first apart; two binds in turn,
+///   each over a stuck call, read as the quote over both calls, and judging the
+///   outer continuation before reading its own bind leaves the decode stuck.
 /// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation`
 /// - witness: `machine::tests::a_continuation_casing_on_a_stuck_call_stays_whole`
+/// - witness: `machine::tests::a_continuation_stuck_at_its_own_bind_reads_through_both`
 #[spec(
-    captures: [entry_tasks = machine.tasks.len(), entry_values = machine.values.len()],
+    captures: [entry_tasks = machine.tasks.len(), entry_values = machine.values.len(), entry_comps = machine.comps.len()],
     ensures: |ret| ret.is_err()
-        || (machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
+        || (machine.tasks.len() == entry_tasks && match delivery {
+            Delivery::Value => machine.values.len() == entry_values.saturating_add(1_usize),
+            Delivery::Continuation => machine.comps.len() == entry_comps.saturating_add(1_usize),
+        })
         || machine.tasks.len() == entry_tasks.saturating_add(2_usize),
 )]
 fn read_from(
@@ -6204,6 +6372,7 @@ fn read_from(
     machine: &mut Machine<'_>,
     computation: DomainCompId,
     from: SpinePosition,
+    delivery: Delivery,
 ) -> Result<(), EvalFault>
 {
     if let Some((bind, continuation, call)) = read_through(domain, computation, from)? {
@@ -6214,12 +6383,81 @@ fn read_from(
         let mut extended = closure.environment().clone();
         extended.extend(Zone::Intuitionistic, call);
         let env = machine.hold_env(extended);
-        machine.tasks.push(Task::ReadThrough { computation, bind });
+        machine.tasks.push(Task::ReadThrough {
+            computation,
+            bind,
+            delivery,
+        });
         machine.tasks.push(Task::Body { body, env });
         return Ok(());
     }
-    let value = returned_value(domain, computation)?;
-    machine.values.push(value);
+    match delivery {
+        Delivery::Value => {
+            let value = returned_value(domain, computation)?;
+            machine.values.push(value);
+        },
+        Delivery::Continuation => machine.comps.push(computation),
+    }
+    Ok(())
+}
+
+/// Go on past a held computation's bind at `bind` once its continuation
+/// returned: `returned` under the eliminations past the bind, read again.
+///
+/// # Specification
+/// - requires: `computation` is the neutral the bind sits in and `returned` a
+///   returner.
+/// - ensures: the eliminations past the bind queued over `returned`, beneath
+///   the reading `delivery` names: [`Task::Returned`] for an endpoint's own
+///   reading, with its unfolding under [`Endpoints::Run`]; [`Task::Reread`] for
+///   a continuation's.
+/// - provides: the step a read-through takes once a continuation returns.
+/// - fails: [`EvalFault::MachineInvariant`] when `computation` is no neutral or
+///   `bind` lies past its spine; [`DomainFault::Dangling`] for a node that does
+///   not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// An `EvalFault`, as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the outer bind of a decoder's arm goes on with what its
+///   inner reading returned, and stopping at the inner bind leaves the decode
+///   stuck.
+/// - witness: `machine::tests::a_continuation_stuck_at_its_own_bind_reads_through_both`
+#[spec(
+    captures: [entry_tasks = machine.tasks.len(), entry_comps = machine.comps.len()],
+    ensures: |ret| ret.is_err()
+        || (machine.tasks.len() > entry_tasks && machine.comps.len() == entry_comps.saturating_add(1_usize)),
+)]
+fn continue_past(
+    domain: &DomainArena,
+    machine: &mut Machine<'_>,
+    computation: DomainCompId,
+    bind: SpinePosition,
+    delivery: Delivery,
+    returned: DomainCompId,
+) -> Result<(), EvalFault>
+{
+    let DomainComp::Neutral { neutral, .. } = *domain
+        .computation(computation)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    let held = domain
+        .neutral(neutral)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    let past = held
+        .spine()
+        .get(bind.outward().0 ..)
+        .ok_or(EvalFault::MachineInvariant)?;
+    machine.tasks.push(match delivery {
+        Delivery::Value => Task::Returned,
+        Delivery::Continuation => Task::Reread,
+    });
+    let _answer = push_eliminations(machine, past);
+    machine.comps.push(returned);
     Ok(())
 }
 

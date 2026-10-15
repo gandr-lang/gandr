@@ -232,8 +232,8 @@ mod census
     /// - `Unparsed`: a spelling the grammar refuses (#401).
     /// - `Unspelled`: a type the printer could not spell at all.
     const READ_BACK_MISSES: [(&str, usize); 6] = [
-        ("Different", 466),
-        ("Open", 1142),
+        ("Different", 468),
+        ("Open", 1162),
         ("Refused", 30),
         ("Unknown", 121),
         ("Unparsed", 174),

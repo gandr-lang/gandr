@@ -370,6 +370,25 @@
 //! core reads. Reversal: when the surface gains a type declaration with
 //! capitalised names, an operator declared there applies by that name.
 //!
+//! # A type variable and a call in a type are decodes
+//!
+//! A name in type position that a binder answers is the decode of the code the
+//! binder holds: a parameter at a universe, and equally a variable `run` bound
+//! to a type, so a decoder's arm `run x <- el(a); run y <- el(b); return (x =>
+//! y)` reads `x` and `y` as `El(x)` and `El(y)`. A call of a dynamic function
+//! in type position is the decode of the code the call returns, and its
+//! arguments are read where a value is read: a capitalised name there is a
+//! constructor before it is a type head, so `el(Arrow(NatC, NatC))` applies
+//! `el` to a constructor value.
+//!
+//! This is the recorded design, a Tarski data universe: the codes are an
+//! ordinary datatype and the decoder a function written over them, both bound
+//! at the value level, and a decode is a type over a code that is a term. The
+//! alternative was a large elimination into `Type`, a `case` with types for
+//! arms standing in the type language and `Element` erased, declined in #353.
+//! The choice reverses for a universe that stops being a data universe, one
+//! whose codes are not values a function can case on.
+//!
 //! # Products, sums, tuples and the value-function alias
 //!
 //! `A * B` is the eager product and `(a, b)` its tuple; `A + B` is the sum,
@@ -4147,12 +4166,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   as a statement that is not an exit refuses as an unadmitted expression
     ///   statement at the statement's bytes; a former of the wrong family for
     ///   the position refuses as the wrong sort, except a type standing where a
-    ///   value is read, which is quoted; a form where a body ends that is
-    ///   neither an exit nor a form that passes the end on — a block, a match,
-    ///   a grouping — nor a hole takes the exit its polarity names, recorded as
-    ///   inferred and leaving, and is handed to its reader; every other former
-    ///   is handed to its own reader, a declaration form to the function
-    ///   reader, the one reading of the family that seeds one.
+    ///   value is read, which is quoted, and a term name or a capitalised name
+    ///   standing where a type is read, which is read as the type head of that
+    ///   spelling; a form where a body ends that is neither an exit nor a form
+    ///   that passes the end on — a block, a match, a grouping — nor a hole
+    ///   takes the exit its polarity names, recorded as inferred and leaving,
+    ///   and is handed to its reader; every other former is handed to its own
+    ///   reader, a declaration form to the function reader, the one reading of
+    ///   the family that seeds one.
     /// - provides: the dispatch on the grammar's named kind.
     /// - fails: yields the form's first refusal.
     /// - panics: none.
@@ -4189,6 +4210,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             else if family_of(former) != site.reading.family()
                 && !(family_of(former) == Family::Type && matches!(site.reading, Reading::Value(_)))
+                && !(matches!(former, Former::Name | Former::Constructor) && site.reading.family() == Family::Type)
             {
                 ret == Err(site.out(FragmentBoundary::WrongSort))
             }
@@ -4232,7 +4254,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             });
         }
         let quoted = family == Family::Type && matches!(site.reading, Reading::Value(_));
-        if family != site.reading.family() && !quoted {
+        let headed = matches!(former, Former::Name | Former::Constructor)
+            && site.reading.family() == Family::Type;
+        if family != site.reading.family() && !quoted && !headed {
             return Err(site.out(FragmentBoundary::WrongSort));
         }
         if self.exits.contains(&site.at.node) && ending(former) == Ending::Inferred {
@@ -4247,6 +4271,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let cursor = Cursor::new(&pieces.pieces, site.at.span);
         match former {
+            Former::Name | Former::Constructor if headed => self.type_head(site),
             Former::Name => self.name(site),
             Former::Constructor => self.constructor(site),
             Former::Hole => {
@@ -6595,12 +6620,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a primitive type, a type identifier or a type
-    ///   variable in type position.
-    /// - ensures: inside a module signature, a head naming a type component
-    ///   written before the head's own component stands for what that component
-    ///   reads: the type a manifest component names, adopted as it lowered, or
-    ///   the atom a sealed component's abstract type declares. Otherwise a head
-    ///   a binder answers is that code; past the binders, a head naming a type
+    ///   variable in type position, or a term name or a capitalised name where
+    ///   a type is read.
+    /// - ensures: a head standing where a value is read — an argument of a
+    ///   type-position call — that names a constructor of a data family
+    ///   declared strictly earlier stands as that constructor applied to no
+    ///   fields, as [`Self::constructor`] reads it in term position. Otherwise,
+    ///   inside a module signature, a head naming a type component written
+    ///   before the head's own component stands for what that component reads:
+    ///   the type a manifest component names, adopted as it lowered, or the
+    ///   atom a sealed component's abstract type declares. Otherwise a head a
+    ///   binder answers is that code; past the binders, a head naming a type
     ///   member written before it in its own module or an enclosing one stands
     ///   for that member's type; then a head an earlier declaration answers is
     ///   that code, read as the static application of it to no arguments. Any
@@ -6619,10 +6649,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a binder written at the bare universe, a binder
-    ///   written at a sorted and levelled one, a declaration, an atom, a
+    ///   written at a sorted and levelled one, a binder a `run` bound to a
+    ///   type, a declaration, an atom, a constructor where a value is read, a
     ///   manifest component, a sealed one and a type member, each asserted as
     ///   the exact core type read back out of the arena.
     /// - witness: `lower::tests::a_bare_type_binder_is_positive_at_the_fuss_free_level`
+    /// - witness: `lower::tests::a_run_bound_type_and_a_constructor_argument_stand_in_a_type`
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::every_type_atom_lowers_to_its_core_type`
@@ -6644,7 +6676,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 | Plan::Atom(_)
                                 | Plan::Decode(_, _, _)
                                 | Plan::StaticApplication(_, _)
-                                | Plan::Data(_, _))
+                                | Plan::Data(_, _)
+                                | Plan::Constructor(_))
                         )
                     ))
         },
@@ -6655,6 +6688,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let name = self.name_at(site.at);
+        if let Reading::Value(_) = site.reading
+            && let Maybe::Present(constructor) = self.constructor_named(site, name)
+        {
+            let none = Stretch {
+                start: self.operands.len(),
+                end: self.operands.len(),
+            };
+            return self.construct(site, constructor, none);
+        }
         if let Maybe::Present(stated) = self.stated_named(site, name)? {
             return self.stated_type(site, stated);
         }
@@ -7311,16 +7353,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a type application in type position, or in value
-    ///   position where a type is quoted.
-    /// - ensures: a head naming a type family, as a component or a member,
-    ///   expands to the family's type over the arguments; a head a binder or an
-    ///   earlier declaration answers is read as the static application of that
-    ///   code to the arguments, left to right; any other head named `Flow` and
-    ///   applied to three arguments is the directed identity type
-    ///   [`Self::flow_type`] plans; any other head applied to one argument
-    ///   resolves against the unary table, stands at the sort its former
-    ///   produces, reads its argument at the sort the former takes, and is
-    ///   planned over it.
+    ///   position where a type is quoted or a constructor applied.
+    /// - ensures: an application standing where a value is read — an argument
+    ///   of a type-position call — whose head names a constructor of a data
+    ///   family declared strictly earlier stands as that constructor applied to
+    ///   the arguments, as [`Self::construct`] plans it. Otherwise a head
+    ///   naming a type family, as a component or a member, expands to the
+    ///   family's type over the arguments; a head a binder or an earlier
+    ///   declaration answers is read as the static application of that code to
+    ///   the arguments, left to right; any other head named `Flow` and applied
+    ///   to three arguments is the directed identity type [`Self::flow_type`]
+    ///   plans; any other head applied to one argument resolves against the
+    ///   unary table, stands at the sort its former produces, reads its
+    ///   argument at the sort the former takes, and is planned over it.
     /// - provides: the applied half of type-head resolution.
     /// - fails: yields the unresolved-head refusal for a head nothing answers
     ///   and no former takes at the arity it was written with, the wrong-sort
@@ -7333,11 +7378,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a former's head, a head no former takes, a head
-    ///   written at two arguments, and an operator a declaration and a binder
-    ///   name, each asserted as the exact core node read back out of the arena
-    ///   or the exact refusal.
+    ///   written at two arguments, an operator a declaration and a binder name,
+    ///   and a constructor applied in a type-position call's argument, each
+    ///   asserted as the exact core node read back out of the arena or the
+    ///   exact refusal.
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::an_applied_head_no_former_answers_is_refused`
+    /// - witness: `lower::tests::a_run_bound_type_and_a_constructor_argument_stand_in_a_type`
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     #[spec(
@@ -7345,7 +7392,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Flow(..)))
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Flow(..) | Plan::Constructor(_)))
                 )
         },
     )]
@@ -7369,6 +7416,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let name = self.name_at(head);
         let start = self.operands.len();
         let read = arguments(site, &mut cursor, &mut self.operands);
+        if let (Ok(()), Reading::Value(_)) = (read, site.reading)
+            && let Maybe::Present(constructor) = self.constructor_named(site, name)
+        {
+            let fields = Stretch {
+                start,
+                end: self.operands.len(),
+            };
+            return self.construct(site, constructor, fields);
+        }
         match read.and_then(|()| self.stated_named(site, name)) {
             Ok(Maybe::Present(TypeComponent {
                 meaning: TypeMeaning::Family(family),
@@ -14044,6 +14100,86 @@ mod tests
             comp_decoded(result),
             code,
             "and a result naming it is that computation type, with no returner"
+        );
+    }
+
+    #[test]
+    fn a_run_bound_type_and_a_constructor_argument_stand_in_a_type()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "data U : Type { NatC : U; Arrow : (a : U, b : U) --> U; } def pick(n : \
+                 Integer) -> -F Type { return Integer } def twice(n : Integer) -> -F Type { \
+                 run x <- pick(n); return (x => x) } def el(u : U) -> -F Type { return Integer \
+                 } def one : el(Arrow(NatC, NatC)) ;",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+
+        let Some(&Value::Thunk(suspended)) = arena.value(body_of(lowered[2]))
+        else {
+            panic!("`twice` is a thunk");
+        };
+        let Some(&Computation::Lambda(body)) = arena.computation(suspended)
+        else {
+            panic!("over its parameter");
+        };
+        let Some(&Computation::Bind(_, continuation)) = arena.computation(body)
+        else {
+            panic!("`run x <- pick(n)` binds the call");
+        };
+        let Some(&Computation::Return(quote)) = arena.computation(continuation)
+        else {
+            panic!("and returns");
+        };
+        let Some(&Value::Quote(quoted)) = arena.value(quote)
+        else {
+            panic!("a type, quoted where a value is read");
+        };
+        let Some(&ValueType::Thunk(arrow)) = arena.value_type(quoted)
+        else {
+            panic!("`x => x` is a thunked arrow");
+        };
+        let Some(&CompType::Arrow { domain, .. }) = arena.comp_type(arrow)
+        else {
+            panic!("an arrow");
+        };
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(domain)
+        else {
+            panic!("the `run`-bound `x` is a decode");
+        };
+        assert_eq!(
+            arena.value(code),
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0_u32),
+            }),
+            "of the variable `run` bound"
+        );
+
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(declared_of(lowered[4]))
+        else {
+            panic!("`el(…)` in a type is a decode");
+        };
+        let Some(&Value::Returned(call)) = arena.value(code)
+        else {
+            panic!("of the call's returned code");
+        };
+        let Some(&Computation::Application(_, argument)) = arena.computation(call)
+        else {
+            panic!("`el` applied");
+        };
+        let Some(&Value::Constructor { ref fields, .. }) = arena.value(argument)
+        else {
+            panic!("to `Arrow(NatC, NatC)`, a constructor value, not a type");
+        };
+        assert!(
+            fields
+                .iter()
+                .all(|&field| matches!(arena.value(field), Some(&Value::Constructor { .. }))),
+            "whose `NatC` arguments are constructors too"
         );
     }
 

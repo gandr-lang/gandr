@@ -86,7 +86,8 @@
 //!   refused with `PolicyRefusal::GranularityGated`.
 //! - `Definitions`: the lowered chain, the definitional environment and the
 //!   scope a run reads unfoldings through, with the `Endpoints` stance a
-//!   compound endpoint reads in, and `Fuel`, the run's budget.
+//!   compound endpoint reads in, the `Recursion` stance a readback names a
+//!   definition's own recursion by, and `Fuel`, the run's budget.
 //! - `LoweredChain`: a definition chain with every body lowered into the run's
 //!   core arena in one pass, so `ReadbackMode::Unfolding` forces any body the
 //!   chain holds — evaluating its lowering closed and recording it with
@@ -410,6 +411,7 @@ pub use crate::eval::Endpoints;
 pub use crate::eval::EvalFault;
 pub use crate::eval::Fuel;
 pub use crate::eval::LoweredChain;
+pub use crate::eval::Recursion;
 pub use crate::eval::eval_comp_within;
 pub use crate::eval::eval_computation;
 pub use crate::eval::eval_value;

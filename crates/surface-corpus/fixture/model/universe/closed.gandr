@@ -1,0 +1,76 @@
+// A Tarski universe written by hand: a datatype of codes and a decoder from
+// codes to value types. The decode of a code over a binder is a value type
+// over a neutral code, compared by its code; the decode of a code that runs
+// to a quote is the quoted type. The arrow code decodes to the function type
+// between its two decoded sides, so a function at a decoded arrow applies.
+
+/// Natural numbers, free: every constructor term is its own value.
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// The codes: the naturals, and the functions from one coded type to another.
+@[ checks ]
+data U : Type {
+  NatC : U;
+  Arrow : (a : U, b : U) --> U;
+}
+
+/// The decoder. An arm binds the type each side decodes to, a type-valued
+/// variable, and returns the function type between the two.
+@[ checks ]
+def rec el(u : U) -> -F Type {
+  case u {
+    NatC => return Nat,
+    Arrow(a, b) => { run x <- el[<](a); run y <- el[<](b); return (x => y) }
+  }
+}
+
+/// One, at the decode of the natural code, which runs to `Nat`.
+@[ checks ]
+def one : el(NatC) ;
+def one = Succ(Zero) ;
+
+/// The identity at every code: over the binder `c` the decode `el(c)` is a
+/// neutral type, and its two occurrences are one type.
+@[ checks ]
+def idAt(c : U, v : el(c)) -> -F el(c) { v }
+
+/// The identity at the natural code keeps one.
+@[ runs("Succ(Zero)") ]
+def kept : +U (-F Nat) ;
+def kept = thunk { idAt(NatC, one) } ;
+
+/// The successor, at the decode of the arrow from naturals to naturals,
+/// which runs to `Nat => Nat`.
+@[ checks ]
+def succ : el(Arrow(NatC, NatC)) ;
+def succ = thunk { fn (n) { Succ(n) } } ;
+
+/// Application at every pair of codes: the decode of `Arrow(a, b)` reads
+/// through the decoder's arm to `el(a) => el(b)`, so `f` applies to `v` and
+/// returns at `el(b)`.
+@[ checks ]
+def applyAt(a : U, b : U, f : el(Arrow(a, b)), v : el(a)) -> -F el(b) { f(v) }
+
+/// The successor applied at its decoded type.
+@[ runs("Succ(Succ(Zero))") ]
+def stepped : +U (-F Nat) ;
+def stepped = thunk { succ(one) } ;
+
+/// Application at the arrow from naturals to naturals: the successor of one.
+@[ runs("Succ(Succ(Zero))") ]
+def applied : +U (-F Nat) ;
+def applied = thunk { applyAt(NatC, NatC, succ, one) } ;
+
+/// A function at the decode of an arrow whose domain is itself an arrow:
+/// it applies its argument to one.
+@[ checks ]
+def atOne : el(Arrow(Arrow(NatC, NatC), NatC)) ;
+def atOne = thunk { fn (g) { g(one) } } ;
+
+/// Application one code up: `atOne` at the successor.
+@[ runs("Succ(Succ(Zero))") ]
+def appliedAbove : +U (-F Nat) ;
+def appliedAbove = thunk { applyAt(Arrow(NatC, NatC), NatC, atOne, succ) } ;

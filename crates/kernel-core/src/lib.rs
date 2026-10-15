@@ -532,6 +532,7 @@ pub use crate::replay::ReplaySides;
 pub use crate::replay::TracePosition;
 pub use crate::replay::Unfoldable;
 pub use crate::replay::Unfoldings;
+pub use crate::replay::read_step;
 pub use crate::replay::replay;
 pub use crate::rewrite::BinderDepth;
 pub use crate::rewrite::RewriteMemo;
