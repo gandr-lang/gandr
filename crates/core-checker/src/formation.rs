@@ -548,6 +548,7 @@ pub fn level_of(
 ///   inside products, crosses.
 /// - witness: `bridge::tests::native_path_module_round_trips`
 /// - witness: `ua::tests::the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe`
+/// - witness: `formation::tests::a_path_code_is_closed_first_order_and_inhabited`
 #[spec(ensures: |ret| match ret { Ok(root) => matches!(arena.value(code), Some(&gandr_core_term::Value::Quote(quoted)) if root == quoted) && matches!(arena.value_type(root), Some(&(gandr_core_term::ValueType::Base(_) | gandr_core_term::ValueType::Product(_) | gandr_core_term::ValueType::Sum(_)))), Err(CheckRefusal::PathCode(found)) => found == code, Err(_) => false })]
 pub fn path_code(
     arena: &CoreArena,

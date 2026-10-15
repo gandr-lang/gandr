@@ -6215,6 +6215,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `bridge::tests::family_applied_at_wrong_arity_raises_the_exact_variant`
     /// - witness: `bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
     /// - witness: `bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
+    /// - witness: `product::tests::a_product_with_a_native_and_a_written_component_reads_as_an_element`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::FamilyArity { expected, actual, .. }) => {
             u32::from(expected) < u32::from(actual)
@@ -7901,6 +7902,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   the kernel and replay there.
     /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
     /// - witness: `bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
+    /// - witness: `judgement::tests::reflexivity_at_a_stuck_native_point_meets_it_by_syntax`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::EndpointMismatch { at: site, left: named_left, right: named_right }) => site == at && named_left == left && named_right == right,
         | Ok(()) => self.context.reflexivities().contains_key(&at),

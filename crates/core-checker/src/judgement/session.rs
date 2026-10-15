@@ -418,6 +418,7 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — a receive under the bind of an earlier receive reads
     ///   its payload at the bind's depth.
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    /// - witness: `judgement::session::tests::a_type_is_read_shifted_past_the_binders_opened_since_it_was_formed`
     #[spec(
         captures: current = self.context.depth(Zone::Intuitionistic),
         ensures: |ret| (current != depth || ret == Ok(ty))
@@ -1300,6 +1301,7 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — an arm consuming an outer endpoint the first arm left
     ///   is refused.
     /// - witness: `judgement::session::tests::offer_arms_leaving_different_endpoints_are_refused`
+    /// - witness: `judgement::session::tests::offer_arms_leaving_an_endpoint_open_agree_on_its_state`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::Linearity { at: refused, defect: LinearityDefect::ArmsDisagree { first: kept, other: differing, .. } }) => {
             refused == CoreNode::Term(TermNode::Computation(other)) && kept == first && differing == other
@@ -1445,6 +1447,7 @@ impl Machine<'_, '_>
     ///   an endpoint both halves of an inner fork name is refused.
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
     /// - witness: `judgement::session::tests::an_endpoint_used_twice_in_one_action_is_refused`
+    /// - witness: `judgement::session::tests::an_inner_child_takes_an_outer_endpoint_only_when_its_parent_leaves_it`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))))]
     pub(super) fn fork_formed(
         &mut self,
@@ -1533,6 +1536,7 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — a child that never closes its end is refused, the
     ///   endpoint and its state named.
     /// - witness: `judgement::session::tests::a_leftover_endpoint_is_reported_by_name`
+    /// - witness: `judgement::session::tests::an_outer_endpoint_an_inner_child_leaves_open_is_its_residue`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::Linearity { at: refused, defect: LinearityDefect::Residue { .. } }) => {
             refused == CoreNode::Term(TermNode::Computation(at))
@@ -1717,6 +1721,7 @@ impl Machine<'_, '_>
 ///   refused by each name, and a branch reading a held value checks.
 /// - witness: `judgement::session::tests::an_endpoint_captured_by_a_thunk_is_refused`
 /// - witness: `judgement::access::tests::a_view_escaping_its_access_is_refused`
+/// - witness: `judgement::session::tests::a_held_value_is_captured_by_a_branch_only`
 #[spec(ensures: |ret| match (resident, ret) {
     | (Resident::Held { .. }, Ok(())) => by == Capture::Branch,
     | (Resident::Endpoint(_) | Resident::View { .. }, Ok(())) => false,

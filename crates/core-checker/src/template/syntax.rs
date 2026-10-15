@@ -191,6 +191,7 @@ impl Graph
     ///   points distinguish fixed-sentinel collision from fresh rigid
     ///   constants.
     /// - witness: `template::tests::skolems_are_fresh_and_pairwise_distinct`
+    /// - witness: `template::tests::export_mints_a_constant_per_unbound_point_and_its_predecessor`
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|skolems|
         skolems.iter().all(|(id, ty)| skolems.range(..id).all(|(_, previous)| previous != ty)
             && matches!(arena.ty(*ty), Ok(Type::In(_))))))]
@@ -247,6 +248,12 @@ impl Graph
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member graph built from a template keeps its
+    ///   classifier vocabulary, so a member classifier compares by content
+    ///   against the template's.
+    /// - witness: `template::tests::a_member_graph_starts_from_its_templates_vocabulary`
     pub(super) fn member(&self) -> Self
     {
         Self {
@@ -271,6 +278,7 @@ impl Graph
     /// - hypothesis: L2/L3 — matching selects exact existing arms and refuses
     ///   different numerals even when constructor skeletons agree.
     /// - witness: `template::tests::peak_choices_are_correlated`
+    /// - witness: `template::tests::comparison_refuses_content_that_differs_below_the_root`
     #[spec(ensures: |output| output.is_err() || self.node(left).ok().zip(other.node(right).ok())
         .is_some_and(|(left, right)| left.head == right.head))]
     pub(super) fn compare(

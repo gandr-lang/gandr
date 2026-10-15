@@ -705,6 +705,11 @@ fn endpoints_agree(
 /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
 /// - witness: `conversion::tests::the_unknown_type_is_consistent_beside_a_differing_former`
 /// - witness: `bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
+/// - witness: `conversion::tests::codes_agree_exactly_where_their_parts_do`
+/// - witness: `conversion::tests::invariant_types_agree_exactly_where_their_parts_do`
+/// - witness: `conversion::tests::a_row_meets_its_signatures_in_a_wider_row_by_name`
+/// - witness: `conversion::tests::invariant_capabilities_agree_on_authority_grade_and_region`
+/// - witness: `conversion::tests::a_path_type_is_apart_from_data_it_does_not_read_as`
 #[spec(ensures: |ret| match root {
     | Pairing::Values(left, right) | Pairing::Assignable(left, right) | Pairing::SubValues(left, right) if left == right => ret == Ok(Agreement::Convertible),
     | Pairing::Comps(left, right) | Pairing::SubComps(left, right) if left == right => ret == Ok(Agreement::Convertible),

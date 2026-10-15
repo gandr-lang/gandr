@@ -609,6 +609,12 @@ impl Reflexivity
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reflexivity at a point that computes to its right
+    ///   endpoint records that derivation, and the bridge crosses it with the
+    ///   reflexivity.
+    /// - witness: `bridge::tests::a_reflexivity_carries_its_right_endpoint_s_dialogue`
     #[inline]
     #[must_use]
     pub fn right(&self) -> &[ConversionDecision<TraceNode>]
