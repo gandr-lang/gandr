@@ -1,0 +1,21 @@
+[package]
+name = "gandr-workflow-sweep"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The corpus sources a sweep test visits: a stated, hashed and stratified sample under the pull-request profiles, the whole corpus under the nightly one"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["ci", "corpus", "gandr", "nextest", "testing"]
+categories = ["development-tools::testing"]
+publish.workspace = true
+
+# The pinned anodized facade supplies the specification attribute, and BLAKE3
+# the rank a sample orders sources by.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+
+[lints]
+workspace = true

@@ -54,6 +54,7 @@ members = [
   "crates/workflow-build-state",
   "crates/workflow-lane-budget",
   "crates/workflow-spec-cost",
+  "crates/workflow-sweep",
   "crates/workflow-test-timing",
 ]
 
@@ -160,6 +161,7 @@ default-features = false
 # - workflow-build-state
 # - workflow-lane-budget
 # - workflow-spec-cost
+# - workflow-sweep
 # - workflow-test-timing
 [workspace.dependencies.anodized]
 package = "quenchant-anodized"
@@ -168,8 +170,8 @@ rev = "8b8d0702d69409549e855606a85492c777e05fc9"
 default-features = false
 features = ["anodized"]
 
-# BLAKE3 hashing for content and node identities, and the engine hub's
-# socket names.
+# BLAKE3 hashing for content and node identities, the engine hub's socket
+# names, and the rank a sweep's sample orders sources by.
 # consumers:
 # - core-incremental
 # - storage-artifact
@@ -180,6 +182,7 @@ features = ["anodized"]
 # - surface-lsp
 # - surface-parser (dev)
 # - surface-syntax
+# - workflow-sweep
 [workspace.dependencies.blake3]
 version = "1.8.7"
 default-features = false
@@ -787,6 +790,17 @@ path = "crates/theory-sites"
 # - theory-levitation
 [workspace.dependencies.gandr-theory-spec-combinators]
 path = "crates/theory-spec-combinators"
+
+# The corpus sources a sweep test visits: the stated sample under every
+# pull-request profile, the whole corpus under `sweeps`.
+# consumers:
+# - surface-diagnostics (dev)
+# - surface-dispatcher (dev)
+# - surface-format (dev)
+# - surface-lsp (dev)
+# - surface-parser (dev)
+[workspace.dependencies.gandr-workflow-sweep]
+path = "crates/workflow-sweep"
 
 # Recent merge-queue test durations: the specification-cost ranking profiles
 # the slowest enforcing tests the stored reports name.
