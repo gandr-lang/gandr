@@ -769,6 +769,54 @@ fn a_code_constant_unfolds_in_conversion_and_its_trace_replays()
     }
 }
 
+/// A run's certificate keeps a code constant it is handed as the constant:
+/// the trace unfolds `Num` inside the call, so the redex crosses with `Num`
+/// as written and the kernel replays the unfolding there.
+#[test]
+fn a_code_constant_argument_crosses_as_written_in_a_run()
+{
+    // def Num : Type = Integer ; def id : U (Type -> F Type) = λx. return x ;
+    // def n : El(id(Num)) = 0 ;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let code = arena.value_quote(integer);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let body = arena.computation_return(bound);
+    let body = arena.computation_lambda(body);
+    let identity = arena.value_thunk(body);
+    let returns = arena.comp_type_returner(small);
+    let arrow = arena.comp_type_arrow(small, returns);
+    let arrow = arena.value_type_thunk(arrow);
+    let num = arena.value_constant(ConstantIndex::from(0_usize));
+    let head = arena.value_constant(ConstantIndex::from(1_usize));
+    let forced = arena.computation_force(head);
+    let applied = arena.computation_application(forced, num);
+    let call = arena.value_returned(applied);
+    let decoded = arena.value_type_element(call, Level::zero());
+    let zero = arena.value_literal(integer_literal());
+    let (report, readmission) = judge_and_readmit(&mut arena, &[
+        declaration(At(0), Maybe::Present(small), Maybe::Present(code)),
+        declaration(At(1), Maybe::Present(arrow), Maybe::Present(identity)),
+        declaration(At(2), Maybe::Present(decoded), Maybe::Present(zero)),
+    ]);
+    assert!(
+        matches!(report.judged()[2].verdict(), Verdict::Checked { .. }),
+        "`id(Num)` runs to the integer quote: {:?}",
+        report.judged()[2].verdict()
+    );
+    let entry = &readmission.readmitted()[2];
+    assert!(
+        matches!(entry.outcome(), Outcome::Defined { .. }),
+        "the kernel replays the run with `Num` where the trace unfolds it: {:?}",
+        entry.outcome()
+    );
+    assert_eq!(steps(entry), [(
+        Unfolded::Returned(call),
+        KernelVerdict::Convertible
+    )]);
+}
+
 /// Products, sums, tuples, injections and cases of any arity cross into
 /// the kernel as the one n-ary former each is, and the kernel admits
 /// them: a triple, an injection into the last of three summands, a case
@@ -2227,6 +2275,55 @@ fn a_funext_crosses_as_a_higher_evaluation()
         }),
         "each input returns itself on both sides, with the unit as its identity"
     );
+}
+
+/// A funext between functions that return a literal crosses with the literal
+/// as both sides of its one component: an integer and a string alike.
+#[test]
+fn a_funext_returning_a_literal_crosses_with_the_literal()
+{
+    // def f, g : U (() -> F T) = λ_. return c ;
+    // def same : Path(U (…), f, g) = funext(f, g) ;
+    for (atom, literal) in [
+        (BaseType::Integer, integer_literal()),
+        (BaseType::String, text_literal()),
+    ] {
+        let mut arena = CoreArena::new();
+        let unit_type = arena.value_type_unit();
+        let atom = arena.value_type_base(atom);
+        let returns = arena.comp_type_returner(atom);
+        let arrow = arena.comp_type_arrow(unit_type, returns);
+        let function = arena.value_type_thunk(arrow);
+        let [left, right] = [(), ()].map(|()| {
+            let constant = arena.value_literal(literal.clone());
+            let body = arena.computation_return(constant);
+            let lambda = arena.computation_lambda(body);
+            arena.value_thunk(lambda)
+        });
+        let [left_constant, right_constant] =
+            [0_usize, 1_usize].map(|at| arena.value_constant(ConstantIndex::from(at)));
+        let path = arena.value_type_path(function, left_constant, right_constant);
+        let funext = arena.value_funext(left_constant, right_constant);
+        let declared = Maybe::Present(function);
+        let (report, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), declared, Maybe::Present(left)),
+            declaration(At(1), declared, Maybe::Present(right)),
+            declaration(At(2), Maybe::Present(path), Maybe::Present(funext)),
+        ]);
+        assert!(
+            matches!(report.judged()[2].verdict(), Verdict::Checked { .. }),
+            "both functions return the same literal: {:?}",
+            report.judged()[2].verdict()
+        );
+        assert!(
+            matches!(
+                readmission.readmitted()[2].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "the literal crosses as itself on either side: {:?}",
+            readmission.readmitted()[2].outcome()
+        );
+    }
 }
 
 #[test]
