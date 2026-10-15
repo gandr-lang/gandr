@@ -225,8 +225,8 @@ macro_rules! text {
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 /// - witness: `pretty::tests::literal_spelling_preserves_fraction_and_escaped_content`
 #[spec(
-    captures: [fixed = match root { Piece::Text(Token(text)) => Some(text), _ => None },
-        owned_length = match root { Piece::Owned(ref text) => Some(text.len()), _ => None },
+    captures: [fixed = match root { Piece::Text(Token(text)) => Some(text), Piece::Name(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None },
+        owned_length = match root { Piece::Owned(ref text) => Some(text.len()), Piece::Name(_) | Piece::Text(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None },
         elided = matches!(root, Piece::Command(_, depth) | Piece::Producer(_, depth) | Piece::Consumer(_, depth) if depth >= RenderDepth::LIMIT)],
     ensures: |ref ret| fixed.is_none_or(|text| ret == text)
         && owned_length.is_none_or(|length| ret.len() == length) && (!elided || ret == "…"),
@@ -292,7 +292,7 @@ fn render<'arena>(
             && bar == match polarity { Polarity::Positive => " |+ ", Polarity::Negative => " |− " },
     | (None, &[Piece::Text(Token("<dangling>"))]) => true,
     | (Some(&CommandNode::Perform { payload, continuation, .. }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Producer(found, under) if found == payload && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
-    | (Some(&CommandNode::Handle { subject, on_return, ref clauses, continuation, .. }), pieces) => pieces.iter().filter_map(|piece| match *piece { Piece::Command(id, _) => Some(id), _ => None }).eq([subject, on_return].into_iter().chain(clauses.iter().map(|clause| clause.body))) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
+    | (Some(&CommandNode::Handle { subject, on_return, ref clauses, continuation, .. }), pieces) => pieces.iter().filter_map(|piece| match *piece { Piece::Command(id, _) => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq([subject, on_return].into_iter().chain(clauses.iter().map(|clause| clause.body))) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | (Some(&CommandNode::Resume { stack, body, continuation }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Producer(found, _) if found == stack)) && pieces.iter().any(|piece| matches!(*piece, Piece::Command(found, under) if found == body && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, _) if found == continuation)),
     | (Some(&CommandNode::Reset { body, continuation } | &CommandNode::Shift { body, continuation }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Command(found, under) if found == body && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | _ => false,
@@ -453,7 +453,7 @@ fn command(
         | ProducerNode::Mu { body } => matches!(ret.as_slice(), &[Piece::Text(Token("μα. ")), Piece::Command(found, _)] if body == found),
         | ProducerNode::Cocase { ref arms } => matches!(ret.first(), Some(&Piece::Text(Token("cocase {"))))
             && matches!(ret.last(), Some(&Piece::Text(Token("}"))))
-            && ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), _ => None }).eq(arms.iter().map(|arm| arm.body)),
+            && ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(arms.iter().map(|arm| arm.body)),
     },
 })]
 fn producer(
@@ -588,16 +588,16 @@ fn producer(
     | Some(node) => match *node {
         | ConsumerNode::Covariable(_) => matches!(ret.as_slice(), &[Piece::Owned(_)]),
         | ConsumerNode::Top => matches!(ret.as_slice(), &[Piece::Text(Token("★"))]),
-        | ConsumerNode::ListFold { on_nil, on_cons, continuation, .. } => ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), _ => None }).eq([on_nil, on_cons]) && ret.iter().any(|piece| matches!(*piece, Piece::Consumer(found, _) if found == continuation)),
+        | ConsumerNode::ListFold { on_nil, on_cons, continuation, .. } => ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq([on_nil, on_cons]) && ret.iter().any(|piece| matches!(*piece, Piece::Consumer(found, _) if found == continuation)),
         | ConsumerNode::MuTilde { body } => matches!(ret.as_slice(), &[Piece::Text(Token("μ̃x. ")), Piece::Command(found, _)] if body == found),
         | ConsumerNode::Destructor { tag, .. } => matches!(ret.first(), Some(&Piece::Text(Token(name)))
             if name == match tag { DestructorTag::Apply => "apply", DestructorTag::Force => "force", DestructorTag::Project(Side::Left) => "project-left", DestructorTag::Project(Side::Right) => "project-right" }),
         | ConsumerNode::Case { ref arms } => matches!(ret.first(), Some(&Piece::Text(Token("case {"))))
             && matches!(ret.last(), Some(&Piece::Text(Token("}"))))
-            && ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), _ => None }).eq(arms.iter().map(|arm| arm.body)),
+            && ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(arms.iter().map(|arm| arm.body)),
         | ConsumerNode::DataCase { ref branches, then } => matches!(ret.first(), Some(&Piece::Text(Token("datacase"))))
-            && ret.iter().filter_map(|piece| match *piece { Piece::Producer(id, _) => Some(id), _ => None }).eq(branches.iter().copied())
-            && ret.iter().filter_map(|piece| match *piece { Piece::Consumer(id, _) => Some(id), _ => None }).eq(core::iter::once(then)),
+            && ret.iter().filter_map(|piece| match *piece { Piece::Producer(id, _) => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Consumer(..) => None }).eq(branches.iter().copied())
+            && ret.iter().filter_map(|piece| match *piece { Piece::Consumer(id, _) => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) => None }).eq(core::iter::once(then)),
         | ConsumerNode::Select { ref selector, then } => matches!(ret.as_slice(), &[Piece::Text(Token("select")), Piece::Owned(ref field), Piece::Text(Token("(")), Piece::Consumer(found, _), Piece::Text(Token(")"))]
             if found == then && *field == match *selector {
                 | Selector::Component(component) => alloc::format!("[{}]", usize::from(component)),
@@ -702,9 +702,9 @@ fn consumer(
     matches!(ret.first(), Some(&Piece::Text(Token(found))) if found == name.0)
         && matches!(ret.get(1), Some(&Piece::Text(Token("("))))
         && matches!(ret.last(), Some(&Piece::Text(Token(")"))))
-        && ret.iter().filter_map(|piece| match *piece { Piece::Producer(id, under) => Some((id, under)), _ => None })
+        && ret.iter().filter_map(|piece| match *piece { Piece::Producer(id, under) => Some((id, under)), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Consumer(..) => None })
             .eq(producers.iter().copied().map(|id| (id, depth)))
-        && ret.iter().filter_map(|piece| match *piece { Piece::Consumer(id, under) => Some((id, under)), _ => None })
+        && ret.iter().filter_map(|piece| match *piece { Piece::Consumer(id, under) => Some((id, under)), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) => None })
             .eq(consumers.iter().copied().map(|id| (id, depth)))
         && ret.iter().skip(2).filter(|piece| matches!(**piece, Piece::Text(Token(", ")))).count()
             == producers.len().saturating_sub(1).saturating_add(consumers.len().saturating_sub(1))

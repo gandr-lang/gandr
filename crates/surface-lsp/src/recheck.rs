@@ -825,7 +825,7 @@ fn diagnostics_of(
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
 /// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ret| ret.source == "gandr"
-    && ret.severity == match found.severity { Seriousness::Goal => Severity::INFORMATION, Seriousness::Warning => Severity::WARNING, Seriousness::Note => Severity::HINT, _ => Severity::ERROR }
+    && ret.severity == match found.severity { Seriousness::Goal => Severity::INFORMATION, Seriousness::Warning => Severity::WARNING, Seriousness::Note => Severity::HINT, Seriousness::Error | Seriousness::Ledger => Severity::ERROR }
     && ret.code.is_some() == matches!(found.identifier, Maybe::Present(_))
     && (verbosity == Verbosity::Json || ret.message.starts_with(found.message.text.as_str()))
     && ret.related_information.len() == found.annotations.iter()

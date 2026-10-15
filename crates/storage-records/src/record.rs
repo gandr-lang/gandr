@@ -951,7 +951,7 @@ pub enum RangeContainment
     RecordTreeError::UnsortedInput { previous, current } =>
         previous.0.checked_add(1) == Some(current.0),
     RecordTreeError::ArithmeticOverflow { .. } => true,
-    _ => false,
+    RecordTreeError::MalformedNode { .. } | RecordTreeError::UnknownNode { .. } | RecordTreeError::HashMismatch { .. } | RecordTreeError::IncompatibleParameters { .. } | RecordTreeError::UnsupportedVersion { .. } | RecordTreeError::InvalidProofShape { .. } | RecordTreeError::InvalidRange { .. } | RecordTreeError::BudgetExceeded { .. } => false,
 }))]
 pub fn ensure_strictly_sorted<'key, K>(keys: K) -> Result<(), RecordTreeError>
 where

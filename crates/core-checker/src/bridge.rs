@@ -4213,7 +4213,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `native_formers::native_formers::empty_data_elimination_preserves_the_ambient_scope`
     /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(
-        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), _ => Some(1_usize) })],
+        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) => Some(1_usize) })],
         ensures: |ret| match held {
             | Some(Image::Erased(image)) => ret == Ok(Step::Ascend(AnyNode::Computation(image))) && self.frames.len() == before,
             | Some(Image::Open) => ret == Err(Refusal::Cyclic { node: CoreNode::Term(TermNode::Computation(at)) }) && self.frames.len() == before,
@@ -9763,7 +9763,7 @@ mod tests
             && ret.0.iter().enumerate().all(|(index,declaration)| declaration.constant() == ConstantIndex::from(index)
                 && match declaration.content() {
                     &crate::DeclarationContent::Value {signature:Maybe::Present(ty),body} => arena.value_type(ty).is_some() && match body { Maybe::Present(body) => arena.value(body).is_some(), Maybe::Absent(_) => true },
-                    _ => false,
+                    &crate::DeclarationContent::Value { .. } | &crate::DeclarationContent::Data(_) | &crate::DeclarationContent::Abstract(_) => false,
                 }),
     )]
     fn universe_module(

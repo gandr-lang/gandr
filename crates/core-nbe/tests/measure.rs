@@ -287,7 +287,7 @@ mod measure
             && u64::try_from(sketch.iter().filter(|&&token| matches!(token, Token::Occurrence(_))).count()) == Ok(ret.1.occurrences)
             && ret.1.depth <= ret.1.shares
             && (ret.1.depth == 0) == (ret.1.shares == 0)
-            && ret.0.iter().filter_map(|&node| match node { Placed::Share(arity) => Some(u64::from(u32::from(arity))), _ => None }).sum::<u64>() == ret.1.occurrences
+            && ret.0.iter().filter_map(|&node| match node { Placed::Share(arity) => Some(u64::from(u32::from(arity))), Placed::Unit | Placed::Opaque | Placed::Occurrence(_) | Placed::Injection | Placed::Pair => None }).sum::<u64>() == ret.1.occurrences
             && sketch.iter().zip(&ret.0).all(|(&input, &output)| match (input, output) {
                 (Token::Unit, Placed::Unit) | (Token::Opaque, Placed::Opaque)
                 | (Token::Injection, Placed::Injection) | (Token::Pair, Placed::Pair)

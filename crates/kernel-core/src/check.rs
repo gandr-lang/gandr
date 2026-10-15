@@ -900,7 +900,7 @@ enum TypeLevelFrame
         && (matches!(M::ACTIVITY, MemoActivity::Active) || match root {
             TypeLevelGoal::Value(id) if matches!(arena.value_type(id), Some(&ValueType::PathUniverse(..))) =>
                 ret.as_ref().map_or(true, |level| *level == Level::zero()),
-            _ => true,
+            TypeLevelGoal::Value(_) | TypeLevelGoal::Comp(_) => true,
         })
 })]
 fn type_level<M>(
@@ -1265,7 +1265,7 @@ where
 /// - witness: `check::tests::an_abstract_type_forms_at_its_declared_universe`
 /// - witness: `check::tests::an_atom_naming_a_definition_is_not_an_abstract_type`
 /// - witness: `check::tests::a_forward_atom_reference_is_not_an_abstract_type`
-#[spec(ensures: |ret| match entries.get(usize::from(atom)).map(AdmittedDeclaration::content) { Some(&DeclarationContent::AbstractType { kind, .. }) => arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node { ValueType::Universe { sort: GroundSort::Value, ref level } => ret.as_ref().is_ok_and(|actual| actual == level), _ => ret.is_err() }), _ => ret.is_err() })]
+#[spec(ensures: |ret| match entries.get(usize::from(atom)).map(AdmittedDeclaration::content) { Some(&DeclarationContent::AbstractType { kind, .. }) => arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node { ValueType::Universe { sort: GroundSort::Value, ref level } => ret.as_ref().is_ok_and(|actual| actual == level), ValueType::Data { .. } | ValueType::Record(_) | ValueType::Session { .. } | ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } => ret.is_err() }), _ => ret.is_err() })]
 fn abstract_atom_level(
     arena: &TermArena,
     entries: &[AdmittedDeclaration],

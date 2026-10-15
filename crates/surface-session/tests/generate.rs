@@ -454,7 +454,7 @@ pub fn program_and_edits() -> impl Strategy<Value = (Vec<Stmt>, Vec<Edit>)>
                                                 renamed.name { to } else { read }
                                             )
                                         }
-                                        _ => found.body == before.body,
+                                        Body::Int(_) | Body::Str(_) | Body::Delay(_) | Body::Function(_) | Body::Absent => found.body == before.body,
                                     }
                             })
                 },
@@ -507,7 +507,7 @@ pub fn program_and_edits() -> impl Strategy<Value = (Vec<Stmt>, Vec<Edit>)>
                                 Body::Int(_) => found.body == Body::Int(value),
                                 Body::Delay(_) => found.body == Body::Delay(value),
                                 Body::Function(_) => found.body == Body::Function(value),
-                                _ => found.body == before.body,
+                                Body::Str(_) | Body::Ref(_) | Body::Call(_) | Body::Absent => found.body == before.body,
                             }
                         } else {
                             found.body == before.body

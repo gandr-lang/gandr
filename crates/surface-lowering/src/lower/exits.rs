@@ -992,7 +992,7 @@ impl<'source> Lowerer<'_, 'source>
         && (!sink.breaks.contains(&held) || sink.breaks.contains(&written))
         && (!sink.loops.contains(&held) || sink.loops.contains(&written))
         && (!sink.distributed.contains_key(&held) || sink.distributed.contains_key(&written)),
-    _ => true,
+    Carried::Value(..) | Carried::ValueType(..) | Carried::CompType(..) => true,
 }))]
 pub(super) fn mark_copies(
     sink: &mut Sink<'_>,

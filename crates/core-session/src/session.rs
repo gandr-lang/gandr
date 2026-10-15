@@ -208,7 +208,7 @@ impl Session
                     Node::Mu(body) => session.nodes.get(body.0).is_some_and(|body|
                         !matches!(*body, Node::Mu(_) | Node::Var(_))),
                     Node::Var(binder) => matches!(session.nodes.get(binder.0), Some(Node::Mu(_))),
-                    _ => true,
+                    Node::Send(..) | Node::Receive(..) | Node::Select(_) | Node::Offer(_) | Node::End => true,
                 })
         })
     )]

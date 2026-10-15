@@ -441,7 +441,7 @@ impl Arena
         && match ty {
             Type::Arrow(a, b) => a.0 < id.0 && b.0 < id.0,
             Type::Lift(inner) => inner.0 < id.0,
-            _ => true,
+            Type::In(_) | Type::Universe(_) | Type::Nat(_) => true,
         }))]
     pub fn alloc_type(
         &mut self,

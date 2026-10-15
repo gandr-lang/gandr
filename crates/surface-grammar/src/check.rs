@@ -112,7 +112,7 @@ pub fn validate_operator_form(rule: &Rule) -> Result<(), PbgError>
 #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|error| match *error {
     PbgError::DuplicateTile { sort, prec, first_rule, second_rule, .. } => rules.iter().any(|rule| rule.name == first_rule) && rules.iter().any(|rule| rule.name == second_rule && rule.sort == sort && rule.prec == prec),
     PbgError::MoldOverflow => true,
-    _ => false,
+    PbgError::InvalidSort { .. } | PbgError::MissingPrec { .. } | PbgError::PrecedenceSpec(_) | PbgError::PrecedenceCycle { .. } | PbgError::PrecedenceDag(_) | PbgError::Walk(_) | PbgError::InvalidPrec { .. } | PbgError::DuplicateRule { .. } | PbgError::AdjacentSorts { .. } | PbgError::Assumption3Conflict { .. } | PbgError::UnknownMold { .. } | PbgError::UnknownRCtx { .. } => false,
 }))]
 #[inline]
 pub fn validate_unique_tiles(rules: &[Rule]) -> Result<(), PbgError>
@@ -145,7 +145,7 @@ pub fn validate_unique_tiles(rules: &[Rule]) -> Result<(), PbgError>
 #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|error| match *error {
     PbgError::Assumption3Conflict { first_sort, second_sort } => first_sort != second_sort && rules.iter().any(|rule| rule.sort == first_sort) && rules.iter().any(|rule| rule.sort == second_sort),
     PbgError::AdjacentSorts { rule: name, .. } => rules.iter().any(|rule| rule.name == name),
-    _ => false,
+    PbgError::InvalidSort { .. } | PbgError::MissingPrec { .. } | PbgError::PrecedenceSpec(_) | PbgError::PrecedenceCycle { .. } | PbgError::PrecedenceDag(_) | PbgError::Walk(_) | PbgError::InvalidPrec { .. } | PbgError::DuplicateRule { .. } | PbgError::DuplicateTile { .. } | PbgError::MoldOverflow | PbgError::UnknownMold { .. } | PbgError::UnknownRCtx { .. } => false,
 }))]
 #[inline]
 pub fn validate_assumption_3(rules: &[Rule]) -> Result<(), PbgError>

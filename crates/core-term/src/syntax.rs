@@ -571,7 +571,7 @@ impl Value
     /// - hypothesis: L3 — a tuple of two components, the empty tuple and an
     ///   injection separate the tuple reading from every other former.
     /// - witness: `syntax::tests::the_unit_is_the_empty_tuple`
-    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), _ => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn components(&self) -> Option<&[ValueId]>

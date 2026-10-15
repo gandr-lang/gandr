@@ -935,7 +935,7 @@ impl Walk
                 Step::Fault { path, fault: SourceFault::Unreadable(ref error) } =>
                     path == expected_path && error.kind() == expected_kind
                         && error.raw_os_error() == expected_os_error,
-                _ => false,
+                Step::Source { .. } | Step::Fault { .. } => false,
             },
     )]
     fn unreadable(

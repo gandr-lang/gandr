@@ -290,7 +290,7 @@ impl<'graph> Cursor<'graph>
                 HigherError::DepthBound => meter.progress.steps.0 == u64::from(meter.limit),
                 HigherError::UnknownLayer(id) => id == self.current && self.graph.nodes.get(id.0).is_none(),
                 HigherError::Relation(_) => true,
-                _ => false,
+                HigherError::Path(_) | HigherError::Boundary | HigherError::ZeroDepth | HigherError::ExpectedEquivalence | HigherError::Replay(_) | HigherError::NeutralTransport => false,
             },
         },
     )]

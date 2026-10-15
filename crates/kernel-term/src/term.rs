@@ -459,7 +459,7 @@ impl Value
     /// - hypothesis: L3 — a tuple of two components, the empty tuple and an
     ///   injection separate the tuple reading from every other former.
     /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
-    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), _ => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Constructor { .. } | Self::Record(_) | Self::SessionPath { .. } | Self::SessionFlow { .. } | Self::Stay { .. } | Self::ForwardFlow { .. } | Self::FunctionFlow { .. } | Self::Then { .. } | Self::FlowProduct(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here { .. } | Self::Returned(_) | Self::Higher { .. } | Self::HigherEvaluation { .. } | Self::QuantifiedEvaluation { .. } | Self::Variable(_) | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticApplication(..) => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn components(&self) -> Option<&[ValueId]>

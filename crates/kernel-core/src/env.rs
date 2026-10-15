@@ -2777,7 +2777,7 @@ mod tests
             super::DeclarationContent::Def { declared, body } =>
                 matches!(environment.arena().value_type(declared), Some(super::ValueType::Product(parts)) if parts.is_empty())
                 && matches!(environment.arena().value(body).and_then(super::Value::components), Some(&[])),
-            _ => false,
+            super::DeclarationContent::Data { .. } | super::DeclarationContent::Axiom { .. } | super::DeclarationContent::AbstractType { .. } => false,
         })]
     fn stage_unit(environment: &mut Environment) -> StagedDeclaration
     {

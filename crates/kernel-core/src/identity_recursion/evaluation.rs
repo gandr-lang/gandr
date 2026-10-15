@@ -170,7 +170,7 @@ impl Relation
     )]
     #[spec(ensures: |ret| match ret {
         Ok(ref fibers) => fibers.root.0 < fibers.nodes.len()
-            && fibers.nodes.iter().enumerate().all(|(id, node)| match *node { Fiber::Product(a, b) => a.0 < id && b.0 < id, _ => true })
+            && fibers.nodes.iter().enumerate().all(|(id, node)| match *node { Fiber::Product(a, b) => a.0 < id && b.0 < id, Fiber::Unit | Fiber::Empty | Fiber::Universe(..) | Fiber::Certificate(..) | Fiber::Discrete(..) | Fiber::Suspended(..) | Fiber::Function { .. } => true })
             && self.node(relation).is_ok_and(|node| matches!((node.clause, fibers.get(fibers.root)),
                 (Clause::Unit, Ok(Fiber::Unit)) | (Clause::Empty, Ok(Fiber::Empty)) | (Clause::Universe, Ok(Fiber::Universe(..))) | (Clause::Certificate, Ok(Fiber::Certificate(..))) | (Clause::Product(..), Ok(Fiber::Product(..))) | (Clause::Function(..), Ok(Fiber::Function { .. }))
                 | (Clause::Discrete | Clause::Sum(..) | Clause::CaseLeft(..) | Clause::CaseRight(..), Ok(_)))),

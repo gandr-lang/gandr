@@ -732,7 +732,7 @@ impl<'source> TryFrom<TextSource<'source>> for CheckedText
     #[spec(
         ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidText => source.text.contains(['\r', '\n', '\t']), BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => !source.text.contains(['\r', '\n', '\t'])
                 && u32::try_from(source.text.chars().count()).is_err(), BuildError::AllocationFailed { site: BuildAllocationSite::TextArena } => !source.text.contains(['\r', '\n', '\t'])
-                && u32::try_from(source.text.chars().count()).is_ok(), _ => false },
+                && u32::try_from(source.text.chars().count()).is_ok(), BuildError::ArenaKeyExhausted | BuildError::NodeIdExhausted | BuildError::UnknownDoc | BuildError::InvalidVerbatimLineEnding | BuildError::ArithmeticOverflow { .. } | BuildError::AllocationFailed { .. } | BuildError::LimitExceeded { .. } => false },
             |text| text.text == source.text
                 && !source.text.contains(['\r', '\n', '\t'])
                 && usize::try_from(u32::from(text.width)) == Ok(source.text.chars().count()))
@@ -823,7 +823,7 @@ impl<'source> TryFrom<VerbatimSource<'source>> for VerbatimText
     ///   failure and widths beyond u32 are outside this bounded witness domain.
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
     #[spec(
-        ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidVerbatimLineEnding => source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')), BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => source.text.split('\n').any(|fragment| u32::try_from(fragment.strip_suffix('\r').unwrap_or(fragment).chars().count()).is_err()), BuildError::AllocationFailed { site: BuildAllocationSite::VerbatimArena | BuildAllocationSite::TextArena } => true, _ => false },
+        ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidVerbatimLineEnding => source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')), BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => source.text.split('\n').any(|fragment| u32::try_from(fragment.strip_suffix('\r').unwrap_or(fragment).chars().count()).is_err()), BuildError::AllocationFailed { site: BuildAllocationSite::VerbatimArena | BuildAllocationSite::TextArena } => true, BuildError::ArenaKeyExhausted | BuildError::NodeIdExhausted | BuildError::UnknownDoc | BuildError::InvalidText | BuildError::ArithmeticOverflow { .. } | BuildError::AllocationFailed { .. } | BuildError::LimitExceeded { .. } => false },
             |verbatim| verbatim.bytes == source.text
                 && !(source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')))
                 && verbatim.lines.len() == source.text.bytes().filter(|byte| *byte == b'\n').count().saturating_add(1)
@@ -880,7 +880,7 @@ impl TryFrom<VerbatimOwned> for VerbatimText
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
     #[spec(
         captures: before = (source.text.as_ptr(), source.text.len(), source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')), source.text.split('\n').any(|fragment| u32::try_from(fragment.strip_suffix('\r').unwrap_or(fragment).chars().count()).is_err())),
-        ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidVerbatimLineEnding => before.2, BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => before.3, BuildError::AllocationFailed { site: BuildAllocationSite::VerbatimArena } => true, _ => false },
+        ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidVerbatimLineEnding => before.2, BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => before.3, BuildError::AllocationFailed { site: BuildAllocationSite::VerbatimArena } => true, BuildError::ArenaKeyExhausted | BuildError::NodeIdExhausted | BuildError::UnknownDoc | BuildError::InvalidText | BuildError::ArithmeticOverflow { .. } | BuildError::AllocationFailed { .. } | BuildError::LimitExceeded { .. } => false },
             |verbatim| verbatim.bytes.as_ptr() == before.0
                 && verbatim.bytes.len() == before.1
                 && !(verbatim.bytes.match_indices('\r').any(|(offset, _)| verbatim.bytes.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')))
@@ -967,7 +967,7 @@ fn checked_text_width(source: TextSource<'_>) -> Result<ScalarWidth, BuildError>
 ///   outside this bounded witness domain.
 /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
 #[spec(
-    ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidVerbatimLineEnding => source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')), BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => source.text.split('\n').any(|fragment| u32::try_from(fragment.strip_suffix('\r').unwrap_or(fragment).chars().count()).is_err()), BuildError::AllocationFailed { site: BuildAllocationSite::VerbatimArena } => true, _ => false },
+    ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidVerbatimLineEnding => source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')), BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => source.text.split('\n').any(|fragment| u32::try_from(fragment.strip_suffix('\r').unwrap_or(fragment).chars().count()).is_err()), BuildError::AllocationFailed { site: BuildAllocationSite::VerbatimArena } => true, BuildError::ArenaKeyExhausted | BuildError::NodeIdExhausted | BuildError::UnknownDoc | BuildError::InvalidText | BuildError::ArithmeticOverflow { .. } | BuildError::AllocationFailed { .. } | BuildError::LimitExceeded { .. } => false },
         |lines| !(source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')))
             && lines.len() == source.text.bytes().filter(|byte| *byte == b'\n').count().saturating_add(1)
             && lines.iter().zip(source.text.split('\n')).enumerate().all(|(index, (line, fragment))| { let last = index.saturating_add(1) == lines.len();
@@ -1187,7 +1187,7 @@ impl DocArena
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
     #[spec(
         ensures: |ret| { let expected = (self.arena == doc.arena
-                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Text(identity) => self.texts.get(usize::try_from(identity.index).ok()?), _ => None });
+                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Text(identity) => self.texts.get(usize::try_from(identity.index).ok()?), DocNode::Empty | DocNode::Verbatim(_) | DocNode::Line | DocNode::HardLine | DocNode::Concat { .. } | DocNode::Nest { .. } | DocNode::Align { .. } | DocNode::Choice { .. } | DocNode::Flatten { .. } => None });
             ret.as_ref().map_or_else(|error| expected.is_none()
                 && matches!(*error, BuildError::UnknownDoc | BuildError::ArithmeticOverflow { operation: BuildArithmetic::IdConversion }),
             |actual| expected.is_some_and(|expected| actual.text == expected.text)) }
@@ -1242,7 +1242,7 @@ impl DocArena
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
     #[spec(
         ensures: |ret| { let expected = (self.arena == doc.arena
-                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Text(identity) => self.texts.get(usize::try_from(identity.index).ok()?), _ => None });
+                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Text(identity) => self.texts.get(usize::try_from(identity.index).ok()?), DocNode::Empty | DocNode::Verbatim(_) | DocNode::Line | DocNode::HardLine | DocNode::Concat { .. } | DocNode::Nest { .. } | DocNode::Align { .. } | DocNode::Choice { .. } | DocNode::Flatten { .. } => None });
             ret.as_ref().map_or_else(|error| expected.is_none()
                 && matches!(*error, BuildError::UnknownDoc | BuildError::ArithmeticOverflow { operation: BuildArithmetic::IdConversion }),
             |actual| expected.is_some_and(|expected| *actual == expected.width)) }
@@ -1297,7 +1297,7 @@ impl DocArena
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
     #[spec(
         ensures: |ret| { let expected = (self.arena == doc.arena
-                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Verbatim(identity) => self.verbatim.get(usize::try_from(identity.index).ok()?), _ => None });
+                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Verbatim(identity) => self.verbatim.get(usize::try_from(identity.index).ok()?), DocNode::Empty | DocNode::Text(_) | DocNode::Line | DocNode::HardLine | DocNode::Concat { .. } | DocNode::Nest { .. } | DocNode::Align { .. } | DocNode::Choice { .. } | DocNode::Flatten { .. } => None });
             ret.as_ref().map_or_else(|error| expected.is_none()
                 && matches!(*error, BuildError::UnknownDoc | BuildError::ArithmeticOverflow { operation: BuildArithmetic::IdConversion }),
             |actual| expected.is_some_and(|expected| actual.text == expected.bytes)) }
@@ -1353,7 +1353,7 @@ impl DocArena
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
     #[spec(
         ensures: |ret| { let expected = (self.arena == doc.arena
-                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Verbatim(identity) => self.verbatim.get(usize::try_from(identity.index).ok()?), _ => None });
+                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Verbatim(identity) => self.verbatim.get(usize::try_from(identity.index).ok()?), DocNode::Empty | DocNode::Text(_) | DocNode::Line | DocNode::HardLine | DocNode::Concat { .. } | DocNode::Nest { .. } | DocNode::Align { .. } | DocNode::Choice { .. } | DocNode::Flatten { .. } => None });
             ret.as_ref().map_or_else(|error| expected.is_none()
                 && matches!(*error, BuildError::UnknownDoc | BuildError::ArithmeticOverflow { operation: BuildArithmetic::IdConversion }),
             |actual| expected.is_some_and(|expected| actual.as_slice() == expected.lines.as_slice())) }

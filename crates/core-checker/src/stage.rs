@@ -163,7 +163,7 @@ impl From<KernelError> for ReadmissionError
     program.result.0 < program.instructions.len()
     && program.instructions.iter().enumerate().all(|(index, instruction)| match *instruction {
         Instruction::Multiply(left, right) => left.0 < index && right.0 < index,
-        _ => true,
+        Instruction::Input | Instruction::Natural(_) => true,
     })))]
 pub fn compile(
     arena: &mut Arena,
@@ -313,7 +313,7 @@ impl Program
     #[spec(requires: self.result.0 < self.instructions.len()
         && self.instructions.iter().enumerate().all(|(index, instruction)| match *instruction {
             Instruction::Multiply(left, right) => left.0 < index && right.0 < index,
-            _ => true,
+            Instruction::Input | Instruction::Natural(_) => true,
         }),
         ensures: |ret| ret.as_ref().ok().is_none_or(|value| match self.instructions.get(self.result.0).copied() {
             Some(Instruction::Input) => *value == input,
