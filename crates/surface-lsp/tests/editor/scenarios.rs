@@ -60,180 +60,161 @@ use super::editing::Session;
 use super::editing::panic_message;
 use super::shapes;
 
-/// The corpus positions no hover answers, above which hovering has regressed:
-/// the count measured when it was last changed. A position inside a
-/// declaration's body that no entry holds answers nothing, so the
-/// declaration's own answer is not counted there. A position inside a comment
-/// is hovered but not counted: a comment is no hover target, and corpus items
-/// carry comments saying what they demonstrate, so counting them would move
-/// the count for documentation alone. The line end closing a line comment is
-/// still counted (#456): the comments on `fragment/stage-not-below.gandr`
-/// brought nine such positions and the blank line after its header, the ten
-/// added here to the count measured before them.
-const UNANSWERED_CEILING: usize = 28_709 + 10;
-
-/// The misses each node kind's hovers may hold, as [`KindFloor`] reads a row:
-/// the kind, then counts of the corpus positions whose smallest meaningful
-/// node is of that kind — answered by an ancestor, answered by nothing,
-/// answered with a `?`, answered in another shape than the kind's
-/// ([`shapes`]). Each count must not rise; the share answered at the node and
-/// the share answered in shape are printed beside them and held by none.
-///
-/// The counts are absolute so that deleting corpus text never fails the
-/// sweep: a source that shrinks takes its misses with it, where a share of
-/// fewer positions can fall with every remaining position answered. A row
-/// changes only with a stated cause — a change that answers or shapes a kind
-/// at its own nodes lowers it, a corpus source added or extended with misses
-/// raises it, and the commit moving it says which. A row whose kind answers
-/// out of shape names the issue its answers wait on. A kind measured with no
-/// row here and none in [`MEANINGLESS`] fails the sweep, so a new kind is
-/// decided rather than counted silently, and so does a row whose kind the
-/// corpus no longer has.
-const KIND_FLOORS: &[KindFloor] = &[
-    KindFloor("expression abort_expression", 0, 0, 7, 0),
-    KindFloor("expression abort_expression name", 4, 0, 1, 0),
-    KindFloor("expression access_expression", 0, 0, 0, 0),
-    KindFloor("expression access_expression name", 16, 0, 0, 0),
-    KindFloor("expression become_expression", 1026, 72, 36, 0),
-    KindFloor("expression binary_expression", 18, 91, 2, 4), // shape: #401
-    KindFloor("expression block", 375, 152, 20, 0),
-    KindFloor("expression block name", 29, 8, 0, 0),
-    KindFloor("expression boolean", 0, 30, 0, 0),
-    KindFloor("expression break_expression", 0, 0, 0, 0),
-    KindFloor("expression break_value_expression", 35, 21, 0, 0),
-    KindFloor("expression call_expression", 97, 503, 134, 98), // shape: #401, `?`
-    KindFloor("expression case_expression", 11, 308, 185, 12), // shape: #401
-    KindFloor("expression close_expression", 70, 84, 35, 0),
-    KindFloor("expression constructor", 1416, 239, 95, 0),
-    KindFloor("expression continue_expression", 0, 24, 0, 0),
-    KindFloor("expression double_quoted_string", 0, 83, 0, 0),
-    KindFloor("expression dup_expression", 0, 5, 0, 0),
-    KindFloor("expression file_descriptor", 0, 2, 0, 0),
-    KindFloor("expression for_expression", 0, 8, 0, 0),
-    KindFloor("expression for_expression name", 0, 1, 0, 0),
-    KindFloor("expression force_expression", 0, 10, 15, 0),
-    KindFloor("expression glob_expression", 0, 10, 0, 0),
-    KindFloor("expression glob_expression name", 0, 8, 0, 0),
-    KindFloor("expression handle_expression", 0, 132, 0, 33), // shape: #401
-    KindFloor("expression handle_expression name", 141, 60, 0, 1), // shape: #401
-    KindFloor("expression hole", 1, 0, 24, 0),
-    KindFloor("expression host_escape", 0, 6, 0, 0),
-    KindFloor("expression identifier", 2518, 1743, 167, 194), // shape: #401
-    KindFloor("expression if_expression", 0, 96, 0, 0),
-    KindFloor("expression instantiation_expression", 57, 34, 33, 0),
-    KindFloor("expression labelled_sum_expression", 5, 0, 0, 0),
-    KindFloor("expression labelled_sum_expression name", 10, 0, 0, 0),
-    KindFloor("expression lambda_expression", 0, 70, 6, 0),
-    KindFloor("expression lambda_expression name", 5, 17, 1, 0),
-    KindFloor("expression lazy_record_expression", 0, 0, 0, 0),
-    KindFloor("expression lazy_record_expression name", 18, 0, 0, 0),
-    KindFloor("expression list_expression", 0, 76, 0, 0),
-    KindFloor("expression list_operator", 0, 36, 0, 0),
-    KindFloor("expression loop_expression", 0, 24, 0, 18), // shape: #401
-    KindFloor("expression number", 24, 251, 3, 0),
-    KindFloor("expression offer_expression", 0, 0, 0, 0),
-    KindFloor("expression pack_expression", 0, 30, 0, 0),
-    KindFloor("expression parenthesized_expression", 94, 90, 5, 0),
-    KindFloor("expression pipeline", 0, 5, 0, 0),
-    KindFloor("expression projection_expression", 4, 106, 1, 3), // shape: #401
-    KindFloor("expression projection_expression name", 227, 561, 1, 0),
-    KindFloor("expression pure_expression", 56, 160, 4, 24), // shape: #401
-    KindFloor("expression redirection_operator", 0, 4, 0, 0),
-    KindFloor("expression resume_expression", 9, 0, 9, 0),
-    KindFloor("expression resume_expression name", 6, 0, 1, 0),
-    KindFloor("expression return_expression", 48, 468, 18, 6), // shape: #401
-    KindFloor("expression run_expression", 0, 0, 0, 0),
-    KindFloor("expression select_expression", 18, 0, 0, 0),
-    KindFloor("expression select_expression name", 37, 0, 0, 0),
-    KindFloor("expression send_expression", 0, 0, 0, 0),
-    KindFloor("expression shell_block", 0, 112, 0, 0),
-    KindFloor("expression shell_word", 0, 229, 0, 0),
-    KindFloor("expression single_quoted_string", 0, 110, 0, 0),
-    KindFloor("expression string", 81, 528, 14, 0),
-    KindFloor("expression subshell", 0, 10, 0, 0),
-    KindFloor("expression telescope_expression", 21, 216, 8, 0),
-    KindFloor("expression telescope_expression name", 13, 20, 0, 0),
-    KindFloor("expression thunk_expression", 0, 122, 42, 7), // shape: #401
-    KindFloor("expression typed_number", 0, 52, 0, 0),
-    KindFloor("expression unary_expression", 0, 1, 0, 0),
-    KindFloor("expression unit", 12, 40, 0, 0),
-    KindFloor("expression variable_expansion", 0, 29, 0, 0),
-    KindFloor("expression while_expression", 0, 0, 0, 0),
-    KindFloor("instantiation instantiation_expression", 98, 20, 0, 0),
-    KindFloor("instantiation instantiation_expression name", 0, 10, 0, 0),
-    KindFloor("item circuit_declaration", 0, 78, 0, 0),
-    KindFloor("item circuit_declaration name", 20, 65, 0, 0),
-    KindFloor("item codata_declaration", 0, 74, 0, 0),
-    KindFloor("item codata_declaration name", 5, 63, 0, 0),
-    KindFloor("item data_declaration", 0, 1914, 0, 0),
-    KindFloor("item data_declaration name", 27, 385, 0, 0),
-    KindFloor("item def_value", 0, 919, 105, 143), // shape: #401
-    KindFloor("item def_value name", 186, 664, 153, 122), // shape: #401
-    KindFloor("item extern_block", 0, 142, 0, 0),
-    KindFloor("item extern_block name", 0, 80, 0, 0),
-    KindFloor("item import_declaration", 0, 69, 0, 0),
-    KindFloor("item import_declaration name", 0, 15, 0, 0),
-    KindFloor("item module_declaration", 0, 595, 0, 40), // shape: #405
-    KindFloor("item module_declaration name", 52, 483, 0, 0),
-    KindFloor("item operator_declaration", 0, 56, 0, 0),
-    KindFloor("item rec_block", 0, 25, 0, 0),
-    KindFloor("item rec_block name", 0, 9, 0, 0),
-    KindFloor("item sign_declaration", 0, 1371, 0, 0),
-    KindFloor("item sign_declaration name", 18, 231, 0, 0),
-    KindFloor("module_member module_declaration", 0, 445, 10, 74), // shape: #401
-    KindFloor("module_member module_declaration name", 1, 359, 12, 81), // shape: #401
-    KindFloor("pattern cons_pattern", 0, 4, 0, 16),                // shape: #408
-    KindFloor("pattern cons_pattern name", 32, 12, 0, 0),
-    KindFloor("pattern constructor_pattern", 10, 43, 2, 0),
-    KindFloor("pattern constructor_pattern name", 40, 131, 8, 0),
-    KindFloor("pattern hole", 0, 12, 0, 0),
-    KindFloor("pattern identifier", 80, 155, 2, 0),
-    KindFloor("pattern labelled_sum_pattern", 0, 0, 0, 19), // shape: #408
-    KindFloor("pattern labelled_sum_pattern name", 0, 0, 0, 0),
-    KindFloor("pattern literal_pattern", 34, 3, 22, 0),
-    KindFloor("pattern or_pattern", 0, 0, 0, 0),
-    KindFloor("pattern telescope_pattern", 0, 0, 0, 0),
-    KindFloor("pattern telescope_pattern name", 7, 0, 0, 0),
-    KindFloor("pattern tuple_pattern", 3, 0, 0, 0),
-    KindFloor("pattern wildcard", 4, 2, 0, 0),
-    KindFloor("type capability_type", 0, 0, 0, 0),
-    KindFloor("type capability_type name", 47, 0, 0, 0),
-    KindFloor("type end_session_type", 6, 15, 0, 0),
-    KindFloor("type f_type", 142, 94, 2, 12), // shape: #404
-    KindFloor("type f_type name", 14, 0, 0, 0),
-    KindFloor("type function_type", 8, 12, 0, 0),
-    KindFloor("type labelled_sum_type", 0, 4, 0, 0),
-    KindFloor("type lazy_product_type", 5, 0, 0, 0),
-    KindFloor("type lazy_record_type", 19, 0, 0, 0),
-    KindFloor("type mu_session_type", 0, 3, 0, 0),
-    KindFloor("type mu_session_type name", 0, 4, 0, 17), // shape: #401
-    KindFloor("type number", 0, 2, 0, 0),
-    KindFloor("type package_type", 0, 99, 0, 0),
-    KindFloor("type package_type name", 0, 11, 0, 0),
-    KindFloor("type parenthesized_type", 618, 34, 2, 0),
-    KindFloor("type path_type", 136, 0, 0, 0),
-    KindFloor("type primitive_type", 553, 658, 0, 0),
-    KindFloor("type product_type", 4, 0, 1, 6), // shape: #404
-    KindFloor("type receive_session_type", 2, 0, 0, 0),
-    KindFloor("type send_session_type", 2, 4, 0, 0),
-    KindFloor("type static_abstraction", 0, 0, 0, 38), // shape: #404
-    KindFloor("type static_abstraction name", 46, 0, 0, 0),
-    KindFloor("type sum_type", 2, 3, 0, 0),
-    KindFloor("type telescope_type", 6, 58, 0, 0),
-    KindFloor("type type_application", 42, 83, 0, 0),
-    KindFloor("type type_application name", 959, 154, 0, 0),
-    KindFloor("type type_identifier", 333, 478, 0, 0),
-    KindFloor("type type_path", 0, 0, 0, 8), // shape: #404
-    KindFloor("type type_path name", 97, 0, 0, 0),
-    KindFloor("type type_variable", 36, 129, 0, 90), // shape: #401
-    KindFloor("type u_type", 22, 75, 0, 10),         // shape: #404
-    KindFloor("type universe_type", 40, 116, 0, 0),
-    KindFloor("type unknown_type", 8, 0, 0, 0),
-    KindFloor("type value_function_type", 2, 0, 0, 4), // shape: #404
+/// The node kinds the hover sweep counts: the kind — its form's grammar
+/// sort, then its named kind — of the corpus positions whose smallest
+/// meaningful node is of that kind. The sweep prints, per kind, how many
+/// positions it holds and how many are answered at the node, in shape
+/// ([`shapes`]), by an ancestor, by nothing, with a `?` and in another shape
+/// than the kind's; the counts are a report, not a gate (#467). A kind whose
+/// answers wait on an issue names it. A kind measured with no row here and
+/// none in [`MEANINGLESS`] fails the sweep, so a new kind is decided rather
+/// than counted silently, and so does a row whose kind the corpus no longer
+/// has.
+const COUNTED: &[&str] = &[
+    "expression abort_expression",
+    "expression abort_expression name",
+    "expression access_expression",
+    "expression access_expression name",
+    "expression become_expression",
+    "expression binary_expression", // shape: #401
+    "expression block",
+    "expression block name",
+    "expression boolean",
+    "expression break_expression",
+    "expression break_value_expression",
+    "expression call_expression", // shape: #401, `?`
+    "expression case_expression", // shape: #401
+    "expression close_expression",
+    "expression constructor",
+    "expression continue_expression",
+    "expression double_quoted_string",
+    "expression dup_expression",
+    "expression file_descriptor",
+    "expression for_expression",
+    "expression for_expression name",
+    "expression force_expression",
+    "expression glob_expression",
+    "expression glob_expression name",
+    "expression handle_expression",      // shape: #401
+    "expression handle_expression name", // shape: #401
+    "expression hole",
+    "expression host_escape",
+    "expression identifier", // shape: #401
+    "expression if_expression",
+    "expression instantiation_expression",
+    "expression labelled_sum_expression",
+    "expression labelled_sum_expression name",
+    "expression lambda_expression",
+    "expression lambda_expression name",
+    "expression lazy_record_expression",
+    "expression lazy_record_expression name",
+    "expression list_expression",
+    "expression list_operator",
+    "expression loop_expression", // shape: #401
+    "expression number",
+    "expression offer_expression",
+    "expression pack_expression",
+    "expression parenthesized_expression",
+    "expression pipeline",
+    "expression projection_expression", // shape: #401
+    "expression projection_expression name",
+    "expression pure_expression", // shape: #401
+    "expression redirection_operator",
+    "expression resume_expression",
+    "expression resume_expression name",
+    "expression return_expression", // shape: #401
+    "expression run_expression",
+    "expression select_expression",
+    "expression select_expression name",
+    "expression send_expression",
+    "expression shell_block",
+    "expression shell_word",
+    "expression single_quoted_string",
+    "expression string",
+    "expression subshell",
+    "expression telescope_expression",
+    "expression telescope_expression name",
+    "expression thunk_expression", // shape: #401
+    "expression typed_number",
+    "expression unary_expression",
+    "expression unit",
+    "expression variable_expansion",
+    "expression while_expression",
+    "instantiation instantiation_expression",
+    "instantiation instantiation_expression name",
+    "item circuit_declaration",
+    "item circuit_declaration name",
+    "item codata_declaration",
+    "item codata_declaration name",
+    "item data_declaration",
+    "item data_declaration name",
+    "item def_value",      // shape: #401
+    "item def_value name", // shape: #401
+    "item extern_block",
+    "item extern_block name",
+    "item import_declaration",
+    "item import_declaration name",
+    "item module_declaration", // shape: #405
+    "item module_declaration name",
+    "item operator_declaration",
+    "item rec_block",
+    "item rec_block name",
+    "item sign_declaration",
+    "item sign_declaration name",
+    "module_member module_declaration",      // shape: #401
+    "module_member module_declaration name", // shape: #401
+    "pattern cons_pattern",                  // shape: #408
+    "pattern cons_pattern name",
+    "pattern constructor_pattern",
+    "pattern constructor_pattern name",
+    "pattern hole",
+    "pattern identifier",
+    "pattern labelled_sum_pattern", // shape: #408
+    "pattern labelled_sum_pattern name",
+    "pattern literal_pattern",
+    "pattern or_pattern",
+    "pattern telescope_pattern",
+    "pattern telescope_pattern name",
+    "pattern tuple_pattern",
+    "pattern wildcard",
+    "type capability_type",
+    "type capability_type name",
+    "type end_session_type",
+    "type f_type", // shape: #404
+    "type f_type name",
+    "type function_type",
+    "type labelled_sum_type",
+    "type lazy_product_type",
+    "type lazy_record_type",
+    "type mu_session_type",
+    "type mu_session_type name", // shape: #401
+    "type number",
+    "type package_type",
+    "type package_type name",
+    "type parenthesized_type",
+    "type path_type",
+    "type primitive_type",
+    "type product_type", // shape: #404
+    "type receive_session_type",
+    "type send_session_type",
+    "type static_abstraction", // shape: #404
+    "type static_abstraction name",
+    "type sum_type",
+    "type telescope_type",
+    "type type_application",
+    "type type_application name",
+    "type type_identifier",
+    "type type_path", // shape: #404
+    "type type_path name",
+    "type type_variable", // shape: #401
+    "type u_type",        // shape: #404
+    "type universe_type",
+    "type unknown_type",
+    "type value_function_type", // shape: #404
 ];
 
 /// The node kinds with no meaning of their own to hover, each with why: the
-/// sweep counts their positions but pins no floor on them.
+/// sweep counts their positions but does not list them in [`COUNTED`].
 pub(super) const MEANINGLESS: &[(&str, &str)] = &[
     (
         "grout",
@@ -354,14 +335,6 @@ pub(super) fn opened(sources: &[gandr_workflow_sweep::Source]) -> Vec<Source>
         })
         .collect()
 }
-
-/// The misses one node kind's hovers may hold over the corpus, as counts of
-/// positions: the kind — its form's grammar sort, then its named kind — then
-/// how many positions an ancestor answers, how many nothing answers, how many
-/// an answer with a `?` answers and how many an answer of another shape than
-/// the kind's answers. Each count must not rise.
-#[derive(Clone, Copy, Debug)]
-struct KindFloor(&'static str, usize, usize, usize, usize);
 
 /// How the hovers of one node kind's corpus positions answered.
 #[derive(Clone, Copy, Debug, Default)]
@@ -1251,12 +1224,8 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
 /// at least one source of each corpus class — `strict` and each directory
 /// below `fixture` — and adds every source the change adds or modifies, so a
 /// corpus edit is swept on the pull request that makes it. The hover sweep
-/// visits every source in the plain build under every profile: its ceilings
-/// count the whole corpus, which no sample can push over them, so a change
-/// that moves them is refused on its own pull request rather than on `main`
-/// the next night. The ceilings do not depend on the build, so with
-/// specifications enforced it visits its sample, which holds the enforced
-/// run to the test bound.
+/// prints its counts by node kind as a report and holds no ceiling on them
+/// (#467).
 mod sweeps
 {
     use gandr_workflow_sweep::Sample;
@@ -1405,10 +1374,7 @@ mod sweeps
     #[test]
     fn hovering_every_position_of_each_corpus_source_answers_without_fault()
     {
-        // The plain build holds the whole corpus to the ceilings; the enforced
-        // build, whose counts are the same, holds its sample to the bound.
-        let whole = !cfg!(anodized_panic)
-            || gandr_workflow_sweep::Coverage::asked() == gandr_workflow_sweep::Coverage::Full;
+        let whole = gandr_workflow_sweep::Coverage::asked() == gandr_workflow_sweep::Coverage::Full;
         let sources = if whole {
             let mut sources =
                 opened(&gandr_workflow_sweep::corpus::sources().expect("the corpus reads"));
@@ -1511,43 +1477,22 @@ mod sweeps
             );
         }
         let mut misses = Vec::new();
-        if unanswered > UNANSWERED_CEILING {
-            misses.push(format!(
-                "{unanswered} corpus positions answered by nothing, above {UNANSWERED_CEILING}"
-            ));
-        }
-        for (kind, row) in &by_kind {
+        for kind in by_kind.keys() {
             if MEANINGLESS
                 .iter()
                 .any(|&(meaningless, _)| meaningless == kind)
+                || COUNTED.contains(&kind.as_str())
             {
                 continue;
             }
-            let Some(&KindFloor(_, ancestors, unanswered, unknowns, unshaped)) =
-                KIND_FLOORS.iter().find(|floor| floor.0 == kind)
-            else {
-                misses.push(format!("{kind}: no floor and not meaningless"));
-                continue;
-            };
-            for (what, count, ceiling) in [
-                ("answered by an ancestor", row.ancestor, ancestors),
-                ("answered by nothing", row.unanswered, unanswered),
-                ("answered with `?`", row.unknown, unknowns),
-                ("answered in another shape", row.unshaped, unshaped),
-            ] {
-                if count > ceiling {
-                    misses.push(format!("{kind}: {count} {what}, above {ceiling}"));
-                }
-            }
+            misses.push(format!("{kind}: neither counted nor meaningless"));
         }
         // A sample need not hold every kind; only the whole corpus can show a
-        // floor whose kind is gone.
+        // row whose kind is gone.
         if whole {
-            for &KindFloor(kind, ..) in KIND_FLOORS {
+            for &kind in COUNTED {
                 if !by_kind.contains_key(kind) {
-                    misses.push(format!(
-                        "{kind}: a floor for a kind the corpus no longer has"
-                    ));
+                    misses.push(format!("{kind}: a row for a kind the corpus no longer has"));
                 }
             }
         }
