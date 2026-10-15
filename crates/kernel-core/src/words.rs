@@ -22,6 +22,11 @@
 //!   and transports along it in the family `z. Path(C, z, r(pt))` for the left
 //!   one and `z. Path(C, l(pt), z)` for the right one, whose rows are again the
 //!   fixed and moving ones.
+//! - in a singleton family `y. Path(C, a, y)`, where no row above reads the
+//!   path, by the word moved, as `then` appends on its first word: `tr(P, q, ε)
+//!   ⇝ return q` and `tr(P, q, ℓ ∷ p) ⇝ return ℓ ∷ ⟨tr(P, q, p)⟩`, the rest's
+//!   transport held as the value it returns, as the evaluator reads a stuck one
+//!   under its letter.
 //!
 //! An endpoint's image of a letter is the loop arm the innermost function's
 //! case carries for the letter's loop — inverted along the family `z.
@@ -786,13 +791,14 @@ where
 /// # Specification
 /// - requires: nothing; an ill-typed term reduces or sticks without panicking.
 /// - ensures: `Reduced` with the transport along a named path's word; with a
-///   returned path run first; with the operand returned along the empty word,
-///   or its named word reread; with the first letter's transport bound into the
-///   rest's along a longer word; with a returned operand run first; along one
-///   letter in a path family over a carrier its binder never reads, with the
-///   spliced word returned when both endpoints are fixed or moving and the
+///   returned path run first; with a returned operand run first; with the
+///   operand returned along the empty word, or its named word reread; with the
+///   first letter's transport bound into the rest's along a longer word; along
+///   one letter in a path family over a carrier its binder never reads, with
+///   the spliced word returned when both endpoints are fixed or moving and the
 ///   words splice, or with the images of the endpoints bound and the operand
-///   transported along them as the module states; `Stuck` otherwise.
+///   transported along them as the module states; along a path no row reads, or
+///   a letter whose splice fails, by [`appended`]'s rows; `Stuck` otherwise.
 /// - provides: the replay's reading of transport along a word, the engine's
 ///   evaluator's rows as reducts.
 /// - fails: never.
@@ -810,6 +816,7 @@ where
 /// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
 /// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 /// - witness: `native_formers::native_formers::a_composite_along_a_returned_path_cancels_to_the_empty_word`
+/// - witness: `native_formers::native_formers::a_word_appends_on_its_first_word`
 #[spec(ensures: |ret| match ret {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
@@ -844,10 +851,20 @@ where
         let transported = arena.computation_path_transport(lifted, bound, onward);
         return Reduction::Reduced(arena.computation_bind(along, transported));
     }
+    // A returned operand runs first, as an elimination meeting one does:
+    // `tr(P, w, ⟨c⟩) ⇝ y ← c; tr(P↑, w↑, y)`.
+    if let Some(&Value::Returned(operand)) = arena.value(value) {
+        let one = BinderDepth::from(1_u32);
+        let lifted = shift_value_type(arena, table, memo, motive, one, one);
+        let onward = shift_value(arena, table, memo, path, BinderDepth::NONE, one);
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let along = arena.computation_path_transport(lifted, onward, bound);
+        return Reduction::Reduced(arena.computation_bind(operand, along));
+    }
     let (tag, words, rest) = match head(arena, presentations, path) {
         Head::Empty => (FreeCells::nil(), None, path),
         Head::Letter { tag, words, rest } => (tag, Some(words), rest),
-        Head::Other => return Reduction::Stuck,
+        Head::Other => return appended(arena, (table, memo), unfoldings, term),
     };
     if words.is_some() && head(arena, presentations, rest) != Head::Empty {
         let Some(&Value::Constructor { datatype, .. }) = arena.value(path)
@@ -863,16 +880,6 @@ where
         let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
         let along = arena.computation_path_transport(lifted, onward, bound);
         return Reduction::Reduced(arena.computation_bind(step, along));
-    }
-    // A returned operand runs first, as an elimination meeting one does:
-    // `tr(P, w, ⟨c⟩) ⇝ y ← c; tr(P↑, w↑, y)`.
-    if let Some(&Value::Returned(operand)) = arena.value(value) {
-        let one = BinderDepth::from(1_u32);
-        let lifted = shift_value_type(arena, table, memo, motive, one, one);
-        let onward = shift_value(arena, table, memo, path, BinderDepth::NONE, one);
-        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let along = arena.computation_path_transport(lifted, onward, bound);
-        return Reduction::Reduced(arena.computation_bind(operand, along));
     }
     let Some(words) = words
     else {
@@ -915,9 +922,10 @@ where
         let spliced = inverted(arena, presentations, left_image)
             .and_then(|back| concatenated(arena, presentations, (back, value)))
             .and_then(|before| concatenated(arena, presentations, (before, right_image)));
-        return spliced.map_or(Reduction::Stuck, |moved| {
-            Reduction::Reduced(arena.computation_return(moved))
-        });
+        return match spliced {
+            Some(moved) => Reduction::Reduced(arena.computation_return(moved)),
+            None => appended(arena, (table, memo), unfoldings, term),
+        };
     }
     let Some(at) = point(arena, presentations, words)
     else {
@@ -1009,4 +1017,81 @@ where
         (None, None) => return Reduction::Stuck,
     };
     Reduction::Reduced(reduct)
+}
+
+/// One transport step in a singleton family by the word moved, where the word
+/// moved along reads no further: `then` appends on its first word.
+///
+/// # Specification
+/// - requires: nothing; an ill-typed term reduces or sticks without panicking.
+/// - ensures: in a family `y. Path(C, a, y)` whose carrier and left endpoint
+///   never read `y`, `Reduced` with the path returned when the operand is the
+///   empty word — `tr(P, q, ε) ⇝ return q` — with the operand's first letter
+///   returned before the rest's transport, held as the value it returns, when
+///   the operand is `ℓ ∷ p` — `tr(P, q, ℓ ∷ p) ⇝ return ℓ ∷ ⟨tr(P, q, p)⟩`, a
+///   letter looping at the one point — and with the operand reread when a
+///   definition names it; `Stuck` otherwise.
+/// - provides: the replay's reading of the evaluator's append row
+///   (`gandr-core-nbe`'s `eval::words::appended`) as reducts.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the empty word moved along a path parameter is that
+///   parameter, and a letter before a parameter moved along another is the
+///   letter before the parameters' composite; the replay re-derives what the
+///   checker accepted by those rows only when it reads them too.
+/// - witness: `native_formers::native_formers::a_word_appends_on_its_first_word`
+#[spec(ensures: |ret| match ret {
+    Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
+    Reduction::Stuck => true,
+})]
+fn appended<M>(
+    arena: &mut TermArena,
+    (table, memo): (&mut ContentTable, &mut M),
+    unfoldings: &Unfoldings,
+    term: ElementTransport,
+) -> Reduction
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let ElementTransport {
+        motive,
+        path,
+        value,
+    } = term;
+    let Some(&ValueType::Path {
+        domain: carrier,
+        left,
+        right,
+    }) = arena.value_type(motive)
+    else {
+        return Reduction::Stuck;
+    };
+    if binder_use(arena, table, memo, Family::Type(carrier)) != BinderUse::Ignored {
+        return Reduction::Stuck;
+    }
+    let (Some(Action::Fixed), Some(Action::Moving)) = (
+        action(arena, table, memo, left),
+        action(arena, table, memo, right),
+    )
+    else {
+        return Reduction::Stuck;
+    };
+    match head(arena, unfoldings.presentations(), value) {
+        Head::Empty => Reduction::Reduced(arena.computation_return(path)),
+        Head::Letter { tag, rest, .. } => {
+            let Some(&Value::Constructor { datatype, .. }) = arena.value(value)
+            else {
+                return Reduction::Stuck;
+            };
+            let moved = arena.computation_path_transport(motive, path, rest);
+            let held = arena.value_returned(moved);
+            let prefixed = arena.value_constructor(datatype, tag, Vec::from([held]));
+            Reduction::Reduced(arena.computation_return(prefixed))
+        },
+        Head::Other => named(arena, unfoldings, value).map_or(Reduction::Stuck, |body| {
+            Reduction::Reduced(arena.computation_path_transport(motive, path, body))
+        }),
+    }
 }
