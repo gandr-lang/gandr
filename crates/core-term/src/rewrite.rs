@@ -367,6 +367,10 @@ struct Engine<'arena>
     slots: BTreeMap<ValueId, Binders>,
     /// Each run beside the bind minted for it.
     binds: Vec<(ValueId, ComputationId)>,
+    /// Each region beside the body it closed to, its runs standing as
+    /// themselves, where the close rebuilt it: the node a splice copies, which
+    /// no memo entry reports.
+    closings: Vec<Carried>,
     /// The constants and atoms a renaming replaces; nothing outside one.
     renaming: &'arena Renaming,
 }
@@ -391,6 +395,7 @@ impl<'arena> Engine<'arena>
             regions: BTreeMap::new(),
             slots: BTreeMap::new(),
             binds: Vec::new(),
+            closings: Vec::new(),
             renaming: &NOTHING_RENAMED,
         }
     }
@@ -773,7 +778,8 @@ impl<'arena> Engine<'arena>
     ///   stands.
     /// - ensures: `first` on the result stack, and tasks that leave each later
     ///   run's computation shifted past the binders before it and then the body
-    ///   spliced past them all above it, and hoist them.
+    ///   spliced past them all above it, and hoist them; `closed` reported
+    ///   beside the region when the close rebuilt it.
     /// - provides: the scheduling half of a region's hoist.
     /// - fails: never.
     /// - panics: none.
@@ -783,7 +789,8 @@ impl<'arena> Engine<'arena>
     /// - witness: `rewrite::tests::an_elaboration_runs_in_written_order_before_its_region`
     #[spec(captures: [ready = self.results.len(), pending = self.tasks.len()],
         ensures: self.results.len() == ready.saturating_add(1)
-            && self.tasks.len() == pending.saturating_add(rest.len()).saturating_add(2))]
+            && self.tasks.len() == pending.saturating_add(rest.len()).saturating_add(2)
+            && (closed == region || self.closings.last() == Some(&Carried::Computation(region, closed))))]
     fn splice(
         &mut self,
         region: ComputationId,
@@ -793,6 +800,9 @@ impl<'arena> Engine<'arena>
         rest: &[ComputationId],
     )
     {
+        if closed != region {
+            self.closings.push(Carried::Computation(region, closed));
+        }
         self.results.push(Node::Computation(first));
         self.tasks.push(Task::Hoist(region, depth));
         let runs = Binders::ONE.deeper_by(ComponentCount::from(rest.len()));
@@ -4027,7 +4037,9 @@ fn survey_computation(
 /// - hypothesis: L3 — two runs in one spine, a suspension beside a run, a run
 ///   in a thunk, a run in a case arm, a run nested in another's computation and
 ///   a run in a definition's own value separate written order, the two
-///   decisions, the boundaries, nesting and the refusal.
+///   decisions, the boundaries, nesting and the refusal; the suspension beside
+///   a run, which rebuilds the region before its splice, separates a report of
+///   every node minted from one that drops the region's closed body.
 /// - witness: `rewrite::tests::an_elaboration_runs_in_written_order_before_its_region`
 /// - witness: `rewrite::tests::an_elaboration_suspends_and_runs_as_decided`
 /// - witness: `rewrite::tests::an_elaboration_never_hoists_out_of_a_thunk_or_an_arm`
@@ -4059,6 +4071,7 @@ pub fn elaborate_nested_traced(
     engine.regions = regions;
     let elaborated = engine.run(Node::Value(subject), Binders::NONE, Rewrite::Elaborate);
     report(&engine.memo, carried);
+    carried.append(&mut engine.closings);
     binds.append(&mut engine.binds);
     match elaborated {
         | Node::Value(id) => Ok(id),
@@ -4538,6 +4551,7 @@ mod tests
     use super::Binders;
     use super::Carried;
     use super::Nesting;
+    use super::Node;
     use super::Renaming;
     use super::Unenclosed;
     use super::elaborate_nested_traced;
@@ -6459,12 +6473,36 @@ mod tests
         let lambda = arena.computation_lambda(returned);
         let subject = arena.value_thunk(lambda);
         let nesting = BTreeMap::from([(suspended, Nesting::Thunk), (run, Nesting::Run)]);
+        let mut carried = Vec::new();
         let mut binds = Vec::new();
+        let minted = arena.watermark();
         let Ok(elaborated) =
-            elaborate_nested_traced(&mut arena, subject, &nesting, &mut Vec::new(), &mut binds)
+            elaborate_nested_traced(&mut arena, subject, &nesting, &mut carried, &mut binds)
         else {
             panic!("every run stands in a computation");
         };
+        let reported: Vec<Node> = carried
+            .iter()
+            .map(|pair| match *pair {
+                | Carried::Value(_, written) => Node::Value(written),
+                | Carried::Computation(_, written) => Node::Computation(written),
+                | Carried::ValueType(_, written) => Node::ValueType(written),
+                | Carried::CompType(_, written) => Node::CompType(written),
+            })
+            .chain(binds.iter().map(|&(_, bind)| Node::Computation(bind)))
+            .collect();
+        let unreported: Vec<Node> = arena
+            .values_since(minted)
+            .map(Node::Value)
+            .chain(arena.computations_since(minted).map(Node::Computation))
+            .filter(|node| !reported.contains(node))
+            .collect();
+        assert_eq!(
+            unreported,
+            [],
+            "every node the elaboration minted is reported beside a node it stands for, the \
+             region's body closed around the suspension among them"
+        );
         assert_eq!(
             term_text(&arena, elaborated),
             "thunk(lambda(bind(apply(force(#2),v0),return(tuple(thunk(apply(force(#1),v1)),v0)))))",

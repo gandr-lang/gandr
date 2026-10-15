@@ -1124,6 +1124,51 @@ mod tests
     }
 
     #[test]
+    fn a_second_run_refusal_is_located_where_its_bound_spelling_is()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let data = "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  P : (x : Int) --> \
+                    Int;\n  rule S(P(x)) ==> x;\n  rule P(S(x)) ==> x;\n}\n\n";
+        let fold = |arm: &str| {
+            format!(
+                "{data}def rec tell(n : Int) -> -F Int {{\n  case n {{\n    Z => Z,\n    S(x) => \
+                 {arm},\n    P(x) => {arm}\n  }}\n}}\n"
+            )
+        };
+        // The nested call is judged by the second run, over the bind the
+        // first run elaborated it to; the bound twin by the first run alone.
+        for written in [fold("S(tell[<](x))"), fold("{ run t <- tell[<](x); S(t) }")] {
+            let text = SourceText::from(written.as_str());
+            let start = written.find("case n").expect("the case");
+            let end = written.rfind("  }\n}").expect("the case's close") + "  }".len();
+            let case = Maybe::Present(
+                ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("ordered"),
+            );
+            let fold = step(
+                Path::new("fold.gandr"),
+                SourceRoot::Strict,
+                text,
+                Standing::Unsettled,
+                &grammar,
+            );
+            assert_eq!(
+                entries(&fold, Verb::Check(Goals::Gated))
+                    .map(|diagnostic| {
+                        let code = diagnostic.identifier.map(|code| code.to_string());
+                        (diagnostic.severity, code, diagnostic.span)
+                    })
+                    .collect::<Vec<_>>(),
+                [(
+                    Severity::Error,
+                    Maybe::Present(String::from("RuleNotRespected")),
+                    case
+                )],
+                "the fold is refused at the case block whichever run judged it:\n{written}"
+            );
+        }
+    }
+
+    #[test]
     fn counted_declarations_preserve_visible_order_and_exhaustion()
     {
         let text = SourceText::from(
