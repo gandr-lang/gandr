@@ -1447,6 +1447,9 @@ enum Elimination
     /// A ride along a neutral flow head; the arena node retains its motive
     /// and its value.
     Ride(ComputationId),
+    /// A path transport along a neutral path head; the arena node retains
+    /// its motive and its value.
+    PathTransport(ComputationId),
     /// The head forced.
     Force,
     /// An application to this argument.
@@ -3982,6 +3985,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         spine.as_slice() == [Elimination::ProductTransport(path)]
                     } else { spine.as_slice() == [Elimination::Transport(value)] },
                     Computation::Ride { .. } => spine.as_slice() == [Elimination::Ride(computation)],
+                    Computation::PathTransport { .. } => spine.as_slice() == [Elimination::PathTransport(computation)],
                     Computation::Case { .. } => spine.as_slice() == [Elimination::Case(computation)],
                     Computation::DataCase { .. } => spine.as_slice() == [Elimination::DataCase(computation)],
                     Computation::SigmaSplit { .. } => spine.as_slice() == [Elimination::SigmaSplit(computation)],
@@ -3989,7 +3993,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Computation::TupleProjection(..) => spine.as_slice() == [Elimination::TupleProjection(computation)],
                     Computation::Project(side, _) => spine.last() == Some(&Elimination::Project(side)),
                     Computation::ListFold { on_nil, on_cons, .. } => spine.as_slice() == [Elimination::ListFold(on_nil, on_cons)],
-                    Computation::Lambda(_) | Computation::Return(_) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Fixpoint { .. } => false,
+                    Computation::Lambda(_) | Computation::Return(_) | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Fixpoint { .. } => false,
                 },
                 Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
                 _ => false,
@@ -4103,6 +4107,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     spine.push(Elimination::Ride(focus));
                     break self.value_head(flow, frozen, side)?;
                 },
+                // A path transport stuck at the table stands on its path, as
+                // a ride stands on its flow.
+                Some(&Computation::PathTransport { path, .. }) => {
+                    spine.push(Elimination::PathTransport(focus));
+                    break self.value_head(path, frozen, side)?;
+                },
                 Some(&Computation::Lambda(body)) if spine.is_empty() => {
                     return Ok(Shape::Lambda(body));
                 },
@@ -4148,14 +4158,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     let head = self.value_head(scrutinee, frozen, side)?;
                     break head;
                 },
-                // A transport in a motive, a telescope ride or a related
+                // A telescope transport, a telescope ride or a related
                 // application that did not reduce has no trace alphabet of its
                 // own: the replay reads it as unreadable.
                 Some(
                     &(Computation::Lambda(_)
                     | Computation::With(..)
                     | Computation::Return(_)
-                    | Computation::PathTransport { .. }
                     | Computation::TelescopeTransport { .. }
                     | Computation::TelescopeRide { .. }
                     | Computation::RelatedApplication { .. }),
@@ -5112,6 +5121,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 let (call, mut outer, before, first) = next;
                 let (call, bind) = self.next_bind(call, &mut outer);
                 match bind {
+                    // A call stuck on a path transport is not read through:
+                    // its spine names it for the rule table alone, and reading
+                    // a bind through it would transport along the returned
+                    // endpoint of the call it stands for, unfolding a cong
+                    // chain link by link where [`Self::fuse`] reads it whole.
                     Some(body)
                         if !first
                             || matches!(
@@ -5122,8 +5136,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 ),
                                 Ok(Shape::Neutral(
                                     Head::Variable(_) | Head::Constant(_, Status::Opaque),
-                                    _
-                                ))
+                                    ref spine
+                                )) if !spine.iter().any(|elimination| matches!(elimination, Elimination::PathTransport(_)))
                             ) =>
                     {
                         if self.continuation_of(body) == Continuation::Eliminates {
@@ -5809,9 +5823,10 @@ fn bind_rule(
 ///   elimination's kind; else an application's or a static application's
 ///   arguments, a bind's continuations, a sum case's two branches and a
 ///   dependent split's bodies, in spine order. A native data case first
-///   compares its quoted motive, then its ordinary branch functions; a ride
-///   compares its quoted motive, then its value; a force, a matching record
-///   projection or a projection of one lazy-product side contributes none.
+///   compares its quoted motive, then its ordinary branch functions; a ride or
+///   a path transport compares its quoted motive, then its value; a force, a
+///   matching record projection or a projection of one lazy-product side
+///   contributes none.
 /// - provides: the decomposition of two neutrals over one head.
 /// - fails: unreadable native metadata when a retained source is missing or
 ///   malformed.
@@ -5824,14 +5839,16 @@ fn bind_rule(
 /// # Adequacy
 /// - hypothesis: L3: case branches followed by an application distinguish
 ///   subgoal order; two rides along one flow refute at their values' subgoal,
-///   not their motives'; unequal spine lengths and application-versus-bind
-///   kinds refute without a decision; empty spines close positively. The
-///   fixtures do not enumerate all mixed spines.
+///   not their motives'; two path transports along one path whose motives close
+///   over different environments convert by their premises; unequal spine
+///   lengths and application-versus-bind kinds refute without a decision; empty
+///   spines close positively. The fixtures do not enumerate all mixed spines.
 /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
 /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
 /// - witness: `path_universe::tests::refl_collapses`
 /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
 /// - witness: `replay::tests::a_ride_unfolds_its_flow_where_the_dialogue_names_it`
+/// - witness: `replay::tests::two_stuck_path_transports_compare_by_motive_and_value`
 #[spec(ensures: |ret| {
     let compatible = left.len() == right.len() && left.iter().zip(right).all(|(one, other)| match (*one,*other) {
         (Elimination::RecordProjection(a),Elimination::RecordProjection(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::RecordProjection(_,a)),Some(Computation::RecordProjection(_,b))) if a == b),
@@ -5862,6 +5879,10 @@ if let Some(matched_left_node) = matched_left_value && let Computation::DataCase
  else { false }
 },
                 (Elimination::Ride(a), Elimination::Ride(b)) => if let (Some(&Computation::Ride { motive: a_motive, value: a_value, .. }), Some(&Computation::Ride { motive: b_motive, value: b_value, .. })) = (arena.computation(a), arena.computation(b)) {
+                    pending.next().is_some_and(|premise| matches!((premise.left, premise.right), (Term::Value(left), Term::Value(right)) if arena.value(left) == Some(&Value::Quote(a_motive)) && arena.value(right) == Some(&Value::Quote(b_motive))))
+                        && pending.next() == Some(&Premise::values(a_value, b_value))
+                } else { false },
+                (Elimination::PathTransport(a), Elimination::PathTransport(b)) => if let (Some(&Computation::PathTransport { motive: a_motive, value: a_value, .. }), Some(&Computation::PathTransport { motive: b_motive, value: b_value, .. })) = (arena.computation(a), arena.computation(b)) {
                     pending.next().is_some_and(|premise| matches!((premise.left, premise.right), (Term::Value(left), Term::Value(right)) if arena.value(left) == Some(&Value::Quote(a_motive)) && arena.value(right) == Some(&Value::Quote(b_motive))))
                         && pending.next() == Some(&Premise::values(a_value, b_value))
                 } else { false },
@@ -6029,6 +6050,31 @@ fn spines(
                     Premise::values(a_value, b_value),
                 ]);
             },
+            // Two path transports along one neutral path compare as two rides
+            // do: their motives as codes, then their values.
+            (Elimination::PathTransport(a), Elimination::PathTransport(b)) => {
+                let (
+                    Some(&Computation::PathTransport {
+                        motive: a_motive,
+                        value: a_value,
+                        ..
+                    }),
+                    Some(&Computation::PathTransport {
+                        motive: b_motive,
+                        value: b_value,
+                        ..
+                    }),
+                ) = (arena.computation(a), arena.computation(b))
+                else {
+                    return Err(unreadable());
+                };
+                let a_quote = arena.value_quote(a_motive);
+                let b_quote = arena.value_quote(b_motive);
+                premises.extend([
+                    Premise::values(a_quote, b_quote),
+                    Premise::values(a_value, b_value),
+                ]);
+            },
             (Elimination::Bind(a), Elimination::Bind(b))
             | (Elimination::Fixpoint(a), Elimination::Fixpoint(b)) => {
                 premises.push(Premise::computations(a, b));
@@ -6065,6 +6111,7 @@ fn spines(
                 | Elimination::Transport(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::Ride(_)
+                | Elimination::PathTransport(_)
                 | Elimination::Force
                 | Elimination::Apply(_)
                 | Elimination::Bind(_)
@@ -8252,6 +8299,65 @@ mod tests
             refused(ReplayRefusal::Contradicted {
                 at: TracePosition::from(1)
             })
+        );
+    }
+
+    #[test]
+    fn two_stuck_path_transports_compare_by_motive_and_value()
+    {
+        // `tr(y. Path(Unit, (), y), q, v)` over one variable path `q`, as
+        // two definitions' composites `p then q` leave it: the motives,
+        // minted apart, compare as codes, then the values.
+        let mut arena = TermArena::new();
+        let unfoldings = Unfoldings::new(Vec::new());
+        let unit_type = arena.value_type_unit();
+        let unit = arena.value_unit();
+        let endpoint = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let one_motive = arena.value_type_path(unit_type, unit, endpoint);
+        let other_motive = arena.value_type_path(unit_type, unit, endpoint);
+        let path = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let injected = arena.value_injection(Side::Left.into(), unit);
+        let one = arena.computation_path_transport(one_motive, path, unit);
+        let same = arena.computation_path_transport(other_motive, path, unit);
+        let apart = arena.computation_path_transport(other_motive, path, injected);
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Computations(one, same),
+                EngineClaim::Convertible,
+                &[]
+            ),
+            KernelVerdict::Convertible,
+            "two transports along one path whose premises agree are one"
+        );
+        let transports = ReplaySides::Computations(one, apart);
+        let negative = |position: u32| ConversionDecision::NegativeSubgoal {
+            position: SubgoalPosition::from(position),
+        };
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                transports,
+                EngineClaim::NotConvertible,
+                &[negative(1)]
+            ),
+            KernelVerdict::NotConvertible,
+            "the values refute at the second premise"
+        );
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                transports,
+                EngineClaim::NotConvertible,
+                &[negative(0)]
+            ),
+            refused(ReplayRefusal::Contradicted {
+                at: TracePosition::from(1)
+            }),
+            "the motives agree, so a refutation there is contradicted"
         );
     }
 }
