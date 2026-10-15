@@ -1363,6 +1363,13 @@ enum Task
     /// Read the computation on the stack again from its first position, for
     /// a continuation's reading whose bind just returned.
     Reread,
+    /// Run a loop arm under its function's arguments once the fixed ones have
+    /// their values: the values above on the stack, one per argument but the
+    /// moving one, the first deepest ([`words::arm_entered`]).
+    Arm(words::ArmEntry),
+    /// Return the value on the stack: what a held continuation binds once the
+    /// machine has evaluated a value as its answer.
+    Yield,
 }
 
 /// Where a reading of a held computation leaves what it reads to.
@@ -3278,6 +3285,14 @@ fn run(
                 && machine.values.len() == entry_values.saturating_add(1_usize) && machine.values.last() == Some(&value),
             Task::Remember(pending) => machine.tasks.len() == entry_tasks && machine.values.len() == entry_values
                 && machine.comps.len() == entry_comps && machine.sharing.pending.get(pending.0).is_none_or(Option::is_none),
+            Task::Arm(entry) => machine.comps.len() == entry_comps
+                && entry_values.checked_sub(entry.count.saturating_sub(1_usize)) == Some(machine.values.len())
+                && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::Comp { term, .. }]) if term == entry.arm),
+            Task::Yield => machine.tasks.len() == entry_tasks
+                && entry_values.checked_sub(1_usize) == Some(machine.values.len())
+                && machine.comps.len() == entry_comps.saturating_add(1_usize)
+                && matches!(machine.comps.last().and_then(|comp| domain.computation(*comp)),
+                    Some(DomainComp::Return { value, .. }) if Some(*value) == entry_value),
             }),
 )]
 fn step(
@@ -3839,6 +3854,14 @@ fn step(
                 return continue_past(domain, machine, computation, bind, delivery, read);
             }
             read_from(domain, machine, computation, bind.outward(), delivery)
+        },
+        Task::Arm(entry) => words::arm_entered(machine, entry),
+        Task::Yield => {
+            let produced = machine.pop_value()?;
+            machine
+                .comps
+                .push(domain.comp_return(produced, CompTermFace::Reduced));
+            Ok(())
         },
         Task::Reread => {
             let produced = machine.pop_comp()?;

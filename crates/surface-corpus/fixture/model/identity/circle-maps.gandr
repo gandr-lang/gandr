@@ -1,0 +1,107 @@
+// A dependent case over the circle owes the transport of its answer at the
+// point along the loop, through each endpoint's maps (#425): a map of any
+// arity whose one argument the point runs through, and a loop arm answering
+// the loop by its name. A row the tree refuses today states the refusal it
+// meets and the issue that holds it.
+
+/// The circle: one point and a loop at it.
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+/// Every point's loop.
+@[ checks ]
+def selfloop(x : Circle) -> -F Path(Circle, x, x) {
+  case x {
+    Base => loop
+  }
+}
+
+/// The identity on the circle, its loop arm the loop's name.
+@[ checks ]
+def same(a : Circle) -> -F Circle {
+  case a {
+    Base => Base,
+    loop => loop
+  }
+}
+
+/// The identity on its first argument, the second along for the ride.
+@[ checks ]
+def first(a : Circle, b : Circle) -> -F Circle {
+  case a {
+    Base => Base,
+    loop => loop
+  }
+}
+
+/// The identity on its second argument, the first along for the ride.
+@[ checks ]
+def second(b : Circle, a : Circle) -> -F Circle {
+  case a {
+    Base => Base,
+    loop => loop
+  }
+}
+
+/// A map whose loop arm answers the loop's name: carried along the loop,
+/// reflexivity at `Base` is the loop's inverse, then the loop.
+@[ checks ]
+def throughName(b : Circle) -> -F Path(Circle, same(b), b) {
+  case b {
+    Base => here(Base)
+  }
+}
+
+/// A map of two arguments, the point through the first.
+@[ checks ]
+def throughFirst(b : Circle) -> -F Path(Circle, first(b, Base), b) {
+  case b {
+    Base => here(Base)
+  }
+}
+
+/// A map of two arguments, the point through the second.
+@[ checks ]
+def throughSecond(b : Circle) -> -F Path(Circle, second(Base, b), b) {
+  case b {
+    Base => here(Base)
+  }
+}
+
+/// Two maps of two arguments, one inside the other.
+@[ checks ]
+def throughBoth(b : Circle) -> -F Path(Circle, second(Base, first(b, Base)), b) {
+  case b {
+    Base => here(Base)
+  }
+}
+
+/// Reflexivity carried along the loop through a map is the loop's inverse,
+/// not reflexivity, against a fixed right endpoint.
+@[ refuses("LoopNotRespected") ]
+def twisted(b : Circle) -> -F Path(Circle, first(b, Base), Base) {
+  case b {
+    Base => here(Base)
+  }
+}
+
+/// The circle's multiplication, whose loop arm calls `selfloop`.
+@[ checks ]
+def mul(a : Circle, b : Circle) -> -F Circle {
+  case a {
+    Base => b,
+    loop => selfloop(b)
+  }
+}
+
+/// The point is a right unit. The obligation runs `mul`'s loop arm δ-free, so
+/// its call of `selfloop` stays a call and the transport does not compute
+/// (#425).
+@[ refuses("LoopNotRespected") ]
+def unitRight(b : Circle) -> -F Path(Circle, mul(b, Base), b) {
+  case b {
+    Base => here(Base)
+  }
+}
