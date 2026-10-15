@@ -924,6 +924,68 @@ mod native_formers
     }
 
     #[test]
+    fn a_word_written_as_a_transport_path_is_that_path_in_both_checkers()
+    {
+        let mut arena = CoreArena::new();
+        let (mut declarations, circle) = one_loop(&mut arena);
+        let at_point = arena.value_type_path(circle.carrier, circle.point, circle.point);
+        // `loop then ε`: the loop transported along the empty word, written
+        // as a constructor of the words, whose type is the words' own.
+        let joined = gandr_core_term::identity::then(
+            &mut arena,
+            circle.carrier,
+            circle.point,
+            circle.named,
+            circle.empty,
+        );
+        let joined = arena.value_returned(joined);
+        let composed = arena.value_type_path(at_point, joined, circle.named);
+        let looped = arena.value_here(circle.named);
+        declarations.push(definition(ConstantIndex::from(3_usize), composed, looped));
+        // `back(ℓ⁻¹ ∷ ε)`: the inverse letter's word, inverted, is the loop.
+        let inverted = gandr_core_term::identity::back(
+            &mut arena,
+            circle.carrier,
+            circle.point,
+            circle.inverse,
+        );
+        let inverted = arena.value_returned(inverted);
+        let reverted = arena.value_type_path(at_point, inverted, circle.named);
+        declarations.push(definition(ConstantIndex::from(4_usize), reverted, looped));
+        // The composite is not reflexivity.
+        let reflexive = arena.value_type_path(at_point, joined, circle.empty);
+        let stays = arena.value_here(circle.empty);
+        declarations.push(definition(ConstantIndex::from(5_usize), reflexive, stays));
+        let (report, crossed) = run(&mut arena, &declarations);
+        for (position, what) in [
+            (3, "the loop composed with the empty word is the loop"),
+            (4, "the inverse letter's word inverted is the loop"),
+        ] {
+            assert!(
+                matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+                "{what}: {:?}",
+                report.judged()[position].verdict()
+            );
+            assert!(
+                matches!(
+                    crossed.readmitted()[position].outcome(),
+                    Outcome::Defined { .. }
+                ),
+                "and the kernel follows the word as the same path: {:?}",
+                crossed.readmitted()[position].outcome()
+            );
+        }
+        assert!(
+            matches!(
+                report.judged()[5].verdict(),
+                Verdict::Refused(CheckRefusal::EndpointMismatch { .. })
+            ),
+            "the composite is not reflexivity: {:?}",
+            report.judged()[5].verdict()
+        );
+    }
+
+    #[test]
     fn an_absurd_case_rests_on_apart_endpoints_in_both_checkers()
     {
         let looped = ConstructorTag::from(1_usize);

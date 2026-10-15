@@ -301,6 +301,7 @@ use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
+use quenchant_shape::shape::Maybe;
 
 use crate::arena::CompTypeId;
 use crate::arena::ComputationId;
@@ -1135,7 +1136,7 @@ pub fn equal_certificate_syntax(
     right: ValueId,
 ) -> CertificateEquality
 {
-    equal_syntax(arena, StructuralGoal::Value(left, right))
+    equal_syntax(arena, &BTreeMap::new(), StructuralGoal::Value(left, right))
 }
 
 /// Compare signature type syntax without making allocation identity observable.
@@ -1160,7 +1161,236 @@ pub fn equal_type_syntax(
     right: ValueTypeId,
 ) -> CertificateEquality
 {
-    equal_syntax(arena, StructuralGoal::ValueType(left, right))
+    equal_syntax(
+        arena,
+        &BTreeMap::new(),
+        StructuralGoal::ValueType(left, right),
+    )
+}
+
+/// Compare type syntax as [`equal_type_syntax`] does, reading a parameterless
+/// type of words and the path type at its cells' point as one type, as every
+/// checker reads them.
+///
+/// # Specification
+/// - requires: `signatures` holds the data declarations the types name.
+/// - ensures: [`CertificateEquality::Equal`] exactly when every reached pair
+///   agrees in syntax after path evidence is erased, or is `Data(words, [])`
+///   against `Path(S, a, b)` with [`identified_words`] reading the path as
+///   `words`, in either order.
+/// - provides: the comparison a printed type's reading back is held to: a type
+///   of words has no name the surface writes, and is spelled as the path type
+///   it reads as.
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's words against the path at its point, alone
+///   and under a path type, compare equal where the syntax alone compares
+///   different; at an endpoint off the point they stay different.
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
+#[spec(ensures: |ret| ret == CertificateEquality::Different || equal_type_syntax(arena, left, right) == CertificateEquality::Equal || signatures.values().any(|signature| signature.presentation().cells().is_some()))]
+#[inline]
+#[must_use]
+pub fn equal_type_reading(
+    arena: &crate::CoreArena,
+    signatures: &BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>,
+    left: ValueTypeId,
+    right: ValueTypeId,
+) -> CertificateEquality
+{
+    equal_syntax(arena, signatures, StructuralGoal::ValueType(left, right))
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a path type reads as no type of words.
+    pub mod unworded {
+        /// The reason [`super::identified_words`] answered no declaration.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No declaration's free cells loop over the carrier, as written,
+            /// at a point both endpoints spell.
+            Unlooped,
+        }
+    }
+}
+
+/// The type of words the path type `Path(carrier, left, right)` reads as.
+///
+/// The declaration among `signatures` whose free cells loop at a point both
+/// endpoints spell, over the parameterless data type `carrier` is as written.
+///
+/// # Specification
+/// - requires: nothing; unreadable ids read as no words.
+/// - ensures: `Present(words)` exactly when `carrier` is `Data(sort, [])` and
+///   `words`, the first such in key order, carries cells over `sort` whose
+///   point both `left` and `right` spell as constructor terms of `sort`.
+/// - provides: the identification a checker reads a path type by
+///   (`CheckingContext::words`), the one the kernel's `Presentations::words`
+///   makes over the admitted cells, and the one a printed type's reading back
+///   is held to ([`equal_type_reading`]).
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's path at its point reads as its words; with
+///   an endpoint off the point it reads as none.
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(words) => signatures.get(&words).is_some_and(|signature| signature.presentation().cells().is_some()),
+    Maybe::Absent(_) => true,
+})]
+#[inline]
+pub fn identified_words(
+    arena: &crate::CoreArena,
+    signatures: &BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>,
+    carrier: ValueTypeId,
+    (left, right): (ValueId, ValueId),
+) -> Maybe<ConstantIndex, unworded::Absent>
+{
+    let Some(&ValueType::Data {
+        declaration: sort,
+        ref arguments,
+    }) = arena.value_type(carrier)
+    else {
+        return Maybe::Absent(unworded::Absent::Unlooped);
+    };
+    if !arguments.is_empty() {
+        return Maybe::Absent(unworded::Absent::Unlooped);
+    }
+    signatures
+        .iter()
+        .find_map(|(&words, signature)| {
+            let cells = signature.presentation().cells()?;
+            (cells.sort() == sort
+                && spells(arena, sort, left, cells.point()) == Spelling::Spelled
+                && spells(arena, sort, right, cells.point()) == Spelling::Spelled)
+                .then_some(words)
+        })
+        .map_or(Maybe::Absent(unworded::Absent::Unlooped), Maybe::Present)
+}
+
+/// Whether `words` is `Data(w, [])` and `path` a path type
+/// [`identified_words`] reads as `w`.
+///
+/// # Specification
+/// - requires: nothing; unreadable ids identify nothing.
+/// - ensures: `Present(w)` exactly in that case.
+/// - provides: the one rule [`equal_type_reading`] adds to the syntax.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(found) => matches!(arena.value_type(words), Some(&ValueType::Data { declaration, .. }) if declaration == found),
+    Maybe::Absent(_) => true,
+})]
+fn read_as_words(
+    arena: &crate::CoreArena,
+    signatures: &BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>,
+    (words, path): (ValueTypeId, ValueTypeId),
+) -> Maybe<ConstantIndex, unworded::Absent>
+{
+    let (
+        Some(&ValueType::Data {
+            declaration,
+            ref arguments,
+        }),
+        Some(&ValueType::Path {
+            carrier,
+            left,
+            right,
+        }),
+    ) = (arena.value_type(words), arena.value_type(path))
+    else {
+        return Maybe::Absent(unworded::Absent::Unlooped);
+    };
+    if !arguments.is_empty() {
+        return Maybe::Absent(unworded::Absent::Unlooped);
+    }
+    if let Maybe::Present(found) = identified_words(arena, signatures, carrier, (left, right))
+        && found == declaration
+    {
+        return Maybe::Present(found);
+    }
+    Maybe::Absent(unworded::Absent::Unlooped)
+}
+
+/// Whether a value is the closed term a rule side spells.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Spelling
+{
+    /// The value is the term the side spells.
+    Spelled,
+    /// It is another term, or no term the arena can read.
+    Apart,
+}
+
+/// Whether `value` is the constructor term of `sort` that the closed rule side
+/// `side` spells.
+///
+/// # Specification
+/// - requires: nothing — unreadable ids spell nothing.
+/// - ensures: [`Spelling::Spelled`] exactly when reading `value` in pre-order
+///   meets one constructor of `sort` per node of `side`, each with the node's
+///   tag, and no node is left over on either side; a variable node spells
+///   nothing.
+/// - provides: the endpoint comparison of [`identified_words`], as the
+///   kernel's, bounded by the side's length whatever the value's depth.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` loop over `side`'s nodes, not recursion.
+/// - measure: the nodes of `side` not yet read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`identified_words`].
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
+#[spec(ensures: |ret| ret == Spelling::Apart || !side.is_empty())]
+fn spells(
+    arena: &crate::CoreArena,
+    sort: ConstantIndex,
+    value: ValueId,
+    side: &[gandr_kernel_term::RuleNode],
+) -> Spelling
+{
+    let mut pending = Vec::with_capacity(side.len());
+    pending.push(value);
+    for &node in side {
+        let (Some(at), gandr_kernel_term::RuleNode::Constructor(tag)) = (pending.pop(), node)
+        else {
+            return Spelling::Apart;
+        };
+        let Some(&Value::Constructor {
+            datatype,
+            tag: written,
+            ref fields,
+        }) = arena.value(at)
+        else {
+            return Spelling::Apart;
+        };
+        if written != tag
+            || !matches!(
+                arena.value_type(datatype),
+                Some(&ValueType::Data { declaration, .. }) if declaration == sort
+            )
+        {
+            return Spelling::Apart;
+        }
+        pending.extend(fields.iter().rev());
+    }
+    if pending.is_empty() {
+        Spelling::Spelled
+    }
+    else {
+        Spelling::Apart
+    }
 }
 
 /// Queue operation type pairs after checking interface and operation
@@ -1201,7 +1431,9 @@ fn signature_children(
 ///
 /// # Specification
 /// - ensures: returns equal exactly when every reached pair agrees in syntax
-///   after path evidence is erased; no reduction is performed.
+///   after path evidence is erased, a value-type pair `signatures` reads as one
+///   type of words ([`read_as_words`]) agreeing outright; no reduction is
+///   performed.
 /// - executable: none — the contract is the inductive graph comparison, not a
 ///   second traversal pretending to be an independent postcondition.
 ///
@@ -1210,8 +1442,10 @@ fn signature_children(
 ///   comparison rules without depending on allocation order.
 /// - witness: `syntax::tests::certificate_syntax_erases_only_evidence`
 /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
 fn equal_syntax(
     arena: &crate::CoreArena,
+    signatures: &BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>,
     root: StructuralGoal,
 ) -> CertificateEquality
 {
@@ -1815,6 +2049,11 @@ fn equal_syntax(
                 }
             },
             | VT(a, b) => {
+                if matches!(read_as_words(arena, signatures, (a, b)), Maybe::Present(_))
+                    || matches!(read_as_words(arena, signatures, (b, a)), Maybe::Present(_))
+                {
+                    continue;
+                }
                 let (Some(a), Some(b)) = (arena.value_type(a), arena.value_type(b))
                 else {
                     return CertificateEquality::Different;
@@ -2196,6 +2435,87 @@ mod tests
         assert_eq!(
             CertificateEquality::Equal,
             equal_certificate_syntax(&arena, one, two)
+        );
+    }
+
+    #[test]
+    fn a_type_of_words_reads_as_the_path_at_its_point()
+    {
+        use gandr_kernel_term::FreeCell;
+        use gandr_kernel_term::FreeCells;
+        use gandr_kernel_term::Presentation;
+        use gandr_kernel_term::RuleNode;
+
+        let mut arena = crate::CoreArena::new();
+        let kind = arena.value_type_universe(
+            Sort::Ground(gandr_kernel_term::GroundSort::Value),
+            Level::zero(),
+        );
+        let (sort, words) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
+        let carrier = arena.value_type_data(sort, alloc::vec![]);
+        let own = arena.value_type_data(words, alloc::vec![]);
+        let point = arena.value_constructor(carrier, ConstructorTag::from(0_usize), alloc::vec![]);
+        let base = || -> alloc::boxed::Box<[RuleNode]> {
+            [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+        };
+        let cells = FreeCells::new(sort, alloc::vec![FreeCell::new(base(), base())]);
+        let mut signatures = BTreeMap::new();
+        let _sort = signatures.insert(
+            sort,
+            alloc::sync::Arc::new(DataSignature::new(
+                alloc::vec![],
+                alloc::vec![alloc::vec![]],
+                kind,
+            )),
+        );
+        let _words = signatures.insert(
+            words,
+            alloc::sync::Arc::new(
+                DataSignature::new(
+                    alloc::vec![],
+                    alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                    kind,
+                )
+                .presented(Presentation::words(cells)),
+            ),
+        );
+        let at_point = arena.value_type_path(carrier, point, point);
+        let off = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let off_point = arena.value_type_path(carrier, point, off);
+        assert_eq!(
+            identified_words(&arena, &signatures, carrier, (point, point)),
+            Maybe::Present(words),
+            "the path at the point reads as its words"
+        );
+        assert_eq!(
+            identified_words(&arena, &signatures, carrier, (point, off)),
+            Maybe::Absent(unworded::Absent::Unlooped),
+            "an endpoint off the point reads as none"
+        );
+        // A word's own type, alone and as the carrier of a path between words.
+        let empty = arena.value_constructor(own, ConstructorTag::from(0_usize), alloc::vec![]);
+        let over_words = arena.value_type_path(own, empty, empty);
+        let over_path = arena.value_type_path(at_point, empty, empty);
+        for (left, right, what) in [
+            (own, at_point, "the words against the path at their point"),
+            (at_point, own, "in either order"),
+            (over_words, over_path, "under a path type"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, own, off_point),
+            CertificateEquality::Different,
+            "the words are not a path off their point"
         );
     }
 }

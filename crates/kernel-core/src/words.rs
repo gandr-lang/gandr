@@ -522,6 +522,55 @@ fn point(
     (!open).then_some(built)
 }
 
+/// The carrier and endpoints of the path a transport follows, read off its
+/// type `ty`: a parameterless type of words is the path at its cells' point,
+/// any other type is read as [`crate::element_identity::path_parts`] reads it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `(Data(S, []), pt, pt)` for `ty` a `Data(words, [])` whose
+///   presentation carries free cells over the sort `S` looping at the closed
+///   point `pt` ([`point`]), the path type `Presentations::words` reads as
+///   those words; the parts of a `Path` type otherwise.
+/// - provides: the reading the element and telescope transports give the path
+///   they follow, the checker's own.
+/// - fails: the value-shape mismatch naming `ty` for any other type.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a composite and an inverse transported along a word
+///   written inline admit at the circle's point and refuse at the wrong
+///   endpoints; reading the words as their own type refuses by shape.
+/// - witness: `native_formers::native_formers::a_word_written_as_a_transport_path_is_that_path`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(domain, left, right)|
+    matches!(arena.value_type(ty), Some(&ValueType::Path { domain: d, left: l, right: r }) if d == domain && l == left && r == right)
+        || (left == right && matches!(arena.value(left), Some(&Value::Constructor { .. })))))]
+pub fn followed(
+    arena: &mut TermArena,
+    presentations: &Presentations,
+    ty: ValueTypeId,
+) -> Result<(ValueTypeId, ValueId, ValueId), crate::error::KernelError>
+{
+    if let Some(&ValueType::Data {
+        declaration: words,
+        ref arguments,
+    }) = arena.value_type(ty)
+        && arguments.is_empty()
+        && let Some(sort) = presentations
+            .presented(words)
+            .and_then(crate::presented::PresentedType::cells)
+            .map(FreeCells::sort)
+        && let Some(at) = point(arena, presentations, words)
+    {
+        let carrier = arena.value_type_data(sort, Vec::new());
+        return Ok((carrier, at, at));
+    }
+    crate::element_identity::path_parts(arena, ty)
+}
+
 /// What a case over a looped sort carries for one of its loops.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Arm

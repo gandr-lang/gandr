@@ -2027,23 +2027,18 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         (left, right): (ValueId, ValueId),
     ) -> Result<Option<ConstantIndex>, CheckRefusal>
     {
-        let ValueTypeView::Data {
-            declaration: sort,
-            arguments,
-        } = value_type_view(self.arena, carrier)?
-        else {
-            return Ok(None);
+        // The view refuses a carrier that does not resolve; the reading itself
+        // is the one every reader of a path type shares.
+        let _view = value_type_view(self.arena, carrier)?;
+        let found = match gandr_core_term::identified_words(
+            self.arena,
+            &self.data_signatures,
+            carrier,
+            (left, right),
+        ) {
+            | Maybe::Present(words) => Some(words),
+            | Maybe::Absent(gandr_core_term::unworded::Absent::Unlooped) => None,
         };
-        if !arguments.is_empty() {
-            return Ok(None);
-        }
-        let found = self.data_signatures.iter().find_map(|(&words, signature)| {
-            let cells = signature.presentation().cells()?;
-            (cells.sort() == sort
-                && spells(self.arena, sort, left, cells.point()) == Spelling::Spelled
-                && spells(self.arena, sort, right, cells.point()) == Spelling::Spelled)
-                .then_some(words)
-        });
         if let Some(words) = found {
             let _logged = self.consult_data(words);
         }
@@ -2438,81 +2433,6 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         self.signatures.push((constant, declared));
-    }
-}
-
-/// Whether a value is the closed term a rule side spells.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Spelling
-{
-    /// The value is the term the side spells.
-    Spelled,
-    /// It is another term, or no term the arena can read.
-    Apart,
-}
-
-/// Whether `value` is the constructor term of `sort` that the closed rule side
-/// `side` spells.
-///
-/// # Specification
-/// - requires: nothing — unreadable ids spell nothing.
-/// - ensures: [`Spelling::Spelled`] exactly when reading `value` in pre-order
-///   meets one constructor of `sort` per node of `side`, each with the node's
-///   tag, and no node is left over on either side; a variable node spells
-///   nothing.
-/// - provides: the endpoint comparison of [`CheckingContext::words`], as the
-///   kernel's, bounded by the side's length whatever the value's depth.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Termination
-/// - reason: one `for` loop over `side`'s nodes, not recursion.
-/// - measure: the nodes of `side` not yet read.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`CheckingContext::words`].
-/// - witness: `native_formers::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
-#[spec(ensures: |ret| ret == Spelling::Apart || !side.is_empty())]
-fn spells(
-    arena: &CoreArena,
-    sort: ConstantIndex,
-    value: ValueId,
-    side: &[gandr_core_term::RuleNode],
-) -> Spelling
-{
-    let mut pending = Vec::with_capacity(side.len());
-    pending.push(value);
-    for &node in side {
-        let (Some(at), gandr_core_term::RuleNode::Constructor(tag)) = (pending.pop(), node)
-        else {
-            return Spelling::Apart;
-        };
-        let Some(&Value::Constructor {
-            datatype,
-            tag: written,
-            ref fields,
-        }) = arena.value(at)
-        else {
-            return Spelling::Apart;
-        };
-        if written != tag
-            || !matches!(
-                value_type_view(arena, datatype),
-                Ok(ValueTypeView::Data { declaration, .. }) if declaration == sort
-            )
-        {
-            return Spelling::Apart;
-        }
-        pending.extend(fields.iter().rev());
-    }
-    if pending.is_empty() {
-        Spelling::Spelled
-    }
-    else {
-        Spelling::Apart
     }
 }
 

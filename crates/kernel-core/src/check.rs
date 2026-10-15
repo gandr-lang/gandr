@@ -3704,7 +3704,8 @@ where
                 // Transport's input checks at the motive instantiated at the
                 // source endpoint, and it returns at the motive instantiated
                 // at the target: instantiation is the rewrite machine's
-                // substitution, so the law holds of every motive.
+                // substitution, so the law holds of every motive. A word
+                // written as the path is followed as the path it is.
                 | Frame::ElementTransport(transport) => {
                     let path_type = produced.value_type()?;
                     let Some(&Computation::PathTransport { motive, value, .. }) =
@@ -3713,7 +3714,7 @@ where
                         return Err(KernelError::ArenaFault);
                     };
                     let (domain, left, right) =
-                        crate::element_identity::path_parts(arena, path_type)?;
+                        crate::words::followed(arena, judgement.presentations, path_type)?;
                     let mut scoped = context.clone();
                     scoped.push(domain);
                     let _level = type_level(
@@ -3768,7 +3769,7 @@ where
                         },
                     )?;
                     let (domain, left, right) =
-                        crate::element_identity::path_parts(arena, path_type)?;
+                        crate::words::followed(arena, judgement.presentations, path_type)?;
                     if let Err(mismatch) = former::assignable(arena, carrier, domain) {
                         let reading = read_returned(
                             arena,
