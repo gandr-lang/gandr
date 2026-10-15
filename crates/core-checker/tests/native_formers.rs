@@ -1478,6 +1478,104 @@ mod native_formers
         }
     }
 
+    /// A law states its path bare only for a rule over no variable, and
+    /// behind one parameter per variable otherwise, an arrow as well as a
+    /// Π: over `Twist(Base) ~> Base` and `Loop(Wrap(x)) ~> Base`, a fold
+    /// returning `c` at `Base` and `d` elsewhere rests on `d = c` stated bare
+    /// for the first rule and behind `Integer →`, the fold's value at `x`,
+    /// for the second; a bare statement for the second is refused by that
+    /// rule.
+    #[test]
+    fn a_law_is_stated_bare_only_over_no_variable()
+    {
+        use gandr_kernel_term::RuleNode;
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let x = RuleNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32));
+        let (base, twist) = (ConstantIndex::from(1_usize), ConstantIndex::from(2_usize));
+        let (closed, open) = (ConstantIndex::from(3_usize), ConstantIndex::from(4_usize));
+        let second = gandr_kernel_term::RuleIndex::from(1_usize);
+        for behind_an_arrow in [true, false] {
+            let mut arena = CoreArena::new();
+            let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+            let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+            let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+            let returner = arena.comp_type_returner(integer);
+            let rules = vec![
+                gandr_kernel_term::PresentedRule::new([c(1), c(0)].into(), [c(0)].into()),
+                gandr_kernel_term::PresentedRule::new([c(2), c(3), x].into(), [c(0)].into()),
+            ];
+            let presented = Declaration::data(
+                ConstantIndex::from(0_usize),
+                DataSignature::new(vec![], vec![vec![], vec![own], vec![own], vec![own]], kind)
+                    .presented(gandr_kernel_term::Presentation::new(rules))
+                    .into(),
+                OriginToken::from(0_usize),
+            );
+            let [at_base, elsewhere] = [base, twist].map(|constant| arena.value_constant(constant));
+            let bare = arena.value_type_path(integer, elsewhere, at_base);
+            let stated = if behind_an_arrow {
+                let returns = arena.comp_type_returner(bare);
+                let arrow = arena.comp_type_arrow(integer, returns);
+                arena.value_type_thunk(arrow)
+            }
+            else {
+                bare
+            };
+            // `λy. case y { Base ⇒ return c; Twist(_) | Loop(_) | Wrap(_) ⇒ return d }`
+            let base_arm = arena.computation_return(at_base);
+            let [twist_arm, loop_arm, wrap_arm] = [(); 3].map(|()| {
+                let returned = arena.computation_return(elsewhere);
+                arena.computation_lambda(returned)
+            });
+            let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let case = arena.computation_data_case(scrutinee, returner, vec![
+                base_arm, twist_arm, loop_arm, wrap_arm,
+            ]);
+            let lambda = arena.computation_lambda(case);
+            let fixpoint = arena.computation_fixpoint(
+                lambda,
+                gandr_kernel_term::FixpointEvidence::StructuralDescent,
+            );
+            let body = arena.value_thunk(fixpoint);
+            let arrow = arena.comp_type_arrow(own, returner);
+            let declared = arena.value_type_thunk(arrow);
+            let hole = |constant: ConstantIndex, stated| {
+                Declaration::new(
+                    constant,
+                    Maybe::Present(stated),
+                    Maybe::Absent(gandr_core_checker::body::Absent::Hole),
+                    OriginToken::from(usize::from(constant)),
+                )
+            };
+            let declarations = vec![
+                presented,
+                hole(base, integer),
+                hole(twist, integer),
+                hole(closed, bare),
+                hole(open, stated),
+                definition(ConstantIndex::from(5_usize), declared, body).lawful(vec![closed, open]),
+            ];
+            let (report, _) = run(&mut arena, &declarations);
+            let verdict = report.judged()[5].verdict();
+            if behind_an_arrow {
+                assert!(
+                    matches!(verdict, Verdict::Checked { .. }),
+                    "a bare law for the closed rule and an arrow-stated one for `Loop(x)` \
+                     relate the fold: {verdict:?}"
+                );
+            }
+            else {
+                assert!(
+                    matches!(
+                        verdict,
+                        Verdict::Refused(CheckRefusal::RuleNotRespected { rule, .. }) if rule == second
+                    ),
+                    "a law over a variable stated bare relates nothing: {verdict:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_fold_into_the_paths_of_a_set_respects_its_rules()
     {
