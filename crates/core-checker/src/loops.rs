@@ -54,10 +54,28 @@
 //! compares a definition by its name and so refuses every arm that calls one.
 //! **Reversal.** An obligation whose unfolding diverges where a recorded
 //! dialogue would close it takes the dialogue.
+//!
+//! **Choice.** A case whose answer at the loop's point is itself a case over
+//! another variable of a looped sort, `case a { Base => case b { Base => … }
+//! }`, owes each looped scrutinee its own obligation with the others held at
+//! their constructors ([`scrutinees`]): the one over `a` is decided once per
+//! constructor of `b`'s sort, `b` replaced by it, and the inner case owes its
+//! own when it is checked. The square between the two loops, the 2-cell a
+//! map out of the torus would owe, is not owed where the fibre is presented as
+//! a set, the paths of a parameterless looped sort with no field
+//! ([`presented_set`]): there every square commutes. Off a set the case is
+//! refused [`CheckRefusal::LoopNotRespected`] with
+//! [`crate::LoopRespect::NotPresentedSet`], naming the reason, never passed
+//! silently. **Alternatives.** Owing the square everywhere, which needs the
+//! 2-dimensional path algebra the tree does not have; refusing every nested
+//! scrutinee, which refused `rotInv1`–`rotInv4` (#464). **Reversal.** A fibre
+//! shown a set by some other means than its presentation, or a square the
+//! tree computes, lifts the refusal off a set.
 
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::Binders;
 use gandr_core_term::CompType;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
@@ -66,8 +84,14 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_core_term::hole::TermId;
+use gandr_core_term::shift_value_type;
+use gandr_core_term::substitute_environment;
 use gandr_kernel_term::CellIndex;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::FreeCells;
 use gandr_kernel_term::RuleNode;
@@ -76,6 +100,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::CheckRefusal;
 use crate::CheckingContext;
+use crate::LoopRespect;
 use crate::code::converted;
 
 /// One loop a case over a sort owes.
@@ -221,6 +246,7 @@ pub fn respected(
             cell: first.cell,
             left: at,
             right: at,
+            reason: LoopRespect::Apart,
         });
     };
     let arities: Vec<FieldCount> = signature
@@ -237,28 +263,274 @@ pub fn respected(
         let carried = gandr_core_term::identity::answer_at(arena, point, motive, &branches);
         let transported = arena.computation_path_transport(family, word, carried);
         let stayed = arena.computation_path_transport(family, empty, carried);
-        match context
-            .definitions()
-            .convert_unfolding(context.arena(), (transported, stayed))
-        {
-            Maybe::Present(()) => {},
-            Maybe::Absent(converted::Absent::Undecided) => {
-                return Err(CheckRefusal::LoopUndecided {
-                    at,
-                    cell: owed.cell,
-                });
-            },
-            Maybe::Absent(converted::Absent::Apart) => {
-                return Err(CheckRefusal::LoopNotRespected {
-                    at,
-                    cell: owed.cell,
-                    left: transported,
-                    right: stayed,
-                });
-            },
+        let held = scrutinees(context, (point, &branches))?;
+        if held.is_empty() {
+            owe(context, (at, owed.cell), (transported, stayed))?;
+            continue;
+        }
+        // The answer is a case over other looped scrutinees: the loop is
+        // owed with each held at each of its points, which is all a set's
+        // paths owe; off a set the square between the loops is owed as well,
+        // and no rule reads it.
+        if presented_set(context, family)?.is_none() {
+            return Err(CheckRefusal::LoopNotRespected {
+                at,
+                cell: owed.cell,
+                left: transported,
+                right: stayed,
+                reason: LoopRespect::NotPresentedSet,
+            });
+        }
+        let depth = usize::from(context.binders().depth(Zone::Intuitionistic));
+        let arena = context.arena_mut();
+        let mut environment = Vec::with_capacity(depth);
+        for index in 0 .. depth {
+            let index = u32::try_from(index).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+            environment
+                .push(arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
+        }
+        // Each choice of a point per held scrutinee, as an odometer: the
+        // first scrutinee's choice turns fastest.
+        let mut choice = alloc::vec![0_usize; held.len()];
+        loop {
+            for (&chosen, variable) in choice.iter().zip(&held) {
+                let slot = environment
+                    .get_mut(variable.slot)
+                    .ok_or(CheckRefusal::MachineInvariant)?;
+                *slot = *variable
+                    .points
+                    .get(chosen)
+                    .ok_or(CheckRefusal::MachineInvariant)?;
+            }
+            let arena = context.arena_mut();
+            let (TermId::Computation(left), TermId::Computation(right)) = (
+                substitute_environment(arena, TermId::Computation(transported), &environment),
+                substitute_environment(arena, TermId::Computation(stayed), &environment),
+            )
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            owe(context, (at, owed.cell), (left, right))?;
+            let mut turned = false;
+            for (chosen, variable) in choice.iter_mut().zip(&held) {
+                *chosen = chosen.saturating_add(1);
+                if *chosen < variable.points.len() {
+                    turned = true;
+                    break;
+                }
+                *chosen = 0;
+            }
+            if !turned {
+                break;
+            }
         }
     }
     Ok(())
+}
+
+/// Decide one instance of a loop's obligation: the answer carried along the
+/// loop, `left`, against the answer carried along the empty word, `right`.
+///
+/// # Specification
+/// - ensures: `Ok(())` exactly when the two convert under
+///   [`crate::code::CodeDefinitions::convert_unfolding`].
+/// - fails: [`CheckRefusal::LoopUndecided`] at `at` naming `cell` when the
+///   conversion runs past its budget; [`CheckRefusal::LoopNotRespected`] at
+///   `at` naming `cell` and the two sides, apart, otherwise.
+/// - panics: none.
+/// - executable: none — the conversion is the predicate, and restating it would
+///   run it twice.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`respected`].
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+fn owe(
+    context: &CheckingContext<'_>,
+    (at, cell): (ComputationId, CellIndex),
+    (left, right): (ComputationId, ComputationId),
+) -> Result<(), CheckRefusal>
+{
+    match context
+        .definitions()
+        .convert_unfolding(context.arena(), (left, right))
+    {
+        Maybe::Present(()) => Ok(()),
+        Maybe::Absent(converted::Absent::Undecided) => {
+            Err(CheckRefusal::LoopUndecided { at, cell })
+        },
+        Maybe::Absent(converted::Absent::Apart) => Err(CheckRefusal::LoopNotRespected {
+            at,
+            cell,
+            left,
+            right,
+            reason: LoopRespect::Apart,
+        }),
+    }
+}
+
+/// A looped scrutinee a case's answer at its point is itself a case over: the
+/// variable's slot in the case's environment, and every point of its sort.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Held
+{
+    /// The variable's slot in the environment, innermost first.
+    slot: usize,
+    /// Each constructor of the variable's sort, in tag order.
+    points: Vec<ValueId>,
+}
+
+/// The looped scrutinees a case's answer at `point` is itself a case over,
+/// each with every point of its sort.
+///
+/// # Specification
+/// - requires: `branches` are a case's branches, `point` a closed constructor
+///   of its sort.
+/// - ensures: the branch `point` selects, and in turn the branch each nested
+///   case selects at its sort's first looped point, read while each is a case
+///   over a variable of the case's context whose type is a parameterless sort
+///   with loops and only constructors of no fields; one entry per such
+///   variable, its index and its sort's constructors in tag order. Empty for a
+///   point with fields or a branch that is no such case.
+/// - fails: as [`crate::former::signature`] and [`point`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `loop` descends one nested case per turn into a strict
+///   subterm, never recursing.
+/// - measure: the answer's nodes left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `rotInv1`'s answer at `Base` is a case over `b`, held at
+///   `Base`; without it the obligation over `a` reads `b` free and sticks.
+/// - witness: `native_formers::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|held| !held.points.is_empty())))]
+fn scrutinees(
+    context: &mut CheckingContext<'_>,
+    (at, branches): (ValueId, &[ComputationId]),
+) -> Result<Vec<Held>, CheckRefusal>
+{
+    let mut held: Vec<Held> = Vec::new();
+    let Some(&Value::Constructor {
+        tag, ref fields, ..
+    }) = context.arena().value(at)
+    else {
+        return Ok(held);
+    };
+    let (Some(&selected), true) = (branches.get(usize::from(tag)), fields.is_empty())
+    else {
+        return Ok(held);
+    };
+    let mut body = selected;
+    loop {
+        let Some(&Computation::DataCase {
+            scrutinee,
+            ref branches,
+            ..
+        }) = context.arena().computation(body)
+        else {
+            return Ok(held);
+        };
+        let branches = branches.clone();
+        let Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        }) = context.arena().value(scrutinee)
+        else {
+            return Ok(held);
+        };
+        let Ok(declared) = context.binders().declared(Zone::Intuitionistic, index)
+        else {
+            return Ok(held);
+        };
+        let sort = shift_value_type(context.arena_mut(), declared, Binders::past(index));
+        let Some(first) = loops(context, sort).first().copied()
+        else {
+            return Ok(held);
+        };
+        let signature = crate::former::signature(context, sort)?;
+        if signature
+            .constructors()
+            .iter()
+            .any(|fields| !fields.is_empty())
+        {
+            return Ok(held);
+        }
+        let arities = alloc::vec![FieldCount::from(0_usize); signature.constructors().len()];
+        let arena = context.arena_mut();
+        let points = (0 .. arities.len())
+            .map(|tag| arena.value_constructor(sort, ConstructorTag::from(tag), Vec::new()))
+            .collect();
+        let slot = usize::try_from(u32::from(index))
+            .map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+        if held.iter().any(|seen| seen.slot == slot) {
+            return Ok(held);
+        }
+        held.push(Held { slot, points });
+        let at = point(context, (sort, &arities), first.words)?;
+        let Some(&Value::Constructor { tag, .. }) = context.arena().value(at)
+        else {
+            return Ok(held);
+        };
+        let Some(&next) = branches.get(usize::from(tag))
+        else {
+            return Ok(held);
+        };
+        body = next;
+    }
+}
+
+/// The sort whose paths a case's fibre is, when that sort presents them as a
+/// set: a parameterless sort with loops whose constructors take no fields,
+/// whose paths are its words.
+///
+/// # Specification
+/// - requires: `family` is the motive's returner type under the scrutinee's
+///   binder.
+/// - ensures: `Some(D)` exactly when `family` is `Path(D, l, r)` for such a
+///   `D`; `None` otherwise.
+/// - fails: as [`crate::former::signature`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `rotInv1`'s fibre, a path over the circle, is a set; a
+///   record holding a point of the circle is not, and its nested case is
+///   refused naming the square.
+/// - witness: `native_formers::native_formers::a_nested_loop_obligation_owes_its_square_off_a_set_464`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|sort| matches!(context.arena().value_type(family), Some(&ValueType::Path { carrier, .. }) if carrier == sort))))]
+fn presented_set(
+    context: &mut CheckingContext<'_>,
+    family: ValueTypeId,
+) -> Result<Option<ValueTypeId>, CheckRefusal>
+{
+    let Some(&ValueType::Path { carrier, .. }) = context.arena().value_type(family)
+    else {
+        return Ok(None);
+    };
+    let Some(&ValueType::Data { ref arguments, .. }) = context.arena().value_type(carrier)
+    else {
+        return Ok(None);
+    };
+    if !arguments.is_empty() || loops(context, carrier).is_empty() {
+        return Ok(None);
+    }
+    let signature = crate::former::signature(context, carrier)?;
+    Ok(signature
+        .constructors()
+        .iter()
+        .all(Vec::is_empty)
+        .then_some(carrier))
 }
 
 /// The type the loop arm for `owed` of the case `at` over `datatype` checks
@@ -313,6 +585,7 @@ pub fn arm_type(
             cell: owed.cell,
             left: at,
             right: at,
+            reason: LoopRespect::Apart,
         });
     };
     let arities: Vec<FieldCount> = signature

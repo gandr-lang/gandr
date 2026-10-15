@@ -1615,6 +1615,209 @@ mod native_formers
         );
     }
 
+    /// Stage `thunk (λa. λb. case a { Base ⇒ return b })` at `(a : S) → (b :
+    /// S) → F S`, a non-dependent case with no loop arm, and admit it at its
+    /// position.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pick_other(environment: &mut Environment) -> Result<ConstantIndex, KernelError>
+    {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let kept = arena.comp_type_returner(carrier);
+        let b = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let branches = vec![arena.computation_return(b)];
+        let a = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let case = arena.computation_data_case(a, kept, branches);
+        let inner = arena.computation_lambda(case);
+        let outer = arena.computation_lambda(inner);
+        let codomain = arena.comp_type_pi(carrier, kept);
+        let pi = arena.comp_type_pi(carrier, codomain);
+        let declared = arena.value_type_thunk(pi);
+        let body = arena.value_thunk(outer);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment
+            .add_decl(staged)
+            .map(gandr_kernel_core::CheckedId::position)
+    }
+
+    /// Stage `thunk (λx. case x { Base ⇒ return ε })` at `(x : S) → F Path(S,
+    /// ⟨f x x⟩, right)`, `right` the binder or the point, and admit it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn diagonal(
+        environment: &mut Environment,
+        function: ConstantIndex,
+        right: Built,
+    ) -> Result<ConstantIndex, KernelError>
+    {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let x = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let named = arena.value_constant(function);
+        let forced = arena.computation_force(named);
+        let applied = arena.computation_application(forced, x);
+        let applied = arena.computation_application(applied, x);
+        let image = arena.value_returned(applied);
+        let right = match right {
+            Built::Point => build(arena, Built::Point),
+            Built::Empty | Built::Named | Built::Inverse | Built::Stays => x,
+        };
+        let fibre = arena.value_type_path(carrier, image, right);
+        let motive = arena.comp_type_returner(fibre);
+        let empty = build(arena, Built::Empty);
+        let branches = vec![arena.computation_return(empty)];
+        let case = arena.computation_data_case(x, motive, branches);
+        let lambda = arena.computation_lambda(case);
+        let pi = arena.comp_type_pi(carrier, motive);
+        let declared = arena.value_type_thunk(pi);
+        let body = arena.value_thunk(lambda);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment
+            .add_decl(staged)
+            .map(gandr_kernel_core::CheckedId::position)
+    }
+
+    #[test]
+    fn a_loop_obligation_reads_both_arguments_of_a_diagonal_464()
+    {
+        let mut environment = one_loop();
+        let pick =
+            pick_other(&mut environment).expect("a case answering its other argument admits");
+        assert!(
+            diagonal(&mut environment, pick, Built::Empty).is_ok(),
+            "along `f(x, x)` the loop runs through the case's argument, whose unwritten arm \
+             gives reflexivity, then through the other, which the branch at the point returns: \
+             the loop, which `x` meets"
+        );
+        assert_eq!(
+            diagonal(&mut environment, pick, Built::Point),
+            Err(KernelError::LoopNotRespected(CellIndex::from(0_usize))),
+            "the diagonal's image of the loop is the loop, so a fixed right endpoint does not \
+             meet it"
+        );
+    }
+
+    /// The fibre a nested witness answers in.
+    #[derive(Clone, Copy, Debug)]
+    enum Nested
+    {
+        /// `Path(S, a, a)`.
+        Looped,
+        /// `Path(S, Base, a)`.
+        Joined,
+        /// `U (Path(S, a, a) → F Path(S, a, a))`.
+        Endomaps,
+    }
+
+    /// `nested`'s returner with `a` the variable `index`, or the point for
+    /// `None`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn nested_motive(
+        arena: &mut TermArena,
+        nested: Nested,
+        index: Option<DeBruijnIndex>,
+    ) -> CompTypeId
+    {
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let point = build(arena, Built::Point);
+        let at = |arena: &mut TermArena, past: u32| {
+            index.map_or(point, |index| {
+                arena.value_variable(DeBruijnIndex::from(u32::from(index).saturating_add(past)))
+            })
+        };
+        let a = at(arena, 0);
+        let fibre = match nested {
+            Nested::Looped => arena.value_type_path(carrier, a, a),
+            Nested::Joined => arena.value_type_path(carrier, point, a),
+            Nested::Endomaps => {
+                let domain = arena.value_type_path(carrier, a, a);
+                let lifted = at(arena, 1);
+                let codomain = arena.value_type_path(carrier, lifted, lifted);
+                let returns = arena.comp_type_returner(codomain);
+                let arrow = arena.comp_type_pi(domain, returns);
+                arena.value_type_thunk(arrow)
+            },
+        };
+        arena.comp_type_returner(fibre)
+    }
+
+    /// Stage `thunk (λa. λb. case a { Base ⇒ case b { Base ⇒ return answer }
+    /// })` at `(a b : S) → nested`, and admit it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn nested_over(
+        environment: &mut Environment,
+        nested: Nested,
+    ) -> Result<ConstantIndex, KernelError>
+    {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let answer = match nested {
+            Nested::Looped | Nested::Joined => build(arena, Built::Empty),
+            Nested::Endomaps => {
+                let p = arena.value_variable(DeBruijnIndex::from(0_u32));
+                let returned = arena.computation_return(p);
+                let identity = arena.computation_lambda(returned);
+                arena.value_thunk(identity)
+            },
+        };
+        let answer = arena.computation_return(answer);
+        let inner_motive = nested_motive(arena, nested, None);
+        let b = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let inner = arena.computation_data_case(b, inner_motive, vec![answer]);
+        let outer_motive = nested_motive(arena, nested, Some(DeBruijnIndex::from(0_u32)));
+        let a = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let outer = arena.computation_data_case(a, outer_motive, vec![inner]);
+        let body = arena.computation_lambda(outer);
+        let body = arena.computation_lambda(body);
+        let codomain = nested_motive(arena, nested, Some(DeBruijnIndex::from(1_u32)));
+        let pi = arena.comp_type_pi(carrier, codomain);
+        let pi = arena.comp_type_pi(carrier, pi);
+        let declared = arena.value_type_thunk(pi);
+        let body = arena.value_thunk(body);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment
+            .add_decl(staged)
+            .map(gandr_kernel_core::CheckedId::position)
+    }
+
+    #[test]
+    fn a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464()
+    {
+        let mut environment = one_loop();
+        assert!(
+            nested_over(&mut environment, Nested::Looped).is_ok(),
+            "held at `b = Base`, the answer over `a` is reflexivity, which the loop fixes"
+        );
+        assert_eq!(
+            nested_over(&mut environment, Nested::Joined),
+            Err(KernelError::LoopNotRespected(CellIndex::from(0_usize))),
+            "holding `b` leaves the obligation over `a` owed: the circle is still not \
+             contractible"
+        );
+    }
+
+    #[test]
+    fn a_nested_loop_obligation_owes_its_square_off_a_set_464()
+    {
+        let mut environment = one_loop();
+        assert_eq!(
+            nested_over(&mut environment, Nested::Endomaps),
+            Err(KernelError::LoopNotRespected(CellIndex::from(0_usize))),
+            "off a set, holding `b` at its point drops the square between the loops, which is \
+             owed"
+        );
+    }
+
     #[test]
     fn a_composite_along_a_returned_path_cancels_to_the_empty_word()
     {

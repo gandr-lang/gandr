@@ -36,6 +36,16 @@
 //! **Reversal.** An obligation whose unfolding diverges where a recorded
 //! dialogue would close it takes the dialogue.
 //!
+//! **Choice.** A case answering at the loop's point by a case over another
+//! variable of a looped sort owes the loop with that variable held at each of
+//! its sort's constructors, the square between the two loops not owed where
+//! the fibre is the paths of a parameterless looped sort with no field, a
+//! set; off a set it is refused. The checker decides the same and names the
+//! reason; the kernel's refusal keeps its shape. **Alternatives.** Owing the
+//! square everywhere, which needs 2-dimensional path algebra; refusing every
+//! nested case. **Reversal.** A fibre shown a set otherwise, or a square the
+//! kernel computes.
+//!
 //! The loops a case owes are the cells of every type of words looping in its
 //! scrutinee's sort, by the words' admission position and then in written
 //! order; a case's loop arms follow its constructors' branches in the same
@@ -51,6 +61,8 @@ use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorCount;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::FreeCells;
@@ -61,6 +73,7 @@ use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 use gandr_kernel_term::build_side;
+use quenchant_shape::shape::Maybe;
 
 use crate::element_identity::BinderUse;
 use crate::encoding::ContentTable;
@@ -71,7 +84,9 @@ use crate::replay::ReplayBudget;
 use crate::replay::ReplayDecline;
 use crate::replay::ReplaySides;
 use crate::replay::Unfoldings;
+use crate::rewrite::BinderDepth;
 use crate::rewrite::substitute_comp_type;
+use crate::rewrite::substitute_computation_at;
 use crate::rewrite::substitute_value_type;
 use crate::support::LooseDepths;
 
@@ -341,33 +356,46 @@ pub(super) fn arm_type(
 /// Decide that the case `case` over `datatype` respects every loop in its
 /// sort: carried along the loop, its answer at the loop's point is itself.
 ///
+/// A case nested at the loop's point over another variable of a looped sort,
+/// `case a { Base => case b { Base => … } }`, answers at the point only as
+/// that variable allows: the obligation over `a` is owed with `b` held at
+/// each of its constructors, each instance an obligation of its own, and
+/// the square between the two loops is not owed where the fibre is a set.
+///
 /// # Specification
 /// - requires: the case's branches have checked; it carries one branch per
-///   constructor and no loop arm.
+///   constructor and no loop arm; `context` is the case's own.
 /// - ensures: `Ok(())` exactly when the motive ignores its binder, or, for
 ///   every loop of [`loops`] in order, [`sides`] convert under
-///   [`crate::replay::convert_unfolding`] within [`ReplayBudget::DEFAULT`];
-///   `arena` holds what it held on entry either way.
+///   [`crate::replay::convert_unfolding`] within [`ReplayBudget::DEFAULT`],
+///   with each of [`scrutinees`]' variables held at each combination of its
+///   sort's constructors; `arena` holds what it held on entry either way.
 /// - fails: [`KernelError::LoopUndecided`] naming the first loop whose
 ///   conversion ran past its budget; [`KernelError::LoopNotRespected`] naming
-///   the first loop whose sides do not convert otherwise, or the first loop for
-///   a motive that reads its binder and is no returner;
-///   [`KernelError::ArenaFault`] as [`sides`].
+///   the first loop whose sides do not convert otherwise, the first loop for a
+///   motive that reads its binder and is no returner, or the first loop of a
+///   case with nested scrutinees whose fibre [`presented_set`] does not read as
+///   a set; [`KernelError::ArenaFault`] as [`sides`].
 /// - panics: none.
 ///
 /// # Errors
 /// As `- fails:`.
 ///
 /// # Termination
-/// - reason: the `for` loop over the sort's finite loops, not recursion; each
+/// - reason: the `for` loop over the sort's finite loops and the `loop` over
+///   the finitely many combinations of constructors, not recursion; each
 ///   conversion runs under its budget.
-/// - measure: the loops left.
+/// - measure: the loops left, then the combinations left.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — over the circle, `Base => here(Base)` at `Path(Circle,
 ///   Base, x)` is refused at its loop while the same arm at `Path(Circle, x,
-///   x)` is admitted, as the checker refuses and admits them.
+///   x)` is admitted, as the checker refuses and admits them; `rotInv1`'s
+///   obligation over `a` holds at `b = Base`, and the same nesting over a fibre
+///   of paths of paths is refused.
 /// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
+/// - witness: `native_formers::native_formers::a_nested_loop_obligation_owes_its_square_off_a_set_464`
 #[spec(
     captures: before = arena.watermark(),
     ensures: |ret| arena.watermark() == before
@@ -376,6 +404,7 @@ pub(super) fn arm_type(
 pub(super) fn respected(
     arena: &mut TermArena,
     unfoldings: &Unfoldings,
+    context: &[ValueTypeId],
     (case, datatype): (ComputationId, ValueTypeId),
 ) -> Result<(), KernelError>
 {
@@ -398,28 +427,248 @@ pub(super) fn respected(
         else {
             return Err(KernelError::LoopNotRespected(first.cell));
         };
+        let mut held = scrutinees(arena, presentations, context, (case, datatype))?;
+        if !held.is_empty() && presented_set(arena, presentations, family).is_none() {
+            return Err(KernelError::LoopNotRespected(first.cell));
+        }
+        // The outermost variable first: substituting one lowers every index
+        // past it, never one inside it.
+        held.sort_unstable_by_key(|variable| core::cmp::Reverse(variable.index));
+        let mut table = ContentTable::default();
         for owed_loop in owed {
             let Sides {
                 transported,
                 stayed,
                 ..
             } = sides(arena, presentations, (case, datatype), (family, owed_loop))?;
-            let sides = ReplaySides::Computations(transported, stayed);
-            match crate::replay::convert_unfolding(arena, unfoldings, sides, ReplayBudget::DEFAULT)
-            {
-                KernelVerdict::Convertible => {},
-                KernelVerdict::Declined(ReplayDecline::Budget) => {
-                    return Err(KernelError::LoopUndecided(owed_loop.cell));
-                },
-                KernelVerdict::NotConvertible | KernelVerdict::Declined(_) => {
-                    return Err(KernelError::LoopNotRespected(owed_loop.cell));
-                },
+            // An odometer over the held variables' constructors: one
+            // obligation per combination.
+            let mut tags = alloc::vec![0_usize; held.len()];
+            loop {
+                let (mut left, mut right) = (transported, stayed);
+                for (variable, &tag) in held.iter().zip(&tags) {
+                    let instance = arena.value_constructor(
+                        variable.datatype,
+                        ConstructorTag::from(tag),
+                        Vec::new(),
+                    );
+                    let depth = BinderDepth::from(u32::from(variable.index));
+                    left = substitute_computation_at(
+                        arena,
+                        &mut table,
+                        &mut NullMemo,
+                        (left, instance),
+                        depth,
+                    );
+                    right = substitute_computation_at(
+                        arena,
+                        &mut table,
+                        &mut NullMemo,
+                        (right, instance),
+                        depth,
+                    );
+                }
+                let sides = ReplaySides::Computations(left, right);
+                match crate::replay::convert_unfolding(
+                    arena,
+                    unfoldings,
+                    sides,
+                    ReplayBudget::DEFAULT,
+                ) {
+                    KernelVerdict::Convertible => {},
+                    KernelVerdict::Declined(ReplayDecline::Budget) => {
+                        return Err(KernelError::LoopUndecided(owed_loop.cell));
+                    },
+                    KernelVerdict::NotConvertible | KernelVerdict::Declined(_) => {
+                        return Err(KernelError::LoopNotRespected(owed_loop.cell));
+                    },
+                }
+                let mut wrapped = true;
+                for (variable, tag) in held.iter().zip(&mut tags) {
+                    *tag = tag.saturating_add(1);
+                    if *tag < usize::from(variable.constructors) {
+                        wrapped = false;
+                        break;
+                    }
+                    *tag = 0;
+                }
+                if wrapped {
+                    break;
+                }
             }
         }
         Ok(())
     })();
     arena.truncate_to(watermark);
     decided
+}
+
+/// A variable of a case's context that a case nested at the loop's point is
+/// over: its index, its sort, and how many constructors the sort has, every
+/// one without fields.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Held
+{
+    /// The variable's index in the case's context.
+    index: DeBruijnIndex,
+    /// The variable's sort.
+    datatype: ValueTypeId,
+    /// The sort's constructors, all without fields.
+    constructors: ConstructorCount,
+}
+
+/// The variables a case's answer at its loop's point is a case over, each
+/// read at the point of its own sort's first loop: `b` in `case a { Base =>
+/// case b { Base => … } }`, deepest last.
+///
+/// # Specification
+/// - requires: `context` is the case's own.
+/// - ensures: each [`Held`] names a variable other than the case's own
+///   scrutinee and the others found, whose sort loops and has only constructors
+///   without fields, a case over which is the branch the point of the previous
+///   sort selects, starting at `case`'s.
+/// - fails: as [`point`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `loop` descends one nested case per turn, never recursing.
+/// - measure: the case's nodes left, each a strict subterm.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `rotInv1`'s case over `a` nests one over `b` at `Base`,
+///   which holds; a case over `a` alone holds none.
+/// - witness: `native_formers::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|held| usize::from(held.constructors) > 0)))]
+fn scrutinees(
+    arena: &mut TermArena,
+    presentations: &Presentations,
+    context: &[ValueTypeId],
+    (case, datatype): (ComputationId, ValueTypeId),
+) -> Result<Vec<Held>, KernelError>
+{
+    let mut found: Vec<Held> = Vec::new();
+    let own = match arena.computation(case) {
+        Some(&Computation::DataCase { scrutinee, .. }) => match arena.value(scrutinee) {
+            Some(&Value::Variable(index)) => Some(index),
+            Some(_) | None => None,
+        },
+        Some(_) | None => None,
+    };
+    let (mut focus, mut sort) = (case, datatype);
+    while let Some(&first) = loops(arena, presentations, sort).first() {
+        let at = point(arena, presentations, (sort, first))?;
+        let Some(&Value::Constructor {
+            tag, ref fields, ..
+        }) = arena.value(at)
+        else {
+            break;
+        };
+        if !fields.is_empty() {
+            break;
+        }
+        let Some(&Computation::DataCase { ref branches, .. }) = arena.computation(focus)
+        else {
+            break;
+        };
+        let Some(&branch) = branches.get(usize::from(tag))
+        else {
+            break;
+        };
+        let Some(&Computation::DataCase { scrutinee, .. }) = arena.computation(branch)
+        else {
+            break;
+        };
+        let Some(&Value::Variable(index)) = arena.value(scrutinee)
+        else {
+            break;
+        };
+        if own == Some(index) || found.iter().any(|held| held.index == index) {
+            break;
+        }
+        // A parameterless sort is closed: the slot's type is the variable's,
+        // read from anywhere.
+        let Maybe::Present(nested) = super::slot(context, index)
+        else {
+            break;
+        };
+        let Some(constructors) = nullary_constructors(arena, presentations, nested)
+        else {
+            break;
+        };
+        found.push(Held {
+            index,
+            datatype: nested,
+            constructors,
+        });
+        (focus, sort) = (branch, nested);
+    }
+    Ok(found)
+}
+
+/// How many constructors the parameterless looped sort `datatype` has, when
+/// none of them carries a field.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some(n)` exactly when [`loops`] owes a loop over `datatype` and
+///   its sort's `n > 0` constructors all have no fields; `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle has one constructor without fields; a sort
+///   whose constructor carries one is no presented set of this shape.
+/// - witness: `native_formers::native_formers::a_nested_loop_obligation_owes_its_square_off_a_set_464`
+#[spec(ensures: |ret| ret.is_none_or(|count| usize::from(count) > 0))]
+fn nullary_constructors(
+    arena: &TermArena,
+    presentations: &Presentations,
+    datatype: ValueTypeId,
+) -> Option<ConstructorCount>
+{
+    let first = *loops(arena, presentations, datatype).first()?;
+    let arities = presentations.sort_arities(first.words)?;
+    if arities.is_empty()
+        || arities
+            .iter()
+            .any(|&arity| arity != FieldCount::from(0_usize))
+    {
+        return None;
+    }
+    Some(ConstructorCount::from(arities.len()))
+}
+
+/// The sort whose paths the fibre `family`, read under the case's binder, is,
+/// when that sort presents them as a set: a parameterless looped sort whose
+/// constructors carry no field, each path a word of its loops.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some(D)` exactly when `family` is `Path(D, l, r)` for a `D` that
+///   [`nullary_constructors`] reads; `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `rotInv1`'s fibre `Path(Circle, …)` is a set of words,
+///   while a fibre of paths between the circle's paths is not, and its square
+///   is owed.
+/// - witness: `native_formers::native_formers::a_nested_loop_obligation_owes_its_square_off_a_set_464`
+#[spec(ensures: |ret| ret.is_none_or(|sort| nullary_constructors(arena, presentations, sort).is_some()))]
+fn presented_set(
+    arena: &TermArena,
+    presentations: &Presentations,
+    family: ValueTypeId,
+) -> Option<ValueTypeId>
+{
+    let Some(&ValueType::Path { domain, .. }) = arena.value_type(family)
+    else {
+        return None;
+    };
+    nullary_constructors(arena, presentations, domain).map(|_count| domain)
 }
 
 /// What a computation type under one binder does with it.

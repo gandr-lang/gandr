@@ -405,6 +405,31 @@ pub enum Mismatch
     },
 }
 
+/// Why a case over a looped sort is not shown to respect one of its loops.
+///
+/// # Specification
+/// - provides: the reason a loop obligation refuses, beside the loop it names.
+/// - panics: none.
+/// - executable: none — closed classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's contractibility is refused apart, and a case
+///   nested over a second looped scrutinee at a fibre that is no path type over
+///   a looped sort is refused as no set.
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_nested_loop_obligation_owes_its_square_off_a_set_464`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LoopRespect
+{
+    /// Carried along the loop, the answer at its point does not convert with
+    /// that answer.
+    Apart,
+    /// The answer at the loop's point is a case over another looped
+    /// scrutinee, and the case's fibre is not presented as a set: the square
+    /// between the two loops is owed, and no rule reads it.
+    NotPresentedSet,
+}
+
 /// Why the judgement refused a term, a type or a declaration.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckRefusal
@@ -459,7 +484,8 @@ pub enum CheckRefusal
     /// A case over a sort its words loop at is not shown to respect one of
     /// the loops: carried along the loop, its answer at the loop's point does
     /// not convert with itself, so it would eliminate the sort as if the loop
-    /// were not there.
+    /// were not there; or that answer is a case over another looped scrutinee
+    /// at a fibre not presented as a set, where the square is owed.
     LoopNotRespected
     {
         /// The case.
@@ -471,6 +497,8 @@ pub enum CheckRefusal
         left: ComputationId,
         /// The answer at the point.
         right: ComputationId,
+        /// Why the loop is not shown respected.
+        reason: LoopRespect,
     },
     /// A case's obligation for one of its sort's loops ran past the budget
     /// of the conversion that decides it: unfolding the definitions its sides

@@ -814,6 +814,163 @@ mod native_formers
         }
     }
 
+    /// `thunk (λa. λb. case a { Base ⇒ case b { Base ⇒ answer } })` at `(a b
+    /// : S) → motive`, `motive` read under both binders and the outer case's
+    /// motive the same family over its own binder.
+    ///
+    /// # Specification
+    /// trivial.
+    fn nested_over(
+        arena: &mut CoreArena,
+        (carrier, nested): (ValueTypeId, Nested),
+        answer: gandr_core_term::ComputationId,
+    ) -> (ValueTypeId, ValueId)
+    {
+        // Inside the outer case's branch at `Base`, the inner case answers at
+        // the family's instance at the point, whose binder it ignores.
+        let inner_motive = nested_motive(arena, (carrier, nested), None);
+        let b = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let inner = arena.computation_data_case(b, inner_motive, vec![answer]);
+        let outer_motive =
+            nested_motive(arena, (carrier, nested), Some(DeBruijnIndex::from(0_u32)));
+        let a = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let outer = arena.computation_data_case(a, outer_motive, vec![inner]);
+        let body = arena.computation_lambda(outer);
+        let body = arena.computation_lambda(body);
+        let codomain = nested_motive(arena, (carrier, nested), Some(DeBruijnIndex::from(1_u32)));
+        let pi = arena.comp_type_pi(carrier, codomain);
+        let pi = arena.comp_type_pi(carrier, pi);
+        (arena.value_type_thunk(pi), arena.value_thunk(body))
+    }
+
+    /// The point `Base` of [`one_loop`]'s sort, for a family read at the
+    /// point rather than at a variable.
+    ///
+    /// # Specification
+    /// trivial.
+    fn base(
+        arena: &mut CoreArena,
+        carrier: ValueTypeId,
+    ) -> ValueId
+    {
+        arena.value_constructor(carrier, ConstructorTag::from(0_usize), vec![])
+    }
+
+    /// The fibre a nested witness answers in, over the sort's point `a`.
+    #[derive(Clone, Copy, Debug)]
+    enum Nested
+    {
+        /// `F Path(S, a, a)`.
+        Looped,
+        /// `F Path(S, Base, a)`.
+        Joined,
+        /// `F U (Path(S, a, a) → F Path(S, a, a))`: a fibre that reads `a` and
+        /// is no path type over the sort.
+        Endomaps,
+    }
+
+    /// `nested`'s returner with `a` the variable `index` past `past` more
+    /// binders, or the point for `None`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn nested_motive(
+        arena: &mut CoreArena,
+        (carrier, nested): (ValueTypeId, Nested),
+        index: Option<DeBruijnIndex>,
+    ) -> gandr_core_term::CompTypeId
+    {
+        let at = |arena: &mut CoreArena, past: u32| match index {
+            Some(index) => {
+                let index = DeBruijnIndex::from(u32::from(index).saturating_add(past));
+                arena.value_variable(Zone::Intuitionistic, index)
+            },
+            None => base(arena, carrier),
+        };
+        let a = at(arena, 0);
+        let fibre = match nested {
+            Nested::Looped => arena.value_type_path(carrier, a, a),
+            Nested::Joined => {
+                let point = base(arena, carrier);
+                arena.value_type_path(carrier, point, a)
+            },
+            Nested::Endomaps => {
+                let path = arena.value_type_path(carrier, a, a);
+                // Under the function's own binder `a` is lifted past it.
+                let lifted = at(arena, 1);
+                let codomain = arena.value_type_path(carrier, lifted, lifted);
+                let returns = arena.comp_type_returner(codomain);
+                let arrow = arena.comp_type_pi(path, returns);
+                arena.value_type_thunk(arrow)
+            },
+        };
+        arena.comp_type_returner(fibre)
+    }
+
+    #[test]
+    fn a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464()
+    {
+        let mut arena = CoreArena::new();
+        let (mut declarations, circle) = one_loop(&mut arena);
+        for (position, nested) in [(3_usize, Nested::Looped), (4_usize, Nested::Joined)] {
+            let answer = arena.computation_return(circle.empty);
+            let (declared, body) = nested_over(&mut arena, (circle.carrier, nested), answer);
+            declarations.push(definition(ConstantIndex::from(position), declared, body));
+        }
+        let (report, crossed) = run(&mut arena, &declarations);
+        assert!(
+            matches!(report.judged()[3].verdict(), Verdict::Checked { .. }),
+            "held at `b = Base`, the answer over `a` is reflexivity, which the loop fixes: {:?}",
+            report.judged()[3].verdict()
+        );
+        assert!(
+            matches!(crossed.readmitted()[3].outcome(), Outcome::Defined { .. }),
+            "and the kernel re-derives it, holding `b` as the checker does: {:?}",
+            crossed.readmitted()[3].outcome()
+        );
+        assert!(
+            matches!(
+                report.judged()[4].verdict(),
+                Verdict::Refused(CheckRefusal::LoopNotRespected {
+                    reason: gandr_core_checker::LoopRespect::Apart,
+                    ..
+                })
+            ),
+            "holding `b` leaves the obligation over `a` owed: the circle is still not \
+             contractible: {:?}",
+            report.judged()[4].verdict()
+        );
+    }
+
+    #[test]
+    fn a_nested_loop_obligation_owes_its_square_off_a_set_464()
+    {
+        let mut arena = CoreArena::new();
+        let (mut declarations, circle) = one_loop(&mut arena);
+        // `U (Path(S, a, a) → F Path(S, a, a))`, answered by the identity at
+        // the point.
+        let p = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let identity = arena.computation_return(p);
+        let identity = arena.computation_lambda(identity);
+        let identity = arena.value_thunk(identity);
+        let answer = arena.computation_return(identity);
+        let (declared, body) = nested_over(&mut arena, (circle.carrier, Nested::Endomaps), answer);
+        declarations.push(definition(ConstantIndex::from(3_usize), declared, body));
+        let (report, _crossed) = run(&mut arena, &declarations);
+        assert!(
+            matches!(
+                report.judged()[3].verdict(),
+                Verdict::Refused(CheckRefusal::LoopNotRespected {
+                    reason: gandr_core_checker::LoopRespect::NotPresentedSet,
+                    ..
+                })
+            ),
+            "off a set, holding `b` at its point drops the square between the loops, which \
+             is owed: {:?}",
+            report.judged()[3].verdict()
+        );
+    }
+
     #[test]
     fn a_path_whose_endpoints_compute_the_point_is_its_words_485()
     {

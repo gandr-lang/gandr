@@ -122,7 +122,7 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x09";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x0a";
 
 /// The magic and version a program's address is computed over.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x07";
@@ -5267,10 +5267,14 @@ where
             write_site(writer, at)?;
             write_apartness(writer, reason)?;
         },
-        Refusal::LoopNotRespected { at, cell } => {
+        Refusal::LoopNotRespected { at, cell, reason } => {
             writer.tag(Tag(75));
             write_site(writer, at)?;
             writer.count(Count(usize::from(cell)))?;
+            writer.tag(Tag(match reason {
+                gandr_core_checker::LoopRespect::Apart => 0,
+                gandr_core_checker::LoopRespect::NotPresentedSet => 1,
+            }));
         },
         Refusal::LoopUndecided { at, cell } => {
             writer.tag(Tag(78));
@@ -5953,6 +5957,11 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         75 => Refusal::LoopNotRespected {
             at: read_site(reader)?,
             cell: gandr_kernel_term::CellIndex::from(reader.count()?.0),
+            reason: match reader.tag()?.0 {
+                0 => gandr_core_checker::LoopRespect::Apart,
+                1 => gandr_core_checker::LoopRespect::NotPresentedSet,
+                _ => return Err(CodecError::Corrupt),
+            },
         },
         78 => Refusal::LoopUndecided {
             at: read_site(reader)?,
@@ -7883,6 +7892,31 @@ mod tests
     }
 
     #[test]
+    fn a_loop_refusal_round_trips_with_its_reason_464()
+    {
+        use gandr_core_checker::LoopRespect;
+        let at = Site::Node(NodeIndex::from(3_usize));
+        let cell = gandr_kernel_term::CellIndex::from(1_usize);
+        let mut encodings = alloc::collections::BTreeSet::new();
+        for reason in [LoopRespect::Apart, LoopRespect::NotPresentedSet] {
+            let refusal = Refusal::LoopNotRespected { at, cell, reason };
+            let mut bytes = CheckpointBytes::default();
+            super::write_refusal(&mut Writer { sink: &mut bytes }, &refusal)
+                .expect("portable refusal");
+            assert!(
+                encodings.insert(bytes.as_ref().to_vec()),
+                "each reason keeps its own encoding"
+            );
+            let mut reader = Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0,
+            };
+            assert_eq!(super::read_refusal(&mut reader), Ok(refusal));
+            assert_eq!(reader.finish(), Ok(()));
+        }
+    }
+
+    #[test]
     fn a_stage_refusal_round_trips_with_where_it_stood()
     {
         use gandr_kernel_term::Stage;
@@ -8208,7 +8242,7 @@ mod tests
     {
         let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
         let expected = [
-            b'G', b'C', b'K', b'P', b'T', 0, 0, 9, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            b'G', b'C', b'K', b'P', b'T', 0, 0, 10, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         assert_eq!(
             encode_checkpoints(&checkpoints)
@@ -8218,7 +8252,7 @@ mod tests
         );
         assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
         let mut wrong_version = expected;
-        *wrong_version.get_mut(7).expect("version byte") = 8;
+        *wrong_version.get_mut(7).expect("version byte") = 9;
         assert_eq!(
             decode_checkpoints(Bytes(&wrong_version)),
             Err(CodecError::Corrupt)

@@ -983,6 +983,47 @@ where
     .computation_or(subject)
 }
 
+/// The computation `subject` with the binder `depth` binders out instantiated
+/// at `replacement`, the `depth` binders inside it kept.
+///
+/// # Specification
+/// - requires: `replacement` is scoped where the instantiated binder stands,
+///   outside the kept ones; memo entries belong to this arena.
+/// - ensures: indices below `depth` stay bound, index `depth` becomes the
+///   replacement carried under the kept binders, and outer indices fall by one
+///   without variable capture.
+/// - provides: a case's loop obligation held at an instance of a variable of
+///   its context, the variable's index the depth.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the loop obligation over `a` held at `b = Base` leaves
+///   the obligation over `a` alone; a wrong index holds `a` instead.
+/// - witness: `native_formers::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
+#[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
+    arena.computation(ret).is_some_and(|result| core::mem::discriminant(source) == core::mem::discriminant(result))))]
+pub(crate) fn substitute_computation_at<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    (subject, replacement): (ComputationId, ValueId),
+    depth: BinderDepth,
+) -> ComputationId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Substitute { replacement },
+        AnyNode::Computation(subject),
+        depth,
+    )
+    .computation_or(subject)
+}
+
 /// The value type `subject` with its second binder instantiated at
 /// `replacement`, its innermost binder kept.
 ///

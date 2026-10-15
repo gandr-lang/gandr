@@ -3531,7 +3531,12 @@ where
                     )?;
                 },
                 Frame::Loops(case, datatype) => {
-                    loops::respected(arena, &admitted_unfoldings(judgement), (case, datatype))?;
+                    loops::respected(
+                        arena,
+                        &admitted_unfoldings(judgement),
+                        context.as_slice(),
+                        (case, datatype),
+                    )?;
                 },
                 // A dependent split forms its motive under the scrutinee's
                 // binder, checks its body under the two components against the
