@@ -389,6 +389,63 @@ pub fn point(
     Ok(point)
 }
 
+/// The point the type of words at `words` loops at, as a term of `carrier`,
+/// when `carrier` is the sort its cells loop in.
+///
+/// # Specification
+/// - requires: `carrier` is formed.
+/// - ensures: `Some(point)` exactly when `carrier` is a parameterless data type
+///   in scope and the words at `words` read the path type at `point` against
+///   itself ([`CheckingContext::words`]), `point` the term [`point`] builds;
+///   `None` otherwise.
+/// - provides: the point a path type's endpoints are converted to where they
+///   compute it without spelling it, so the path type reads as the words.
+/// - fails: [`CheckRefusal::MachineInvariant`] when the words loop in the sort
+///   at no closed point; as [`crate::former::signature`] for a carrier that is
+///   not in scope.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's words loop at `Base`, so a path type over
+///   the circle at `kept(Base)` reads as its words once both endpoints convert
+///   with `Base`, in both checkers.
+/// - witness: `native_formers::native_formers::a_path_whose_endpoints_compute_the_point_is_its_words_485`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |point| point.is_none_or(|point| matches!(context.arena().value(point), Some(Value::Constructor { .. })))))]
+pub fn point_of(
+    context: &mut CheckingContext<'_>,
+    carrier: ValueTypeId,
+    words: ConstantIndex,
+) -> Result<Option<ValueId>, CheckRefusal>
+{
+    let Some(&ValueType::Data {
+        declaration: sort,
+        ref arguments,
+    }) = context.arena().value_type(carrier)
+    else {
+        return Ok(None);
+    };
+    if !arguments.is_empty()
+        || context
+            .data_signatures()
+            .get(&words)
+            .and_then(|signature| signature.presentation().cells())
+            .is_none_or(|cells| cells.sort() != sort)
+    {
+        return Ok(None);
+    }
+    let signature = crate::former::signature(context, carrier)?;
+    let arities: Vec<FieldCount> = signature
+        .constructors()
+        .iter()
+        .map(|fields| FieldCount::from(fields.len()))
+        .collect();
+    let point = point(context, (carrier, &arities), words)?;
+    Ok((context.words(carrier, (point, point))? == Some(words)).then_some(point))
+}
+
 /// The word of `owed`'s one letter: the loop itself, as a path at its point.
 ///
 /// # Specification

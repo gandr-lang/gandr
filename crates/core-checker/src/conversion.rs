@@ -812,7 +812,8 @@ fn convert(
                     // A path at the point a type of words' cells loop at is
                     // those words, as the kernel reads them: both endpoints
                     // spell the point, or one does and the other converts
-                    // with it.
+                    // with it, or each computes it (`mul(Base, Base)` at
+                    // the circle's `Base`) and converts with it (#485).
                     (
                         ValueTypeView::Data {
                             declaration,
@@ -847,6 +848,13 @@ fn convert(
                         }
                         else if context.words(carrier, (from, from))? == Some(declaration) {
                             pending.push(Pairing::Endpoints(to, from));
+                            true
+                        }
+                        else if let Some(point) =
+                            crate::loops::point_of(context, carrier, declaration)?
+                        {
+                            pending.push(Pairing::Endpoints(from, point));
+                            pending.push(Pairing::Endpoints(to, point));
                             true
                         }
                         else {

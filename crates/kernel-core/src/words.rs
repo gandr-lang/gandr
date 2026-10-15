@@ -592,7 +592,7 @@ fn spine(
 ///   the flip's arm answers the inverse letter.
 /// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| ret.is_none_or(|built| matches!(arena.value(built), Some(&Value::Constructor { .. }))))]
-fn point(
+pub fn point(
     arena: &mut TermArena,
     presentations: &Presentations,
     words: ConstantIndex,

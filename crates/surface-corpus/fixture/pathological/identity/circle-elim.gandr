@@ -57,6 +57,24 @@ data Marked : Type {
 def misjoined_then : Path(Marked, Mark, Elsewhere) ;
 def misjoined_then = turn then here(Elsewhere) ;
 
+/// Every point to itself, by cases: no loop arm, and the motive reads no
+/// point, so the turn is owed nothing.
+@[ checks ]
+def kept(x : Marked) -> -F Marked {
+  case x {
+    Mark => Mark,
+    Elsewhere => Elsewhere
+  }
+}
+
+/// Reflexivity at the looped point, wanted at a path whose endpoints compute
+/// the other point: `kept(Elsewhere)` computes `Elsewhere`, which the turn
+/// never reaches, so the path is no words and `here(Mark)` does not inhabit
+/// it (#485).
+@[ refuses("TypeMismatch") ]
+def elsewhereComputed : Path(Marked, kept(Elsewhere), kept(Elsewhere)) ;
+def elsewhereComputed = here(Mark) ;
+
 /// `cong` maps a path by a function, and the point's constructor is not one:
 /// `Base` names the point, not a map out of the circle.
 @[ refuses("OutOfFragment") ]
