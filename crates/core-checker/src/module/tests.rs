@@ -707,6 +707,101 @@ fn a_typed_module_keeps_each_judged_body_s_term_types()
     );
 }
 
+/// A typed run keys a declaration exactly when it formed or judged something,
+/// refused or not: a formed data declaration and one refused at a field keep
+/// the kind they formed, a signature refused at its second component keeps
+/// the first, and a signature refused before forming anything is not keyed.
+#[test]
+fn a_typed_module_keys_what_each_run_formed()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let dangling = crate::fixture::dangling_value_type();
+    let partial = arena.value_type_product(&[integer, dangling]);
+    let zero = arena.value_literal(integer_literal());
+    let [formed, refused] = [Vec::new(), Vec::from([dangling])]
+        .map(|fields| gandr_core_term::DataSignature::new(Vec::new(), Vec::from([fields]), kind));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let module = [
+        Declaration::data(
+            ConstantIndex::from(0_usize),
+            formed.into(),
+            OriginToken::from(0_usize),
+        ),
+        Declaration::data(
+            ConstantIndex::from(1_usize),
+            refused.into(),
+            OriginToken::from(1_usize),
+        ),
+        declaration(At(2), Maybe::Present(dangling), Maybe::Present(zero)),
+        declaration(At(3), Maybe::Present(partial), Maybe::Present(zero)),
+    ];
+    let typed = type_module(&mut context, &module);
+    assert_eq!(
+        typed.keys().copied().collect::<Vec<_>>(),
+        [
+            ConstantIndex::from(0_usize),
+            ConstantIndex::from(1_usize),
+            ConstantIndex::from(3_usize)
+        ],
+        "a run that formed nothing is not keyed: {typed:?}"
+    );
+    for (constant, ty) in [(0_usize, kind), (1, kind), (3, integer)] {
+        assert!(
+            typed[&ConstantIndex::from(constant)]
+                .formed()
+                .iter()
+                .any(|formed| formed.ty == TypeNode::Value(ty)),
+            "the declaration at {constant} keeps what it formed: {typed:?}"
+        );
+    }
+}
+
+/// A declaration's judgement says why it carries no elaboration: a body
+/// with no nested computation is unnested, and a first run that decided a
+/// nesting and was refused is unaccepted.
+#[test]
+fn a_refused_first_run_leaves_its_nesting_unaccepted()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let pair = arena.value_type_product(&[integer, integer]);
+    let (function, identity) = integer_function(&mut arena);
+    let zero = arena.value_literal(integer_literal());
+    let text = arena.value_literal(text_literal());
+    let applied = call(&mut arena, ConstantIndex::from(0_usize), zero);
+    let nested = arena.value_nested(applied);
+    let refused = arena.value_tuple(&[nested, text]);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let plain = super::decide(
+        &mut context,
+        &declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
+        super::Run::Judged,
+    );
+    assert!(
+        matches!(plain.verdict, Verdict::Checked { .. })
+            && matches!(
+                plain.elaboration,
+                Maybe::Absent(super::elaborated::Absent::Unnested)
+            ),
+        "a body with no nested computation is unnested: {plain:?}"
+    );
+    let unaccepted = super::decide(
+        &mut context,
+        &declaration(At(1), Maybe::Present(pair), Maybe::Present(refused)),
+        super::Run::Judged,
+    );
+    assert!(
+        matches!(unaccepted.verdict, Verdict::Refused(_))
+            && matches!(
+                unaccepted.elaboration,
+                Maybe::Absent(super::elaborated::Absent::Unaccepted)
+            ),
+        "a refused first run that decided a nesting is unaccepted: {unaccepted:?}"
+    );
+}
+
 #[test]
 fn a_typed_module_keeps_the_terms_its_signature_judges()
 {
