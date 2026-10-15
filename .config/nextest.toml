@@ -35,8 +35,9 @@ inherits = "ci"
 # every source (`gandr-workflow-sweep` reads the profile's name). The nightly
 # workflow runs it plain and enforced (`mise run ci:sweeps`), where the limit
 # is the nightly budget, not the 30 s bound. The slowest whole sweep, the
-# typing, measured 240 s enforced and 111 s plain on sixteen cores; twenty
-# minutes holds it on four hosted cores with the margin a slow runner needs.
+# typing, measured 756 s enforced on four hosted cores (the table verdicts,
+# 371 s plain); twenty minutes holds it with the margin a slow runner needs,
+# and each lane's whole run, 14 and 7 minutes, sits inside its 60.
 [profile.sweeps]
 default-filter = "test(/(^|::)sweeps::/)"
 status-level = "pass"
