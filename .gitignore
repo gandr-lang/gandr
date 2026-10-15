@@ -12,3 +12,5 @@ mise.local.lock
 rustc-ice-*.txt
 /coverage.lcov
 /coverage-plain.lcov
+# `mise run mutants` outcomes.
+/mutants.out

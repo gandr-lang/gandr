@@ -1,0 +1,96 @@
+#:tombi toml-version = "v1.0.0"
+#:schema https://mise.jdx.dev/schema/mise-task.json
+
+# The mutation lane: cargo-mutants over one crate with the settings its
+# campaign measured. Every mutant relinks the crate's test binaries, so the
+# host's own target rustflags, which may name a memory-hungry linker, give
+# way to `-Ctarget-cpu=native` alone for the host triple. Four mutants build
+# at once under a jobserver of eight tasks; nextest runs each one's tests.
+# A whole crate takes hours, which is why a witness batch reruns only the
+# survivors it answers (`mutants:named`). Further arguments pass through to
+# cargo-mutants (`--shard k/n`, `--list`, `--timeout`). Outcomes land in
+# `mutants.out/<crate>`, or in `MUTANTS_OUTPUT` when set. The release ships no
+# Apple-silicon binary, so the pin stays `cargo:` (binstall fetches the rest).
+["mutants"]
+description = "Mutation-test one crate with the campaign's measured settings"
+tools."cargo:cargo-mutants" = "27.1.0"
+env.NEXTEST_TEST_THREADS = "8"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+crate=
+previous=
+for argument in "$@"; do
+  case "$previous" in
+    -p | --package) crate=$argument ;;
+  esac
+  case "$argument" in
+    --package=*) crate=${argument#--package=} ;;
+  esac
+  previous=$argument
+done
+if [[ -z "$crate" ]]; then
+  echo 'usage: mise run mutants -- -p <crate> [cargo-mutants arguments]' >&2
+  exit 2
+fi
+host=$(rustc -vV | sed -n 's/^host: //p')
+triple=$(tr '[:lower:]-' '[:upper:]_' <<< "$host")
+export "CARGO_TARGET_${triple}_RUSTFLAGS=-Ctarget-cpu=native"
+output=${MUTANTS_OUTPUT:-mutants.out/$crate}
+mkdir -p "$output"
+exec cargo mutants --test-tool nextest -j 4 --jobserver-tasks 8 --output "$output" "$@"
+'''
+
+# The survivors a witness batch answers, rerun alone: each `file:function`
+# names a source file, relative to the crate's `src/` or to the workspace,
+# and a function in it, bare or with its impl path (`converge`,
+# `Replay::settle`). The files narrow the run with `--file` and the
+# functions with one `--re` over the mutant names, which end in the
+# function. The trust path's crates are checked this way after each batch
+# lands. Outcomes land in `mutants.out/<crate>/named`.
+["mutants:named"]
+description = "Rerun only the named survivors of one crate under the measured settings"
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+crate=
+named=()
+while (( $# > 0 )); do
+  case "$1" in
+    -p | --package) crate=${2:-}; shift 2 ;;
+    --package=*) crate=${1#--package=}; shift ;;
+    *) named+=("$1"); shift ;;
+  esac
+done
+if [[ -z "$crate" || ${#named[@]} == 0 ]]; then
+  echo 'usage: mise run mutants:named -- -p <crate> <file:function>...' >&2
+  exit 2
+fi
+root=$(cargo metadata --locked --no-deps --format-version 1 | jq -r --arg crate "$crate" \
+  '.workspace_root as $workspace | .packages[] | select(.name == $crate) | .manifest_path | rtrimstr("/Cargo.toml") | ltrimstr($workspace + "/")')
+if [[ -z "$root" ]]; then
+  printf 'no workspace crate named %s\n' "$crate" >&2
+  exit 2
+fi
+files=()
+functions=
+for entry in "${named[@]}"; do
+  file=${entry%%:*}
+  function=${entry#*:}
+  if [[ "$file" == "$entry" || -z "$function" ]]; then
+    printf 'expected <file:function>, got %s\n' "$entry" >&2
+    exit 2
+  fi
+  if [[ ! -f "$file" ]]; then file="$root/src/$file"; fi
+  if [[ ! -f "$file" ]]; then
+    printf 'no source file %s in %s\n' "${entry%%:*}" "$crate" >&2
+    exit 2
+  fi
+  files+=(--file "$file")
+  functions+="${functions:+|}$function"
+done
+MUTANTS_OUTPUT="mutants.out/$crate/named" exec mise run mutants -- -p "$crate" \
+  "${files[@]}" --re " in (.*::)?($functions)\$"
+{% endraw %}
+'''
