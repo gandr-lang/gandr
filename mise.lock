@@ -7,6 +7,11 @@ version = "6.0.4"
 backend = "cargo:cargo-dylint"
 specifiers = ["6.0.4"]
 
+[[tools."cargo:cargo-mutants"]]
+version = "27.1.0"
+backend = "cargo:cargo-mutants"
+specifiers = ["27.1.0"]
+
 [[tools."cargo:dylint-link"]]
 version = "6.0.4"
 backend = "cargo:dylint-link"
