@@ -154,7 +154,7 @@ const COUNTED: &[&str] = &[
     "item extern_block name",
     "item import_declaration",
     "item import_declaration name",
-    "item module_declaration", // shape: #405
+    "item module_declaration",
     "item module_declaration name",
     "item operator_declaration",
     "item rec_block",
@@ -163,13 +163,13 @@ const COUNTED: &[&str] = &[
     "item sign_declaration name",
     "module_member module_declaration",
     "module_member module_declaration name",
-    "pattern cons_pattern", // shape: #408
+    "pattern cons_pattern",
     "pattern cons_pattern name",
     "pattern constructor_pattern",
     "pattern constructor_pattern name",
     "pattern hole",
     "pattern identifier",
-    "pattern labelled_sum_pattern", // shape: #408
+    "pattern labelled_sum_pattern",
     "pattern labelled_sum_pattern name",
     "pattern literal_pattern",
     "pattern or_pattern",
@@ -182,7 +182,7 @@ const COUNTED: &[&str] = &[
     "type capability_type",
     "type capability_type name",
     "type end_session_type",
-    "type f_type", // shape: #404
+    "type f_type",
     "type f_type name",
     "type function_type",
     "type labelled_sum_type",
@@ -196,23 +196,23 @@ const COUNTED: &[&str] = &[
     "type parenthesized_type",
     "type path_type",
     "type primitive_type",
-    "type product_type", // shape: #404
+    "type product_type",
     "type receive_session_type",
     "type send_session_type",
-    "type static_abstraction", // shape: #404
+    "type static_abstraction",
     "type static_abstraction name",
     "type sum_type",
     "type telescope_type",
     "type type_application",
     "type type_application name",
     "type type_identifier",
-    "type type_path", // shape: #404
+    "type type_path",
     "type type_path name",
     "type type_variable",
-    "type u_type", // shape: #404
+    "type u_type",
     "type universe_type",
     "type unknown_type",
-    "type value_function_type", // shape: #404
+    "type value_function_type",
 ];
 
 /// The node kinds with no meaning of their own to hover, each with why: the
@@ -403,15 +403,16 @@ pub(super) struct Owner
 /// - ensures: one owner per tile and grout of the tree, ordered by where the
 ///   leaf starts: a name a form spells as one of its own tiles — an identifier,
 ///   a constructor, a type's name or variable, such as a declaration's name, a
-///   parameter, a loop or a word pattern's letter — is owned by itself, as kind
-///   `<sort> <form> name`, its form the form spelling it; any other tile of the
-///   form its parent completes — a keyword, a delimiter, an operator — by that
-///   form; any other tile, an atom such as a name, a constructor or a literal,
-///   by itself; grout by itself, as kind `grout`. A kind is the sort of the
-///   owning form's mold and its named kind, so a name in a pattern and a name
-///   in a term are two kinds. Every leaf inside an attribute block or a module
-///   member's inline `@[ … ]` — its payload's strings, numbers and names as
-///   well as its own tiles — is owned by the attribute, as kind `item
+///   parameter, a loop or a word pattern's letter, and a positional label, the
+///   number after one of the form's `.` tiles (#408) — is owned by itself, as
+///   kind `<sort> <form> name`, its form the form spelling it; any other tile
+///   of the form its parent completes — a keyword, a delimiter, an operator —
+///   by that form; any other tile, an atom such as a name, a constructor or a
+///   literal, by itself; grout by itself, as kind `grout`. A kind is the sort
+///   of the owning form's mold and its named kind, so a name in a pattern and a
+///   name in a term are two kinds. Every leaf inside an attribute block or a
+///   module member's inline `@[ … ]` — its payload's strings, numbers and names
+///   as well as its own tiles — is owned by the attribute, as kind `item
 ///   attribute_block`, or `item attribute_block name` for a name: an
 ///   attribute's payload states what its declaration is expected to do, not a
 ///   term of the program.
@@ -461,6 +462,7 @@ fn owners(
     };
     let mut owners = Vec::new();
     let mut attributes: Vec<(usize, usize)> = Vec::new();
+    let mut after_dot: Option<(usize, usize)> = None;
     for position in tree.positions() {
         let node = tree.node(position).expect("a position names a node");
         let (owner, form, kind) = match node.label() {
@@ -504,10 +506,17 @@ fn owners(
                     .copied()
                     .flatten()
                     .and_then(|parent| tree.node(parent));
+                let label = grammar.mold(mold).expect("a tree's mold is known").label;
+                let dotted = after_dot.take();
                 match parent.map(|parent| (parent, parent.label())) {
                     Some((parent, NodeLabel::Meld(form))) if rule(form) == rule(mold) => {
-                        if NAMES
-                            .contains(&grammar.mold(mold).expect("a tree's mold is known").label)
+                        // A positional label, the number after a form's `.`, names
+                        // its entry as a written label does.
+                        if label == "." {
+                            after_dot = Some(range(parent));
+                        }
+                        if NAMES.contains(&label)
+                            || (label == "number" && dotted == Some(range(parent)))
                         {
                             (range(node), range(parent), format!("{} name", kind(form)))
                         }

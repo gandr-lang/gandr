@@ -226,7 +226,9 @@ pub enum Subject
     Binder,
     /// A term a judgement typed, spelled at its type.
     Term,
-    /// A written type, spelled at its universe.
+    /// A written type, spelled at its universe: a type the checker forms, or
+    /// one a static function takes, lowered as a code and spelled at its
+    /// universe or at the operator type that ends in one.
     Type,
 }
 
@@ -779,6 +781,34 @@ const fn root(node: TypeNode) -> CoreNode
     }
 }
 
+/// What a term typed `first` first and `last` last stands for, and the last
+/// type it is spelled against: a written type at `first` when it is a code no
+/// check moved — its type a universe, or a static Π whose codomain is one,
+/// and its last type the same in syntax — and a term otherwise.
+///
+/// # Specification
+/// trivial.
+fn term_subject(
+    arena: &CoreArena,
+    (first, last): (TypeNode, TypeNode),
+) -> (Subject, TypeNode)
+{
+    let (TypeNode::Value(mut ty), TypeNode::Value(moved)) = (first, last)
+    else {
+        return (Subject::Term, last);
+    };
+    if gandr_core_term::equal_type_syntax(arena, ty, moved) != CertificateEquality::Equal {
+        return (Subject::Term, last);
+    }
+    loop {
+        match arena.value_type(ty) {
+            Some(&ValueType::Universe { .. }) => return (Subject::Type, first),
+            Some(&ValueType::StaticPi { codomain, .. }) => ty = codomain,
+            Some(_) | None => return (Subject::Term, last),
+        }
+    }
+}
+
 impl TypeTable
 {
     /// Type every node of `source` a face can point at.
@@ -787,7 +817,9 @@ impl TypeTable
     /// - requires: `grammar` is the checked grammar the source is parsed under.
     /// - ensures: the source is parsed, lowered and judged in the checker's
     ///   typed run; each term the run typed and the origin table places is an
-    ///   entry at its span, at the first type the run kept for it and the last;
+    ///   entry at its span, at the first type the run kept for it and the last,
+    ///   and a written type when the term is a code — its type a universe or a
+    ///   static Π ending in one — that no check against another type moved;
     ///   each binder the origin table records for a typed use is one entry at
     ///   the binder's span, at that use's type; each written value or
     ///   computation type whose level the checker reads is an entry at its
@@ -813,8 +845,10 @@ impl TypeTable
     ///   signature and its definition, a synthesised definition, a data
     ///   declaration and a mismatched body separate the term, binder, type and
     ///   declaration entries and the expected type; a sign's members and a data
-    ///   family with an operation answer at their own types.
+    ///   family with an operation answer at their own types; a type written
+    ///   where a static function takes one answers as a written type.
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+    /// - witness: `typed::tests::a_type_under_a_static_binder_answers_as_a_written_type`
     /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
     /// - witness: `typed::tests::both_halves_of_a_declaration_find_its_type`
     /// - witness: `typed::tests::a_sign_member_answers_under_the_sorts_before_it`
@@ -964,9 +998,10 @@ impl TypeTable
                 TermNode::Computation(id) => (origins.computation(id), CoreNode::Computation(id)),
             };
             if let Maybe::Present(origin) = origin {
+                let (subject, last) = term_subject(&arena, (first, last));
                 entries.push(Entry {
                     span: origin.span(),
-                    subject: Subject::Term,
+                    subject,
                     provenance: origin.provenance(),
                     ty: first,
                     last,
@@ -2506,6 +2541,40 @@ mod tests
     }
 
     #[test]
+    fn a_type_under_a_static_binder_answers_as_a_written_type()
+    {
+        // #404: a type written where a static function takes one is lowered
+        // as a code, and answers as every written type does, at its universe
+        // or at the operator type ending in one.
+        let source = SourceText::from(
+            "def pair : Type -> Type[-] ;\ndef pair = \\X. -F (X * X) ;\ndef arrow : Type ;\ndef \
+             arrow = +U (Integer -> -F Integer) ;\n",
+        );
+        let table = table(source);
+        let at = |needle: &'static str| answer(&table, source, SourceText::from(needle));
+        assert_eq!(
+            at("\\X."),
+            agreed(Subject::Type, SourceText::from("Type -> Type[-]")),
+            "a type family under its static binder"
+        );
+        assert_eq!(
+            at("-F (X"),
+            agreed(Subject::Type, SourceText::from("Type[-]")),
+            "the computation type it returns"
+        );
+        assert_eq!(
+            at("* X)"),
+            agreed(Subject::Type, SourceText::from("Type")),
+            "the product under the binder"
+        );
+        assert_eq!(
+            at("+U (Integer"),
+            agreed(Subject::Type, SourceText::from("Type")),
+            "a thunk type a definition states as a code"
+        );
+    }
+
+    #[test]
     fn a_printed_type_reads_back_to_its_certificate()
     {
         let source = SourceText::from(
@@ -2665,8 +2734,14 @@ mod tests
         );
         assert_eq!(
             at("back(loop) ∷ q => return 2"),
-            pattern("back(loop)", path),
-            "an inverse letter"
+            pattern("back", path),
+            "the name inverting a letter, a word of one letter"
+        );
+        assert_eq!(
+            at("(loop) ∷ q => return 2"),
+            pattern("back(loop) ∷ q", path),
+            "the parentheses around the inverted letter answer the cons as a constructor \
+             pattern's do (#408)"
         );
         assert_eq!(
             at("loop) ∷ q => return 2"),
