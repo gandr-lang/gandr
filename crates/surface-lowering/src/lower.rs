@@ -8638,7 +8638,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         stated.sort_unstable_by_key(|defined| (defined.span.start(), defined.node));
         stated.dedup();
         let mut manifests: Vec<NodeIndex> = stated.iter().map(|defined| defined.node).collect();
-        manifests.extend(self.codomains());
+        manifests.extend(self.synthesised_types());
         manifests.extend(self.answers.values().map(|answer| answer.node));
         manifests.reverse();
         let mut subtree: Vec<NodeIndex> = Vec::new();

@@ -125,29 +125,19 @@ def atBase(f : +U ((x : Circle) -> -F Path(Circle, x, x))) -> -F Path(Circle, Ba
   f(Base)
 }
 
-/// A path between two families of loops, evaluated at the point: `selfloop`
-/// gives the loop there and `selfrefl` the empty word. `cong` over the
-/// parameter needs this written path type (#423).
-@[ checks ]
-def atBaseAlong(e : Path(+U ((x : Circle) -> -F Path(Circle, x, x)), selfloop, selfrefl)) -> -F Path(Path(Circle, Base, Base), loop, here(Base)) {
-  cong(atBase, e)
-}
-
 /// Every point's loop is not every point's reflexivity (the book's Lemma
 /// 6.4.2, cubical's `rotLoop` against `refl`): a path between the two
 /// functions, evaluated at the point, would make the loop the empty word.
 @[ checks ]
 def distinct(e : Path(+U ((x : Circle) -> -F Path(Circle, x, x)), selfloop, selfrefl)) -> -F Empty {
-  loop_apart(atBaseAlong(e))
+  loop_apart(cong(atBase, e))
 }
 
 /// A map out of the circle is its point and the loop's image (the forward
-/// half of cubical's `IsoFunSpaceS¹`, `S1/Properties.agda`). `cong` over the
-/// parameter needs a written path type (#423); given one, the record binds the
-/// point's call before the loop's image is checked, so the image no longer
-/// meets the point (#426). `sect` (by `here`), `retr` (by `funext` over the
-/// case on the point) and the record of all four wait on both.
-@[ refuses("OutOfFragment") ]
+/// half of cubical's `IsoFunSpaceS¹`, `S1/Properties.agda`). The record binds
+/// the point's call before the loop's image is checked, and the image's type
+/// reads the point through what that call returns.
+@[ checks ]
 def toLoop(f : +U[ω] (Circle -> -F Int)) -> -F (#{point : Int, around : Path(Int, point, point)}) {
   #{f(Base), cong(f, loop)}
 }
@@ -164,7 +154,7 @@ def fromLoopAt(x : Int, p : Path(Int, x, x), c : Circle) -> -F Int {
 
 /// A point and a loop at it make a map out of the circle (the backward half
 /// of `IsoFunSpaceS¹`), curried: from the record, the point's projection is
-/// bound before the loop's type reads it, as in `toLoop` (#426).
+/// bound before the loop's type reads it, as in `toLoop`.
 @[ checks ]
 def fromLoop(x : Int, p : Path(Int, x, x)) -> -F (+U[ω] (Circle -> -F Int)) {
   thunk { fn (c) { fromLoopAt(x, p, c) } }

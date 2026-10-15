@@ -105,10 +105,13 @@ def spinDown(n : Int) -> -F Path(Path(Circle, Base, Base), spin(P(n)), back(loop
 }
 
 /// Spinning a sum is composing the spins (cubical's `intLoop-hom`), by
-/// induction on the second summand. The composite of two open words is not
-/// written without a stated type (#423), nor does it compute (#422).
-@[ refuses("OutOfFragment") ]
-def rec spinHom(a : Int, b : Int) -> -F Path(Path(Circle, Base, Base), spin(plus(a, b)), spin(a) then spin(b)) {
+/// induction on the second summand. `spin` puts its new loop first where
+/// cubical's `intLoop` puts it last, so the law composes the spins the other
+/// way round, as the words compute: `(loop ∷ p) then q` is
+/// `loop ∷ (p then q)`. At zero `spin(Z)` is a call held as the empty word,
+/// and the composite over it does not yet compute to `spin(a)` (#440).
+@[ refuses("EndpointMismatch") ]
+def rec spinHom(a : Int, b : Int) -> -F Path(Path(Circle, Base, Base), spin(plus(a, b)), spin(b) then spin(a)) {
   case b {
     Z => here(spin(a)),
     S(x) => cong(loopOn, spinHom[<](a, x)),
@@ -117,27 +120,25 @@ def rec spinHom(a : Int, b : Int) -> -F Path(Path(Circle, Base, Base), spin(plus
 }
 
 /// Winding a composite is summing the windings (cubical's `winding-hom`), by
-/// induction on the first loop. Held as `spinHom` is (#423, #422).
-@[ refuses("OutOfFragment") ]
-def rec windHom(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Int, wind(p then q), plus(wind(p), wind(q))) {
-  case p {
-    here => here(wind(q)),
-    loop ∷ r => cong(up, windHom[<](r, q)),
-    back(loop) ∷ r => cong(down, windHom[<](r, q))
-  }
-}
+/// induction on the first loop, written last because a recursion descends
+/// its last parameter, and summed with `wind(q)` first because the sum
+/// descends its second summand: `here(wind(q))` on the empty word, and the
+/// recursive call carried along `up` or `down`. The checker accepts that
+/// body and the kernel refuses it, the fault of #424, so the law is owed.
+@[ owes(1) ]
+def windHom : (q : Path(Circle, Base, Base), p : Path(Circle, Base, Base)) => Path(Int, wind(p then q), plus(wind(q), wind(p))) ;
 
 /// The sum commutes; restated from `int-sum.gandr`, where its proof waits on
-/// #423 and #427.
+/// #427.
 @[ owes(1) ]
 def plusComm : (a : Int, b : Int) => Path(Int, plus(a, b), plus(b, a)) ;
 
 /// The loops commute (cubical's `comm-ΩS¹`): each composite is the spin of
 /// its winding by `sect`, the windings sum by `windHom`, and the sums commute
-/// by `plusComm`. Held by the rows it reads (#422, #423, #427).
-@[ refuses("OutOfFragment") ]
+/// by `plusComm`.
+@[ checks ]
 def comm(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p then q, q then p) {
-  back(sect(p then q)) then cong(spin, windHom(p, q)) then cong(spin, plusComm(wind(p), wind(q))) then back(cong(spin, windHom(q, p))) then sect(q then p)
+  back(sect(p then q)) then cong(spin, windHom(q, p)) then cong(spin, plusComm(wind(q), wind(p))) then back(cong(spin, windHom(p, q))) then sect(q then p)
 }
 
 /// Three loops spun and wound count three (cubical's `test-winding-pos`).

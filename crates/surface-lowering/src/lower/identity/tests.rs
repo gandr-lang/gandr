@@ -818,6 +818,81 @@ fn a_derived_operation_synthesises_its_path_at_the_words()
 }
 
 #[test]
+fn a_derived_operation_reads_a_parameter_or_a_call()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
+            "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n}\n",
+            "def up(n : Int) -> -F Int {\n  S(n)\n}\n",
+            // A parameter, in a body and in a type.
+            "def inBody(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {\n  back(p)\n}\n",
+            "def inType(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p then loop, p then loop) {\n  here(p then loop)\n}\n",
+            // A call of a definition, in a body and in a type; a later call of
+            // the one whose type holds the operation.
+            "def twice(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {\n  p then p\n}\n",
+            "def overCall(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {\n  back(twice(p))\n}\n",
+            "def inTypeCall(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), twice(p) then p, twice(p) then p) {\n  here(twice(p) then p)\n}\n",
+            "def later(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), twice(p) then p, twice(p) then p) {\n  back(inTypeCall(p))\n}\n",
+            // A call of a signature, and a recursive call's descent.
+            "def sig : (a : Int) => Path(Int, a, a) ;\n",
+            "def overSig(a : Int) -> -F Path(Int, S(a), S(a)) {\n  cong(up, sig(a)) then here(S(a))\n}\n",
+            "def rec descend(b : Int) -> -F Path(Int, b, b) {\n  case b {\n    Z => here(Z),\n    S(x) => cong(up, descend[<](x)) then here(S(x))\n  }\n}\n",
+            // `cong` over a parameter function.
+            "def mapped(f : +U[ω] (Circle -> -F Int)) -> -F Path(Int, f(Base), f(Base)) {\n  back(cong(f, loop))\n}\n",
+            // A parameter of no path type.
+            "def pointed(c : Circle) -> -F Path(Circle, Base, Base) {\n  back(c) then loop\n}\n",
+            // A parameter composed in a signature's own type, under a call,
+            // and a `cong` over a call of that signature: the signature's
+            // result is minted after the parameter types the composite inside
+            // it reads, though they stand deeper in the tree.
+            "def size(p : Path(Circle, Base, Base)) -> -F Circle {\n  return Base\n}\n",
+            "def same(c : Circle) -> -F Circle {\n  return c\n}\n",
+            "def joined : (q : Path(Circle, Base, Base), p : Path(Circle, Base, Base)) => Path(Circle, size(p then q), size(p then q)) ;\n",
+            "def unjoined(p : Path(Circle, Base, Base)) -> -F Path(Circle, same(size(p then p)), same(size(p then p))) {\n  back(cong(same, joined(p, p)))\n}\n",
+        )),
+        &mut arena,
+    );
+    for name in [
+        "inBody",
+        "inType",
+        "overCall",
+        "inTypeCall",
+        "later",
+        "overSig",
+        "descend",
+        "mapped",
+        "unjoined",
+    ] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` reads its operand's path type"
+        );
+    }
+    assert!(
+        matches!(
+            outcome_of(&module, "pointed".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unannotated,
+                ..
+            })
+        ),
+        "a parameter of no path type gives no path to read"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "joined".into()),
+            DeclarationOutcome::Uncompleted { .. }
+        ),
+        "a signature reads its own parameters' path types"
+    );
+}
+
+#[test]
 fn a_dependent_transport_lowers_to_its_telescope()
 {
     let mut arena = CoreArena::new();

@@ -927,6 +927,35 @@ impl<'source> Scope<'source>
             .map_or(Zone::Intuitionistic, |entry| entry.zone)
     }
 
+    /// The type the binder that introduced `binder` was written with.
+    ///
+    /// # Specification
+    /// - requires: nothing — an out-of-range coordinate is admissible.
+    /// - ensures: a stored frame answers the syntax node of its written type,
+    ///   or the untyped absence it was extended with; an out-of-range
+    ///   coordinate answers the untyped absence.
+    /// - provides: the type a derived path operation reads off a parameter it
+    ///   stands over.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a typed and an untyped frame of one chain answer
+    ///   their own written types.
+    /// - witness: `resolve::tests::a_typed_binder_resolves_with_its_written_type`
+    #[spec(ensures: |ret| ret == self.frames.get(binder.0)
+        .map_or(Maybe::Absent(binder_type::Absent::Untyped), |entry| entry.declared))]
+    #[inline]
+    pub fn declared(
+        &self,
+        binder: ScopeId,
+    ) -> Maybe<NodeIndex, binder_type::Absent>
+    {
+        self.frames
+            .get(binder.0)
+            .map_or(Maybe::Absent(binder_type::Absent::Untyped), |entry| {
+                entry.declared
+            })
+    }
+
     /// The de Bruijn index `name` has in the chain rooted at `frame`.
     ///
     /// # Specification
@@ -1357,6 +1386,7 @@ mod tests
     use super::Bound;
     use super::Frame;
     use super::Scope;
+    use super::ScopeId;
     use super::SurfaceName;
     use super::TypeFormer;
     use super::binder;
@@ -1728,6 +1758,19 @@ mod tests
                 zone: Zone::Intuitionistic,
             })),
             "an untyped binder answers no written type"
+        );
+        assert_eq!(
+            (
+                scope.declared(typed),
+                scope.declared(untyped),
+                scope.declared(ScopeId(9)),
+            ),
+            (
+                Maybe::Present(NodeIndex::from(7_usize)),
+                Maybe::Absent(binder_type::Absent::Untyped),
+                Maybe::Absent(binder_type::Absent::Untyped),
+            ),
+            "each frame answers its own written type, and a stray coordinate none"
         );
     }
 
