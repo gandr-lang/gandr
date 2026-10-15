@@ -1,0 +1,63 @@
+// The empty type and the apartness rule. `Empty` is a data type with no
+// constructor, so a match on it has no arm and answers whatever type it is
+// asked for: `A -> Empty` is how "not A" is spelled. A path between two terms
+// of a data type is eliminated the same way when the terms are apart: their
+// type's rules converge, and their normal forms first differ at two distinct
+// constructors, so no path joins them and a match on one has no arm either.
+
+/// The type with no element.
+@[ checks ]
+data Empty : Type {}
+
+/// Anything follows from an element of the empty type.
+@[ checks ]
+def absurd(v : Empty) -> -F Integer {
+  case v {}
+}
+
+/// The answer written on the match itself.
+@[ checks ]
+def stated(v : Empty) -> -F Integer {
+  case v -> -F Integer {}
+}
+
+/// The integers as a presented type: a successor and a predecessor that
+/// cancel.
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
+}
+
+/// One is not zero: `S(Z)` and `Z` are normal forms with distinct heads.
+@[ checks ]
+def not_zero(e : Path(Int, S(Z), Z)) -> -F Empty {
+  case e {}
+}
+
+/// One is not two: the normal forms first differ below their shared
+/// successor.
+@[ checks ]
+def one_not_two(e : Path(Int, S(Z), S(S(Z)))) -> -F Empty {
+  case e {}
+}
+
+/// Minus one is not one, read through the rules: `P(S(P(Z)))` is `P(Z)`.
+@[ checks ]
+def signs(e : Path(Int, P(S(P(Z))), S(Z))) -> -F Empty {
+  case e {}
+}
+
+/// A free type: two constructors and no rule.
+data Truth : Type {
+  False : Truth;
+  True : Truth;
+}
+
+/// True is not false: distinct constructors of a free type are apart.
+@[ checks ]
+def true_not_false(e : Path(Truth, True, False)) -> -F Empty {
+  case e {}
+}

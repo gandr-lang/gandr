@@ -283,10 +283,12 @@
 //! confluent; conversion is then an equivalence the rules generate, and sound.
 //! **Alternatives.** Quotient syntax with a node of its own, which would put
 //! the rules' obligations in every term that names the type; a confluence
-//! check in the kernel, which the producer's critical-pair joins already
-//! certify. **Reversal.** A presentation whose rules terminate only by a path
-//! order takes that order's check here in place of the size bound; one whose
-//! redexes sit behind a definition unfolds its leaves by recorded decisions.
+//! check at admission, which the producer's critical-pair joins already
+//! certify for conversion (the apartness rule below runs its own, where a
+//! refutation is the verdict). **Reversal.** A presentation whose rules
+//! terminate only by a path order takes that order's check here in place of
+//! the size bound; one whose redexes sit behind a definition unfolds its
+//! leaves by recorded decisions.
 //! The witnesses are
 //! `presented::tests::the_forced_loop_converts_circle_words_by_their_normal_forms`
 //! and `presented::tests::a_mode_switch_reads_circle_words_by_their_normal_forms`.
@@ -343,6 +345,27 @@
 //! `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
 //! and, on readmission,
 //! `kernel_export::kernel_presented_readmission::a_fold_resting_on_a_forged_law_is_refused_by_name`
+//! in the surface corpus.
+//!
+//! **Two terms of a data type are apart when their normal forms differ at a
+//! constructor.** A case of no branch over a scrutinee of `Path(A, a, b)`, `A`
+//! a data type, answers any motive when `a` and `b` are apart
+//! ([`presented`] § Apartness): the kernel joins every critical pair of `A`'s
+//! rules itself, reads each endpoint where `A` stands — a constructor of `A`
+//! a node, a reference to a definition its body, anything else a leaf —
+//! normalizes both, and requires the first difference to be two distinct
+//! constructors, no leaf standing where `A` does. A free type is the case with
+//! no rule: constructor disjointness. The case is the whole certificate: no
+//! new node, no recorded verdict, the artifact format unchanged; a case whose
+//! endpoints are not apart is refused `NotApart`, naming why — they agree,
+//! differ only under a leaf of another type, are open, or the rules diverge —
+//! and the checker decides the same rule over its own arena and refuses by the
+//! same name. A data type with no constructor is eliminated by the same case
+//! of no branch, with no decision to make. The witnesses are
+//! `presented::tests::endpoints_are_apart_by_their_normal_forms`,
+//! `native_formers::native_formers::an_absurd_case_rests_on_apart_endpoints_in_both_checkers`
+//! and, on readmission,
+//! `kernel_export::kernel_presented_readmission::an_absurd_case_readmits_by_apartness_and_forged_twins_are_refused_by_name`
 //! in the surface corpus.
 //!
 //! # Contract boundaries

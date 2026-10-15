@@ -8,10 +8,13 @@
 //! an expected type flowing down from the declaration's declared type; the
 //! eliminators and atoms — variable, constant, application, force, bind, case,
 //! literal, lift — **synthesize** a type flowing up. A synthesizing term used
-//! where a type is expected triggers a conversion at the mode switch. Empty
-//! elimination is checking-only: its value child checks at Empty and the
-//! expected computation type supplies its result. This needs no metavariable
-//! and no inference.
+//! where a type is expected triggers a conversion at the mode switch. The
+//! empty sum's elimination is checking-only: its value child checks at the
+//! empty sum and the expected computation type supplies its result. A data
+//! type with no constructor, and a path between two apart terms of a data type
+//! ([`crate::presented`] § Apartness), are eliminated by a data case of no
+//! branch, which synthesizes its motive at the scrutinee. Neither needs a
+//! metavariable or inference.
 //!
 //! # Arena-native: ids, never owned types
 //!
@@ -3343,20 +3346,34 @@ where
                             respect::Reading::Case { datatype }
                         },
                     };
-                    let (result, mut goals) =
-                        former::case(arena, judgement.entries, session, case, datatype)?;
-                    if let Maybe::Present(reading) =
-                        respect::obliged(arena, judgement.entries, datatype, reading)
-                    {
-                        frames.push(Frame::Respect(case, reading));
+                    // A case of no branches over a path between two apart
+                    // terms of a data type owes no branch.
+                    let absurd = former::absurd(
+                        arena,
+                        (judgement.entries, judgement.presentations),
+                        session,
+                        case,
+                        datatype,
+                    )?;
+                    if let Maybe::Present(result) = absurd {
+                        produced = Produced::CompType(result);
                     }
-                    goals.reverse();
-                    if let Some(next) = goals.pop() {
-                        frames.push(Frame::Pending(goals, Produced::CompType(result)));
-                        goal = next;
-                        continue 'expand;
+                    else {
+                        let (result, mut goals) =
+                            former::case(arena, judgement.entries, session, case, datatype)?;
+                        if let Maybe::Present(reading) =
+                            respect::obliged(arena, judgement.entries, datatype, reading)
+                        {
+                            frames.push(Frame::Respect(case, reading));
+                        }
+                        goals.reverse();
+                        if let Some(next) = goals.pop() {
+                            frames.push(Frame::Pending(goals, Produced::CompType(result)));
+                            goal = next;
+                            continue 'expand;
+                        }
+                        produced = Produced::CompType(result);
                     }
-                    produced = Produced::CompType(result);
                 },
                 | Frame::Respect(case, reading) => {
                     respect::respected(

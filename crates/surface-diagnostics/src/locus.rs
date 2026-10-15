@@ -852,6 +852,7 @@ fn checked(
         | CheckRefusal::DescentNotReplayed { at, .. }
         | CheckRefusal::NonExhaustiveDataCase(at)
         | CheckRefusal::RuleNotRespected { at, .. }
+        | CheckRefusal::NotApart { at, .. }
         | CheckRefusal::AbsentRecordField(at)
         | CheckRefusal::AbsentTupleComponent(at)
         | CheckRefusal::NonCovariantMotive { at }
@@ -1094,6 +1095,14 @@ impl fmt::Display for Checked
                 gandr_kernel_term::RuleFault::NotDecreasing => "its right side is not smaller than its left",
             }),
             CheckRefusal::RuleNotRespected { rule, .. } => write!(f, "the case is not shown to respect rule {} of its datatype", usize::from(rule)),
+            CheckRefusal::NotApart { reason, .. } => match reason {
+                gandr_kernel_term::Apartness::Apart => f.write_str("the path's endpoints are apart"),
+                gandr_kernel_term::Apartness::Agree => f.write_str("the path's endpoints have one normal form"),
+                gandr_kernel_term::Apartness::Open => f.write_str("an endpoint holds a subterm of its datatype that is no constructor"),
+                gandr_kernel_term::Apartness::Leaf => f.write_str("the endpoints differ only at a subterm of another type"),
+                gandr_kernel_term::Apartness::Diverges { outer, inner } => write!(f, "rules {} and {} of the datatype do not converge", usize::from(outer), usize::from(inner)),
+                gandr_kernel_term::Apartness::Undecided => f.write_str("the endpoints were not decided within the rewrite budget"),
+            },
             CheckRefusal::AbstractKindNotUniverse(_) => f.write_str("an abstract type's kind must be a value universe"),
             CheckRefusal::RepresentationAboveKind {..} => f.write_str("a sealed representation exceeds its abstract type's universe"),
             CheckRefusal::NotAnAbstractType(constant) => write!(f,"declaration {} is not an abstract type",usize::from(constant)),

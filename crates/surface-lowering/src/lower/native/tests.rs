@@ -1225,17 +1225,35 @@ fn a_match_of_no_arms_eliminates_the_empty_sum()
         }
     ));
     assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_match_of_no_arms_switches_on_empty_data_and_on_a_path()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "data Empty : Type {{}}\n{COLOR}def absurd(v : Empty) -> -F Integer {{ case v {{}} }}\ndef stated(v : Empty) -> -F Integer {{ case v -> -F Integer {{}} }}\ndef apart(e : Path(Color, Red, Blue)) -> -F Empty {{ case e {{}} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["absurd", "stated", "apart"] {
+        assert!(
+            arena
+                .computation(tail_of(&arena, body_named(&module, SurfaceName::from(name))))
+                .is_some_and(|held| matches!(*held, Computation::DataCase { ref branches, .. } if branches.is_empty())),
+            "`{name}` switches on its scrutinee with no branch"
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
 
     let mut arena = CoreArena::new();
-    let source = alloc::format!("{COLOR}def nominal(c : Color) -> -F Integer {{ case c {{}} }}\n");
+    let source = alloc::format!("{COLOR}def some(c : Color) -> -F Integer {{ case c {{}} }}\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
-    let report = judged(&module, &mut arena);
     assert!(
-        report
-            .judged()
-            .iter()
-            .any(|judged| matches!(judged.verdict(), Verdict::Refused(_))),
-        "a match of no arms eliminates the empty sum, not a nominal family: {report:?}"
+        matches!(
+            refusal_of(&module, SurfaceName::from("some")),
+            LoweringRefusal::NonExhaustiveMatch { .. }
+        ),
+        "a match of no arms over a type with constructors misses them"
     );
 }
 

@@ -20,19 +20,49 @@
 //! its left. Such a rule removes a constructor from every term it rewrites,
 //! so a term of `n` constructors normalizes in at most `n` rewrites: the
 //! kernel needs no termination claim and no budget argument beyond the term's
-//! own size. Confluence is not checked here. The normal form is taken by one
-//! fixed strategy (`Presentation::normalize` names it), so conversion is an
-//! equivalence and sound for the equational theory whether or not the rules
-//! are confluent; confluence makes it complete, and the producer's coincidence
-//! check is where a presentation's convergence is established.
+//! own size. Confluence is not checked at admission. The normal form is taken
+//! by one fixed strategy (`Presentation::normalize` names it), so conversion
+//! is an equivalence and sound for the equational theory whether or not the
+//! rules are confluent; confluence makes it complete, and the producer's
+//! coincidence check is where a presentation's convergence is established for
+//! conversion. The apartness rule below does not lean on it: it joins every
+//! critical pair itself before it reads two normal forms as two elements.
 //!
 //! **Alternatives.** A recursive path order would admit size-preserving rules
 //! such as associativity, at the price of a precedence in the trusted base. A
-//! critical-pair check in the kernel would make conversion complete for every
-//! admitted presentation, at the price of joining every overlap at admission.
-//! **Reversal.** The first presented type whose rules preserve size takes a
-//! path order; the first conversion the fixed strategy separates though the
-//! theory equates takes the critical-pair check.
+//! critical-pair check at admission would make conversion complete for every
+//! admitted presentation, at the price of joining every overlap of every
+//! presented type, used or not. **Reversal.** The first presented type whose
+//! rules preserve size takes a path order; the first conversion the fixed
+//! strategy separates though the theory equates moves the critical-pair check
+//! of [`apart`] to admission.
+//!
+//! # Apartness
+//!
+//! A case of no branches over a scrutinee of the path type `Path(A, a, b)`,
+//! `A` a data type, is admitted at any motive exactly when `a` and `b` are
+//! apart ([`apart`]): the rules of `A` converge — every critical pair joins,
+//! so with the termination admission establishes each term has one normal
+//! form, and two terms are equal exactly when their normal forms are — and the
+//! two normal forms, holding no subterm of `A` that is not a constructor,
+//! first differ at two constructors with distinct tags. A free type is the
+//! case with no rule, and the rule is constructor disjointness; the words of a
+//! looped point are a presented type like any other, so `loop` and the empty
+//! word are apart at the circle's loop space. The decision is the kernel's own
+//! over the admitted declaration: the certificate is the case itself, with no
+//! new node and no recorded verdict, and a refusal names the reason
+//! ([`KernelError::NotApart`]): the normal forms agree, differ only under a
+//! leaf of another type, hold a subterm of `A` that is not a constructor, or
+//! the rules diverge.
+//!
+//! **Alternative.** Apartness by decoding: a map from `A` into a type with its
+//! own no-confusion (the circle's winding number into the integers) carries a
+//! path between the endpoints to one between their images, and those are
+//! apart. Each presented type then owes its decoding, and the decoding's
+//! target, the integers, still needs this rule at its own constructors.
+//! **Reversal.** The first apartness the rule cannot see — an endpoint that is
+//! open at a constructor head, or a type whose identity is not decided by
+//! normal form — takes decoding through a map the corpus defines.
 //!
 //! # The normal form
 //!
@@ -45,6 +75,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_term::Apartness;
 use gandr_kernel_term::CellFault;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeclarationContent;
@@ -59,6 +90,7 @@ use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::RuleSlot;
 use gandr_kernel_term::RuleTerm;
 use gandr_kernel_term::TermArena;
+use gandr_kernel_term::TermReading;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
@@ -630,12 +662,113 @@ pub(crate) fn normal_form(
     Ok(built.pop().unwrap_or(value))
 }
 
+/// Decide whether `left` and `right`, two terms of the data type
+/// `declaration` heads, are apart: the apartness rule a case of no branches
+/// over their path type rests on.
+///
+/// # Specification
+/// - requires: `left` and `right` live in `arena`, each a term of the data type
+///   `declaration` heads.
+/// - ensures: [`Presentation::apart`] over the declaration's own table and
+///   rules — free when it presents none — of the two terms read by [`node`]:
+///   each constructor of the declaration a constructor, each reference to an
+///   admitted definition its body, every other value a leaf by its id.
+/// - provides: the kernel's whole trust in an absurd case over a path: the
+///   decision is re-derived from the admitted declarations and the endpoints,
+///   and no certificate names a rewrite or a verdict.
+/// - fails: [`KernelError::NotADataType`] when `declaration` names no admitted
+///   data declaration.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `S(Z)` and `Z` over the integers are apart, `S(P(Z))` and
+///   `Z` agree, a reference to a word is read as the word, and a free type's
+///   distinct constructors are apart.
+/// - witness: `presented::tests::endpoints_are_apart_by_their_normal_forms`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::NotADataType { .. })))]
+pub(crate) fn apart(
+    arena: &TermArena,
+    entries: &[AdmittedDeclaration],
+    declaration: ConstantIndex,
+    endpoints: (ValueId, ValueId),
+) -> Result<Apartness, KernelError>
+{
+    let entry = entries
+        .get(usize::from(declaration))
+        .ok_or(KernelError::NotADataType { index: declaration })?;
+    let DeclarationContent::Data {
+        ref constructors, ..
+    } = *entry.content()
+    else {
+        return Err(KernelError::NotADataType { index: declaration });
+    };
+    let table = slot_table(arena, declaration, constructors);
+    Ok(entry
+        .declaration()
+        .presentation()
+        .apart(&table, endpoints, |at, fields| {
+            node(arena, entries, declaration, at, fields)
+        }))
+}
+
+/// The node at `at` as a term of the data type `declaration` heads.
+///
+/// # Specification
+/// - requires: nothing — an unreadable id is a leaf.
+/// - ensures: [`TermReading::Constructor`] with its fields appended for a
+///   constructor of `declaration`; [`TermReading::Defined`] with the body for a
+///   reference to an admitted definition; [`TermReading::Other`] for every
+///   other value. The checker reads its own arena alike.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`apart`].
+/// - witness: `presented::tests::endpoints_are_apart_by_their_normal_forms`
+#[spec(captures: before = fields.len(), ensures: |ret| matches!(ret, TermReading::Constructor(_)) || fields.len() == before)]
+fn node(
+    arena: &TermArena,
+    entries: &[AdmittedDeclaration],
+    declaration: ConstantIndex,
+    at: ValueId,
+    fields: &mut Vec<ValueId>,
+) -> TermReading<ValueId>
+{
+    match arena.value(at) {
+        | Some(&Value::Constructor {
+            datatype,
+            tag,
+            fields: ref written,
+        }) if matches!(
+            arena.value_type(datatype),
+            Some(&ValueType::Data { declaration: found, .. }) if found == declaration
+        ) =>
+        {
+            fields.extend_from_slice(written);
+            TermReading::Constructor(tag)
+        },
+        | Some(&Value::Constant(constant)) => {
+            match entries
+                .get(usize::from(constant))
+                .map(AdmittedDeclaration::content)
+            {
+                | Some(&DeclarationContent::Def { body, .. }) => TermReading::Defined(body),
+                | _ => TermReading::Other,
+            }
+        },
+        | _ => TermReading::Other,
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
     use alloc::vec::Vec;
 
     use gandr_kernel_strata::Level;
+    use gandr_kernel_term::Apartness;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
@@ -831,6 +964,108 @@ mod tests
             super::normal_form(arena, &free, word, &mut fuel),
             Ok(word),
             "without the declaration's rules the word is not read"
+        );
+    }
+
+    #[test]
+    fn endpoints_are_apart_by_their_normal_forms()
+    {
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = staging
+            .arena()
+            .value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let staged = staging
+            .data(
+                LevelSignature::monomorphic(),
+                Vec::new(),
+                alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                kind,
+            )
+            .presented(circle());
+        let _circle = environment
+            .add_decl(staged)
+            .expect("the circle admits with its rules");
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let free = staging
+            .arena()
+            .value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let staged = staging.data(
+            LevelSignature::monomorphic(),
+            Vec::new(),
+            alloc::vec![alloc::vec![], alloc::vec![free], alloc::vec![free]],
+            kind,
+        );
+        let _free = environment
+            .add_decl(staged)
+            .expect("the same table admits free");
+        let mut staging = environment.stage();
+        let circled = staging
+            .arena()
+            .value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let point = staging
+            .arena()
+            .value_constructor(circled, Letter::Base.tag(), Vec::new());
+        let body = staging
+            .arena()
+            .value_constructor(circled, Letter::Loop.tag(), alloc::vec![point]);
+        let staged = staging.def(LevelSignature::monomorphic(), circled, body);
+        let _named = environment
+            .add_decl(staged)
+            .expect("a definition of `loop(base)` admits");
+        let mut cloned = environment.arena().clone();
+        let arena = &mut cloned;
+        let base = arena.value_constructor(own, Letter::Base.tag(), Vec::new());
+        let looped = arena.value_constructor(own, Letter::Loop.tag(), alloc::vec![base]);
+        let unlooped = arena.value_constructor(own, Letter::Unloop.tag(), alloc::vec![looped]);
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let open = arena.value_constructor(own, Letter::Loop.tag(), alloc::vec![variable]);
+        let entries = environment.entries();
+        let circle = ConstantIndex::from(0_usize);
+        assert_eq!(
+            super::apart(arena, entries, circle, (looped, base)),
+            Ok(Apartness::Apart)
+        );
+        assert_eq!(
+            super::apart(arena, entries, circle, (unlooped, base)),
+            Ok(Apartness::Agree),
+            "`unloop(loop(base))` is `base` by the declaration's rules"
+        );
+        assert_eq!(
+            super::apart(arena, entries, circle, (open, base)),
+            Ok(Apartness::Open)
+        );
+        let named = arena.value_constant(ConstantIndex::from(2_usize));
+        assert_eq!(
+            super::apart(arena, entries, circle, (named, base)),
+            Ok(Apartness::Apart),
+            "a reference to `loop(base)` is read as its definition"
+        );
+        let free_base = arena.value_constructor(free, Letter::Base.tag(), Vec::new());
+        let free_looped = arena.value_constructor(free, Letter::Loop.tag(), alloc::vec![free_base]);
+        let free_unlooped =
+            arena.value_constructor(free, Letter::Unloop.tag(), alloc::vec![free_looped]);
+        assert_eq!(
+            super::apart(
+                arena,
+                entries,
+                ConstantIndex::from(1_usize),
+                (free_unlooped, free_base)
+            ),
+            Ok(Apartness::Apart),
+            "without rules nothing cancels"
+        );
+        assert_eq!(
+            super::apart(arena, entries, ConstantIndex::from(9_usize), (base, base)),
+            Err(KernelError::NotADataType {
+                index: ConstantIndex::from(9_usize)
+            })
         );
     }
 

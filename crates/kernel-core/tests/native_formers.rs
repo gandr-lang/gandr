@@ -591,6 +591,71 @@ mod native_formers
     }
 
     #[test]
+    fn an_absurd_case_rests_on_apart_endpoints()
+    {
+        use gandr_kernel_term::Apartness;
+        use gandr_kernel_term::Presentation;
+        use gandr_kernel_term::PresentedRule;
+        use gandr_kernel_term::RuleNode;
+        let x = RuleNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32));
+        let succ = RuleNode::Constructor(ConstructorTag::from(1_usize));
+        // The naturals modulo two: `Succ(Zero)` and `Zero` are normal and
+        // differ at their heads, and `Succ(Succ(Zero))` is `Zero`.
+        let modulo =
+            Presentation::new(vec![PresentedRule::new([succ, succ, x].into(), [x].into())]);
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let naturals = staging
+            .data(
+                LevelSignature::monomorphic(),
+                vec![],
+                vec![vec![], vec![own]],
+                kind,
+            )
+            .presented(modulo);
+        let nominal = environment
+            .add_decl(naturals)
+            .expect("the naturals modulo two admit")
+            .position();
+        for (successors, expected, why) in [
+            (1_usize, Ok(()), "`Succ(Zero)` is apart from `Zero`"),
+            (
+                2,
+                Err(KernelError::NotApart(Apartness::Agree)),
+                "`Succ(Succ(Zero))` is `Zero`, so the path is reflexivity",
+            ),
+        ] {
+            // `λe. case e {}` at `Path(N, Succ^n(Zero), Zero) → F unit`.
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let datatype = arena.value_type_data(nominal, vec![]);
+            let zero = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![]);
+            let mut left = zero;
+            for _ in 0 .. successors {
+                left = arena.value_constructor(datatype, ConstructorTag::from(1_usize), vec![left]);
+            }
+            let path = arena.value_type_path(datatype, left, zero);
+            let unit = arena.value_type_unit();
+            let motive = arena.comp_type_returner(unit);
+            let variable = arena.value_variable(DeBruijnIndex::from(0));
+            let case = arena.computation_data_case(variable, motive, vec![]);
+            let lambda = arena.computation_lambda(case);
+            let body = arena.value_thunk(lambda);
+            let arrow = arena.comp_type_pi(path, motive);
+            let declared = arena.value_type_thunk(arrow);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            assert_eq!(
+                environment.add_decl(declaration).map(|_admitted| ()),
+                expected,
+                "{why}"
+            );
+        }
+    }
+
+    #[test]
     fn record_width_depth_projection_and_absent_fields()
     {
         let mut environment = Environment::new();

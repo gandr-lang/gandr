@@ -1,0 +1,41 @@
+// Matches of no arm over paths whose endpoints are not apart. Each is refused
+// by the apartness rule, naming why.
+
+data Empty : Type {}
+
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
+}
+
+/// `S(P(Z))` is `Z`: the normal forms agree, and the path is reflexivity.
+@[ refuses("NotApart") ]
+def agree(e : Path(Int, S(P(Z)), Z)) -> -F Empty {
+  case e {}
+}
+
+/// `S(n)` is `Z` once `n` is `P(Z)`: an endpoint holds a variable of the type.
+@[ refuses("NotApart") ]
+def open(n : Int, e : Path(Int, S(n), Z)) -> -F Empty {
+  case e {}
+}
+
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+/// The loop then its inverse is the empty word.
+@[ refuses("NotApart") ]
+def cancelled(e : Path(Path(Circle, Base, Base), loop ∷ back(loop) ∷ here(Base), here(Base))) -> -F Empty {
+  case e {}
+}
+
+/// A match of no arm over a type with constructors misses them.
+@[ refuses("NonExhaustiveMatch") ]
+def unmatched(n : Int) -> -F Empty {
+  case n {}
+}

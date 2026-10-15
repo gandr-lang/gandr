@@ -443,6 +443,9 @@ fn checked(
         | CheckRefusal::RuleNotRespected { .. } => {
             f.write_str("this case might tell apart terms its datatype's rules identify")
         },
+        | CheckRefusal::NotApart { .. } => {
+            f.write_str("this case has no arm, but its path's endpoints are not shown apart")
+        },
         | CheckRefusal::AbstractKindNotUniverse(_) => {
             f.write_str("an abstract type's kind must be a universe")
         },
@@ -988,6 +991,10 @@ mod tests
                 rule: gandr_kernel_term::RuleIndex::from(0_usize),
                 left: value,
                 right: value,
+            },
+            CheckRefusal::NotApart {
+                at: computation,
+                reason: gandr_kernel_term::Apartness::Agree,
             },
             CheckRefusal::AbstractKindNotUniverse(value_type),
             CheckRefusal::RepresentationAboveKind {

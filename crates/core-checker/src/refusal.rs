@@ -439,6 +439,17 @@ pub enum CheckRefusal
         /// The rule's right side, over the same variables.
         right: ValueId,
     },
+    /// A case of no branches over a path type whose endpoints are not shown
+    /// apart: the apartness rule admits it only between two terms of a data
+    /// type whose normal forms first differ at two constructors.
+    NotApart
+    {
+        /// The case.
+        at: ComputationId,
+        /// Why the endpoints are not apart: they agree, differ only at a
+        /// subterm of another type, are open, or the type's rules diverge.
+        reason: gandr_kernel_term::Apartness,
+    },
     /// An abstract type's kind is not a value universe.
     AbstractKindNotUniverse(ValueTypeId),
     /// A sealed representation forms above its abstract type's universe.
@@ -1013,7 +1024,7 @@ impl CheckRefusal
         | Self::MachineInvariant
         | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
         | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. }
-        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
+        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
         | Self::UnknownOperation { .. } | Self::HandlerCoverage { .. }
@@ -1050,6 +1061,7 @@ impl CheckRefusal
             | Self::DataFieldLevel { .. }
             | Self::RuleNotPresentable { .. }
             | Self::RuleNotRespected { .. }
+            | Self::NotApart { .. }
             | Self::AbstractKindNotUniverse(_)
             | Self::RepresentationAboveKind { .. }
             | Self::NotAnAbstractType(_)
@@ -1248,6 +1260,7 @@ impl CheckRefusal
             | Self::DataFieldLevel { .. }
             | Self::RuleNotPresentable { .. }
             | Self::RuleNotRespected { .. }
+            | Self::NotApart { .. }
             | Self::AbstractKindNotUniverse(_)
             | Self::RepresentationAboveKind { .. }
             | Self::NotAnAbstractType(_)

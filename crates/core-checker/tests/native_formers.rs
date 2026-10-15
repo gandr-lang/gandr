@@ -666,6 +666,107 @@ mod native_formers
     }
 
     #[test]
+    fn an_absurd_case_rests_on_apart_endpoints_in_both_checkers()
+    {
+        let looped = ConstructorTag::from(1_usize);
+        let unlooped = ConstructorTag::from(2_usize);
+        let mut arena = CoreArena::new();
+        let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+        let empty = arena.value_type_data(ConstantIndex::from(1_usize), vec![]);
+        let base = word(&mut arena, &[]);
+        // `λe. case e {}` at `Path(Circle, left, right) → F Empty`, its type,
+        // its lambda and its case.
+        let absurd = |arena: &mut CoreArena, left: ValueId, right: ValueId| {
+            let path = arena.value_type_path(own, left, right);
+            let motive = arena.comp_type_returner(empty);
+            let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let case = arena.computation_data_case(scrutinee, motive, vec![]);
+            let lambda = arena.computation_lambda(case);
+            let arrow = arena.comp_type_arrow(path, motive);
+            (lambda, arrow, case)
+        };
+        let thunked = |arena: &mut CoreArena,
+                       (lambda, arrow, case): (
+            gandr_core_term::ComputationId,
+            gandr_core_term::CompTypeId,
+            gandr_core_term::ComputationId,
+        )| {
+            (
+                arena.value_thunk(lambda),
+                arena.value_type_thunk(arrow),
+                case,
+            )
+        };
+        let once = word(&mut arena, &[looped]);
+        let formed = absurd(&mut arena, once, base);
+        let (apart, apart_type, _) = thunked(&mut arena, formed);
+        let named = arena.value_constant(ConstantIndex::from(3_usize));
+        let formed = absurd(&mut arena, named, base);
+        let (by_name, by_name_type, _) = thunked(&mut arena, formed);
+        let cancelled = word(&mut arena, &[looped, unlooped]);
+        let formed = absurd(&mut arena, cancelled, base);
+        let (agree, agree_type, agree_case) = thunked(&mut arena, formed);
+        // `λx. λe. case e {}` at `(x : Circle) → Path(Circle, Loop(x), Base)
+        // → F Empty`: an endpoint holds a variable of the circle.
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let open_word = arena.value_constructor(own, looped, vec![variable]);
+        let (inner, arrow, open_case) = absurd(&mut arena, open_word, base);
+        let outer = arena.computation_lambda(inner);
+        let open = arena.value_thunk(outer);
+        let pi = arena.comp_type_pi(own, arrow);
+        let open_type = arena.value_type_thunk(pi);
+        let declarations = vec![
+            circle(&mut arena, cancellations()),
+            Declaration::data(
+                ConstantIndex::from(1_usize),
+                DataSignature::new(vec![], vec![], kind).into(),
+                OriginToken::from(1_usize),
+            ),
+            definition(ConstantIndex::from(2_usize), apart_type, apart),
+            definition(ConstantIndex::from(3_usize), own, once),
+            definition(ConstantIndex::from(4_usize), by_name_type, by_name),
+            definition(ConstantIndex::from(5_usize), agree_type, agree),
+            definition(ConstantIndex::from(6_usize), open_type, open),
+        ];
+        let (report, crossed) = run(&mut arena, &declarations);
+        for (position, what) in [
+            (2, "`Loop(Base)` and `Base` are apart"),
+            (4, "a definition of `Loop(Base)` is read as its body"),
+        ] {
+            assert!(
+                matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+                "{what}: {:?}",
+                report.judged()[position].verdict()
+            );
+            assert!(
+                matches!(
+                    crossed.readmitted()[position].outcome(),
+                    Outcome::Defined { .. }
+                ),
+                "and the kernel decides alike: {:?}",
+                crossed.readmitted()[position].outcome()
+            );
+        }
+        assert_eq!(
+            report.judged()[5].verdict(),
+            Verdict::Refused(CheckRefusal::NotApart {
+                at: agree_case,
+                reason: gandr_kernel_term::Apartness::Agree,
+            }),
+            "`Loop(Unloop(Base))` is `Base`"
+        );
+        assert_eq!(
+            report.judged()[6].verdict(),
+            Verdict::Refused(CheckRefusal::NotApart {
+                at: open_case,
+                reason: gandr_kernel_term::Apartness::Open,
+            }),
+            "`Loop(x)` is `Base` once `x` is `Unloop(Base)`"
+        );
+    }
+
+    #[test]
     fn a_fold_rests_on_the_laws_of_the_rules_it_computes_apart()
     {
         let (turn, unturn) = (ConstantIndex::from(1_usize), ConstantIndex::from(2_usize));

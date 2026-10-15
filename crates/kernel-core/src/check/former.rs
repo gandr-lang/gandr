@@ -32,6 +32,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::Apartness;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
@@ -45,11 +46,14 @@ use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
+use quenchant_shape::shape::Maybe;
 
 use super::Goal;
 use crate::env::AdmittedDeclaration;
 use crate::error::ExpectedValueShape;
 use crate::error::KernelError;
+use crate::presented;
+use crate::presented::Presentations;
 use crate::rewrite;
 use crate::rewrite::BinderDepth;
 use crate::support::SupportContext;
@@ -457,6 +461,97 @@ pub(super) fn case(
     let (table, memo) = session.rewrite_parts();
     let result = rewrite::substitute_comp_type(arena, table, memo, motive, scrutinee);
     Ok((result, goals))
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a data case is no appeal to the apartness rule.
+    pub(super) mod absurd {
+        /// The reason the case splits by its type's constructors instead.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub(in crate::check) enum Absent {
+            /// The case has branches.
+            Branched,
+            /// The scrutinee's type is no path between two terms of a data
+            /// type.
+            NotAPath,
+        }
+    }
+}
+
+/// The result of a case of no branches over a path between two apart terms
+/// of a data type: the motive at the scrutinee, with no branch owed.
+///
+/// # Specification
+/// - requires: the scrutinee has the classifier `datatype`, read as its words
+///   where it is a path at a looped point; the motive has formed under one
+///   binder of it.
+/// - ensures: `Present(motive[scrutinee])` exactly when the case has no branch,
+///   `datatype` is `Path(domain, left, right)` with `domain` — read as its
+///   words where it is itself a path at a looped point — a data type, and
+///   [`crate::presented::apart`] decides `left` and `right` apart;
+///   [`absurd::Absent::Branched`] or [`absurd::Absent::NotAPath`] when the case
+///   is no such appeal, which [`case`] then checks as a split.
+/// - provides: the elimination of a path between apart terms, the absurd case's
+///   one admission rule.
+/// - fails: [`KernelError::NotApart`] naming why the endpoints are not shown
+///   apart, [`KernelError::NotADataType`] or [`KernelError::ArenaFault`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a case of no branches over `Path(N, Succ(Zero), Zero)` at
+///   the naturals modulo two admits, and one over `Path(N, Succ(Succ(Zero)),
+///   Zero)`, whose normal forms agree, is refused by name.
+/// - witness: `native_formers::native_formers::an_absurd_case_rests_on_apart_endpoints`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::NotApart(_) | KernelError::NotADataType { .. } | KernelError::ArenaFault)))]
+pub(super) fn absurd(
+    arena: &mut TermArena,
+    (entries, presentations): (&[AdmittedDeclaration], &Presentations),
+    session: &mut SupportContext,
+    case: ComputationId,
+    datatype: ValueTypeId,
+) -> Result<Maybe<CompTypeId, absurd::Absent>, KernelError>
+{
+    let (scrutinee, motive) = match arena.computation(case).ok_or(KernelError::ArenaFault)? {
+        | &Computation::DataCase {
+            scrutinee,
+            motive,
+            ref branches,
+        } => {
+            if !branches.is_empty() {
+                return Ok(Maybe::Absent(absurd::Absent::Branched));
+            }
+            (scrutinee, motive)
+        },
+        | _ => return Err(KernelError::ArenaFault),
+    };
+    let Some(&ValueType::Path {
+        domain,
+        left,
+        right,
+    }) = arena.value_type(datatype)
+    else {
+        return Ok(Maybe::Absent(absurd::Absent::NotAPath));
+    };
+    let domain = presentations.identified(arena, domain);
+    let Some(&ValueType::Data { declaration, .. }) = arena.value_type(domain)
+    else {
+        return Ok(Maybe::Absent(absurd::Absent::NotAPath));
+    };
+    match presented::apart(arena, entries, declaration, (left, right))? {
+        | Apartness::Apart => {},
+        | reason @ (Apartness::Agree
+        | Apartness::Open
+        | Apartness::Leaf
+        | Apartness::Diverges { .. }
+        | Apartness::Undecided) => return Err(KernelError::NotApart(reason)),
+    }
+    let (table, memo) = session.rewrite_parts();
+    Ok(Maybe::Present(rewrite::substitute_comp_type(
+        arena, table, memo, motive, scrutinee,
+    )))
 }
 
 /// Check directional record inclusion without changing definitional equality.

@@ -535,6 +535,7 @@ fn checking_row(
         | CheckRefusal::DataFieldLevel { .. }
         | CheckRefusal::RuleNotPresentable { .. }
         | CheckRefusal::RuleNotRespected { .. }
+        | CheckRefusal::NotApart { .. }
         | CheckRefusal::AbstractKindNotUniverse(_)
         | CheckRefusal::RepresentationAboveKind { .. }
         | CheckRefusal::NotAnAbstractType(_)

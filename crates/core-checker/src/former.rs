@@ -40,6 +40,29 @@
 //! former for them. Native declarations export as data declarations, not
 //! axioms.
 //!
+//! # Apartness
+//!
+//! A data type with no constructor is eliminated by its case of no branch,
+//! which synthesizes its motive at the scrutinee like any data case; no β rule
+//! exists, having no constructor to fire at. A path is eliminated the same way
+//! when its endpoints are apart ([`apart`]): its carrier, read as its words at
+//! a looped point, is a data type whose rules converge, and the endpoints'
+//! normal forms first differ at two distinct constructors. Each endpoint is
+//! read where the carrier stands — a constructor of it a node, a reference to
+//! a definition its body, anything else a leaf — by the decision
+//! `gandr_kernel_term::Presentation::apart` makes for both checkers, so the
+//! kernel admits exactly the cases the checker does. A case whose endpoints
+//! are not apart is refused [`CheckRefusal::NotApart`] with the reason.
+//!
+//! **Choice.** Apartness decided at the presented type, from its normal forms.
+//! **Alternative.** Decoding: a map out of the type into one with its own
+//! no-confusion — the circle's winding number into the integers — carries the
+//! path to one between the images. Each type then owes its decoding, and the
+//! integers at the bottom still need this rule at their constructors.
+//! **Reversal.** An endpoint open at a constructor head, or a type whose
+//! identity is not decided by normal form, takes decoding through a map the
+//! program defines.
+//!
 //! # Sealed abstract types
 //!
 //! An abstract type forms when its kind is a value universe and its
@@ -60,14 +83,18 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::ConstructorTag;
 use gandr_core_term::DataSignature;
 use gandr_core_term::Sort;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::Apartness;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::RuleSlot;
+use gandr_kernel_term::TermReading;
 use quenchant_shape::shape::Maybe;
 
 use crate::CheckRefusal;
@@ -254,6 +281,129 @@ pub fn slot_table(
                 .collect()
         })
         .collect()
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a path's endpoints are no question for the apartness rule.
+    pub mod carrier {
+        /// The reason the carrier is not decided over.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The carrier, read as its words where it is a path at a looped
+            /// point, is no data type.
+            NotData,
+        }
+    }
+}
+
+/// Decide whether `left` and `right`, the endpoints of a path at `carrier`,
+/// are apart: the rule a case of no branches over the path rests on.
+///
+/// # Specification
+/// - requires: `left` and `right` are terms of `carrier`, formed.
+/// - ensures: [`gandr_kernel_term::Presentation::apart`] over the declaration's
+///   own table ([`slot_table`]) and rules, both endpoints read by [`node`] —
+///   each constructor of the declaration a constructor, each reference to a
+///   definition its body, every other value a leaf by its id — when `carrier`,
+///   read as its words where it is a path at a looped point, is a data type;
+///   its signature and each definition read are then logged as consulted.
+///   [`carrier::Absent::NotData`] otherwise. The kernel decides over the same
+///   table, rules and terms (`presented::apart` in `gandr-kernel-core`), so the
+///   two admit alike.
+/// - provides: the apartness rule of the absurd case over a path.
+/// - fails: as [`CheckingContext::identified`]; [`CheckRefusal::NotADataType`]
+///   for a declaration not in scope.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — absurd cases over `S(Z)` against `Z`, over a free type's
+///   distinct constructors and over the circle's loop, a definition, against
+///   its empty word check, and over `S(P(Z))` against `Z` and over an open
+///   endpoint are refused by name, in both checkers.
+/// - witness: `native_formers::native_formers::an_absurd_case_rests_on_apart_endpoints_in_both_checkers`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::NotADataType(_) | CheckRefusal::Undecided { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::OutOfFragment { .. })))]
+pub fn apart(
+    context: &mut CheckingContext<'_>,
+    carrier: ValueTypeId,
+    endpoints: (ValueId, ValueId),
+) -> Result<Maybe<Apartness, carrier::Absent>, CheckRefusal>
+{
+    let carrier = context.identified(carrier)?;
+    let Some(&ValueType::Data { declaration, .. }) = context.arena().value_type(carrier)
+    else {
+        return Ok(Maybe::Absent(carrier::Absent::NotData));
+    };
+    let signature = context
+        .consult_data(declaration)
+        .ok_or(CheckRefusal::NotADataType(declaration))?;
+    let mut unfolded = Vec::new();
+    let decided = {
+        let (arena, definitions) = (context.arena(), context.definitions());
+        let table = slot_table(arena, declaration, &signature);
+        signature
+            .presentation()
+            .apart(&table, endpoints, |at, fields| {
+                node(
+                    (arena, definitions),
+                    declaration,
+                    (at, fields),
+                    &mut unfolded,
+                )
+            })
+    };
+    for constant in unfolded {
+        let _answer = context.consult(constant);
+    }
+    Ok(Maybe::Present(decided))
+}
+
+/// The node at `at` as a term of the data type `declaration` heads.
+///
+/// # Specification
+/// - requires: nothing — an unreadable id is a leaf.
+/// - ensures: [`TermReading::Constructor`] with its fields appended for a
+///   constructor of `declaration`; [`TermReading::Defined`] with the body for a
+///   reference to a definition, the reference's constant appended to
+///   `unfolded`; [`TermReading::Other`] for every other value. The kernel reads
+///   its own arena alike.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`apart`].
+/// - witness: `native_formers::native_formers::an_absurd_case_rests_on_apart_endpoints_in_both_checkers`
+#[spec(captures: before = fields.len(), ensures: |ret| matches!(ret, TermReading::Constructor(_)) || fields.len() == before)]
+fn node(
+    (arena, definitions): (&gandr_core_term::CoreArena, &crate::code::CodeDefinitions),
+    declaration: ConstantIndex,
+    (at, fields): (ValueId, &mut Vec<ValueId>),
+    unfolded: &mut Vec<ConstantIndex>,
+) -> TermReading<ValueId>
+{
+    match arena.value(at) {
+        | Some(&Value::Constructor {
+            datatype,
+            tag,
+            fields: ref written,
+        }) if matches!(
+            arena.value_type(datatype),
+            Some(&ValueType::Data { declaration: found, .. }) if found == declaration
+        ) =>
+        {
+            fields.extend_from_slice(written);
+            TermReading::Constructor(tag)
+        },
+        | Some(&Value::Constant(constant)) => match definitions.body(constant) {
+            | Maybe::Present(body) => {
+                unfolded.push(constant);
+                TermReading::Defined(body)
+            },
+            | Maybe::Absent(_) => TermReading::Other,
+        },
+        | _ => TermReading::Other,
+    }
 }
 
 /// Form an abstract type's kind and representation: the level of the universe

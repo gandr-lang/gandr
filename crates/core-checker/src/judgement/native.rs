@@ -19,6 +19,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::instantiate_comp_type;
 use gandr_core_term::shift_comp_type_under;
+use gandr_kernel_term::Apartness;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
@@ -326,6 +327,32 @@ impl Machine<'_, '_>
         // free cells mint.
         let datatype = self.context.whnf_value_type(datatype)?;
         let datatype = self.context.identified(datatype)?;
+        // A case of no branches over a path between two apart terms of a data
+        // type owes no branch and no rule.
+        if let ValueTypeView::Path {
+            carrier,
+            left,
+            right,
+        } = value_type_view(self.context.arena(), datatype)?
+            && let &Computation::DataCase {
+                motive,
+                ref branches,
+                ..
+            } = self.computation(term)?
+            && branches.is_empty()
+            && let Maybe::Present(reason) = former::apart(self.context, carrier, (left, right))?
+        {
+            if reason != Apartness::Apart {
+                return Err(CheckRefusal::NotApart { at: term, reason });
+            }
+            self.wait(Frame::NativeMotive {
+                term,
+                datatype,
+                respect: Maybe::Absent(obligation::Absent::Absurd),
+            });
+            self.context.binders().open(Zone::Intuitionistic, datatype);
+            return Ok(Step::Descend(Goal::Form(TypeNode::Computation(motive))));
+        }
         if !matches!(
             self.context.arena().value_type(datatype),
             Some(ValueType::Data { .. })
