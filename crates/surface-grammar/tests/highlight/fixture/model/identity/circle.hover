@@ -206,10 +206,10 @@
 65:14-65:15 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @63:3-67:4
 65:17-65:17 1 ⇒ Integer @65:17-65:18
 65:18-65:18 , ⇒ ?⏎⏎checked against⏎⏎-F Integer @63:3-67:4
-66:5-66:9 back( ⇒ back(loop) : Path(Circle, Base, Base) @66:5-66:15
+66:5-66:8 back ⇒ back : Path(Circle, Base, Base) @66:5-66:9
+66:9-66:9 ( ⇒ back(loop) ∷ q : Path(Circle, Base, Base) @66:5-66:19
 66:10-66:13 loop ⇒ loop : Path(Circle, Base, Base) @66:10-66:14
-66:14-66:14 ) ⇒ back(loop) : Path(Circle, Base, Base) @66:5-66:15
-66:16-66:16 ∷ ⇒ back(loop) ∷ q : Path(Circle, Base, Base) @66:5-66:19
+66:14-66:16 ) ∷ ⇒ back(loop) ∷ q : Path(Circle, Base, Base) @66:5-66:19
 66:18-66:18 q ⇒ q : Path(Circle, Base, Base) @66:18-66:19
 66:20-66:21 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @63:3-67:4
 66:23-66:23 2 ⇒ Integer @66:23-66:24
@@ -248,10 +248,10 @@
 75:28-75:28 ) ⇒ -F Int @75:19-75:29
 75:29-75:29 ) ⇒ S(wind[<](q)) : Int @75:17-75:30
 75:30-75:30 , ⇒ -F Int @73:3-77:4
-76:5-76:9 back( ⇒ back(loop) : Path(Circle, Base, Base) @76:5-76:15
+76:5-76:8 back ⇒ back : Path(Circle, Base, Base) @76:5-76:9
+76:9-76:9 ( ⇒ back(loop) ∷ q : Path(Circle, Base, Base) @76:5-76:19
 76:10-76:13 loop ⇒ loop : Path(Circle, Base, Base) @76:10-76:14
-76:14-76:14 ) ⇒ back(loop) : Path(Circle, Base, Base) @76:5-76:15
-76:16-76:16 ∷ ⇒ back(loop) ∷ q : Path(Circle, Base, Base) @76:5-76:19
+76:14-76:16 ) ∷ ⇒ back(loop) ∷ q : Path(Circle, Base, Base) @76:5-76:19
 76:18-76:18 q ⇒ q : Path(Circle, Base, Base) @76:18-76:19
 76:20-76:21 => ⇒ -F Int @73:3-77:4
 76:23-76:24 P( ⇒ P(wind[<](q)) : Int @76:23-76:36
@@ -533,10 +533,10 @@
 129:39-129:39 ) ⇒ -F Path(Path(Circle, Base, Base), spin(wind(q)), q) @129:30-129:40
 129:40-129:40 ) ⇒ -F Path(Path(Circle, Base, Base), spin(wind(loop ∷ q)), loopOn(q))⏎⏎checked against⏎⏎-F Path(Path(Circle, Base, Base), spin(wind(loop ∷ q)), loop ∷ q) @129:17-129:41
 129:41-129:41 , ⇒ -F Path(Path(Circle, Base, Base), spin(wind(p)), p) @127:3-131:4
-130:5-130:9 back( ⇒ back(loop) : Path(Circle, Base, Base) @130:5-130:15
+130:5-130:8 back ⇒ back : Path(Circle, Base, Base) @130:5-130:9
+130:9-130:9 ( ⇒ back(loop) ∷ q : Path(Circle, Base, Base) @130:5-130:19
 130:10-130:13 loop ⇒ loop : Path(Circle, Base, Base) @130:10-130:14
-130:14-130:14 ) ⇒ back(loop) : Path(Circle, Base, Base) @130:5-130:15
-130:16-130:16 ∷ ⇒ back(loop) ∷ q : Path(Circle, Base, Base) @130:5-130:19
+130:14-130:16 ) ∷ ⇒ back(loop) ∷ q : Path(Circle, Base, Base) @130:5-130:19
 130:18-130:18 q ⇒ q : Path(Circle, Base, Base) @130:18-130:19
 130:20-130:21 => ⇒ -F Path(Path(Circle, Base, Base), spin(wind(p)), p) @127:3-131:4
 130:23-130:27 cong( ⇒ -F Path(Path(Circle, Base, Base), spin(wind(back(loop) ∷ q)), unloopOn(q))⏎⏎checked against⏎⏎-F Path(Path(Circle, Base, Base), spin(wind(back(loop) ∷ q)), back(loop) ∷ q) @130:23-130:49

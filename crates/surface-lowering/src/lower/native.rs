@@ -3386,7 +3386,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the constructor of the words of the loop `g` names whose tag
     ///   is its letter, or its inverse under `back`, as [`Self::loop_letter`]
     ///   reads it, its one field the rest queued on `work`; the letter `g`, and
-    ///   `back(g)` whole, spelled at `slot` as a word of one letter.
+    ///   the name `back` that inverts it, spelled at `slot` as a word of one
+    ///   letter, so the parentheses around `g`, tiles of the pattern, answer
+    ///   the pattern as a constructor pattern's do.
     /// - fails: the unadmitted refusal for a head other than `back` applied to
     ///   a name; the unresolved-name refusal for a name that is no loop; a tile
     ///   out of place.
@@ -3421,7 +3423,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
             };
-            let Maybe::Present(close) = cursor.tile(TileName::PAREN_CLOSE)
+            let Maybe::Present(_) = cursor.tile(TileName::PAREN_CLOSE)
             else {
                 return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
             };
@@ -3430,7 +3432,7 @@ impl<'source> Lowerer<'_, 'source>
             }
             patterns
                 .spelled
-                .push((slot, head.span.join(close.span), PatternReading::Matched));
+                .push((slot, head.span, PatternReading::Matched));
             (cell, Inverse(true))
         }
         else {

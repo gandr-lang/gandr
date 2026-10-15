@@ -215,18 +215,19 @@ pub struct Style
 ///   table holds the lowering's refusal of it, that refusal after a blank line;
 ///   then the documentation the session filed for the form after a blank line,
 ///   about the name's range; else, on the innermost typed node holding the
-///   position: when the node spans a whole non-module declaration — its body's
-///   term written over the declaration — as on that declaration's name, about
-///   its head when the position is there and the node's range otherwise; else a
-///   block of its type — a binder's name, a written type's text or a term
-///   written as one name before ` : ` — and, for a term checked against a type
-///   spelled otherwise, that type in a second block, about the node's range;
-///   else, in the head of a non-module declaration — from its form's start to
-///   the brace opening its own body — as on its name, about the head, and in
-///   the attributes before the head, about them. Absent elsewhere, and absent
-///   for a declaration with neither a type, a refusal nor documentation. Every
-///   type is spelled in `style`'s form, and every block is written as [`Code`]
-///   writes it in `style`'s markup.
+///   position: when the node spans a whole declaration — its body's term
+///   written over the declaration, or a module's instantiation written over the
+///   module (#405), which answers nothing when its name answers nothing — as on
+///   that declaration's name, about its head when the position is there and the
+///   node's range otherwise; else a block of its type — a binder's name, a
+///   written type's text or a term written as one name before ` : ` — and, for
+///   a term checked against a type spelled otherwise, that type in a second
+///   block, about the node's range; else, in the head of a non-module
+///   declaration — from its form's start to the brace opening its own body — as
+///   on its name, about the head, and in the attributes before the head, about
+///   them. Absent elsewhere, and absent for a declaration with neither a type,
+///   a refusal nor documentation. Every type is spelled in `style`'s form, and
+///   every block is written as [`Code`] writes it in `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -294,11 +295,14 @@ pub fn hover<Store, Blocks>(
             RenderOffset::from(usize::from(entry.span().end())),
         )
     {
-        // An entry standing for a whole declaration — its body's term, written
-        // at the declaration's span — answers as the declaration it stands for.
+        // An entry standing for a whole declaration — its body's term, or a
+        // module's instantiation, written at the declaration's span — answers
+        // as the declaration it stands for. A module with a body has no entry
+        // over it whole, so its members answer for themselves; an
+        // instantiation's entry is one of the members it instantiates, so a
+        // module answers its own entry or nothing (#405).
         if let Some(whole) = found.iter().rfind(|found| {
-            found.symbol.kind != SymbolKind::MODULE
-                && range.start <= found.symbol.selection_range.start
+            range.start <= found.symbol.selection_range.start
                 && found.symbol.range.end <= range.end
                 && found.symbol.range.start <= position
                 && position <= found.symbol.range.end
@@ -309,8 +313,9 @@ pub fn hover<Store, Blocks>(
             else {
                 range
             };
-            if let Maybe::Present(answer) = declared(session, table, whole, about, &quoted, style) {
-                return Maybe::Present(answer);
+            let answer = declared(session, table, whole, about, &quoted, style);
+            if whole.symbol.kind == SymbolKind::MODULE || matches!(answer, Maybe::Present(_)) {
+                return answer;
             }
         }
         let mut value = typed(&quoted, &entry, style.markup);
@@ -717,7 +722,7 @@ mod tests
     #[test]
     fn each_marked_position_hovers_its_answer()
     {
-        let rows: [(&str, &str, Result<String, hovered::Absent>); 21] = [
+        let rows: [(&str, &str, Result<String, hovered::Absent>); 25] = [
             (
                 "a synthesised declaration's name",
                 "def ans$0wer = 42 ;\n",
@@ -797,6 +802,33 @@ mod tests
                  -> -F Type { case u { NatC => return Integer, Arrow(a, b) => return Unit } \
                  }\ndef k : el(Arrow$0(NatC, NatC)) ;\n",
                 Ok(fenced(SourceText::from("Arrow(NatC, NatC) : U"))),
+            ),
+            (
+                "a type under a static binder (#404)",
+                "def pair : Type -> Type[-] ;\ndef pair = \\X. -$0F (X * X) ;\n",
+                Ok(fenced(SourceText::from("-F (X * X) : Type[-]"))),
+            ),
+            (
+                "a module's instantiation answers its own entry, never a member's type (#405)",
+                "module Seed :> #{ type T, zero : T } {\n  type T = Integer;\n  def zero = 0;\n}\nmodule \
+                 Keep(S : #{ type T, zero : T }) :> #{ type T, zero : T } {\n  type T = S.T;\n  def \
+                 zero = S.zero;\n}\nmodule A = Keep(S$0eed) ;\n",
+                Err(hovered::Absent::Unknown),
+            ),
+            (
+                "the parentheses around an inverted letter answer the cons pattern (#408)",
+                "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef rec size(p : \
+                 Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    here => return 0,\n    \
+                 loop ∷ q => become size[<](q),\n    back$0(loop) ∷ q => become size[<](q)\n  }\n}\n",
+                Ok(fenced(SourceText::from(
+                    "back(loop) ∷ q : Path(Circle, Base, Base)",
+                ))),
+            ),
+            (
+                "a sum pattern's positional label answers as a label (#408)",
+                "def flip(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  case b {\n    +{.$00 = u} => \
+                 return +{.1 = u},\n    +{.1 = u} => return +{.0 = u}\n  }\n}\n",
+                Ok(fenced(SourceText::from("0 : Unit"))),
             ),
             (
                 "a keyword opening a term",
