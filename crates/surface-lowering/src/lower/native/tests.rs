@@ -42,6 +42,7 @@ use crate::lower::lower_module;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredModule;
 use crate::namespace::Recognition;
+use crate::origin::PatternReading;
 use crate::origin::Provenance;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
@@ -1318,6 +1319,33 @@ fn a_match_keeps_its_patterns_beside_its_tree()
         "the tree is stuck on the same hole"
     );
     assert!(usize::from(kept.scrutinee) > usize::from(kept.written));
+    assert!(
+        matches!(kept.scrutinised, Maybe::Present(value) if matches!(arena.value(value), Some(&Value::Variable { .. }))),
+        "the record names the value the tree eliminates"
+    );
+    let spelled: Vec<(&str, PatternReading)> = kept
+        .spans
+        .iter()
+        .map(|kept| {
+            (
+                source
+                    .get(usize::from(kept.span.start()) .. usize::from(kept.span.end()))
+                    .expect("a kept span is in the source"),
+                kept.reading,
+            )
+        })
+        .collect();
+    for written in [
+        ("Some(x)", PatternReading::Matched),
+        ("Some", PatternReading::Constructor),
+        ("x", PatternReading::Matched),
+        ("?", PatternReading::Matched),
+    ] {
+        assert!(
+            spelled.contains(&written),
+            "{written:?} is kept: {spelled:?}"
+        );
+    }
     for at in reachable(&arena, root) {
         assert!(
             matches!(module.origins().computation(at), Maybe::Present(_)),
@@ -1792,12 +1820,8 @@ fn a_loop_mints_the_words_at_its_point()
 
     use crate::module::Role;
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(
-            "data Circle : Type {\n  Base : Circle;\n  Next : (x : Circle) --> Circle;\n  loop : Next(Base) <-> Next(Base);\n  turn : Next(Base) <-> Next(Base);\n}\ndata Flag : Type { On : Flag; }\n",
-        ),
-        &mut arena,
-    );
+    let source = "data Circle : Type {\n  Base : Circle;\n  Next : (x : Circle) --> Circle;\n  loop : Next(Base) <-> Next(Base);\n  turn : Next(Base) <-> Next(Base);\n}\ndata Flag : Type { On : Flag; }\n";
+    let module = lowered(SourceText::from(source), &mut arena);
     let [ref circle, ref words, ref looped, ref turned, ref flag] = *module.declarations()
     else {
         panic!(
@@ -1911,6 +1935,18 @@ fn a_loop_mints_the_words_at_its_point()
         sides, 8_usize,
         "each written node of both sides of both cells, `Next(Base)` and `Base`, answers at the family"
     );
+    for name in ["loop :", "turn :"] {
+        let start = source.find(name).expect("the cell is declared");
+        assert!(
+            module.origins().labels().iter().any(|label| {
+                usize::from(label.span.start()) == start
+                    && usize::from(label.span.end()) == start.saturating_add(4)
+                    && matches!(label.labelled, crate::origin::Labelled::ValueType { ty, .. }
+                        if matches!(arena.value_type(ty), Some(&ValueType::Path { .. })))
+            }),
+            "`{name}` names its loop where the cell declares it, at the path type"
+        );
+    }
     assert_accepted(&judged(&module, &mut arena));
 }
 

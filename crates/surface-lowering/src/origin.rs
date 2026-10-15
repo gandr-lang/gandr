@@ -33,9 +33,12 @@
 //! A match lowers to a decision tree of native eliminations, so its patterns
 //! do not survive into the core term. The table keeps them beside it: per
 //! lowered match, a [`CaseOrigin`] holding the pattern table its arms are
-//! written in, one [`ArmOrigin`] per arm alternative, and the syntax nodes of
-//! the scrutinee and every pattern and body. A live match and a coverage
-//! report read the arms from here and the tree from the arena.
+//! written in, one [`ArmOrigin`] per arm alternative, the syntax nodes of the
+//! scrutinee and every pattern and body, the scrutinee's core value, and the
+//! span every pattern and constructor name was written at ([`PatternSpan`]).
+//! A live match and a coverage report read the arms from here and the tree
+//! from the arena; a hover reads each pattern's span and types it from the
+//! scrutinee's.
 //!
 //! # A binder keeps its name
 //!
@@ -116,6 +119,19 @@ quenchant_shape::reason_enum! {
             /// No entry has the requested id, or the token is outside this
             /// table's declaration list.
             Unrecorded,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a match's record names no scrutinee value.
+    pub mod scrutinised {
+        /// The match's record holds no core value for its scrutinee.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The record was read before its match was minted: the table
+            /// records a match only once its tree is minted, with the value.
+            Unminted,
         }
     }
 }
@@ -1502,13 +1518,53 @@ pub struct ArmOrigin
     pub body: NodeIndex,
 }
 
+/// What a span of a written pattern answers at.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PatternReading
+{
+    /// The pattern itself, at the type it matches: the pattern's own span, a
+    /// word pattern's letter, which is a word of one letter, the key of a sum
+    /// pattern, at the payload it names, or an or-pattern at its first
+    /// alternative.
+    Matched,
+    /// The constructor a constructor pattern names, at the constructor's type:
+    /// the name `S` of `S(x)`.
+    Constructor,
+}
+
+/// One span a match's patterns were written at, with the pattern it belongs
+/// to and what it answers at.
+///
+/// # Specification
+/// - requires: nothing; the fields are admitted as supplied metadata.
+/// - ensures: the pattern names its match's table.
+/// - executable: none — the record holds no table to resolve its pattern in.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a match over a constructor pattern, a word pattern and a
+///   binder keeps one span per written pattern and one per constructor name and
+///   letter.
+/// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PatternSpan
+{
+    /// The pattern, in the match's table.
+    pub pattern: PatternId,
+    /// The bytes written.
+    pub span: ByteSpan,
+    /// What the bytes answer at.
+    pub reading: PatternReading,
+}
+
 /// What a lowered match keeps of its arms.
 ///
 /// # Specification
 /// - requires: nothing; the fields are admitted as supplied metadata.
 /// - ensures: the arms keep source order and name patterns of `patterns`; a
 ///   pattern hole's identity is its syntax node's position, the identity the
-///   tree's stuck leaves and the term holes carry.
+///   tree's stuck leaves and the term holes carry; every written pattern has a
+///   span in `spans`, so a face answers a pattern as the node it is rather than
+///   as the match around it.
 /// - executable: none — the record holds no tree to check its nodes against.
 ///
 /// # Adequacy
@@ -1522,10 +1578,16 @@ pub struct CaseOrigin
     pub written: NodeIndex,
     /// The scrutinee's syntax node.
     pub scrutinee: NodeIndex,
+    /// The scrutinee's core value, the one the tree eliminates, under the
+    /// match's binders; every record the table holds names it.
+    pub scrutinised: Maybe<ValueId, scrutinised::Absent>,
     /// The patterns the arms are written in.
     pub patterns: Patterns,
     /// The arm alternatives, in source order.
     pub arms: Vec<ArmOrigin>,
+    /// Where each pattern, each constructor name and each letter was written,
+    /// in the order the patterns were read.
+    pub spans: Vec<PatternSpan>,
 }
 
 #[cfg(test)]

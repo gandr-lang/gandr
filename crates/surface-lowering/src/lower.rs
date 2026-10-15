@@ -2670,9 +2670,10 @@ struct Lowerer<'run, 'source>
     /// Each loop's binding, the path type at its point and the word of its
     /// one letter, by slot.
     looped: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
-    /// Each letter written before a cons, and the name an inverse letter
-    /// applies `back` to, with the words it spells a letter of: no core node
-    /// holds it, so it answers at the path type at the words' point.
+    /// Each letter written before a cons, the name an inverse letter applies
+    /// `back` to, and the loop a loop arm names, with the words it spells a
+    /// letter of: no core node holds it, so it answers at the path type at
+    /// the words' point.
     lettered: Vec<(ByteSpan, usize)>,
     /// Each node of a point `here` names when it is the empty word, with the
     /// words at that point: no core node holds it, so it answers at the

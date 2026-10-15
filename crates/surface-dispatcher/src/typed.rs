@@ -23,6 +23,19 @@
 //!   that type under the binders it is read under, a record's field at its
 //!   value's type, an endpoint at the session type the typed run found it
 //!   standing at in that action, so each use shows the protocol left to run.
+//! - **A pattern** is spelled with what it wrote at the type its place in the
+//!   match's scrutinee gives it: a root pattern at the scrutinee's type, a
+//!   constructor's field at the field's type read at the family's arguments, a
+//!   word pattern's letter, cons and rest at the words' type, a product's or a
+//!   sum's components at their own. A constructor's name in a pattern is
+//!   spelled at the constructor's type. The lowering keeps where each pattern
+//!   and constructor name was written beside the match
+//!   ([`CaseOrigin`](gandr_surface_lowering::CaseOrigin)); the typed run judges
+//!   the scrutinee before the arms, so a match whose body it refused still
+//!   types every pattern of it. The alternative was typing patterns in the
+//!   lowering, which knows the scrutinee's type only where the source annotated
+//!   it; the choice reverses when the typed run records the type it checked
+//!   each arm's bindings at.
 //! - **A written type** is spelled at its universe: the level the typed run
 //!   formed it at, under the binders it was formed under, and the level it
 //!   reads closed where no formation reached it. A type the lowering inserted
@@ -82,16 +95,25 @@ use gandr_core_checker::TypeNode;
 use gandr_core_checker::Typings;
 use gandr_core_checker::level_of;
 use gandr_core_checker::type_module;
+use gandr_core_term::Binders;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
+use gandr_core_term::ConstructorTag;
 use gandr_core_term::CoreArena;
+use gandr_core_term::DataSignature;
 use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::instantiate_value_type;
+use gandr_core_term::pattern::Pattern;
+use gandr_core_term::pattern::PatternId;
+use gandr_core_term::shift_value;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::Side;
 use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_grammar::Pbg;
@@ -99,6 +121,7 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::Labelled;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::Origin;
+use gandr_surface_lowering::PatternReading;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::described::DescribedRole;
@@ -113,6 +136,7 @@ use gandr_surface_pretty::Scopes;
 use gandr_surface_pretty::present_type;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -827,6 +851,59 @@ impl TypeTable
                 });
             }
         }
+        // Each pattern at the type its place in the scrutinee's gives it: the
+        // scrutinee is judged before the arms, so a match whose body the run
+        // refused still types its patterns. The scrutinee is the value the
+        // match's record names, or, where the run judged a copy of the match
+        // the lowering rebuilt and not that value, the value written at the
+        // scrutinee's node. A binder some use already answers is not answered
+        // twice.
+        let typed_at = |value: ValueId| match first_of(TermNode::Value(value)) {
+            | Some((TypeNode::Value(ty), constant)) => Some(Scrutinised {
+                ty,
+                within: Within {
+                    constant,
+                    node: CoreNode::Value(value),
+                },
+            }),
+            | Some((TypeNode::Computation(_), _)) | None => None,
+        };
+        let mut scrutinised: BTreeMap<NodeIndex, Scrutinised> = BTreeMap::new();
+        for (_, case) in origins.cases() {
+            if let Maybe::Present(value) = case.scrutinised
+                && let Some(typed) = typed_at(value)
+            {
+                let _first = scrutinised.entry(case.scrutinee).or_insert(typed);
+            }
+        }
+        let unjudged: BTreeSet<NodeIndex> = origins
+            .cases()
+            .map(|(_, case)| case.scrutinee)
+            .filter(|node| !scrutinised.contains_key(node))
+            .collect();
+        if !unjudged.is_empty() {
+            for &(value, origin) in origins.values() {
+                if origin.provenance() == Provenance::Written
+                    && unjudged.contains(&origin.node())
+                    && !scrutinised.contains_key(&origin.node())
+                    && let Some(typed) = typed_at(value)
+                {
+                    let _first = scrutinised.insert(origin.node(), typed);
+                }
+            }
+        }
+        for (span, ty, within) in matched(&module, &mut arena, &scrutinised) {
+            if binders.insert(span) {
+                entries.push(Entry {
+                    span,
+                    subject: Subject::Binder,
+                    provenance: Provenance::Written,
+                    ty: TypeNode::Value(ty),
+                    last: TypeNode::Value(ty),
+                    standing: Standing::Judged(within),
+                });
+            }
+        }
         let mut contexts: Vec<Vec<String>> = described
             .contexts
             .iter()
@@ -1379,6 +1456,314 @@ impl TypeTable
     }
 }
 
+/// A match's scrutinee as the typed run found it: its first type, and where
+/// it stands, so a pattern typed from it is read under the same binders.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Scrutinised
+{
+    /// The scrutinee's first kept type.
+    ty: ValueTypeId,
+    /// The declaration whose run typed it, and the scrutinee itself.
+    within: Within,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a constructor pattern's name has no type of its own.
+    mod named {
+        /// The reason the name answers nothing apart from its pattern.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The pattern matches at no data family the module declares, or
+            /// it names no constructor of it.
+            Undeclared,
+        }
+    }
+}
+
+/// Every written span of every match of `module` whose scrutinee the typed run
+/// typed, each at what it answers, and where it stands.
+///
+/// # Specification
+/// - requires: `arena` is the one `module` was lowered into and `scrutinised`
+///   holds the first kept type of each match's scrutinee, keyed by the
+///   scrutinee's syntax node.
+/// - ensures: for each match whose scrutinee is in `scrutinised` at a type
+///   other than the unknown one, each root pattern at the scrutinee's type and
+///   each part at the type its place gives it — a data constructor's field at
+///   the field's type, its parameters read at the family's arguments; a word
+///   pattern's rest at the word's type; a product's, a pair's, a dependent
+///   pair's first and a sum's components at their own — and each span the
+///   lowering kept for a typed pattern: one read as the pattern at that type,
+///   one read as a constructor's name at the constructor's type, which takes
+///   the fields to the family as a thunked function and is the family itself
+///   for a constructor of no field. A part whose place no rule above types, and
+///   every span inside it, answers nothing.
+/// - provides: the pattern half of [`TypeTable::of`].
+/// - fails: never; an untyped pattern answers nothing.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a word pattern's empty word, letter, cons and rest, a
+///   data constructor pattern's name and field, in a declaration the run
+///   settled and in one it refused, are asserted at their types.
+/// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match`
+#[spec(ensures: |ret| ret.iter().all(|&(_, ty, _)| arena.value_type(ty).is_some()))]
+fn matched(
+    module: &LoweredModule<'_>,
+    arena: &mut CoreArena,
+    scrutinised: &BTreeMap<NodeIndex, Scrutinised>,
+) -> Vec<(ByteSpan, ValueTypeId, Within)>
+{
+    let mut signatures: BTreeMap<ConstantIndex, &DataSignature> = BTreeMap::new();
+    for declaration in module.declarations() {
+        if let DeclarationOutcome::Data(index) = declaration.outcome()
+            && let Maybe::Present(signature) = module.data(index)
+        {
+            let _first = signatures.insert(declaration.constant(), signature);
+        }
+    }
+    let mut matched = Vec::new();
+    let mut typed: BTreeMap<PatternId, ValueTypeId> = BTreeMap::new();
+    let mut pending: Vec<(PatternId, ValueTypeId)> = Vec::new();
+    for (_, case) in module.origins().cases() {
+        let Some(&Scrutinised { ty, within }) = scrutinised.get(&case.scrutinee)
+        else {
+            continue;
+        };
+        if matches!(arena.value_type(ty), None | Some(&ValueType::Unknown)) {
+            continue;
+        }
+        typed.clear();
+        pending.clear();
+        pending.extend(case.arms.iter().map(|arm| (arm.pattern, ty)));
+        while let Some((pattern, ty)) = pending.pop() {
+            if typed.insert(pattern, ty).is_some() {
+                continue;
+            }
+            if let Some(shape) = case.patterns.pattern(pattern) {
+                pending.extend(parts(arena, &signatures, shape, ty));
+            }
+        }
+        for written in &case.spans {
+            let Some(&ty) = typed.get(&written.pattern)
+            else {
+                continue;
+            };
+            let answered = match written.reading {
+                | PatternReading::Matched => ty,
+                | PatternReading::Constructor => {
+                    let Some(shape) = case.patterns.pattern(written.pattern)
+                    else {
+                        continue;
+                    };
+                    match constructor(arena, &signatures, shape, ty) {
+                        | Maybe::Present(constructor) => constructor,
+                        | Maybe::Absent(named::Absent::Undeclared) => continue,
+                    }
+                },
+            };
+            matched.push((written.span, answered, within));
+        }
+    }
+    matched
+}
+
+/// The parts of `pattern`, matched at `ty`, each at the type its place gives
+/// it.
+///
+/// # Specification
+/// - requires: `ty` is a type of `arena` and `signatures` the module's data
+///   families by constant.
+/// - ensures: as [`matched`] types the parts of one pattern; none for a pattern
+///   whose place it does not type, and none for a leaf.
+/// - provides: one step of [`matched`]'s walk.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`matched`].
+/// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match`
+#[spec(ensures: |ret| ret.iter().all(|&(_, part)| arena.value_type(part).is_some())
+    && (ret.is_empty() || matches!(*pattern, Pattern::Constructor { .. } | Pattern::Pair(..) | Pattern::Injection(..))))]
+fn parts(
+    arena: &mut CoreArena,
+    signatures: &BTreeMap<ConstantIndex, &DataSignature>,
+    pattern: &Pattern,
+    ty: ValueTypeId,
+) -> Vec<(PatternId, ValueTypeId)>
+{
+    let at = |components: &[ValueTypeId], parts: &[PatternId]| -> Vec<(PatternId, ValueTypeId)> {
+        if components.len() == parts.len() {
+            parts
+                .iter()
+                .copied()
+                .zip(components.iter().copied())
+                .collect()
+        }
+        else {
+            Vec::new()
+        }
+    };
+    match *pattern {
+        | Pattern::Constructor { tag, ref fields } => {
+            match arena.value_type(ty) {
+                | Some(&ValueType::Path { .. }) => {
+                    return fields.iter().map(|&field| (field, ty)).collect();
+                },
+                | Some(&ValueType::Product(ref components)) if usize::from(tag) == 0_usize => {
+                    return at(components, fields);
+                },
+                | Some(&ValueType::Sum(ref summands)) => {
+                    return match summands.get(usize::from(tag)) {
+                        | Some(&summand) => at(&[summand], fields),
+                        | None => Vec::new(),
+                    };
+                },
+                | Some(&ValueType::Data { .. }) => {},
+                | Some(_) | None => return Vec::new(),
+            }
+            match declared(arena, signatures, tag, ty) {
+                | Maybe::Present(declared) => at(&declared, fields),
+                | Maybe::Absent(named::Absent::Undeclared) => Vec::new(),
+            }
+        },
+        | Pattern::Pair(first, second) => match arena.value_type(ty) {
+            | Some(&ValueType::Product(ref components)) => at(components, &[first, second]),
+            | Some(&ValueType::Sigma {
+                first: component, ..
+            }) => Vec::from([(first, component)]),
+            | Some(_) | None => Vec::new(),
+        },
+        | Pattern::Injection(side, body) => match arena.value_type(ty) {
+            | Some(&ValueType::Sum(ref summands)) if summands.len() == 2_usize => {
+                let summand = match side {
+                    | Side::Left => summands.first(),
+                    | Side::Right => summands.get(1_usize),
+                };
+                summand
+                    .map(|&summand| (body, summand))
+                    .into_iter()
+                    .collect()
+            },
+            | Some(_) | None => Vec::new(),
+        },
+        | Pattern::Wildcard
+        | Pattern::Binder
+        | Pattern::Unit
+        | Pattern::Literal(_)
+        | Pattern::Hole(_) => Vec::new(),
+    }
+}
+
+/// The field types of the constructor `tag` of the data family `ty`, its
+/// parameters read at the family's arguments.
+///
+/// # Specification
+/// - requires: as [`parts`].
+/// - ensures: the constructor's declared fields, in order, each with the
+///   family's arguments substituted for its parameters, outermost first, as the
+///   checker's branch types read them.
+/// - provides: what a data constructor pattern's parts and name are typed by.
+/// - fails: never; a family the module does not declare, an argument count
+///   other than its parameters', or a tag past its constructors answers
+///   [`named::Absent::Undeclared`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`matched`].
+/// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(ref fields) => matches!(arena.value_type(ty), Some(&ValueType::Data { declaration, .. })
+        if signatures.get(&declaration)
+            .and_then(|signature| signature.constructors().get(usize::from(tag)))
+            .is_some_and(|written| written.len() == fields.len())),
+    Maybe::Absent(named::Absent::Undeclared) => true,
+})]
+fn declared(
+    arena: &mut CoreArena,
+    signatures: &BTreeMap<ConstantIndex, &DataSignature>,
+    tag: ConstructorTag,
+    ty: ValueTypeId,
+) -> Maybe<Vec<ValueTypeId>, named::Absent>
+{
+    let Some(&ValueType::Data {
+        declaration,
+        ref arguments,
+    }) = arena.value_type(ty)
+    else {
+        return Maybe::Absent(named::Absent::Undeclared);
+    };
+    let Some(signature) = signatures.get(&declaration)
+    else {
+        return Maybe::Absent(named::Absent::Undeclared);
+    };
+    let (Some(fields), true) = (
+        signature.constructors().get(usize::from(tag)),
+        signature.parameters().len() == arguments.len(),
+    )
+    else {
+        return Maybe::Absent(named::Absent::Undeclared);
+    };
+    let arguments = arguments.clone();
+    let mut declared = Vec::with_capacity(fields.len());
+    for &field in fields {
+        let mut subject = field;
+        for (index, &argument) in arguments.iter().enumerate().rev() {
+            let depth = Binders::from(u32::try_from(index).unwrap_or(u32::MAX));
+            let argument = shift_value(arena, argument, depth);
+            subject = instantiate_value_type(arena, subject, argument);
+        }
+        declared.push(subject);
+    }
+    Maybe::Present(declared)
+}
+
+/// The type of the constructor `pattern` names, matched at `ty`: from its
+/// fields to the family, as a thunked function.
+///
+/// # Specification
+/// - requires: as [`parts`].
+/// - ensures: for a constructor pattern at a data family, the family itself
+///   when the constructor has no field, and otherwise `U (A₁ → … → F T)` over
+///   its fields' types, as a data declaration's constructor is described.
+/// - provides: what the name of a constructor pattern answers at.
+/// - fails: never; any other pattern, or one at a type no data family
+///   classifies, answers [`named::Absent::Undeclared`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`matched`].
+/// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(answer) => matches!(*pattern, Pattern::Constructor { .. })
+        && (answer == ty || matches!(arena.value_type(answer), Some(&ValueType::Thunk(_)))),
+    Maybe::Absent(named::Absent::Undeclared) => true,
+})]
+fn constructor(
+    arena: &mut CoreArena,
+    signatures: &BTreeMap<ConstantIndex, &DataSignature>,
+    pattern: &Pattern,
+    ty: ValueTypeId,
+) -> Maybe<ValueTypeId, named::Absent>
+{
+    let &Pattern::Constructor { tag, .. } = pattern
+    else {
+        return Maybe::Absent(named::Absent::Undeclared);
+    };
+    let Maybe::Present(fields) = declared(arena, signatures, tag, ty)
+    else {
+        return Maybe::Absent(named::Absent::Undeclared);
+    };
+    if fields.is_empty() {
+        return Maybe::Present(ty);
+    }
+    let mut chain = arena.comp_type_returner(ty);
+    for &field in fields.iter().rev() {
+        chain = arena.comp_type_arrow(field, chain);
+    }
+    Maybe::Present(arena.value_type_thunk(chain))
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -1525,6 +1910,125 @@ mod tests
                 expected: Maybe::Present(String::from("Integer")),
             }),
             "the term has its own type and the one it was checked against"
+        );
+    }
+
+    #[test]
+    fn a_pattern_answers_as_itself_in_a_settled_and_a_refused_match()
+    {
+        let source = SourceText::from(
+            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n\ndata Int : \
+             Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  P : (x : Int) --> Int;\n  rule \
+             S(P(x)) <=> x;\n  rule P(S(x)) <=> x;\n}\n\ndef tell(p : Path(Circle, Base, Base)) \
+             -> -F Integer {\n  case p {\n    here => return 0,\n    loop ∷ q => return 1,\n    \
+             back(loop) ∷ q => return 2\n  }\n}\n\ndef rec spin(n : Int) -> -F Path(Circle, \
+             Base, Base) {\n  case n {\n    Z => return here(Base),\n    S(x) => { run c <- \
+             spin[<](x); return loop ∷ c },\n    P(x) => { run c <- spin[<](x); return \
+             back(loop) ∷ c }\n  }\n}\n\ndef flip(x : Circle) -> -F Circle {\n  case x {\n    \
+             Base => Base,\n    loop => back(loop)\n  }\n}\n",
+        );
+        let table = table(source);
+        let text = <&str>::from(source);
+        // What the table answers at the first byte of `needle`: the bytes the
+        // answering entry spans, what it is and its type.
+        let at = |needle: &str| {
+            let offset = text.find(needle).expect("the needle occurs");
+            match table.at(
+                ByteOffset::from(offset),
+                PageWidth::from(80_u32),
+                Form::Sugared,
+            ) {
+                | Maybe::Present(entry) => (
+                    String::from(
+                        text.get(
+                            usize::from(entry.span().start()) .. usize::from(entry.span().end()),
+                        )
+                        .expect("an entry spans the source"),
+                    ),
+                    entry.subject(),
+                    String::from(entry.ty().as_ref()),
+                ),
+                | Maybe::Absent(reason) => panic!("`{needle}` answers nothing: {reason:?}"),
+            }
+        };
+        let path = "Path(Circle, Base, Base)";
+        let pattern =
+            |written: &str, ty: &str| (String::from(written), Subject::Binder, String::from(ty));
+        assert_eq!(
+            at("case p"),
+            (
+                String::from(
+                    "case p {\n    here => return 0,\n    loop ∷ q => return 1,\n    back(loop) ∷ q => return 2\n  }"
+                ),
+                Subject::Term,
+                String::from("?")
+            ),
+            "the run refused the match's body"
+        );
+        assert_eq!(
+            at("here =>"),
+            pattern("here", path),
+            "the empty word at the scrutinee's type"
+        );
+        assert_eq!(
+            at("loop ∷ q => return 1"),
+            pattern("loop", path),
+            "a letter is a word of one letter"
+        );
+        assert_eq!(
+            at("∷ q => return 1"),
+            pattern("loop ∷ q", path),
+            "the cons at the words' type"
+        );
+        assert_eq!(
+            at("q => return 1"),
+            pattern("q", path),
+            "the rest at the words' type, though no use of it was judged"
+        );
+        assert_eq!(
+            at("back(loop) ∷ q => return 2"),
+            pattern("back(loop)", path),
+            "an inverse letter"
+        );
+        assert_eq!(
+            at("loop) ∷ q => return 2"),
+            pattern("loop", path),
+            "the letter it inverts"
+        );
+        assert_eq!(
+            at("S(x) => {"),
+            pattern("S", "Int => Int"),
+            "a constructor's name at its type"
+        );
+        assert_eq!(
+            at("(x) => { run c"),
+            pattern("S(x)", "Int"),
+            "the constructor pattern at its family"
+        );
+        assert_eq!(
+            at("x) => { run c"),
+            pattern("x", "Int"),
+            "the field at the constructor's field type"
+        );
+        assert_eq!(
+            at("Z => return"),
+            pattern("Z", "Int"),
+            "a constructor of no field at its family"
+        );
+        assert_eq!(
+            at("loop : Base"),
+            pattern("loop", path),
+            "a loop's declared name at its path type"
+        );
+        assert_eq!(
+            at("loop => back"),
+            pattern("loop", path),
+            "a loop arm's loop at its path type"
+        );
+        assert_eq!(
+            at("Base => Base"),
+            pattern("Base", "Circle"),
+            "the point's arm at the circle"
         );
     }
 

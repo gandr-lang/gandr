@@ -295,6 +295,7 @@ use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
 use quenchant_shape::shape::Maybe;
@@ -344,6 +345,9 @@ use crate::origin::ArmOrigin;
 use crate::origin::CaseOrigin;
 use crate::origin::Insertion;
 use crate::origin::Origin;
+use crate::origin::PatternReading;
+use crate::origin::PatternSpan;
+use crate::origin::scrutinised;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
@@ -991,6 +995,10 @@ struct Written
     shapes: Vec<(Placed, Matcher)>,
     /// The field patterns of every constructor pattern, stretch by stretch.
     parts: Vec<PatternAt>,
+    /// The spans inside a pattern that answer apart from its own: the name a
+    /// constructor pattern applies, a word pattern's letter, a sum pattern's
+    /// key, an or-pattern.
+    spelled: Vec<(PatternAt, ByteSpan, PatternReading)>,
 }
 
 /// The matcher every unwritten column entry reads as.
@@ -1937,17 +1945,21 @@ impl<'source> Lowerer<'_, 'source>
             });
         }
         // A loop's name as an arm's whole pattern names the loop's arm, never
-        // a variable; the other arms compile to the tree.
+        // a variable, and answers as the loop does; the other arms compile to
+        // the tree.
         let mut looped = Vec::new();
         let mut constructed = Vec::with_capacity(arms.len());
         for &(pattern, body) in &arms {
             match self.loop_named(site, pattern)? {
-                | Maybe::Present(NamedLoop { words, generator }) => looped.push(LoopArm {
-                    words,
-                    generator: usize::from(generator),
-                    body: body.node,
-                    named: pattern,
-                }),
+                | Maybe::Present(NamedLoop { words, generator }) => {
+                    self.lettered.push((pattern.span, words));
+                    looped.push(LoopArm {
+                        words,
+                        generator: usize::from(generator),
+                        body: body.node,
+                        named: pattern,
+                    });
+                },
                 | Maybe::Absent(_) => constructed.push((pattern, body)),
             }
         }
@@ -1958,8 +1970,10 @@ impl<'source> Lowerer<'_, 'source>
         let mut kept = CaseOrigin {
             written: site.at.node,
             scrutinee: scrutinee.node,
+            scrutinised: Maybe::Absent(scrutinised::Absent::Unminted),
             patterns: Patterns::new(),
             arms: Vec::new(),
+            spans: Vec::new(),
         };
         let stated = self.scrutinee_type(frame, scrutinee)?;
         let mut roots = Vec::new();
@@ -1968,7 +1982,7 @@ impl<'source> Lowerer<'_, 'source>
             let alternatives = self.alternatives(pattern)?;
             let several = alternatives.len() > 1;
             let mut bound = Vec::new();
-            for alternative in alternatives {
+            for (place, alternative) in alternatives.into_iter().enumerate() {
                 let mut named = Vec::new();
                 let root = self.pattern(site, alternative, stated, &mut patterns, &mut named)?;
                 if several && !named.is_empty() {
@@ -1980,6 +1994,11 @@ impl<'source> Lowerer<'_, 'source>
                     });
                 }
                 bound = named;
+                if several && place == 0_usize {
+                    patterns
+                        .spelled
+                        .push((root, pattern.span, PatternReading::Matched));
+                }
                 roots.push((arm, root, alternative.node, body.node));
                 rows.push(Row {
                     columns: Vec::from([root]),
@@ -2156,8 +2175,10 @@ impl<'source> Lowerer<'_, 'source>
             origin: CaseOrigin {
                 written: site.at.node,
                 scrutinee: scrutinee.node,
+                scrutinised: Maybe::Absent(scrutinised::Absent::Unminted),
                 patterns: Patterns::new(),
                 arms: Vec::new(),
+                spans: Vec::new(),
             },
         });
         self.plan(site, Plan::Case(index));
@@ -2759,7 +2780,7 @@ impl<'source> Lowerer<'_, 'source>
             return Err(repaired.refusal(here.name));
         }
         if name == FormName::CONS_PATTERN {
-            return self.cons_pattern(site, here, pieces, patterns, work);
+            return self.cons_pattern(site, here, queued.slot, pieces, patterns, work);
         }
         if name == FormName::LITERAL_PATTERN {
             return match pieces.pieces.first() {
@@ -2792,7 +2813,11 @@ impl<'source> Lowerer<'_, 'source>
                 }
             }
             exhausted(here, &cursor)?;
-            return self.constructor_pattern(site, here, head, &fields, patterns, work);
+            let shape = self.constructor_pattern(site, here, head, &fields, patterns, work)?;
+            patterns
+                .spelled
+                .push((queued.slot, head.span, PatternReading::Constructor));
+            return Ok(shape);
         }
         if name == FormName::TUPLE_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
@@ -2877,15 +2902,17 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
-    /// The shape of the word pattern `g ∷ p` or `back(g) ∷ p` at `here`, read
-    /// from `pieces`, its rest pattern `p` allocated and queued.
+    /// The shape of the word pattern `g ∷ p` or `back(g) ∷ p` at `here`, the
+    /// pattern at `slot`, read from `pieces`, its rest pattern `p` allocated
+    /// and queued.
     ///
     /// # Specification
-    /// - requires: `here` is a cons pattern of the match at `site` and `pieces`
-    ///   its reading.
+    /// - requires: `here` is a cons pattern of the match at `site`, `slot` its
+    ///   place in `patterns` and `pieces` its reading.
     /// - ensures: the constructor of the words of the loop `g` names whose tag
     ///   is its letter, or its inverse under `back`, as [`Self::loop_letter`]
-    ///   reads it, its one field the rest queued on `work`.
+    ///   reads it, its one field the rest queued on `work`; the letter `g`, and
+    ///   `back(g)` whole, spelled at `slot` as a word of one letter.
     /// - fails: the unadmitted refusal for a head other than `back` applied to
     ///   a name; the unresolved-name refusal for a name that is no loop; a tile
     ///   out of place.
@@ -2898,11 +2925,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a letter and an inverse match their constructors, and
     ///   a name that is no loop is refused.
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
     #[spec(captures: before = work.len(), ensures: |ret| ret.is_err() || work.len() == before.saturating_add(1))]
     fn cons_pattern(
         &mut self,
         site: Site,
         here: Site,
+        slot: PatternAt,
         pieces: &Pieces,
         patterns: &mut Written,
         work: &mut Vec<Queued>,
@@ -2918,15 +2947,24 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
             };
-            closed(here, &mut cursor, TileName::PAREN_CLOSE)?;
+            let Maybe::Present(close) = cursor.tile(TileName::PAREN_CLOSE)
+            else {
+                return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
+            };
             if self.text_at(head).as_ref() != super::identity::BACK {
                 return Err(here.out(FragmentBoundary::Unadmitted));
             }
+            patterns
+                .spelled
+                .push((slot, head.span.join(close.span), PatternReading::Matched));
             (cell, Inverse(true))
         }
         else {
             (head, Inverse(false))
         };
+        patterns
+            .spelled
+            .push((slot, cell.span, PatternReading::Matched));
         closed(here, &mut cursor, TileName::CONS)?;
         let rest = here.one(cursor.operands())?;
         exhausted(here, &cursor)?;
@@ -3194,7 +3232,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `key` and `payload` are the sum pattern's at `here`.
     /// - ensures: the injection into the summand the key's index names, or its
     ///   label names among the stated sum's entries, of as many summands as the
-    ///   stated sum has; the payload queued with the summand's type.
+    ///   stated sum has; the payload queued with the summand's type, and the
+    ///   key spelled at the payload, which it names.
     /// - fails: the unannotated refusal where the position states no sum; a
     ///   misplaced tile at an index past the sum; the unresolved-name refusal
     ///   for a label the sum lacks.
@@ -3228,17 +3267,17 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(here.out(FragmentBoundary::Unannotated));
         };
-        let (summand, entry) = match key {
+        let (summand, entry, keyed) = match key {
             | arity::Key::Index(index, _, written) => {
                 let Some(&entry) = summands.get(index)
                 else {
                     return Err(here.fault(written.span, FormFault::MisplacedTile));
                 };
-                (index, entry)
+                (index, entry, written.span)
             },
             | arity::Key::Label(name, written) => {
                 let (arity::Place(index), entry) = Self::labelled_in(&summands, name, written)?;
-                (index, entry)
+                (index, entry, written.span)
             },
             | arity::Key::Positional => {
                 return Err(here.fault(payload.span, FormFault::MisplacedTile));
@@ -3251,15 +3290,19 @@ impl<'source> Lowerer<'_, 'source>
             punned: Punned(false),
         }];
         let fields = allocated(patterns, work, &queued);
+        let field = patterns
+            .parts
+            .get(fields.start)
+            .copied()
+            .unwrap_or(UNWRITTEN);
+        patterns
+            .spelled
+            .push((field, keyed, PatternReading::Matched));
 
         Ok(Matcher::Injection {
             summand,
             arity: summands.len(),
-            field: patterns
-                .parts
-                .get(fields.start)
-                .copied()
-                .unwrap_or(UNWRITTEN),
+            field,
         })
     }
 
@@ -3925,7 +3968,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   constructor of tag zero over its parts, and any other injection as the
     ///   constructor tagged with its summand over its payload, which the core's
     ///   coverage reads as outside its fragment; one arm record per root, in
-    ///   order.
+    ///   order; each pattern's own span, then each span `patterns` spells
+    ///   inside one, recorded against the pattern minted for it.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -3935,7 +3979,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   a pair and a two-summand injection its side.
     /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
     /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
-    #[spec(captures: before = kept.arms.len(), ensures: kept.arms.len() == before.saturating_add(roots.len()))]
+    #[spec(captures: before = kept.arms.len(), ensures: kept.arms.len() == before.saturating_add(roots.len()) && kept.spans.len() >= patterns.shapes.len())]
     fn keep(
         patterns: &Written,
         roots: &[(ArmAt, PatternAt, NodeIndex, NodeIndex)],
@@ -4007,6 +4051,24 @@ impl<'source> Lowerer<'_, 'source>
                     pattern,
                     written,
                     body,
+                });
+            }
+        }
+        let spelled = patterns
+            .spelled
+            .iter()
+            .map(|&(slot, span, reading)| (slot.0, span, reading));
+        let own = patterns
+            .shapes
+            .iter()
+            .enumerate()
+            .map(|(position, &(at, _))| (position, at.span, PatternReading::Matched));
+        for (position, span, reading) in own.chain(spelled) {
+            if let Some(&Some(pattern)) = minted.get(position) {
+                kept.spans.push(PatternSpan {
+                    pattern,
+                    span,
+                    reading,
                 });
             }
         }
@@ -4118,9 +4180,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   word, presented as the words of the loops at their point — the two
     ///   cancellations per loop the presentation mints — its index recorded by
     ///   the entry's position; each loop's binding the path type at the point
-    ///   and the word of its one letter. Each letter a cons wrote is labelled
-    ///   at the path type, and each node of a point an empty word or a cell's
-    ///   side wrote at the family, since no core node holds them.
+    ///   and the word of its one letter. Each letter a cons wrote, and each
+    ///   loop's name where its cell declares it, is labelled at the path type,
+    ///   and each node of a point an empty word or a cell's side wrote at the
+    ///   family, since no core node holds them.
     /// - provides: the
     ///   [`DeclarationOutcome::Data`](crate::DeclarationOutcome::Data) outcome
     ///   of a words slot and the completed outcome of a loop.
@@ -4224,12 +4287,10 @@ impl<'source> Lowerer<'_, 'source>
                 .iter()
                 .filter(|&&(_, at)| at == index)
                 .map(|&(span, _)| (span, carrier));
-            let sides = form
-                .cells
-                .iter()
-                .filter(|cell| cell.point == words.point)
-                .flat_map(|cell| cell.sides.iter().map(|&span| (span, carrier)));
-            for (span, ty) in lettered.chain(pointed).chain(sides) {
+            let at_point = || form.cells.iter().filter(|cell| cell.point == words.point);
+            let named = at_point().map(|cell| (cell.named.span, path));
+            let sides = at_point().flat_map(|cell| cell.sides.iter().map(|&span| (span, carrier)));
+            for (span, ty) in lettered.chain(pointed).chain(named).chain(sides) {
                 sink.origins.record_label(crate::origin::Label {
                     span,
                     labelled: crate::origin::Labelled::ValueType {
@@ -4551,9 +4612,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   carried under the binders above its use, so no binding of it is
     ///   minted. The root carries the written origin, a leaf's copy of its
     ///   arm's body the origin of what it copies, every other node the inserted
-    ///   match origin, and the arms are recorded beside the root; a match whose
-    ///   first arm matches anything is that arm's body. Nothing when the
-    ///   scrutinee, a reached body or a needed answer did not lower.
+    ///   match origin, and the arms are recorded beside the root with the
+    ///   scrutinee's value; a match whose first arm matches anything is that
+    ///   arm's body. Nothing when the scrutinee, a reached body or a needed
+    ///   answer did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -4685,7 +4747,9 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present((root, origin)),
             &copies,
         );
-        sink.origins.record_case(root, form.origin.clone());
+        let mut kept = form.origin.clone();
+        kept.scrutinised = Maybe::Present(scrutinee);
+        sink.origins.record_case(root, kept);
 
         Maybe::Present(Lowered::Computation(root))
     }

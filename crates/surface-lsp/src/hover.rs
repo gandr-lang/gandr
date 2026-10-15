@@ -39,6 +39,35 @@
 //! as two occurrences of one item. The choice reverses when the session keeps
 //! the typed run's table itself, and the hover then reads it there rather than
 //! judging the copy's text again.
+//!
+//! # A hover answers the node under the cursor, never an ancestor
+//!
+//! A node the source wrote answers as itself: a pattern with its name and
+//! the type its place in the scrutinee gives it, a constructor's name in a
+//! pattern with the constructor's type, a loop's name where its cell declares
+//! it with its path type. An answer from an enclosing node — the match for a
+//! pattern inside it, the declaration for its loop — is a gap, not an answer:
+//! a reader asking what `here` is learns nothing from the match's `?`.
+//!
+//! The editor's corpus sweep
+//! (`editor::scenarios::hovering_every_position_of_each_corpus_source_answers_without_fault`)
+//! holds every node kind to that rule. It classes each position by the
+//! smallest node holding it — a name a form spells as a node of its own, the
+//! form's keywords and delimiters as the form's — and counts, per kind, the
+//! positions answered at that node, by an ancestor, by nothing and with a
+//! `?`, against floors pinned per kind. A share answered at the node falls, or
+//! one answered by an ancestor or with a `?` rises, and the sweep fails. The
+//! kinds with no meaning of their own to hover are listed with why and
+//! counted but not held: the parser's repair grout, which the source never
+//! wrote, and an attribute's brackets, keywords and name, which state what
+//! the declaration they decorate is expected to do and are answered by its
+//! head.
+//!
+//! The alternative was one corpus-wide answered share: it counts an answer
+//! from the match as covering a pattern inside it, so a kind answered only by
+//! its ancestors passed unseen. The table returns to one share if keeping its
+//! rows costs more than the gaps they find: a row moves only with a change
+//! that answers, or stops answering, a kind at its own nodes.
 
 use alloc::format;
 use alloc::string::String;
