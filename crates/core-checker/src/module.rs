@@ -1032,10 +1032,12 @@ pub fn check_module(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `context` is left as [`check_module`] leaves it, every
-///   declaration judged in order; each declaration whose body was judged is
-///   keyed by its constant with what [`type_value`] keeps for its body, read
-///   before its own type entered the table; a declaration refused before its
-///   body, a data declaration and a hole are not keyed.
+///   declaration judged in order; each declaration whose run formed a type or
+///   judged a term, refused or not, is keyed by its constant with what
+///   [`type_value`] keeps for it, read before its own type entered the table: a
+///   judged body, a hole's formed signature, a data declaration's formed kind
+///   and the components a refused signature formed before its refusal; a
+///   declaration whose run formed nothing is not keyed.
 /// - provides: the type of every term a module's bodies judge, for a face
 ///   answering a position inside a declaration.
 /// - fails: never; a refusal is kept as the typed run's mark.
@@ -1043,9 +1045,12 @@ pub fn check_module(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a module of an accepted body, a refused body and a hole
-///   separates the keyed bodies from the unkeyed hole and the accepted body's
-///   own type from its parts'.
+///   keys all three, the hole by its signature alone, and separates the
+///   accepted body's own type from its parts'; data declarations and a
+///   signature refused at its second component keep what they formed, and a
+///   signature refused before forming anything is not keyed.
 /// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
+/// - witness: `module::tests::a_typed_module_keys_what_each_run_formed`
 #[spec(ensures: |ret| ret.keys().all(|constant|
     declarations.iter().any(|declaration| declaration.constant() == *constant)))]
 #[inline]
