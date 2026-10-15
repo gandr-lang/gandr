@@ -873,9 +873,10 @@ impl TypeTable
     ///   typed run; each term the run typed and the origin table places is an
     ///   entry at its span, at the first type the run kept for it and the last,
     ///   and a written type when the term is a code — its type a universe or a
-    ///   static Π ending in one — that no check against another type moved;
-    ///   each binder the origin table records for a typed use is one entry at
-    ///   the binder's span, at that use's type; each written value or
+    ///   static Π ending in one — that no check against another type moved,
+    ///   save a term of a model's derived type, which the source writes
+    ///   nowhere; each binder the origin table records for a typed use is one
+    ///   entry at the binder's span, at that use's type; each written value or
     ///   computation type whose level the checker reads is an entry at its
     ///   universe; each declaration is keyed by each form key it carries, at
     ///   its declared type, its body's synthesised type, its data universe, or
@@ -900,13 +901,15 @@ impl TypeTable
     ///   declaration and a mismatched body separate the term, binder, type and
     ///   declaration entries and the expected type; a sign's members and a data
     ///   family with an operation answer at their own types; a type written
-    ///   where a static function takes one answers as a written type.
+    ///   where a static function takes one answers as a written type; a model
+    ///   header's sign answers no term its derived types hold.
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     /// - witness: `typed::tests::a_type_under_a_static_binder_answers_as_a_written_type`
     /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
     /// - witness: `typed::tests::both_halves_of_a_declaration_find_its_type`
     /// - witness: `typed::tests::a_sign_member_answers_under_the_sorts_before_it`
     /// - witness: `typed::tests::a_data_family_is_keyed_at_its_own_type_past_its_operations`
+    /// - witness: `typed::tests::a_model_header_answers_no_term_its_signature_derives_477`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|table| table.entries.iter().all(|entry|
         usize::from(entry.span.end()) <= <&str>::from(source).len()
             && (entry.subject == Subject::Term || entry.last == entry.ty)))
@@ -1100,7 +1103,12 @@ impl TypeTable
                 TermNode::Value(id) => (origins.value(id), CoreNode::Value(id)),
                 TermNode::Computation(id) => (origins.computation(id), CoreNode::Computation(id)),
             };
-            if let Maybe::Present(origin) = origin {
+            // A model's derived type is located at the signature its header
+            // names, which writes the name and nothing the type holds, so no
+            // term in it answers for those bytes (#477).
+            if let Maybe::Present(origin) = origin
+                && origin.provenance() != Provenance::Inserted(Insertion::Model)
+            {
                 let (subject, last) = term_subject(&arena, (first, last));
                 entries.push(Entry {
                     span: origin.span(),
@@ -3239,6 +3247,41 @@ mod tests
                 "{needle}"
             );
         }
+    }
+
+    #[test]
+    fn a_model_header_answers_no_term_its_signature_derives_477()
+    {
+        // The members' derived types are located at the sign the header
+        // names; their terms once answered there, over binders the naming
+        // fallback called after the sign (`CatShape => CatShape`).
+        let source = SourceText::from(
+            "sign Cat {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : \
+             Ob) --> Hom(a, a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
+             rule unitL : comp(id(a), f) <=> f;\n}\n\nmodule Fns : Model(Cat) {\n  type Ob = \
+             Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : \
+             t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t \
+             -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    run y <- f(x);\n    become \
+             g(y)\n  }\n  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become \
+             ident(t) } }\n  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : \
+             +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {\n    return thunk { become \
+             compose(t, u, v, f, g) }\n  }\n  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F \
+             q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) {\n    return \
+             here(f)\n  }\n}\n",
+        );
+        let table = table(source);
+        assert_eq!(
+            answer(&table, source, SourceText::from("Cat) {")),
+            Maybe::Absent(typing::Absent::Untyped)
+        );
+        assert_eq!(
+            answer(&table, source, SourceText::from("id(p), f), f)")),
+            agreed(
+                Subject::Term,
+                SourceText::from("+U ((a : Type) -> -F (+U (a -> -F a)))")
+            ),
+            "a member the module writes still answers where it is written"
+        );
     }
 
     #[test]

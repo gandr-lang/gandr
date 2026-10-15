@@ -141,13 +141,15 @@ quenchant_shape::reason_enum! {
 /// The five bridges, the `return` of an inferred exit, the classifier of a
 /// constructor written without one, the eliminations a match compiles to, a
 /// recursive function's fixpoint, a compound endpoint, the transport a
-/// derived identity operation unfolds to, and a computation carried where a
-/// value is read for the checker to run or suspend.
+/// derived identity operation unfolds to, a computation carried where a value
+/// is read for the checker to run or suspend, and the type a model's member
+/// derives from its signature.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the tag distinguishes force, thunk, returner, quote, decode,
-///   return, classifier, match, fixpoint, endpoint, identity and nested.
+///   return, classifier, match, fixpoint, endpoint, identity, nested, unwind
+///   and model.
 /// - provides: the kind of an insertion recorded in an origin.
 /// - fails: not applicable to the tag itself.
 /// - panics: not applicable to the tag itself.
@@ -207,6 +209,11 @@ pub enum Insertion
     /// and the capture that `return` is: the capture discards every handler
     /// frame up to the delimiter, which returns the value.
     Unwind,
+    /// The type a model's member derives from the signature its module's
+    /// header names, `S` in `Model(S)`, every node of it located at that
+    /// name: the source writes the name, never the type or the binders the
+    /// type opens.
+    Model,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.

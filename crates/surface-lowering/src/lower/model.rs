@@ -77,6 +77,7 @@ use crate::module::SlotIndex;
 use crate::module::StructureIndex;
 use crate::module::TypeMeaning;
 use crate::module::spine_domains;
+use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
@@ -341,10 +342,12 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the mint sweep and the abstract slots have run.
     /// - ensures: every unrefused slot whose signature is a model half holds
-    ///   the type its derived component mints, its origin the ascription's
-    ///   sign; a slot whose component names a refused one holds that refusal as
-    ///   a fault, and one naming a component that did not lower holds
-    ///   [`LoweringRefusal::UnstatedComponent`] with [`ModelFault::Inherited`].
+    ///   the type its derived component mints, its origin the ascription's sign
+    ///   marked [`Insertion::Model`], since the source writes the sign's name
+    ///   there and not the type; a slot whose component names a refused one
+    ///   holds that refusal as a fault, and one naming a component that did not
+    ///   lower holds [`LoweringRefusal::UnstatedComponent`] with
+    ///   [`ModelFault::Inherited`].
     /// - provides: the declared types [`Self::outcome`] reads for model halves.
     /// - fails: never.
     /// - panics: none.
@@ -383,10 +386,11 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            let Maybe::Present(origin) = self.origin_at(declaration.node)
+            let Maybe::Present(written) = self.origin_at(declaration.node)
             else {
                 continue;
             };
+            let origin = written.inserted(Insertion::Model);
             let position = SlotIndex::from(position);
             match self.mint_component(structure, part, sink, origin) {
                 Ok(minted) => {

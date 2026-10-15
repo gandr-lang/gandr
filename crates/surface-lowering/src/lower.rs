@@ -12682,7 +12682,8 @@ impl Sink<'_>
                 | Insertion::Endpoint
                 | Insertion::Identity
                 | Insertion::Nested
-                | Insertion::Unwind,
+                | Insertion::Unwind
+                | Insertion::Model,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
             (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }
