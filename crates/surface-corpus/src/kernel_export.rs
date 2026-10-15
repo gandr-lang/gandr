@@ -94,6 +94,17 @@
 //! point as them. A twin whose words keep their cell but drop the cancellations
 //! is refused at the words, naming the fault.
 //!
+//! `kernel_export::kernel_presented_readmission::an_absurd_case_readmits_by_apartness_and_forged_twins_are_refused_by_name`
+//! readmits `fixture/model/data/empty.gandr`, whose `not_zero` eliminates a
+//! path between `S(Z)` and `Z` by a case of no branch: the kernel decides the
+//! endpoints apart itself, from the integers' rules. It readmits
+//! `fixture/model/identity/circle-apart.gandr` the same way, the loop apart
+//! from the empty word at the circle's words. A twin stating the path between
+//! `S(P(Z))` and `Z` is refused at `not_zero`, the endpoints named as
+//! agreeing; a twin presenting the integers by two rules that rewrite one
+//! redex apart is refused there too, naming the critical pair that does not
+//! join.
+//!
 //! The suite derives its expectations from admission and storage semantics
 //! rather than checked-in sizes, identities, class thresholds or corpus
 //! cardinalities. Exact kernel format goldens belong to `gandr-kernel-term`;
@@ -1384,8 +1395,10 @@ mod kernel_here_congruence_readmission
 /// other rule's path — is refused by the first rule; a section at a variable,
 /// over the circle's terms or over its words, readmits by its cong chains,
 /// and a twin carrying the wrong loop is refused by name; a loop's words
-/// readmit as their cell mints them, and a twin
-/// without the cancellations is refused by name.
+/// readmit as their cell mints them, and a twin without the cancellations is
+/// refused by name; a case of no branch over a path readmits when its
+/// endpoints are apart, and twins whose endpoints agree or whose rules
+/// diverge are refused by name.
 mod kernel_presented_readmission
 {
     use alloc::vec;
@@ -1396,7 +1409,9 @@ mod kernel_presented_readmission
     use gandr_kernel_core::Environment;
     use gandr_kernel_core::IdentityError;
     use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::Apartness;
     use gandr_kernel_term::CellFault;
+    use gandr_kernel_term::CompType;
     use gandr_kernel_term::Computation;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeclarationBuilder;
@@ -1412,6 +1427,7 @@ mod kernel_presented_readmission
     use gandr_kernel_term::RuleVariable;
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::Value;
+    use gandr_kernel_term::ValueType;
     use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
@@ -1547,6 +1563,133 @@ mod kernel_presented_readmission
             *refusal.error(),
             KernelError::WordsRefused(CellFault::NotMinted),
             "the kernel names the words and their fault"
+        );
+    }
+
+    #[test]
+    fn an_absurd_case_readmits_by_apartness_and_forged_twins_are_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/data/empty.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the empty type lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("every absurd case readmits: its endpoints are apart");
+        let circle = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/identity/circle-apart.gandr"
+        ));
+        let Swept::Exported(circle) = export(&pbg, circle, Root::Fixture)
+        else {
+            panic!("the circle lowers");
+        };
+        let circle = decode(circle.artifact.as_image()).expect("the export decodes");
+        Environment::replay(circle.arena().clone(), circle.declarations())
+            .expect("the loop is apart from the empty word, its square and its inverse");
+        let position = |name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(vec![segment]);
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"))
+        };
+        let integers = position("Int");
+        let not_zero = position("not_zero");
+
+        // The twin states `not_zero` at `Path(Int, S(P(Z)), Z)`: the same
+        // case of no branch, its endpoints forged to agree.
+        let marked = &declarations[not_zero];
+        let DeclarationContent::Def { declared, body } = *marked.declaration().content()
+        else {
+            panic!("`not_zero` is a definition");
+        };
+        let Some(&ValueType::Thunk(arrow)) = arena.value_type(declared)
+        else {
+            panic!("`not_zero` is a thunk");
+        };
+        let Some(&(CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain })) =
+            arena.comp_type(arrow)
+        else {
+            panic!("`not_zero` takes the path");
+        };
+        let dependent = matches!(arena.comp_type(arrow), Some(CompType::Pi { .. }));
+        let Some(&ValueType::Path {
+            domain: carrier,
+            left,
+            right,
+        }) = arena.value_type(domain)
+        else {
+            panic!("`not_zero` takes a path");
+        };
+        let Some(Value::Constructor {
+            datatype,
+            tag,
+            fields,
+        }) = arena.value(left).cloned()
+        else {
+            panic!("`S(Z)` is a constructor");
+        };
+        let predecessor = arena.value_constructor(datatype, ConstructorTag::from(2_usize), fields);
+        let cancelled = arena.value_constructor(datatype, tag, vec![predecessor]);
+        let forged = arena.value_type_path(carrier, cancelled, right);
+        let forged = if dependent {
+            arena.comp_type_pi(forged, codomain)
+        }
+        else {
+            arena.comp_type_arrow(forged, codomain)
+        };
+        let forged = arena.value_type_thunk(forged);
+        let twin_declaration = DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), forged, body)
+            .named(marked.declaration().name().clone());
+        let mut twin = declarations.clone();
+        twin[not_zero] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena.clone(), &twin)
+            .expect_err("`S(P(Z))` is `Z`: no apartness separates them");
+        assert_eq!(usize::from(refusal.position()), not_zero);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::NotApart(Apartness::Agree),
+            "the kernel names the forged endpoints' reason"
+        );
+
+        // The twin presents the integers by two rules rewriting one redex
+        // apart: admission takes them, each linear and decreasing, and the
+        // apartness rule refuses to read their normal forms as elements.
+        let x = RuleNode::Variable(RuleVariable::from(0_u32));
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let divergent = Presentation::new(vec![
+            PresentedRule::new([c(1), c(2), x].into(), [x].into()),
+            PresentedRule::new([c(1), c(2), x].into(), [c(0)].into()),
+        ]);
+        let mut twin = declarations.clone();
+        let Some(marked) = twin.get_mut(integers)
+        else {
+            panic!("the integers are a declaration");
+        };
+        *marked = MarkedDeclaration::new(
+            marked.mark(),
+            marked.declaration().clone().presented(divergent),
+        );
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("divergent rules give no normal form to compare");
+        assert_eq!(usize::from(refusal.position()), not_zero);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::NotApart(Apartness::Diverges {
+                outer: RuleIndex::from(0_usize),
+                inner: RuleIndex::from(1_usize),
+            }),
+            "the kernel joins the critical pairs itself and names the pair that does not join"
         );
     }
 

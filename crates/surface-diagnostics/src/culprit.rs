@@ -219,6 +219,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         | CheckRefusal::DataFieldLevel { .. } => "above the declared universe",
         | CheckRefusal::RuleNotPresentable { .. } => "rules that do not present the datatype",
         | CheckRefusal::RuleNotRespected { .. } => "a case its datatype's rules do not admit",
+        | CheckRefusal::NotApart { .. } => "a path whose endpoints are not apart",
         | CheckRefusal::RepresentationAboveKind { .. } => "above the abstract type's universe",
         | CheckRefusal::NotAnAbstractType(_) => "not an abstract type",
         | CheckRefusal::SealSiteRepeated(_) => "a component sealed twice",

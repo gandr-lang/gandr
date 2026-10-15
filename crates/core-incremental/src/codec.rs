@@ -4751,6 +4751,77 @@ fn read_occurrence_site(reader: &mut Reader<'_>) -> Result<OccurrenceSite, Codec
     }
 }
 
+/// Write why an absurd case's endpoints are not apart.
+///
+/// # Specification
+/// - ensures: one tag per reason in declaration order, `Diverges` followed by
+///   its two rule positions.
+/// - fails: [`CodecError::Unrepresentable`] for a count no word holds.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CodecError`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each reason, and each order of a divergent pair, keeps
+///   its own encoding and round-trips through a refusal.
+/// - witness: `codec::tests::an_absurd_case_s_refusal_round_trips_with_its_reason`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(CodecError::Unrepresentable))]
+fn write_apartness<Out>(
+    writer: &mut Writer<'_, Out>,
+    reason: gandr_kernel_term::Apartness,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match reason {
+        | gandr_kernel_term::Apartness::Apart => writer.tag(Tag(0)),
+        | gandr_kernel_term::Apartness::Agree => writer.tag(Tag(1)),
+        | gandr_kernel_term::Apartness::Open => writer.tag(Tag(2)),
+        | gandr_kernel_term::Apartness::Leaf => writer.tag(Tag(3)),
+        | gandr_kernel_term::Apartness::Diverges { outer, inner } => {
+            writer.tag(Tag(4));
+            writer.count(Count(usize::from(outer)))?;
+            writer.count(Count(usize::from(inner)))?;
+        },
+        | gandr_kernel_term::Apartness::Undecided => writer.tag(Tag(5)),
+    }
+    Ok(())
+}
+
+/// Read why an absurd case's endpoints are not apart.
+///
+/// # Specification
+/// - ensures: the inverse of [`write_apartness`].
+/// - fails: [`CodecError::Corrupt`] for an unknown reason tag, or the reader's
+///   own refusal.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CodecError`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_apartness`].
+/// - witness: `codec::tests::an_absurd_case_s_refusal_round_trips_with_its_reason`
+#[spec(captures: before = reader.cursor, ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_apartness(reader: &mut Reader<'_>) -> Result<gandr_kernel_term::Apartness, CodecError>
+{
+    let tag = reader.tag()?;
+    match tag.0 {
+        | 0 => Ok(gandr_kernel_term::Apartness::Apart),
+        | 1 => Ok(gandr_kernel_term::Apartness::Agree),
+        | 2 => Ok(gandr_kernel_term::Apartness::Open),
+        | 3 => Ok(gandr_kernel_term::Apartness::Leaf),
+        | 4 => {
+            let outer = gandr_kernel_term::RuleIndex::from(reader.count()?.0);
+            let inner = gandr_kernel_term::RuleIndex::from(reader.count()?.0);
+            Ok(gandr_kernel_term::Apartness::Diverges { outer, inner })
+        },
+        | 5 => Ok(gandr_kernel_term::Apartness::Undecided),
+        | _ => Err(CodecError::Corrupt),
+    }
+}
+
 /// Write the position of `wanted` in `table` as a tag.
 ///
 /// # Specification
@@ -4924,6 +4995,11 @@ where
             writer.tag(Tag(73));
             write_site(writer, at)?;
             writer.count(Count(usize::from(rule)))?;
+        },
+        | Refusal::NotApart { at, reason } => {
+            writer.tag(Tag(74));
+            write_site(writer, at)?;
+            write_apartness(writer, reason)?;
         },
         | Refusal::AbstractKindNotUniverse(at) => {
             writer.tag(Tag(48));
@@ -5471,6 +5547,7 @@ where
                     Refusal::DataFieldLevel {..} => 21,
                     Refusal::RuleNotPresentable {..} => 72,
                     Refusal::RuleNotRespected {..} => 73,
+                    Refusal::NotApart {..} => 74,
                     Refusal::DataArgumentArity(_) => 22,
                     Refusal::UnknownConstructor {..} => 23,
                     Refusal::ConstructorArity(_) => 24,
@@ -5570,6 +5647,10 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         | 73 => Refusal::RuleNotRespected {
             at: read_site(reader)?,
             rule: gandr_kernel_term::RuleIndex::from(reader.count()?.0),
+        },
+        | 74 => Refusal::NotApart {
+            at: read_site(reader)?,
+            reason: read_apartness(reader)?,
         },
         | 22 => Refusal::DataArgumentArity(read_site(reader)?),
         | 23 => Refusal::UnknownConstructor {
@@ -7362,6 +7443,44 @@ mod tests
             assert!(
                 encodings.insert(bytes.as_ref().to_vec()),
                 "each defect and side keeps its own encoding"
+            );
+            let mut reader = Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0,
+            };
+            assert_eq!(super::read_refusal(&mut reader), Ok(refusal));
+            assert_eq!(reader.finish(), Ok(()));
+        }
+    }
+
+    #[test]
+    fn an_absurd_case_s_refusal_round_trips_with_its_reason()
+    {
+        use gandr_kernel_term::Apartness;
+        use gandr_kernel_term::RuleIndex;
+        let at = Site::Node(NodeIndex::from(3_usize));
+        let mut encodings = alloc::collections::BTreeSet::new();
+        for reason in [
+            Apartness::Agree,
+            Apartness::Open,
+            Apartness::Leaf,
+            Apartness::Diverges {
+                outer: RuleIndex::from(1_usize),
+                inner: RuleIndex::from(0_usize),
+            },
+            Apartness::Diverges {
+                outer: RuleIndex::from(0_usize),
+                inner: RuleIndex::from(1_usize),
+            },
+            Apartness::Undecided,
+        ] {
+            let refusal = Refusal::NotApart { at, reason };
+            let mut bytes = CheckpointBytes::default();
+            super::write_refusal(&mut Writer { sink: &mut bytes }, &refusal)
+                .expect("portable refusal");
+            assert!(
+                encodings.insert(bytes.as_ref().to_vec()),
+                "each reason, and each order of a divergent pair, keeps its own encoding"
             );
             let mut reader = Reader {
                 bytes: bytes.as_ref(),

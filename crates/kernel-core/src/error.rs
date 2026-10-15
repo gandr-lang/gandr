@@ -558,6 +558,9 @@ pub enum KernelError
     /// A case over a presented type is not shown to respect the named rule of
     /// its type: its arms might tell apart two terms the rule identifies.
     RuleNotRespected(gandr_kernel_term::RuleIndex),
+    /// A case of no branches over a path type whose endpoints are not shown
+    /// apart: the reason the apartness rule names.
+    NotApart(gandr_kernel_term::Apartness),
     /// A fixpoint's structural-descent claim did not replay.
     DescentNotReplayed(gandr_kernel_term::DescentRefusal),
     /// A required record field is absent.
@@ -831,6 +834,9 @@ impl core::fmt::Display for KernelError
             },
             | Self::RuleNotRespected(_) => {
                 f.write_str("a case over a presented type was not shown to respect its rules")
+            },
+            | Self::NotApart(_) => {
+                f.write_str("a case of no branches met a path whose endpoints are not apart")
             },
             | Self::DescentNotReplayed(_) => {
                 f.write_str("a fixpoint's structural-descent claim did not replay")

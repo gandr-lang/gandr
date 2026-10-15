@@ -50,6 +50,22 @@
 //! their own. **Reversal.** A cell between distinct terms takes words indexed
 //! by their endpoints, a family over pairs of points rather than one type per
 //! point.
+//!
+//! # Convergence and apartness
+//!
+//! Conversion reads normal forms by one fixed strategy, sound whether or not
+//! the rules are confluent. Telling two terms apart is the converse claim and
+//! needs more: [`Presentation::converges`] joins every critical pair, so with
+//! the termination admission establishes, each term has one normal form, and
+//! [`Presentation::apart`] then separates two terms whose normal forms, holding
+//! no unknown subterm of the type, first differ at two distinct constructors.
+//! Both checkers call the one decision with the same fuel, each reading its
+//! own arena through a [`TermReading`] callback, so they refuse alike.
+//!
+//! **Alternatives.** Joining the critical pairs once at admission, which would
+//! put the cost on every presented type rather than on each use of apartness.
+//! **Reversal.** A presented type cased absurdly often enough that the joins
+//! show in profiles caches the verdict on the admitted declaration.
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
@@ -574,6 +590,683 @@ impl Presentation
             return Ok(outcome);
         }
     }
+
+    /// Decide whether these rules give every term one normal form, by joining
+    /// every critical pair.
+    ///
+    /// A critical pair is where two rules overlap: the left side of `inner`
+    /// unifies with the subterm of `outer`'s left side at a constructor
+    /// position, the root excepted when the two rules are one. Rewriting the
+    /// overlap by `outer` at its root and by `inner` at that position gives
+    /// the pair's two sides, each normalized by [`Self::normalize`]. Both left
+    /// sides are linear and their variables are kept apart, so unification is
+    /// one walk of the two sides that fails only where two constructors
+    /// differ.
+    ///
+    /// # Specification
+    /// - requires: `self` passed [`Self::validate`] against the table `arities`
+    ///   counts.
+    /// - ensures: [`Convergence::Converges`] exactly when every critical pair's
+    ///   two sides normalize to one term; otherwise [`Convergence::Diverges`]
+    ///   naming the first pair that does not, in written order of the
+    ///   overlapped rule, the position and the overlapping rule. Each node
+    ///   unified, built, compared or copied costs one unit of `fuel`.
+    /// - provides: the convergence a decision over normal forms rests on: an
+    ///   admitted presentation terminates, so joining every critical pair makes
+    ///   it confluent (the critical pair lemma with Newman's lemma), and two
+    ///   terms are then equal exactly when their normal forms are.
+    /// - fails: [`Exhausted`] when `fuel` runs out first.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: three `for` loops over the finite rules and the overlapped
+    ///   rule's left side, each pair built by bounded walks and normalized by
+    ///   [`Self::normalize`], which terminates.
+    /// - measure: the (rule, position, rule) triples left; `fuel`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's two cancellations and the integers'
+    ///   converge; two rules rewriting one redex to two normal forms diverge,
+    ///   named in order; a rule overlapping itself below its root is checked.
+    /// - witness: `presented::tests::critical_pairs_decide_convergence`
+    #[spec(captures: before = fuel.0, ensures: |ret| fuel.0 <= before
+        && match ret {
+            Ok(Convergence::Diverges { outer, inner }) => outer.0 < self.rules().len() && inner.0 < self.rules().len(),
+            Ok(Convergence::Converges) => true,
+            Err(Exhausted) => fuel.0 == 0,
+        })]
+    #[inline]
+    pub fn converges(
+        &self,
+        arities: &[FieldCount],
+        fuel: &mut RewriteFuel,
+    ) -> Result<Convergence, Exhausted>
+    {
+        for (outer_index, outer) in self.rules().iter().enumerate() {
+            for (position, &node) in outer.left().iter().enumerate() {
+                if !matches!(node, RuleNode::Constructor(_)) {
+                    continue;
+                }
+                for (inner_index, inner) in self.rules().iter().enumerate() {
+                    if position == 0 && inner_index == outer_index {
+                        continue;
+                    }
+                    let Overlap::Pair {
+                        outer: mut by_outer,
+                        inner: mut by_inner,
+                    } = overlap((outer, TermPosition(position)), inner, arities, fuel)?
+                    else {
+                        continue;
+                    };
+                    let _outer = self.normalize(arities, &mut by_outer, |&()| (), fuel)?;
+                    let _inner = self.normalize(arities, &mut by_inner, |&()| (), fuel)?;
+                    if by_outer != by_inner {
+                        return Ok(Convergence::Diverges {
+                            outer: RuleIndex(outer_index),
+                            inner: RuleIndex(inner_index),
+                        });
+                    }
+                }
+            }
+        }
+        Ok(Convergence::Converges)
+    }
+
+    /// Decide whether two terms of the presented type are apart: no path at
+    /// the type joins them.
+    ///
+    /// `table` is the type's constructor table as [`Self::validate`] reads it;
+    /// `read` reads one node of a term where the type stands: a constructor of
+    /// the type, its fields appended in order to the vector it is handed; a
+    /// reference whose definition is a closed term, unfolded; anything else, a
+    /// leaf, two leaves equal exactly when their ids are. The terms are apart
+    /// when the rules converge and the normal forms, holding no subterm of the
+    /// type that is not a constructor, first differ at two constructors with
+    /// distinct tags: by convergence two terms are equal exactly when their
+    /// normal forms are, and two constructor heads that differ make the normal
+    /// forms differ under every reading of the leaves of other types, which no
+    /// rule reads. A free type is the same decision with no rule to rewrite
+    /// by: constructor disjointness.
+    ///
+    /// # Specification
+    /// - requires: `self` passed [`Self::validate`] against `table`; `read`
+    ///   reads the terms as well-typed by `table`.
+    /// - ensures: [`Apartness::Diverges`] when the rules do not converge, as
+    ///   [`Self::converges`] names them; else both terms flattened in pre-order
+    ///   — where the type's own family stands, a constructor a node and a
+    ///   definition its body, and elsewhere every subterm a leaf — and
+    ///   normalized; [`Apartness::Open`] when either normal form holds a leaf
+    ///   where the type's own family stands, the root included; else, read in
+    ///   pre-order side by side, [`Apartness::Apart`] when the first nodes to
+    ///   differ are two constructors, [`Apartness::Leaf`] when they are
+    ///   anything else, and [`Apartness::Agree`] when no node differs.
+    ///   [`Apartness::Undecided`] when the decision's fuel runs out first: one
+    ///   unit per node read, rewritten, compared or copied, the same fuel at
+    ///   every caller, so two checkers decide alike.
+    /// - provides: the apartness rule both checkers admit the empty case over a
+    ///   path type by.
+    /// - fails: never — an exhausted decision is [`Apartness::Undecided`].
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: the flattening is a `while let` loop over a stack charged one
+    ///   unit of fuel per node; [`Self::converges`] and [`Self::normalize`]
+    ///   terminate; the scans are `for` loops over the two finite terms.
+    /// - measure: the decision's fuel; the nodes left to scan.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `S(Z)` and `Z` over the integers are apart, `S(P(Z))`
+    ///   and `Z` agree, `S(x)` and `Z` over a leaf of the type are open, a
+    ///   reference to `S(Z)` is apart from `Z`, two marks over distinct leaves
+    ///   differ at a leaf, two distinct words are apart, a self-referring
+    ///   definition runs out of fuel, and divergent rules are named.
+    /// - witness: `presented::tests::apartness_is_decided_by_normal_forms`
+    #[spec(ensures: |ret| !self.rules().is_empty() || !matches!(ret, Apartness::Diverges { .. }))]
+    #[inline]
+    #[must_use]
+    pub fn apart<T, V, R>(
+        &self,
+        table: &[Vec<RuleSlot<T>>],
+        (left, right): (V, V),
+        mut read: R,
+    ) -> Apartness
+    where
+        T: Copy + Eq,
+        V: Copy + Eq,
+        R: FnMut(V, &mut Vec<V>) -> TermReading<V>,
+    {
+        let arities: Vec<FieldCount> = table
+            .iter()
+            .map(|fields| FieldCount(fields.len()))
+            .collect();
+        let mut fuel = RewriteFuel(DECISION_FUEL);
+        let decided = flatten(table, left, &mut read, &mut fuel).and_then(|mut left| {
+            let mut right = flatten(table, right, &mut read, &mut fuel)?;
+            decide_apart(self, (table, &arities), (&mut left, &mut right), &mut fuel)
+        });
+        decided.unwrap_or(Apartness::Undecided)
+    }
+}
+
+/// The fuel [`Presentation::apart`] spends, the same at every caller.
+const DECISION_FUEL: u64 = 0x0010_0000;
+
+/// One node of a term as the caller of [`Presentation::apart`] reads it.
+///
+/// # Specification
+/// - provides: the caller's whole contribution to the decision: which nodes are
+///   the type's constructors and which references unfold.
+/// - panics: none.
+/// - executable: none — closed classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::apart`].
+/// - witness: `presented::tests::apartness_is_decided_by_normal_forms`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TermReading<V>
+{
+    /// A constructor of the type with this tag, its fields appended in order.
+    Constructor(ConstructorTag),
+    /// A reference whose definition is this closed term.
+    Defined(V),
+    /// Any other node: a leaf.
+    Other,
+}
+
+/// `root` flattened in pre-order as a term of the type `table` describes:
+/// where the type's own family stands, a constructor a node and a definition
+/// its body; every other subterm a leaf.
+///
+/// # Specification
+/// - requires: nothing — a constructor whose tag `table` lacks is a leaf.
+/// - ensures: the term, each node read costing one unit of `fuel`.
+/// - fails: [`Exhausted`] when `fuel` runs out, a definition that refers to
+///   itself included.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: a `while let` loop over a stack, each round charged one unit of
+///   `fuel`.
+/// - measure: `fuel`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::apart`].
+/// - witness: `presented::tests::apartness_is_decided_by_normal_forms`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |term| !term.is_empty()))]
+fn flatten<T, V, R>(
+    table: &[Vec<RuleSlot<T>>],
+    root: V,
+    read: &mut R,
+    fuel: &mut RewriteFuel,
+) -> Result<FlatTerm<V>, Exhausted>
+where
+    T: Copy + Eq,
+    V: Copy + Eq,
+    R: FnMut(V, &mut Vec<V>) -> TermReading<V>,
+{
+    let mut term = Vec::new();
+    let mut fields = Vec::new();
+    let mut pending = Vec::from([(root, RuleSlot::<T>::Own)]);
+    while let Some((at, slot)) = pending.pop() {
+        fuel.charge()?;
+        fields.clear();
+        let reading = read(at, &mut fields);
+        match (slot, reading) {
+            | (RuleSlot::Own, TermReading::Constructor(tag)) => {
+                let Some(row) = table.get(usize::from(tag))
+                else {
+                    term.push(RuleTerm::Leaf(at));
+                    continue;
+                };
+                term.push(RuleTerm::Constructor {
+                    tag,
+                    arity: FieldCount(fields.len()),
+                    payload: (),
+                });
+                for (index, &field) in fields.iter().enumerate().rev() {
+                    pending.push((field, row.get(index).copied().unwrap_or(RuleSlot::Own)));
+                }
+            },
+            | (RuleSlot::Own, TermReading::Defined(body)) => pending.push((body, RuleSlot::Own)),
+            | (RuleSlot::Own, TermReading::Other) | (RuleSlot::Other(_), _) => {
+                term.push(RuleTerm::Leaf(at));
+            },
+        }
+    }
+    Ok(term)
+}
+
+/// Whether a presentation's rules give every term one normal form.
+///
+/// # Specification
+/// - provides: the verdict [`Presentation::converges`] reaches.
+/// - panics: none.
+/// - executable: none — closed classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::converges`].
+/// - witness: `presented::tests::critical_pairs_decide_convergence`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Convergence
+{
+    /// Every critical pair joins: every term has one normal form.
+    Converges,
+    /// The overlap of rule `outer` by rule `inner` rewrites one term to two
+    /// normal forms.
+    Diverges
+    {
+        /// The rule overlapped, rewritten at the overlap's root.
+        outer: RuleIndex,
+        /// The rule overlapping it, rewritten where its left side stands.
+        inner: RuleIndex,
+    },
+}
+
+/// How two terms of a presented type stand, as [`Presentation::apart`]
+/// decides.
+///
+/// # Specification
+/// - provides: apartness, and otherwise the one reason it was not decided.
+/// - panics: none.
+/// - executable: none — closed classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::apart`].
+/// - witness: `presented::tests::apartness_is_decided_by_normal_forms`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Apartness
+{
+    /// The normal forms first differ at two constructors with distinct tags:
+    /// no path joins the terms.
+    Apart,
+    /// The normal forms agree: the terms are one element.
+    Agree,
+    /// A normal form holds a subterm of the type that is no constructor — a
+    /// variable or a stuck term — which the rules might rewrite once it is
+    /// known.
+    Open,
+    /// The normal forms first differ at a subterm of another type, which the
+    /// rules do not read.
+    Leaf,
+    /// The rules do not converge, so distinct normal forms need not be
+    /// distinct elements.
+    Diverges
+    {
+        /// The rule overlapped.
+        outer: RuleIndex,
+        /// The rule overlapping it.
+        inner: RuleIndex,
+    },
+    /// The decision's fuel ran out first.
+    Undecided,
+}
+
+/// [`Presentation::apart`]'s decision within `fuel`.
+///
+/// # Specification
+/// - requires: as [`Presentation::apart`]; `arities` counts `table`.
+/// - ensures: as [`Presentation::apart`], the terms normalized in place.
+/// - fails: [`Exhausted`] when `fuel` runs out.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: as [`Presentation::apart`].
+/// - measure: `fuel`; the nodes left to scan.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::apart`].
+/// - witness: `presented::tests::apartness_is_decided_by_normal_forms`
+#[spec(ensures: |ret| ret != Ok(Apartness::Undecided))]
+fn decide_apart<T, L>(
+    presentation: &Presentation,
+    (table, arities): (&[Vec<RuleSlot<T>>], &[FieldCount]),
+    (left, right): (&mut FlatTerm<L>, &mut FlatTerm<L>),
+    fuel: &mut RewriteFuel,
+) -> Result<Apartness, Exhausted>
+where
+    T: Copy + Eq,
+    L: Copy + Eq,
+{
+    if !presentation.rules().is_empty() {
+        if let Convergence::Diverges { outer, inner } = presentation.converges(arities, fuel)? {
+            return Ok(Apartness::Diverges { outer, inner });
+        }
+        let _left = presentation.normalize(arities, left, |&()| (), fuel)?;
+        let _right = presentation.normalize(arities, right, |&()| (), fuel)?;
+    }
+    if closure(table, left) == Closure::Open || closure(table, right) == Closure::Open {
+        return Ok(Apartness::Open);
+    }
+    for (one, other) in left.iter().zip(right.iter()) {
+        fuel.charge()?;
+        match (*one, *other) {
+            | (
+                RuleTerm::Constructor { tag: first, .. },
+                RuleTerm::Constructor { tag: second, .. },
+            ) => {
+                if first != second {
+                    return Ok(Apartness::Apart);
+                }
+            },
+            | (RuleTerm::Leaf(first), RuleTerm::Leaf(second)) if first == second => {},
+            | (RuleTerm::Constructor { .. } | RuleTerm::Leaf(_), _) => return Ok(Apartness::Leaf),
+        }
+    }
+    if left.len() == right.len() {
+        Ok(Apartness::Agree)
+    }
+    else {
+        Ok(Apartness::Leaf)
+    }
+}
+
+/// Whether a flattened term of a presented type is closed where its own
+/// family stands.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Closure
+{
+    /// No leaf stands where the family does.
+    Closed,
+    /// A leaf stands where the family does, or the term is not one term.
+    Open,
+}
+
+/// Whether a flattened term of a presented type holds a leaf where its own
+/// family stands.
+///
+/// # Specification
+/// - requires: nothing — a term that is not one well-formed pre-order term by
+///   `table` reads as open.
+/// - ensures: [`Closure::Open`] exactly when some leaf of `term` stands at the
+///   root or at a [`RuleSlot::Own`] field of the constructor above it, or the
+///   term is not one term by `table`.
+/// - provides: the closedness [`Presentation::apart`] asks of a normal form.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` loop over the term.
+/// - measure: the nodes left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::apart`].
+/// - witness: `presented::tests::apartness_is_decided_by_normal_forms`
+#[spec(ensures: |ret| !term.is_empty() || ret == Closure::Open)]
+fn closure<T, C, L>(
+    table: &[Vec<RuleSlot<T>>],
+    term: &[RuleTerm<C, L>],
+) -> Closure
+where
+    T: Copy + Eq,
+{
+    let mut expected = Vec::from([RuleSlot::Own]);
+    for node in term {
+        let Some(slot) = expected.pop()
+        else {
+            return Closure::Open;
+        };
+        match *node {
+            | RuleTerm::Constructor { tag, .. } => {
+                let Some(fields) = table.get(usize::from(tag))
+                else {
+                    return Closure::Open;
+                };
+                expected.extend(fields.iter().rev().copied());
+            },
+            | RuleTerm::Leaf(_) => {
+                if slot == RuleSlot::Own {
+                    return Closure::Open;
+                }
+            },
+        }
+    }
+    if expected.is_empty() {
+        Closure::Closed
+    }
+    else {
+        Closure::Open
+    }
+}
+
+/// A variable of a critical pair: the overlapped rule's or the overlapping
+/// rule's, kept apart.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PairVariable
+{
+    /// A variable of the overlapped rule.
+    Outer(RuleVariable),
+    /// A variable of the overlapping rule.
+    Inner(RuleVariable),
+}
+
+/// A term flattened in pre-order with no payload on its constructors: what
+/// the apartness decision and the critical pairs compare.
+type FlatTerm<L> = Vec<RuleTerm<(), L>>;
+
+/// One side of a critical pair, flattened in pre-order.
+type PairTerm = FlatTerm<PairVariable>;
+
+/// What overlapping one rule's left side by another's at a position found.
+///
+/// # Specification
+/// trivial.
+enum Overlap
+{
+    /// The two left sides do not unify there.
+    Disjoint,
+    /// They unify; the overlap rewritten by each rule.
+    Pair
+    {
+        /// The overlap rewritten at its root by the overlapped rule.
+        outer: PairTerm,
+        /// The overlap rewritten at the position by the overlapping rule.
+        inner: PairTerm,
+    },
+}
+
+/// The critical pair of `outer` overlapped at `position` of its left side by
+/// `inner`'s left side.
+///
+/// # Specification
+/// - requires: both rules passed [`Presentation::validate`] against the table
+///   `arities` counts; `position` holds a constructor of `outer`'s left side.
+/// - ensures: [`Overlap::Disjoint`] when the subterm at `position` and
+///   `inner`'s left side meet two constructors with distinct tags; otherwise
+///   [`Overlap::Pair`] with the most general unifier `σ` — each variable of
+///   either side bound to the other side's subterm standing where it does —
+///   applied to `outer`'s right side, and to `outer`'s left side with `inner`'s
+///   right side in place at `position`. Each node walked or copied costs one
+///   unit of `fuel`.
+/// - fails: [`Exhausted`] when `fuel` runs out.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `while let` loop advances a cursor over the subterm at
+///   `position` every round; the builds are `for` loops over finite sides.
+/// - measure: the subterm's nodes left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::converges`].
+/// - witness: `presented::tests::critical_pairs_decide_convergence`
+#[spec(ensures: |ret| ret.is_ok() || fuel.0 == 0)]
+fn overlap(
+    (outer, position): (&PresentedRule, TermPosition),
+    inner: &PresentedRule,
+    arities: &[FieldCount],
+    fuel: &mut RewriteFuel,
+) -> Result<Overlap, Exhausted>
+{
+    let left = outer.left();
+    let TermPosition(end) = subterm_end(left, position, arities, fuel)?;
+    let (Some(before), Some(at), Some(after)) = (
+        left.get(.. position.0),
+        left.get(position.0 .. end),
+        left.get(end ..),
+    )
+    else {
+        return Ok(Overlap::Disjoint);
+    };
+    let overlapping = inner.left();
+    let mut outer_bound: Vec<(RuleVariable, PairTerm)> = Vec::new();
+    let mut inner_bound: Vec<(RuleVariable, PairTerm)> = Vec::new();
+    let (mut a, mut b) = (0_usize, 0_usize);
+    while let Some(&node) = at.get(a) {
+        fuel.charge()?;
+        match (node, overlapping.get(b)) {
+            | (RuleNode::Constructor(one), Some(&RuleNode::Constructor(other))) => {
+                if one != other {
+                    return Ok(Overlap::Disjoint);
+                }
+                a = a.saturating_add(1);
+                b = b.saturating_add(1);
+            },
+            | (RuleNode::Variable(variable), Some(_)) => {
+                let TermPosition(to) = subterm_end(overlapping, TermPosition(b), arities, fuel)?;
+                let span = overlapping.get(b .. to).unwrap_or(&[]);
+                outer_bound.push((variable, flattened(span, PairVariable::Inner, arities)));
+                a = a.saturating_add(1);
+                b = to;
+            },
+            | (RuleNode::Constructor(_), Some(&RuleNode::Variable(variable))) => {
+                let TermPosition(to) = subterm_end(at, TermPosition(a), arities, fuel)?;
+                let span = at.get(a .. to).unwrap_or(&[]);
+                inner_bound.push((variable, flattened(span, PairVariable::Outer, arities)));
+                a = to;
+                b = b.saturating_add(1);
+            },
+            | (RuleNode::Constructor(_) | RuleNode::Variable(_), None) => {
+                return Ok(Overlap::Disjoint);
+            },
+        }
+    }
+    let by_outer = substituted(outer.right(), PairVariable::Outer, &outer_bound, arities);
+    let mut by_inner = flattened(before, PairVariable::Outer, arities);
+    by_inner.extend(substituted(
+        inner.right(),
+        PairVariable::Inner,
+        &inner_bound,
+        arities,
+    ));
+    by_inner.extend(flattened(after, PairVariable::Outer, arities));
+    Ok(Overlap::Pair {
+        outer: by_outer,
+        inner: by_inner,
+    })
+}
+
+/// One past the last node of the subterm of `side` starting at `start`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the end of the pre-order subterm at `start` by `arities`; the
+///   side's length when the side ends first.
+/// - fails: [`Exhausted`] when `fuel` runs out; one unit per node.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `while let` loop reads one node per round and stops at the
+///   side's end.
+/// - measure: the side's nodes after `start`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::converges`].
+/// - witness: `presented::tests::critical_pairs_decide_convergence`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&TermPosition(end)| end <= side.len().max(start.0)))]
+fn subterm_end(
+    side: &[RuleNode],
+    start: TermPosition,
+    arities: &[FieldCount],
+    fuel: &mut RewriteFuel,
+) -> Result<TermPosition, Exhausted>
+{
+    let TermPosition(mut at) = start;
+    let mut owed = 1_usize;
+    while let Some(next) = owed.checked_sub(1) {
+        fuel.charge()?;
+        owed = match side.get(at) {
+            | Some(&RuleNode::Constructor(tag)) => {
+                next.saturating_add(arities.get(usize::from(tag)).map_or(0, |count| count.0))
+            },
+            | Some(&RuleNode::Variable(_)) => next,
+            | None => return Ok(TermPosition(side.len().max(start.0))),
+        };
+        at = at.saturating_add(1);
+    }
+    Ok(TermPosition(at))
+}
+
+/// `nodes` as a pair's term, each variable read as `side` names it.
+///
+/// # Specification
+/// trivial.
+fn flattened(
+    nodes: &[RuleNode],
+    side: fn(RuleVariable) -> PairVariable,
+    arities: &[FieldCount],
+) -> PairTerm
+{
+    nodes
+        .iter()
+        .map(|&node| match node {
+            | RuleNode::Constructor(tag) => RuleTerm::Constructor {
+                tag,
+                arity: arities.get(usize::from(tag)).copied().unwrap_or_default(),
+                payload: (),
+            },
+            | RuleNode::Variable(variable) => RuleTerm::Leaf(side(variable)),
+        })
+        .collect()
+}
+
+/// The rule side `nodes` under a unifier: each variable `bound` names read
+/// as its term, every other as `side` names it.
+///
+/// # Specification
+/// trivial.
+fn substituted(
+    nodes: &[RuleNode],
+    side: fn(RuleVariable) -> PairVariable,
+    bound: &[(RuleVariable, PairTerm)],
+    arities: &[FieldCount],
+) -> PairTerm
+{
+    let mut term = Vec::with_capacity(nodes.len());
+    for &node in nodes {
+        match node {
+            | RuleNode::Constructor(tag) => term.push(RuleTerm::Constructor {
+                tag,
+                arity: arities.get(usize::from(tag)).copied().unwrap_or_default(),
+                payload: (),
+            }),
+            | RuleNode::Variable(variable) => {
+                match bound.iter().find(|&&(named, _)| named == variable) {
+                    | Some(&(_, ref value)) => term.extend_from_slice(value),
+                    | None => term.push(RuleTerm::Leaf(side(variable))),
+                }
+            },
+        }
+    }
+    term
 }
 
 /// A free invertible 1-cell of a presented type's sort: a generator between
@@ -1439,7 +2132,9 @@ mod tests
     use alloc::string::String;
     use alloc::vec::Vec;
 
+    use super::Apartness;
     use super::CellFault;
+    use super::Convergence;
     use super::Exhausted;
     use super::FieldCount;
     use super::FreeCell;
@@ -1455,6 +2150,7 @@ mod tests
     use super::RuleSlot;
     use super::RuleTerm;
     use super::RuleVariable;
+    use super::TermReading;
     use crate::term::ConstructorTag;
 
     /// The classifier of `mark`'s field, another type than the circle.
@@ -1823,6 +2519,308 @@ mod tests
         assert_eq!(
             super::build_side(&[c(9)], &arities, shown),
             Err(RuleFault::UnknownConstructor)
+        );
+    }
+
+    /// A node of a test term written in pre-order: a constructor by its tag, a
+    /// leaf by its id, or a reference to a term already built.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Clone, Copy, Debug)]
+    enum Node
+    {
+        /// A constructor of the table.
+        C(usize),
+        /// A leaf.
+        L(u8),
+        /// A reference defined as the term at this id.
+        R(Id),
+    }
+
+    /// The id of a test term.
+    ///
+    /// # Specification
+    /// trivial.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Id(usize);
+
+    /// A node of a test term as stored.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Clone, Debug)]
+    enum Stored
+    {
+        /// A constructor and its fields' ids.
+        Constructor(usize, Vec<Id>),
+        /// A reference and the id of its definition.
+        Defined(Id),
+        /// A leaf.
+        Leaf(u8),
+    }
+
+    /// The terms a test decides over, by id.
+    ///
+    /// # Specification
+    /// trivial.
+    #[repr(transparent)]
+    #[derive(Debug, Default)]
+    struct Terms(Vec<Stored>);
+
+    impl Terms
+    {
+        /// The term `nodes` writes over a table of `arities`, its id; one leaf
+        /// per leaf id.
+        ///
+        /// # Specification
+        /// trivial.
+        fn build(
+            &mut self,
+            nodes: &[Node],
+            arities: &[FieldCount],
+        ) -> Id
+        {
+            let mut built: Vec<Id> = Vec::new();
+            for &node in nodes.iter().rev() {
+                let stored =
+                    match node {
+                        | Node::C(tag) => {
+                            let mut fields = Vec::new();
+                            for _ in 0 .. arities[tag].0 {
+                                fields.push(built.pop().expect("a field is written"));
+                            }
+                            Stored::Constructor(tag, fields)
+                        },
+                        | Node::L(id) => {
+                            if let Some(found) = self.0.iter().position(
+                                |stored| matches!(*stored, Stored::Leaf(held) if held == id),
+                            ) {
+                                built.push(Id(found));
+                                continue;
+                            }
+                            Stored::Leaf(id)
+                        },
+                        | Node::R(target) => Stored::Defined(target),
+                    };
+                built.push(Id(self.0.len()));
+                self.0.push(stored);
+            }
+            built.pop().expect("one term is written")
+        }
+
+        /// The node at `at` as [`Presentation::apart`] reads it.
+        ///
+        /// # Specification
+        /// trivial.
+        fn read(
+            &self,
+            at: Id,
+            fields: &mut Vec<Id>,
+        ) -> TermReading<Id>
+        {
+            match self.0[at.0] {
+                | Stored::Constructor(tag, ref written) => {
+                    fields.extend_from_slice(written);
+                    TermReading::Constructor(ConstructorTag::from(tag))
+                },
+                | Stored::Defined(body) => TermReading::Defined(body),
+                | Stored::Leaf(_) => TermReading::Other,
+            }
+        }
+    }
+
+    /// The integers' table, `Z`, `S(x)` and `P(x)`, and their two
+    /// cancellations.
+    ///
+    /// # Specification
+    /// trivial.
+    fn integers() -> (Vec<Vec<RuleSlot<Classifier>>>, Presentation)
+    {
+        let successor = RuleNode::Constructor(ConstructorTag::from(1_usize));
+        let predecessor = RuleNode::Constructor(ConstructorTag::from(2_usize));
+        let x = RuleNode::Variable(RuleVariable::from(0_u32));
+        (
+            alloc::vec![alloc::vec![], alloc::vec![RuleSlot::Own], alloc::vec![
+                RuleSlot::Own
+            ],],
+            Presentation::new(alloc::vec![
+                PresentedRule::new([successor, predecessor, x].into(), [x].into()),
+                PresentedRule::new([predecessor, successor, x].into(), [x].into()),
+            ]),
+        )
+    }
+
+    #[test]
+    fn critical_pairs_decide_convergence()
+    {
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
+        let arities = [0_usize, 1, 1, 1].map(FieldCount::from);
+        let table = table();
+        let mut fuel = RewriteFuel::from(10_000_u64);
+        assert_eq!(
+            circle().converges(&arities, &mut fuel),
+            Ok(Convergence::Converges),
+            "each cancellation overlaps the other below its root, and the overlaps join"
+        );
+        let (integers_table, integers) = integers();
+        assert_eq!(integers.validate(&integers_table), Ok(()));
+        assert_eq!(
+            integers.converges(&arities, &mut fuel),
+            Ok(Convergence::Converges)
+        );
+        let forked = Presentation::new(alloc::vec![
+            PresentedRule::new([c(1), c(2), v(0)].into(), [v(0)].into()),
+            PresentedRule::new([c(1), c(2), v(0)].into(), [c(0)].into()),
+        ]);
+        assert_eq!(forked.validate(&table), Ok(()));
+        assert_eq!(
+            forked.converges(&arities, &mut fuel),
+            Ok(Convergence::Diverges {
+                outer: RuleIndex::from(0_usize),
+                inner: RuleIndex::from(1_usize),
+            }),
+            "one redex rewritten to its variable and to `base`, the first rule overlapped first"
+        );
+        let collapsing = one(&[c(1), c(1), v(0)], &[v(0)]);
+        assert_eq!(
+            collapsing.converges(&arities, &mut fuel),
+            Ok(Convergence::Converges),
+            "`loop(loop(loop(x)))` reaches `loop(x)` either way"
+        );
+        let turning = one(&[c(1), c(1), v(0)], &[c(2), v(0)]);
+        assert_eq!(turning.validate(&table), Ok(()));
+        assert_eq!(
+            turning.converges(&arities, &mut fuel),
+            Ok(Convergence::Diverges {
+                outer: RuleIndex::from(0_usize),
+                inner: RuleIndex::from(0_usize),
+            }),
+            "the rule overlaps itself below its root: `unloop(loop(x))` against `loop(unloop(x))`"
+        );
+        let mut starved = RewriteFuel::from(2_u64);
+        assert_eq!(circle().converges(&arities, &mut starved), Err(Exhausted));
+    }
+
+    #[test]
+    fn apartness_is_decided_by_normal_forms()
+    {
+        use Node::C;
+        use Node::L;
+        use Node::R;
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
+        let mut terms = Terms::default();
+        let mut apart = |presentation: &Presentation,
+                         table: &[Vec<RuleSlot<Classifier>>],
+                         left: &[Node],
+                         right: &[Node]| {
+            let arities: Vec<FieldCount> = table
+                .iter()
+                .map(|fields| FieldCount(fields.len()))
+                .collect();
+            let (left, right) = (terms.build(left, &arities), terms.build(right, &arities));
+            presentation.apart(table, (left, right), |at, fields| terms.read(at, fields))
+        };
+        let (numbers, integers) = integers();
+        assert_eq!(
+            apart(&integers, &numbers, &[C(1), C(0)], &[C(0)]),
+            Apartness::Apart,
+            "`S(Z)` and `Z` are normal and differ at their heads"
+        );
+        assert_eq!(
+            apart(&integers, &numbers, &[C(1), C(1), C(0)], &[C(1), C(0)]),
+            Apartness::Apart,
+            "`S(S(Z))` and `S(Z)` first differ below one shared head"
+        );
+        assert_eq!(
+            apart(&integers, &numbers, &[C(1), C(2), C(0)], &[C(0)]),
+            Apartness::Agree,
+            "`S(P(Z))` is `Z`"
+        );
+        assert_eq!(
+            apart(&integers, &numbers, &[C(1), L(7)], &[C(0)]),
+            Apartness::Open,
+            "`S(x)` is `Z` once `x` is `P(Z)`"
+        );
+        assert_eq!(
+            apart(&integers, &numbers, &[C(2), C(1), L(7)], &[C(1), C(0)]),
+            Apartness::Open,
+            "the leaf survives `P(S(x))`'s rewrite to `x`"
+        );
+        let erasing = one(&[c(2), c(1), v(0)], &[c(0)]);
+        assert_eq!(erasing.validate(&numbers), Ok(()));
+        assert_eq!(
+            apart(&erasing, &numbers, &[C(2), C(1), L(7)], &[C(1), C(0)]),
+            Apartness::Apart,
+            "a rule that erases the leaf leaves a closed normal form"
+        );
+        let forked = Presentation::new(alloc::vec![
+            PresentedRule::new([c(1), c(2), v(0)].into(), [v(0)].into()),
+            PresentedRule::new([c(1), c(2), v(0)].into(), [c(0)].into()),
+        ]);
+        assert_eq!(
+            apart(&forked, &numbers, &[C(1), C(0)], &[C(0)]),
+            Apartness::Diverges {
+                outer: RuleIndex::from(0_usize),
+                inner: RuleIndex::from(1_usize),
+            },
+            "normal forms of divergent rules are not elements"
+        );
+        let table = table();
+        let marks = [C(3), L(1)];
+        assert_eq!(
+            apart(&circle(), &table, &marks, &[C(3), L(2)]),
+            Apartness::Leaf,
+            "two marks first differ at their fields of another type"
+        );
+        assert_eq!(apart(&circle(), &table, &marks, &marks), Apartness::Agree);
+        assert_eq!(
+            apart(&circle(), &table, &[C(1), C(1), C(0)], &[C(1), C(0)]),
+            Apartness::Apart,
+            "two words, the second letter against the empty word"
+        );
+        assert_eq!(
+            apart(&Presentation::default(), &table, &[C(1), C(2), C(0)], &[C(
+                0
+            )]),
+            Apartness::Apart,
+            "a free type: constructors are disjoint, and nothing cancels"
+        );
+        let mut terms = Terms::default();
+        let arities = [0_usize, 1, 1].map(FieldCount);
+        let successor = terms.build(&[C(1), C(0)], &arities);
+        let zero = terms.build(&[C(0)], &arities);
+        let named = terms.build(&[R(successor)], &arities);
+        let read = |terms: &Terms, at: Id, fields: &mut Vec<Id>| terms.read(at, fields);
+        assert_eq!(
+            integers.apart(&numbers, (named, zero), |at, fields| read(
+                &terms, at, fields
+            )),
+            Apartness::Apart,
+            "a reference to `S(Z)` unfolds where the type stands"
+        );
+        let later = Id(terms.0.len());
+        terms.0.push(Stored::Defined(later));
+        assert_eq!(
+            integers.apart(&numbers, (later, zero), |at, fields| read(
+                &terms, at, fields
+            )),
+            Apartness::Undecided,
+            "a definition that refers to itself runs out of fuel"
+        );
+        let mark_table = super::tests::table();
+        let marked = terms.build(&[C(3), R(zero)], &[0_usize, 1, 1, 1].map(FieldCount));
+        let direct = Id(terms.0.len());
+        terms.0.push(Stored::Constructor(3, alloc::vec![zero]));
+        assert_eq!(
+            circle().apart(&mark_table, (marked, direct), |at, fields| read(
+                &terms, at, fields
+            )),
+            Apartness::Leaf,
+            "a reference at a field of another type is a leaf, not unfolded to the term it names"
         );
     }
 }

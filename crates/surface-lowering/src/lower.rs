@@ -2034,7 +2034,8 @@ enum Plan
     /// The lazy record of the computation types in the lowerer's operand
     /// store, in order: the binary lazy product nested to the right.
     With(Stretch),
-    /// A case of no arms over its scrutinee: the eliminator of the empty sum.
+    /// A case of no arms over a scrutinee stated at no data type and no path
+    /// type: the eliminator of the empty sum.
     EmptyCase(NodeIndex),
     /// One tuple of the values in the lowerer's operand store, in order.
     Tuple(Stretch),

@@ -35,11 +35,6 @@
 //! its thunk once an arm body's duplication costs more than the binding of
 //! its type, which needs the answer type at every join.
 //!
-//! A match with no arms, `case e {}`, is declined by the view's name, under
-//! which the grammar reserves it: no pattern names the family it would
-//! eliminate. Reversal: a scrutinee whose type the lowering reads, an
-//! annotation or a parameter's written type, names it.
-//!
 //! # The motive is the answer the source states
 //!
 //! A data case checks against a motive under one scrutinee binder. The
@@ -235,25 +230,28 @@
 //! ends in the match, and a match that eliminates native data with neither is
 //! unannotated. Rows exhausted before a leaf are `NonExhaustiveMatch`, classed
 //! as malformed source; string patterns, as-patterns, an or-pattern binding a
-//! variable, the view `with e` and the arm-less `case e {}` are declined by
-//! name. Reversal: a join point earns its thunk once duplication costs more
-//! than binding the answer type at every join; the arm-less match lowers once
-//! the lowering reads a scrutinee's type.
+//! variable and the view `with e` are declined by name. Reversal: a join point
+//! earns its thunk once duplication costs more than binding the answer type at
+//! every join.
 //!
 //! A match of no arms, `case e {}`, names no family to compile against, so it
-//! lowers to the case of no branches over its scrutinee, the eliminator of the
-//! empty sum `Void`, which checks at any answer. A written answer on it, `case
-//! e -> T {}`, is declined: no branch would answer it. A nominal family
-//! declared with no constructors is not the empty sum, so `case e {}` over one
-//! is refused by the checker as a shape mismatch.
+//! reads its scrutinee's stated type, as a sum pattern reads its arity. Over a
+//! data type with no constructor it lowers to that type's data case of no
+//! branch; over a path type, to a data case of no branch whose admission the
+//! checker decides by apartness (`gandr-core-checker`'s `former` § Apartness);
+//! over a data type with a constructor it is `NonExhaustiveMatch`; over
+//! anything else, `Void` among them, it is the case of no branches, the empty
+//! sum's eliminator, which checks at any answer. The data case reads its
+//! answer as any match does, `case e -> T {}` or the enclosing result type;
+//! the empty sum's case takes none written, since no branch would answer it.
 //!
-//! **Choice.** One reading of `case e {}`, the empty sum's eliminator, decided
-//! without the scrutinee's type. **Alternatives.** Reading the scrutinee's
-//! declared type to emit an empty data case over a nominal family, which needs
-//! the type the lowering does not compute; keeping the empty match declined,
-//! which leaves `Void` with no eliminator. **Reversal.** When the lowering
-//! learns its scrutinees' types, an empty nominal family takes the data case of
-//! no branches.
+//! **Choice.** The empty match read by its scrutinee's written type, so `data
+//! Empty : Type {}` and a path between apart terms each have an eliminator.
+//! **Alternatives.** One reading of `case e {}`, the empty sum's eliminator,
+//! which leaves every empty nominal family without one; a reading by the
+//! checked type, which the lowering does not compute. **Reversal.** A
+//! scrutinee with no written type — a nested expression — takes the reading
+//! once the lowering learns synthesized types.
 //!
 //! The tree forgets its patterns, so `OriginTable::case` keeps them: per match,
 //! the `gandr_core_term` pattern table the arms are written in, one `ArmOrigin`
@@ -443,6 +441,20 @@ quenchant_shape::reason_enum! {
             /// The family has parameters, or is the presentation's own, so a
             /// constructor needs a written classifier the switch does not hold.
             Parameterised,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a match of no arms switches on no data.
+    pub mod switched {
+        /// Its scrutinee states no data type and no path type.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The scrutinee is no name written with a type.
+            Untyped,
+            /// The stated type is another former: the empty sum among them.
+            Otherwise,
         }
     }
 }
@@ -1752,19 +1764,21 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a match in term position.
-    /// - ensures: a match of no arms, `case e {}`, is planned as the case of no
-    ///   branches over its scrutinee, the eliminator of the empty sum `Void`;
-    ///   otherwise the match stands as a computation, its arms' patterns read
-    ///   and compiled to a decision tree over the scrutinee, read as a value
-    ///   under the site's frame; the written answer is read where a result is
-    ///   read, and else the answer the position states is taken; each arm body
-    ///   is read as a computation under the case's frame, the tree's anonymous
-    ///   binders and its own variables, answers what the match does, and takes
-    ///   the paths through the match's position.
+    /// - ensures: a match of no arms, `case e {}`, is planned as
+    ///   [`Self::empty_case`] plans it: the data switch of no branches over a
+    ///   scrutinee stated at a data type or a path type, and else the case of
+    ///   no branches, the eliminator of the empty sum `Void`; otherwise the
+    ///   match stands as a computation, its arms' patterns read and compiled to
+    ///   a decision tree over the scrutinee, read as a value under the site's
+    ///   frame; the written answer is read where a result is read, and else the
+    ///   answer the position states is taken; each arm body is read as a
+    ///   computation under the case's frame, the tree's anonymous binders and
+    ///   its own variables, answers what the match does, and takes the paths
+    ///   through the match's position.
     /// - provides: the reading of `case`.
     /// - fails: the wrong-sort refusal outside computation position; the view
-    ///   form `case … with` by the view's name; a written answer on a match of
-    ///   no arms, which checks at any type; a written answer on a match whose
+    ///   form `case … with` by the view's name; a match of no arms as
+    ///   [`Self::empty_case`] refuses it; a written answer on a match whose
     ///   arms continue a block as joining it; a pattern the fragment does not
     ///   read by its own name; a pattern of the wrong kind for its column as
     ///   the wrong sort; a variable bound twice in one pattern; a
@@ -1821,17 +1835,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         exhausted(site, &cursor)?;
         if arms.is_empty() {
-            if let Maybe::Present(stated) = written {
-                return Err(LoweringRefusal::OutOfFragment {
-                    span: stated.span,
-                    form: FormName::CASE,
-                    sort: site.reading.sort(),
-                    boundary: FragmentBoundary::Unadmitted,
-                });
-            }
-            self.read(scrutinee.node, Reading::Value(frame));
-            self.plan(site, Plan::EmptyCase(scrutinee.node));
-            return Ok(());
+            return self.empty_case(site, frame, scrutinee, written);
         }
         if self.joined.contains(&site.at.node)
             && let Maybe::Present(stated) = written
@@ -1936,6 +1940,230 @@ impl<'source> Lowerer<'_, 'source>
         self.plan(site, Plan::Case(index));
 
         Ok(())
+    }
+
+    /// Classify a match of no arms, `case e -> T? {}`, over `scrutinee` under
+    /// `frame`, with the answer `written` when one is written.
+    ///
+    /// # Specification
+    /// - requires: `site` is a match of no arms in term position, read under
+    ///   `frame`.
+    /// - ensures: over a scrutinee [`Self::empty_switch`] reads a data switch
+    ///   for, the match is planned as that switch with no branch, its answer
+    ///   the written one and else the one its position states, the written
+    ///   answer read where a result is read; over any other scrutinee it is
+    ///   planned as the case of no branches, the eliminator of the empty sum
+    ///   `Void`. The scrutinee is read as a value under `frame` either way.
+    /// - provides: the empty match: a data type with no constructor, and a path
+    ///   the checker decides has no inhabitant, are eliminated by their own
+    ///   switch, exhaustive with no branch, at any answer.
+    /// - fails: as [`Self::empty_switch`] refuses the scrutinee's type; a
+    ///   written answer on the case of no branches, which checks at any type; a
+    ///   data switch whose answer neither the match nor its position states, as
+    ///   unannotated.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The match's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match of no arms over `Void`, over a data type with
+    ///   no constructor, over a path and over a data type with a constructor
+    ///   separate the empty sum's case, the data switch and the refusal.
+    /// - witness: `lower::native::tests::a_match_of_no_arms_eliminates_the_empty_sum`
+    /// - witness: `lower::native::tests::a_match_of_no_arms_switches_on_empty_data_and_on_a_path`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Case(_) | Plan::EmptyCase(_)))))]
+    fn empty_case(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        scrutinee: Placed,
+        written: Maybe<Placed, answered::Absent>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let stated = self.scrutinee_type(frame, scrutinee)?;
+        let Maybe::Present(family) = self.empty_switch(site, frame, stated)?
+        else {
+            if let Maybe::Present(stated) = written {
+                return Err(LoweringRefusal::OutOfFragment {
+                    span: stated.span,
+                    form: FormName::CASE,
+                    sort: site.reading.sort(),
+                    boundary: FragmentBoundary::Unadmitted,
+                });
+            }
+            self.read(scrutinee.node, Reading::Value(frame));
+            self.plan(site, Plan::EmptyCase(scrutinee.node));
+            return Ok(());
+        };
+        let answer = match written {
+            | Maybe::Present(node) => Maybe::Present(Answer {
+                node: node.node,
+                frame,
+            }),
+            | Maybe::Absent(reason) => self
+                .answers
+                .get(&site.at.node)
+                .copied()
+                .map_or(Maybe::Absent(reason), Maybe::Present),
+        };
+        if let Maybe::Absent(_) = answer {
+            return Err(site.out(FragmentBoundary::Unannotated));
+        }
+        self.read(scrutinee.node, Reading::Value(frame));
+        if let Maybe::Present(node) = written {
+            self.read(node.node, Reading::Result(frame));
+        }
+        let index = CaseIndex(self.cases.len());
+        self.cases.push(CaseForm {
+            scrutinee: scrutinee.node,
+            frame,
+            answer,
+            bodies: Vec::new(),
+            tests: Vec::from([Test::Data {
+                level: TreeLevel::default(),
+                depth: Depth::default(),
+                family,
+                branches: Vec::new(),
+            }]),
+            origin: CaseOrigin {
+                written: site.at.node,
+                scrutinee: scrutinee.node,
+                patterns: Patterns::new(),
+                arms: Vec::new(),
+            },
+        });
+        self.plan(site, Plan::Case(index));
+
+        Ok(())
+    }
+
+    /// The family of the data switch a match of no arms eliminates its
+    /// scrutinee by, the scrutinee stated at `stated`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a match of no arms under `frame`; `stated` is its
+    ///   scrutinee's written type, as [`Self::scrutinee_type`] reads it.
+    /// - ensures: read through parentheses, a path type answers a switch over
+    ///   no bare family, whose emptiness the checker decides; a type head, bare
+    ///   or applied, naming a data declaration with no constructor answers a
+    ///   switch over that family, bare when it takes no parameter. Any other
+    ///   stated type, the empty sum among them, answers
+    ///   [`switched::Absent::Otherwise`], and an unstated one
+    ///   [`switched::Absent::Untyped`].
+    /// - fails: [`LoweringRefusal::NonExhaustiveMatch`] at the match for a head
+    ///   naming a data declaration with a constructor, which no arm covers; the
+    ///   head's own resolution refusals; the allowance, one step per form read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// Every round reads one form and descends only into the type its
+    /// parentheses hold, a strict subtree, spending one step of the
+    /// allowance.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::empty_case`].
+    /// - witness: `lower::native::tests::a_match_of_no_arms_switches_on_empty_data_and_on_a_path`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::NonExhaustiveMatch { span }) if span == site.at.span) || !matches!(ret, Err(LoweringRefusal::NonExhaustiveMatch { .. })))]
+    fn empty_switch(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        stated: Maybe<NodeIndex, binder_type::Absent>,
+    ) -> Result<Maybe<Maybe<ConstantIndex, bare::Absent>, switched::Absent>, LoweringRefusal<'source>>
+    {
+        let otherwise = Ok(Maybe::Absent(switched::Absent::Otherwise));
+        let Maybe::Present(mut at) = stated
+        else {
+            return Ok(Maybe::Absent(switched::Absent::Untyped));
+        };
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = loop {
+            if let Err(refusal) = self.fuel.spend() {
+                break Err(refusal);
+            }
+            let Some(tree) = self.tree.node(at)
+            else {
+                break Ok(None);
+            };
+            let placed = Placed::of(at, tree);
+            let former = match self.form_at(placed) {
+                | Ok(Some((_name, former))) => former,
+                | Ok(None) => break Ok(None),
+                | Err(refusal) => break Err(refusal),
+            };
+            if former == Former::PathType {
+                break Ok(Some(Maybe::Absent(bare::Absent::Parameterised)));
+            }
+            if former == Former::TypeHead {
+                break Ok(Some(Maybe::Present(placed)));
+            }
+            if former != Former::ParenthesizedType && former != Former::TypeApplication {
+                break Ok(None);
+            }
+            if let Err(refusal) = read_pieces(self.pbg, self.tree, at, &mut scratch) {
+                break Err(refusal);
+            }
+            if former == Former::TypeApplication {
+                break Ok(scratch.pieces.first().and_then(|piece| match *piece {
+                    | Piece::Tile { at: head, .. } => Some(Maybe::Present(head)),
+                    | Piece::Operand(_) => None,
+                }));
+            }
+            let mut operands = scratch.pieces.iter().filter_map(|piece| match *piece {
+                | Piece::Operand(inner) => Some(inner),
+                | Piece::Tile { .. } => None,
+            });
+            match (operands.next(), operands.next()) {
+                | (Some(inner), None) => at = inner.node,
+                | (Some(_) | None, _) => break Ok(None),
+            }
+        };
+        self.scratch = scratch;
+        let head = match read? {
+            | Some(Maybe::Present(head)) => head,
+            | Some(Maybe::Absent(path)) => return Ok(Maybe::Present(Maybe::Absent(path))),
+            | None => return otherwise,
+        };
+        let named = Site {
+            at: head,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        };
+        let name = self.name_at(head);
+        let Maybe::Present(super::Resolved::Declaration { constant, .. }) =
+            self.resolve_name(named, frame, name)?
+        else {
+            return otherwise;
+        };
+        let Some(Maybe::Present(Half {
+            operand: Operand::Data(form),
+            ..
+        })) = self
+            .collected
+            .slots
+            .get(usize::from(constant))
+            .map(|slot| slot.definition)
+        else {
+            return otherwise;
+        };
+        let Some(written) = self.collected.data.get(form)
+        else {
+            return otherwise;
+        };
+        if !written.generators.is_empty() {
+            return Err(LoweringRefusal::NonExhaustiveMatch { span: site.at.span });
+        }
+
+        Ok(Maybe::Present(if written.parameters.is_empty() {
+            Maybe::Present(constant)
+        }
+        else {
+            Maybe::Absent(bare::Absent::Parameterised)
+        }))
     }
 
     /// The alternatives of the arm pattern `pattern`: its or-pattern's

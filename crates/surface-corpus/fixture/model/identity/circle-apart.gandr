@@ -1,0 +1,35 @@
+// The loop is not reflexivity, the HoTT book's Lemma 6.4.1. The paths from the
+// circle's point to itself are the words over the loop and its inverse, a
+// presented type whose two cancellations converge, so two words are one path
+// exactly when their normal forms agree. `loop` and the empty word are normal
+// and differ at their first letter: they are apart, and a path between them is
+// eliminated by a match of no arm. The book reaches the same fact through a
+// universe and univalence; here it is the apartness rule at the words.
+
+/// The type with no element.
+data Empty : Type {}
+
+/// The circle: one point and a loop at it, bound as `loop : Path(Circle,
+/// Base, Base)`.
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+/// The loop is not the empty word.
+@[ checks ]
+def loop_apart(e : Path(Path(Circle, Base, Base), loop, here(Base))) -> -F Empty {
+  case e {}
+}
+
+/// Going around twice is not going around once.
+@[ checks ]
+def twice_apart(e : Path(Path(Circle, Base, Base), loop ∷ loop, loop)) -> -F Empty {
+  case e {}
+}
+
+/// The loop is not its inverse.
+@[ checks ]
+def inverse_apart(e : Path(Path(Circle, Base, Base), loop, back(loop) ∷ here(Base))) -> -F Empty {
+  case e {}
+}

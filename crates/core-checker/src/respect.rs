@@ -108,6 +108,9 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The scrutinee's type is free: it has no rules.
             Free,
+            /// The case has no branch: its scrutinee is a path between two
+            /// apart terms, and no arm reads a rule's sides.
+            Absurd,
         }
     }
 }
