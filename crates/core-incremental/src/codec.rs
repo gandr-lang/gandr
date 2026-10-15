@@ -5272,6 +5272,11 @@ where
             write_site(writer, at)?;
             writer.count(Count(usize::from(cell)))?;
         },
+        Refusal::LoopUndecided { at, cell } => {
+            writer.tag(Tag(78));
+            write_site(writer, at)?;
+            writer.count(Count(usize::from(cell)))?;
+        },
         Refusal::AbstractKindNotUniverse(at) => {
             writer.tag(Tag(48));
             write_site(writer, at)?;
@@ -5839,6 +5844,7 @@ where
                     Refusal::RuleNotRespected {..} => 73,
                     Refusal::NotApart {..} => 74,
                     Refusal::LoopNotRespected {..} => 75,
+                    Refusal::LoopUndecided {..} => 78,
                     Refusal::DataArgumentArity(_) => 22,
                     Refusal::UnknownConstructor {..} => 23,
                     Refusal::ConstructorArity(_) => 24,
@@ -5945,6 +5951,10 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             reason: read_apartness(reader)?,
         },
         75 => Refusal::LoopNotRespected {
+            at: read_site(reader)?,
+            cell: gandr_kernel_term::CellIndex::from(reader.count()?.0),
+        },
+        78 => Refusal::LoopUndecided {
             at: read_site(reader)?,
             cell: gandr_kernel_term::CellIndex::from(reader.count()?.0),
         },
@@ -6810,6 +6820,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::RuleNotRespected { .. }
             | Refusal::NotApart { .. }
             | Refusal::LoopNotRespected { .. }
+            | Refusal::LoopUndecided { .. }
             | Refusal::DataArgumentArity(_)
             | Refusal::UnknownConstructor { .. }
             | Refusal::ConstructorArity(_)

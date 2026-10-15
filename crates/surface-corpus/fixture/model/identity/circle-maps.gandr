@@ -1,7 +1,8 @@
 // A dependent case over the circle owes the transport of its answer at the
 // point along the loop, through each endpoint's maps (#425): a map of any
-// arity whose one argument the point runs through, and a loop arm answering
-// the loop by its name. A row the tree refuses today states the refusal it
+// arity whose one argument the point runs through, a loop arm answering the
+// loop by its name, and the definitions those maps call, unfolded within the
+// obligation's budget. A row the tree refuses today states the refusal it
 // meets and the issue that holds it.
 
 /// The circle: one point and a loop at it.
@@ -96,10 +97,9 @@ def mul(a : Circle, b : Circle) -> -F Circle {
   }
 }
 
-/// The point is a right unit. The obligation runs `mul`'s loop arm δ-free, so
-/// its call of `selfloop` stays a call and the transport does not compute
-/// (#425).
-@[ refuses("LoopNotRespected") ]
+/// The point is a right unit. The obligation unfolds `mul`'s loop arm through
+/// its call of `selfloop`, and the transport computes.
+@[ checks ]
 def unitRight(b : Circle) -> -F Path(Circle, mul(b, Base), b) {
   case b {
     Base => here(Base)

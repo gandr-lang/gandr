@@ -507,6 +507,10 @@ fn checked(
             "this case might tell a loop apart from staying put: carried along the loop, its \
              answer at the loop's point is not that answer",
         ),
+        CheckRefusal::LoopUndecided { .. } => f.write_str(
+            "deciding whether this case respects its sort's loops ran past the checker's \
+             budget: unfolding what the loop's obligation calls did not settle it",
+        ),
         CheckRefusal::AbstractKindNotUniverse(_) => {
             f.write_str("an abstract type's kind must be a universe")
         },
@@ -1089,6 +1093,10 @@ mod tests
                 cell: gandr_kernel_term::CellIndex::from(0_usize),
                 left: computation,
                 right: computation,
+            },
+            CheckRefusal::LoopUndecided {
+                at: computation,
+                cell: gandr_kernel_term::CellIndex::from(0_usize),
             },
             CheckRefusal::AbstractKindNotUniverse(value_type),
             CheckRefusal::RepresentationAboveKind {

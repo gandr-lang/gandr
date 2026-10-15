@@ -68,11 +68,12 @@ def mul(a : Circle, b : Circle) -> -F Circle {
 }
 
 /// Rotating by `b` and back is the identity (cubical's `rotInv-1`, `b · a ·
-/// invLooper b ≡ a`, `_·_` associating to the left). The loop obligation
-/// reads `mul` through its two arguments, but its case is over `b`, which the
-/// loop over `a` leaves standing, and `mul`'s loop arm calls `selfloop`, which
-/// the obligation's δ-free run keeps a call; its transport does not compute
-/// (#425).
+/// invLooper b ≡ a`, `_·_` associating to the left). The obligation over `a`
+/// moves `mul(b, a)` through its second argument, but `mul`'s case is over
+/// `b`, which the loop over `a` leaves standing; the one over `b` reads `b`
+/// in both of the outer `mul`'s arguments. Both hold only by a case on the
+/// other point inside the obligation, the square of `loop` against `loop`
+/// (#464).
 @[ refuses("LoopNotRespected") ]
 def rotInv1(a : Circle, b : Circle) -> -F Path(Circle, mul(mul(b, a), invLooper(b)), a) {
   case a {
@@ -83,7 +84,7 @@ def rotInv1(a : Circle, b : Circle) -> -F Path(Circle, mul(mul(b, a), invLooper(
 }
 
 /// Rotating back by `b` and forth is the identity (cubical's `rotInv-2`),
-/// held as `rotInv1` is (#425).
+/// held as `rotInv1` is (#464).
 @[ refuses("LoopNotRespected") ]
 def rotInv2(a : Circle, b : Circle) -> -F Path(Circle, mul(mul(invLooper(b), a), b), a) {
   case a {
@@ -94,7 +95,7 @@ def rotInv2(a : Circle, b : Circle) -> -F Path(Circle, mul(mul(invLooper(b), a),
 }
 
 /// Dividing by `b` after it undoes it (cubical's `rotInv-3`), held as
-/// `rotInv1` is (#425).
+/// `rotInv1` is (#464).
 @[ refuses("LoopNotRespected") ]
 def rotInv3(a : Circle, b : Circle) -> -F Path(Circle, mul(b, invLooper(mul(invLooper(a), b))), a) {
   case a {
@@ -105,7 +106,7 @@ def rotInv3(a : Circle, b : Circle) -> -F Path(Circle, mul(b, invLooper(mul(invL
 }
 
 /// Dividing by `b` before it undoes it (cubical's `rotInv-4`), held as
-/// `rotInv1` is (#425).
+/// `rotInv1` is (#464).
 @[ refuses("LoopNotRespected") ]
 def rotInv4(a : Circle, b : Circle) -> -F Path(Circle, mul(invLooper(mul(b, invLooper(a))), b), a) {
   case a {

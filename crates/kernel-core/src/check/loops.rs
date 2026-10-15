@@ -9,10 +9,12 @@
 //! loop supplies that path instead, the arm checked at `Path(A[pt],
 //! ⟨transport(A, ℓ, b)⟩, b)`, or at `Path(A, b, b)` for a motive that ignores
 //! its binder ([`arm_type`]), and owes nothing more. The conversion is the
-//! kernel's own, [`crate::replay::convert`], under which transport along a
-//! word computes (`crate::words`); the checker decides the same obligation
-//! δ-free and the kernel re-derives it with no trace, so no dialogue carries
-//! it and the artifact format is unchanged.
+//! kernel's own unfolding one, [`crate::replay::convert_unfolding`], under
+//! which transport along a word computes (`crate::words`) and a definition
+//! a side runs unfolds by the kernel's evaluator; the checker decides the same
+//! obligation by its own unfolding conversion and the kernel re-derives it
+//! with no trace, so no dialogue carries it and the artifact format is
+//! unchanged.
 //!
 //! **Choice.** A missing loop arm is owed by conversion, a written one
 //! supplies the dependent path, and a refusal of its own,
@@ -22,6 +24,17 @@
 //! **Reversal.** A loop at a point of a parameterised family, whose point is
 //! a term over the family's arguments and whose obligation is one per
 //! instance.
+//!
+//! **Choice.** The obligation is decided by conversion with definitions
+//! unfolding, as every other judgement "by conversion" is: a loop arm may
+//! answer with a definition applied at the transported point (`mul`'s `loop
+//! => selfloop(b)`), and its image is what that definition computes there.
+//! The unfolding is bounded by the conversion's budget, and a run past it is
+//! refused by its own name, [`KernelError::LoopUndecided`], never read as the
+//! sides being apart. **Alternative.** The δ-free conversion, which compares
+//! a definition by its name and so refuses every arm that calls one.
+//! **Reversal.** An obligation whose unfolding diverges where a recorded
+//! dialogue would close it takes the dialogue.
 //!
 //! The loops a case owes are the cells of every type of words looping in its
 //! scrutinee's sort, by the words' admission position and then in written
@@ -55,6 +68,7 @@ use crate::error::KernelError;
 use crate::presented::Presentations;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
+use crate::replay::ReplayDecline;
 use crate::replay::ReplaySides;
 use crate::replay::Unfoldings;
 use crate::rewrite::substitute_comp_type;
@@ -332,11 +346,13 @@ pub(super) fn arm_type(
 ///   constructor and no loop arm.
 /// - ensures: `Ok(())` exactly when the motive ignores its binder, or, for
 ///   every loop of [`loops`] in order, [`sides`] convert under
-///   [`crate::replay::convert`] within [`ReplayBudget::DEFAULT`]; `arena` holds
-///   what it held on entry either way.
-/// - fails: [`KernelError::LoopNotRespected`] naming the first loop whose sides
-///   do not convert, or the first loop for a motive that reads its binder and
-///   is no returner; [`KernelError::ArenaFault`] as [`sides`].
+///   [`crate::replay::convert_unfolding`] within [`ReplayBudget::DEFAULT`];
+///   `arena` holds what it held on entry either way.
+/// - fails: [`KernelError::LoopUndecided`] naming the first loop whose
+///   conversion ran past its budget; [`KernelError::LoopNotRespected`] naming
+///   the first loop whose sides do not convert otherwise, or the first loop for
+///   a motive that reads its binder and is no returner;
+///   [`KernelError::ArenaFault`] as [`sides`].
 /// - panics: none.
 ///
 /// # Errors
@@ -355,7 +371,7 @@ pub(super) fn arm_type(
 #[spec(
     captures: before = arena.watermark(),
     ensures: |ret| arena.watermark() == before
-        && (ret.is_ok() || matches!(ret, Err(KernelError::LoopNotRespected(_) | KernelError::ArenaFault))),
+        && (ret.is_ok() || matches!(ret, Err(KernelError::LoopNotRespected(_) | KernelError::LoopUndecided(_) | KernelError::ArenaFault))),
 )]
 pub(super) fn respected(
     arena: &mut TermArena,
@@ -389,10 +405,15 @@ pub(super) fn respected(
                 ..
             } = sides(arena, presentations, (case, datatype), (family, owed_loop))?;
             let sides = ReplaySides::Computations(transported, stayed);
-            if crate::replay::convert(arena, unfoldings, sides, ReplayBudget::DEFAULT)
-                != KernelVerdict::Convertible
+            match crate::replay::convert_unfolding(arena, unfoldings, sides, ReplayBudget::DEFAULT)
             {
-                return Err(KernelError::LoopNotRespected(owed_loop.cell));
+                KernelVerdict::Convertible => {},
+                KernelVerdict::Declined(ReplayDecline::Budget) => {
+                    return Err(KernelError::LoopUndecided(owed_loop.cell));
+                },
+                KernelVerdict::NotConvertible | KernelVerdict::Declined(_) => {
+                    return Err(KernelError::LoopNotRespected(owed_loop.cell));
+                },
             }
         }
         Ok(())
