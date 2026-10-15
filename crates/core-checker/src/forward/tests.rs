@@ -438,3 +438,47 @@ fn directed_statements_cross_and_replay()
         "the kernel replays every erased certificate: {outcomes:?}"
     );
 }
+
+/// The rule reads only canonical shapes: an empty sum is not first-order, a
+/// pattern tuple short of its product is no pattern, and an output at a unit or
+/// a product is a tuple of exactly its arity.
+#[test]
+fn the_rule_reads_canonical_shapes_at_their_own_arity()
+{
+    let mut arena = CoreArena::new();
+    let at = arena.value_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let unit = arena.value_type_unit();
+    let empty = arena.value_type_sum(&[]);
+    let pair = arena.value_type_product(&[integer, string]);
+    let single = arena.value_type_product(&[integer]);
+    let leaf = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let one = arena.value_tuple(&[leaf]);
+    let two = arena.value_tuple(&[leaf, leaf]);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let unsupported = Err(CheckRefusal::ForwardUnsupported { at });
+    assert_eq!(
+        super::first_order(&mut context, at, empty),
+        unsupported,
+        "an empty sum is not first-order"
+    );
+    assert_eq!(super::first_order(&mut context, at, pair), Ok(()));
+    assert_eq!(
+        super::leaves(&mut context, at, one, pair),
+        Err(CheckRefusal::MachineInvariant),
+        "a pattern short of its product"
+    );
+    let read = [Maybe::Present(super::Leaf::Integer)];
+    assert_eq!(
+        super::natural(&mut context, at, one, unit, &read),
+        unsupported,
+        "a unit's value is the empty tuple"
+    );
+    assert_eq!(super::natural(&mut context, at, one, single, &read), Ok(()));
+    assert_eq!(
+        super::natural(&mut context, at, two, single, &read),
+        unsupported,
+        "a product's value is a tuple of its own arity"
+    );
+}

@@ -219,6 +219,45 @@ fn kinds(
         .collect()
 }
 
+/// A function coordinate's pattern reads the first function on its left and
+/// the second on its right, wherever the function sits in a sum or a pair.
+#[test]
+fn a_function_coordinate_keeps_distinct_sides_inside_sums_and_pairs()
+{
+    let mut arena = CoreArena::new();
+    let functions = booleans(&mut arena);
+    let function = into_booleans(&mut arena, &functions, functions.ty);
+    let unit = arena.value_type_unit();
+    let domains = [
+        arena.value_type_sum(&[function, unit]),
+        arena.value_type_product(&[function, unit]),
+        arena.value_type_product(&[unit, function]),
+    ];
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for domain in domains {
+        let Ok(Maybe::Present(patterns)) = super::coverage(&mut context, domain)
+        else {
+            panic!("a sum or a pair of a function and the unit is covered");
+        };
+        let mut read = 0_usize;
+        for pattern in patterns
+            .iter()
+            .filter(|pattern| !pattern.coordinates.is_empty())
+        {
+            assert!(
+                gandr_core_term::equal_certificate_syntax(
+                    context.arena(),
+                    pattern.left,
+                    pattern.right
+                ) != gandr_core_term::CertificateEquality::Equal,
+                "the two sides read different functions"
+            );
+            read = read.checked_add(1).unwrap();
+        }
+        assert!(read > 0, "the function is a coordinate");
+    }
+}
+
 #[test]
 fn pointwise_equal_functions_relate_by_computation()
 {

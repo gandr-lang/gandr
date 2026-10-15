@@ -29,8 +29,11 @@ use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::Value as KernelValue;
 use quenchant_shape::shape::Maybe;
 
+use super::Moving;
 use super::computed;
 use super::covariant;
+use super::ride;
+use super::session_code;
 use super::universe;
 use crate::bridge;
 use crate::bridge::Outcome;
@@ -668,14 +671,17 @@ fn motives_ride_only_covariantly()
     let path = arena.value_type_path(type_universe, code, code);
     let foreign = arena.value_type_run(outer);
     let pair = arena.value_type_product(&[runs, foreign]);
-    let verdicts: Vec<_> = [runs, codomain, target, domain, source, path, pair]
-        .iter()
-        .map(|&motive| covariant(&arena, at, motive))
-        .collect();
+    let verdicts: Vec<_> = [
+        runs, codomain, target, unit_type, domain, source, path, pair,
+    ]
+    .iter()
+    .map(|&motive| covariant(&arena, at, motive))
+    .collect();
     let refused = Err(CheckRefusal::NonCovariantMotive { at });
     assert_eq!(
         verdicts,
         [
+            Ok(()),
             Ok(()),
             Ok(()),
             Ok(()),
@@ -684,7 +690,7 @@ fn motives_ride_only_covariantly()
             refused,
             Err(CheckRefusal::RideUnsupported { at }),
         ],
-        "a run, an arrow's codomain and a flow's target ride; a domain, a flow's source and a path do not; an outer binder is unsupported"
+        "a run, an arrow's codomain, a flow's target and a motive ignoring the code ride; a domain, a flow's source and a path do not; an outer binder is unsupported"
     );
     let decoded = arena.value_type_element(code, Level::zero());
     let decoded_pair = arena.value_type_product(&[decoded, unit_type]);
@@ -694,14 +700,95 @@ fn motives_ride_only_covariantly()
     let returns_decoded = arena.comp_type_returner(decoded);
     let reader = arena.comp_type_arrow(unit_type, returns_decoded);
     let suspended = arena.value_type_thunk(reader);
-    let moved: Vec<_> = [decoded, decoded_pair, target, record, suspended]
-        .iter()
-        .map(|&motive| computed(&arena, at, motive))
-        .collect();
+    let lifted = arena.value_type_element(code, Level::zero().succ().unwrap());
+    let carried = arena.value_type_flow(decoded, end, code);
+    let wrapped = arena.value_tuple(&[code]);
+    let beside = arena.value_type_flow(type_universe, end, wrapped);
+    let moved: Vec<_> = [
+        decoded,
+        decoded_pair,
+        target,
+        record,
+        suspended,
+        lifted,
+        carried,
+        beside,
+    ]
+    .iter()
+    .map(|&motive| computed(&arena, at, motive))
+    .collect();
     let unsupported = Err(CheckRefusal::RideUnsupported { at });
     assert_eq!(
         moved,
-        [Ok(()), Ok(()), Ok(()), unsupported, unsupported],
-        "a decode of the code, a pair of it and a flow singleton compute; a record of it and a thunk returning it do not"
+        [
+            Ok(()),
+            Ok(()),
+            Ok(()),
+            unsupported,
+            unsupported,
+            unsupported,
+            unsupported,
+            unsupported,
+        ],
+        "a decode of the code, a pair of it and a flow singleton compute; a record of it, a thunk returning it, a decode above level zero, a flow whose carrier reads it and one whose target only contains it do not"
+    );
+}
+
+/// A quoted session type is a session code only at its protocol's root; the
+/// same session past its root is read as some other code.
+#[test]
+fn a_session_is_a_code_only_at_its_root()
+{
+    let mut arena = CoreArena::new();
+    let root = seat(&mut arena, Seat::End);
+    let Some(&gandr_core_term::Value::Quote(quoted)) = arena.value(root)
+    else {
+        panic!("the seat is quoted");
+    };
+    let Some(gandr_core_term::ValueType::Session(session)) = arena.value_type(quoted).cloned()
+    else {
+        panic!("the seat quotes a session");
+    };
+    let later = session.at(ProtocolState::from(2_usize)).unwrap();
+    let later = arena.value_type_session(later);
+    let later = arena.value_quote(later);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert!(matches!(
+        session_code(&mut context, root),
+        Ok(Maybe::Present(ref read)) if *read == session
+    ));
+    assert_eq!(
+        session_code(&mut context, later),
+        Ok(Maybe::Absent(session_code::Absent::Elsewhere))
+    );
+}
+
+/// Along a flow between two distinct session codes, a motive ignoring its
+/// code rides fixed, while a decode of the code, which no run carries, is
+/// unsupported.
+#[test]
+fn a_ride_between_session_codes_is_fixed_only_for_a_constant_motive()
+{
+    let mut arena = CoreArena::new();
+    let end = seat(&mut arena, Seat::End);
+    let wide = seat(&mut arena, Seat::Wide);
+    let type_universe = universe(&mut arena);
+    let flow = arena.value_type_flow(type_universe, end, wide);
+    let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let constant = arena.value_type_unit();
+    let decoded = arena.value_type_element(code, Level::zero());
+    let along = arena.value_unit();
+    let value = arena.value_unit();
+    let [fixed, moving] =
+        [constant, decoded].map(|motive| arena.computation_ride(motive, along, value));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert!(
+        matches!(ride(&mut context, fixed, flow), Ok(ref ridden) if ridden.moving == Moving::Fixed),
+        "a motive ignoring its code rides fixed"
+    );
+    assert_eq!(
+        ride(&mut context, moving, flow).map(|ridden| ridden.moving),
+        Err(CheckRefusal::RideUnsupported { at: moving }),
+        "a decode between session codes is unsupported"
     );
 }
