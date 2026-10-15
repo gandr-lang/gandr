@@ -1777,4 +1777,100 @@ mod native_formers
             "and is no other letter: {inverted:?}"
         );
     }
+
+    #[test]
+    fn a_composite_over_a_call_to_the_empty_word_is_its_second_word_473()
+    {
+        /// Which side of the composite is a held call.
+        #[derive(Clone, Copy, Debug)]
+        enum Case
+        {
+            /// `ε then ⟨same p⟩` against `⟨same p⟩`: the second word held.
+            HeldSecond,
+            /// `⟨force zero⟩ then p` against `p`: the first word a call that
+            /// returns the empty word.
+            HeldFirst,
+        }
+        let mut environment = one_loop();
+        // `zero : U F Path(S, Base, Base)`, `thunk (return ε)`, and `same : U
+        // ((p : Path(S, Base, Base)) → F Path(S, Base, Base))`, `thunk (λp.
+        // return p)`: two definitions only an unfolding reads through.
+        let mut define = |body: fn(&mut TermArena, ValueTypeId) -> (ValueTypeId, ValueId)| {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+            let point = build(arena, Built::Point);
+            let at_point = arena.value_type_path(carrier, point, point);
+            let (declared, body) = body(arena, at_point);
+            let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment
+                .add_decl(staged)
+                .map(gandr_kernel_core::CheckedId::position)
+                .expect("the definition checks")
+        };
+        let zero = define(|arena, at_point| {
+            let empty = build(arena, Built::Empty);
+            let returned = arena.computation_return(empty);
+            let returner = arena.comp_type_returner(at_point);
+            (
+                arena.value_type_thunk(returner),
+                arena.value_thunk(returned),
+            )
+        });
+        let same = define(|arena, at_point| {
+            let parameter = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let returned = arena.computation_return(parameter);
+            let lambda = arena.computation_lambda(returned);
+            let returner = arena.comp_type_returner(at_point);
+            let pi = arena.comp_type_pi(at_point, returner);
+            (arena.value_type_thunk(pi), arena.value_thunk(lambda))
+        });
+        // `(p : Path(S, Base, Base)) → F Path(Path(S, Base, Base), ⟨w then
+        // q⟩, q)` at reflexivity on `q`.
+        let mut states = |case: Case| {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+            let point = build(arena, Built::Point);
+            let parameter = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let (first, second) = match case {
+                Case::HeldSecond => {
+                    let function = arena.value_constant(same);
+                    let forced = arena.computation_force(function);
+                    let applied = arena.computation_application(forced, parameter);
+                    (build(arena, Built::Empty), arena.value_returned(applied))
+                },
+                Case::HeldFirst => {
+                    let function = arena.value_constant(zero);
+                    let forced = arena.computation_force(function);
+                    (arena.value_returned(forced), parameter)
+                },
+            };
+            let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let joined = arena.value_type_path(carrier, point, moving);
+            let composite = arena.computation_path_transport(joined, second, first);
+            let composite = arena.value_returned(composite);
+            let at_point = arena.value_type_path(carrier, point, point);
+            let stated = arena.value_type_path(at_point, composite, second);
+            let returner = arena.comp_type_returner(stated);
+            let pi = arena.comp_type_pi(at_point, returner);
+            let declared = arena.value_type_thunk(pi);
+            let reflexive = arena.value_here(second);
+            let returned = arena.computation_return(reflexive);
+            let lambda = arena.computation_lambda(returned);
+            let body = arena.value_thunk(lambda);
+            let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(staged).map(|_admitted| ())
+        };
+        assert_eq!(
+            states(Case::HeldSecond),
+            Ok(()),
+            "the empty word moved along a held call is the call"
+        );
+        assert_eq!(
+            states(Case::HeldFirst),
+            Ok(()),
+            "a call returning the empty word moved along a path is the path"
+        );
+    }
 }
