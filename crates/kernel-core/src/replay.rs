@@ -4653,7 +4653,21 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 focus = reduct;
                                 progress = Progress::Reduced;
                             },
-                            | crate::path_universe::Reduction::Stuck => break,
+                            | crate::path_universe::Reduction::Stuck => {
+                                match crate::words::transport_word(
+                                    self.arena,
+                                    &mut self.table,
+                                    &mut self.memo,
+                                    self.evaluator,
+                                    term,
+                                ) {
+                                    | crate::path_universe::Reduction::Reduced(reduct) => {
+                                        focus = reduct;
+                                        progress = Progress::Reduced;
+                                    },
+                                    | crate::path_universe::Reduction::Stuck => break,
+                                }
+                            },
                         }
                     },
                     | Some(&Computation::TelescopeTransport {

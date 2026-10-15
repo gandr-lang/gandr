@@ -220,6 +220,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         | CheckRefusal::RuleNotPresentable { .. } => "rules that do not present the datatype",
         | CheckRefusal::RuleNotRespected { .. } => "a case its datatype's rules do not admit",
         | CheckRefusal::NotApart { .. } => "a path whose endpoints are not apart",
+        | CheckRefusal::LoopNotRespected { .. } => "a case its sort's loops do not admit",
         | CheckRefusal::RepresentationAboveKind { .. } => "above the abstract type's universe",
         | CheckRefusal::NotAnAbstractType(_) => "not an abstract type",
         | CheckRefusal::SealSiteRepeated(_) => "a component sealed twice",

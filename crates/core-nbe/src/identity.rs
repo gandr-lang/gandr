@@ -801,6 +801,18 @@ mod tests
         core.value_type_base(BaseType::String)
     }
 
+    /// The diagonal `y. Path(Text, y, y)`: a motive that reads its binder at
+    /// both endpoints, so no rule moves it along a stuck path.
+    ///
+    /// # Specification
+    /// trivial.
+    fn diagonal(core: &mut CoreArena) -> ValueTypeId
+    {
+        let carrier = text_type(core);
+        let moving = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        core.value_type_path(carrier, moving, moving)
+    }
+
     #[test]
     fn transport_along_here_is_the_identity()
     {
@@ -852,13 +864,30 @@ mod tests
     {
         let mut core = CoreArena::new();
         let five = literal(&mut core, Word::Five);
-        let carrier = text_type(&mut core);
+        let here = core.value_here(five);
+        let motive = diagonal(&mut core);
         let path = stuck(&mut core, ConstantIndex::from(0_usize));
-        let transported = core.computation_path_transport(carrier, path, five);
+        let transported = core.computation_path_transport(motive, path, here);
         assert_eq!(
             normalises_to(&mut core, transported, transported),
             CertificateEquality::Equal,
             "a transport along a path no rule reduces reads back as itself"
+        );
+    }
+
+    #[test]
+    fn transport_in_a_constant_motive_returns_the_operand()
+    {
+        let mut core = CoreArena::new();
+        let five = literal(&mut core, Word::Five);
+        let carrier = text_type(&mut core);
+        let path = stuck(&mut core, ConstantIndex::from(0_usize));
+        let transported = core.computation_path_transport(carrier, path, five);
+        let returned = core.computation_return(five);
+        assert_eq!(
+            normalises_to(&mut core, transported, returned),
+            CertificateEquality::Equal,
+            "a motive that never reads its binder returns the operand along any path, as the kernel's constant row does"
         );
     }
 
@@ -952,18 +981,19 @@ mod tests
         let mut core = CoreArena::new();
         let five = literal(&mut core, Word::Five);
         let seven = literal(&mut core, Word::Seven);
-        let carrier = text_type(&mut core);
+        let here = core.value_here(five);
+        let diagonal = diagonal(&mut core);
         let unit = core.value_type_unit();
-        let motive = core.value_type_product(&[carrier, unit]);
+        let motive = core.value_type_product(&[diagonal, unit]);
         let path = stuck(&mut core, ConstantIndex::from(0_usize));
         let empty = core.value_unit();
-        let operand = core.value_tuple(&[five, empty]);
+        let operand = core.value_tuple(&[here, empty]);
         let transported = core.computation_path_transport(motive, path, operand);
 
-        let first = core.computation_path_transport(carrier, path, five);
+        let first = core.computation_path_transport(diagonal, path, here);
         // The first coordinate's transport is stuck on the path, so the second
-        // waits under its bind; the unit coordinate is a product of no
-        // components, so its transport computes to the empty tuple there.
+        // waits under its bind; the unit coordinate never reads the binder, so
+        // its transport returns the empty tuple there.
         let moved = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
         let pair = core.value_tuple(&[moved, empty]);
         let returned = core.computation_return(pair);
@@ -988,7 +1018,8 @@ mod tests
             normalises_to(&mut core, transported, swapped),
             CertificateEquality::Different
         );
-        let other = core.computation_path_transport(carrier, path, seven);
+        let elsewhere = core.value_here(seven);
+        let other = core.computation_path_transport(diagonal, path, elsewhere);
         let other = core.computation_bind(other, returned);
         assert_eq!(
             normalises_to(&mut core, transported, other),
@@ -1001,14 +1032,15 @@ mod tests
     {
         let mut core = CoreArena::new();
         let five = literal(&mut core, Word::Five);
-        let carrier = text_type(&mut core);
+        let here = core.value_here(five);
+        let diagonal = diagonal(&mut core);
         let unit = core.value_type_unit();
-        let motive = core.value_type_sum(&[unit, carrier]);
+        let motive = core.value_type_sum(&[unit, diagonal]);
         let path = stuck(&mut core, ConstantIndex::from(0_usize));
-        let operand = core.value_injection(Side::Right.into(), five);
+        let operand = core.value_injection(Side::Right.into(), here);
         let transported = core.computation_path_transport(motive, path, operand);
 
-        let payload = core.computation_path_transport(carrier, path, five);
+        let payload = core.computation_path_transport(diagonal, path, here);
         let moved = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
         let injected = core.value_injection(Side::Right.into(), moved);
         let injected = core.computation_return(injected);
@@ -1270,12 +1302,16 @@ mod tests
         let mut core = CoreArena::new();
         let five = literal(&mut core, Word::Five);
         let six = literal(&mut core, Word::Six);
-        let carrier = text_type(&mut core);
+        let (here, there) = (core.value_here(five), core.value_here(six));
+        let motive = diagonal(&mut core);
         let path = stuck(&mut core, ConstantIndex::from(0_usize));
-        let transported = core.computation_path_transport(carrier, path, five);
-        let elsewhere = core.computation_path_transport(carrier, path, six);
-        let unit = core.value_type_unit();
-        let remotivated = core.computation_path_transport(unit, path, five);
+        let transported = core.computation_path_transport(motive, path, here);
+        let elsewhere = core.computation_path_transport(motive, path, there);
+        // `y. Path(Text, y, five)` also reads its binder and is no singleton.
+        let carrier = text_type(&mut core);
+        let moving = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        let fixed = core.value_type_path(carrier, moving, five);
+        let remotivated = core.computation_path_transport(fixed, path, here);
         let chain = LoweredChain::new();
         let environment = DefinitionalEnvironment::new();
         let definitions = Definitions::new(&chain, &environment, environment.root());

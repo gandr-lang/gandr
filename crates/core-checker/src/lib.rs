@@ -344,6 +344,7 @@ mod forward;
 mod funext;
 mod judgement;
 mod ledger;
+mod loops;
 mod module;
 mod nested;
 mod occurrence;

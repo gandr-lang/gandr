@@ -779,7 +779,9 @@ fn convert(
                         true
                     },
                     // A path at the point a type of words' cells loop at is
-                    // those words, as the kernel reads them.
+                    // those words, as the kernel reads them: both endpoints
+                    // spell the point, or one does and the other converts
+                    // with it.
                     | (
                         ValueTypeView::Data {
                             declaration,
@@ -802,8 +804,23 @@ fn convert(
                             arguments,
                         },
                     ) => {
-                        arguments.is_empty()
-                            && context.words(carrier, (from, to))? == Some(declaration)
+                        if !arguments.is_empty() {
+                            false
+                        }
+                        else if context.words(carrier, (from, to))? == Some(declaration) {
+                            true
+                        }
+                        else if context.words(carrier, (to, to))? == Some(declaration) {
+                            pending.push(Pairing::Endpoints(from, to));
+                            true
+                        }
+                        else if context.words(carrier, (from, from))? == Some(declaration) {
+                            pending.push(Pairing::Endpoints(to, from));
+                            true
+                        }
+                        else {
+                            false
+                        }
                     },
                     | (ValueTypeView::Record(a), ValueTypeView::Record(b)) => {
                         if a.len() != b.len() || !a.keys().eq(b.keys()) {

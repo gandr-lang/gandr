@@ -450,6 +450,22 @@ pub enum CheckRefusal
         /// subterm of another type, are open, or the type's rules diverge.
         reason: gandr_kernel_term::Apartness,
     },
+    /// A case over a sort its words loop at is not shown to respect one of
+    /// the loops: carried along the loop, its answer at the loop's point does
+    /// not convert with itself, so it would eliminate the sort as if the loop
+    /// were not there.
+    LoopNotRespected
+    {
+        /// The case.
+        at: ComputationId,
+        /// The first loop the case is not shown to respect, its position
+        /// among its words' cells.
+        cell: gandr_kernel_term::CellIndex,
+        /// The answer at the point carried along the loop.
+        left: ComputationId,
+        /// The answer at the point.
+        right: ComputationId,
+    },
     /// An abstract type's kind is not a value universe.
     AbstractKindNotUniverse(ValueTypeId),
     /// A sealed representation forms above its abstract type's universe.
@@ -1024,7 +1040,7 @@ impl CheckRefusal
         | Self::MachineInvariant
         | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
         | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. }
-        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
+        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
         | Self::UnknownOperation { .. } | Self::HandlerCoverage { .. }
@@ -1062,6 +1078,7 @@ impl CheckRefusal
             | Self::RuleNotPresentable { .. }
             | Self::RuleNotRespected { .. }
             | Self::NotApart { .. }
+            | Self::LoopNotRespected { .. }
             | Self::AbstractKindNotUniverse(_)
             | Self::RepresentationAboveKind { .. }
             | Self::NotAnAbstractType(_)
@@ -1261,6 +1278,7 @@ impl CheckRefusal
             | Self::RuleNotPresentable { .. }
             | Self::RuleNotRespected { .. }
             | Self::NotApart { .. }
+            | Self::LoopNotRespected { .. }
             | Self::AbstractKindNotUniverse(_)
             | Self::RepresentationAboveKind { .. }
             | Self::NotAnAbstractType(_)

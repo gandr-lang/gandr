@@ -118,6 +118,24 @@ pub(crate) struct PresentedType
     presentation: Presentation,
     /// Each constructor's field count, in tag order.
     arities: Arc<[FieldCount]>,
+    /// For a type of words, the field count of each constructor of the sort
+    /// its cells loop in, in tag order: where a case over the sort keeps its
+    /// loop arms, and how the cells' point builds.
+    sort_arities: Option<Arc<[FieldCount]>>,
+}
+
+impl PresentedType
+{
+    /// The cells the presentation's words loop by, when it is a type of
+    /// words.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn cells(&self) -> Option<&FreeCells>
+    {
+        self.presentation.cells()
+    }
 }
 
 /// The presented types of an environment, by admission position.
@@ -170,12 +188,31 @@ impl Presentations
                 ref constructors, ..
             } = *declaration.content()
             {
+                let sort_arities = declaration.presentation().cells().and_then(|cells| {
+                    match *entries
+                        .get(usize::from(cells.sort()))?
+                        .declaration()
+                        .content()
+                    {
+                        | DeclarationContent::Data {
+                            constructors: ref table,
+                            ..
+                        } => Some(
+                            table
+                                .iter()
+                                .map(|fields| FieldCount::from(fields.len()))
+                                .collect(),
+                        ),
+                        | _ => None,
+                    }
+                });
                 let _previous = presented.insert(ConstantIndex::from(position), PresentedType {
                     presentation: declaration.presentation().clone(),
                     arities: constructors
                         .iter()
                         .map(|fields| FieldCount::from(fields.len()))
                         .collect(),
+                    sort_arities,
                 });
             }
         }
@@ -197,6 +234,43 @@ impl Presentations
     {
         let table = self.0.as_ref()?;
         table.get(&constant)
+    }
+
+    /// The types of words whose cells loop in the sort admitted at `sort`, by
+    /// admission position ascending, each with its cells: the order a case
+    /// over the sort keeps its loop arms in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn looping(
+        &self,
+        sort: ConstantIndex,
+    ) -> impl Iterator<Item = (ConstantIndex, &FreeCells)>
+    {
+        self.0.iter().flat_map(move |table| {
+            table.iter().filter_map(move |(&words, presented)| {
+                presented
+                    .presentation
+                    .cells()
+                    .filter(|cells| cells.sort() == sort)
+                    .map(|cells| (words, cells))
+            })
+        })
+    }
+
+    /// The field counts of the constructors of the sort the type of words at
+    /// `words` loops in, in tag order, when `words` is a type of words.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn sort_arities(
+        &self,
+        words: ConstantIndex,
+    ) -> Option<&[FieldCount]>
+    {
+        self.presented(words)?.sort_arities.as_deref()
     }
 
     /// The type of words the path type `Path(domain, left, right)` reads as:

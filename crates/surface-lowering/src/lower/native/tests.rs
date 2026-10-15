@@ -2074,3 +2074,73 @@ fn a_word_conses_its_letters_and_matches_them()
     );
     assert_accepted(&judged(&module, &mut arena));
 }
+
+/// A case over the circle reads `loop => e` as the loop's arm, one branch
+/// after the point's; a name no loop declares binds, even one a later member
+/// of its module spells, which resolving it would refuse as a forward
+/// reference; and a loop arm twice, or over a sort its loop is not at, is
+/// refused by name.
+#[test]
+fn a_loop_arm_follows_the_constructors_branches()
+{
+    let source = "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndata Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndef invLooper(x : Circle) -> -F Circle {\n  case x {\n    Base => Base,\n    loop => back(loop)\n  }\n}\nmodule Late {\n  def kept(x : Circle) -> -F Circle {\n    case x {\n      later => later\n    }\n  }\n  def later : Circle ;\n  def later = Base ;\n}\ndef twice(x : Circle) -> -F Circle {\n  case x {\n    Base => Base,\n    loop => loop,\n    loop => back(loop)\n  }\n}\ndef astray(n : Nat) -> -F Nat {\n  case n {\n    Z => Z,\n    S(m) => m,\n    loop => Z\n  }\n}\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let Some(Computation::DataCase { branches, .. }) = arena
+        .computation(tail_of(
+            &arena,
+            body_named(&module, SurfaceName::from("invLooper")),
+        ))
+        .cloned()
+    else {
+        panic!("`invLooper` cases on its argument");
+    };
+    assert_eq!(
+        branches.len(),
+        2_usize,
+        "the point's branch, then the loop's arm"
+    );
+    let Some(&Computation::PathTransport { value, .. }) = arena.computation(branches[1])
+    else {
+        panic!(
+            "the arm binds nothing and answers `back(loop)`, the transport it derives: {:?}",
+            arena.computation(branches[1])
+        );
+    };
+    assert!(
+        matches!(
+            arena.value(value),
+            Some(&Value::Here(at)) if matches!(arena.value(at), Some(Value::Constructor { fields, .. }) if fields.is_empty())
+        ),
+        "`back` starts from reflexivity at `Base`, the value the point's branch returns, not at the case at `Base`: {:?}",
+        arena.value(value)
+    );
+    assert!(
+        !matches!(
+            module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name() == SurfaceName::from("kept"))
+                .map(crate::module::LoweredDeclaration::outcome),
+            Some(DeclarationOutcome::Refused(_)) | None
+        ),
+        "a pattern spelling a later member, which no loop declares, binds"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("twice")),
+            LoweringRefusal::DuplicateDefinition { .. }
+        ),
+        "a loop's second arm is refused"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("astray")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::WrongSort,
+                ..
+            }
+        ),
+        "an arm for a loop the scrutinee's sort does not carry is refused"
+    );
+}

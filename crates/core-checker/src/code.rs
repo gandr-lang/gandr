@@ -698,9 +698,10 @@ impl CodeDefinitions
     ///
     /// # Specification
     /// - requires: `signature` formed at `constant`, its rules validated.
-    /// - ensures: the lowered chain presents `constant` by the signature's
-    ///   rules over its constructor table's arities exactly when the signature
-    ///   has rules; a free signature leaves the table unchanged.
+    /// - ensures: the lowered chain records the signature's constructor count
+    ///   at `constant`, and presents `constant` by the signature's rules over
+    ///   its constructor table's arities exactly when the signature has rules;
+    ///   a free signature leaves the presentations unchanged.
     /// - provides: the one place a presented type reaches the checker's
     ///   conversion.
     /// - panics: none.
@@ -718,6 +719,10 @@ impl CodeDefinitions
         signature: &gandr_core_term::DataSignature,
     )
     {
+        self.lowered.admit_data(
+            constant,
+            gandr_kernel_term::ConstructorCount::from(signature.constructors().len()),
+        );
         let presentation = signature.presentation();
         if presentation.rules().is_empty() {
             return;

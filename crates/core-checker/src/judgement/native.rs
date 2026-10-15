@@ -372,7 +372,12 @@ impl Machine<'_, '_>
             } => (*motive, branches.len()),
             | _ => return Err(CheckRefusal::MachineInvariant),
         };
-        if count != signature.constructors().len() {
+        let constructors = signature.constructors().len();
+        // A case carries one branch per constructor, and then either no loop
+        // arm or one per loop of its sort.
+        let looped = crate::loops::loops(self.context, datatype).len();
+        if count != constructors && (looped == 0 || constructors.checked_add(looped) != Some(count))
+        {
             return Err(CheckRefusal::NonExhaustiveDataCase(term));
         }
         let respect = if signature.presentation().rules().is_empty() {
@@ -435,6 +440,14 @@ impl Machine<'_, '_>
         let result =
             gandr_core_term::instantiate_comp_type(self.context.arena_mut(), motive, scrutinee);
         self.wait(Frame::NativeYield(Produced::CompType(result)));
+        // A case of no branches over apart endpoints checks no branch, and its
+        // scrutinee's path type owes no loop.
+        if matches!(respect, Maybe::Absent(obligation::Absent::Absurd)) {
+            return Ok(Step::Ascend(Produced::Checked));
+        }
+        if !crate::loops::loops(self.context, datatype).is_empty() {
+            self.wait(Frame::NativeLoops { term, datatype });
+        }
         if let Maybe::Present(reading) = respect {
             self.wait(Frame::NativeRespect {
                 term,
@@ -442,7 +455,36 @@ impl Machine<'_, '_>
                 reading,
             });
         }
-        for index in (0 .. count).rev() {
+        let constructors = former::signature(self.context, datatype)?;
+        let owed = crate::loops::loops(self.context, datatype);
+        if count != constructors.constructors().len() {
+            for (position, &loop_arm) in owed.iter().enumerate().rev() {
+                let expected = crate::loops::arm_type(
+                    self.context,
+                    term,
+                    (datatype, &constructors),
+                    loop_arm,
+                )?;
+                let index = constructors
+                    .constructors()
+                    .len()
+                    .checked_add(position)
+                    .ok_or(CheckRefusal::MachineInvariant)?;
+                let arm =
+                    match self.computation(term)? {
+                        | &Computation::DataCase { ref branches, .. } => branches
+                            .get(index)
+                            .copied()
+                            .ok_or(CheckRefusal::MachineInvariant)?,
+                        | _ => return Err(CheckRefusal::MachineInvariant),
+                    };
+                self.wait(Frame::NativeNext(Goal::Computation {
+                    term: arm,
+                    direction: Direction::Check(expected),
+                }));
+            }
+        }
+        for index in (0 .. constructors.constructors().len()).rev() {
             let expected =
                 former::branch_type(self.context, datatype, ConstructorTag::from(index), motive)?;
             let branch = match self.computation(term)? {

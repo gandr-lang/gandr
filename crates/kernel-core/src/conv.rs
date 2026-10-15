@@ -714,7 +714,9 @@ fn converge(
                         stack.extend(a.iter().zip(b).map(|(a, b)| ConversionGoal::Value(*a, *b)));
                     },
                     // A path at the point a type of words' cells loop at is
-                    // those words, once presented types are read.
+                    // those words, once presented types are read: both
+                    // endpoints spell the point, or one does and the other
+                    // converts with it.
                     | (
                         &ValueType::Data {
                             declaration,
@@ -737,16 +739,26 @@ fn converge(
                             ref arguments,
                         },
                     ) => {
-                        let identified = match endpoints {
+                        let presentations = match endpoints {
                             | Endpoints::Deferred { presentations, .. }
-                            | Endpoints::Related { presentations, .. } => {
-                                arguments.is_empty()
-                                    && presentations.words(arena, domain, (from, to))
-                                        == Some(declaration)
-                            },
-                            | Endpoints::Structural => false,
+                            | Endpoints::Related { presentations, .. } => presentations,
+                            | Endpoints::Structural => return Convertibility::Distinct,
                         };
-                        if !identified {
+                        let at =
+                            |sides| presentations.words(arena, domain, sides) == Some(declaration);
+                        if !arguments.is_empty() {
+                            return Convertibility::Distinct;
+                        }
+                        if at((from, to)) {
+                            continue;
+                        }
+                        if at((to, to)) {
+                            stack.push(ConversionGoal::Value(from, to));
+                        }
+                        else if at((from, from)) {
+                            stack.push(ConversionGoal::Value(to, from));
+                        }
+                        else {
                             return Convertibility::Distinct;
                         }
                     },

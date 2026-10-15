@@ -536,6 +536,7 @@ fn checking_row(
         | CheckRefusal::RuleNotPresentable { .. }
         | CheckRefusal::RuleNotRespected { .. }
         | CheckRefusal::NotApart { .. }
+        | CheckRefusal::LoopNotRespected { .. }
         | CheckRefusal::AbstractKindNotUniverse(_)
         | CheckRefusal::RepresentationAboveKind { .. }
         | CheckRefusal::NotAnAbstractType(_)

@@ -1573,6 +1573,9 @@ enum Frame
     /// Decide that a case over a presented type respects the type's rules,
     /// once its branches have checked.
     Respect(ComputationId, respect::Reading),
+    /// Show a case over a sort its words loop at respects each loop, once its
+    /// branches have checked.
+    Loops(ComputationId, ValueTypeId),
     /// Form a dependent split's motive and check its body after scrutinee
     /// synthesis.
     SigmaSplit(ComputationId),
@@ -2661,6 +2664,20 @@ where
                 {
                     let (domain, left, right) =
                         crate::element_identity::path_parts(arena, expected)?;
+                    // A path whose one endpoint spells a looped point and whose
+                    // other converts with it is those words: the value checks at
+                    // the words, and the path then converts with them.
+                    let spelled = |sides| judgement.presentations.words(arena, domain, sides);
+                    if spelled((left, right)).is_none()
+                        && let Some(words) =
+                            spelled((right, right)).or_else(|| spelled((left, left)))
+                    {
+                        let words = arena.value_type_data(words, Vec::new());
+                        frames.push(Frame::ConvertValue(expected));
+                        frames.push(Frame::ProduceValue(words));
+                        goal = Goal::CheckValue(id, words);
+                        continue 'expand;
+                    }
                     let fibre = if let Some(words) =
                         judgement.presentations.words(arena, domain, (left, right))
                     {
@@ -3359,8 +3376,16 @@ where
                         produced = Produced::CompType(result);
                     }
                     else {
-                        let (result, mut goals) =
-                            former::case(arena, judgement.entries, session, case, datatype)?;
+                        let (result, mut goals, looped) = former::case(
+                            arena,
+                            (judgement.entries, judgement.presentations),
+                            session,
+                            case,
+                            datatype,
+                        )?;
+                        if looped == former::Looped::Owed {
+                            frames.push(Frame::Loops(case, datatype));
+                        }
                         if let Maybe::Present(reading) =
                             respect::obliged(arena, judgement.entries, datatype, reading)
                         {
@@ -3383,6 +3408,9 @@ where
                         reading,
                         judgement.laws,
                     )?;
+                },
+                | Frame::Loops(case, datatype) => {
+                    loops::respected(arena, &admitted_unfoldings(judgement), (case, datatype))?;
                 },
                 // A dependent split forms its motive under the scrutinee's
                 // binder, checks its body under the two components against the
@@ -7013,6 +7041,8 @@ mod tests
 mod descent;
 
 mod former;
+
+mod loops;
 
 mod respect;
 
