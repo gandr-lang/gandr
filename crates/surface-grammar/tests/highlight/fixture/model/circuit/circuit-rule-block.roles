@@ -67,7 +67,7 @@
 660..661 Other ":"
 662..665 Type "Nat"
 668..669 Other ")"
-670..673 Operator "==>"
+670..673 Operator "<=>"
 674..675 Other "("
 675..676 VariableParam "z"
 677..678 Other ":"

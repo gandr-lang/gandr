@@ -19,7 +19,7 @@ sign NatSum {
     rule p : Nat ==> Nat,
     data x : Nat,
     data y : Nat
-  ) ==> (z : Nat) {
+  ) <=> (z : Nat) {
     node : p(x) ==> (x′);
     node : add(x′, y) --> (z);
   };

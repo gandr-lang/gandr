@@ -443,6 +443,52 @@ fn a_rule_that_rebuilds_its_own_call_refuses_the_block()
 }
 
 #[test]
+fn an_equation_written_backwards_orients_forwards()
+{
+    let source = SourceText::from(
+        r#"data Int : Type {
+    Z : Int;
+    S : (x : Int) --> Int;
+    P : (x : Int) --> Int;
+    rule x <=> S(P(x));
+    rule P(S(x)) <=> x;
+}"#,
+    );
+    lowered(source, |module| {
+        let described = &module.descriptions().declarations[0];
+        let printed: Vec<_> = described.rules().map(|rule| rule.print_data()).collect();
+        assert_eq!(printed, ["rule x <=> S(P(x))", "rule P(S(x)) <=> x"]);
+        assert_eq!(
+            described
+                .rules()
+                .next()
+                .unwrap()
+                .print_sign(&gandr_theory_levitation::Name::from("cancel")),
+            "rule cancel : x <=> S(P(x))"
+        );
+        let cells = &module.cells().declarations[0];
+        assert_eq!(cells.directions, [
+            crate::description::written::RuleDirection::RightToLeft,
+            crate::description::written::RuleDirection::LeftToRight,
+        ]);
+        assert!(
+            matches!(
+                cells.oriented[0].lhs.view(),
+                gandr_theory_levitation::TermView::Ctor { name, .. } if name.as_ref() == "S"
+            ),
+            "the kernel-facing rule runs forwards"
+        );
+        let family = &module.declarations()[0];
+        assert_eq!(
+            module
+                .normal_form(family, CallText::from("S(P(Z))"))
+                .map(|form| form.normal),
+            Ok(gandr_theory_levitation::FreeTerm::ctor("Z", []))
+        );
+    });
+}
+
+#[test]
 fn a_congruence_is_no_rewrite_of_its_own()
 {
     let source = SourceText::from(

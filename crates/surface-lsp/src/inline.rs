@@ -146,7 +146,8 @@ use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 
 /// How many closings of the innermost open form the query walks.
-const CLOSINGS: usize = 8;
+/// Nine holds the equation arrow beside the attributed constructor.
+const CLOSINGS: usize = 9;
 
 /// How many ghost texts an answer holds at most.
 const SHOWN: usize = 8;
@@ -1870,6 +1871,7 @@ mod tests
               " ${1:constructor}"
               " ${1:constructor} : ${2:type}"
               " rule ${1:value} ==> ${2:value}"
+              " rule ${1:value} <=> ${2:value}"
               " rule ${1:value} ~> ${2:value}"
               " ${1:constructor} [${2:identifier}]"
             "" ‸ ""

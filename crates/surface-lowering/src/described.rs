@@ -1231,6 +1231,7 @@ impl Typer<'_>
         }
         for (face, member) in description.rules.iter().zip(&written.faces) {
             let mut variables: BTreeMap<&Name, ValueTypeId> = BTreeMap::new();
+            let mut unsorted: Vec<(ByteSpan, Name)> = Vec::new();
             let root = match face.lhs.view() {
                 | TermView::Op { name, .. } => {
                     operations.get(name).map(|operation| operation.result)
@@ -1256,6 +1257,9 @@ impl Typer<'_>
                             let ty = variables.get(name).copied().or(expected);
                             if let Some(ty) = ty {
                                 let _held = variables.entry(name).or_insert(ty);
+                            }
+                            else {
+                                unsorted.push((written.span, name.clone()));
                             }
                             (ty, Vec::new())
                         },
@@ -1307,6 +1311,11 @@ impl Typer<'_>
                         self.emit(written.span, DescribedRole::Term, ty, closed);
                     }
                     pending.extend(below.into_iter().rev());
+                }
+            }
+            for (span, name) in unsorted {
+                if let Some(&ty) = variables.get(&name) {
+                    self.emit(span, DescribedRole::Term, ty, closed);
                 }
             }
         }

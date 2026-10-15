@@ -25,7 +25,7 @@
 104..105 Other "("
 105..109 Constructor "Zero"
 109..110 Other ")"
-111..114 Operator "==>"
+111..114 Operator "<=>"
 115..119 Constructor "Zero"
 119..120 Other ";"
 121..122 Other "}"

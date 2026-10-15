@@ -22,8 +22,8 @@ data Int : Type {
   Z : Int;
   S : (x : Int) --> Int;
   P : (x : Int) --> Int;
-  rule S(P(x)) ==> x;
-  rule P(S(x)) ==> x;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
 }
 
 /// The loop's word: one letter before the empty word.

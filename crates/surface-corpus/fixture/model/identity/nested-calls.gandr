@@ -35,8 +35,8 @@ data Int : Type {
   Z : Int;
   S : (n : Int) --> Int;
   P : (n : Int) --> Int;
-  rule S(P(n)) ==> n;
-  rule P(S(n)) ==> n;
+  rule S(P(n)) <=> n;
+  rule P(S(n)) <=> n;
 }
 
 /// One step up.

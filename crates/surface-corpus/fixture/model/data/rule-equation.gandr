@@ -1,0 +1,8 @@
+@[ normalizes("S(P(Z)) ~> Z") ]
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule x <=> S(P(x));
+  rule P(S(x)) <=> x;
+}

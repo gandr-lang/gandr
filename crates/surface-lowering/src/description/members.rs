@@ -20,6 +20,8 @@ use super::DescriptionFault;
 use super::Reader;
 use super::Run;
 use super::Spelling;
+use super::written::RuleDirection;
+use super::written::RuleOrientation;
 use super::written::WrittenFace;
 use super::written::WrittenNode;
 use super::written::WrittenOperation;
@@ -158,9 +160,11 @@ impl Reader<'_, '_>
     ///
     /// # Specification
     /// - ensures: the face keeps both terms and the member's exact byte span;
-    ///   the written face is anonymous and holds each side's nodes.
-    /// - fails: only `==>` is a written face arrow; unsupported terms are
-    ///   located.
+    ///   the written face is anonymous and holds each side's nodes. `<=>`
+    ///   states [`RuleOrientation::Unpinned`]; `==>` states
+    ///   [`RuleOrientation::Pinned`] left to right.
+    /// - fails: only `==>` and `<=>` are written face arrows; `~>` is the
+    ///   retired spelling; unsupported terms are located.
     /// - panics: none.
     ///
     /// # Errors
@@ -168,8 +172,10 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — asymmetric rule endpoints distinguish reversal, fresh
-    ///   variables and lost nested heads.
+    ///   variables and lost nested heads; the equation and the pinned arrow
+    ///   state different orientations.
     /// - witness: `description::tests::operations_and_rules_preserve_their_boundaries`
+    /// - witness: `description::tests::an_equation_states_no_direction`
     #[spec(ensures: |result| result.as_ref().map_or(true, |read| read.0.provenance.start == usize::from(run.span.start()).into() && read.0.provenance.end == usize::from(run.span.end()).into()))]
     pub(super) fn rule(
         &self,
@@ -184,9 +190,16 @@ impl Reader<'_, '_>
                 fault: DescriptionFault::RetiredRuleArrow,
             });
         }
-        if !run.eat(Spelling("==>")).0 {
-            return Err(run.fault(DescriptionFault::Malformed));
+        let orientation = if run.at(Spelling("<=>")).0 {
+            RuleOrientation::Unpinned
         }
+        else if run.at(Spelling("==>")).0 {
+            RuleOrientation::Pinned(RuleDirection::LeftToRight)
+        }
+        else {
+            return Err(run.fault(DescriptionFault::Malformed));
+        };
+        let arrow = run.take()?.span;
         let rhs = run.take()?;
         run.end()?;
         let (lhs, left) = self.free_term(lhs)?;
@@ -200,6 +213,8 @@ impl Reader<'_, '_>
             named: Maybe::Absent(member_name::Absent::Anonymous),
             left,
             right,
+            arrow,
+            orientation,
         }))
     }
 

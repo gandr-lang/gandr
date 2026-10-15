@@ -16,8 +16,8 @@ data Circle : Type {
   Base : Circle;
   Loop : (x : Circle) --> Circle;
   Unloop : (x : Circle) --> Circle;
-  rule Loop(Unloop(x)) ==> x;
-  rule Unloop(Loop(x)) ==> x;
+  rule Loop(Unloop(x)) <=> x;
+  rule Unloop(Loop(x)) <=> x;
 }
 
 /// A function that builds a word: one more loop.
@@ -106,8 +106,8 @@ sign CircleShape {
   oper turn : (x : Pt) --> Pt;
   oper unturn : (x : Pt) --> Pt;
 
-  rule turnUnturn : turn(unturn(x)) ==> x;
-  rule unturnTurn : unturn(turn(x)) ==> x;
+  rule turnUnturn : turn(unturn(x)) <=> x;
+  rule unturnTurn : unturn(turn(x)) <=> x;
 }
 
 /// The number of laws in a presentation's rule chain.
@@ -139,8 +139,8 @@ data Int : Type {
   Z : Int;
   S : (x : Int) --> Int;
   P : (x : Int) --> Int;
-  rule S(P(x)) ==> x;
-  rule P(S(x)) ==> x;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
 }
 
 /// The presented integers as a model of the shape: `turn` the successor and

@@ -307,7 +307,7 @@ fn declarations(
     data.adaptations.push(Adaptation::new(
         RuleName("data_declaration"),
         SurfaceForm("rule_member"),
-        AdaptationReason("reserved parse-and-decline: a `rule lhs ==> rhs` 2-cell member is inlined in the data block, first-token-discriminated by the `rule` keyword; the declined `~>` face arrow stays admissible so a stale spelling reaches the elaborator's decline instead of a parse repair"),
+        AdaptationReason("a `rule lhs <=> rhs` equation, or `rule lhs ==> rhs` pinning its direction, is inlined in the data block, first-token-discriminated by the `rule` keyword; the declined `~>` face arrow stays admissible so a stale spelling reaches the elaborator's decline instead of a parse repair"),
     ));
     data.adaptations.push(Adaptation::new(
         RuleName("data_declaration"),
@@ -364,7 +364,7 @@ fn declarations(
     codata.adaptations.push(Adaptation::new(
         RuleName("codata_declaration"),
         SurfaceForm("rule_member"),
-        AdaptationReason("reserved parse-and-decline: a `rule lhs ==> rhs` 2-cell member is inlined in the codata block, first-token-discriminated by the `rule` keyword; the declined `~>` face arrow stays admissible so a stale spelling reaches the elaborator's decline instead of a parse repair"),
+        AdaptationReason("a `rule lhs <=> rhs` equation, or `rule lhs ==> rhs` pinning its direction, is inlined in the codata block, first-token-discriminated by the `rule` keyword; the declined `~>` face arrow stays admissible so a stale spelling reaches the elaborator's decline instead of a parse repair"),
     ));
     out.push(codata);
 
@@ -923,7 +923,7 @@ fn data_member() -> Regex
         // (as it does the `~>` face arrow); `op` otherwise leads only the
         // operator-fixity declaration.
         data_oper_member(alt([t(TileLabel("oper")), t(TileLabel("op"))])),
-        // reserved `rule lhs ==> rhs` 2-cell member.
+        // `rule lhs <=> rhs`, or `rule lhs ==> rhs` pinning the direction.
         seq([
             t(TileLabel("rule")),
             h(Sort::Expression),
@@ -1032,18 +1032,20 @@ fn generator_telescope() -> Regex
     ])
 }
 
-/// Build the rewrite-face arrow of a `rule` member: `==>`, or the declined
-/// `~>` kept admissible so it can be declined by name.
+/// Build the rewrite-face arrow of a `rule` member: `==>` pinning the
+/// direction, `<=>` leaving it to the order, or the declined `~>` kept
+/// admissible so it can be declined by name.
 ///
-/// `==>` is the rewrite-face former at every position. Removing `~>` from the
-/// grammar outright would turn a stale face into a parse repair, which names
-/// a token rather than the respelling; admitting it here keeps the member's
-/// shape whole so the elaborator declines it by name and points at `==>`.
+/// `<=>` is the equation. The order over the block's faces chooses its
+/// direction; `==>` states the direction the order must admit. Removing `~>`
+/// from the grammar outright would turn a stale face into a parse repair,
+/// which names a token rather than the respelling; admitting it here keeps
+/// the member's shape whole so the elaborator declines it by name.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the rewrite arrow and the admitted obsolete spelling, in that
-///   order.
+/// - ensures: the pinned arrow, the equation, and the admitted obsolete
+///   spelling, in that order.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1053,10 +1055,10 @@ fn generator_telescope() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().zip(["==>","~>"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.iter().zip(["==>","<=>","~>"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
 pub(super) fn rule_face_arrow() -> Regex
 {
-    alt([t(TileLabel("==>")), t(TileLabel("~>"))])
+    alt([t(TileLabel("==>")), t(TileLabel("<=>")), t(TileLabel("~>"))])
 }
 
 /// Build the reserved grade prefix, narrowed to `{ number, ω }`.

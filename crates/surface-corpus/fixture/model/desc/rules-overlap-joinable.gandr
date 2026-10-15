@@ -3,9 +3,9 @@ data NatUnits : Type {
   Zero : NatUnits;
   Succ : (n : NatUnits) --> NatUnits;
   oper add(m : NatUnits, n : NatUnits) -> NatUnits;
-  rule add(Zero, n) ==> n;
-  rule add(m, Zero) ==> m;
-  rule add(Succ(m), n) ==> Succ(add(m, n));
+  rule add(Zero, n) <=> n;
+  rule add(m, Zero) <=> m;
+  rule add(Succ(m), n) <=> Succ(add(m, n));
 }
 
 @[ runs("Zero") ]

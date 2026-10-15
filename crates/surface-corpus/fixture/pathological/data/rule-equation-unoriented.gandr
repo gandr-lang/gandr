@@ -1,0 +1,6 @@
+@[ refuses("RulesUnoriented") ]
+data Marks : Type {
+  Aye : Marks;
+  Nay : Marks;
+  rule Aye <=> Nay;
+}

@@ -68,6 +68,7 @@ use gandr_theory_computads::PresentedRules;
 use gandr_theory_computads::elaborate_data_desc;
 use gandr_theory_computads::elaborate_sign_desc;
 use gandr_theory_computads::presented_reading;
+use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::SurfaceSpan;
 use gandr_theory_levitation::WhiskeredCell;
 use quenchant_shape::shape::Maybe;
@@ -75,8 +76,10 @@ use quenchant_shape::shape::Maybe;
 use crate::coincide::CoherenceFault;
 use crate::coincide::Coincidence;
 use crate::coincide::decide;
+use crate::coincide::orient_block;
 use crate::coincide::rewriting_store;
 use crate::description::DescribedDeclaration;
+use crate::description::written::RuleDirection;
 use crate::form::Placed;
 
 /// An index into a cell report's located diagnostic vector.
@@ -170,6 +173,13 @@ pub struct DeclarationCells
     pub circuits: Vec<CircuitCell>,
     /// The declaration's eta cells or their explicit absence.
     pub eta: EtaElaboration,
+    /// The kernel-facing rules, left above right, parallel to the description's
+    /// rules. Empty when the block did not orient.
+    pub oriented: Vec<RuleFace>,
+    /// The direction the order chose for each oriented rule.
+    pub directions: Vec<RuleDirection>,
+    /// The written span of each oriented rule, parallel to `directions`.
+    pub rule_spans: Vec<ByteSpan>,
     /// How the declaration's rules stand as one rewriting system.
     pub coincidence: Coincidence,
 }
@@ -239,6 +249,17 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
         diagnostics: Vec::new(),
     };
     for declaration in declarations {
+        let orientations: Vec<_> = declaration
+            .written
+            .faces
+            .iter()
+            .map(|face| face.orientation)
+            .collect();
+        let oriented = orient_block(&declaration.description, &orientations).ok();
+        let reading = match oriented.as_ref() {
+            | Some(block) => &block.description,
+            | None => &declaration.description,
+        };
         let DescElaboration {
             store,
             opers,
@@ -249,8 +270,8 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             circuits,
             eta,
         } = match declaration.presentation {
-            | Maybe::Present(_) => elaborate_sign_desc(&declaration.description),
-            | Maybe::Absent(_) => elaborate_data_desc(&declaration.description),
+            | Maybe::Present(_) => elaborate_sign_desc(reading),
+            | Maybe::Absent(_) => elaborate_data_desc(reading),
         };
         let examined = declined_opers.is_empty()
             && declined_faces.is_empty()
@@ -315,7 +336,7 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
         }
         else {
             match decide(
-                &declaration.description,
+                reading,
                 declaration.at.span,
                 &store,
                 &admitted_faces,
@@ -333,6 +354,21 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
                 },
             }
         };
+        let (oriented_rules, directions) = match oriented {
+            | Some(block) => (block.description.rules.to_vec(), block.directions),
+            | None => (Vec::new(), Vec::new()),
+        };
+        let rule_spans = if directions.is_empty() {
+            Vec::new()
+        }
+        else {
+            declaration
+                .written
+                .faces
+                .iter()
+                .map(|face| face.arrow)
+                .collect()
+        };
         report.declarations.push(DeclarationCells {
             at: declaration.at,
             store,
@@ -342,6 +378,9 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             presented,
             circuits: outcomes,
             eta,
+            oriented: oriented_rules,
+            directions,
+            rule_spans,
             coincidence,
         });
     }

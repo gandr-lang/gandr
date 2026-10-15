@@ -20,7 +20,8 @@
 //! derivation rather than fabricating a boundary. A feed back-edge is a wheel
 //! refusal, a bodiless cell between composites of cells a higher-cell refusal,
 //! an operation filler, in a block or as a top-level `oper`, a filler refusal,
-//! and the reversible glyphs `<->` and `<=>` are reserved; each is a fragment
+//! and the reversible map `<->` is reserved. `<=>` is the equation: a face
+//! arrow whose direction the order chooses. Each refusal is a fragment
 //! boundary rather than malformed source. Witnesses:
 //! `description::sign::tests::a_ruled_sign_block_lowers_its_members_into_a_description`,
 //! `description::sign::tests::a_many_out_frame_binds_every_port_and_roots_the_body`,
@@ -119,6 +120,8 @@ use super::TileSeen;
 use super::Written;
 use super::family_classifier;
 use super::split_members;
+use super::written::RuleDirection;
+use super::written::RuleOrientation;
 use super::written::WrittenCircuit;
 use super::written::WrittenCircuitPort;
 use super::written::WrittenFace;
@@ -742,6 +745,13 @@ impl Reader<'_, '_>
         }
         if !run.at(Spelling("(")).0 && !parenthesized {
             let lhs = run.take()?;
+            let arrow = run.here();
+            let orientation = if run.at(Spelling("<=>")).0 {
+                RuleOrientation::Unpinned
+            }
+            else {
+                RuleOrientation::Pinned(RuleDirection::LeftToRight)
+            };
             run.arrow(Some(ArrowRow::Face))?;
             let rhs = run.take()?;
             run.end()?;
@@ -759,6 +769,8 @@ impl Reader<'_, '_>
                     named: Maybe::Present(name.span),
                     left,
                     right,
+                    arrow,
+                    orientation,
                 },
             ));
         }
@@ -1152,8 +1164,8 @@ impl Run<'_>
     /// Confirm an arrow's row without interpreting an unresolved head.
     ///
     /// # Specification
-    /// - ensures: mismatches and the reserved reversible glyphs, `<->` and
-    ///   `<=>`, retain their own span.
+    /// - ensures: mismatches and the reserved reversible map `<->` retain their
+    ///   own span. `<=>` is a face arrow, the equation.
     /// - fails: a missing arrow is malformed syntax.
     /// - panics: none.
     /// - executable: none — the glyph consumed is source syntax the row does
@@ -1164,16 +1176,17 @@ impl Run<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a declared head under the wrong arrow, an unknown
-    ///   head under any arrow and a reversible map are refused apart.
+    ///   head under any arrow and a reversible map are refused apart; an
+    ///   equation is a face arrow.
     /// - witness: `description::sign::tests::node_arrow_resolution_distinguishes_declared_and_unknown_heads`
-    /// - witness: `description::sign::tests::both_reversible_glyphs_are_reserved`
+    /// - witness: `description::sign::tests::a_reversible_map_is_reserved_and_an_equation_is_a_face`
     fn arrow(
         &mut self,
         expected: Option<ArrowRow>,
     ) -> Result<ArrowRow, DescriptionDiagnostic>
     {
         let at = self.cursor.here();
-        let actual = if self.eat(Spelling("<=>")).0 || self.eat(Spelling("<->")).0 {
+        let actual = if self.eat(Spelling("<->")).0 {
             return Err(DescriptionDiagnostic {
                 span: at,
                 fault: DescriptionFault::Signature(SignatureFault::Reversible),
@@ -1182,7 +1195,7 @@ impl Run<'_>
         else if self.eat(Spelling("-->")).0 {
             ArrowRow::Mapping
         }
-        else if self.eat(Spelling("==>")).0 {
+        else if self.eat(Spelling("==>")).0 || self.eat(Spelling("<=>")).0 {
             ArrowRow::Face
         }
         else {

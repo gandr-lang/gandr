@@ -3745,8 +3745,14 @@ impl<'source> Lowerer<'_, 'source>
             .map(|generator| self.text_at(generator.named))
             .collect();
         let mut rules = Vec::new();
+        let faces = if cells.oriented.is_empty() {
+            described.description.rules.as_ref()
+        }
+        else {
+            cells.oriented.as_slice()
+        };
         for &(index, _cell) in &presented.faces {
-            let Some(face) = described.description.rules.get(usize::from(index))
+            let Some(face) = faces.get(usize::from(index))
             else {
                 continue;
             };

@@ -489,6 +489,29 @@ fn the_ruled_face_arrow_elaborates_and_the_retired_one_declines_with_its_respell
 }
 
 #[test]
+fn an_equation_states_no_direction()
+{
+    let report = elaborated(SourceText::from(
+        "data NatEq : Type { Zero : NatEq; oper id(x : NatEq) -> NatEq; rule id(Zero) <=> Zero; }",
+    ));
+    assert_eq!(report.diagnostics, []);
+    let rules: Vec<_> = report.declarations[0].rules().collect();
+    let [ref rule] = *rules.as_slice()
+    else {
+        panic!("one equation")
+    };
+    assert_eq!(
+        rule.written.orientation,
+        crate::description::written::RuleOrientation::Unpinned
+    );
+    assert_eq!(rule.print_data(), "rule id(Zero) <=> Zero");
+    assert_eq!(
+        rule.print_sign(&gandr_theory_levitation::Name::from("id")),
+        "rule id : id(Zero) <=> Zero"
+    );
+}
+
+#[test]
 fn the_retired_op_member_lead_declines_with_its_respelling()
 {
     let source =
