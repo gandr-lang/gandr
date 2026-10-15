@@ -8,10 +8,17 @@
 //! and all, so the lowering has to know them where the constructor is
 //! written. A family without parameters has one classifier, which the
 //! lowering inserts; a family with parameters takes it from an annotation,
-//! `(C(…) : T(…))`, and is refused as unannotated without one. Inferring the
-//! arguments from the fields or the position is the checker's work, which
-//! the lowering does not duplicate; reversal: a checker that synthesises a
-//! constructor against an expected type makes the annotation optional.
+//! `(C(…) : T(…))`, or, where the constructor is written as an argument of a
+//! data family, from that family's parameter at its place with the
+//! parameters before it replaced by the arguments written for them: `Inl(a)`
+//! in `Tagged(Integer, String, Inl(a))`, whose third parameter is
+//! `s : SumOb(l, r)`, is a `SumOb(Integer, String)`. Without either it is
+//! refused as unannotated. The arguments before the place are its siblings,
+//! which the mint sweep reaches after it, so the application mints such a
+//! constructor before itself. Inferring the arguments from the fields or any
+//! other position is the checker's work, which the lowering does not
+//! duplicate; reversal: a checker that synthesises a constructor against an
+//! expected type makes the annotation optional.
 //!
 //! # A match is a decision tree of eliminations
 //!
@@ -208,12 +215,7 @@
 //! indices.
 //!
 //! A constructor `C(e, …)` is a native constructor value, which names its whole
-//! classifier. A family with no parameters has one, which the lowering inserts;
-//! a family with parameters takes it from an annotation `(C(…) : T(…))` and is
-//! refused as unannotated without one. The alternative was inferring the
-//! arguments from the fields, which is the checker's work; the annotation
-//! becomes optional when the checker synthesises a constructor against an
-//! expected type.
+//! classifier, as the section above reads it.
 //!
 //! `case e -> T? { p => c, … }` compiles to a decision tree of native
 //! eliminations by the pattern-matrix construction of Maranget's _Compiling
@@ -357,19 +359,6 @@ use crate::resolve::binder_type;
 
 #[cfg(test)]
 pub(super) mod tests;
-
-quenchant_shape::reason_enum! {
-    /// Why a constructor carries no written classifier.
-    pub mod classified {
-        /// The constructor stands under no annotation.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// Its family has no parameters, so the lowering inserts the one
-            /// classifier it has.
-            Inserted,
-        }
-    }
-}
 
 quenchant_shape::reason_enum! {
     /// Why a match states no answer.
@@ -643,6 +632,57 @@ pub(super) enum Over
     },
 }
 
+/// Where a constructor's classifier comes from.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a written annotation names its type's node; a slot names a data
+///   family's form, the argument's place among its parameters and the stretch
+///   of the operand store the application's arguments occupy.
+/// - executable: none — the plan holds no store to check its stretch against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an annotated constructor, one of a family without
+///   parameters and one written as a data family's argument each lower to the
+///   constructor value over the classifier its source states.
+/// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
+/// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) enum Classifier
+{
+    /// The annotation `(C(…) : T)` the source wrote: its type's node.
+    Written(NodeIndex),
+    /// The constructor is written as an argument of a data family: the
+    /// family's parameter at its place, under the arguments before it.
+    Slot(Argued),
+    /// Its family has no parameters, so the lowering inserts the one
+    /// classifier it has.
+    Inserted,
+}
+
+/// The place a value argument takes in a data family's application.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `form` is the family's position in the collection's data list,
+///   `place` the argument's among the family's parameters, and `applied` the
+///   operand stretch of the application's arguments, `place` within it.
+/// - executable: none — the plan holds no store to check its stretch against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Classifier`]'s slot row.
+/// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Argued
+{
+    /// The family's position in the collection's data list.
+    pub form: usize,
+    /// The argument's place among the family's parameters.
+    pub place: usize,
+    /// The application's arguments, in the operand store.
+    pub applied: Stretch,
+}
+
 /// A constructor applied to its fields, as the classification planned it.
 ///
 /// # Specification
@@ -664,8 +704,8 @@ pub(super) struct Constructed
     pub tag: ConstructorTag,
     /// The fields, in the operand store.
     pub fields: Stretch,
-    /// The annotation's type, when the source wrote one.
-    pub classifier: Maybe<NodeIndex, classified::Absent>,
+    /// Where its classifier comes from.
+    pub classifier: Classifier,
 }
 
 /// One pattern, as the match compiler reads it.
@@ -1342,12 +1382,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   field the site was written with, left to right.
     /// - ensures: the constructor stands as a value, each field read as a value
     ///   under the site's frame, its classifier the annotation the site stands
-    ///   under when there is one.
+    ///   under when there is one, else, for a family with parameters, its place
+    ///   in the data family application it is an argument of, the constructor
+    ///   then awaiting that application's mint.
     /// - provides: constructor application, bare and called.
     /// - fails: yields the arity refusal for a field count other than the
     ///   constructor's; the wrong-sort refusal outside value position; the
     ///   unannotated refusal for a constructor of a family with parameters
-    ///   under no annotation.
+    ///   under no annotation and at no data family's argument place.
     /// - panics: none.
     ///
     /// # Errors
@@ -1380,10 +1422,17 @@ impl<'source> Lowerer<'_, 'source>
                 .map_or(0_usize, |written| written.parameters.len()),
             Generators::Presentation | Generators::Words(_) => 0_usize,
         };
-        let classifier = match self.classifiers.get(&site.at.node) {
-            Some(&written) => Maybe::Present(written),
-            None if parameters == 0 => Maybe::Absent(classified::Absent::Inserted),
-            None => return Err(site.out(FragmentBoundary::Unannotated)),
+        let classifier = match (
+            self.classifiers.get(&site.at.node),
+            self.argued.get(&site.at.node),
+        ) {
+            (Some(&written), _) => Classifier::Written(written),
+            (None, _) if parameters == 0 => Classifier::Inserted,
+            (None, Some(&argued)) => {
+                let _first = self.awaiting.insert(site.at.node);
+                Classifier::Slot(argued)
+            },
+            (None, None) => return Err(site.out(FragmentBoundary::Unannotated)),
         };
         let family = self
             .collected
@@ -1838,7 +1887,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `applied` is a stretch of the operand store.
     /// - ensures: the family stands as a value type over its arguments, each
-    ///   read as a value under the site's frame.
+    ///   read as a value under the site's frame and recorded at its place among
+    ///   the family's parameters.
     /// - fails: the arity refusal for an argument count other than `arity`; the
     ///   wrong-sort refusal where no value type is read or reached.
     /// - panics: none.
@@ -1864,8 +1914,21 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
         }
         let frame = self.require(site, Produced::ValueType)?;
-        for position in applied.start .. applied.end {
+        let form = self.collected.data.iter().position(|form| {
+            self.collected
+                .slots
+                .get(usize::from(form.slot))
+                .is_some_and(|slot| slot.constant == constant)
+        });
+        for (place, position) in (applied.start .. applied.end).enumerate() {
             if let Some(&argument) = self.operands.get(position) {
+                if let Some(form) = form {
+                    let _first = self.argued.insert(argument, Argued {
+                        form,
+                        place,
+                        applied,
+                    });
+                }
                 self.read(argument, Reading::Value(frame));
             }
         }
@@ -4534,17 +4597,22 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: every field and the annotation's type are already minted or
-    ///   absent.
+    ///   absent; for a slot, the family's parameter type and every argument
+    ///   before the constructor's are too.
     /// - ensures: the constructor value over its fields, its classifier the
-    ///   annotation's type carried into the term's binders, or the family over
-    ///   no arguments with an inserted origin; the written origin on the value;
-    ///   nothing when a field or the annotation did not lower.
+    ///   annotation's type carried into the term's binders; for a slot, the
+    ///   family's parameter at the constructor's place with the parameters
+    ///   before it replaced by the arguments written for them; or the family
+    ///   over no arguments; the classifier's origin inserted and the written
+    ///   origin on the value; nothing when a field, the annotation or a slot's
+    ///   type or argument did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::construct`].
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
     pub(super) fn mint_constructor(
         &self,
@@ -4564,19 +4632,23 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
+        let classified = origin.inserted(Insertion::Classifier);
         let classifier = match constructed.classifier {
-            Maybe::Present(written) => {
+            Classifier::Written(written) => {
                 let Maybe::Present(id) = self.value_type_at(written)
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);
                 };
                 let frame = self.reading(written).frame();
-                self.relocate_value_type(id, frame, sink, origin.inserted(Insertion::Classifier))
+                self.relocate_value_type(id, frame, sink, classified)
             },
-            Maybe::Absent(_) => {
+            Classifier::Slot(argued) => match self.slot_type(argued, sink, classified) {
+                Maybe::Present(id) => id,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Classifier::Inserted => {
                 let id = sink.arena.value_type_data(constructed.family, Vec::new());
-                sink.origins
-                    .record_value_type(id, origin.inserted(Insertion::Classifier));
+                sink.origins.record_value_type(id, classified);
                 id
             },
         };
@@ -4585,6 +4657,81 @@ impl<'source> Lowerer<'_, 'source>
             .value_constructor(classifier, constructed.tag, fields);
 
         Maybe::Present(sink.value(id, origin))
+    }
+
+    /// The type a data family's application gives the argument at `argued`'s
+    /// place.
+    ///
+    /// # Specification
+    /// - requires: the family's parameter types and the arguments before the
+    ///   place are minted or absent.
+    /// - ensures: the family's parameter at the place, read under the
+    ///   parameters before it, with each of those replaced by the argument
+    ///   written for it, every node the substitution mints recorded at
+    ///   `origin`; nothing when the parameter's type or an argument did not
+    ///   lower.
+    /// - provides: the classifier of a constructor written as a family's
+    ///   argument (#421).
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Inl(a)` written for the third parameter `s :
+    ///   SumOb(l, r)` of a family applied to `Integer` and `String` is
+    ///   classified `SumOb(Integer, String)`.
+    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn slot_type(
+        &self,
+        argued: Argued,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let Some(parameter) = self
+            .collected
+            .data
+            .get(argued.form)
+            .and_then(|form| form.parameters.get(argued.place))
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let declared = match self.value_type_at(parameter.classifier.node) {
+            Maybe::Present(declared) => declared,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let mut environment = Vec::with_capacity(argued.place);
+        for &argument in stretch(&self.operands, argued.applied)
+            .iter()
+            .take(argued.place)
+        {
+            match self.value_at(argument) {
+                Maybe::Present(value) => environment.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        // The innermost parameter is the last before the place.
+        environment.reverse();
+        let mark = sink.arena.watermark();
+        let code = sink.arena.value_quote(declared);
+        let mut carried = Vec::new();
+        let substituted = gandr_core_term::substitute_environment_traced(
+            sink.arena,
+            TermId::Value(code),
+            &environment,
+            &mut carried,
+        );
+        exits::record_copies(sink, mark, &carried, origin);
+        let TermId::Value(substituted) = substituted
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+
+        Maybe::Present(ty)
     }
 
     /// `ty`, a value type read under `frame` in a type's telescope, carried

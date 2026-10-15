@@ -984,6 +984,56 @@ fn a_parameterized_constructor_needs_its_classifier()
 }
 
 #[test]
+fn a_constructor_takes_its_slot_as_a_family_argument()
+{
+    let families = "data SumOb(a : Type, b : Type) : Type { Inl : (x : a) --> SumOb(a, b); Inr : (y : b) --> SumOb(a, b); }\ndata Tagged(l : Type, r : Type, s : SumOb(l, r)) : Type { Tag : (n : Integer) --> Tagged(l, r, s); }\n";
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{COLOR}{families}def tagged = (Tag(1) : Tagged(Color, Integer, Inl(Red)));\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let Some(&Value::Constructor { datatype, .. }) =
+        arena.value(body_named(&module, SurfaceName::from("tagged")))
+    else {
+        panic!("the annotated tag is a constructor value");
+    };
+    let Some(&ValueType::Data { ref arguments, .. }) = arena.value_type(datatype)
+    else {
+        panic!("its classifier is the annotation's family");
+    };
+    let Some(&Value::Constructor {
+        datatype: summand, ..
+    }) = arguments
+        .get(2_usize)
+        .and_then(|&argument| arena.value(argument))
+    else {
+        panic!("the family's third argument is a constructor value: {arguments:?}");
+    };
+    assert!(matches!(
+        arena.value_type(summand),
+        Some(&ValueType::Data { declaration, ref arguments })
+            if declaration == ConstantIndex::from(1_usize) && arguments.len() == 2_usize
+    ));
+    let report = judged(&module, &mut arena);
+    assert_accepted(&report);
+    // The place's type is `SumOb(Color, Integer)`, so the right summand of a
+    // colour is refused: read in the other order, it would be accepted.
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{COLOR}{families}def misplaced = (Tag(1) : Tagged(Color, Integer, Inr(Red)));\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let report = judged(&module, &mut arena);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .any(|judged| matches!(judged.verdict(), Verdict::Refused(_))),
+        "{report:?}"
+    );
+}
+
+#[test]
 fn a_data_family_applies_to_its_parameters()
 {
     let mut arena = CoreArena::new();
