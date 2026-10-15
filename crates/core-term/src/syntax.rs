@@ -1147,6 +1147,21 @@ enum StructuralGoal
     CompType(CompTypeId, CompTypeId),
 }
 
+/// How [`equal_syntax`] reads a value-type pair.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy)]
+enum Reading<'signatures>
+{
+    /// As the certificate holds it: a stage is part of its type.
+    Syntax,
+    /// As a printed type reads back: a type of words against the path type
+    /// these declarations read it as, and a staged type as its base, which is
+    /// all of it the surface writes.
+    Printed(&'signatures BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>),
+}
+
 /// Result of evidence-erasing certificate syntax comparison.
 ///
 /// # Specification
@@ -1189,7 +1204,7 @@ pub fn equal_certificate_syntax(
     right: ValueId,
 ) -> CertificateEquality
 {
-    equal_syntax(arena, &BTreeMap::new(), StructuralGoal::Value(left, right))
+    equal_syntax(arena, Reading::Syntax, StructuralGoal::Value(left, right))
 }
 
 /// Compare signature type syntax without making allocation identity observable.
@@ -1216,33 +1231,43 @@ pub fn equal_type_syntax(
 {
     equal_syntax(
         arena,
-        &BTreeMap::new(),
+        Reading::Syntax,
         StructuralGoal::ValueType(left, right),
     )
 }
 
-/// Compare type syntax as [`equal_type_syntax`] does, reading a parameterless
-/// type of words and the path type at its cells' point as one type, as every
-/// checker reads them.
+/// Compare type syntax as [`equal_type_syntax`] does, as a printed type reads.
+///
+/// A parameterless type of words and the path type at its cells' point read
+/// as one type, as every checker reads them; a staged type reads as its base,
+/// as the printer writes it, since the surface spells no stage.
 ///
 /// # Specification
 /// - requires: `signatures` holds the data declarations the types name.
-/// - ensures: [`CertificateEquality::Equal`] exactly when every reached pair
-///   agrees in syntax after path evidence is erased, or is `Data(words, [])`
-///   against `Path(S, a, b)` with [`identified_words`] reading the path as
-///   `words`, in either order.
+/// - ensures: [`CertificateEquality::Equal`] exactly when every reached pair,
+///   each side read at its base when it is staged, agrees in syntax after path
+///   evidence is erased, or is `Data(words, [])` against `Path(S, a, b)` with
+///   [`identified_words`] reading the path as `words`, in either order.
 /// - provides: the comparison a printed type's reading back is held to: a type
 ///   of words has no name the surface writes, and is spelled as the path type
-///   it reads as.
+///   it reads as; a stage has no spelling, and a staged type is spelled as its
+///   base.
 /// - fails: returns `Different` on a dangling node.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the circle's words against the path at its point, alone
 ///   and under a path type, compare equal where the syntax alone compares
-///   different; at an endpoint off the point they stay different.
+///   different; at an endpoint off the point they stay different. A staged
+///   type, alone and as an arrow's domain, reads as its base where the syntax
+///   alone tells them apart, and stays different from another type.
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
-#[spec(ensures: |ret| ret == CertificateEquality::Different || equal_type_syntax(arena, left, right) == CertificateEquality::Equal || signatures.values().any(|signature| signature.presentation().cells().is_some()))]
+/// - witness: `syntax::tests::a_staged_type_reads_as_its_base`
+#[spec(ensures: |ret| ret == CertificateEquality::Different || match (arena.value_type(unstaged(arena, left)), arena.value_type(unstaged(arena, right))) {
+    (Some(a), Some(b)) => core::mem::discriminant(a) == core::mem::discriminant(b)
+        || matches!((a, b), (&ValueType::Data { .. }, &ValueType::Path { .. }) | (&ValueType::Path { .. }, &ValueType::Data { .. })),
+    _ => false,
+})]
 #[inline]
 #[must_use]
 pub fn equal_type_reading(
@@ -1252,7 +1277,35 @@ pub fn equal_type_reading(
     right: ValueTypeId,
 ) -> CertificateEquality
 {
-    equal_syntax(arena, signatures, StructuralGoal::ValueType(left, right))
+    equal_syntax(
+        arena,
+        Reading::Printed(signatures),
+        StructuralGoal::ValueType(left, right),
+    )
+}
+
+/// The type `id` refines when it is staged, `id` itself otherwise.
+///
+/// # Specification
+/// - requires: nothing; an unreadable id is returned as it is.
+/// - ensures: the base of a staged type, which is never itself staged; `id` for
+///   any other.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_staged_type_reads_as_its_base`
+#[spec(ensures: |ret| ret == id || matches!(arena.value_type(id), Some(&ValueType::Staged { base, .. }) if base == ret))]
+fn unstaged(
+    arena: &crate::CoreArena,
+    id: ValueTypeId,
+) -> ValueTypeId
+{
+    match arena.value_type(id) {
+        Some(&ValueType::Staged { base, .. }) => base,
+        Some(_) | None => id,
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -1329,7 +1382,8 @@ pub fn identified_words(
 /// # Specification
 /// - requires: nothing; unreadable ids identify nothing.
 /// - ensures: `Present(w)` exactly in that case.
-/// - provides: the one rule [`equal_type_reading`] adds to the syntax.
+/// - provides: the rule [`equal_type_reading`] adds to the syntax for a type of
+///   words.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1484,9 +1538,10 @@ fn signature_children(
 ///
 /// # Specification
 /// - ensures: returns equal exactly when every reached pair agrees in syntax
-///   after path evidence is erased, a value-type pair `signatures` reads as one
-///   type of words ([`read_as_words`]) agreeing outright; no reduction is
-///   performed.
+///   after path evidence is erased; under [`Reading::Printed`], each side of a
+///   value-type pair is first read at its base when staged, and a pair the
+///   declarations read as one type of words ([`read_as_words`]) agrees
+///   outright; no reduction is performed.
 /// - executable: none — the contract is the inductive graph comparison, not a
 ///   second traversal pretending to be an independent postcondition.
 ///
@@ -1496,9 +1551,10 @@ fn signature_children(
 /// - witness: `syntax::tests::certificate_syntax_erases_only_evidence`
 /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
+/// - witness: `syntax::tests::a_staged_type_reads_as_its_base`
 fn equal_syntax(
     arena: &crate::CoreArena,
-    signatures: &BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>,
+    reading: Reading<'_>,
     root: StructuralGoal,
 ) -> CertificateEquality
 {
@@ -2113,11 +2169,18 @@ fn equal_syntax(
                 }
             },
             VT(a, b) => {
-                if matches!(read_as_words(arena, signatures, (a, b)), Maybe::Present(_))
-                    || matches!(read_as_words(arena, signatures, (b, a)), Maybe::Present(_))
-                {
-                    continue;
-                }
+                let (a, b) = match reading {
+                    Reading::Syntax => (a, b),
+                    Reading::Printed(signatures) => {
+                        let (a, b) = (unstaged(arena, a), unstaged(arena, b));
+                        if matches!(read_as_words(arena, signatures, (a, b)), Maybe::Present(_))
+                            || matches!(read_as_words(arena, signatures, (b, a)), Maybe::Present(_))
+                        {
+                            continue;
+                        }
+                        (a, b)
+                    },
+                };
                 let (Some(a), Some(b)) = (arena.value_type(a), arena.value_type(b))
                 else {
                     return CertificateEquality::Different;
@@ -2592,6 +2655,47 @@ mod tests
             equal_type_reading(&arena, &signatures, own, off_point),
             CertificateEquality::Different,
             "the words are not a path off their point"
+        );
+    }
+
+    #[test]
+    fn a_staged_type_reads_as_its_base()
+    {
+        use gandr_kernel_term::Stage;
+        use gandr_kernel_term::StageId;
+
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let nat = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let other = arena.value_type_data(ConstantIndex::from(1_usize), alloc::vec![]);
+        let staged = arena.value_type_staged(nat, Stage::At(StageId::from(1_usize)));
+        // A recursion's self reference: the parameter it descends on, staged,
+        // as the domain of a thunked arrow.
+        let returner = arena.comp_type_returner(nat);
+        let at_stage = arena.comp_type_arrow(staged, returner);
+        let at_stage = arena.value_type_thunk(at_stage);
+        let plain = arena.comp_type_arrow(nat, returner);
+        let plain = arena.value_type_thunk(plain);
+        for (left, right, what) in [
+            (staged, nat, "the staged type against its base"),
+            (nat, staged, "in either order"),
+            (at_stage, plain, "as an arrow's domain"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, staged, other),
+            CertificateEquality::Different,
+            "a staged type does not read as another type"
         );
     }
 }
