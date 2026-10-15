@@ -137,24 +137,59 @@ fn record_dangling() -> WireTag
 /// top of the byte range, as far from the block as the alphabet allows.
 const DANGLING_TAG: u8 = 0xFF;
 
-/// Keep the dangling sentinel outside every admitted node tag.
+/// The tag of a staged value type's record.
+///
+/// A stage is admission's alone and never on the wire, so its record takes a
+/// byte no node tag takes: one below the dangling sentinel. A staged type and
+/// its base are different goals' types, and its record keeps them apart.
 ///
 /// # Specification
-/// - ensures: compilation refuses a table row that uses the dangling byte.
+/// trivial.
+fn record_staged() -> WireTag
+{
+    WireTag::from(STAGED_TAG)
+}
+
+/// The byte a staged type's record reserves out of the node-tag alphabet.
+const STAGED_TAG: u8 = 0xFE;
+
+/// The tag of an exact stage inside a staged type's record.
+///
+/// # Specification
+/// trivial.
+fn stage_exact() -> WireTag
+{
+    WireTag::from(0x00_u8)
+}
+
+/// The tag of a bound inside a staged type's record.
+///
+/// # Specification
+/// trivial.
+fn stage_bound() -> WireTag
+{
+    WireTag::from(0x01_u8)
+}
+
+/// Keep the dangling and staged sentinels outside every admitted node tag.
+///
+/// # Specification
+/// - ensures: compilation refuses a table row that uses either reserved byte.
 /// - panics: no runtime path; a violation fails constant evaluation.
 /// - executable: none — this is an evaluated compile-time assertion, not a
 ///   callable boundary.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — sparse native tags and unreadable references encode
-///   separately; adding a row at the sentinel fails compilation.
+///   separately; adding a row at a sentinel fails compilation.
 /// - witness: `encoding::tests::an_unreadable_reference_still_encodes`
+/// - witness: `encoding::tests::a_stage_is_part_of_a_type_s_content`
 const _: () = {
     let mut rows = gandr_kernel_term::NODE_TAG_TABLE.as_slice();
     while let &[row, ref rest @ ..] = rows {
         assert!(
-            row.tag.0 < DANGLING_TAG,
-            "node tag overlaps dangling sentinel"
+            row.tag.0 < STAGED_TAG,
+            "node tag overlaps a reserved sentinel"
         );
         rows = rest;
     }
@@ -1357,7 +1392,15 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     gandr_kernel_term::FixpointEvidence::StructuralDescent => {
                         gandr_kernel_term::FIXPOINT_STRUCTURAL_DESCENT
                     },
+                    gandr_kernel_term::FixpointEvidence::Staged { .. } => {
+                        gandr_kernel_term::FIXPOINT_STAGED
+                    },
                 });
+                if let gandr_kernel_term::FixpointEvidence::Staged { position } = evidence {
+                    record.put_word(EncodedWord(
+                        u64::try_from(usize::from(position)).unwrap_or(u64::MAX),
+                    ));
+                }
                 record.put_content(self.content_of(AnyNode::Computation(body)));
             },
             Computation::Application(head, argument) => {
@@ -1436,7 +1479,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::StaticPi { domain: first, codomain: second } | ValueType::Sigma { first, second } => self.placed.contains_key(&AnyNode::ValueType(first))
                             && self.placed.contains_key(&AnyNode::ValueType(second)),
             ValueType::Thunk(body) => self.placed.contains_key(&AnyNode::CompType(body)),
-            ValueType::Lift { inner, .. } | ValueType::List(inner) => self.placed.contains_key(&AnyNode::ValueType(inner)),
+            ValueType::Lift { inner, .. } | ValueType::List(inner) | ValueType::Staged { base: inner, .. } => self.placed.contains_key(&AnyNode::ValueType(inner)),
             ValueType::Element { code, .. } => self.placed.contains_key(&AnyNode::Value(code)),
         },
         captures: entry_len = record.0.len(),
@@ -1460,6 +1503,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Abstract(..) => gandr_kernel_term::NODE_VT_ABSTRACT,
             ValueType::StaticPi { .. } => gandr_kernel_term::NODE_VT_STATIC_PI,
             ValueType::Sigma { .. } => gandr_kernel_term::NODE_VT_SIGMA,
+            ValueType::Staged { .. } => record_staged(),
         }))
     )]
     fn put_value_type(
@@ -1555,7 +1599,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     | ValueType::Lift { .. }
                     | ValueType::Element { .. }
                     | ValueType::Abstract(_)
-                    | ValueType::StaticPi { .. } => gandr_kernel_term::NODE_VT_SUM,
+                    | ValueType::StaticPi { .. }
+                    | ValueType::Staged { .. } => gandr_kernel_term::NODE_VT_SUM,
                 });
                 record.put_count(ComponentCount(parts.len()));
                 for part in parts {
@@ -1601,6 +1646,24 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_tag(gandr_kernel_term::NODE_VT_SIGMA);
                 record.put_content(self.content_of(AnyNode::ValueType(first)));
                 record.put_content(self.content_of(AnyNode::ValueType(second)));
+            },
+            // A stage is part of a type's identity within the judgement that
+            // minted it: `A^s` and `A` are different goals' types, and so are
+            // `A` at two stages.
+            ValueType::Staged { base, stage } => {
+                record.put_tag(record_staged());
+                record.put_content(self.content_of(AnyNode::ValueType(base)));
+                match stage {
+                    gandr_kernel_term::Stage::At(exact) => {
+                        record.put_tag(stage_exact());
+                        record.put_count(ComponentCount(usize::from(exact)));
+                    },
+                    gandr_kernel_term::Stage::Below { anchor, depth } => {
+                        record.put_tag(stage_bound());
+                        record.put_count(ComponentCount(usize::from(anchor)));
+                        record.put_word(EncodedWord(u64::from(u32::from(depth))));
+                    },
+                }
             },
         }
     }
@@ -1747,7 +1810,7 @@ None => opened.eq((core::iter::empty()).map(Some)),
 ValueType::Data {ref arguments,..} => opened.eq((arguments.iter().copied().map(AnyNode::Value)).map(Some)),
 ValueType::Record(ref fields) => opened.eq((fields.values().copied().map(AnyNode::ValueType)).map(Some)),
 ValueType::Base(_) | ValueType::Universe {..} | ValueType::Abstract(_) => opened.eq((core::iter::empty()).map(Some)),
-ValueType::Session {payloads: inner,..} | ValueType::List(inner) | ValueType::Lift {inner,..} => opened.eq((core::iter::once(AnyNode::ValueType(inner))).map(Some)),
+ValueType::Session {payloads: inner,..} | ValueType::List(inner) | ValueType::Lift {inner,..} | ValueType::Staged {base: inner,..} => opened.eq((core::iter::once(AnyNode::ValueType(inner))).map(Some)),
 ValueType::PathUniverse(a,b) | ValueType::FlowUniverse(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
 ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => opened.eq(([AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)].into_iter()).map(Some)),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => opened.eq((parts.iter().copied().map(AnyNode::ValueType)).map(Some)),
@@ -2103,7 +2166,8 @@ fn push_children(
                     payloads: inner, ..
                 }
                 | &ValueType::Lift { inner, .. }
-                | &ValueType::List(inner),
+                | &ValueType::List(inner)
+                | &ValueType::Staged { base: inner, .. },
             ) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(inner)));
             },
@@ -2891,6 +2955,50 @@ mod tests
                 &[]
             ),
             "A x B and B x A are different types and must be different keys"
+        );
+    }
+
+    /// Trap set — **a stage is identity within a judgement**. A recursion's
+    /// goals at `A`, at `A^ι` and at `A^{<ι}` are different questions, so a
+    /// memo keyed on content never answers one with another's verdict; two
+    /// mints of one stage over one base are one key.
+    #[test]
+    fn a_stage_is_part_of_a_type_s_content()
+    {
+        let mut arena = TermArena::new();
+        let base = arena.value_type_base(BaseType::Integer);
+        let root = gandr_kernel_term::StageId::from(0_usize);
+        let other = gandr_kernel_term::StageId::from(1_usize);
+        let at = gandr_kernel_term::Stage::At(root);
+        let below = gandr_kernel_term::Stage::Below {
+            anchor: root,
+            depth: gandr_kernel_term::StageDepth::ONE,
+        };
+        let types = [
+            base,
+            arena.value_type_staged(base, at),
+            arena.value_type_staged(base, below),
+            arena.value_type_staged(base, gandr_kernel_term::Stage::At(other)),
+            arena.value_type_staged(base, gandr_kernel_term::Stage::Below {
+                anchor: root,
+                depth: gandr_kernel_term::StageDepth::ONE.deeper(),
+            }),
+        ];
+        let again = arena.value_type_staged(base, at);
+        let mut table = ContentTable::new();
+        let keys: alloc::vec::Vec<_> = types
+            .iter()
+            .map(|&id| encode_support(&mut table, &arena, SupportGoal::ValueTypeLevel(id), &[]))
+            .collect();
+        for (index, key) in keys.iter().enumerate() {
+            for later in keys.iter().skip(index.saturating_add(1)) {
+                assert_ne!(key, later, "two stages, or a stage and none, are two keys");
+            }
+        }
+        assert_eq!(
+            encode_support(&mut table, &arena, SupportGoal::ValueTypeLevel(again), &[]),
+            keys[1],
+            "one stage over one base is one key"
         );
     }
 

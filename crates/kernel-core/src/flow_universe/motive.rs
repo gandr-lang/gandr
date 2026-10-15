@@ -175,7 +175,9 @@ fn walk(
                     ValueType::Record(ref fields) => {
                         pending.extend(fields.values().map(|&field| Visit::Type(field, sign, at)));
                     },
-                    ValueType::List(inner) | ValueType::Lift { inner, .. } => {
+                    ValueType::List(inner)
+                    | ValueType::Lift { inner, .. }
+                    | ValueType::Staged { base: inner, .. } => {
                         pending.push(Visit::Type(inner, sign, at));
                     },
                     ValueType::Thunk(body) => pending.push(Visit::Comp(body, sign, at)),

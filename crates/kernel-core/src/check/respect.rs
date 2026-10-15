@@ -128,8 +128,8 @@ pub(super) enum Reading
 /// its type's rules.
 ///
 /// # Specification
-/// - requires: `body` is the body of the fixpoint `fixpoint`, whose
-///   structural-descent claim replayed at `expected`.
+/// - requires: `body` is the body of the fixpoint `fixpoint`, whose structural
+///   evidence stages its first parameter at `expected`.
 /// - ensures: the case under the body's lambda beside [`Reading::Fold`] naming
 ///   the fixpoint and the domain of `expected`, read as its words where it is a
 ///   path at a looped point ([`Presentations::identified`]), when that case's

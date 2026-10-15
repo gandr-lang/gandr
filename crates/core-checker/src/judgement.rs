@@ -461,11 +461,13 @@ use gandr_core_term::shift_value;
 use gandr_core_term::shift_value_type;
 use gandr_core_term::shift_value_type_under;
 use gandr_core_term::strengthen_comp_type;
+use gandr_kernel_core::stage_order::Fit;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::StagedPosition;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::Atom;
@@ -1211,6 +1213,9 @@ enum Frame
         /// How the case is read against its type's rules, when the type has
         /// any.
         respect: Maybe<crate::respect::Reading, crate::respect::obligation::Absent>,
+        /// The stage the case opened for its recursive fields, when its
+        /// scrutinee stood at one.
+        opened: Maybe<gandr_kernel_term::StageId, crate::recursion::Unstaged>,
     },
     /// Show a case over a presented type respects the type's rules, once its
     /// branches have checked.
@@ -4122,9 +4127,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   type, its computation checks against the thunk's body and it is
     ///   recorded suspended, and against any other it runs: its computation
     ///   synthesises a returner whose result crosses the value bridge to
-    ///   `expected`, and it is recorded run; a synthesising value synthesises,
-    ///   then crosses the value bridge to `expected`. Every other rule
-    ///   descends.
+    ///   `expected`, and it is recorded run; a constructor checked at a staged
+    ///   type checks as [`Self::staged_constructor`] does; a synthesising value
+    ///   synthesises, then crosses the value bridge to `expected`. Every other
+    ///   rule descends.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a thunk against no thunk
     ///   type, a pair against no eager product or dependent pair, a pair of
     ///   other than two components against a dependent pair, a static lambda
@@ -4155,6 +4161,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
         expected: ValueTypeId,
     ) -> Result<Step, CheckRefusal>
     {
+        // A constructor checked at a stage stands above its recursive fields.
+        if matches!(*self.value(term)?, Value::Constructor { .. })
+            && let Maybe::Present(owed) =
+                crate::recursion::constructor_owes(self.context, expected)?
+        {
+            return self.staged_constructor(term, expected, owed);
+        }
         match *self.value(term)? {
             Value::Record(_) => self.check_native_record(term, expected),
             Value::Reify(_) => {
@@ -4854,13 +4867,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   checks its body against `expected` shifted past its binder; a hole and
     ///   a mark check against any type at once; a fixpoint opens a binder of `U
     ///   expected` and checks its body against `expected` shifted past it,
-    ///   after its structural-descent claim, when it makes one, replays; a
-    ///   synthesising computation synthesises, then crosses the computation
-    ///   bridge to `expected`.
-    /// - fails: [`CheckRefusal::ShapeMismatch`] for a lambda against no arrow
-    ///   or a return against no returner; [`CheckRefusal::OutOfFragment`] for a
-    ///   case; [`CheckRefusal::DescentNotReplayed`] for a descent claim the
-    ///   walk refuses.
+    ///   except that a structural one opens its stage
+    ///   ([`crate::recursion::open_fixpoint`]): the self binder takes the
+    ///   recursed-on parameter below the stage and the body takes it at the
+    ///   stage; a synthesising computation synthesises, then crosses the
+    ///   computation bridge to `expected`.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] for a lambda against no arrow,
+    ///   a return against no returner, or a structural fixpoint against a type
+    ///   with no arrow to recurse on; [`CheckRefusal::OutOfFragment`] for a
+    ///   case.
     ///
     /// # Judgement
     /// - expected: `expected`
@@ -4874,7 +4889,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
     /// - witness: `recursive_data::recursive_data::a_fixpoint_checks_at_every_computation_type`
-    /// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
+    /// - witness: `recursion::tests::a_recursion_descends_on_its_first_parameter`
     #[spec(
         captures: before = self.frames.len(),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len() >= before)
@@ -4931,16 +4946,31 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             Computation::Fixpoint { body, evidence } => {
-                match evidence {
-                    FixpointEvidence::StructuralDescent => {
-                        crate::descent::replay(self.context, term, expected, body)?;
-                        self.root = self.fold_root(term, expected, body)?;
+                let position = match evidence {
+                    FixpointEvidence::Partial => None,
+                    FixpointEvidence::StructuralDescent => Some(StagedPosition::default()),
+                    FixpointEvidence::Staged { position } => Some(position),
+                };
+                let (own, inside) = match position {
+                    None => (expected, expected),
+                    Some(position) => {
+                        if usize::from(position) == 0 {
+                            self.root = self.fold_root(term, expected, body)?;
+                        }
+                        match crate::recursion::open_fixpoint(
+                            self.context,
+                            term,
+                            expected,
+                            position,
+                        )? {
+                            Maybe::Present(opened) => (opened.own, opened.inside),
+                            Maybe::Absent(_unknown) => (expected, expected),
+                        }
                     },
-                    FixpointEvidence::Partial => {},
-                }
+                };
                 let arena = self.context.arena_mut();
-                let recursive = arena.value_type_thunk(expected);
-                let scoped = shift_comp_type(arena, expected, Binders::from(1_u32));
+                let recursive = arena.value_type_thunk(own);
+                let scoped = shift_comp_type(arena, inside, Binders::from(1_u32));
                 self.context.binders().open(Zone::Intuitionistic, recursive);
                 self.wait(Frame::LambdaBody);
                 Ok(Step::Descend(Goal::Computation {
@@ -5494,7 +5524,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   [`UnadmittedFormer::TopUniverse`]; [`CheckRefusal::NotAnAbstractType`]
     ///   for a sealed atom no admitted abstract type declares;
     ///   [`CheckRefusal::CapabilityConsumable`] for a consumable capability,
-    ///   whose linear zone no former binds into.
+    ///   whose linear zone no former binds into;
+    ///   [`CheckRefusal::OutOfFragment`] naming [`UnadmittedFormer::Stage`] for
+    ///   a staged type whose stage this judgement did not mint.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -5581,6 +5613,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::Checked))
             },
             ValueTypeView::List(element) => Ok(Step::Descend(Goal::Form(TypeNode::Value(element)))),
+            ValueTypeView::Staged { base, stage } => {
+                // A stage is in scope where this judgement minted it: an order
+                // fits a stage within itself exactly when it minted it.
+                if self.context.stages().fit(stage, stage) == Fit::NotBelow {
+                    return Err(CheckRefusal::OutOfFragment {
+                        at: CoreNode::Type(TypeNode::Value(at)),
+                        former: UnadmittedFormer::Stage,
+                    });
+                }
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(base))))
+            },
             ValueTypeView::Thunk(body) => {
                 Ok(Step::Descend(Goal::Form(TypeNode::Computation(body))))
             },
@@ -5929,6 +5972,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Product(..)
                 | ValueTypeView::Sigma { .. }
                 | ValueTypeView::Abstract(_)
+                | ValueTypeView::Staged { .. }
                 | ValueTypeView::Session(_) => {
                     return Err(CheckRefusal::StaticClassifierExpected {
                         at,
@@ -5997,6 +6041,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Sigma { .. }
                 | ValueTypeView::StaticPi { .. }
                 | ValueTypeView::Abstract(_)
+                | ValueTypeView::Staged { .. }
                 | ValueTypeView::Session(_)
                 | ValueTypeView::Unknown => return Err(CheckRefusal::MachineInvariant),
             },
@@ -6217,9 +6262,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     term,
                     datatype,
                     respect,
+                    opened,
                 },
                 Produced::Checked,
-            ) => self.native_branches(term, datatype, respect),
+            ) => self.native_branches(term, datatype, respect, opened),
             (
                 Frame::NativeRespect {
                     term,
@@ -7304,7 +7350,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::IndexOccurrence(_)
                     | CheckRefusal::NonUniformOccurrence(_)
                     | CheckRefusal::CrossBlockReference { .. }
-                    | CheckRefusal::DescentNotReplayed { .. }
+                    | CheckRefusal::StageNotBelow { .. }
                     | CheckRefusal::SessionMismatch { .. }
                     | CheckRefusal::Linearity { .. }
                     | CheckRefusal::UnenclosedRun { .. }
@@ -7644,6 +7690,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::StaticPi { .. }
             | ValueTypeView::Sigma { .. }
             | ValueTypeView::Abstract(_)
+            | ValueTypeView::Staged { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_) => Err(CheckRefusal::ShapeMismatch {
                 at,

@@ -3629,10 +3629,13 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
 ///
 /// # Specification
 /// - requires: the cursor is positioned at a fixpoint's evidence byte.
-/// - ensures: on `Ok`, returns the claim the tag named and advances past it.
+/// - ensures: on `Ok`, returns the claim the tag named and advances past it; a
+///   staged claim also reads its position, a varint, and advances past it.
 /// - provides: the evidence alphabet's one interpretation site.
-/// - fails: [`DecodeError::Truncated`] at the end of the image;
-///   [`DecodeError::UnknownTag`] at the evidence site on any other byte.
+/// - fails: [`DecodeError::Truncated`] at the end of the image, or within a
+///   staged claim's position; [`DecodeError::UnknownTag`] at the evidence site
+///   on any other byte; the varint's refusal for a position past the platform's
+///   width.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3640,11 +3643,17 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
 ///   exact value or named refusal, with empty-input truncation and
 ///   consumed-offset checks.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
+/// - witness: `decode::tests::a_staged_claim_reads_its_position`
 #[spec(
     captures: start = reader.position,
     ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
-        reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
-            && match byte { Some(0) => ret.as_ref() == Ok(&crate::FixpointEvidence::Partial), Some(1) => ret.as_ref() == Ok(&crate::FixpointEvidence::StructuralDescent), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::FixpointEvidence, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
+        match byte {
+            Some(2) => reader.position.0 > start.0 && (ret.is_err() || matches!(ret, Ok(crate::FixpointEvidence::Staged { .. }))),
+            Some(0) => reader.position.0 == start.0.saturating_add(1) && ret.as_ref() == Ok(&crate::FixpointEvidence::Partial),
+            Some(1) => reader.position.0 == start.0.saturating_add(1) && ret.as_ref() == Ok(&crate::FixpointEvidence::StructuralDescent),
+            Some(other) => reader.position.0 == start.0.saturating_add(1) && ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::FixpointEvidence, tag: WireTag::from(other) }),
+            None => reader.position.0 == start.0 && ret.as_ref() == Err(&DecodeError::Truncated),
+        } },
 )]
 #[inline]
 fn decode_evidence(reader: &mut ByteReader<'_>) -> Result<crate::FixpointEvidence, DecodeError>
@@ -3653,6 +3662,9 @@ fn decode_evidence(reader: &mut ByteReader<'_>) -> Result<crate::FixpointEvidenc
     match tag {
         tags::FIXPOINT_PARTIAL => Ok(crate::FixpointEvidence::Partial),
         tags::FIXPOINT_STRUCTURAL_DESCENT => Ok(crate::FixpointEvidence::StructuralDescent),
+        tags::FIXPOINT_STAGED => Ok(crate::FixpointEvidence::Staged {
+            position: crate::StagedPosition::from(usize::from(reader.read_usize()?)),
+        }),
         other => Err(DecodeError::UnknownTag {
             site: TagSite::FixpointEvidence,
             tag: other,
@@ -4127,13 +4139,19 @@ mod tests
             assert_eq!(super::decode_base_type(&mut reader), base);
             assert_eq!(reader.position.0, 1);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
-            let evidence = match byte {
-                0 => Ok(crate::FixpointEvidence::Partial),
-                1 => Ok(crate::FixpointEvidence::StructuralDescent),
-                _ => Err(unknown(super::TagSite::FixpointEvidence)),
+            let (evidence, consumed) = match byte {
+                0 => (Ok(crate::FixpointEvidence::Partial), 1),
+                1 => (Ok(crate::FixpointEvidence::StructuralDescent), 1),
+                2 => (
+                    Ok(crate::FixpointEvidence::Staged {
+                        position: crate::StagedPosition::from(0x55_usize),
+                    }),
+                    2,
+                ),
+                _ => (Err(unknown(super::TagSite::FixpointEvidence)), 1),
             };
             assert_eq!(super::decode_evidence(&mut reader), evidence);
-            assert_eq!(reader.position.0, 1);
+            assert_eq!(reader.position.0, consumed);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             let side = match byte {
                 0 => Ok(crate::Side::Left),
@@ -4213,6 +4231,31 @@ mod tests
             super::decode_literal(&mut ByteReader::new(image)),
             Err(DecodeError::Truncated)
         );
+    }
+
+    #[test]
+    fn a_staged_claim_reads_its_position()
+    {
+        let bytes = [2_u8, 0x81, 1, 0x55];
+        let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+        assert_eq!(
+            super::decode_evidence(&mut reader),
+            Ok(crate::FixpointEvidence::Staged {
+                position: crate::StagedPosition::from(129_usize),
+            })
+        );
+        assert_eq!(
+            reader.position.0, 3,
+            "the position's two bytes are consumed"
+        );
+        for cut in [1_usize, 2] {
+            let image = ArtifactImage::from(bytes.get(.. cut).expect("a prefix"));
+            assert_eq!(
+                super::decode_evidence(&mut ByteReader::new(image)),
+                Err(DecodeError::Truncated),
+                "a staged claim cut after {cut} bytes"
+            );
+        }
     }
 
     #[test]
@@ -5261,6 +5304,16 @@ mod tests
                 crate::term::Computation::Fixpoint {
                     body: c1,
                     evidence: crate::FixpointEvidence::StructuralDescent,
+                },
+                &[7],
+            ),
+            (
+                &[0x63, 2, 0x81, 1, 7],
+                crate::term::Computation::Fixpoint {
+                    body: c1,
+                    evidence: crate::FixpointEvidence::Staged {
+                        position: crate::StagedPosition::from(129_usize),
+                    },
                 },
                 &[7],
             ),

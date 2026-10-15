@@ -303,6 +303,7 @@ pub(crate) fn session_at(
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Abstract(_)
+        | ValueTypeView::Staged { .. }
         | ValueTypeView::Unknown => Err(CheckRefusal::MachineInvariant),
     }
 }
@@ -357,6 +358,7 @@ pub(crate) fn unrestricted(
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
+        | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::Unknown => declared,
@@ -386,6 +388,7 @@ pub(crate) fn unrestricted(
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
+        | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Unknown => Ok(()),
     }

@@ -1009,6 +1009,24 @@ fn converge(
                         }
                         stack.push(ConversionGoal::ValueType(one_inner, other_inner));
                     },
+                    // Invariantly a stage is only itself: the same stage over
+                    // convertible bases. Admission alone mints a stage, so the
+                    // pair is one judgement's and the ids compare.
+                    (
+                        &ValueType::Staged {
+                            base: one_base,
+                            stage: one_stage,
+                        },
+                        &ValueType::Staged {
+                            base: other_base,
+                            stage: other_stage,
+                        },
+                    ) => {
+                        if one_stage != other_stage {
+                            return Convertibility::Distinct;
+                        }
+                        stack.push(ConversionGoal::ValueType(one_base, other_base));
+                    },
                     (
                         &ValueType::Data { .. }
                         | &ValueType::Record(_)
@@ -1027,7 +1045,8 @@ fn converge(
                         | &ValueType::Abstract(_)
                         | &ValueType::Element { .. }
                         | &ValueType::Lift { .. }
-                        | &ValueType::StaticPi { .. },
+                        | &ValueType::StaticPi { .. }
+                        | &ValueType::Staged { .. },
                         _,
                     ) => return Convertibility::Distinct,
                 }

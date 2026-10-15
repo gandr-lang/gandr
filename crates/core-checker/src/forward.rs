@@ -380,6 +380,7 @@ fn first_order(
             | ValueTypeView::StaticPi { .. }
             | ValueTypeView::Sigma { .. }
             | ValueTypeView::Abstract(_)
+            | ValueTypeView::Staged { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
             | ValueTypeView::Unknown => return Err(CheckRefusal::ForwardUnsupported { at }),
@@ -462,6 +463,7 @@ fn leaves(
             | ValueTypeView::StaticPi { .. }
             | ValueTypeView::Sigma { .. }
             | ValueTypeView::Abstract(_)
+            | ValueTypeView::Staged { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
             | ValueTypeView::Unknown => return Err(CheckRefusal::ForwardUnsupported { at }),
@@ -572,6 +574,7 @@ fn natural(
             | ValueTypeView::StaticPi { .. }
             | ValueTypeView::Sigma { .. }
             | ValueTypeView::Abstract(_)
+            | ValueTypeView::Staged { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
             | ValueTypeView::Unknown => return Err(unsupported),

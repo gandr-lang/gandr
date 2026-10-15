@@ -1487,7 +1487,9 @@ enum Residence
 /// - ensures: the checker's side for an effect row, a stack and its literal, a
 ///   request, a handler, a resumption, a delimiter, a capture, a capability, an
 ///   exercise, a scope, a recorded run or ride, a flow at a universe above
-///   level zero and a memory form; the kernel's for every pure former.
+///   level zero and a memory form; the kernel's for every pure former, and for
+///   a recursion's stage, which no source writes and the checker never lets a
+///   declaration carry, so its refusal is the checker's fault.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1500,7 +1502,7 @@ enum Residence
 #[spec(ensures: |ret| (ret == Residence::Kernel) == matches!(former,
     UnadmittedFormer::ValueLift | UnadmittedFormer::NumericLiteral | UnadmittedFormer::NumericAtom
         | UnadmittedFormer::TypeLift | UnadmittedFormer::Abstract | UnadmittedFormer::SortParameter
-        | UnadmittedFormer::TopUniverse | UnadmittedFormer::StaticLambda))]
+        | UnadmittedFormer::TopUniverse | UnadmittedFormer::StaticLambda | UnadmittedFormer::Stage))]
 fn residence(former: UnadmittedFormer) -> Residence
 {
     match former {
@@ -1525,7 +1527,8 @@ fn residence(former: UnadmittedFormer) -> Residence
         | UnadmittedFormer::Abstract
         | UnadmittedFormer::SortParameter
         | UnadmittedFormer::TopUniverse
-        | UnadmittedFormer::StaticLambda => Residence::Kernel,
+        | UnadmittedFormer::StaticLambda
+        | UnadmittedFormer::Stage => Residence::Kernel,
     }
 }
 

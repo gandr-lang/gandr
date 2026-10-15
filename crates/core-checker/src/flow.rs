@@ -381,6 +381,7 @@ pub fn session_code(
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
+        | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::Unknown => elsewhere,
@@ -681,6 +682,7 @@ pub fn endpoints(
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
+        | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::Unknown => Err(CheckRefusal::ShapeMismatch {
@@ -859,7 +861,9 @@ pub fn covariant(
                         .iter()
                         .map(|&part| (Position::ValueType(part), polarity, depth)),
                 ),
-                ValueType::List(inner) | ValueType::Lift { inner, .. } => {
+                ValueType::List(inner)
+                | ValueType::Lift { inner, .. }
+                | ValueType::Staged { base: inner, .. } => {
                     work.push((Position::ValueType(inner), polarity, depth));
                 },
                 ValueType::Thunk(body) => work.push((Position::CompType(body), polarity, depth)),
@@ -1102,7 +1106,8 @@ fn computed(
             | ValueType::Unknown
             | ValueType::Stack { .. }
             | ValueType::Session(_)
-            | ValueType::Capability { .. } => return Err(unsupported),
+            | ValueType::Capability { .. }
+            | ValueType::Staged { .. } => return Err(unsupported),
         }
     }
     Ok(())
@@ -1242,6 +1247,7 @@ pub fn run_premises(
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
+        | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_) => {
             return Err(CheckRefusal::ShapeMismatch {

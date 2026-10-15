@@ -60,10 +60,10 @@ use quenchant_shape::shape::Maybe;
 
 use crate::locus::Action;
 use crate::locus::Captor;
-use crate::locus::Descent;
 use crate::locus::Former;
 use crate::locus::Shape;
 use crate::locus::Site;
+use crate::locus::Stood;
 
 /// A refusal's plain message.
 #[repr(transparent)]
@@ -737,8 +737,8 @@ fn checked(
             "the datatype's {} refers to a declaration written after it",
             Site(site)
         ),
-        CheckRefusal::DescentNotReplayed { reason, .. } => {
-            write!(f, "the recursion is not structural: {}", Descent(reason))
+        CheckRefusal::StageNotBelow { found, .. } => {
+            write!(f, "the recursion is not structural: {}", Stood(found))
         },
         CheckRefusal::SessionMismatch { defect, .. } => match defect {
             ProtocolDefect::Action { expected, observed } => write!(
@@ -864,9 +864,11 @@ mod tests
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
-    use gandr_kernel_term::DescentRefusal;
     use gandr_kernel_term::OccurrenceSite;
     use gandr_kernel_term::ParameterPosition;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageId;
+    use gandr_kernel_term::Standing;
     use gandr_surface_corpus::CorpusRefusal;
     use gandr_surface_corpus::ExpectationSchema;
     use gandr_surface_corpus::Refusal;
@@ -1192,9 +1194,10 @@ mod tests
                 site,
                 index: ConstantIndex::from(1_usize),
             },
-            CheckRefusal::DescentNotReplayed {
-                at: computation,
-                reason: DescentRefusal::NotOverData,
+            CheckRefusal::StageNotBelow {
+                at: value,
+                found: Standing::Top,
+                bound: Stage::At(StageId::from(0_usize)),
             },
             CheckRefusal::EndpointMismatch {
                 at: value,

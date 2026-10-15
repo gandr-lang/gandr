@@ -132,7 +132,8 @@ fn first_order(
             | &ValueType::Lift { .. }
             | &ValueType::Element { .. }
             | &ValueType::Abstract(_)
-            | &ValueType::StaticPi { .. } => return Err(FlowError::UnsupportedType(id)),
+            | &ValueType::StaticPi { .. }
+            | &ValueType::Staged { .. } => return Err(FlowError::UnsupportedType(id)),
         }
     }
     Ok(())
@@ -371,7 +372,8 @@ fn patterns(
                 | &ValueType::Lift { .. }
                 | &ValueType::Element { .. }
                 | &ValueType::Abstract(_)
-                | &ValueType::StaticPi { .. } => return Err(FlowError::UnsupportedType(id)),
+                | &ValueType::StaticPi { .. }
+                | &ValueType::Staged { .. } => return Err(FlowError::UnsupportedType(id)),
             },
             Cover::Sum(arity) => {
                 let start = results.len().checked_sub(arity).ok_or(FlowError::Arena)?;

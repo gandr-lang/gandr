@@ -81,6 +81,67 @@
 //! nothing but itself; the kernel admits the same declaration and seals it at
 //! the same place.
 //!
+//! # Recursion
+//!
+//! A structural fixpoint is typed by stages. The rule:
+//!
+//! - **A fixpoint opens a stage.** `fix f. λy₀ … λyₙ. M`, staged at position
+//!   `k`, checks `M` with `yₖ : A^ι` for a fresh stage `ι`, and binds `f` at
+//!   the same telescope with that parameter at `A^{<ι}`.
+//! - **A case opens one stage below its scrutinee's.** A case on a value at
+//!   `A^s` mints one child `s' < s`, and every arm binds its recursive fields
+//!   at `A^{s'}`.
+//! - **A constructor stands above its fields.** A constructor checked at `A^s`
+//!   owes each recursive field at `A^{<s}`; one with no recursive field owes a
+//!   value in scope at a stage within `s`, so a nullary constructor never
+//!   stands below the first stage.
+//! - **Subsumption is the order.** `A^r` stands where `A^s` is wanted when the
+//!   stage forest places `r` within `s`, and `A^s` stands where `A` is wanted;
+//!   a thunked arrow is contravariant in its domain and covariant in its
+//!   result, and every other position compares a stage as itself. A call whose
+//!   argument does not stand below the stage is refused as
+//!   [`CheckRefusal::StageNotBelow`], naming where the argument stood and the
+//!   bound.
+//!
+//! The kernel re-derives every stage from the case structure and the
+//! evidence's staged position, and no stage is carried on a node or crosses
+//! to the kernel: a stage in a term would change node identity, which stays
+//! free of sizes. A staged type the bridge meets is refused by name.
+//!
+//! **This is the solver-free fragment of sized types** (Barthe et al.'s
+//! stage-based termination): every stage is minted by a fixpoint or a case,
+//! none is chosen, and the order is a forest read off the term with no
+//! variables, no `∞` and no successor arithmetic to solve. Stage polymorphism,
+//! the solver and measures extend this core without a second format.
+//!
+//! **No global check, ever.** The guarantee is per definition: a definition's
+//! typing is self-contained, so its termination holds in every extension of
+//! the program and survives every consumer and every package added later —
+//! Guo, Hagens, Kop and Vale's *universal computability*, a function
+//! computable in every extension of its system on computable arguments. A
+//! trace condition over a whole program's call graph lacks it: adding a
+//! definition can break a guarantee already given. Every later rung of the
+//! recursion lane keeps this invariant.
+//!
+//! Three alternatives were weighed:
+//!
+//! - **The descent claim**, a syntactic walk over case fields that the kernel
+//!   replayed, gave the same verdicts over the corpus but recursed on the last
+//!   parameter only, refused an argument rebuilt below the stage and could not
+//!   recurse through a function such as `map`. Its walks are deleted; the
+//!   evidence byte it wrote is still read, as the stage typing at position 0.
+//!   Reversal: none — the stage rule admits every program the claim did.
+//! - **Carried stages**, a stage written on each call's argument type for the
+//!   kernel to compare, would make a stage part of a node's identity. Reversal:
+//!   stage polymorphism needs stage codes in terms, and the sized rung erases
+//!   them before the kernel reads a node.
+//! - **Sizes now**, full sized types with stage variables, `∞` and a constraint
+//!   solver, decide more than the corpus asks for and add a consistency gate.
+//!   Reversal: the sized rung, once a program needs a stage quantified over (a
+//!   helper typed at a stage) or a measure.
+//!
+//! The rules where they are applied are in the `recursion` module.
+//!
 //! # Dependent transport
 //!
 //! A transport whose motive depends on the path's endpoint is the telescope
@@ -326,6 +387,17 @@
 //!   Canonicity." _Mathematical Structures in Computer Science_ 25, 5 (2015).
 //!   `doi:10.1017/S0960129514000565` — diagrams built degree by degree, the
 //!   telescope [`ua`] derives `ua_n` through.
+//! - Gilles Barthe, Maria João Frade, Eduardo Giménez, Luís Pinto and Tarmo
+//!   Uustalu. "Type-based termination of recursive definitions." _Mathematical
+//!   Structures in Computer Science_ 14(1) (2004).
+//!   `doi:10.1017/S0960129503004122` — stages on inductive types, a fixpoint's
+//!   recursive calls typed at a smaller stage, and subtyping by the stage
+//!   order: the fragment [§ Recursion](#recursion) types without a solver.
+//! - Liye Guo, Kasper Hagens, Cynthia Kop and Deivid Vale. "Higher-Order
+//!   Constrained Dependency Pairs for (Universal) Computability." _49th
+//!   International Symposium on Mathematical Foundations of Computer Science
+//!   (MFCS 2024)_. `doi:10.4230/LIPIcs.MFCS.2024.57` — universal computability,
+//!   the per-definition guarantee the recursion core keeps.
 //!
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is stated in the documentation of the module it governs.
@@ -342,7 +414,6 @@ mod context;
 mod conversion;
 mod coverage;
 mod declaration;
-mod descent;
 pub mod eliminator;
 mod equiv;
 mod failure;
@@ -361,6 +432,7 @@ mod module;
 mod nested;
 mod occurrence;
 mod product;
+mod recursion;
 mod refusal;
 mod respect;
 mod seal;

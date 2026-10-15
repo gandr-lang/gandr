@@ -1776,8 +1776,9 @@ quenchant_shape::reason_enum! {
 ///   lowering kept for a typed pattern: one read as the pattern at that type,
 ///   one read as a constructor's name at the constructor's type, which takes
 ///   the fields to the family as a thunked function and is the family itself
-///   for a constructor of no field. A part whose place no rule above types, and
-///   every span inside it, answers nothing.
+///   for a constructor of no field. A scrutinee the recursion staged is read at
+///   the type its stage refines, as the surface writes no stage. A part whose
+///   place no rule above types, and every span inside it, answers nothing.
 /// - provides: the pattern half of [`TypeTable::of`].
 /// - fails: never; an untyped pattern answers nothing.
 /// - panics: none.
@@ -1785,7 +1786,8 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L3 — a word pattern's empty word, letter, cons and rest, a
 ///   data constructor pattern's name and field, in a declaration the run
-///   settled and in one it refused, are asserted at their types.
+///   settled and in one it refused, and a constructor pattern on a staged
+///   scrutinee, are asserted at their types.
 /// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match`
 #[spec(ensures: |ret| ret.iter().all(|&(_, ty, _)| arena.value_type(ty).is_some()))]
 fn matched(
@@ -1809,6 +1811,12 @@ fn matched(
         let Some(&Scrutinised { ty, within }) = scrutinised.get(&case.scrutinee)
         else {
             continue;
+        };
+        // A recursion's stage refines its scrutinee's type without renaming
+        // the family, whose constructors the patterns name.
+        let ty = match arena.value_type(ty) {
+            Some(&ValueType::Staged { base, .. }) => base,
+            Some(_) | None => ty,
         };
         if matches!(arena.value_type(ty), None | Some(&ValueType::Unknown)) {
             continue;

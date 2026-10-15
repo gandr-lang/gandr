@@ -602,6 +602,7 @@ fn first_order(
             | ValueTypeView::StaticPi { .. }
             | ValueTypeView::Sigma { .. }
             | ValueTypeView::Abstract(_)
+            | ValueTypeView::Staged { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
             | ValueTypeView::Unknown => return Ok(Maybe::Absent(outside::Absent::Former)),
@@ -735,6 +736,7 @@ fn coverage(
                     | ValueTypeView::StaticPi { .. }
                     | ValueTypeView::Sigma { .. }
                     | ValueTypeView::Abstract(_)
+                    | ValueTypeView::Staged { .. }
                     | ValueTypeView::Capability { .. }
                     | ValueTypeView::Session(_)
                     | ValueTypeView::Unknown => return Ok(Maybe::Absent(outside::Absent::Former)),

@@ -160,7 +160,7 @@ pub struct Unfolded(pub u64);
                     ValueType::Capability { ref authority, .. } => 1_u64.checked_add(u64::try_from(authority.types().count()).expect("walkable authority arity")).expect("walkable authority arity"),
                     ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::StaticPi { .. } | ValueType::Sigma { .. } => 3,
                     ValueType::Path { .. } | ValueType::Flow { .. } => 4,
-                    ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) => 2,
+                    ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Staged { .. } => 2,
                 }
             },
             CoreNode::CompType(id) => {
@@ -510,7 +510,9 @@ pub fn unfolded(
                         pending.push(CoreNode::ValueType(second));
                     },
                     ValueType::Thunk(body) => pending.push(CoreNode::CompType(body)),
-                    ValueType::List(inner) | ValueType::Lift { inner, .. } => {
+                    ValueType::List(inner)
+                    | ValueType::Lift { inner, .. }
+                    | ValueType::Staged { base: inner, .. } => {
                         pending.push(CoreNode::ValueType(inner));
                     },
                     ValueType::Element { code, .. } => pending.push(CoreNode::Value(code)),

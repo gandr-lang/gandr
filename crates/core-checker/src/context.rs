@@ -336,6 +336,9 @@ pub struct CheckingContext<'arena>
     /// The types whose formations a recording keeps, and which of them it
     /// has kept.
     formations: Wanted,
+    /// The stages the recursion typing minted since the declaration under way
+    /// began.
+    stages: gandr_kernel_core::stage_order::StageOrder,
 }
 
 /// Whether a typed run is recording the judgements it holds as they finish.
@@ -458,6 +461,7 @@ impl<'arena> CheckingContext<'arena>
             grants: crate::capability::Grants::Unbounded,
             typings: None,
             formations: Wanted::All,
+            stages: gandr_kernel_core::stage_order::StageOrder::default(),
         }
     }
 
@@ -1982,6 +1986,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::Sigma { .. }
                 | ValueTypeView::StaticPi { .. }
                 | ValueTypeView::Session(_)
+                | ValueTypeView::Staged { .. }
                 | ValueTypeView::Unknown => return Ok(head),
             };
             let Maybe::Present(body) = self.unfold(code)?
@@ -2284,6 +2289,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::StaticPi { .. }
                     | ValueTypeView::Abstract(_)
                     | ValueTypeView::Session(_)
+                    | ValueTypeView::Staged { .. }
                     | ValueTypeView::Unknown => Ok(otherwise.clone()),
                 },
                 Maybe::Absent(_) => Ok(otherwise.clone()),
@@ -2343,6 +2349,60 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub(crate) const fn binders(&mut self) -> &mut Context
     {
         &mut self.binders
+    }
+
+    /// The stages the recursion typing minted since the declaration under way
+    /// began.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn stages(&self) -> &gandr_kernel_core::stage_order::StageOrder
+    {
+        &self.stages
+    }
+
+    /// The stages the recursion typing minted, to mint more.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn stages_mut(&mut self) -> &mut gandr_kernel_core::stage_order::StageOrder
+    {
+        &mut self.stages
+    }
+
+    /// Forget every stage minted: a declaration's stages are its own, so the
+    /// stages a refusal names do not depend on the declarations before it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn forget_stages(&mut self)
+    {
+        self.stages = gandr_kernel_core::stage_order::StageOrder::default();
+    }
+
+    /// The type of the intuitionistic hypothesis `index` binders out.
+    ///
+    /// # Specification
+    /// - ensures: the declared type of that binder, as the context holds it.
+    /// - fails: [`CheckRefusal::MachineInvariant`] for an index past the depth.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — read through the room rule, whose witnesses separate
+    ///   a hypothesis at a stage from one past it.
+    /// - witness: `recursion::tests::a_nullary_argument_needs_a_value_below_the_stage`
+    #[spec(ensures: |ret| ret.is_ok() == usize::try_from(u32::from(index)).is_ok_and(|at| at < usize::from(self.depth(Zone::Intuitionistic))))]
+    pub(crate) fn hypothesis(
+        &self,
+        index: gandr_kernel_term::DeBruijnIndex,
+    ) -> Result<ValueTypeId, CheckRefusal>
+    {
+        self.binders
+            .declared(Zone::Intuitionistic, index)
+            .map_err(|_unbound| CheckRefusal::MachineInvariant)
     }
 
     /// The type a leaf rule synthesises.

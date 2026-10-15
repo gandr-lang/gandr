@@ -381,6 +381,11 @@ fn worst(
                     };
                     pending.push((AnyNode::CompType(body), inner));
                 },
+                // A stage refines its base's values and never its shape: the
+                // base stands where the staged type does.
+                Some(&ValueType::Staged { base, .. }) => {
+                    pending.push((AnyNode::ValueType(base), reach));
+                },
                 Some(&(ValueType::Base(_) | ValueType::Universe { .. })) | None => {},
             },
             AnyNode::CompType(id) => match arena.comp_type(id) {

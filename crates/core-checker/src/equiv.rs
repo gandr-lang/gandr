@@ -495,6 +495,7 @@ pub fn coverage(
                     | ValueTypeView::StaticPi { .. }
                     | ValueTypeView::Sigma { .. }
                     | ValueTypeView::Abstract(_)
+                    | ValueTypeView::Staged { .. }
                     | ValueTypeView::Capability { .. }
                     | ValueTypeView::Session(_)
                     | ValueTypeView::Unknown => {

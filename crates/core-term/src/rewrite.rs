@@ -1125,7 +1125,7 @@ ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } | ValueType::Flow { .. } => 3,
-ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) => 1,
+ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Staged { .. } => 1,
 }),
         | Node::CompType(id) => match self.arena.comp_type(id) {
             | None | Some(&CompType::Unknown) => 0_usize,
@@ -1520,7 +1520,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                             self.tasks.push(open(Node::CompType(output), depth));
                             self.tasks.push(open(Node::CompType(input), depth));
                         },
-                        ValueType::List(element) => {
+                        ValueType::List(element) | ValueType::Staged { base: element, .. } => {
                             self.tasks.push(open(Node::ValueType(element), depth));
                         },
                         ValueType::Data { ref arguments, .. } => self.tasks.extend(
@@ -2833,7 +2833,7 @@ ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } | ValueType::Flow { .. } => 3,
-ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) => 1,
+ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Staged { .. } => 1,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.value_type(id).is_some_and(|original| self.arena.value_type(ret).is_some_and(|rewritten|
@@ -2902,6 +2902,15 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 }
                 else {
                     self.arena.value_type_list(rewritten)
+                }
+            },
+            ValueType::Staged { base, stage } => {
+                let rewritten = Self::value_type(&mut self.results, base);
+                if rewritten == base {
+                    id
+                }
+                else {
+                    self.arena.value_type_staged(rewritten, stage)
                 }
             },
             ValueType::PathUniverse(source, target) => {
@@ -4898,7 +4907,7 @@ mod tests
             Some(&ValueType::Stack { .. } | &ValueType::List(_) | &ValueType::Data { .. } | &ValueType::Record(_) |
 &ValueType::Sum(..) | &ValueType::PathUniverse(..) | &ValueType::Path { .. } | &ValueType::Universe { ..
 } | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi { .. } | &ValueType::Sigma {
-.. } | &ValueType::Capability { .. } | &ValueType::Unknown | &ValueType::Session(_) | &ValueType::Flow { .. } | &ValueType::Run(_)) | None => Token::Other,
+.. } | &ValueType::Capability { .. } | &ValueType::Unknown | &ValueType::Session(_) | &ValueType::Flow { .. } | &ValueType::Run(_) | &ValueType::Staged { .. }) | None => Token::Other,
             },
         | Visit::Value(id) => match arena.value(id) {
             | Some(&Value::Variable { index, .. }) => Token::Variable(u32::from(index)),

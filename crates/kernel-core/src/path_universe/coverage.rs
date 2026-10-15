@@ -111,7 +111,8 @@ pub(super) fn code(
             | &ValueType::Lift { .. }
             | &ValueType::Element { .. }
             | &ValueType::Abstract(_)
-            | &ValueType::StaticPi { .. } => return Err(PathError::UnsupportedType(id)),
+            | &ValueType::StaticPi { .. }
+            | &ValueType::Staged { .. } => return Err(PathError::UnsupportedType(id)),
         }
     }
     Ok(root)
@@ -219,7 +220,8 @@ fn patterns(
                     | &ValueType::Lift { .. }
                     | &ValueType::Element { .. }
                     | &ValueType::Abstract(_)
-                    | &ValueType::StaticPi { .. } => return Err(PathError::UnsupportedType(id)),
+                    | &ValueType::StaticPi { .. }
+                    | &ValueType::Staged { .. } => return Err(PathError::UnsupportedType(id)),
                 }
             },
             Cover::Sum(arity) => {

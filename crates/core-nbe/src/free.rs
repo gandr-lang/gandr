@@ -1274,7 +1274,9 @@ Err(_) => false,
                         Reached::CompType(output),
                         Lowering::NONE,
                     ),
-                    ValueType::List(element) => one(Reached::ValueType(element), Lowering::NONE),
+                    ValueType::List(element) | ValueType::Staged { base: element, .. } => {
+                        one(Reached::ValueType(element), Lowering::NONE)
+                    },
                     ValueType::PathUniverse(source, target) => {
                         two(value(source), value(target), Lowering::NONE)
                     },

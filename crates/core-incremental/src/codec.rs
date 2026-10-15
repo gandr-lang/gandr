@@ -78,7 +78,6 @@ use gandr_kernel_strata::LevelVarIndex;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
-use gandr_kernel_term::DescentRefusal;
 use gandr_kernel_term::FieldPosition;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::FractionDigits;
@@ -91,6 +90,11 @@ use gandr_kernel_term::OccurrenceSite;
 use gandr_kernel_term::ParameterPosition;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
+use gandr_kernel_term::Stage;
+use gandr_kernel_term::StageDepth;
+use gandr_kernel_term::StageId;
+use gandr_kernel_term::StagedPosition;
+use gandr_kernel_term::Standing;
 use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::Summand;
 use quenchant_shape::shape::Maybe;
@@ -1802,7 +1806,7 @@ where
         },
         ContentNode::Fixpoint { body, evidence } => {
             writer.tag(Tag(0x19));
-            write_listed(writer, &EVIDENCES, &evidence)?;
+            write_evidence(writer, evidence)?;
             write_index(writer, body)?;
         },
         ContentNode::Base(base) => {
@@ -3575,7 +3579,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             ContentNode::ComputationMark { mark, body }
         },
         0x19 => {
-            let evidence = read_listed(reader, &EVIDENCES)?;
+            let evidence = read_evidence(reader)?;
             let body = read_index(reader)?;
             ContentNode::Fixpoint { body, evidence }
         },
@@ -4642,7 +4646,7 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in stable wire order.
-const FORMERS: [UnadmittedFormer; 22] = [
+const FORMERS: [UnadmittedFormer; 23] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::NumericAtom,
@@ -4665,6 +4669,7 @@ const FORMERS: [UnadmittedFormer; 22] = [
     UnadmittedFormer::Run,
     UnadmittedFormer::HigherFlow,
     UnadmittedFormer::Memory,
+    UnadmittedFormer::Stage,
 ];
 
 /// The shapes a rule can require, in stable wire order.
@@ -4709,20 +4714,210 @@ const CAPTURES: [Capture; 5] = [
     Capture::Continuation,
 ];
 
-/// The termination evidence a fixpoint carries, in stable wire order.
-const EVIDENCES: [FixpointEvidence; 2] = [
-    FixpointEvidence::Partial,
-    FixpointEvidence::StructuralDescent,
-];
+/// Write a fixpoint's termination evidence: a tag in stable wire order, a
+/// staged claim's position after it as a word.
+///
+/// # Specification
+/// - ensures: `Partial` writes tag 0, `StructuralDescent` tag 1, and `Staged`
+///   tag 2 then its position.
+/// - fails: [`CodecError::Unrepresentable`] for a position past 64 bits.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each evidence round-trips, the staged one with its
+///   position.
+/// - witness: `codec::tests::fixpoint_evidence_round_trips_with_its_staged_position`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(CodecError::Unrepresentable))]
+fn write_evidence<Out>(
+    writer: &mut Writer<'_, Out>,
+    evidence: FixpointEvidence,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match evidence {
+        FixpointEvidence::Partial => writer.tag(Tag(0)),
+        FixpointEvidence::StructuralDescent => writer.tag(Tag(1)),
+        FixpointEvidence::Staged { position } => {
+            let position = u64::try_from(usize::from(position))
+                .map_err(|_wide| CodecError::Unrepresentable)?;
+            writer.tag(Tag(2));
+            writer.word(Word(position));
+        },
+    }
+    Ok(())
+}
 
-/// The rules of the descent walk a claim fails, in stable wire order.
-const DESCENT_REFUSALS: [DescentRefusal; 5] = [
-    DescentRefusal::NotOverData,
-    DescentRefusal::NotCaseOnArgument,
-    DescentRefusal::BranchNotOverFields,
-    DescentRefusal::UnguardedSelfReference,
-    DescentRefusal::NonDescendingCall,
-];
+/// Read a fixpoint's termination evidence as [`write_evidence`] writes it.
+///
+/// # Specification
+/// - ensures: tags 0 and 1 read the partial and structural evidence, tag 2 a
+///   staged claim at the position after it.
+/// - fails: [`CodecError::Corrupt`] for another tag, a short input, or a
+///   position past the platform's width.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_evidence`], and a tag past 2 is corrupt.
+/// - witness: `codec::tests::fixpoint_evidence_round_trips_with_its_staged_position`
+#[spec(captures: before = reader.cursor, ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_evidence(reader: &mut Reader<'_>) -> Result<FixpointEvidence, CodecError>
+{
+    let tag = reader.tag()?;
+    match tag.0 {
+        0 => Ok(FixpointEvidence::Partial),
+        1 => Ok(FixpointEvidence::StructuralDescent),
+        2 => {
+            let word = reader.word()?;
+            let position = usize::try_from(word.0).map_err(|_wide| CodecError::Corrupt)?;
+            Ok(FixpointEvidence::Staged {
+                position: StagedPosition::from(position),
+            })
+        },
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write a stage a recursion refusal names: tag 0 and the stage's ordinal
+/// for a stage itself, tag 1, its anchor's ordinal and the steps below it
+/// for a bound.
+///
+/// # Specification
+/// - fails: [`CodecError::Unrepresentable`] for an ordinal past 64 bits.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a refusal at a stage and one at a bound round-trip.
+/// - witness: `codec::tests::a_stage_refusal_round_trips_with_where_it_stood`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(CodecError::Unrepresentable))]
+fn write_stage<Out>(
+    writer: &mut Writer<'_, Out>,
+    stage: Stage,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let ordinal =
+        |id: StageId| u64::try_from(usize::from(id)).map_err(|_wide| CodecError::Unrepresentable);
+    match stage {
+        Stage::At(id) => {
+            let id = ordinal(id)?;
+            writer.tag(Tag(0));
+            writer.word(Word(id));
+        },
+        Stage::Below { anchor, depth } => {
+            let anchor = ordinal(anchor)?;
+            writer.tag(Tag(1));
+            writer.word(Word(anchor));
+            writer.word(Word(u64::from(u32::from(depth))));
+        },
+    }
+    Ok(())
+}
+
+/// Read a stage as [`write_stage`] writes it.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for another tag, a short input, an ordinal
+///   past the platform's width, or a bound zero or more than 32 bits of steps
+///   below its anchor.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_stage`].
+/// - witness: `codec::tests::a_stage_refusal_round_trips_with_where_it_stood`
+#[spec(captures: before = reader.cursor, ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_stage(reader: &mut Reader<'_>) -> Result<Stage, CodecError>
+{
+    let tag = reader.tag()?;
+    let word = reader.word()?;
+    let id = usize::try_from(word.0).map_err(|_wide| CodecError::Corrupt)?;
+    let id = StageId::from(id);
+    match tag.0 {
+        0 => Ok(Stage::At(id)),
+        1 => {
+            let steps = reader.word()?;
+            let steps = u32::try_from(steps.0).map_err(|_wide| CodecError::Corrupt)?;
+            let depth = core::num::NonZeroU32::new(steps).ok_or(CodecError::Corrupt)?;
+            Ok(Stage::Below {
+                anchor: id,
+                depth: StageDepth::from(depth),
+            })
+        },
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write where a value stood in a stage order: tag 0 for the top, tag 1 and
+/// the stage otherwise.
+///
+/// # Specification
+/// - fails: as [`write_stage`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_stage`], and the top round-trips.
+/// - witness: `codec::tests::a_stage_refusal_round_trips_with_where_it_stood`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(CodecError::Unrepresentable))]
+fn write_standing<Out>(
+    writer: &mut Writer<'_, Out>,
+    standing: Standing,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match standing {
+        Standing::Top => {
+            writer.tag(Tag(0));
+            Ok(())
+        },
+        Standing::Staged(stage) => {
+            writer.tag(Tag(1));
+            write_stage(writer, stage)
+        },
+    }
+}
+
+/// Read where a value stood as [`write_standing`] writes it.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for another tag, and as [`read_stage`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_standing`].
+/// - witness: `codec::tests::a_stage_refusal_round_trips_with_where_it_stood`
+#[spec(captures: before = reader.cursor, ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_standing(reader: &mut Reader<'_>) -> Result<Standing, CodecError>
+{
+    let tag = reader.tag()?;
+    match tag.0 {
+        0 => Ok(Standing::Top),
+        1 => {
+            let stage = read_stage(reader)?;
+            Ok(Standing::Staged(stage))
+        },
+        _ => Err(CodecError::Corrupt),
+    }
+}
 
 /// The faults a presented type's rule is refused for, in stable wire order.
 const RULE_FAULTS: [gandr_kernel_term::RuleFault; 9] = [
@@ -5429,10 +5624,11 @@ where
             write_occurrence_site(writer, site)?;
             write_reference(writer, index)?;
         },
-        Refusal::DescentNotReplayed { at, reason } => {
-            writer.tag(Tag(33));
+        Refusal::StageNotBelow { at, found, bound } => {
+            writer.tag(Tag(77));
             write_site(writer, at)?;
-            write_listed(writer, &DESCENT_REFUSALS, &reason)?;
+            write_standing(writer, found)?;
+            write_stage(writer, bound)?;
         },
         Refusal::SessionMismatch {
             at,
@@ -5660,7 +5856,7 @@ where
                     | Refusal::IndexOccurrence(_) => 30,
                     | Refusal::NonUniformOccurrence(_) => 31,
                     | Refusal::CrossBlockReference { .. } => 32,
-                    | Refusal::DescentNotReplayed { .. } => 33,
+                    | Refusal::StageNotBelow { .. } => 77,
                     | Refusal::EffectSignatureConflict { .. } => 34,
                     | Refusal::UnknownOperation { .. } => 35,
                     | Refusal::HandlerCoverage { .. } => 36,
@@ -6051,10 +6247,11 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             let index = read_reference(reader)?;
             Refusal::CrossBlockReference { site, index }
         },
-        33 => {
+        77 => {
             let at = read_site(reader)?;
-            let reason = read_listed(reader, &DESCENT_REFUSALS)?;
-            Refusal::DescentNotReplayed { at, reason }
+            let found = read_standing(reader)?;
+            let bound = read_stage(reader)?;
+            Refusal::StageNotBelow { at, found, bound }
         },
         34 => Refusal::EffectSignatureConflict {
             at: read_site(reader)?,
@@ -6637,7 +6834,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::IndexOccurrence(_)
             | Refusal::NonUniformOccurrence(_)
             | Refusal::CrossBlockReference { .. }
-            | Refusal::DescentNotReplayed { .. }
+            | Refusal::StageNotBelow { .. }
             | Refusal::EffectSignatureConflict { .. }
             | Refusal::AbstractKindNotUniverse(_)
             | Refusal::NotAnAbstractType(_)
@@ -7659,6 +7856,88 @@ mod tests
             assert_eq!(super::read_refusal(&mut reader), Ok(refusal));
             assert_eq!(reader.finish(), Ok(()));
         }
+    }
+
+    #[test]
+    fn a_stage_refusal_round_trips_with_where_it_stood()
+    {
+        use gandr_kernel_term::Stage;
+        use gandr_kernel_term::StageDepth;
+        use gandr_kernel_term::StageId;
+        use gandr_kernel_term::Standing;
+        let at = Site::Node(NodeIndex::from(3_usize));
+        let root = StageId::from(0_usize);
+        let below = Stage::Below {
+            anchor: root,
+            depth: StageDepth::ONE,
+        };
+        let mut encodings = alloc::collections::BTreeSet::new();
+        for (found, bound) in [
+            (Standing::Top, below),
+            (Standing::Staged(Stage::At(root)), below),
+            (
+                Standing::Staged(Stage::At(StageId::from(1_usize))),
+                Stage::Below {
+                    anchor: root,
+                    depth: StageDepth::ONE.deeper(),
+                },
+            ),
+            (Standing::Staged(below), Stage::At(root)),
+        ] {
+            let refusal = Refusal::StageNotBelow { at, found, bound };
+            let mut bytes = CheckpointBytes::default();
+            super::write_refusal(&mut Writer { sink: &mut bytes }, &refusal)
+                .expect("portable refusal");
+            assert!(
+                encodings.insert(bytes.as_ref().to_vec()),
+                "each standing and bound keeps its own encoding"
+            );
+            let mut reader = Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0,
+            };
+            assert_eq!(super::read_refusal(&mut reader), Ok(refusal));
+            assert_eq!(reader.finish(), Ok(()));
+        }
+        // A bound zero steps below its anchor is no bound.
+        let mut zero = Reader {
+            bytes: &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            cursor: 0,
+        };
+        assert_eq!(super::read_stage(&mut zero), Err(CodecError::Corrupt));
+    }
+
+    #[test]
+    fn fixpoint_evidence_round_trips_with_its_staged_position()
+    {
+        use gandr_kernel_term::FixpointEvidence;
+        use gandr_kernel_term::StagedPosition;
+        for (evidence, expected) in [
+            (FixpointEvidence::Partial, vec![0_u8]),
+            (FixpointEvidence::StructuralDescent, vec![1]),
+            (
+                FixpointEvidence::Staged {
+                    position: StagedPosition::from(3_usize),
+                },
+                vec![2, 3, 0, 0, 0, 0, 0, 0, 0],
+            ),
+        ] {
+            let mut bytes = CheckpointBytes::default();
+            super::write_evidence(&mut Writer { sink: &mut bytes }, evidence)
+                .expect("evidence encodes");
+            assert_eq!(bytes.as_ref(), expected.as_slice(), "{evidence:?}");
+            let mut reader = Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0,
+            };
+            assert_eq!(super::read_evidence(&mut reader), Ok(evidence));
+            assert_eq!(reader.finish(), Ok(()));
+        }
+        let mut past = Reader {
+            bytes: &[3],
+            cursor: 0,
+        };
+        assert_eq!(super::read_evidence(&mut past), Err(CodecError::Corrupt));
     }
 
     #[test]

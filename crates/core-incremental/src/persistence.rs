@@ -1818,7 +1818,7 @@ mod tests
             Typing::Refused(Refusal::IndexOccurrence(_)) => "index-occurrence",
             Typing::Refused(Refusal::NonUniformOccurrence(_)) => "non-uniform-occurrence",
             Typing::Refused(Refusal::CrossBlockReference { .. }) => "cross-block-reference",
-            Typing::Refused(Refusal::DescentNotReplayed { .. }) => "descent-not-replayed",
+            Typing::Refused(Refusal::StageNotBelow { .. }) => "stage-not-below",
             Typing::Refused(Refusal::AbstractKindNotUniverse(_)) => "abstract-kind-not-universe",
             Typing::Refused(Refusal::RepresentationAboveKind { .. }) => "representation-above-kind",
             Typing::Refused(Refusal::NotAnAbstractType(_)) => "not-an-abstract-type",

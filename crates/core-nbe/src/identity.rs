@@ -268,7 +268,8 @@ pub fn clause(
             | ValueType::Sigma { .. }
             | ValueType::Session(_)
             | ValueType::Flow { .. }
-            | ValueType::Run(_) => Clause::Unclassified,
+            | ValueType::Run(_)
+            | ValueType::Staged { .. } => Clause::Unclassified,
         },
     )
 }

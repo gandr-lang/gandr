@@ -135,8 +135,11 @@
 //! `Computation::Fixpoint { body, evidence }` is `fix x. M`: its body stands
 //! under one intuitionistic binder, the self thunk, so binder rewrites, shifts
 //! and substitutions treat it as they treat a lambda. `FixpointEvidence` is the
-//! kernel's own, `Partial` or `StructuralDescent`; the arena records the claim
-//! and grants nothing, and syntax equality distinguishes the two claims.
+//! kernel's own — `Partial`, `StructuralDescent` (its first parameter staged)
+//! or `Staged { position }` — and the arena records the claim and grants
+//! nothing; syntax equality distinguishes the claims. `ValueType::Staged` is
+//! the type a checker's recursion core gives a staged parameter or field; two
+//! such types are syntactically equal at one stage over equal bases.
 //!
 //! # N-ary products and sums
 //!
@@ -996,6 +999,19 @@ pub enum ValueType
     /// A sealed abstract type: a nominal atom named by the admission position
     /// of the declaration that introduced it.
     Abstract(ConstantIndex),
+    /// `A^s`: the values of `base` at the stage `s` of a recursion, which only
+    /// the checker mints — at a fixpoint's staged parameter, its
+    /// self-reference's domain and the recursive fields of a case on a staged
+    /// value. A stage refines the type's values and never its identity: `A^s`
+    /// is used where `A` is wanted, and every other comparison takes it for
+    /// itself. The base is never itself staged.
+    Staged
+    {
+        /// The type the stage refines.
+        base: ValueTypeId,
+        /// The stage.
+        stage: gandr_kernel_term::Stage,
+    },
     /// The static Pi: the classifier of a type operator, taking an operand
     /// classified by the domain to a result classified by the codomain.
     /// Formation admits only static classifiers — universes and static Pis —
@@ -2249,6 +2265,18 @@ fn equal_syntax(
                         && (target == other)
                     {
                         pending.push(V(a, b));
+                    }
+                    else if let ValueType::Staged {
+                        base: a,
+                        stage: ref first,
+                    } = *matched_left_value
+                        && let ValueType::Staged {
+                            base: b,
+                            stage: ref second,
+                        } = *matched_right_value
+                        && (first == second)
+                    {
+                        pending.push(VT(a, b));
                     }
                     else if let ValueType::Session(ref a) = *matched_left_value
                         && let ValueType::Session(ref b) = *matched_right_value

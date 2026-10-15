@@ -663,9 +663,11 @@ fn decide(
         elaboration: Maybe::Absent(elaborated::Absent::Unnested),
     };
     let constant = declaration.constant();
-    // The pairs a declaration's conversions relate are its own: whatever an
-    // earlier declaration's typing pass left is dropped.
+    // The pairs a declaration's conversions relate, and the stages its
+    // recursion typing mints, are its own: whatever an earlier declaration's
+    // typing pass left is dropped.
     let _earlier = context.take_relating();
+    context.forget_stages();
     if let Err(refusal) = context.admit(constant) {
         return unrun(refusal);
     }
@@ -745,6 +747,7 @@ fn decide(
                             // The verdict is the second run's, and so are the
                             // pairs it relates.
                             let _first = context.take_relating();
+                            context.forget_stages();
                             judge(context, elaborated, direction)
                         },
                         Err(unenclosed) => Err(unenclosed_failure(unenclosed.run())),

@@ -77,6 +77,8 @@ pub enum ValueTypeHead
     Abstract,
     /// A static Pi, classifying type operators.
     StaticPi,
+    /// A type refined at a stage of a recursion.
+    Staged,
     /// The reference resolved to nothing.
     Unreadable,
 }
@@ -110,6 +112,7 @@ impl ValueTypeHead
             ValueType::Lift { .. } => Self::Lift,
             ValueType::Abstract(_) => Self::Abstract,
             ValueType::StaticPi { .. } => Self::StaticPi,
+            ValueType::Staged { .. } => Self::Staged,
         }
     }
 }
@@ -565,8 +568,21 @@ pub enum KernelError
     /// loop: carried along it, its answer at the loop's point does not convert
     /// with that answer.
     LoopNotRespected(gandr_kernel_term::CellIndex),
-    /// A fixpoint's structural-descent claim did not replay.
-    DescentNotReplayed(gandr_kernel_term::DescentRefusal),
+    /// A value checked where the recursion typing wants a stage it does not
+    /// stand at or below: a self-reference's argument not strictly below the
+    /// fixpoint's stage, or a constructor with no recursive field where no
+    /// value in scope shows a stage below the one wanted.
+    StageNotBelow
+    {
+        /// Where the value stands.
+        found: gandr_kernel_term::Standing,
+        /// The stage it was wanted at or below.
+        bound: gandr_kernel_term::Stage,
+    },
+    /// A presented type names a stage. Admission alone mints a stage, at a
+    /// structural fixpoint and a case under it; a declaration never writes
+    /// one.
+    StagePresented,
     /// A required record field is absent.
     AbsentRecordField
     {
@@ -845,9 +861,10 @@ impl core::fmt::Display for KernelError
             Self::LoopNotRespected(_) => {
                 f.write_str("a case over a looped sort was not shown to respect its loops")
             },
-            Self::DescentNotReplayed(_) => {
-                f.write_str("a fixpoint's structural-descent claim did not replay")
+            Self::StageNotBelow { .. } => {
+                f.write_str("a value did not stand below the stage its recursion wants")
             },
+            Self::StagePresented => f.write_str("a presented type named a stage"),
             Self::AbsentRecordField { .. } => f.write_str("a required record field was absent"),
             Self::AbsentTupleComponent { .. } => {
                 f.write_str("a tuple projection named a component the product does not have")

@@ -731,7 +731,8 @@ fn encode_sealing_provenance(
 ///   fit the index space.
 /// - ensures: assigns reachable nodes globals, appends newly completed content
 ///   in post-order first-completion order and returns the root’s memoized
-///   index; an already memoized root changes neither segment nor memo.
+///   index; an already memoized root changes neither segment nor memo; a staged
+///   value type takes its base's index and appends nothing.
 /// - provides: content-keyed sharing across segments, with captured counts
 ///   checking reuse and one appended entry per new content key without cloning
 ///   either map.
@@ -750,6 +751,7 @@ fn encode_sealing_provenance(
 ///   transitions; a shared encode/decode round trip is not an independent
 ///   format oracle.
 /// - witness: `encode::tests::interning_reuses_content_across_segments_without_losing_order`
+/// - witness: `encode::tests::a_staged_type_is_written_as_its_base`
 /// - witness: `sharing_format::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
 /// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
 #[spec(requires: match root { AnyNode::ValueType(id) => arena.value_type(id).is_some(), AnyNode::CompType(id) => arena.comp_type(id).is_some(), AnyNode::Value(id) => arena.value(id).is_some(), AnyNode::Computation(id) => arena.computation(id).is_some() },
@@ -793,6 +795,19 @@ fn intern(
             }
         }
         if descended {
+            continue;
+        }
+        // A stage is admission's alone: the wire holds the type it refines, so
+        // a staged node takes its base's index and writes no entry.
+        if let AnyNode::ValueType(id) = node
+            && let Some(&ValueType::Staged { base, .. }) = arena.value_type(id)
+        {
+            let global = interner
+                .by_node
+                .get(&AnyNode::ValueType(base))
+                .copied()
+                .unwrap_or_else(GlobalIndex::default);
+            let _prior = interner.by_node.insert(node, global);
             continue;
         }
         let child_globals: Vec<GlobalIndex> = children
@@ -853,7 +868,7 @@ fn intern(
 ///   family.
 /// - witness: `encode::tests::entry_goldens_pin_every_former_and_child_position`
 /// - witness: `encode::tests::stale_roots_violate_the_encoding_domain`
-#[spec(requires: match node { AnyNode::ValueType(id) => arena.value_type(id).is_some(), AnyNode::CompType(id) => arena.comp_type(id).is_some(), AnyNode::Value(id) => arena.value(id).is_some(), AnyNode::Computation(id) => arena.computation(id).is_some() },
+#[spec(requires: match node { AnyNode::ValueType(id) => arena.value_type(id).is_some_and(|value_type| !matches!(value_type, ValueType::Staged { .. })), AnyNode::CompType(id) => arena.comp_type(id).is_some(), AnyNode::Value(id) => arena.value(id).is_some(), AnyNode::Computation(id) => arena.computation(id).is_some() },
 ensures: |ret| ret.0.as_image().as_ref().first().copied()
     == Some(u8::from(match node {
         AnyNode::ValueType(id) => match arena.value_type(id) {
@@ -869,7 +884,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
                 tags::NODE_VT_COMPUTATION_UNIVERSE
             },
             Some(&ValueType::Abstract(_)) => tags::NODE_VT_ABSTRACT,
-            None | Some(&ValueType::Product(_)) => tags::NODE_VT_PRODUCT,
+            None | Some(&ValueType::Product(_) | &ValueType::Staged { .. }) => tags::NODE_VT_PRODUCT,
             Some(&ValueType::Sigma { .. }) => tags::NODE_VT_SIGMA,
             Some(&ValueType::Sum(..)) => tags::NODE_VT_SUM,
             Some(&ValueType::Session { .. }) => tags::NODE_VT_SESSION,
@@ -1019,6 +1034,12 @@ fn encode_entry(
                     encode_level(&mut out, target);
                 },
                 ValueType::StaticPi { .. } => out.put_tag(tags::NODE_VT_STATIC_PI),
+                // Outside the encoding domain, as an absent id is: interning
+                // writes a stage's base in its place.
+                ValueType::Staged { .. } => {
+                    out.put_tag(tags::NODE_VT_PRODUCT);
+                    out.put_uvarint(WireU64::from(WireUsize::from(0_usize)));
+                },
             },
         },
         AnyNode::CompType(id) => match arena.comp_type(id) {
@@ -1174,6 +1195,9 @@ fn encode_entry(
             Some(&Computation::Fixpoint { evidence, .. }) => {
                 out.put_tag(tags::NODE_C_FIXPOINT);
                 out.put_tag(evidence_tag(evidence));
+                if let crate::FixpointEvidence::Staged { position } = evidence {
+                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(position))));
+                }
             },
             Some(&Computation::Application(..)) => out.put_tag(tags::NODE_C_APPLICATION),
             Some(&Computation::Return(_)) | None => out.put_tag(tags::NODE_C_RETURN),
@@ -1503,7 +1527,8 @@ fn sign_tag(sign: Sign) -> WireTag
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: maps each claim to its frozen tag.
+/// - ensures: maps each claim to its frozen tag; a staged claim's position
+///   follows the tag at the write site.
 /// - provides: the total claim-to-tag map, so a claim's byte is decided in one
 ///   place rather than at each write site.
 /// - panics: none.
@@ -1516,6 +1541,7 @@ fn sign_tag(sign: Sign) -> WireTag
     ensures: |ret| ret == match evidence {
         crate::FixpointEvidence::Partial => tags::FIXPOINT_PARTIAL,
         crate::FixpointEvidence::StructuralDescent => tags::FIXPOINT_STRUCTURAL_DESCENT,
+        crate::FixpointEvidence::Staged { .. } => tags::FIXPOINT_STAGED,
     },
 )]
 #[inline]
@@ -1524,6 +1550,7 @@ fn evidence_tag(evidence: crate::FixpointEvidence) -> WireTag
     match evidence {
         crate::FixpointEvidence::Partial => tags::FIXPOINT_PARTIAL,
         crate::FixpointEvidence::StructuralDescent => tags::FIXPOINT_STRUCTURAL_DESCENT,
+        crate::FixpointEvidence::Staged { .. } => tags::FIXPOINT_STAGED,
     }
 }
 
@@ -1906,6 +1933,16 @@ mod tests
                 &[0x63, 1, 3],
             ),
             (
+                AnyNode::Computation(arena.computation_fixpoint(
+                    c0,
+                    crate::FixpointEvidence::Staged {
+                        position: crate::StagedPosition::from(129_usize),
+                    },
+                )),
+                &[first],
+                &[0x63, 2, 0x81, 1, 3],
+            ),
+            (
                 AnyNode::Computation(arena.computation_application(c0, v0)),
                 &[first, second],
                 &[0x12, 3, 0x81, 1],
@@ -2150,6 +2187,41 @@ mod tests
         assert_eq!(interner.by_content.len(), 4);
         assert_eq!(interner.by_node.len(), 6);
         assert_eq!(first_segment, prefix);
+    }
+
+    #[test]
+    fn a_staged_type_is_written_as_its_base()
+    {
+        let mut arena = TermArena::new();
+        let integer = arena.value_type_base(crate::BaseType::Integer);
+        let staged =
+            arena.value_type_staged(integer, crate::Stage::At(crate::StageId::from(0_usize)));
+        let plain_list = arena.value_type_list(integer);
+        let staged_list = arena.value_type_list(staged);
+        let mut interner = super::Interner::new();
+        let mut segment = Vec::new();
+        let plain = super::intern(
+            &arena,
+            &mut interner,
+            &mut segment,
+            AnyNode::ValueType(plain_list),
+        );
+        let written = segment.clone();
+        assert_eq!(
+            super::intern(
+                &arena,
+                &mut interner,
+                &mut segment,
+                AnyNode::ValueType(staged_list)
+            ),
+            plain,
+            "a list of a staged type is the list of its base on the wire"
+        );
+        assert_eq!(segment, written, "a stage writes no entry");
+        assert_eq!(
+            interner.by_node.get(&AnyNode::ValueType(staged)),
+            interner.by_node.get(&AnyNode::ValueType(integer))
+        );
     }
 
     #[test]

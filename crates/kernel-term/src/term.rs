@@ -49,11 +49,13 @@
 //! is an ordinary nominal application whose declaration index is the
 //! declaration's own position. Admission, not the reader, decides whether that
 //! occurrence is strictly positive and uniform. The fixpoint carries one
-//! evidence byte, [`FIXPOINT_PARTIAL`] or [`FIXPOINT_STRUCTURAL_DESCENT`], then
-//! one computation child: its body under the self binder. Any other evidence
-//! byte is refused as an unknown tag at the evidence site. The byte records a
-//! claim kernel admission replays; decoding it grants nothing. The encoder's
-//! entry goldens and the decoder's former-preservation witness pin both bytes.
+//! evidence byte, [`FIXPOINT_PARTIAL`], [`FIXPOINT_STRUCTURAL_DESCENT`] or
+//! [`FIXPOINT_STAGED`] followed by the staged position as a varint, then one
+//! computation child: its body under the self binder. Any other evidence byte
+//! is refused as an unknown tag at the evidence site. The byte records a claim
+//! kernel admission replays as the stage typing, the descent byte at position
+//! zero; decoding it grants nothing. The encoder's entry goldens and the
+//! decoder's former-preservation witness pin every byte.
 //!
 //! **Choice.** Native identity and field structure, not atom names or product
 //! offsets. New node and declaration-kind bytes extend the closed vocabulary
@@ -68,6 +70,7 @@
 //! [`KIND_DATA`]: crate::KIND_DATA
 //! [`FIXPOINT_PARTIAL`]: crate::FIXPOINT_PARTIAL
 //! [`FIXPOINT_STRUCTURAL_DESCENT`]: crate::FIXPOINT_STRUCTURAL_DESCENT
+//! [`FIXPOINT_STAGED`]: crate::FIXPOINT_STAGED
 
 use anodized::spec;
 use gandr_kernel_strata::Level;
@@ -692,29 +695,161 @@ pub enum FixpointEvidence
 {
     /// No claim: the fixpoint is partial, and conversion never unfolds it.
     Partial,
-    /// Structural descent: the body is a lambda whose body is a case on that
-    /// lambda's variable, and every self call's argument is a field of the
-    /// scrutinised constructor or a function field's result.
+    /// Structural recursion on the fixpoint's first parameter: the stage
+    /// typing at [`StagedPosition`] zero, the wire's first spelling of it.
     StructuralDescent,
+    /// Structural recursion on the parameter at `position`: the stage typing
+    /// refines that arrow's domain, and every self-reference's argument there
+    /// stands strictly below the fixpoint's stage.
+    Staged
+    {
+        /// The arrow of the fixpoint's type the stage refines.
+        position: StagedPosition,
+    },
 }
 
-/// Why a fixpoint's structural-descent claim did not replay; each reason is
-/// the first the descent walk meets.
+/// A stage the recursion typing mints.
+///
+/// It is the class of the values one fixpoint's self-reference may take,
+/// placed by the fixpoint and the cases that minted it. A stage names nothing
+/// outside the judgement that minted it; no wire byte carries one.
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum DescentRefusal
+pub struct StageId(usize);
+
+impl From<usize> for StageId
 {
-    /// The classifier is not a function out of a nominal data application.
-    NotOverData,
-    /// The body is not a lambda whose body is a case on that lambda's
-    /// variable with one branch per constructor.
-    NotCaseOnArgument,
-    /// A branch does not open exactly its constructor's fields by lambdas.
-    BranchNotOverFields,
-    /// The self reference occurs other than at the head of a call.
-    UnguardedSelfReference,
-    /// A call's argument is neither a field of the scrutinised constructor
-    /// nor a function field's result.
-    NonDescendingCall,
+    /// Preserve the stage's mint ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: usize) -> Self
+    {
+        Self(index)
+    }
+}
+
+impl From<StageId> for usize
+{
+    /// Read the stage's mint ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(stage: StageId) -> Self
+    {
+        stage.0
+    }
+}
+
+/// How many steps below its anchor a bound stage stands: at least one.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StageDepth(core::num::NonZeroU32);
+
+impl StageDepth
+{
+    /// One step below: the bound `<s` of every stage strictly below `s`.
+    pub const ONE: Self = Self(core::num::NonZeroU32::MIN);
+
+    /// One step further below, saturating at the widest depth.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn deeper(self) -> Self
+    {
+        Self(self.0.saturating_add(1))
+    }
+}
+
+impl From<StageDepth> for u32
+{
+    /// Read the number of steps.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(depth: StageDepth) -> Self
+    {
+        depth.0.get()
+    }
+}
+
+impl From<core::num::NonZeroU32> for StageDepth
+{
+    /// Preserve the number of steps, which is never zero.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(steps: core::num::NonZeroU32) -> Self
+    {
+        Self(steps)
+    }
+}
+
+/// The stage a value type is refined at: a stage of a structural fixpoint's
+/// typing, unrelated to the meta and object levels of
+/// [`stage::Stage`](crate::stage::Stage).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Stage
+{
+    /// The stage itself.
+    At(StageId),
+    /// Some stage at least `depth` steps below `anchor`: `<ι` at one step,
+    /// the domain a fixpoint's self-reference takes.
+    Below
+    {
+        /// The stage the bound lies below.
+        anchor: StageId,
+        /// How many steps below it, at least one.
+        depth: StageDepth,
+    },
+}
+
+/// Where a value stands in a fixpoint's stage order, as a refusal names it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Standing
+{
+    /// At the type a stage would refine, below no stage: the order's top.
+    Top,
+    /// At a stage, or below one.
+    Staged(Stage),
+}
+
+/// The parameter a structural fixpoint recurses on: the arrow of its type the
+/// stage refines, counted from the outermost at zero.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StagedPosition(usize);
+
+impl From<usize> for StagedPosition
+{
+    /// Preserve the arrow's ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: usize) -> Self
+    {
+        Self(index)
+    }
+}
+
+impl From<StagedPosition> for usize
+{
+    /// Read the arrow's ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: StagedPosition) -> Self
+    {
+        position.0
+    }
 }
 
 /// Portable round-trip dialogues for closed universe-path translators.

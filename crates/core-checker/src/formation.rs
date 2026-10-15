@@ -350,11 +350,12 @@ enum Task
 /// - ensures: zero for an atom, the unit type and the unknown type, whichever
 ///   spelling it has; the successor of its level for a universe; its own level
 ///   for a lift and a decode; its kind's level for a sealed atom; its child's
-///   level for a thunk type and a returner, and its carrier's for a path type;
-///   the join of its children's for an eager product, a static Pi, a dependent
-///   pair, an arrow and a dependent arrow, whose second factor's or codomain's
-///   level does not depend on the binder, and of its payloads' for a session
-///   type, and of its operations' payloads and replies for a capability.
+///   level for a thunk type and a returner, its carrier's for a path type and
+///   its base's for a staged type; the join of its children's for an eager
+///   product, a static Pi, a dependent pair, an arrow and a dependent arrow,
+///   whose second factor's or codomain's level does not depend on the binder,
+///   and of its payloads' for a session type, and of its operations' payloads
+///   and replies for a capability.
 /// - provides: the level part of every classifier, and the level a code is
 ///   decoded at when the judgement unfolds a code constant.
 /// - fails: the view's refusal for a node outside the fragment or a dangling
@@ -441,6 +442,7 @@ pub fn level_of(
                 },
                 ValueTypeView::Abstract(atom) => levels.push(context.abstract_level(atom)?),
                 ValueTypeView::List(element)
+                | ValueTypeView::Staged { base: element, .. }
                 | ValueTypeView::Path {
                     carrier: element, ..
                 }

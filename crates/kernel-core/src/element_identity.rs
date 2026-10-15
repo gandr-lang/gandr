@@ -1645,7 +1645,8 @@ where
         | ValueType::Universe { .. }
         | ValueType::Lift { .. }
         | ValueType::Abstract(_)
-        | ValueType::StaticPi { .. } => Ok(Reduction::Stuck),
+        | ValueType::StaticPi { .. }
+        | ValueType::Staged { .. } => Ok(Reduction::Stuck),
     }
 }
 
