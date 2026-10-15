@@ -482,6 +482,9 @@ pub enum RefusalName
     GrammarMismatch,
     /// A mold the grammar's table does not hold.
     UnknownMold,
+    /// A declaration the lowering minted neither a type nor a body for, and
+    /// refused nothing in.
+    Unminted,
     /// A synthesised type that does not convert to the expected one.
     TypeMismatch,
     /// A type of another former than the rule requires.
@@ -577,7 +580,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 139_usize] = [
+    pub const VOCABULARY: [Self; 140_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -675,6 +678,7 @@ impl RefusalName
         Self::BudgetExceeded,
         Self::GrammarMismatch,
         Self::UnknownMold,
+        Self::Unminted,
         Self::TypeMismatch,
         Self::ShapeMismatch,
         Self::NotSynthesisable,
@@ -770,7 +774,7 @@ impl RefusalName
         (Self::RulesDiverge, b"RulesDiverge") |
         (Self::RulesUndecided, b"RulesUndecided") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
-        b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::TypeMismatch,
+        b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::Unminted, b"Unminted") | (Self::TypeMismatch,
         b"TypeMismatch") | (Self::ShapeMismatch, b"ShapeMismatch") |
         (Self::NotSynthesisable, b"NotSynthesisable") | (Self::UnknownConstant,
         b"UnknownConstant") | (Self::UnboundIndex, b"UnboundIndex") |
@@ -993,6 +997,7 @@ impl RefusalName
             Self::BudgetExceeded => "BudgetExceeded",
             Self::GrammarMismatch => "GrammarMismatch",
             Self::UnknownMold => "UnknownMold",
+            Self::Unminted => "Unminted",
             Self::TypeMismatch => "TypeMismatch",
             Self::ShapeMismatch => "ShapeMismatch",
             Self::NotSynthesisable => "NotSynthesisable",
@@ -1202,7 +1207,7 @@ impl Refusal<'_>
         Self::Checking(CheckRefusal::BudgetExceeded { .. }), RefusalName::BudgetExceeded)
         | (Self::Lowering(LoweringRefusal::GrammarMismatch { .. }),
         RefusalName::GrammarMismatch) | (Self::Lowering(LoweringRefusal::UnknownMold { ..
-        }), RefusalName::UnknownMold) | (Self::Checking(CheckRefusal::PathCode(_)), RefusalName::PathCode) | (Self::Checking(CheckRefusal::TypeMismatch(_)),
+        }), RefusalName::UnknownMold) | (Self::Lowering(LoweringRefusal::Unminted { .. }), RefusalName::Unminted) | (Self::Checking(CheckRefusal::PathCode(_)), RefusalName::PathCode) | (Self::Checking(CheckRefusal::TypeMismatch(_)),
         RefusalName::TypeMismatch) | (Self::Checking(CheckRefusal::ShapeMismatch { .. }),
         RefusalName::ShapeMismatch) | (Self::Checking(CheckRefusal::NotSynthesisable { ..
         }), RefusalName::NotSynthesisable) |
@@ -1394,7 +1399,8 @@ impl Refusal<'_>
         RefusalName::RulesUndecided) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
-        RefusalName::UnknownMold)
+        RefusalName::UnknownMold) | (LoweringRefusal::Unminted { .. },
+        RefusalName::Unminted)
     )
 },
 )]
@@ -1440,6 +1446,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,
         LoweringRefusal::UnknownMold { .. } => RefusalName::UnknownMold,
+        LoweringRefusal::Unminted { .. } => RefusalName::Unminted,
     }
 }
 

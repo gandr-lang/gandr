@@ -39,9 +39,10 @@
 //! `MalformedSource` is the author's mistake, rules that may not end or that
 //! rewrite one term apart among them; `Unrepresentable` is `OutOfFragment`,
 //! `GradedBridge` and `UnreadAscription`; `EngineFault` is the budget, the
-//! grammar mismatch, the unknown mold, and a coincidence check its step budget
-//! left undecided. `UserAbsence` — what the author has not yet supplied, the
-//! only class that may become an obligation — has no refusal in it:
+//! grammar mismatch, the unknown mold, a coincidence check its step budget
+//! left undecided, and a declaration the lowering minted nothing for and
+//! refused nothing in. `UserAbsence` — what the author has not yet supplied,
+//! the only class that may become an obligation — has no refusal in it:
 //! obligations come from declaration shape, an uncompleted signature, and
 //! never from a classified failure.
 
@@ -62,10 +63,11 @@ impl LoweringRefusal<'_>
     ///   wrong-arity form, every graded bridge, every unread ascription, every
     ///   model component the derivation cannot state, every `for` loop and
     ///   every cell between terms but a loop classifies as unrepresentable, the
-    ///   exhausted allowance, the grammar mismatch, the unknown mold and an
-    ///   undecided coincidence check as engine faults, and every other refusal
-    ///   — a family member of the wrong telescope, a loop exit off every loop
-    ///   and rules that part among them — as malformed source.
+    ///   exhausted allowance, the grammar mismatch, the unknown mold, an
+    ///   undecided coincidence check and an unminted declaration as engine
+    ///   faults, and every other refusal — a family member of the wrong
+    ///   telescope, a loop exit off every loop and rules that part among them —
+    ///   as malformed source.
     /// - provides: the fact a report groups by and a job alarming on the
     ///   fragment's reach counts.
     /// - fails: never.
@@ -92,7 +94,8 @@ impl LoweringRefusal<'_>
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
-            | Self::UnknownMold { .. } => matches!(ret, FailureClass::EngineFault),
+            | Self::UnknownMold { .. }
+            | Self::Unminted { .. } => matches!(ret, FailureClass::EngineFault),
             | Self::UnresolvedName { .. }
             | Self::UnresolvedDocLink { .. }
             | Self::UnresolvedTypeHead { .. }
@@ -167,7 +170,8 @@ impl LoweringRefusal<'_>
             Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
-            | Self::UnknownMold { .. } => FailureClass::EngineFault,
+            | Self::UnknownMold { .. }
+            | Self::Unminted { .. } => FailureClass::EngineFault,
         }
     }
 }
@@ -203,7 +207,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: the built-in attribute registry contains `owes`.
-    /// - ensures: the 36 listed refusal variants have distinct representatives;
+    /// - ensures: the 39 listed refusal variants have distinct representatives;
     ///   payloads are fixtures rather than evidence of a real lowering failure.
     /// - provides: the domain of the finite classification checks.
     /// - fails: never.
@@ -225,7 +229,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 38_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 39_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -382,6 +386,10 @@ mod tests
             },
             LoweringRefusal::DirectedCell { span: empty },
             LoweringRefusal::CellNotALoop { span: empty },
+            LoweringRefusal::Unminted {
+                span: empty,
+                name: SurfaceName::from("windHom"),
+            },
         ]
     }
 
@@ -427,6 +435,7 @@ mod tests
             FailureClass::EngineFault,
             FailureClass::Unrepresentable,
             FailureClass::Unrepresentable,
+            FailureClass::EngineFault,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

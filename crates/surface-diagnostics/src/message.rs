@@ -456,6 +456,11 @@ fn lowered(
         LoweringRefusal::UnknownMold { .. } => {
             f.write_str("internal error: the parser produced a form its grammar does not hold")
         },
+        LoweringRefusal::Unminted { name, .. } => write!(
+            f,
+            "internal error: the reader produced neither a type nor a body for `{name}`, and \
+             reported nothing wrong with it"
+        ),
     }
 }
 
@@ -1048,6 +1053,10 @@ mod tests
             LoweringRefusal::UnknownMold {
                 span,
                 mold: MoldId::from(0_u32),
+            },
+            LoweringRefusal::Unminted {
+                span,
+                name: SurfaceName::from("windHom"),
             },
         ]
         .map(Refusal::Lowering);
