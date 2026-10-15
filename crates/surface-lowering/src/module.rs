@@ -7450,6 +7450,18 @@ impl<'source> LoweredModule<'source>
         &self.origins
     }
 
+    /// Every minted core node's origin, for a judgement that records where
+    /// the nodes it minted stand.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn origins_mut(&mut self) -> &mut OriginTable
+    {
+        &mut self.origins
+    }
+
     /// The origin table, the module given up: what a consumer keeps once the
     /// declarations and attributes have been read.
     ///

@@ -241,8 +241,13 @@ mod coincide
                 report,
                 mut program,
                 ..
-            } = judge_module(CorpusRoot::Fixture, module, arena, &HostGrant::UNBOUNDED)
-                .unwrap_or_else(|fault| panic!("{shown}: {fault}"))
+            } = judge_module(
+                CorpusRoot::Fixture,
+                (module, SourceText::from(text.as_str())),
+                arena,
+                &HostGrant::UNBOUNDED,
+            )
+            .unwrap_or_else(|fault| panic!("{shown}: {fault}"))
             else {
                 panic!("{shown}: the module was refused whole");
             };
