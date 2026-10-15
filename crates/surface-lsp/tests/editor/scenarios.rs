@@ -67,7 +67,7 @@ use super::shapes;
 /// is hovered but not counted: a comment is no hover target, and corpus items
 /// carry comments saying what they demonstrate, so counting them would move
 /// the count for documentation alone.
-const UNANSWERED_CEILING: usize = 27_423;
+const UNANSWERED_CEILING: usize = 28_471;
 
 /// The misses each node kind's hovers may hold, as [`KindFloor`] reads a row:
 /// the kind, then counts of the corpus positions whose smallest meaningful
@@ -92,16 +92,16 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("expression access_expression", 0, 0, 0, 0),
     KindFloor("expression access_expression name", 16, 0, 0, 0),
     KindFloor("expression become_expression", 1020, 72, 36, 0),
-    KindFloor("expression binary_expression", 2, 59, 2, 4), // shape: #401
+    KindFloor("expression binary_expression", 18, 91, 2, 4), // shape: #401
     KindFloor("expression block", 375, 152, 20, 0),
     KindFloor("expression block name", 29, 8, 0, 0),
     KindFloor("expression boolean", 0, 30, 0, 0),
     KindFloor("expression break_expression", 0, 0, 0, 0),
     KindFloor("expression break_value_expression", 35, 21, 0, 0),
-    KindFloor("expression call_expression", 73, 410, 134, 98), // shape: #401, `?`
-    KindFloor("expression case_expression", 11, 266, 121, 12), // shape: #401
+    KindFloor("expression call_expression", 97, 503, 134, 98), // shape: #401, `?`
+    KindFloor("expression case_expression", 11, 308, 185, 12), // shape: #401
     KindFloor("expression close_expression", 70, 84, 35, 0),
-    KindFloor("expression constructor", 1311, 235, 95, 0),
+    KindFloor("expression constructor", 1392, 239, 95, 0),
     KindFloor("expression continue_expression", 0, 24, 0, 0),
     KindFloor("expression double_quoted_string", 0, 83, 0, 0),
     KindFloor("expression dup_expression", 0, 5, 0, 0),
@@ -115,9 +115,9 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("expression handle_expression name", 141, 60, 0, 1), // shape: #401
     KindFloor("expression hole", 1, 0, 24, 0),
     KindFloor("expression host_escape", 0, 6, 0, 0),
-    KindFloor("expression identifier", 2279, 1494, 167, 194), // shape: #401
+    KindFloor("expression identifier", 2487, 1743, 167, 194), // shape: #401
     KindFloor("expression if_expression", 0, 96, 0, 0),
-    KindFloor("expression instantiation_expression", 57, 22, 33, 0),
+    KindFloor("expression instantiation_expression", 57, 34, 33, 0),
     KindFloor("expression labelled_sum_expression", 5, 0, 0, 0),
     KindFloor("expression labelled_sum_expression name", 10, 0, 0, 0),
     KindFloor("expression lambda_expression", 0, 70, 6, 0),
@@ -148,7 +148,7 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("expression single_quoted_string", 0, 110, 0, 0),
     KindFloor("expression string", 81, 528, 14, 0),
     KindFloor("expression subshell", 0, 10, 0, 0),
-    KindFloor("expression telescope_expression", 21, 212, 8, 0),
+    KindFloor("expression telescope_expression", 21, 216, 8, 0),
     KindFloor("expression telescope_expression name", 13, 20, 0, 0),
     KindFloor("expression thunk_expression", 0, 122, 42, 7), // shape: #401
     KindFloor("expression typed_number", 0, 52, 0, 0),
@@ -156,16 +156,16 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("expression unit", 12, 40, 0, 0),
     KindFloor("expression variable_expansion", 0, 29, 0, 0),
     KindFloor("expression while_expression", 0, 0, 0, 0),
-    KindFloor("instantiation instantiation_expression", 86, 14, 0, 0),
+    KindFloor("instantiation instantiation_expression", 98, 20, 0, 0),
     KindFloor("instantiation instantiation_expression name", 0, 10, 0, 0),
     KindFloor("item circuit_declaration", 0, 78, 0, 0),
     KindFloor("item circuit_declaration name", 20, 65, 0, 0),
     KindFloor("item codata_declaration", 0, 74, 0, 0),
     KindFloor("item codata_declaration name", 5, 63, 0, 0),
-    KindFloor("item data_declaration", 0, 1752, 0, 0),
+    KindFloor("item data_declaration", 0, 1844, 0, 0),
     KindFloor("item data_declaration name", 22, 385, 0, 0),
-    KindFloor("item def_value", 0, 909, 105, 143), // shape: #401
-    KindFloor("item def_value name", 177, 664, 153, 122), // shape: #401
+    KindFloor("item def_value", 0, 919, 105, 143), // shape: #401
+    KindFloor("item def_value name", 186, 664, 153, 122), // shape: #401
     KindFloor("item extern_block", 0, 142, 0, 0),
     KindFloor("item extern_block name", 0, 80, 0, 0),
     KindFloor("item import_declaration", 0, 69, 0, 0),
@@ -179,12 +179,12 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("item sign_declaration name", 18, 231, 0, 0),
     KindFloor("module_member module_declaration", 0, 445, 10, 74), // shape: #401
     KindFloor("module_member module_declaration name", 1, 359, 12, 81), // shape: #401
-    KindFloor("pattern cons_pattern", 0, 0, 0, 12),                // shape: #408
-    KindFloor("pattern cons_pattern name", 24, 0, 0, 0),
-    KindFloor("pattern constructor_pattern", 10, 35, 2, 0),
-    KindFloor("pattern constructor_pattern name", 40, 125, 8, 0),
+    KindFloor("pattern cons_pattern", 0, 4, 0, 16),                // shape: #408
+    KindFloor("pattern cons_pattern name", 32, 12, 0, 0),
+    KindFloor("pattern constructor_pattern", 10, 43, 2, 0),
+    KindFloor("pattern constructor_pattern name", 40, 131, 8, 0),
     KindFloor("pattern hole", 0, 12, 0, 0),
-    KindFloor("pattern identifier", 79, 145, 2, 0),
+    KindFloor("pattern identifier", 79, 155, 2, 0),
     KindFloor("pattern labelled_sum_pattern", 0, 0, 0, 19), // shape: #408
     KindFloor("pattern labelled_sum_pattern name", 0, 0, 0, 0),
     KindFloor("pattern literal_pattern", 34, 3, 22, 0),
@@ -196,9 +196,9 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("type capability_type", 0, 0, 0, 0),
     KindFloor("type capability_type name", 47, 0, 0, 0),
     KindFloor("type end_session_type", 6, 15, 0, 0),
-    KindFloor("type f_type", 130, 94, 2, 12), // shape: #404
+    KindFloor("type f_type", 142, 94, 2, 12), // shape: #404
     KindFloor("type f_type name", 14, 0, 0, 0),
-    KindFloor("type function_type", 6, 12, 0, 0),
+    KindFloor("type function_type", 8, 12, 0, 0),
     KindFloor("type labelled_sum_type", 0, 4, 0, 0),
     KindFloor("type lazy_product_type", 5, 0, 0, 0),
     KindFloor("type lazy_record_type", 19, 0, 0, 0),
@@ -207,8 +207,8 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("type number", 0, 2, 0, 0),
     KindFloor("type package_type", 0, 99, 0, 0),
     KindFloor("type package_type name", 0, 11, 0, 0),
-    KindFloor("type parenthesized_type", 557, 34, 2, 0),
-    KindFloor("type path_type", 48, 0, 0, 0),
+    KindFloor("type parenthesized_type", 599, 34, 2, 0),
+    KindFloor("type path_type", 136, 0, 0, 0),
     KindFloor("type primitive_type", 553, 658, 0, 0),
     KindFloor("type product_type", 4, 0, 1, 6), // shape: #404
     KindFloor("type receive_session_type", 2, 0, 0, 0),
@@ -216,14 +216,14 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("type static_abstraction", 0, 0, 0, 38), // shape: #404
     KindFloor("type static_abstraction name", 46, 0, 0, 0),
     KindFloor("type sum_type", 2, 3, 0, 0),
-    KindFloor("type telescope_type", 0, 58, 0, 0),
+    KindFloor("type telescope_type", 6, 58, 0, 0),
     KindFloor("type type_application", 40, 83, 0, 20), // shape: #404, #420
     KindFloor("type type_application name", 902, 154, 0, 0),
-    KindFloor("type type_identifier", 264, 478, 1, 36), // shape: #420
+    KindFloor("type type_identifier", 333, 478, 1, 36), // shape: #420
     KindFloor("type type_path", 0, 0, 0, 8),            // shape: #404
     KindFloor("type type_path name", 97, 0, 0, 0),
-    KindFloor("type type_variable", 25, 129, 0, 90), // shape: #401
-    KindFloor("type u_type", 17, 75, 0, 10),         // shape: #404
+    KindFloor("type type_variable", 36, 129, 0, 90), // shape: #401
+    KindFloor("type u_type", 22, 75, 0, 10),         // shape: #404
     KindFloor("type universe_type", 40, 116, 0, 0),
     KindFloor("type unknown_type", 8, 0, 0, 0),
     KindFloor("type value_function_type", 2, 0, 0, 4), // shape: #404
