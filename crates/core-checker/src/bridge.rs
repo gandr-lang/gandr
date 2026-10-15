@@ -371,6 +371,7 @@ use gandr_kernel_core::ReplaySides;
 use gandr_kernel_core::Unfoldable;
 use gandr_kernel_core::Unfoldings;
 use gandr_kernel_core::content_digest;
+use gandr_kernel_core::read_step;
 use gandr_kernel_core::replay;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
@@ -397,6 +398,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::code::Certificate;
 use crate::code::CodeDefinitions;
+use crate::code::Derivation;
 use crate::code::EndpointRelation;
 use crate::code::Lift;
 use crate::code::Reflexivity;
@@ -3151,6 +3153,20 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             None => self.value_in(Mode::Verbatim, target, certificate.reduct())?,
         };
         self.erase_operators(target)?;
+        if certificate.derivation() == Derivation::Reading {
+            let verdict = read_step(
+                target,
+                &self.positions.unfoldings(&self.bodies),
+                left,
+                right,
+                ReplayBudget::DEFAULT,
+            );
+            return Ok(Maybe::Present(Replayed {
+                unfolded,
+                redex,
+                verdict,
+            }));
+        }
         let decisions = if let Some(position) = crossed {
             Vec::from([
                 ConversionDecision::Unfold {
@@ -6995,6 +7011,126 @@ mod tests
             "the replay needs the held unfolding the trace records: {:?}",
             stripped.readmitted()[1].outcome()
         );
+    }
+
+    /// An open decode steps by the kernel's own reading: `arrow(a)` on the
+    /// binder `a` runs to the quote of a function type over `a`, so a value
+    /// at that decode applies. The checker certifies the open step as a
+    /// reading and the closed one by the machine's dialogue; the kernel
+    /// re-derives each, and a forged reduct of either is refused by name.
+    #[test]
+    fn an_open_decode_crosses_read_and_a_forged_one_is_refused()
+    {
+        // def arrow : U (Type -> F Type) = thunk λa. return ⌜U (El(a) -> F El(a))⌝ ;
+        // def apply : U ((a : Type) -> El(⟨arrow a⟩) -> El(a) -> F El(a)) =
+        //     thunk λ λ λ. force f v ;
+        // def same : El(⟨arrow ⌜Integer⌝⟩) = thunk λ. return x ;
+        let mut arena = CoreArena::new();
+        let small = small(&mut arena);
+        let returns_code = arena.comp_type_returner(small);
+        let coding = arena.comp_type_arrow(small, returns_code);
+        let coding = arena.value_type_thunk(coding);
+        let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let decoded = arena.value_type_element(code, Level::zero());
+        let returns_decoded = arena.comp_type_returner(decoded);
+        let function = arena.comp_type_arrow(decoded, returns_decoded);
+        let function = arena.value_type_thunk(function);
+        let quoted = arena.value_quote(function);
+        let returned = arena.computation_return(quoted);
+        let arrow = arena.computation_lambda(returned);
+        let arrow = arena.value_thunk(arrow);
+        let call = |arena: &mut CoreArena, argument: ValueId| {
+            let head = arena.value_constant(ConstantIndex::from(0_usize));
+            let forced = arena.computation_force(head);
+            let applied = arena.computation_application(forced, argument);
+            arena.value_returned(applied)
+        };
+        let open_call = call(&mut arena, code);
+        let at_arrow = arena.value_type_element(open_call, Level::zero());
+        let returning = arena.comp_type_arrow(decoded, returns_decoded);
+        let applying = arena.comp_type_arrow(at_arrow, returning);
+        let applying = arena.comp_type_pi(small, applying);
+        let applying = arena.value_type_thunk(applying);
+        let f = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let forced = arena.computation_force(f);
+        let applied = arena.computation_application(forced, code);
+        let apply = arena.computation_lambda(applied);
+        let apply = arena.computation_lambda(apply);
+        let apply = arena.computation_lambda(apply);
+        let apply = arena.value_thunk(apply);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let integer_code = arena.value_quote(integer);
+        let closed_call = call(&mut arena, integer_code);
+        let at_integer = arena.value_type_element(closed_call, Level::zero());
+        let kept = arena.computation_return(code);
+        let same = arena.computation_lambda(kept);
+        let same = arena.value_thunk(same);
+        let unit_type = arena.value_type_unit();
+        let forged = arena.value_quote(unit_type);
+        let module = [
+            declaration(At(0), Maybe::Present(coding), Maybe::Present(arrow)),
+            declaration(At(1), Maybe::Present(applying), Maybe::Present(apply)),
+            declaration(At(2), Maybe::Present(at_integer), Maybe::Present(same)),
+        ];
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            check_module(&mut context, &module)
+        };
+        for judged in report.judged() {
+            assert!(
+                matches!(judged.verdict(), Verdict::Checked { .. }),
+                "{:?}",
+                judged.verdict()
+            );
+        }
+        let readmission = readmit_with(&mut arena, &report, |certificate| certificate);
+        let [_, ref apply_entry, ref same_entry] = *readmission.readmitted()
+        else {
+            panic!("one outcome per declaration");
+        };
+        assert!(
+            matches!(*apply_entry.outcome(), Outcome::Defined { .. }),
+            "the kernel reads the open decode to the function type: {:?}",
+            apply_entry.outcome()
+        );
+        assert_eq!(
+            steps(apply_entry),
+            [(Unfolded::Returned(open_call), KernelVerdict::Convertible)],
+            "one open run, read once"
+        );
+        assert!(
+            matches!(*same_entry.outcome(), Outcome::Defined { .. }),
+            "{:?}",
+            same_entry.outcome()
+        );
+
+        let forging = |derivation: crate::code::Derivation| {
+            move |certificate: crate::code::Certificate| {
+                if certificate.derivation() == derivation {
+                    certificate.with_reduct(forged)
+                }
+                else {
+                    certificate
+                }
+            }
+        };
+        for (derivation, at, redex) in [
+            (crate::code::Derivation::Reading, 1_usize, open_call),
+            (crate::code::Derivation::Dialogue, 2_usize, closed_call),
+        ] {
+            let forgery = readmit_with(&mut arena, &report, forging(derivation));
+            assert!(
+                matches!(
+                    forgery.readmitted()[at].outcome(),
+                    Outcome::Refused(Refusal::CertificateDeclined {
+                        unfolded: Unfolded::Returned(stepped),
+                        ..
+                    }) if *stepped == redex
+                ),
+                "{derivation:?}: a decode forged to the unit quote is refused: {:?}",
+                forgery.readmitted()[at].outcome()
+            );
+        }
     }
 
     #[test]

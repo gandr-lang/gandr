@@ -124,7 +124,7 @@ mod entries
         ("Pattern _", Standing::Owed(4)),
         ("Pattern constructor", Standing::Owed(6)),
         ("Pattern false", Standing::Owed(0)),
-        ("Pattern identifier", Standing::Owed(25)),
+        ("Pattern identifier", Standing::Owed(29)),
         ("Pattern number", Standing::Owed(8)),
         ("Pattern true", Standing::Owed(0)),
         ("Pattern |", Standing::Owed(0)),

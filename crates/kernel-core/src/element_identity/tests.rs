@@ -1994,7 +1994,7 @@ fn a_certificate_with_a_returned_endpoint_decodes_checks_and_replays()
         read_endpoints(
             arena,
             &Unfoldings::new(bodies),
-            &[(left, right)],
+            &[crate::conv::SetAside::Values(left, right)],
             ReplayBudget::DEFAULT,
         )
     };

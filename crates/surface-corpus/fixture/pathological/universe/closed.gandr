@@ -1,0 +1,36 @@
+// What a hand-written Tarski universe refuses. A decode that runs to a quote
+// is the quoted type, so a value of another type is refused there; a decode
+// over a binder is a type of its own, so a value at `el(c)` does not stand
+// at the decode of the arrow from `c` to `c`.
+
+/// Natural numbers, free: every constructor term is its own value.
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// The codes: the naturals, and the functions from one coded type to another.
+@[ checks ]
+data U : Type {
+  NatC : U;
+  Arrow : (a : U, b : U) --> U;
+}
+
+/// The decoder: each arm returns the type its code names.
+@[ checks ]
+def rec el(u : U) -> -F Type {
+  case u {
+    NatC => return Nat,
+    Arrow(a, b) => { run x <- el[<](a); run y <- el[<](b); return (x => y) }
+  }
+}
+
+/// One is a natural, and the decode of the arrow code runs to `Nat => Nat`.
+@[ refuses("TypeMismatch") ]
+def one : el(Arrow(NatC, NatC)) ;
+def one = Succ(Zero) ;
+
+/// At every code `c`, a value at `el(c)` is no function from `el(c)` to
+/// `el(c)`: the decode of the arrow code reads to that function type.
+@[ refuses("TypeMismatch") ]
+def idAt(c : U, v : el(c)) -> -F el(Arrow(c, c)) { v }

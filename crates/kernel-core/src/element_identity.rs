@@ -655,12 +655,14 @@ pub(crate) fn reflexive_endpoints(
 ///   `unfoldings` live in `arena`, each related pair in the context the
 ///   conversion meets it in.
 /// - ensures: [`crate::replay::EndpointReading::Apart`] when the structure
-///   outside the set-aside pairs diverges, or a set-aside pair is neither
-///   related by the forced reading nor α-equal, in either orientation, to a
-///   related pair; [`crate::replay::EndpointReading::Converts`] when every
-///   set-aside pair is related by the forced reading or its related pair's
-///   dialogue replays, under `unfoldings` and within [`ReplayBudget::DEFAULT`],
-///   as a derivation of convertibility. `arena` holds what it held on entry.
+///   outside the set-aside pairs diverges, a set-aside decode of a returned
+///   code does not read as the type it is compared with, or a set-aside pair is
+///   neither related by the forced reading nor α-equal, in either orientation,
+///   to a related pair; [`crate::replay::EndpointReading::Converts`] when every
+///   set-aside decode reads as its other side and every set-aside pair is
+///   related by the forced reading or its related pair's dialogue replays,
+///   under `unfoldings` and within [`ReplayBudget::DEFAULT`], as a derivation
+///   of convertibility. `arena` holds what it held on entry.
 /// - provides: the mode switches' reading of a definition's relations. The
 ///   match is content equality, never a search: soundness rests on the replay
 ///   alone, and a pair matched to the wrong relation cannot replay. Every
@@ -706,7 +708,22 @@ pub(crate) fn related_endpoints(
     {
         return Ok(crate::replay::EndpointReading::Apart);
     }
-    for (left, right) in pairs {
+    for set_aside in pairs {
+        let (left, right) = match set_aside {
+            crate::conv::SetAside::Values(left, right) => (left, right),
+            crate::conv::SetAside::Decoded { .. } => {
+                if crate::replay::read_endpoints(
+                    arena,
+                    unfoldings,
+                    &[set_aside],
+                    ReplayBudget::DEFAULT,
+                ) == crate::replay::EndpointReading::Converts
+                {
+                    continue;
+                }
+                return Ok(crate::replay::EndpointReading::Apart);
+            },
+        };
         let mut pending = Vec::new();
         if crate::conv::pending_endpoints(
             arena,

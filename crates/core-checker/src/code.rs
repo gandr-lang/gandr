@@ -60,16 +60,34 @@
 //! closed returned code steps to that code by running the call; the step is
 //! certified as an endpoint is related, its δ-steps held as recorded
 //! unfoldings, because the kernel replays it by reading the returned code as
-//! its computation and needs every unfolding named in the trace. A call on a
-//! binder is rigid, and two nodes of one call compare as the same syntax.
+//! its computation and needs every unfolding named in the trace.
 //!
-//! The alternative was a large elimination: a `case` standing in the type
-//! language with types for arms, which would make the kernel's types compute
-//! by themselves. The type language has no such former and none is added.
+//! A call on a binder runs as far as its scrutinee allows. Its run is read
+//! back under rigid binders, a definition's own recursion named as its source
+//! wrote it, so a decoder's arm `run x <- el(a); run y <- el(b); return (x =>
+//! y)` steps `el(Arrow(a, b))` to `⌜U(El(el(a)) → F El(el(b)))⌝`, whose
+//! decodes are the ones a signature writes. A call stuck on its binder,
+//! `el(c)`, reads back as a returned code and stays a decode over a neutral
+//! code: rigid, compared by its code, two nodes of one call the same syntax.
+//!
+//! This is the recorded design, a Tarski data universe: the codes are an
+//! ordinary datatype and `El` a decoder written over them, both bound at the
+//! value level, and a decode is a type over a code that is a term. The
+//! alternative was a large elimination, a `case` into `Type` with types for
+//! arms and `Element` erased, declined in #353: it would make the kernel's
+//! types compute by themselves, and the type language has no such former.
 //! Static operators were the other route, and they inspect no value: their
-//! arguments are codes. The choice reverses when the machine reads an open
-//! run back under rigid binders, at which point a call on a binder steps as
-//! far as its scrutinee allows.
+//! arguments are codes. The choice reverses for a universe that stops being a
+//! data universe, one whose codes are not values a function can case on.
+//!
+//! An open step carries no dialogue: it is a [`Derivation::Reading`], and the
+//! kernel re-derives it by its own reading of the run. The quote such a run
+//! returns holds the calls its arms make on the binders, and the machine's
+//! code walk compares those returned endpoints by place, never by what they
+//! run to, so no dialogue of it relates the two sides. The alternative was a
+//! dialogue over that walk, which needs it to decide returned endpoints under
+//! quotes; the choice reverses with the reversal above, when the machine
+//! decides codes under quotes.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -89,6 +107,7 @@ use gandr_core_nbe::MachineVerdict;
 use gandr_core_nbe::NeutralHead;
 use gandr_core_nbe::Problem;
 use gandr_core_nbe::ReadbackMode;
+use gandr_core_nbe::Recursion;
 use gandr_core_nbe::ResharingMemo;
 use gandr_core_nbe::TermFace;
 use gandr_core_nbe::TraceNode;
@@ -355,6 +374,18 @@ impl Reduction
     }
 }
 
+/// How the kernel re-derives a certified step.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Derivation
+{
+    /// By replaying the machine's dialogue, in order.
+    Dialogue,
+    /// By its own reading of the run, with no dialogue: the step of a returned
+    /// code over a binder, whose quote holds calls the machine's code walk
+    /// compares only by place.
+    Reading,
+}
+
 /// The normaliser's certificate that a code converts to the reduct of one
 /// step at its head.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -366,9 +397,12 @@ pub struct Certificate
     redex: ValueId,
     /// The reduct it fires to.
     reduct: ValueId,
-    /// The machine's verdict.
+    /// The verdict the step was certified at: the machine's for a dialogue,
+    /// the run's own for a reading.
     verdict: MachineVerdict,
-    /// The derivation the machine recorded, in order.
+    /// How the kernel re-derives the step.
+    derivation: Derivation,
+    /// The derivation the machine recorded, in order; empty for a reading.
     decisions: Vec<ConversionDecision<TraceNode>>,
 }
 
@@ -407,7 +441,7 @@ impl Certificate
         self.reduct
     }
 
-    /// The machine's verdict.
+    /// The verdict the step was certified at.
     ///
     /// # Specification
     /// trivial.
@@ -416,6 +450,17 @@ impl Certificate
     pub const fn verdict(&self) -> MachineVerdict
     {
         self.verdict
+    }
+
+    /// How the kernel re-derives the step.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn derivation(&self) -> Derivation
+    {
+        self.derivation
     }
 
     /// The derivation the machine recorded, in order.
@@ -441,6 +486,20 @@ impl Certificate
     ) -> Self
     {
         Self { decisions, ..self }
+    }
+
+    /// The certificate with its reduct replaced: the seam a test forges a
+    /// step's result through, to witness that the replay refuses it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(test)]
+    pub(crate) fn with_reduct(
+        self,
+        reduct: ValueId,
+    ) -> Self
+    {
+        Self { reduct, ..self }
     }
 }
 
@@ -916,13 +975,16 @@ impl CodeDefinitions
     ///
     /// # Specification
     /// - requires: every body this table holds lives in `core`.
-    /// - ensures: for a closed `returned(c)` whose computation reads back, with
-    ///   every definition unfolded, to `return v`, the step unfolding the
-    ///   returned code at `code` to `v`. [`unfolding::Absent::Rigid`] for any
-    ///   other node, for an open code — its run waits on a binder — and for a
-    ///   run that reads back stuck.
+    /// - ensures: for a `returned(c)` whose computation reads back — every
+    ///   definition unfolded, a definition's own recursion named as the
+    ///   definition, the binders `c` reaches read as rigid variables — to
+    ///   `return v` with `v` no returned code, the step unfolding the returned
+    ///   code at `code` to `v`. [`unfolding::Absent::Rigid`] for any other
+    ///   node, for a run that waits on a binder before it returns a code — it
+    ///   reads back as a returned code — and for a run that reads back stuck.
     /// - provides: the reduct of `El` as unquote: a function to a universe
-    ///   returns a quote, and the type at the code position is the quoted one.
+    ///   returns a quote, and the type at the code position is the quoted one,
+    ///   open or closed.
     /// - fails: [`CheckRefusal::Undecided`] at `code` when evaluation or
     ///   readback faults or runs out of fuel; [`CheckRefusal::DanglingNode`]
     ///   for a node `core` does not hold.
@@ -933,8 +995,11 @@ impl CodeDefinitions
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a closed call of a function selecting a quote by
-    ///   `case` runs to that quote, and the same call on a variable is rigid.
+    ///   `case` runs to that quote, and the same call on a variable is rigid; a
+    ///   decoder's arm on a binder steps to the quote over the decodes its
+    ///   source wrote, and an open decode forged to another quote is refused.
     /// - witness: `code::tests::a_closed_returned_code_runs_to_the_quote_it_returns`
+    /// - witness: `bridge::tests::an_open_decode_crosses_read_and_a_forged_one_is_refused`
     #[spec(ensures: |ret| match ret {
         | Ok(Maybe::Present(step)) => step.unfolded() == Unfolded::Returned(code)
             && step.redex() == code
@@ -949,22 +1014,27 @@ impl CodeDefinitions
         code: ValueId,
     ) -> Result<Maybe<Reduction, unfolding::Absent>, CheckRefusal>
     {
-        let Some(&Value::Returned(computation)) = core.value(code)
+        let Some(&Value::Returned(_)) = core.value(code)
         else {
             return Ok(Maybe::Absent(unfolding::Absent::Rigid));
         };
         let reach = loose_reach(core, CoreNode::Term(TermNode::Value(code)))?;
-        if usize::from(reach) != 0 {
-            return Ok(Maybe::Absent(unfolding::Absent::Rigid));
+        let mut body = core.computation_return(code);
+        for _binder in 0 .. usize::from(reach) {
+            body = core.computation_lambda(body);
         }
-        let claim = core.value_thunk(computation);
-        match self.read_back(core, claim) {
-            Ok(Readback::Returned { returned, .. }) => Ok(Maybe::Present(Reduction {
-                unfolded: Unfolded::Returned(code),
-                redex: code,
-                reduct: returned,
-            })),
-            Ok(Readback::Stuck(_) | Readback::Unsuspended) => {
+        let claim = core.value_thunk(body);
+        match self.read_back(core, claim, Recursion::Refolded) {
+            Ok(Readback::Returned { returned, .. })
+                if !matches!(core.value(returned), Some(&Value::Returned(_))) =>
+            {
+                Ok(Maybe::Present(Reduction {
+                    unfolded: Unfolded::Returned(code),
+                    redex: code,
+                    reduct: returned,
+                }))
+            },
+            Ok(Readback::Returned { .. } | Readback::Stuck(_) | Readback::Unsuspended) => {
                 Ok(Maybe::Absent(unfolding::Absent::Rigid))
             },
             Err(_undecided) => Err(CheckRefusal::Undecided { at: code }),
@@ -980,12 +1050,16 @@ impl CodeDefinitions
     /// - ensures: the certificate of the machine's verdict on the redex against
     ///   the reduct, each evaluated with the free binders the redex reaches
     ///   read as rigid variables — the reduct reaches no further — the
-    ///   derivation a recording sink kept. A returned code's run is related as
-    ///   an endpoint is, its δ-steps held as recorded unfoldings, so the
-    ///   kernel's replay of the code as its computation meets every unfolding
-    ///   it needs in the trace.
+    ///   derivation a recording sink kept. A closed returned code's run is
+    ///   related as an endpoint is, its δ-steps held as recorded unfoldings, so
+    ///   the kernel's replay of the code as its computation meets every
+    ///   unfolding it needs in the trace. An open returned code's run is
+    ///   certified as [`Derivation::Reading`], with no dialogue: its quote
+    ///   holds the calls its arms make on the binders, which the machine
+    ///   compares by place, and the kernel re-derives the step by its own
+    ///   reading.
     /// - provides: the one route by which a code position reduces, and the
-    ///   trace the kernel's replay re-derives.
+    ///   derivation the kernel re-derives.
     /// - fails: [`CheckRefusal::Undecided`] at `redex` when either side does
     ///   not evaluate, the machine faults, or its verdict is anything but
     ///   convertible.
@@ -1010,6 +1084,7 @@ impl CodeDefinitions
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
     /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
     /// - witness: `bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
+    /// - witness: `bridge::tests::an_open_decode_crosses_read_and_a_forged_one_is_refused`
     #[inline]
     #[spec(ensures: |ret| match ret {
         | Ok(ref certificate) => {
@@ -1017,6 +1092,7 @@ impl CodeDefinitions
                 && certificate.redex() == step.redex()
                 && certificate.reduct() == step.reduct()
                 && certificate.verdict() == MachineVerdict::Convertible
+                && (certificate.derivation() == Derivation::Dialogue || certificate.decisions().is_empty())
         },
         | Err(refusal) => refusal == CheckRefusal::Undecided { at: step.redex() }
             || matches!(refusal, CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant),
@@ -1029,12 +1105,27 @@ impl CodeDefinitions
     {
         let undecided = CheckRefusal::Undecided { at: step.redex };
         if let Unfolded::Returned(_) = step.unfolded {
+            if usize::from(loose_reach(
+                core,
+                CoreNode::Term(TermNode::Value(step.redex)),
+            )?) != 0
+            {
+                return Ok(Certificate {
+                    unfolded: step.unfolded,
+                    redex: step.redex,
+                    reduct: step.reduct,
+                    verdict: MachineVerdict::Convertible,
+                    derivation: Derivation::Reading,
+                    decisions: Vec::new(),
+                });
+            }
             return match self.relate_terms(core, step.redex, step.reduct)? {
                 Maybe::Present(decisions) => Ok(Certificate {
                     unfolded: step.unfolded,
                     redex: step.redex,
                     reduct: step.reduct,
                     verdict: MachineVerdict::Convertible,
+                    derivation: Derivation::Dialogue,
                     decisions,
                 }),
                 Maybe::Absent(_) => Err(undecided),
@@ -1087,6 +1178,7 @@ impl CodeDefinitions
                 redex: step.redex,
                 reduct: step.reduct,
                 verdict: report.verdict(),
+                derivation: Derivation::Dialogue,
                 decisions: log.decisions().copied().collect(),
             }),
             MachineVerdict::NotConvertible | MachineVerdict::Declined(_) => Err(undecided),
@@ -1385,7 +1477,8 @@ impl CodeDefinitions
         claim: ValueId,
     ) -> Result<Maybe<Evaluation, evaluated::Absent>, CheckRefusal>
     {
-        let Readback::Returned { normal, returned } = self.read_back(core, claim)?
+        let Readback::Returned { normal, returned } =
+            self.read_back(core, claim, Recursion::Unrolled)?
         else {
             return Ok(Maybe::Absent(evaluated::Absent::Stuck));
         };
@@ -1435,7 +1528,7 @@ impl CodeDefinitions
         claim: ValueId,
     ) -> Result<Reading, CheckRefusal>
     {
-        match self.read_back(core, claim)? {
+        match self.read_back(core, claim, Recursion::Unrolled)? {
             Readback::Returned { normal, returned } => {
                 let decisions = self.claim_trace(core, claim, normal)?;
                 Ok(Reading::Returned(Evaluation {
@@ -1453,7 +1546,8 @@ impl CodeDefinitions
     }
 
     /// Read the closed claim `claim` back, round by round, until its body
-    /// returns or a round changes nothing.
+    /// returns or a round changes nothing, naming a definition's own recursion
+    /// in `recursion`.
     ///
     /// # Specification
     /// - requires: as [`Self::evaluate_claim`].
@@ -1488,11 +1582,13 @@ impl CodeDefinitions
         &self,
         core: &mut CoreArena,
         claim: ValueId,
+        recursion: Recursion,
     ) -> Result<Readback, CheckRefusal>
     {
         let undecided = CheckRefusal::Undecided { at: claim };
         let definitions =
-            Definitions::new(&self.lowered, &self.environment, self.environment.root());
+            Definitions::new(&self.lowered, &self.environment, self.environment.root())
+                .reading_recursion(recursion);
         let fuel = Fuel::from(CODE_FUEL);
         let mut current = claim;
         let mut rounds = 0_u32;

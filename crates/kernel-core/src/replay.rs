@@ -145,13 +145,22 @@
 //! `⟨wind(x)⟩` and the other side's call is then an endpoint goal of its own.
 //! The engine reads each endpoint it delivers this way, and the kernel mirrors
 //! the reading by forced replay: [`Replay::whnf`] takes the innermost
-//! such bind whose continuation, reduced by the plain rules, returns, and the
-//! next bind out over both when it does not. The run is deterministic, so no
-//! decision names it and the vocabulary is unchanged. It fires only in a goal
-//! [`Replay::open_returned`] opened, and in [`Replay::normalize_returned`]: a
-//! computation goal of its own may be effectful, and there the two bind laws
-//! stay as the dialogue names them. A call a definition heads is not read
-//! through; the dialogue unfolds it first, as it does at reflexivity.
+//! such bind whose continuation returns, and the next bind out over both when
+//! it does not. A continuation stuck at such a bind of its own is read the
+//! same way before it is judged: a decoder's arm `el(a) to x. el(b) to y.
+//! return ⌜x ⇒ y⌝`, stuck at both calls, reads as `⌜⟨el(a)⟩ ⇒ ⟨el(b)⟩⌝`. The
+//! run is deterministic, so no decision names it and the vocabulary is
+//! unchanged. It fires only in a goal [`Replay::open_returned`] opened, and in
+//! [`Replay::normalize_returned`]: a computation goal of its own may be
+//! effectful, and there the two bind laws stay as the dialogue names them. A
+//! call a definition heads is not read through; the dialogue unfolds it first,
+//! as it does at reflexivity.
+//!
+//! A bind whose continuation eliminates its own variable at its head is passed
+//! over, as part of the call: it is the bind `E[c] ⇝ c to x. E[x]` builds, and
+//! run with the call as a returned endpoint it meets that endpoint again and
+//! binds the same call, so it never returns. The engine holds such an
+//! elimination of a returned endpoint as one neutral, never a bind.
 //!
 //! **Alternatives.** A delivery word recording each bind the engine read
 //! would let the kernel check a named step rather than re-run it; the run
@@ -159,6 +168,30 @@
 //! the term. **Reversal.** A reading that chooses — between two binds, or
 //! between a continuation's reduction and an unfolding — or an endpoint read
 //! inside a computation goal the kernel replays plainly takes a delivery word.
+//!
+//! # A decode is read as its code
+//!
+//! A type `El(⟨c⟩)` over a returned code denotes the type whose quote the
+//! code's computation returns, so a mode switch's structural comparison sets
+//! it aside against a type of another former rather than separating them, and
+//! [`read_endpoints`] reads it: the code normalized as an endpoint is, to a
+//! quote, and the quoted type compared with the other side by the same walk. A
+//! decode over a code stuck on a binder stays a type of its own, a neutral
+//! `Element`, compared with another decode by its code. Only value-type
+//! decodes are set aside; a computation-type decode compares structurally.
+//! [`read_step`] re-derives an open returned code's step the same way, with
+//! no trace: a decoder's arm run over a binder to its quote.
+//!
+//! **Design.** This is the recorded Tarski data universe: the codes are an
+//! ordinary datatype, the decoder a function over them, and a decode a type
+//! over a code that is a term, so the kernel gains no node and no type that
+//! computes by itself. **Alternatives.** A large elimination into `Type`, a
+//! `case` with types for arms in the type language and `Element` erased, was
+//! declined in #353. A dialogue for an open step would need the engine's code
+//! walk to decide returned endpoints under quotes, which it compares by place.
+//! **Reversal.** A universe that stops being a data universe; a model needing
+//! a computation-type decode read the same way; the engine deciding codes
+//! under quotes, at which point an open step carries a dialogue.
 //!
 //! # A cong chain
 //!
@@ -292,10 +325,13 @@ use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 
+use crate::conv::ConversionGoal;
 use crate::conv::Convertibility;
+use crate::conv::SetAside;
 use crate::conv::convert_values;
 use crate::conv::equal_computations;
 use crate::conv::equal_values;
+use crate::conv::pending_endpoints;
 use crate::encoding::ContentTable;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_computation;
@@ -899,6 +935,62 @@ pub fn convert(
     concluded(outcome, Expect::Convertible)
 }
 
+/// The kernel's own reading of the step `left` to `right`.
+///
+/// Each side is read as a returned endpoint is: its computation normalized
+/// by this module's weak head reduction with one δ-step wherever it sticks
+/// at a head naming a definition `unfoldings` holds, and the normal forms
+/// converted by the one conversion — two quotes by the structural walk over
+/// their types, whose own returned endpoints and decodes are read the same
+/// way.
+///
+/// The reading takes no trace: the reduction of a pure computation to
+/// `return v` chooses nothing, so a dialogue could only restate the term.
+/// It is the re-derivation of a step that runs a code over a binder to the
+/// quote it returns: that quote holds the calls its arms make on the binder,
+/// which an engine compares by place and never by what they run to, so no
+/// engine dialogue relates the two sides.
+///
+/// # Specification
+/// - requires: the two values, and every body in `unfoldings`, live in `arena`.
+/// - ensures: [`KernelVerdict::Convertible`] exactly when [`read_endpoints`]
+///   converts the pair within `budget`; otherwise
+///   [`ReplayRefusal::Contradicted`] at the empty trace's first position, never
+///   [`KernelVerdict::NotConvertible`]: a reading that stops short of a value
+///   certifies nothing. `arena` holds what it held on entry.
+/// - provides: the readmission's re-derivation of an open returned code's step.
+/// - fails: never — a decline is a verdict.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an open decode read through its decoder's arm converts
+///   with the quote over the calls the arm makes, and a forged quote stays
+///   apart; a reading that compared the two syntactically separates the first.
+/// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| arena.watermark() == before && ret != KernelVerdict::NotConvertible,
+)]
+#[inline]
+#[must_use]
+pub fn read_step(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    left: ValueId,
+    right: ValueId,
+    budget: ReplayBudget,
+) -> KernelVerdict
+{
+    match read_endpoints(arena, unfoldings, &[SetAside::Values(left, right)], budget) {
+        EndpointReading::Converts => KernelVerdict::Convertible,
+        EndpointReading::Apart => {
+            KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Contradicted {
+                at: TracePosition::default(),
+            }))
+        },
+    }
+}
+
 /// What reading a goal's returned endpoints comes to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum EndpointReading
@@ -909,39 +1001,52 @@ pub(crate) enum EndpointReading
     Apart,
 }
 
-/// What `pending` comes to once its returned endpoints are normalized: each
-/// side normalized as [`Replay::normalize_returned`] gives it, and the normal
-/// forms converted by [`convert_values`], the kernel's one conversion.
+/// What `pending` comes to once its returned endpoints and decodes are read:
+/// each side of a value pair normalized as [`Replay::normalize_returned`]
+/// gives it and the normal forms converted by [`convert_values`], the
+/// kernel's one conversion; a decode's code normalized to the quote it
+/// returns, and the type it quotes compared with the other side by the same
+/// structural walk, whose own set-aside pairs are read in turn.
 ///
 /// # Specification
-/// - requires: every pair's values and every body in `unfoldings` live in
-///   `arena`.
+/// - requires: every pair's values and types, and every body in `unfoldings`,
+///   live in `arena`.
 /// - ensures: [`EndpointReading::Converts`] exactly when, within `budget`,
-///   every pair's normal forms convert under [`convert_values`]; a
-///   normalization that stops short of a value — budget, a partial fixpoint, an
-///   unreadable node — leaves its pair apart, and so does a pair whose normal
-///   forms do not convert. `arena` holds what it held on entry.
-/// - provides: the checker's reading of a returned endpoint at a mode switch.
+///   every value pair's normal forms convert under [`convert_values`] — or,
+///   when both are quotes, their quoted types converge under the walk with
+///   every pair it sets aside read the same way — and every decode's code
+///   normalizes to a quote whose quoted type converges with the other side the
+///   same way. A normalization that stops short of a value — budget, a partial
+///   fixpoint, an unreadable node — leaves its pair apart, and so does a decode
+///   whose code reads to no quote and a pair whose normal forms do not convert.
+///   `arena` holds what it held on entry.
+/// - provides: the checker's reading of a returned endpoint, and of the type a
+///   returned code denotes, at a mode switch.
 /// - fails: never — a normalization that stops is an apart answer.
 /// - panics: none.
 ///
 /// # Termination
-/// - reason: the `for` loop over the pending pairs, not recursion.
-/// - measure: the pairs left; each normalization is bounded by `budget`.
+/// - reason: the `while let` loop over a worklist of set-aside pairs, not
+///   recursion.
+/// - measure: the budget left. A pair adds to the worklist only after reading a
+///   returned code, which charges the budget at least one step, and the walk
+///   over one quoted type adds finitely many pairs.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an endpoint returning its value through a definition
 ///   converts, a stuck endpoint converts only with an equal one, and an
-///   endpoint returning a different value stays apart; the arena's watermark is
-///   restored.
+///   endpoint returning a different value stays apart; a decode whose code
+///   returns the other side's quote converts, one whose code returns another
+///   quote or stays stuck does not; the arena's watermark is restored.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
+/// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
 #[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
 #[must_use]
 pub(crate) fn read_endpoints(
     arena: &mut TermArena,
     unfoldings: &Unfoldings,
-    pending: &[(ValueId, ValueId)],
+    pending: &[SetAside],
     budget: ReplayBudget,
 ) -> EndpointReading
 {
@@ -959,18 +1064,52 @@ pub(crate) fn read_endpoints(
         memo: NullMemo,
     };
     let mut reading = EndpointReading::Converts;
-    for &(left, right) in pending {
-        let (Ok(left_normal), Ok(right_normal)) =
-            (run.normalize_returned(left), run.normalize_returned(right))
-        else {
-            reading = EndpointReading::Apart;
-            break;
+    let mut worklist = pending.to_vec();
+    while let Some(set_aside) = worklist.pop() {
+        let quoted = match set_aside {
+            SetAside::Values(left, right) => {
+                let (Ok(left_normal), Ok(right_normal)) =
+                    (run.normalize_returned(left), run.normalize_returned(right))
+                else {
+                    reading = EndpointReading::Apart;
+                    break;
+                };
+                if convert_values(
+                    run.arena,
+                    run.unfoldings.presentations(),
+                    left_normal,
+                    right_normal,
+                ) == Convertibility::Convertible
+                {
+                    continue;
+                }
+                let (Some(&Value::Quote(one)), Some(&Value::Quote(other))) =
+                    (run.arena.value(left_normal), run.arena.value(right_normal))
+                else {
+                    reading = EndpointReading::Apart;
+                    break;
+                };
+                ConversionGoal::ValueType(one, other)
+            },
+            SetAside::Decoded { code, other } => {
+                let Ok(normal) = run.normalize_returned(code)
+                else {
+                    reading = EndpointReading::Apart;
+                    break;
+                };
+                let Some(&Value::Quote(quoted)) = run.arena.value(normal)
+                else {
+                    reading = EndpointReading::Apart;
+                    break;
+                };
+                ConversionGoal::ValueType(quoted, other)
+            },
         };
-        if convert_values(
+        if pending_endpoints(
             run.arena,
             run.unfoldings.presentations(),
-            left_normal,
-            right_normal,
+            quoted,
+            &mut worklist,
         ) != Convertibility::Convertible
         {
             reading = EndpointReading::Apart;
@@ -1431,6 +1570,17 @@ enum Rigidity
     Rigid,
     /// It holds a thunk, a binder or a defined constant.
     Flexible,
+}
+
+/// What a bind's continuation does at its head with the variable it binds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Continuation
+{
+    /// It eliminates the variable there: the continuation `E[x]` of a bind
+    /// that a returned endpoint's elimination was rebuilt into.
+    Eliminates,
+    /// Anything else.
+    Other,
 }
 
 /// A constant the trace postponed, awaiting the unfolding on the other side.
@@ -4416,10 +4566,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   and the element-identity transport and related application steps of
     ///   [`crate::element_identity`], and under [`Reduction::Endpoint`] a bind
     ///   over a call stuck at a variable or an opaque head read through: the
-    ///   innermost such bind whose continuation, run plainly with the call as a
-    ///   returned endpoint for its value, returns — the next bind out over both
-    ///   when it does not — until none fires at its head, and the original id
-    ///   when none fired at all.
+    ///   innermost such bind whose continuation, run with the call as a
+    ///   returned endpoint for its value, returns — a continuation stuck at
+    ///   such a bind of its own read the same way first, a bind whose
+    ///   continuation eliminates its own variable at its head passed over, and
+    ///   the next bind out tried over both when it does not return — until none
+    ///   fires at its head, and the original id when none fired at all.
     /// - provides: the search-free reductions the trace never records.
     /// - fails: [`Stop::Budget`] on a term that reduces past the budget;
     ///   [`Stop::PartialFixpoint`] when a fixpoint without evidence stands at
@@ -4434,11 +4586,14 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///
     /// # Termination
     /// - reason: the inner `loop` below, which takes one step per iteration;
-    ///   the outer `loop`, which re-enters it to run a bind's continuation and
-    ///   after each reading; and the `while let` loop rebuilding the head path.
-    ///   A continuation runs plainly, so a reading never nests.
+    ///   the `'reading` loop, which re-enters it to run a bind's continuation
+    ///   and after each reading; the `loop` choosing the next bind, which pops
+    ///   one attempt per failed turn, passes one bind frame per bind passed
+    ///   over, and ends at a push or at the last pop; and the `while let` loop
+    ///   rebuilding the head path.
     /// - measure: the budget left, which every inner iteration charges and
-    ///   every outer iteration enters; then the frames left.
+    ///   every `'reading` iteration enters; then the attempts held, finite
+    ///   because each was pushed by a charged iteration; then the frames left.
     ///
     /// # Adequacy
     /// - hypothesis: L3: beta, force, bind, and injection reductions settle
@@ -4455,6 +4610,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `replay::tests::native_list_fold_reduces_without_capturing_outer_variables`
     /// - witness: `replay::tests::a_projection_runs_its_side_of_a_pairing`
     /// - witness: `replay::tests::an_endpoint_reads_a_bind_through_its_stuck_call`
+    /// - witness: `replay::tests::an_endpoint_passes_over_a_bind_its_own_elimination_built`
+    /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
     #[spec(
         captures: before = self.spent,
         ensures: |ret| match term {
@@ -4480,10 +4637,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         let mut frames: Vec<Frame> = Vec::new();
         let mut focus = start;
         let mut progress = Progress::Unchanged;
-        // The bind an endpoint reading is trying while its continuation
-        // reduces, plainly, in `focus` and `frames`.
-        let mut attempt: Option<Attempt> = None;
-        loop {
+        // The binds an endpoint reading is trying, outermost first, while the
+        // innermost one's continuation reduces in `focus` and `frames`. A
+        // continuation stuck at a bind of its own is read the same way, one
+        // attempt deeper.
+        let mut attempts: Vec<Attempt> = Vec::new();
+        'reading: loop {
             loop {
                 self.charge()?;
                 // An elimination meeting a returned endpoint runs the endpoint's
@@ -4894,65 +5053,85 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     None => return Err(unreadable()),
                 }
             }
-            let (call, mut outer, before, first) = match attempt.take() {
-                Some(tried) => {
+            let mut next = match attempts.last() {
+                Some(_)
                     if frames.is_empty()
-                        && let Some(&Computation::Return(_)) = self.arena.computation(focus)
-                    {
-                        // The continuation returned: its bind is spent.
-                        frames = tried.outer;
-                        progress = Progress::Reduced;
-                        continue;
-                    }
-                    // It did not: the bind stays over the call, and the
-                    // next bind out is tried over both.
-                    frames.clear();
-                    let call = self.arena.computation_bind(tried.call, tried.body);
-                    (call, tried.outer, tried.progress, false)
-                },
-                None if reduction == Reduction::Endpoint => {
-                    (focus, core::mem::take(&mut frames), progress, true)
-                },
-                None => break,
-            };
-            let (call, bind) = self.next_bind(call, &mut outer);
-            let body = match bind {
-                Some(body)
-                    if !first
-                        || matches!(
-                            self.shape(
-                                Term::Computation(call),
-                                &Frozen::default(),
-                                ConversionSide::Left
-                            ),
-                            Ok(Shape::Neutral(
-                                Head::Variable(_) | Head::Constant(_, Status::Opaque),
-                                _
-                            ))
+                        && matches!(
+                            self.arena.computation(focus),
+                            Some(&Computation::Return(_))
                         ) =>
                 {
-                    body
-                },
-                unread => {
-                    // No bind is left, or a definition heads the call: the
-                    // endpoint stands as it is.
-                    if let Some(body) = unread {
-                        outer.push(Frame::Bind(body));
+                    // The continuation returned: its bind is spent.
+                    if let Some(tried) = attempts.pop() {
+                        frames = tried.outer;
                     }
-                    frames = outer;
-                    focus = call;
-                    progress = before;
-                    break;
+                    progress = Progress::Reduced;
+                    continue;
                 },
+                Some(_) | None if reduction == Reduction::Endpoint => {
+                    (focus, core::mem::take(&mut frames), progress, true)
+                },
+                Some(_) | None => break,
             };
-            let leaf = self.arena.value_returned(call);
-            focus = self.instantiate(body, leaf);
-            attempt = Some(Attempt {
-                outer,
-                call,
-                body,
-                progress: before,
-            });
+            loop {
+                let (call, mut outer, before, first) = next;
+                let (call, bind) = self.next_bind(call, &mut outer);
+                match bind {
+                    Some(body)
+                        if !first
+                            || matches!(
+                                self.shape(
+                                    Term::Computation(call),
+                                    &Frozen::default(),
+                                    ConversionSide::Left
+                                ),
+                                Ok(Shape::Neutral(
+                                    Head::Variable(_) | Head::Constant(_, Status::Opaque),
+                                    _
+                                ))
+                            ) =>
+                    {
+                        if self.continuation_of(body) == Continuation::Eliminates {
+                            // Read through, this bind restores the elimination
+                            // of a returned endpoint it came from, which binds
+                            // the same call again: it never returns. It stays
+                            // over its call, and the next bind out is tried
+                            // over both.
+                            let call = self.arena.computation_bind(call, body);
+                            next = (call, outer, before, false);
+                            continue;
+                        }
+                        let leaf = self.arena.value_returned(call);
+                        focus = self.instantiate(body, leaf);
+                        attempts.push(Attempt {
+                            outer,
+                            call,
+                            body,
+                            progress: before,
+                        });
+                        continue 'reading;
+                    },
+                    unread => {
+                        // No bind is left, or a definition heads the call:
+                        // this reading stands as it is.
+                        if let Some(body) = unread {
+                            outer.push(Frame::Bind(body));
+                        }
+                        let Some(tried) = attempts.pop()
+                        else {
+                            frames = outer;
+                            focus = call;
+                            progress = before;
+                            break 'reading;
+                        };
+                        // The enclosing continuation did not return: its bind
+                        // stays over its call, and the next bind out is tried
+                        // over both.
+                        let call = self.arena.computation_bind(tried.call, tried.body);
+                        next = (call, tried.outer, tried.progress, false);
+                    },
+                }
+            }
         }
         if progress == Progress::Unchanged {
             return Ok(term);
@@ -5002,6 +5181,73 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             call = self.wrap(call, frame);
         }
         (call, None)
+    }
+
+    /// What `body` does with its own bound variable at its head: eliminates
+    /// it, as the continuation `E[x]` of a bind [`Self::bind_returned`]
+    /// builds, or anything else.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Continuation::Eliminates`] exactly when `body` is a force,
+    ///   a projection, a case, a data case, a dependent split or a list fold
+    ///   inspecting the innermost variable, or a fixpoint applied to it.
+    /// - provides: the binds an endpoint reading in [`Self::whnf`] passes over:
+    ///   run with the call as a returned endpoint, such a continuation meets
+    ///   that endpoint at its head and binds the same call again, so it never
+    ///   returns, and a reading nested into it would never end.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an endpoint whose recursive call waits on another
+    ///   call stuck at a variable reads as its arm's constructor over both, as
+    ///   the engine reads it; nesting into the bind a fixpoint's gate builds
+    ///   loops until the budget declines the endpoint.
+    /// - witness: `replay::tests::an_endpoint_passes_over_a_bind_its_own_elimination_built`
+    #[spec(ensures: |ret| ret == Continuation::Other || self.arena.computation(body).is_some())]
+    fn continuation_of(
+        &self,
+        body: ComputationId,
+    ) -> Continuation
+    {
+        let inspected = if let Some(
+            &(Computation::DataCase {
+                scrutinee: inspected,
+                ..
+            }
+            | Computation::Case {
+                scrutinee: inspected,
+                ..
+            }
+            | Computation::SigmaSplit {
+                scrutinee: inspected,
+                ..
+            }
+            | Computation::ListFold {
+                list: inspected, ..
+            }
+            | Computation::RecordProjection(inspected, _)
+            | Computation::TupleProjection(inspected, _)
+            | Computation::Force(inspected)),
+        ) = self.arena.computation(body)
+        {
+            inspected
+        }
+        else if let Some(&Computation::Application(head, argument)) = self.arena.computation(body)
+            && let Some(&Computation::Fixpoint { .. }) = self.arena.computation(head)
+        {
+            argument
+        }
+        else {
+            return Continuation::Other;
+        };
+        if self.arena.value(inspected) == Some(&Value::Variable(DeBruijnIndex::from(0_u32))) {
+            Continuation::Eliminates
+        }
+        else {
+            Continuation::Other
+        }
     }
 
     /// `body` with its innermost binder instantiated at `value`.
@@ -7261,6 +7507,176 @@ mod tests
             ),
             KernelVerdict::Declined(_)
         ));
+        assert_eq!(arena.watermark(), watermark);
+    }
+
+    #[test]
+    fn an_endpoint_passes_over_a_bind_its_own_elimination_built()
+    {
+        // `⟨pred ⟨pred x⟩ to n. return S(n)⟩` against `S(⟨pred ⟨pred x⟩⟩)`:
+        // `spin(wind(Loop(x)))`'s arm in miniature. The outer `pred` meets the
+        // returned endpoint at its gate and binds it, `pred x to y. pred y`;
+        // read through, that bind's continuation meets the endpoint again and
+        // binds it again, so the reading passes over it and reads the bind
+        // out, over both, as `S` over the call.
+        let mut arena = TermArena::new();
+        let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+        let motive = arena.comp_type_returner(nat);
+        let on_zero = arena.computation_return(zero);
+        let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let on_successor = arena.computation_return(field);
+        let on_successor = arena.computation_lambda(on_successor);
+        let cases = arena.computation_data_case(field, motive, alloc::vec![on_zero, on_successor]);
+        let body = arena.computation_lambda(cases);
+        let pred = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+        let stuck = arena.computation_application(pred, field);
+        let inner = arena.value_returned(stuck);
+        let outer = arena.computation_application(pred, inner);
+        let successor =
+            arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![field]);
+        let continuation = arena.computation_return(successor);
+        let bound = arena.computation_bind(outer, continuation);
+        let endpoint = arena.value_returned(bound);
+        let call = arena.value_returned(outer);
+        let expected =
+            arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![call]);
+
+        assert_eq!(
+            convert(
+                &mut arena,
+                &Unfoldings::default(),
+                ReplaySides::Values(endpoint, expected),
+                ReplayBudget::default()
+            ),
+            KernelVerdict::Convertible
+        );
+    }
+
+    /// `el`, the decoder of one arrow code in miniature, as an admitted
+    /// definition at constant 0: `thunk (λu. force C u to x. force C u to y.
+    /// return ⌜El(x) → F El(y)⌝)`, the calls on `u` held at the opaque
+    /// constant 1 as the decoder's recursive calls are held on a binder.
+    ///
+    /// # Specification
+    /// trivial.
+    fn decoder(arena: &mut TermArena) -> Unfoldings
+    {
+        let opaque = arena.value_constant(ConstantIndex::from(1_usize));
+        let forced = arena.computation_force(opaque);
+        let code = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let first = arena.computation_application(forced, code);
+        let code = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let second = arena.computation_application(forced, code);
+        let x = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let y = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let quote = arrow_quote(arena, x, y);
+        let returned = arena.computation_return(quote);
+        let inner = arena.computation_bind(second, returned);
+        let outer = arena.computation_bind(first, inner);
+        let lambda = arena.computation_lambda(outer);
+        let body = arena.value_thunk(lambda);
+        Unfoldings::new(alloc::vec![Unfoldable::Body(body)])
+    }
+
+    /// `⌜El(x) → F El(y)⌝` over the two codes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn arrow_quote(
+        arena: &mut TermArena,
+        x: gandr_kernel_term::ValueId,
+        y: gandr_kernel_term::ValueId,
+    ) -> gandr_kernel_term::ValueId
+    {
+        let domain = arena.value_type_element(x, Level::zero());
+        let codomain = arena.value_type_element(y, Level::zero());
+        let returner = arena.comp_type_returner(codomain);
+        let arrow = arena.comp_type_arrow(domain, returner);
+        let thunk = arena.value_type_thunk(arrow);
+        arena.value_quote(thunk)
+    }
+
+    #[test]
+    fn a_decode_reads_as_the_quote_its_code_returns()
+    {
+        // `⟨el v⟩` for a free `v` reads through the decoder's two binds, the
+        // second a continuation stuck at a bind of its own, to the quote over
+        // the calls they hold: `⌜El(⟨C v⟩) → F El(⟨C v⟩)⌝`. A quote of anything
+        // else is refused by name, and a decode set aside against a type is
+        // read the same way.
+        let mut arena = TermArena::new();
+        let unfoldings = decoder(&mut arena);
+        let el = arena.value_constant(ConstantIndex::from(0_usize));
+        let el = arena.computation_force(el);
+        let v = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let decode = arena.computation_application(el, v);
+        let decode = arena.value_returned(decode);
+        let opaque = arena.value_constant(ConstantIndex::from(1_usize));
+        let opaque = arena.computation_force(opaque);
+        let held = arena.computation_application(opaque, v);
+        let held = arena.value_returned(held);
+        let quote = arrow_quote(&mut arena, held, held);
+        let Some(&gandr_kernel_term::Value::Quote(decoded)) = arena.value(quote)
+        else {
+            panic!("an arrow quote is a quote");
+        };
+        let unit = arena.value_type_unit();
+        let forged = arena.value_quote(unit);
+        let watermark = arena.watermark();
+
+        assert_eq!(
+            super::read_step(
+                &mut arena,
+                &unfoldings,
+                decode,
+                quote,
+                ReplayBudget::DEFAULT
+            ),
+            KernelVerdict::Convertible
+        );
+        assert_eq!(
+            super::read_step(
+                &mut arena,
+                &unfoldings,
+                decode,
+                forged,
+                ReplayBudget::DEFAULT
+            ),
+            KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Contradicted {
+                at: TracePosition::default(),
+            }))
+        );
+        assert_eq!(
+            super::read_step(
+                &mut arena,
+                &Unfoldings::default(),
+                decode,
+                quote,
+                ReplayBudget::DEFAULT
+            ),
+            KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Contradicted {
+                at: TracePosition::default(),
+            })),
+            "with `el` not admitted, the decode stays its call"
+        );
+        for (other, reading) in [
+            (decoded, super::EndpointReading::Converts),
+            (unit, super::EndpointReading::Apart),
+        ] {
+            assert_eq!(
+                super::read_endpoints(
+                    &mut arena,
+                    &unfoldings,
+                    &[crate::conv::SetAside::Decoded {
+                        code: decode,
+                        other
+                    }],
+                    ReplayBudget::DEFAULT
+                ),
+                reading
+            );
+        }
         assert_eq!(arena.watermark(), watermark);
     }
 

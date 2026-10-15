@@ -8110,6 +8110,48 @@ mod tests
     }
 
     #[test]
+    fn a_continuation_stuck_at_its_own_bind_reads_through_both()
+    {
+        // `⟨force R to n. force R to m. return (n, m)⟩` for the rigid
+        // constant `R`, against `(⟨force R⟩, ⟨force R⟩)`: a decoder's arm
+        // `el(a) to x. el(b) to y. return ⌜x ⇒ y⌝` in miniature. The
+        // continuation sticks at its own bind; the reading nests into it and
+        // reads through both, under either stance, and the kernel replays it by
+        // the same nesting. The calls are forced constants rather than stuck
+        // fixpoints, whose closures inside the continuation carry its binding
+        // and so only meet a fixpoint from outside it under a binder.
+        let mut core = CoreArena::new();
+        let rigid = core.value_constant(Name::Rigid.constant());
+        let held = core.computation_force(rigid);
+        let occurrence = innermost(&mut core);
+        let first = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let paired = core.value_tuple(&[first, occurrence]);
+        let returned = core.computation_return(paired);
+        let continuation = core.computation_bind(held, returned);
+        let bound = core.computation_bind(held, continuation);
+        let endpoint = core.value_returned(bound);
+        let call = core.value_returned(held);
+        let expected = core.value_tuple(&[call, call]);
+        let sides = Sides::Values(endpoint, expected);
+        let read = |world: &World| {
+            let (verdict, decisions) = world.traced(sides);
+            assert_eq!(
+                MachineVerdict::Convertible,
+                verdict,
+                "the endpoint reads as the pair over both calls: {decisions:?}"
+            );
+            assert_eq!(
+                KernelVerdict::Convertible,
+                world.replayed(sides, verdict, &decisions),
+                "the kernel nests the same reading: {decisions:?}"
+            );
+        };
+        let run = World::new(core, &[]);
+        read(&run);
+        read(&run.holding());
+    }
+
+    #[test]
     fn unfolding_one_function_twice_is_not_a_cycle()
     {
         let mut core = CoreArena::new();

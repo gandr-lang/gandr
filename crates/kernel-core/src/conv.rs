@@ -120,21 +120,57 @@ pub(crate) enum ConversionGoal
     Computation(ComputationId, ComputationId),
 }
 
+/// A pair the walk set aside, unread, for its caller to read.
+///
+/// # Specification
+/// - requires: nothing; the ids are the walk's own, read in its arena.
+/// - ensures: the variant names how the caller reads the pair.
+/// - provides: the one list a mode switch, reflexivity and a definition's
+///   relations read.
+/// - fails: none as a data value.
+/// - panics: none as a data value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a returned endpoint, a decode of a returned code against
+///   another former and a path type's endpoint pair are each set aside as the
+///   variant that reads them.
+/// - witness: `conv::tests::related_pairs_set_aside_path_endpoints`
+/// - witness: `conv::tests::a_decode_of_a_returned_code_is_set_aside_against_another_former`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SetAside
+{
+    /// Two values, one of them a returned endpoint or a presented type's
+    /// constructor, or a path type's endpoint pair the walk relates.
+    Values(ValueId, ValueId),
+    /// A value type decoded from a returned code, `El(⟨c⟩)`, against a value
+    /// type of another former: what the code's computation returns is read,
+    /// and the type a quote it returns quotes is compared with `other`.
+    Decoded
+    {
+        /// The returned code the decode reads.
+        code: ValueId,
+        /// The value type on the other side.
+        other: ValueTypeId,
+    },
+}
+
 /// What the walk does with a value pair one of whose sides is a returned
-/// endpoint or a presented type's constructor.
+/// endpoint or a presented type's constructor, and with a value type decoded
+/// from a returned code against a value type of another former.
 #[derive(Debug)]
 enum Endpoints<'pending>
 {
     /// Decide it as every other pair: two returned endpoints by their
     /// computations, a returned endpoint against any other former apart, two
-    /// constructors by their tags and fields.
+    /// constructors by their tags and fields, a decode against another former
+    /// apart.
     Structural,
     /// Set it aside, unread, for the caller to read; a presented type's
     /// constructor is read by the types `presentations` names.
     Deferred
     {
         /// The pairs set aside.
-        pending: &'pending mut Vec<(ValueId, ValueId)>,
+        pending: &'pending mut Vec<SetAside>,
         /// The presented types whose constructors are set aside.
         presentations: &'pending crate::presented::Presentations,
     },
@@ -143,7 +179,7 @@ enum Endpoints<'pending>
     Related
     {
         /// The pairs set aside.
-        pending: &'pending mut Vec<(ValueId, ValueId)>,
+        pending: &'pending mut Vec<SetAside>,
         /// The presented types whose constructors are set aside.
         presentations: &'pending crate::presented::Presentations,
     },
@@ -384,7 +420,8 @@ pub(crate) fn convert_values(
 
 /// Compare `goal` structurally, setting aside into `pending` every value pair
 /// one of whose sides is a returned endpoint or a constructor of a type
-/// `presentations` presents.
+/// `presentations` presents, and every value type decoded from a returned
+/// code against a value type of another former.
 ///
 /// # Specification
 /// - requires: nothing — an unreadable id fails closed.
@@ -394,27 +431,34 @@ pub(crate) fn convert_values(
 ///   nor descended into. On [`Convertibility::Distinct`] `pending` holds
 ///   whatever was set aside before the separating pair.
 /// - provides: where the checker's endpoint reading looks: the type
-///   conversion's own structural walk, finding the returned endpoints and
-///   presented terms it would otherwise compare by syntax. Each is then
-///   normalized and converted by [`convert_values`], never compared here.
+///   conversion's own structural walk, finding the returned endpoints, the
+///   decodes of returned codes and the presented terms it would otherwise
+///   compare by syntax. Each is then read by [`crate::replay::read_endpoints`],
+///   never compared here.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a returned endpoint inside a path type is set aside while
 ///   its domain still separates, so the reading is asked only the pairs
-///   structure leaves open; a circle word is set aside for its normal form.
+///   structure leaves open; a circle word is set aside for its normal form; a
+///   decode of a returned code is set aside against a type of another former,
+///   and against a decode compares its code.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_stuck_returned_endpoint_compares_structurally`
 /// - witness: `presented::tests::a_mode_switch_reads_circle_words_by_their_normal_forms`
+/// - witness: `conv::tests::a_decode_of_a_returned_code_is_set_aside_against_another_former`
 #[spec(captures: before = pending.len(), ensures: |ret| pending.len() >= before
-    && (ret == Convertibility::Distinct || pending.get(before ..).is_some_and(|set_aside| set_aside.iter().all(|pair|
-        <[ValueId; 2]>::from(*pair).iter().any(|&side| matches!(arena.value(side), Some(&(Value::Returned(_) | Value::Constructor { .. }))))))))]
+    && (ret == Convertibility::Distinct || pending.get(before ..).is_some_and(|set_aside| set_aside.iter().all(|pair| match *pair {
+        SetAside::Values(left, right) => [left, right].iter().any(|&side| matches!(arena.value(side), Some(&(Value::Returned(_) | Value::Constructor { .. })))),
+        SetAside::Decoded { code, other } => matches!(arena.value(code), Some(&Value::Returned(_)))
+            && !matches!(arena.value_type(other), Some(&ValueType::Element { .. }) | None),
+    }))))]
 pub(crate) fn pending_endpoints(
     arena: &TermArena,
     presentations: &crate::presented::Presentations,
     goal: ConversionGoal,
-    pending: &mut Vec<(ValueId, ValueId)>,
+    pending: &mut Vec<SetAside>,
 ) -> Convertibility
 {
     converge(arena, goal, Endpoints::Deferred {
@@ -452,7 +496,7 @@ pub(crate) fn related_pairs(
     arena: &TermArena,
     presentations: &crate::presented::Presentations,
     goal: ConversionGoal,
-    pending: &mut Vec<(ValueId, ValueId)>,
+    pending: &mut Vec<SetAside>,
 ) -> Convertibility
 {
     converge(arena, goal, Endpoints::Related {
@@ -582,12 +626,13 @@ pub(crate) fn case_branch_mismatch(
 ///   has readable roots and either equal ids or matching structure, with
 ///   canonical level equality and nominal atom equality. Under
 ///   [`Endpoints::Deferred`] a value pair with a returned endpoint, or with a
-///   constructor of a presented type, on either side is appended to the list
-///   unexamined and closes, and a type of words converts with the path type at
-///   the point its cells loop at ([`crate::presented::Presentations::words`]);
-///   under [`Endpoints::Related`] so does each, and every pair of path
-///   endpoints is appended too. The iterative heap stack does not impose a
-///   host-stack depth limit.
+///   constructor of a presented type, on either side, and a value type decoded
+///   from a returned code against a value type of another former, are appended
+///   to the list unexamined and close, and a type of words converts with the
+///   path type at the point its cells loop at
+///   ([`crate::presented::Presentations::words`]); under [`Endpoints::Related`]
+///   so does each, and every pair of path endpoints is appended too. The
+///   iterative heap stack does not impose a host-stack depth limit.
 /// - provides: the shared engine of the conversion and term-equality faces. The
 ///   predicate checks the initial roots' readability, identity and head
 ///   separation; the graph judgement and termination argument are not replayed
@@ -693,10 +738,41 @@ fn converge(
                     }
                     continue;
                 }
+                let pair = (left, right);
                 let (Some(left), Some(right)) = (arena.value_type(left), arena.value_type(right))
                 else {
                     return Convertibility::Distinct;
                 };
+                // A decode of a returned code against a type of another
+                // former waits to be read: the type it denotes is what the
+                // code's computation returns, a reduction, and none fires
+                // here. Two decodes compare their codes below, and a pair
+                // of returned codes is set aside there.
+                let decoded = if let &ValueType::Element { code, .. } = left
+                    && !matches!(*right, ValueType::Element { .. })
+                {
+                    Some((code, pair.1))
+                }
+                else if let &ValueType::Element { code, .. } = right
+                    && !matches!(*left, ValueType::Element { .. })
+                {
+                    Some((code, pair.0))
+                }
+                else {
+                    None
+                };
+                if let Some((code, other)) = decoded
+                    && matches!(arena.value(code), Some(&Value::Returned(_)))
+                    && let Endpoints::Deferred {
+                        ref mut pending, ..
+                    }
+                    | Endpoints::Related {
+                        ref mut pending, ..
+                    } = endpoints
+                {
+                    pending.push(SetAside::Decoded { code, other });
+                    continue;
+                }
                 match (left, right) {
                     (
                         &ValueType::Data {
@@ -808,8 +884,8 @@ fn converge(
                             ref mut pending, ..
                         } = endpoints
                         {
-                            pending.push((one_left, other_left));
-                            pending.push((one_right, other_right));
+                            pending.push(SetAside::Values(one_left, other_left));
+                            pending.push(SetAside::Values(one_right, other_right));
                         }
                         else {
                             stack.push(ConversionGoal::Value(one_left, other_left));
@@ -1098,7 +1174,7 @@ fn converge(
                 } = endpoints
                     && set_aside
                 {
-                    pending.push(pair);
+                    pending.push(SetAside::Values(pair.0, pair.1));
                     continue;
                 }
                 match (left, right) {
@@ -1673,7 +1749,10 @@ mod tests
             Convertibility::Convertible,
             "differing endpoints are left to the caller"
         );
-        assert_eq!(pending, [(first, second), (second, first)]);
+        assert_eq!(pending, [
+            super::SetAside::Values(first, second),
+            super::SetAside::Values(second, first)
+        ]);
         assert_eq!(
             convertible_value_types(&arena, one, other),
             Convertibility::Distinct,
@@ -1691,6 +1770,54 @@ mod tests
             Convertibility::Distinct,
             "a differing domain still separates"
         );
+    }
+
+    #[test]
+    fn a_decode_of_a_returned_code_is_set_aside_against_another_former()
+    {
+        // `El(⟨c⟩)` for a returned code against `Integer` is set aside, in
+        // either order, for the caller to read; the plain walk, which reads
+        // nothing, separates the two. A decode of a variable code is no
+        // reduction and separates in place.
+        let mut arena = TermArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let forced = arena.computation_force(variable);
+        let code = arena.value_returned(forced);
+        let decoded = arena.value_type_element(code, Level::zero());
+        let rigid = arena.value_type_element(variable, Level::zero());
+        for (one, other) in [(decoded, integer), (integer, decoded)] {
+            let mut pending = alloc::vec::Vec::new();
+            assert_eq!(
+                super::pending_endpoints(
+                    &arena,
+                    &crate::presented::FREE,
+                    super::ConversionGoal::ValueType(one, other),
+                    &mut pending
+                ),
+                Convertibility::Convertible,
+                "the decode waits to be read"
+            );
+            assert_eq!(pending, [super::SetAside::Decoded {
+                code,
+                other: integer
+            }]);
+            assert_eq!(
+                convertible_value_types(&arena, one, other),
+                Convertibility::Distinct
+            );
+        }
+        let mut pending = alloc::vec::Vec::new();
+        assert_eq!(
+            super::pending_endpoints(
+                &arena,
+                &crate::presented::FREE,
+                super::ConversionGoal::ValueType(rigid, integer),
+                &mut pending
+            ),
+            Convertibility::Distinct
+        );
+        assert!(pending.is_empty());
     }
 
     #[test]
