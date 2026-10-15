@@ -3495,4 +3495,41 @@ mod tests
         assert_eq!(table.placed.len(), 34_usize);
         assert_eq!(usize::from(table.stream().length()), before);
     }
+
+    #[test]
+    fn a_rewrite_under_an_inactive_memo_encodes_nothing_487()
+    {
+        let mut arena = TermArena::new();
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let unit = arena.value_unit();
+        let subject = arena.value_tuple(&[variable, unit]);
+        let mut table = ContentTable::new();
+        let shifted = crate::rewrite::shift_value(
+            &mut arena,
+            &mut table,
+            &mut gandr_kernel_check_memo::NullMemo,
+            subject,
+            BinderDepth::NONE,
+            BinderDepth::from(1_u32),
+        );
+        assert_ne!(shifted, subject, "the free variable rises");
+        assert_eq!(
+            (table.records, table.placed.len()),
+            (0_u64, 0_usize),
+            "a memo that keeps nothing is keyed by nothing: the walk encodes no node"
+        );
+        let mut memo = crate::rewrite::RewriteMemo::new();
+        let _shifted = crate::rewrite::shift_value(
+            &mut arena,
+            &mut table,
+            &mut memo,
+            subject,
+            BinderDepth::NONE,
+            BinderDepth::from(1_u32),
+        );
+        assert!(
+            table.records > 0,
+            "a memo that keeps its answers is keyed by their content"
+        );
+    }
 }

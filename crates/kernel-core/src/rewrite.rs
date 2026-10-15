@@ -63,6 +63,7 @@ use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
+use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_check_memo::OrderedMemo;
 use gandr_kernel_term::AnyNode;
@@ -1032,8 +1033,9 @@ where
 ///   rewrites to itself.
 /// - ensures: the rewritten node, minted into `arena` where a child changed and
 ///   reused where none did. A zero shift or an unreadable root returns its
-///   original outcome without traversal or memo lookup. Other memo hits may
-///   reuse equal-content results; memoized and memoless runs preserve the same
+///   original outcome without traversal or memo lookup. Under an inactive memo
+///   no support is built, so `table` is untouched. Other memo hits may reuse
+///   equal-content results; memoized and memoless runs preserve the same
 ///   content, with distinct-support versus occurrence-based expansion.
 /// - provides: the shared engine of the two rewrites. Predicates check family,
 ///   zero-shift identity and unreadable-root fallback. The witnesses compare
@@ -1070,6 +1072,7 @@ where
 /// - witness: `rewrite::tests::a_zero_shift_reuses_its_code_carrying_subject`
 /// - witness: `rewrite::tests::a_saturated_variable_shift_reuses_the_unchanged_occurrence`
 /// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
+/// - witness: `encoding::tests::a_rewrite_under_an_inactive_memo_encodes_nothing_487`
 #[spec(ensures: |ret| (!matches!(rewrite, Rewrite::Shift { amount, .. } if amount.0 == 0)
     || ret == outcome_of(root)) && match (root, ret) {
     (AnyNode::Value(source), RewriteOutcome::Value(result)) => arena.value(source).is_some() || result == source,
@@ -1107,10 +1110,14 @@ where
     while let Some(task) = tasks.pop() {
         match task {
             RewriteTask::Open(node, depth, step) => {
-                let support = RewriteSupport::build(table, arena, step.goal(node, depth));
-                if let Some(hit) = memo.recall(&support) {
-                    results.push(*hit.outcome());
-                    continue;
+                // An inactive memo never answers, so its support is never
+                // built: the memoless walk encodes nothing.
+                if matches!(M::ACTIVITY, MemoActivity::Active) {
+                    let support = RewriteSupport::build(table, arena, step.goal(node, depth));
+                    if let Some(hit) = memo.recall(&support) {
+                        results.push(*hit.outcome());
+                        continue;
+                    }
                 }
                 // The one arm that answers through a sub-walk rather than
                 // through its children: the occurrence being substituted, where
@@ -1142,14 +1149,19 @@ where
             },
             RewriteTask::Close(node, depth, step) => {
                 let outcome = close_rewrite(arena, step, node, depth, &mut results);
-                let support = RewriteSupport::build(table, arena, step.goal(node, depth));
-                // A memo at its ceiling declines to record. The walk proceeds
-                // unmemoized from there, which costs reuse and never the answer.
-                let _recorded = memo.remember(support, outcome);
+                if matches!(M::ACTIVITY, MemoActivity::Active) {
+                    let support = RewriteSupport::build(table, arena, step.goal(node, depth));
+                    // A memo at its ceiling declines to record. The walk
+                    // proceeds unmemoized from there, which costs reuse and
+                    // never the answer.
+                    let _recorded = memo.remember(support, outcome);
+                }
                 results.push(outcome);
             },
             RewriteTask::Record(node, depth, step) => {
-                if let Some(&outcome) = results.last() {
+                if matches!(M::ACTIVITY, MemoActivity::Active)
+                    && let Some(&outcome) = results.last()
+                {
                     let support = RewriteSupport::build(table, arena, step.goal(node, depth));
                     let _recorded = memo.remember(support, outcome);
                 }
