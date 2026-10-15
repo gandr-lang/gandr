@@ -561,6 +561,46 @@ fn a_selection_projects_a_dependent_record_along_its_nesting()
     );
 }
 
+/// A selection by position projects the pair its operand is: `.0` its first
+/// component and `.1` its second, as the labels of a type of two name them;
+/// a third position is refused.
+#[test]
+fn a_selection_by_position_projects_a_pair()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def first(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Integer { return p.0 } \
+         def second(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Path(Integer, p.0, p.0) \
+         { return p.1 } def by_label(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F \
+         Path(Integer, p.n, p.n) { return p.v }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "first"),
+        ["thunk", "lambda", "return", "nested", "component0", "#0"],
+        "`.0` is the pair's first component"
+    );
+    assert_eq!(
+        (
+            body(&arena, &module, "second"),
+            declared(&arena, &module, "second")
+        ),
+        (
+            body(&arena, &module, "by_label"),
+            declared(&arena, &module, "by_label")
+        ),
+        "`.1` and `.0` project as the labels naming the same entries"
+    );
+    assert!(
+        matches!(
+            refused("def third(p : Integer * String) -> -F String { return p.2 }"),
+            LoweringRefusal::OutOfFragment { .. }
+        ),
+        "a pair has no third position"
+    );
+}
+
 #[test]
 fn a_telescope_value_lowers_by_its_arity()
 {

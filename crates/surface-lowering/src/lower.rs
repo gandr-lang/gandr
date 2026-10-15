@@ -1225,7 +1225,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::CapabilityType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1275,6 +1275,7 @@ fn ending(former: Former) -> Ending
         | Former::ParenthesizedType
         | Former::PathType
         | Former::CapabilityType
+        | Former::AtType
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock
@@ -1307,7 +1308,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::CapabilityType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1400,6 +1401,7 @@ fn iterating(former: Former) -> Ending
                     | Former::ParenthesizedType
                     | Former::PathType
                     | Former::CapabilityType
+                    | Former::AtType
                     | Former::SessionType,
                 Family::Type
             ) | (
@@ -1469,6 +1471,7 @@ const fn family_of(former: Former) -> Family
         | Former::ParenthesizedType
         | Former::PathType
         | Former::CapabilityType
+        | Former::AtType
         | Former::SessionType => Family::Type,
         Former::Declaration
         | Former::AttributeBlock
@@ -1822,6 +1825,20 @@ impl Universe
     };
 }
 
+/// What a path type's carrier is written as.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Carrier
+{
+    /// A type, the node written at the carrier's place.
+    Written(NodeIndex),
+    /// A universe spelled by the form's own tiles, `Path(Type, A, B)`: the
+    /// endpoints are written as types.
+    Universe(Universe),
+}
+
 /// The code a decode reads its type from, and the head a static application
 /// applies.
 ///
@@ -1985,6 +2002,10 @@ struct Function
     recursion: Maybe<ScopeId, recursion::Absent>,
 }
 
+/// The continuation type's head, resolved after every binder and earlier
+/// declaration at two arguments.
+const STACK: &str = "Stack";
+
 /// What the mint sweep does for one node, decided by the classification.
 ///
 /// # Specification
@@ -2145,7 +2166,7 @@ enum Plan
     /// lowerer's match store.
     Case(native::CaseIndex),
     /// An element path type over its carrier and its two endpoints.
-    Path(NodeIndex, NodeIndex, NodeIndex),
+    Path(Carrier, NodeIndex, NodeIndex),
     /// Reflexivity at its point.
     Here(NodeIndex),
     /// Function extensionality between its two functions.
@@ -2179,6 +2200,9 @@ enum Plan
     /// A directed identity type over its carrier and its two endpoints:
     /// `Flow(A, a, b)`.
     Flow(NodeIndex, NodeIndex, NodeIndex),
+    /// A first-class continuation's type over the computation types it runs
+    /// from and to: `Stack(C, D)`.
+    Stack(NodeIndex, NodeIndex),
     /// A session statement, `bisim(A, B)` or `sim(A, B)`, over its two codes.
     SessionRelated(
         gandr_core_term::session::SessionRelation,
@@ -2206,10 +2230,12 @@ enum Plan
     Derived(identity::Derived),
     /// The dependent transport over its telescope motive.
     TelescopeTransport(identity::Transported),
-    /// A capability type over its authority at its grade.
+    /// A capability type over its authority at its grade, living in its
+    /// region.
     Capability(
         capability::Authority,
         gandr_core_term::effect::capability::CapabilityGrade,
+        gandr_core_term::effect::capability::Region,
     ),
     /// The returner of the value type at the node, its row holding these
     /// interfaces whole.
@@ -2639,6 +2665,13 @@ struct Lowerer<'run, 'source>
     /// application, not yet minted: its classifier reads the arguments before
     /// it, which the mint sweep reaches after it, so the application mints it.
     awaiting: BTreeSet<NodeIndex>,
+    /// Each thunk a definition is, with the answer its signature states for
+    /// its body: `C` for `+U C`, `-F B` for `() => B`.
+    thunked: BTreeMap<NodeIndex, native::Answer>,
+    /// Each node a type classifies without annotating it: a definition whose
+    /// signature writes a type no thunk is, and a field of a constructor with
+    /// a classifier, with the classifier it takes.
+    inherited: BTreeMap<NodeIndex, native::Classifier>,
     /// Each label written against an entry, in the order planned.
     labels: Vec<LabelSite>,
     /// Each type head that stands for a type minted elsewhere: a manifest
@@ -2781,6 +2814,9 @@ struct Lowerer<'run, 'source>
     presented: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// The frame of every capability a capability scope binds.
     capabilities: BTreeSet<ScopeId>,
+    /// The region each capability type written at a scope lives in, by the
+    /// capability type's node.
+    regions: BTreeMap<NodeIndex, gandr_core_term::effect::capability::RegionDepth>,
     /// Each application's renaming, in source order, or the refusal of the
     /// argument type it could not read: built during the mint sweep, before
     /// the first type written after the application mints.
@@ -3172,6 +3208,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && ret.statements.is_empty()
                 && ret.parameters.is_empty()
                 && ret.classifiers.is_empty()
+                && ret.thunked.is_empty()
+                && ret.inherited.is_empty()
                 && ret.answers.is_empty()
                 && ret.in_type.is_empty()
                 && ret.at_endpoint.is_empty()
@@ -3234,6 +3272,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             classifiers: BTreeMap::new(),
             argued: BTreeMap::new(),
             awaiting: BTreeSet::new(),
+            thunked: BTreeMap::new(),
+            inherited: BTreeMap::new(),
             labels: Vec::new(),
             stand_ins: BTreeSet::new(),
             answers: BTreeMap::new(),
@@ -3280,6 +3320,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             instance_types: BTreeMap::new(),
             instantiated: BTreeMap::new(),
             capabilities: BTreeSet::new(),
+            regions: BTreeMap::new(),
             resumptions: BTreeSet::new(),
         }
     }
@@ -3647,7 +3688,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   witness's body, a member rather than a form, is read nowhere. Every
     ///   other node stays unread. Every written payload is marked as one,
     ///   whatever its form, and every signature type's root with the type
-    ///   components it sees.
+    ///   components it sees. A definition both of whose halves are written is
+    ///   signed as [`Self::sign_definitions`] signs it.
     /// - provides: the entry points of the ascending sweep.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a payload of a mold the
     ///   grammar does not hold.
@@ -3779,6 +3821,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.seed_data(&mut seeds);
         self.seed_families(&mut seeds);
         self.seed_descriptions(&mut seeds)?;
+        self.sign_definitions()?;
         for (position, reading) in seeds {
             self.read(position, reading);
         }
@@ -4379,6 +4422,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::ParenthesizedType => self.parenthesized_type(site, cursor),
             Former::PathType => self.path_type(site, cursor),
             Former::CapabilityType => self.capability_type(site, cursor),
+            Former::AtType => self.at_type(site, cursor),
             Former::Scope => self.capability_scope(site, pieces),
             Former::Instantiation => self.instantiation(site, cursor),
             Former::SessionType => self.session_type(site),
@@ -5082,6 +5126,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Some(&answer) = self.answers.get(&site.at.node) {
             let _passed = self.answers.insert(inner.node, answer);
         }
+        if let Some(&inherited) = self.inherited.get(&site.at.node) {
+            let _passed = self.inherited.insert(inner.node, inherited);
+        }
         self.pass_paths(site.at.node, inner.node);
 
         self.plan(site, Plan::Transparent(inner.node));
@@ -5158,7 +5205,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is a thunk in term position.
     /// - ensures: a thunk standing as a value reads its block in its own frame
-    ///   as a body a path runs through, and is planned over it.
+    ///   as a body a path runs through, answering the type the signature of the
+    ///   definition it is states for its body, and is planned over it.
     /// - provides: the value former that suspends a computation.
     /// - fails: yields the wrong-sort refusal outside value position, the
     ///   unadmitted refusal for a grade, the block's own refusal, and the
@@ -5192,11 +5240,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Err(site.folded(FormName::GRADE, FragmentBoundary::Unadmitted));
         }
         let body = self.block(site, &mut cursor, frame)?;
-        self.open_body(
-            site,
-            body,
-            Maybe::Absent(native::answered::Absent::Unstated),
-        )?;
+        let answer = match self.thunked.get(&site.at.node) {
+            Some(&answer) => {
+                let _passed = self.answers.insert(body.last, answer);
+                Maybe::Present(answer)
+            },
+            None => Maybe::Absent(native::answered::Absent::Unstated),
+        };
+        self.open_body(site, body, answer)?;
 
         self.plan(site, Plan::Thunk(body));
 
@@ -5986,7 +6037,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   because the commuting puts every exit where the function's body ends.
     ///   A return in a handled subject is recorded as crossing its handlers'
     ///   frames, and the body around the scope as delimited: it leaves that
-    ///   body past every frame, no return clause run.
+    ///   body past every frame, no return clause run. The operand of a `pure`
+    ///   where a body ends, and of a return, is classified by the type the body
+    ///   answers.
     /// - provides: the computation formers over a value, and the exit that
     ///   leaves a function with a value.
     /// - fails: yields the wrong-sort refusal outside computation position, the
@@ -6054,6 +6107,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let operand = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
         self.read(operand.node, Reading::Value(frame));
+        // The value a tail's `pure` or a `return` returns is the one the body
+        // answers.
+        let answer = if keyword == TileName::PURE && self.exits.contains(&site.at.node) {
+            self.answers.get(&site.at.node)
+        }
+        else if keyword == TileName::RETURN {
+            self.bodies
+                .get(&site.at.node)
+                .and_then(|body| self.answers.get(body))
+        }
+        else {
+            None
+        };
+        if let Some(&answer) = answer {
+            let _first = self
+                .inherited
+                .insert(operand.node, native::Classifier::Answered { answer, frame });
+        }
         let plan = if keyword == TileName::FORCE {
             Plan::Force(operand.node)
         }
@@ -6411,22 +6482,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a selection `e.name`.
+    /// Classify a selection `e.name` or `e.0`.
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
-    /// - ensures: a selection read as a computation off a name whose written
-    ///   type is a thunked lazy record over labels observes the entry its label
-    ///   names; a selection off a name whose written type is a type over labels
-    ///   projects the entry its label names, as [`Self::selection`] reads it. A
-    ///   chain of selections whose head is a capitalised name is a path: inside
-    ///   a functor whose parameter the head names, a one-link path is that
-    ///   parameter's value component, as [`Self::parameter_value`] reads it;
-    ///   otherwise it is resolved through the outermost scope at the depth that
-    ///   binds it: a path ending at an exported value component stands as that
-    ///   member's constant when the member is declared strictly before the
-    ///   declaration the path is written in. The chain is walked by an explicit
-    ///   loop, and its links are left unread.
+    /// - ensures: a selection by position projects the pair its operand is, as
+    ///   [`Self::positional`] reads it; a selection read as a computation off a
+    ///   name whose written type is a thunked lazy record over labels observes
+    ///   the entry its label names; a selection off a name whose written type
+    ///   is a type over labels projects the entry its label names, as
+    ///   [`Self::selection`] reads it. A chain of selections whose head is a
+    ///   capitalised name is a path: inside a functor whose parameter the head
+    ///   names, a one-link path is that parameter's value component, as
+    ///   [`Self::parameter_value`] reads it; otherwise it is resolved through
+    ///   the outermost scope at the depth that binds it: a path ending at an
+    ///   exported value component stands as that member's constant when the
+    ///   member is declared strictly before the declaration the path is written
+    ///   in. The chain is walked by an explicit loop, and its links are left
+    ///   unread.
     /// - provides: the governed reading of a module path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a selection a governing module
@@ -6469,6 +6542,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         pieces: &Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        if self.positional(site, pieces)? == arity::Planned(true) {
+            return Ok(());
+        }
         if self.observation(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
@@ -7283,9 +7359,42 @@ impl<'run, 'source> Lowerer<'run, 'source>
         cursor: &mut Cursor<'_>,
     ) -> Result<Universe, LoweringRefusal<'source>>
     {
+        let universe = self.universe_tiles(site, cursor)?;
+        exhausted(site, cursor)?;
+
+        Ok(universe)
+    }
+
+    /// The universe the `Type` tile at `cursor` and the bracket after it spell,
+    /// the cursor left past them.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at a `Type` tile.
+    /// - ensures: as [`Self::universe_of`], the cursor left past the universe's
+    ///   last tile rather than required at the form's end.
+    /// - provides: the universe a path type's carrier spells inline.
+    /// - fails: as [`Self::universe_of`].
+    /// - panics: none.
+    /// - executable: none — where the cursor stands after the call has no
+    ///   observer but the tiles the caller reads next; [`Self::universe_of`]
+    ///   holds the whole form to its end.
+    ///
+    /// # Errors
+    /// The universe's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::universe_of`], and a path type at a
+    ///   levelled universe.
+    /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
+    /// - witness: `lower::identity::tests::a_path_at_a_universe_reads_its_endpoints_as_types`
+    fn universe_tiles(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+    ) -> Result<Universe, LoweringRefusal<'source>>
+    {
         let _keyword = cursor.tile(TileName::UNIVERSE);
         if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_OPEN) {
-            exhausted(site, cursor)?;
             return Ok(Universe::FUSS_FREE);
         }
         let sort = match (cursor.tile(TileName::PLUS), cursor.tile(TileName::MINUS)) {
@@ -7316,7 +7425,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Absent(_) => LevelConstant::ZERO,
         };
         closed(site, cursor, TileName::BRACKET_CLOSE)?;
-        exhausted(site, cursor)?;
 
         Ok(Universe { sort, level })
     }
@@ -7434,9 +7542,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   declaration answers is read as the static application of that code to
     ///   the arguments, left to right; any other head named `Flow` and applied
     ///   to three arguments is the directed identity type [`Self::flow_type`]
-    ///   plans; any other head applied to one argument resolves against the
-    ///   unary table, stands at the sort its former produces, reads its
-    ///   argument at the sort the former takes, and is planned over it.
+    ///   plans; any other head named `Stack` and applied to two is the
+    ///   continuation type [`Self::stack_type`] plans; any other head applied
+    ///   to one argument resolves against the unary table, stands at the sort
+    ///   its former produces, reads its argument at the sort the former takes,
+    ///   and is planned over it.
     /// - provides: the applied half of type-head resolution.
     /// - fails: yields the unresolved-head refusal for a head nothing answers
     ///   and no former takes at the arity it was written with, the wrong-sort
@@ -7463,7 +7573,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Flow(..) | Plan::Constructor(_)))
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Constructor(_)))
                 )
         },
     )]
@@ -7538,11 +7648,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .operands
             .get(start ..)
             .and_then(|written| <[NodeIndex; 3]>::try_from(written).ok());
+        let stack = self
+            .operands
+            .get(start ..)
+            .and_then(|written| <[NodeIndex; 2]>::try_from(written).ok());
         self.operands.truncate(start);
         if let Some(written) = flow
             && name.as_ref() == identity::FLOW
         {
             return self.flow_type(site, written);
+        }
+        if let Some(written) = stack
+            && name.as_ref() == STACK
+        {
+            return self.stack_type(site, written);
         }
         let unresolved = |arity| LoweringRefusal::UnresolvedTypeHead {
             span: head.span,
@@ -7559,6 +7678,54 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
 
         self.apply_former(site, former, argument)
+    }
+
+    /// Classify a continuation's type, `Stack(C, D)`, its two operands already
+    /// read off the application.
+    ///
+    /// # Specification
+    /// - requires: `site` is a type application headed `Stack`, which nothing
+    ///   the scope binds answers, written over `input` and `output`.
+    /// - ensures: the form stands as a value type, reads both operands as
+    ///   computation types under its own frame, and is planned over the two in
+    ///   order.
+    /// - provides: the written spelling of the type a captured continuation
+    ///   has, the spelling its presentation writes.
+    /// - fails: yields the wrong-sort refusal where no value type is read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a continuation type written over two returners, read
+    ///   back out of the arena with its input and output in order.
+    /// - witness: `lower::tests::a_written_stack_type_lowers_to_its_continuation_type`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&Plan::Stack(input, output))
+                        if [input, output] == written
+                            && self.reading(input) == Reading::CompType(site.reading.frame())
+                            && self.reading(output) == Reading::CompType(site.reading.frame())
+                )
+        },
+    )]
+    fn stack_type(
+        &mut self,
+        site: Site,
+        written: [NodeIndex; 2],
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::ValueType)?;
+        let [input, output] = written;
+        self.read(input, Reading::CompType(frame));
+        self.read(output, Reading::CompType(frame));
+        self.plan(site, Plan::Stack(input, output));
+
+        Ok(())
     }
 
     /// Classify the static application of the code `resolved` names to the
@@ -8640,6 +8807,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut manifests: Vec<NodeIndex> = stated.iter().map(|defined| defined.node).collect();
         manifests.extend(self.synthesised_types());
         manifests.extend(self.answers.values().map(|answer| answer.node));
+        manifests.extend(
+            self.inherited
+                .values()
+                .filter_map(|inherited| match *inherited {
+                    native::Classifier::Written(written) => Some(written),
+                    native::Classifier::Answered { .. }
+                    | native::Classifier::Slot(_)
+                    | native::Classifier::Inserted => None,
+                }),
+        );
         manifests.reverse();
         let mut subtree: Vec<NodeIndex> = Vec::new();
         let mut work: Vec<NodeIndex> = Vec::new();
@@ -9070,6 +9247,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Former(TypeFormer::Thunk | TypeFormer::List | TypeFormer::Run, _)
                 | Plan::Path(..)
                 | Plan::Flow(..)
+                | Plan::Stack(..)
                 | Plan::Data(..)
                 | Plan::Expansion(..)
                 | Plan::Capability(..)
@@ -9288,8 +9466,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::TelescopeTransport(transported) => {
                 self.mint_telescope_transport(transported, sink, origin)
             },
-            Plan::Capability(ref authority, grade) => {
-                Self::mint_capability(authority, grade, sink, origin)
+            Plan::Capability(ref authority, grade, region) => {
+                Self::mint_capability(authority, grade, region, sink, origin)
             },
             Plan::Effectful(ref row, argument) => self.mint_effectful(row, argument, sink, origin),
             Plan::Exercise(exercised) => self.mint_exercise(exercised, sink, origin),
@@ -9309,6 +9487,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::StaticPi(..)
             | Plan::Path(..)
             | Plan::Flow(..)
+            | Plan::Stack(..)
             | Plan::SessionRelated(..)
             | Plan::Stay(_)
             | Plan::Forward(_)
@@ -9928,7 +10107,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     && sink.origins.computation(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::ValueType(id)) => {
-                matches!(*plan, Plan::StaticPi(_, _) | Plan::Path(..) | Plan::Flow(..))
+                matches!(*plan, Plan::StaticPi(_, _) | Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..))
                     && sink.origins.value_type(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::CompType(id)) => {
@@ -9960,15 +10139,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Lowered::ValueType(id)
                 })
             }),
-            Plan::Path(carrier, left, right) => self.value_type_at(carrier).and_then(|over| {
-                self.value_at(left).and_then(|from| {
-                    self.value_at(right).map(|to| {
-                        let id = sink.arena.value_type_path(over, from, to);
-                        sink.origins.record_value_type(id, origin);
-                        Lowered::ValueType(id)
+            Plan::Path(carrier, left, right) => {
+                let over = match carrier {
+                    Carrier::Written(carrier) => self.value_type_at(carrier),
+                    Carrier::Universe(universe) => {
+                        let id = sink.arena.value_type_universe(
+                            Sort::Ground(universe.sort),
+                            Level::constant(universe.level),
+                        );
+                        Maybe::Present(id)
+                    },
+                };
+                over.and_then(|over| {
+                    self.value_at(left).and_then(|from| {
+                        self.value_at(right).map(|to| {
+                            let id = sink.arena.value_type_path(over, from, to);
+                            sink.origins.record_value_type(id, origin);
+                            Lowered::ValueType(id)
+                        })
                     })
                 })
-            }),
+            },
             Plan::Here(point) => self.value_at(point).map(|at| {
                 let id = sink.arena.value_here(at);
                 sink.value(id, origin)
@@ -10046,6 +10237,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         sink.origins.record_value_type(id, origin);
                         Lowered::ValueType(id)
                     })
+                })
+            }),
+            Plan::Stack(input, output) => self.comp_type_at(input).and_then(|from| {
+                self.comp_type_at(output).map(|to| {
+                    let id = sink.arena.value_type_stack(from, to);
+                    sink.origins.record_value_type(id, origin);
+                    Lowered::ValueType(id)
                 })
             }),
             Plan::SessionRelated(relation, left, right) => self.value_at(left).and_then(|from| {
@@ -13266,6 +13464,7 @@ pub fn parse_literal(
         | Former::ParenthesizedType
         | Former::PathType
         | Former::CapabilityType
+        | Former::AtType
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock
@@ -14217,6 +14416,34 @@ mod tests
                 "the bridges are `+U` and `-F`, so `{source}` names a type nothing declares"
             );
         }
+    }
+
+    #[test]
+    fn a_written_stack_type_lowers_to_its_continuation_type()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def k : Stack(-F Integer, -F String) ;"),
+            &mut arena,
+        );
+        let declared = declared_of(outcomes(&module)[0]);
+        let Some(&ValueType::Stack { input, output }) = arena.value_type(declared)
+        else {
+            panic!("`Stack(C, D)` is a continuation's type");
+        };
+        let returned = |id| match arena.comp_type(id) {
+            Some(&CompType::Returner { result, .. }) => arena.value_type(result).cloned(),
+            _ => None,
+        };
+
+        assert_eq!(
+            (returned(input), returned(output)),
+            (
+                Some(ValueType::Base(BaseType::Integer)),
+                Some(ValueType::Base(BaseType::String))
+            ),
+            "the computation it runs from is written first, the one it ends as second"
+        );
     }
 
     #[test]

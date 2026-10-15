@@ -76,14 +76,14 @@ const COUNTED: &[&str] = &[
     "expression access_expression",
     "expression access_expression name",
     "expression become_expression",
-    "expression binary_expression", // shape: #401
+    "expression binary_expression",
     "expression block",
     "expression block name",
     "expression boolean",
     "expression break_expression",
     "expression break_value_expression",
-    "expression call_expression", // shape: #401, `?`
-    "expression case_expression", // shape: #401
+    "expression call_expression", // `?`
+    "expression case_expression",
     "expression close_expression",
     "expression constructor",
     "expression continue_expression",
@@ -95,11 +95,11 @@ const COUNTED: &[&str] = &[
     "expression force_expression",
     "expression glob_expression",
     "expression glob_expression name",
-    "expression handle_expression",      // shape: #401
-    "expression handle_expression name", // shape: #401
+    "expression handle_expression",
+    "expression handle_expression name",
     "expression hole",
     "expression host_escape",
-    "expression identifier", // shape: #401
+    "expression identifier",
     "expression if_expression",
     "expression instantiation_expression",
     "expression labelled_sum_expression",
@@ -110,19 +110,19 @@ const COUNTED: &[&str] = &[
     "expression lazy_record_expression name",
     "expression list_expression",
     "expression list_operator",
-    "expression loop_expression", // shape: #401
+    "expression loop_expression",
     "expression number",
     "expression offer_expression",
     "expression pack_expression",
     "expression parenthesized_expression",
     "expression pipeline",
-    "expression projection_expression", // shape: #401
+    "expression projection_expression",
     "expression projection_expression name",
-    "expression pure_expression", // shape: #401
+    "expression pure_expression",
     "expression redirection_operator",
     "expression resume_expression",
     "expression resume_expression name",
-    "expression return_expression", // shape: #401
+    "expression return_expression",
     "expression run_expression",
     "expression select_expression",
     "expression select_expression name",
@@ -134,7 +134,7 @@ const COUNTED: &[&str] = &[
     "expression subshell",
     "expression telescope_expression",
     "expression telescope_expression name",
-    "expression thunk_expression", // shape: #401
+    "expression thunk_expression",
     "expression typed_number",
     "expression unary_expression",
     "expression unit",
@@ -148,8 +148,8 @@ const COUNTED: &[&str] = &[
     "item codata_declaration name",
     "item data_declaration",
     "item data_declaration name",
-    "item def_value",      // shape: #401
-    "item def_value name", // shape: #401
+    "item def_value",
+    "item def_value name",
     "item extern_block",
     "item extern_block name",
     "item import_declaration",
@@ -161,9 +161,9 @@ const COUNTED: &[&str] = &[
     "item rec_block name",
     "item sign_declaration",
     "item sign_declaration name",
-    "module_member module_declaration",      // shape: #401
-    "module_member module_declaration name", // shape: #401
-    "pattern cons_pattern",                  // shape: #408
+    "module_member module_declaration",
+    "module_member module_declaration name",
+    "pattern cons_pattern", // shape: #408
     "pattern cons_pattern name",
     "pattern constructor_pattern",
     "pattern constructor_pattern name",
@@ -177,6 +177,8 @@ const COUNTED: &[&str] = &[
     "pattern telescope_pattern name",
     "pattern tuple_pattern",
     "pattern wildcard",
+    "type at_type",
+    "type at_type name",
     "type capability_type",
     "type capability_type name",
     "type end_session_type",
@@ -187,7 +189,7 @@ const COUNTED: &[&str] = &[
     "type lazy_product_type",
     "type lazy_record_type",
     "type mu_session_type",
-    "type mu_session_type name", // shape: #401
+    "type mu_session_type name",
     "type number",
     "type package_type",
     "type package_type name",
@@ -206,8 +208,8 @@ const COUNTED: &[&str] = &[
     "type type_identifier",
     "type type_path", // shape: #404
     "type type_path name",
-    "type type_variable", // shape: #401
-    "type u_type",        // shape: #404
+    "type type_variable",
+    "type u_type", // shape: #404
     "type universe_type",
     "type unknown_type",
     "type value_function_type", // shape: #404
@@ -1456,16 +1458,35 @@ mod sweeps
                         row.ancestor = 1_usize;
                     }
                     // A `?` the printer writes for an unknown stands alone; one
-                    // opening a word is a session type's receive.
+                    // opening a word, or a parenthesised type the action's `.`
+                    // follows, `?(Seat.Dispatch). end`, is a session type's
+                    // receive.
+                    let receives = |rest: &str| match rest.chars().next() {
+                        Some('(') => {
+                            let mut depth = 0_usize;
+                            let closed = rest.char_indices().find(|&(_, glyph)| {
+                                if glyph == '(' {
+                                    depth = depth.saturating_add(1);
+                                }
+                                else if glyph == ')' {
+                                    depth = depth.saturating_sub(1);
+                                }
+                                depth == 0
+                            });
+                            closed.is_some_and(|(at, _)| {
+                                rest.get(at + 1 ..)
+                                    .is_some_and(|after| after.starts_with('.'))
+                            })
+                        },
+                        Some(glyph) => glyph.is_alphabetic(),
+                        None => false,
+                    };
                     if hover.shown["contents"]["value"]
                         .as_str()
                         .is_some_and(|value| {
-                            value.match_indices('?').any(|(at, _)| {
-                                !value
-                                    .get(at + 1 ..)
-                                    .and_then(|rest| rest.chars().next())
-                                    .is_some_and(char::is_alphabetic)
-                            })
+                            value
+                                .match_indices('?')
+                                .any(|(at, _)| !value.get(at + 1 ..).is_some_and(receives))
                         })
                     {
                         row.unknown = 1_usize;

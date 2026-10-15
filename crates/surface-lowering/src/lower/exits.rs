@@ -517,6 +517,7 @@ impl<'source> Lowerer<'_, 'source>
             | Former::ParenthesizedType
             | Former::PathType
             | Former::CapabilityType
+            | Former::AtType
             | Former::AttributeBlock
             | Former::Import
             | Former::Data

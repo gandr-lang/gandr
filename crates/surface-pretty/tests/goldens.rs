@@ -1470,10 +1470,6 @@ mod tests
         let decoded = core.value_type_element(applied, Level::zero());
         let once = core.value_static_application(operator, integer_code);
 
-        let variable = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        let identity = core.value_static_lambda(variable);
-        let redex = core.value_static_application(identity, integer_code);
-
         let source = CoreSource::new(&core, &names);
         for (root, spelling) in [
             (
@@ -1491,7 +1487,6 @@ mod tests
                 Root::Type(CoreNode::ValueType(decoded)),
                 "t(\\a. -F #{a, a}, Integer, Integer)",
             ),
-            (Root::Value(CoreNode::Value(redex)), "(\\a. a)(Integer)"),
         ] {
             assert_eq!(
                 spelled(&source, root),
@@ -1499,6 +1494,72 @@ mod tests
                 "{root:?} spells as the grammar writes it"
             );
         }
+    }
+
+    /// A static redex prints as its reduct, each binder of the abstraction
+    /// written as the argument it takes, in the order applied; arguments past
+    /// the abstraction's chain apply to the reduct; and a thunk over an arrow
+    /// into a decoded redex of a returner takes the value-function alias over
+    /// the reduct's result, as the same type written plainly does.
+    #[test]
+    fn a_static_redex_prints_as_its_reduct()
+    {
+        let names = [Name::from("t")];
+        let mut core = CoreArena::new();
+        let integer = core.value_type_base(BaseType::Integer);
+        let integer_code = core.value_quote(integer);
+        let unit = core.value_type_product(&[]);
+        let unit_code = core.value_quote(unit);
+        let operator = core.value_constant(ConstantIndex::from(0_usize));
+
+        let variable = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let identity = core.value_static_lambda(variable);
+        let once = core.value_static_application(identity, integer_code);
+        let past = core.value_static_application(identity, operator);
+        let past = core.value_static_application(past, integer_code);
+
+        let outer = bound(&mut core, DeBruijnIndex::from(1_u32));
+        let inner = bound(&mut core, DeBruijnIndex::from(0_u32));
+        let both = core.value_type_product(&[outer, inner]);
+        let both_code = core.value_quote(both);
+        let pairing = core.value_static_lambda(both_code);
+        let pairing = core.value_static_lambda(pairing);
+        let paired = core.value_static_application(pairing, integer_code);
+        let paired = core.value_static_application(paired, unit_code);
+
+        let element = bound(&mut core, DeBruijnIndex::from(0_u32));
+        let squared = core.value_type_product(&[element, element]);
+        let returns_squared = core.comp_type_returner(squared);
+        let squared_code = core.value_quote_computation(returns_squared);
+        let squaring = core.value_static_lambda(squared_code);
+        let squares = core.value_static_application(squaring, integer_code);
+        let decoded = core.comp_type_element(squares, Level::zero());
+        let arrow = core.comp_type_arrow(integer, decoded);
+        let function = core.value_type_thunk(arrow);
+
+        let source = CoreSource::new(&core, &names);
+        for (root, spelling) in [
+            (Root::Value(CoreNode::Value(once)), "Integer"),
+            (Root::Value(CoreNode::Value(past)), "t(Integer)"),
+            (Root::Value(CoreNode::Value(paired)), "#{Integer, Unit}"),
+        ] {
+            assert_eq!(
+                spelled(&source, root),
+                faithful(Written(spelling)),
+                "{root:?} spells as its reduct"
+            );
+        }
+        let presented = presented_in(
+            &source,
+            Root::Type(CoreNode::ValueType(function)),
+            wide(),
+            Form::Sugared,
+        );
+        assert_eq!(
+            (presented.as_ref(), presented.fidelity()),
+            ("Integer => Integer * Integer", Fidelity::Faithful),
+            "the alias reads through the redex its codomain decodes"
+        );
     }
 
     /// Every value leaf spells as the surface writes it — a signed integer,
@@ -2122,6 +2183,62 @@ mod tests
             spelled(&source, body(ascribed)),
             ("1".to_owned(), Fidelity::Approximate),
             "a lone ascription stands as its body"
+        );
+    }
+
+    /// A capability living in a scope's region names that scope, `at c`,
+    /// counted from the outermost scope the source names; one in a region
+    /// past the named scopes spells without it, approximately, and a held
+    /// one never names a scope.
+    #[test]
+    #[expect(
+        clippy::literal_string_with_formatting_args,
+        reason = "a capability's authority is spelled `Cap {op}`, which reads as a format argument"
+    )]
+    fn a_scoped_capability_names_its_scope()
+    {
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::capability::CapabilityGrade;
+        use gandr_core_term::effect::capability::Region;
+        use gandr_core_term::effect::capability::RegionDepth;
+
+        let mut core = CoreArena::new();
+        let integer = core.value_type_base(BaseType::Integer);
+        let unit = core.value_type_product(&[]);
+        let exit = EffectRow::singleton(
+            EffectSig::new(EffectName::from("Proc"), [EffectOp {
+                name: "exit".into(),
+                payload: integer,
+                reply: unit,
+            }])
+            .expect("one operation is a signature"),
+        );
+        let mut at =
+            |region| core.value_type_capability(exit.clone(), CapabilityGrade::Durable, region);
+        let outer = at(Region::Scoped(RegionDepth::from(1_u32)));
+        let inner = at(Region::Scoped(RegionDepth::from(2_u32)));
+        let held = at(Region::Held);
+        let ty = |id| Root::Type(CoreNode::ValueType(id));
+        let both = [Some(Name::from("c")), Some(Name::from("e"))];
+        let named = CoreSource::new(&core, &[]).scoped(&both);
+        assert_eq!(
+            spelled(&named, ty(outer)),
+            faithful(Written("Cap {exit} at c"))
+        );
+        assert_eq!(
+            spelled(&named, ty(inner)),
+            faithful(Written("Cap {exit} at e"))
+        );
+        assert_eq!(spelled(&named, ty(held)), faithful(Written("Cap {exit}")));
+        let one = [Some(Name::from("c"))];
+        let short = CoreSource::new(&core, &[]).scoped(&one);
+        assert_eq!(
+            spelled(&short, ty(inner)),
+            approximate(Written("Cap {exit}")),
+            "a region past the named scopes goes unwritten"
         );
     }
 }

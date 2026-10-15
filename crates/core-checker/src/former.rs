@@ -541,15 +541,22 @@ pub fn instantiate(
     Ok(subject)
 }
 
-/// Form the ordinary branch function's dependent classifier.
+/// Form the ordinary branch function's classifier.
 ///
 /// Only the motive has an implicit scrutinee binder. Branches abstract their
-/// fields explicitly with ordinary lambdas, in declaration order.
+/// fields explicitly with ordinary lambdas, in declaration order. A field
+/// binds the rest of the telescope only when the rest names it: the
+/// classifier is the Π over that field, and the plain arrow over every other,
+/// as the lowering reads a written `(x : A) -> C` whose `C` does not name `x`.
+/// One type has one node, so the classifier a hover prints reads back to it.
 ///
 /// # Specification
 /// - requires: the datatype and motive have formed and `tag` belongs to it.
-/// - ensures: the result is a Pi telescope ending in the motive applied to the
-///   corresponding constructor, with ambient indices preserved.
+/// - ensures: the result is a telescope over the constructor's fields ending in
+///   the motive applied to the corresponding constructor, with ambient indices
+///   preserved; each field's former is a Π when the telescope after it names
+///   its binder and a plain arrow, the rest strengthened past the binder,
+///   otherwise.
 /// - fails: a malformed application or an unrepresentable binder count.
 /// - panics: none.
 ///
@@ -558,8 +565,10 @@ pub fn instantiate(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — dependent results and unequal fields separate motive
-///   substitution, binder shifting and field order.
+///   substitution, binder shifting and field order; a result naming its field
+///   and one naming none separate the Π from the plain arrow.
 /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
+/// - witness: `former::tests::a_branch_binds_a_field_only_where_its_result_names_it`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&id| context.arena().comp_type(id).is_some()) == ret.is_ok())]
 pub fn branch_type(
     context: &mut CheckingContext<'_>,
@@ -605,7 +614,69 @@ pub fn branch_type(
         let depth =
             Binders::from(u32::try_from(index).map_err(|_cause| CheckRefusal::MachineInvariant)?);
         let domain = gandr_core_term::shift_value_type(context.arena_mut(), domain, depth);
-        result = context.arena_mut().comp_type_pi(domain, result);
+        result = match gandr_core_term::strengthen_comp_type(context.arena_mut(), result) {
+            Maybe::Present(closed) => context.arena_mut().comp_type_arrow(domain, closed),
+            Maybe::Absent(_) => context.arena_mut().comp_type_pi(domain, result),
+        };
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::sync::Arc;
+    use alloc::vec;
+
+    use gandr_core_term::CompType;
+    use gandr_core_term::CoreArena;
+    use gandr_kernel_term::BaseType;
+
+    use super::*;
+    use crate::CheckBudget;
+
+    #[test]
+    fn a_branch_binds_a_field_only_where_its_result_names_it()
+    {
+        let mut arena = CoreArena::new();
+        let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let integer = arena.value_type_base(BaseType::Integer);
+        let boxed = ConstantIndex::from(0_usize);
+        let signature = Arc::new(DataSignature::new(vec![], vec![vec![integer]], kind));
+        let datatype = arena.value_type_data(boxed, vec![]);
+        let closed = arena.comp_type_returner(integer);
+        let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let named = arena.value_type_path(datatype, scrutinee, scrutinee);
+        let dependent = arena.comp_type_returner(named);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.adopt_data(boxed, signature).expect("the box forms");
+        let unnamed = branch_type(
+            &mut context,
+            datatype,
+            ConstructorTag::from(0_usize),
+            closed,
+        )
+        .expect("the closed branch forms");
+        let renamed = branch_type(
+            &mut context,
+            datatype,
+            ConstructorTag::from(0_usize),
+            dependent,
+        )
+        .expect("the dependent branch forms");
+        assert!(
+            matches!(
+                context.arena().comp_type(unnamed),
+                Some(&CompType::Arrow { domain, codomain }) if domain == integer && codomain == closed
+            ),
+            "a result naming no field is the plain arrow over it"
+        );
+        assert!(
+            matches!(
+                context.arena().comp_type(renamed),
+                Some(&CompType::Pi { domain, .. }) if domain == integer
+            ),
+            "a result naming the field binds it"
+        );
+    }
 }

@@ -202,6 +202,7 @@ use gandr_kernel_term::FieldLabel;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
+use super::Carrier;
 use super::Code;
 use super::Former;
 use super::Function;
@@ -866,14 +867,18 @@ pub(super) struct Transported
 
 impl<'source> Lowerer<'_, 'source>
 {
-    /// Classify a path type, `Path(A, a, b)`.
+    /// Classify a path type, `Path(A, a, b)`, or `Path(Type, A, B)` at a
+    /// universe its own tiles spell.
     ///
     /// # Specification
     /// - requires: `site` is a path type in type position, or in value position
     ///   where a type is quoted.
-    /// - ensures: the form stands as a value type, reads its carrier as a value
-    ///   type and its two endpoints as endpoints standing inside a type, all
-    ///   under its own frame, and is planned over the three.
+    /// - ensures: the form stands as a value type and is planned over its
+    ///   carrier and its two endpoints, each endpoint read as a value standing
+    ///   inside a type, all under the form's own frame. A written carrier is
+    ///   read as a value type. A universe carrier is the universe its tiles
+    ///   spell, and its endpoints, written at the type sort, are read as the
+    ///   codes of the types they spell.
     /// - provides: element identity's type former.
     /// - fails: yields the wrong-sort refusal where no value type is read, and
     ///   a misplaced-tile or extra-operand fault for a form out of shape.
@@ -884,16 +889,21 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a closed path type and one whose endpoint is a
-    ///   computation, each read back out of the arena.
+    ///   computation, each read back out of the arena; a path at a universe
+    ///   between a sum and a session type reads each endpoint as its code.
     /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
+    /// - witness: `lower::identity::tests::a_path_at_a_universe_reads_its_endpoints_as_types`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
                     Some(&Plan::Path(carrier, left, right))
-                        if self.reading(carrier) == Reading::ValueType(site.reading.frame())
+                        if match carrier {
+                            Carrier::Written(carrier) => self.reading(carrier) == Reading::ValueType(site.reading.frame()),
+                            Carrier::Universe(_) => true,
+                        }
                             && self.reading(left) == Reading::Value(site.reading.frame())
                             && self.reading(right) == Reading::Value(site.reading.frame())
                             && self.in_type.contains(&left)
@@ -912,19 +922,25 @@ impl<'source> Lowerer<'_, 'source>
         let frame = self.require(site, Produced::ValueType)?;
         closed(site, &mut cursor, TileName::PATH)?;
         closed(site, &mut cursor, TileName::PAREN_OPEN)?;
-        let carrier = site.one(cursor.operands())?;
+        let carrier = if let Maybe::Present(_) = cursor.at(TileName::UNIVERSE) {
+            Carrier::Universe(self.universe_tiles(site, &mut cursor)?)
+        }
+        else {
+            let carrier = site.one(cursor.operands())?;
+            self.read(carrier.node, Reading::ValueType(frame));
+            Carrier::Written(carrier.node)
+        };
         closed(site, &mut cursor, TileName::COMMA)?;
         let left = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::COMMA)?;
         let right = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         exhausted(site, &cursor)?;
-        self.read(carrier.node, Reading::ValueType(frame));
         self.read(left.node, Reading::Value(frame));
         self.read(right.node, Reading::Value(frame));
         self.in_type.extend([left.node, right.node]);
         self.at_endpoint.extend([left.node, right.node]);
-        self.plan(site, Plan::Path(carrier.node, left.node, right.node));
+        self.plan(site, Plan::Path(carrier, left.node, right.node));
 
         Ok(())
     }
@@ -1567,7 +1583,9 @@ impl<'source> Lowerer<'_, 'source>
             // A loop arm answers the path over its loop, whatever its case
             // answers.
             let answered = match answer.over {
-                super::native::Over::Written => self.answers_path(site, answer.node)?,
+                super::native::Over::Written | super::native::Over::Returning => {
+                    self.answers_path(site, answer.node)?
+                },
                 super::native::Over::Loop { .. } => Answered::Path,
             };
             if answered == Answered::Flow {
@@ -2324,6 +2342,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::ValueFunctionType
                 | Former::StaticAbstraction
                 | Former::CapabilityType
+                | Former::AtType
                 | Former::Scope
                 | Former::Declaration
                 | Former::AttributeBlock
@@ -2540,7 +2559,7 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     ) -> Maybe<Stood, lowered::Absent>
     {
-        let written = match self.comp_type_at(answer.node) {
+        let written = match self.answered_type(answer, sink) {
             Maybe::Present(written) => written,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -2570,7 +2589,7 @@ impl<'source> Lowerer<'_, 'source>
                 (Answered::Path, result, point, point)
             },
             (
-                super::native::Over::Written,
+                super::native::Over::Written | super::native::Over::Returning,
                 Some(&ValueType::Path {
                     carrier,
                     left,
@@ -2578,7 +2597,7 @@ impl<'source> Lowerer<'_, 'source>
                 }),
             ) => (Answered::Path, carrier, left, right),
             (
-                super::native::Over::Written,
+                super::native::Over::Written | super::native::Over::Returning,
                 Some(&ValueType::Flow {
                     carrier,
                     source,

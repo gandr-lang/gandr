@@ -22,6 +22,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::capability::CapabilityGrade;
 use gandr_core_term::effect::capability::Region;
+use gandr_core_term::effect::capability::RegionDepth;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::SourceText;
@@ -749,5 +750,76 @@ fn an_exit_that_would_run_in_a_live_frame_is_refused()
         ),
         "a loop inside the subject leaves only itself: {:?}",
         verdict_of(&module, &report, "inner".into())
+    );
+}
+
+#[test]
+fn a_capability_at_a_scope_lives_in_its_region()
+{
+    let mut arena = CoreArena::new();
+    let clauses = "with { pure(x) => pure x, oper exit(code, k) => k(unit) }";
+    let source = alloc::format!(
+        "def regions() -> -F Unit {{ handle c : Proc {{ handle e : Proc {{ run d : Cap {{exit}} at c <- pure c ; run f : Cap {{exit}} at e <- pure e ; pure unit }} {clauses} }} {clauses} }}\n\
+         def unbound(c : Integer) -> -F Unit {{ handle e : Proc {{ run d : Cap {{exit}} at c <- pure e ; pure unit }} {clauses} }}\n\
+         def plain() -> -F Unit {{ handle c : Proc {{ run d : Integer at c <- pure 1 ; pure unit }} {clauses} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let outer = tail_of(&module, &arena, "regions".into());
+    let Some(&Computation::Scope { subject: inner, .. }) = arena.computation(outer)
+    else {
+        panic!("the outer scope");
+    };
+    let Some(&Computation::Scope { subject, .. }) = arena.computation(inner)
+    else {
+        panic!("the inner scope");
+    };
+    // The region each typed bind of the inner subject ascribes, in order.
+    let mut regions = Vec::new();
+    let mut at = subject;
+    while let Some(&Computation::Bind(bound, rest)) = arena.computation(at) {
+        let Some(&Computation::Ascribe { ty, .. }) = arena.computation(bound)
+        else {
+            panic!("a typed bind ascribes its computation");
+        };
+        let Some(&CompType::Returner { result, .. }) = arena.comp_type(ty)
+        else {
+            panic!("at a returner");
+        };
+        regions.push(capability(&arena, result).2);
+        at = rest;
+    }
+    assert_eq!(
+        regions,
+        [
+            Region::Scoped(RegionDepth::from(1_u32)),
+            Region::Scoped(RegionDepth::from(2_u32))
+        ],
+        "`at c` names the outer scope's region and `at e` the inner one's"
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "regions".into()),
+            Verdict::Checked { .. }
+        ),
+        "{:?}",
+        verdict_of(&module, &report, "regions".into())
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "unbound".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName { name, .. })
+                if name == SurfaceName::from("c")
+        ),
+        "a parameter names no region: {:?}",
+        outcome_of(&module, "unbound".into())
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "plain".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment { .. })
+        ),
+        "only a capability lives in a region: {:?}",
+        outcome_of(&module, "plain".into())
     );
 }
