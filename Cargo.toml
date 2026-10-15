@@ -176,6 +176,7 @@ features = ["anodized"]
 # - storage-records
 # - storage-schema
 # - storage-values
+# - surface-corpus (dev)
 # - surface-lsp
 # - surface-parser (dev)
 # - surface-syntax

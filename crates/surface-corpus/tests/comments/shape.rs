@@ -15,6 +15,16 @@ pub struct Line<'text>(pub &'text str);
 #[derive(Clone, Copy)]
 pub struct Yes(pub bool);
 
+/// A byte range of a source, start inclusive and end exclusive.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Span
+{
+    /// The first byte.
+    pub start: usize,
+    /// One past the last byte.
+    pub end: usize,
+}
+
 impl AsRef<str> for Text<'_>
 {
     /// # Specification

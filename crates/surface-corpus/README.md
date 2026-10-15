@@ -1,6 +1,6 @@
 # gandr-surface-corpus
 
-The expectation language over a lowered module and its verdicts — the `checks`, `owes`, `refuses`, `runs` and `normalizes` schemas, the strict and fixture corpus roots, the settle comparison, and the report a corpus runner reads its counts from — and the language's corpus itself, under `strict/` and `fixture/`. Every `.gandr` source under `fixture/` opens with a comment, and each top-level item carries a doc comment or a line comment immediately before its attribute block; `check:corpus-comments` refuses a source that does not, naming the file and the item, and ratchets against [`fixture/uncommented.ledger`](fixture/uncommented.ledger).
+The expectation language over a lowered module and its verdicts — the `checks`, `owes`, `refuses`, `runs` and `normalizes` schemas, the strict and fixture corpus roots, the settle comparison, and the report a corpus runner reads its counts from — and the language's corpus itself, under `strict/` and `fixture/`. Every `.gandr` source under `fixture/` opens with a comment, and each top-level item carries a doc comment or a line comment immediately before its attribute block; a body on the next line after its commented signature inherits that comment. `check:corpus-comments` refuses a source that does not. A ledger line is `path:name:` and sixteen hex digits of BLAKE3 over the item text, whitespace collapsed and comments and the attribute block left out, ratcheted against [`fixture/uncommented.ledger`](fixture/uncommented.ledger).
 
 <!-- toc -->
 - [Synopsis](#synopsis)

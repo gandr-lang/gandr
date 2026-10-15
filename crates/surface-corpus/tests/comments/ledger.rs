@@ -6,6 +6,11 @@ use anodized::spec;
 
 use crate::judge::Finding;
 
+/// The ledger's first line: the shape of every line after it.
+const HEADER: &str = "# path:name:digest, the digest the first sixteen hex digits of BLAKE3 over \
+                      the item's text with whitespace collapsed and comments and the attribute \
+                      block left out; path:<file> for a source with no leading comment";
+
 /// One way the findings and the ledger disagree.
 ///
 /// # Specification
@@ -98,21 +103,21 @@ impl core::fmt::Display for Discrepancy
 
 /// The disagreements between `found` and the ledger text `ledger`.
 ///
-/// Empty lines in the ledger are ignored. A finding whose line the ledger
-/// holds is not a disagreement.
+/// Empty lines and `#` lines in the ledger are ignored. A finding whose line
+/// the ledger holds is not a disagreement.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one [`Discrepancy::Unledgered`] per finding whose line the ledger
-///   does not hold, and one [`Discrepancy::Stale`] per non-empty ledger line no
-///   finding carries; ordered by line.
+///   does not hold, and one [`Discrepancy::Stale`] per ledger line, neither
+///   empty nor a `#` line, that no finding carries; ordered by line.
 /// - provides: the ratchet's verdict.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a missing line, a stale line and an exact match are three
-///   observations; a blank ledger line is not a fourth finding.
+///   observations; a blank line and the header are not a fourth finding.
 /// - witness: `comments::judge::tests::an_uncommented_item_is_refused_by_name`
 /// - witness: `comments::judge::tests::a_ledgered_item_passes`
 /// - witness: `comments::judge::tests::a_stale_ledger_line_is_refused`
@@ -145,36 +150,38 @@ pub fn discrepancies(
     rows
 }
 
-/// The ledger text of `found`, one sorted line per finding.
+/// The ledger text of `found`: the header, then one sorted line per finding.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the findings' lines in order, each ended by a newline; empty when
-///   `found` is empty.
-/// - provides: the bytes `--write-ledger` commits.
+/// - ensures: the header line, then the findings' distinct lines in order, each
+///   line ended by a newline.
+/// - provides: the bytes `CORPUS_COMMENTS_WRITE_LEDGER=1` commits.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — empty, one line and two unsorted lines render in order
-///   with a trailing newline only when a line exists.
+/// - hypothesis: L3 — empty, one line and two unsorted repeated lines render in
+///   order under the header, each once, each terminated.
 /// - witness: `comments::ledger::tests::the_ledger_text_is_sorted_and_terminated`
-#[spec(ensures: |ret| found.is_empty() == ret.is_empty())]
+#[spec(ensures: |ret| ret.starts_with(HEADER) && ret.ends_with('\n'))]
 #[inline]
 #[must_use]
 pub fn ledger_text(found: &[Finding]) -> String
 {
     let mut lines: Vec<&str> = found.iter().map(|finding| finding.line().0).collect();
     lines.sort_unstable();
-    if lines.is_empty() {
-        return String::new();
-    }
-    let mut text = lines.join("\n");
+    lines.dedup();
+    let mut text = String::from(HEADER);
     text.push('\n');
+    for line in lines {
+        text.push_str(line);
+        text.push('\n');
+    }
     text
 }
 
-/// The non-empty trimmed lines of a ledger.
+/// The trimmed lines of a ledger, neither empty nor a `#` line.
 ///
 /// # Specification
 /// trivial.
@@ -184,7 +191,7 @@ fn ledger_lines(ledger: crate::shape::Text<'_>) -> BTreeSet<String>
         .0
         .lines()
         .map(str::trim)
-        .filter(|line| !line.is_empty())
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
         .map(str::to_owned)
         .collect()
 }
@@ -193,6 +200,7 @@ fn ledger_lines(ledger: crate::shape::Text<'_>) -> BTreeSet<String>
 mod tests
 {
     use super::Discrepancy;
+    use super::HEADER;
     use super::discrepancies;
     use super::ledger_text;
     use crate::judge::Finding;
@@ -229,21 +237,22 @@ mod tests
     #[test]
     fn a_blank_ledger_line_is_not_debt()
     {
-        let rows = discrepancies(&[], crate::shape::Text("\n  \n"));
+        let rows = discrepancies(&[], crate::shape::Text(&format!("{HEADER}\n\n  \n")));
         assert!(
             rows.is_empty(),
-            "a blank ledger line is not a stale finding"
+            "neither a blank ledger line nor the header is a stale finding"
         );
     }
 
     #[test]
     fn the_ledger_text_is_sorted_and_terminated()
     {
-        assert_eq!(ledger_text(&[]), "");
+        assert_eq!(ledger_text(&[]), format!("{HEADER}\n"));
         let text = ledger_text(&[
             finding(crate::shape::Text("b:z")),
             finding(crate::shape::Text("a:m")),
+            finding(crate::shape::Text("b:z")),
         ]);
-        assert_eq!(text, "a:m\nb:z\n");
+        assert_eq!(text, format!("{HEADER}\na:m\nb:z\n"));
     }
 }

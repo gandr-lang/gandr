@@ -1,7 +1,5 @@
 //! One source's uncommented items, read off the molded tree.
 
-use alloc::collections::BTreeSet;
-
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
@@ -13,7 +11,9 @@ use gandr_surface_syntax::SyntaxTree;
 
 use crate::error::CommentError;
 use crate::shape::Line;
+use crate::shape::Span;
 use crate::shape::Text;
+use crate::shape::Yes;
 
 /// The ledger item of a source that does not open with a comment.
 const FILE_ITEM: &str = "<file>";
@@ -21,10 +21,14 @@ const FILE_ITEM: &str = "<file>";
 /// Tile labels that spell a declaration's name.
 const NAME_LABELS: [&str; 3] = ["identifier", "type_identifier", "constructor"];
 
+/// How many hex digits of the item's BLAKE3 hash a ledger line keeps.
+const DIGEST_DIGITS: usize = 16;
+
 /// One uncommented item, as the ledger and the gate name it.
 ///
 /// # Specification
-/// - provides: the ledger line `file:item` and the sentence that names both.
+/// - provides: the ledger line `file:name:digest` (or `file:<file>`) and the
+///   sentence that names the file and the item.
 /// - executable: none — the line is the field the witnesses compare.
 ///
 /// # Adequacy
@@ -33,7 +37,7 @@ const NAME_LABELS: [&str; 3] = ["identifier", "type_identifier", "constructor"];
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Finding
 {
-    /// `file:item`, the ledger key.
+    /// `file:name:digest`, or `file:<file>`, the ledger key.
     line: String,
     /// The sentence the gate prints, naming the file and the item.
     detail: String,
@@ -102,12 +106,49 @@ pub fn grammar() -> Result<Pbg, CommentError>
     built_in().map_err(|error| CommentError::Grammar(error.to_string()))
 }
 
+/// The first sixteen hex digits of BLAKE3 over `text`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: sixteen lowercase hex digits, the prefix of BLAKE3's hex digest
+///   of `text`'s bytes.
+/// - provides: the content half of a ledger line.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the same text keys the same line and a changed text a
+///   different one; a truncation other than sixteen digits would change every
+///   line the witnesses compare.
+/// - witness: `comments::judge::tests::the_key_is_the_items_content`
+#[spec(ensures: |ret| ret.len() == DIGEST_DIGITS && ret.chars().all(|digit| digit.is_ascii_hexdigit()))]
+#[inline]
+#[must_use]
+pub fn digest(text: Text<'_>) -> String
+{
+    blake3::hash(text.0.as_bytes())
+        .to_hex()
+        .as_str()
+        .chars()
+        .take(DIGEST_DIGITS)
+        .collect()
+}
+
 /// The uncommented items of `source`, keyed under `file`.
+///
+/// An item is commented by a doc comment or a line comment immediately
+/// before its attribute block, or by inheritance: an item on the line after
+/// a commented item of the same name (a `def name = …` body after its
+/// `def name : T ;` signature) carries that comment, so one comment covers a
+/// run of one name. An uncommented item's line is `file:name:digest`, the
+/// digest over the item's text with whitespace collapsed and comments left
+/// out; the attribute block is a sibling of the item, never part of it.
 ///
 /// # Specification
 /// - requires: `file` contains no colon.
-/// - ensures: one finding per uncommented top-level item, plus one when the
-///   file has no leading comment; each line is `file:item`.
+/// - ensures: one finding per uncommented top-level item, keyed by its name
+///   (its kind when it has none) and its content digest, plus `file:<file>`
+///   when the file has no leading comment; sorted, without repeats.
 /// - provides: the debt one source owes.
 /// - fails: `file` contains a colon, the parser does not commit a tree, or a
 ///   mold does not resolve.
@@ -121,13 +162,16 @@ pub fn grammar() -> Result<Pbg, CommentError>
 /// # Adequacy
 /// - hypothesis: L3 — an uncommented name, a ledgered name, a stale line and a
 ///   file with no leading comment are distinct observations. A comment after an
-///   attribute block is not a comment before it.
+///   attribute block is not a comment before it. A body inherits only from the
+///   line before it and only under the same name. The key moves with the item's
+///   text and with nothing else.
 /// - witness: `comments::judge::tests::an_uncommented_item_is_refused_by_name`
 /// - witness: `comments::judge::tests::a_ledgered_item_passes`
 /// - witness: `comments::judge::tests::a_stale_ledger_line_is_refused`
 /// - witness: `comments::judge::tests::a_file_without_a_leading_comment_is_refused`
 /// - witness: `comments::judge::tests::a_comment_after_the_attribute_block_does_not_count`
-/// - witness: `comments::judge::tests::a_repeated_name_keeps_its_first_line`
+/// - witness: `comments::judge::tests::a_body_inherits_its_signatures_comment`
+/// - witness: `comments::judge::tests::the_key_is_the_items_content`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|finding| finding.line.starts_with(file.0) && finding.line.contains(':'))))]
 #[inline]
 pub fn findings_of(
@@ -142,10 +186,6 @@ pub fn findings_of(
             detail: "a ledger file key cannot contain ':'".to_owned(),
         });
     }
-    let owed = |file: &str, item: &str, detail: &str| Finding {
-        line: format!("{file}:{item}"),
-        detail: format!("{file}: {detail}"),
-    };
     let opens = |source: &str| {
         let mut rest = source.trim_start();
         if rest.starts_with("#!") {
@@ -241,52 +281,26 @@ pub fn findings_of(
     };
     let mut found = Vec::new();
     if !opens(source.0) {
-        found.push(owed(file.0, FILE_ITEM, "no leading comment"));
+        found.push(Finding {
+            line: format!("{file}:{FILE_ITEM}", file = file.0),
+            detail: format!("{file}: no leading comment", file = file.0),
+        });
     }
-    let mut seen = BTreeSet::new();
-    let mut item_key = |tree: &SyntaxTree<'_>,
-                        at: NodeIndex,
-                        kind: &str,
-                        start: usize|
-     -> Result<String, CommentError> {
-        let mut name = String::new();
-        for child in tree.children(at) {
-            let Some(node) = tree.node(child)
-            else {
-                continue;
-            };
-            let NodeLabel::Tile(mold) = node.label()
-            else {
-                continue;
-            };
-            let defined = pbg.mold(mold).map_err(|error| CommentError::Mold {
-                file: String::new(),
-                detail: error.to_string(),
-            })?;
-            if !NAME_LABELS.contains(&defined.label) {
-                continue;
-            }
-            let Some(text) = tree.fragment(child)
-            else {
-                continue;
-            };
-            let text = <&str>::from(text);
-            if text.is_empty() {
-                continue;
-            }
-            text.clone_into(&mut name);
-            break;
-        }
-        if name.is_empty() {
-            return Ok(format!("{kind}@{start}"));
-        }
-        if seen.insert(name.clone()) {
-            Ok(name)
-        }
-        else {
-            Ok(format!("{name}@{start}"))
-        }
-    };
+    // Every space and doc comment in the tree, by start: an item's text is
+    // its span with these read as one space each.
+    let mut quiet: Vec<Span> = tree
+        .positions()
+        .filter_map(|position| {
+            let node = tree.node(position)?;
+            matches!(node.label(), NodeLabel::Doc | NodeLabel::Space).then(|| Span {
+                start: usize::from(node.span().start()),
+                end: usize::from(node.span().end()),
+            })
+        })
+        .collect();
+    quiet.sort_unstable();
+    // The previous item's name, where it ends, and whether it is commented.
+    let mut previous: Option<(String, usize, bool)> = None;
     let mut attributes: Vec<NodeIndex> = Vec::new();
     for child in tree.children(tree.root()) {
         let Some(node) = tree.node(child)
@@ -306,25 +320,190 @@ pub fn findings_of(
             continue;
         }
         let anchor = attributes.first().copied().unwrap_or(child);
-        let commented = leading(tree, anchor) || sibling(source.0, tree, anchor);
-        let key = item_key(tree, child, kind.0, usize::from(node.span().start()))?;
         attributes.clear();
-        if commented {
-            continue;
+        let start = tree
+            .node(anchor)
+            .map_or(0_usize, |held| usize::from(held.span().start()));
+        let name = item_name(pbg, file, tree, child)?.unwrap_or_else(|| kind.0.to_owned());
+        let inherited = previous
+            .as_ref()
+            .is_some_and(|&(ref held, end, commented)| {
+                commented
+                    && *held == name
+                    && on_next_line(source, Span {
+                        start: end,
+                        end: start,
+                    })
+                    .0
+            });
+        let commented = inherited || leading(tree, anchor) || sibling(source.0, tree, anchor);
+        let end = usize::from(node.span().end());
+        if !commented {
+            let held = Span {
+                start: usize::from(node.span().start()),
+                end,
+            };
+            let key = digest(Text(&item_text(source, held, &quiet)));
+            found.push(Finding {
+                line: format!("{file}:{name}:{key}", file = file.0),
+                detail: format!(
+                    "{file}: {name} ({key}) has no comment before its attribute block",
+                    file = file.0
+                ),
+            });
         }
-        found.push(owed(
-            file.0,
-            &key,
-            &format!("{key} has no comment before its attribute block"),
-        ));
+        previous = Some((name, end, commented));
     }
     found.sort_by(|left, right| left.line.cmp(&right.line));
+    found.dedup_by(|left, right| left.line == right.line);
     Ok(found)
+}
+
+/// The name the item at `at` declares, when one of its tiles spells one.
+///
+/// # Specification
+/// - requires: `at` is a position in `tree`, molded under `pbg`.
+/// - ensures: the text of the item's first non-empty direct tile whose mold is
+///   labelled as a name, or nothing when no tile is.
+/// - provides: the name half of a ledger line and the key of a name run.
+/// - fails: a tile's mold does not resolve under `pbg`.
+/// - panics: none.
+///
+/// # Errors
+/// [`CommentError::Mold`] when a tile's mold does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an uncommented `def` is named by its identifier, and a
+///   body is matched to its signature by that name.
+/// - witness: `comments::judge::tests::an_uncommented_item_is_refused_by_name`
+/// - witness: `comments::judge::tests::a_body_inherits_its_signatures_comment`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |name| name.as_ref().is_none_or(|text| !text.is_empty())))]
+fn item_name(
+    pbg: &Pbg,
+    file: Text<'_>,
+    tree: &SyntaxTree<'_>,
+    at: NodeIndex,
+) -> Result<Option<String>, CommentError>
+{
+    for child in tree.children(at) {
+        let Some(node) = tree.node(child)
+        else {
+            continue;
+        };
+        let NodeLabel::Tile(mold) = node.label()
+        else {
+            continue;
+        };
+        let defined = pbg.mold(mold).map_err(|error| CommentError::Mold {
+            file: file.0.to_owned(),
+            detail: error.to_string(),
+        })?;
+        if !NAME_LABELS.contains(&defined.label) {
+            continue;
+        }
+        let Some(text) = tree.fragment(child)
+        else {
+            continue;
+        };
+        let text = <&str>::from(text);
+        if !text.is_empty() {
+            return Ok(Some(text.to_owned()));
+        }
+    }
+    Ok(None)
+}
+
+/// The text of an item spanning `held`: its source with every space and
+/// comment read as one space, every run of whitespace one space.
+///
+/// The parser hangs an item's inner spaces and comments wherever its layout
+/// puts them, not always under the item's node, so the text is read off the
+/// span and the tree's quiet spans rather than off the item's leaves.
+///
+/// # Specification
+/// - requires: `quiet` is sorted by start and holds the spans of the tree's
+///   space and doc-comment nodes.
+/// - ensures: `source` over `held`, each part of a quiet span inside `held`
+///   read as one space, then every run of whitespace collapsed to one space and
+///   the ends trimmed.
+/// - provides: the text the content digest is taken over.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — re-spacing an item and putting a comment inside it leave
+///   its key alone, and changing a token moves it.
+/// - witness: `comments::judge::tests::the_key_is_the_items_content`
+#[spec(ensures: |ret| ret.trim() == ret.as_str() && !ret.contains("  ") && !ret.contains('\n'))]
+fn item_text(
+    source: Text<'_>,
+    held: Span,
+    quiet: &[Span],
+) -> String
+{
+    let mut spelled = String::new();
+    let mut cursor = held.start;
+    for &Span {
+        start: from,
+        end: to,
+    } in quiet
+    {
+        if from == to || to <= cursor || from >= held.end {
+            continue;
+        }
+        let from = from.max(cursor);
+        spelled.push_str(source.0.get(cursor .. from).unwrap_or_default());
+        spelled.push(' ');
+        cursor = to.min(held.end);
+    }
+    spelled.push_str(source.0.get(cursor .. held.end).unwrap_or_default());
+    let mut collapsed = String::with_capacity(spelled.len());
+    for word in spelled.split_whitespace() {
+        if !collapsed.is_empty() {
+            collapsed.push(' ');
+        }
+        collapsed.push_str(word);
+    }
+    collapsed
+}
+
+/// Whether the text from `gap.end` begins on the line after the text that
+/// ends at `gap.start`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: yes exactly when the stretch from the last non-whitespace byte
+///   before `gap.start` to the first non-whitespace byte from `gap.end` is
+///   whitespace holding exactly one line break.
+/// - provides: the adjacency a body needs to inherit its signature's comment.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a body on the next line inherits and a body after a blank
+///   line does not.
+/// - witness: `comments::judge::tests::a_body_inherits_its_signatures_comment`
+#[spec(ensures: |ret| !ret.0 || source.0.get(.. gap.start).is_some() && source.0.get(gap.end ..).is_some())]
+fn on_next_line(
+    source: Text<'_>,
+    gap: Span,
+) -> Yes
+{
+    let (Some(before), Some(after)) = (source.0.get(.. gap.start), source.0.get(gap.end ..))
+    else {
+        return Yes(false);
+    };
+    let from = before.trim_end().len();
+    let to = source.0.len().saturating_sub(after.trim_start().len());
+    Yes(source.0.get(from .. to).is_some_and(|stretch| {
+        stretch.chars().all(char::is_whitespace) && stretch.matches('\n').count() == 1
+    }))
 }
 
 #[cfg(test)]
 mod tests
 {
+    use super::digest;
     use super::findings_of;
     use super::grammar;
     use crate::ledger::discrepancies;
@@ -342,14 +521,28 @@ mod tests
             .collect()
     }
 
+    /// The ledger line of an uncommented `name` whose collapsed text is
+    /// `text`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn key(
+        name: Text<'_>,
+        text: Text<'_>,
+    ) -> String
+    {
+        format!("sample.gandr:{}:{}", name.0, digest(text))
+    }
+
     #[test]
     fn an_uncommented_item_is_refused_by_name()
     {
+        let bare = key(Text("bare"), Text("def bare = 1;"));
         let owed = lines(Text("// what the file shows\n\ndef bare = 1;\n"));
         assert_eq!(
             owed,
-            ["sample.gandr:bare".to_owned()],
-            "the blank line leaves `bare` uncommented, and the gate names it"
+            [bare.as_str()],
+            "the blank line leaves `bare` uncommented, and the gate names it with its digest"
         );
         let pbg = grammar().expect("the built-in grammar builds");
         let found = findings_of(
@@ -360,9 +553,7 @@ mod tests
         .expect("the source commits a tree");
         let refused = discrepancies(&found, Text(""));
         assert!(
-            refused
-                .iter()
-                .any(|row| row.line().0 == "sample.gandr:bare"),
+            refused.iter().any(|row| row.line().0 == bare),
             "an empty ledger refuses `bare` by name"
         );
     }
@@ -377,10 +568,14 @@ mod tests
             Text("// what the file shows\n\ndef bare = 1;\n"),
         )
         .expect("the source commits a tree");
-        let refused = discrepancies(&found, Text("sample.gandr:bare\n"));
+        let ledger = format!(
+            "# key shape\n{}\n",
+            key(Text("bare"), Text("def bare = 1;"))
+        );
+        let refused = discrepancies(&found, Text(&ledger));
         assert!(
             refused.is_empty(),
-            "a ledger line for `bare` is not a refusal"
+            "a ledger line for `bare` is not a refusal, and the header is not a line"
         );
     }
 
@@ -391,11 +586,12 @@ mod tests
         let found = findings_of(&pbg, Text("sample.gandr"), Text("// kept\ndef kept = 1;\n"))
             .expect("the source commits a tree");
         assert!(found.is_empty(), "a commented item owes nothing");
-        let refused = discrepancies(&found, Text("sample.gandr:gone\n"));
+        let gone = key(Text("gone"), Text("def gone = 1;"));
+        let refused = discrepancies(&found, Text(&format!("{gone}\n")));
         assert!(
             refused
                 .iter()
-                .any(|row| row.is_stale().0 && row.line().0 == "sample.gandr:gone"),
+                .any(|row| row.is_stale().0 && row.line().0 == gone),
             "a ledger line the source no longer owes is refused"
         );
     }
@@ -403,23 +599,22 @@ mod tests
     #[test]
     fn a_file_without_a_leading_comment_is_refused()
     {
-        let owed = lines(Text("def first = 1;\n\n// second\ndef second = 1;\n"));
-        assert!(
-            owed.contains(&"sample.gandr:<file>".to_owned()),
-            "a source that opens on an item has no leading comment"
-        );
-        assert!(
-            !owed.contains(&"sample.gandr:second".to_owned()),
-            "the later item's own comment is not the file's"
+        let source = Text("def first = 1;\n\n// second\ndef second = 1;\n");
+        let owed = lines(source);
+        assert_eq!(
+            owed,
+            [
+                "sample.gandr:<file>".to_owned(),
+                key(Text("first"), Text("def first = 1;")),
+            ],
+            "a source that opens on an item has no leading comment, and the later item's own \
+             comment is not the file's"
         );
         let pbg = grammar().expect("the built-in grammar builds");
-        let found = findings_of(
-            &pbg,
-            Text("sample.gandr"),
-            Text("def first = 1;\n\n// second\ndef second = 1;\n"),
-        )
-        .expect("the source commits a tree");
-        let refused = discrepancies(&found, Text("sample.gandr:first\n"));
+        let found =
+            findings_of(&pbg, Text("sample.gandr"), source).expect("the source commits a tree");
+        let ledger = format!("{}\n", key(Text("first"), Text("def first = 1;")));
+        let refused = discrepancies(&found, Text(&ledger));
         assert!(
             refused
                 .iter()
@@ -437,28 +632,107 @@ mod tests
             "a comment immediately before the attribute block comments the item"
         );
         let after = lines(Text("@[ checks ]\n// late\ndef late = 1;\n"));
-        assert!(
-            after.contains(&"sample.gandr:late".to_owned()),
-            "a comment after the attribute block is not before it"
-        );
-        assert!(
-            after.contains(&"sample.gandr:<file>".to_owned()),
-            "a source that opens on an attribute block has no leading comment"
+        assert_eq!(
+            after,
+            [
+                "sample.gandr:<file>".to_owned(),
+                key(Text("late"), Text("def late = 1;")),
+            ],
+            "a comment after the attribute block is not before it, and a source that opens on an \
+             attribute block has no leading comment"
         );
     }
 
     #[test]
-    fn a_repeated_name_keeps_its_first_line()
+    fn a_body_inherits_its_signatures_comment()
     {
-        let owed = lines(Text("def counted : Integer ;\ndef counted = 1 ;\n"));
         assert!(
-            owed.iter().any(|line| line == "sample.gandr:counted"),
-            "the first `counted` keeps the bare name"
+            lines(Text(
+                "// file\n\n// counted\ndef counted : Integer ;\ndef counted = 1 ;\n"
+            ))
+            .is_empty(),
+            "a body on the line after its commented signature carries that comment"
         );
-        assert!(
-            owed.iter()
-                .any(|line| line.starts_with("sample.gandr:counted@")),
-            "the later `counted` carries its start byte"
+        assert_eq!(
+            lines(Text(
+                "// file\n\n// counted\ndef counted : Integer ;\n\ndef counted = 1 ;\n"
+            )),
+            [key(Text("counted"), Text("def counted = 1 ;"))],
+            "a blank line ends the run, so the body owes its own comment"
         );
+        assert_eq!(
+            lines(Text(
+                "// file\n\n// counted\ndef counted : Integer ;\ndef other = 1 ;\n"
+            )),
+            [key(Text("other"), Text("def other = 1 ;"))],
+            "an item of another name on the next line does not inherit"
+        );
+        let mut both = lines(Text(
+            "// file\n\ndef counted : Integer ;\ndef counted = 1 ;\n",
+        ));
+        both.sort();
+        let mut expected = vec![
+            key(Text("counted"), Text("def counted : Integer ;")),
+            key(Text("counted"), Text("def counted = 1 ;")),
+        ];
+        expected.sort();
+        assert_eq!(
+            both, expected,
+            "an uncommented signature leaves nothing to inherit, and its two items are two \
+             lines told apart by their digests"
+        );
+    }
+
+    #[test]
+    fn the_key_is_the_items_content()
+    {
+        let bare = key(Text("bare"), Text("def bare = 1;"));
+        let alone = lines(Text("// file\n\ndef bare = 1;\n"));
+        assert_eq!(
+            alone,
+            [bare.as_str()],
+            "the digest is over the item's collapsed text"
+        );
+        let moved = lines(Text(
+            "// file\n\n// other\ndef other = 2;\n\ndef bare = 1;\n",
+        ));
+        assert_eq!(
+            moved,
+            [bare.as_str()],
+            "an edit elsewhere leaves the key alone"
+        );
+        let mut reordered = lines(Text("// file\n\ndef second = 2;\n\ndef bare = 1;\n"));
+        let mut ordered = lines(Text("// file\n\ndef bare = 1;\n\ndef second = 2;\n"));
+        reordered.sort();
+        ordered.sort();
+        assert_eq!(
+            reordered, ordered,
+            "reordering items leaves every key alone"
+        );
+        let respaced = lines(Text("// file\n\ndef   bare\n  =\n 1;\n"));
+        assert_eq!(
+            respaced,
+            [bare.as_str()],
+            "whitespace collapses before the digest"
+        );
+        let annotated = lines(Text("// file\n\n@[ checks ]\ndef bare = 1;\n"));
+        assert_eq!(
+            annotated,
+            [bare.as_str()],
+            "the attribute block is not the item's text"
+        );
+        let remarked = lines(Text("// file\n\ndef bare = // one\n 1;\n"));
+        assert_eq!(
+            remarked,
+            [bare.as_str()],
+            "a comment inside the item is not its text"
+        );
+        let edited = lines(Text("// file\n\ndef bare = 2;\n"));
+        assert_eq!(
+            edited,
+            [key(Text("bare"), Text("def bare = 2;"))],
+            "an edited item keys a new line, so its ledger line goes stale"
+        );
+        assert_ne!(edited, alone, "a changed token moves the digest");
     }
 }

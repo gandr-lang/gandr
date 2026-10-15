@@ -240,7 +240,9 @@ mod tests
         let found = collect(&pbg, &root).expect("the walk reads the scratch directory");
         let lines: Vec<&str> = found.iter().map(|finding| finding.line().0).collect();
         assert!(
-            lines.contains(&"kept/bare.gandr:bare"),
+            lines
+                .iter()
+                .any(|line| line.starts_with("kept/bare.gandr:bare:")),
             "the uncommented item is named"
         );
         assert!(

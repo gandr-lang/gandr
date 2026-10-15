@@ -81,7 +81,10 @@ mod gate
         );
         eprintln!(
             "corpus comments OK: {} ledger lines",
-            held.lines().filter(|line| !line.trim().is_empty()).count()
+            held.lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty() && !line.starts_with('#'))
+                .count()
         );
     }
 }
