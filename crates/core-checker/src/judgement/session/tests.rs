@@ -31,6 +31,12 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::StringLiteral;
 use quenchant_shape::shape::Maybe;
 
+use super::super::Goal;
+use super::super::Machine;
+use super::super::Marking;
+use super::Resident;
+use super::Sessions;
+use super::captured;
 use crate::CheckBudget;
 use crate::CheckRefusal;
 use crate::CheckingContext;
@@ -40,6 +46,7 @@ use crate::OriginToken;
 use crate::TermNode;
 use crate::TypeNode;
 use crate::Verdict;
+use crate::access::AccessDefect;
 use crate::body;
 use crate::bridge;
 use crate::check_comp;
@@ -663,6 +670,73 @@ fn offer_arms_leaving_different_endpoints_are_refused()
     );
 }
 
+/// Offer arms that leave the endpoint open agree when they leave it at
+/// convertible states, so the child's leftover endpoint is what is refused,
+/// and disagree when they leave it at different states.
+#[test]
+fn offer_arms_leaving_an_endpoint_open_agree_on_its_state()
+{
+    let offered = |arena: &mut CoreArena, syntax: Vec<ProtocolSyntax>| {
+        let protocol = session(arena, syntax, &[]);
+        let unit = arena.value_unit();
+        let first = arena.computation_return(unit);
+        let other = arena.computation_return(unit);
+        let mut program = Program { arena };
+        let offer = program.offer(&[(Spelled("a"), first), (Spelled("b"), other)]);
+        let parent_closed = program.close();
+        let parent = program.select(Spelled("a"), parent_closed);
+        let exchange = fork(arena, protocol, offer, parent);
+        (check_unit(arena, exchange), exchange, first, other)
+    };
+    let offer = |branches: [usize; 2]| {
+        ProtocolSyntax::Offer(BTreeMap::from([
+            (label(Spelled("a")), ProtocolState::from(branches[0])),
+            (label(Spelled("b")), ProtocolState::from(branches[1])),
+        ]))
+    };
+    let mut arena = CoreArena::new();
+    // &{ a : end, b : end }: the arms leave the endpoint at two `end` states,
+    // one type each, which convert.
+    let (checked, ..) = offered(&mut arena, alloc::vec![
+        offer([1, 2]),
+        ProtocolSyntax::End,
+        ProtocolSyntax::End
+    ]);
+    assert!(
+        matches!(
+            checked,
+            Err(CheckRefusal::Linearity {
+                defect: LinearityDefect::Residue { .. },
+                ..
+            })
+        ),
+        "both arms leave the endpoint at `end`, which the child leaves open: {checked:?}"
+    );
+    // &{ a : end, b : &{ z : end } }: the arms leave it at different states.
+    let later = ProtocolSyntax::Offer(BTreeMap::from([(
+        label(Spelled("z")),
+        ProtocolState::from(3_usize),
+    )]));
+    let (checked, exchange, first, other) = offered(&mut arena, alloc::vec![
+        offer([1, 2]),
+        ProtocolSyntax::End,
+        later,
+        ProtocolSyntax::End
+    ]);
+    assert_eq!(
+        checked,
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(other)),
+            defect: LinearityDefect::ArmsDisagree {
+                endpoint: child(exchange),
+                first,
+                other,
+            },
+        }),
+        "the arms leave the endpoint at different states"
+    );
+}
+
 #[test]
 fn an_endpoint_at_a_top_level_declaration_is_refused()
 {
@@ -789,6 +863,97 @@ fn delegation_and_sharing_are_refused_by_name()
     );
 }
 
+/// An inner fork's child may take an outer endpoint its parent leaves alone;
+/// when both halves name it, it is used twice.
+#[test]
+fn an_inner_child_takes_an_outer_endpoint_only_when_its_parent_leaves_it()
+{
+    let exchange = |arena: &mut CoreArena, parent_closes_outer| {
+        let ended = end(arena);
+        let closes = |arena: &mut CoreArena, outer| {
+            let mut program = Program { arena };
+            let own = program.close();
+            if outer {
+                program.then(
+                    SessionAction::Close {
+                        endpoint: DeBruijnIndex::from(1_u32),
+                    },
+                    own,
+                )
+            }
+            else {
+                own
+            }
+        };
+        let inner_child = closes(arena, true);
+        let inner_parent = closes(arena, parent_closes_outer);
+        let inner = fork(arena, ended, inner_child, inner_parent);
+        let outer_parent = Program { arena }.close();
+        let outer = fork(arena, ended, inner, outer_parent);
+        (check_unit(arena, outer), outer, inner)
+    };
+    let mut arena = CoreArena::new();
+    let (checked, ..) = exchange(&mut arena, false);
+    assert_eq!(checked, Ok(()), "the inner child takes the outer endpoint");
+    let (checked, outer, inner) = exchange(&mut arena, true);
+    assert_eq!(
+        checked,
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(inner)),
+            defect: LinearityDefect::UsedTwice {
+                endpoint: child(outer),
+            },
+        }),
+        "both halves of the inner fork name the outer endpoint"
+    );
+}
+
+/// An inner child that takes an outer endpoint must finish it: one it leaves
+/// open is a residue of the inner fork, not of the outer one.
+#[test]
+fn an_outer_endpoint_an_inner_child_leaves_open_is_its_residue()
+{
+    let mut arena = CoreArena::new();
+    let ended = end(&mut arena);
+    // ⊕{ a : end }
+    let choosing = session(
+        &mut arena,
+        alloc::vec![
+            ProtocolSyntax::Select(BTreeMap::from([(
+                label(Spelled("a")),
+                ProtocolState::from(1_usize),
+            )])),
+            ProtocolSyntax::End,
+        ],
+        &[],
+    );
+    let mut program = Program { arena: &mut arena };
+    let own = program.close();
+    let inner_child = program.then(
+        SessionAction::Select {
+            endpoint: DeBruijnIndex::from(1_u32),
+            label: label(Spelled("a")),
+        },
+        own,
+    );
+    let inner_parent = program.close();
+    let inner = fork(&mut arena, ended, inner_child, inner_parent);
+    let closed = Program { arena: &mut arena }.close();
+    let outer_parent = Program { arena: &mut arena }.offer(&[(Spelled("a"), closed)]);
+    let outer = fork(&mut arena, choosing, inner, outer_parent);
+    let refused = check_unit(&mut arena, outer);
+    assert!(
+        matches!(
+            refused,
+            Err(CheckRefusal::Linearity {
+                at: CoreNode::Term(TermNode::Computation(at)),
+                defect: LinearityDefect::Residue { .. },
+            }) if at == inner
+        ),
+        "the inner fork leaves the outer endpoint open: {refused:?}"
+    );
+}
+
 #[test]
 fn a_session_code_crosses_only_at_its_root()
 {
@@ -846,5 +1011,80 @@ fn a_session_code_crosses_only_at_its_root()
         .classify(),
         gandr_core_term::FailureClass::Unrepresentable,
         "a session is unrepresentable, not a fault"
+    );
+}
+
+/// A held value may be read by a branch, which runs once; any other capture
+/// is refused by its capturer.
+#[test]
+fn a_held_value_is_captured_by_a_branch_only()
+{
+    let mut arena = CoreArena::new();
+    let at = seat(&mut arena);
+    let node = CoreNode::Term(TermNode::Computation(at));
+    let held = Resident::Held { at };
+    assert_eq!(captured(node, held, Capture::Branch), Ok(()));
+    for by in [
+        Capture::Thunk,
+        Capture::Recursion,
+        Capture::Stack,
+        Capture::Continuation,
+    ] {
+        assert_eq!(
+            captured(node, held, by),
+            Err(CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::HeldCaptured { by },
+            })
+        );
+    }
+}
+
+/// A type formed at an intuitionistic depth reads unchanged at that depth and
+/// shifted past every binder opened since.
+#[test]
+fn a_type_is_read_shifted_past_the_binders_opened_since_it_was_formed()
+{
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let open = arena.value_type_element(variable, Level::zero());
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let mut machine = Machine {
+        context: &mut context,
+        frames: Vec::new(),
+        owner: Goal::Form(TypeNode::Value(unit_type)),
+        native_types: Vec::new(),
+        conversions: crate::conversion::ConversionCount::default(),
+        remaining: 1_usize,
+        marking: Marking::Strict,
+        anchors: Vec::new(),
+        marks: Vec::new(),
+        sessions: Sessions::new(gandr_core_term::BinderDepth::default()),
+        root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
+    };
+    let formed = gandr_core_term::BinderDepth::default();
+    assert_eq!(
+        machine.here(open, formed),
+        Ok(open),
+        "read where it was formed"
+    );
+    machine
+        .context
+        .binders()
+        .open(Zone::Intuitionistic, unit_type);
+    let read = machine.here(open, formed).unwrap();
+    let Some(&gandr_core_term::ValueType::Element { code, .. }) =
+        machine.context.arena_mut().value_type(read)
+    else {
+        panic!("an element reads as an element");
+    };
+    assert_eq!(
+        machine.context.arena_mut().value(code),
+        Some(&gandr_core_term::Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(1_u32),
+        }),
+        "read one binder later, its variable names the same binder"
     );
 }
