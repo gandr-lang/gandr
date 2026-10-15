@@ -1614,6 +1614,17 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.nesting.insert(at, nesting);
     }
 
+    /// Every decision recorded since the last take: a run that holds one is
+    /// a first run, whose verdict the elaborated body's second run replaces.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) const fn nesting(&self) -> &BTreeMap<ValueId, crate::nested::Nesting>
+    {
+        &self.nesting
+    }
+
     /// Take every decision recorded since the last take, leaving none.
     ///
     /// # Specification

@@ -19,6 +19,17 @@
 //! normal forms, which is what the kernel re-derives on readmission with no
 //! trace to replay.
 //!
+//! A body holding a computation written where a value is read is judged
+//! twice (`nested`), and the obligation is judged on the second run only,
+//! over the elaborated body: there `S(S(dbl(x)))` is the bind its explicit
+//! spelling `run d <- dbl(x); S(S(d))` writes, so the fixpoint unfolds the
+//! call as it unfolds the written bind, and one fold checks to one term
+//! whichever way it is spelled. Read in place, on the first run, the call is
+//! a value no conversion unfolds, and a fold that respects its rules would
+//! be refused. **Alternative.** The lowering writing the bind itself, which
+//! runs every call at a thunk-typed parameter. **Reversal.** A checker that
+//! mints each bind as it judges, which `nested` names, judges it in one run.
+//!
 //! A dependent fold into a path type meets a rule as a cong chain: at
 //! `Loop(Unloop(x))` the section of the circle binds its call at `x` into
 //! `cong(unaround, _)` and that into `cong(around, _)`. Conversion reads such
@@ -328,13 +339,12 @@ fn pattern_binder(
 /// re-derives them.
 ///
 /// An endpoint is a value, a call among it written as the value its run
-/// returns. The fold's arms are judged twice when they hold a run written
-/// where a value is read: first with each run in place, then with every run
-/// elaborated into a bind ahead of its arm. An endpoint is read to match:
-/// its own run with the runs in its arguments in place, and else
-/// [`sequenced`], the runs bound ahead as elaboration binds them. The second
-/// run's verdict is the one kept, and the kernel reads the sequenced endpoint
-/// alone, since it sees only elaborated arms.
+/// returns, `Returned(M)`. The fold's sides hold their calls as its arms do:
+/// in place where an arm writes `Returned`, and bound ahead of the arm where
+/// the arm's nested runs were elaborated into binds, which happens before the
+/// obligation is judged. An endpoint is read to match: its own run with the
+/// runs in its arguments in place, and else [`sequenced`], the runs bound
+/// ahead as elaboration binds them.
 ///
 /// # Specification
 /// - requires: `obliged` is `rule`'s obligation at a fold whose type is
