@@ -222,9 +222,8 @@ mod census
     /// so a corpus source deleted takes its misses with it.
     ///
     /// - `Different`: a spelling that reads back as another type — an unused
-    ///   binder printed (#398), a loop word printed as its path type (#399), a
-    ///   session state or a capability region dropped (#400), a term inside a
-    ///   type read as another (#402).
+    ///   binder printed (#398), a session state or a capability region dropped
+    ///   (#400), a term inside a type read as another (#402).
     /// - `Open`: a type naming a binder in scope, not read (#403).
     /// - `Refused`: a spelling that parses and refuses to lower (#401, #402).
     /// - `Unknown`: a type the printer writes with `?`, which the census of
@@ -232,7 +231,7 @@ mod census
     /// - `Unparsed`: a spelling the grammar refuses (#401).
     /// - `Unspelled`: a type the printer could not spell at all.
     const READ_BACK_MISSES: [(&str, usize); 6] = [
-        ("Different", 468),
+        ("Different", 346),
         ("Open", 1162),
         ("Refused", 30),
         ("Unknown", 121),

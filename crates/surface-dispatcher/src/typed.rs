@@ -83,6 +83,7 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::string::ToString as _;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -109,7 +110,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
-use gandr_core_term::equal_type_syntax;
+use gandr_core_term::equal_type_reading;
 use gandr_core_term::instantiate_value_type;
 use gandr_core_term::pattern::Pattern;
 use gandr_core_term::pattern::PatternId;
@@ -1532,10 +1533,11 @@ impl TypeTable
     ///   to the source as a signature of a fresh name — a computation type `C`
     ///   as `+U (C)` — the whole lowered once, and is [`RoundTrip::Equal`] when
     ///   the signature's type has the syntax of the table's node, `U C` for a
-    ///   computation type, compared by [`equal_type_syntax`] with path evidence
-    ///   erased; [`RoundTrip::Different`] otherwise; and [`RoundTrip::Refused`]
-    ///   with the refusal when the lowering refused the signature or the whole
-    ///   source.
+    ///   computation type, compared by [`equal_type_reading`] with path
+    ///   evidence erased and a type of words read as the path type it is
+    ///   spelled as; [`RoundTrip::Different`] otherwise; and
+    ///   [`RoundTrip::Refused`] with the refusal when the lowering refused the
+    ///   signature or the whole source.
     /// - provides: the read-back half of the hover's content guarantee.
     /// - fails: never; a type that does not read back says why.
     /// - panics: none.
@@ -1645,6 +1647,10 @@ impl TypeTable
             })
             .collect();
         let mut lowered: BTreeMap<String, Result<ValueTypeId, String>> = BTreeMap::new();
+        // The data declarations the read type names, by constant: a type of
+        // words is spelled as the path type it reads as, and compares through
+        // that reading.
+        let mut signatures: BTreeMap<ConstantIndex, Arc<DataSignature>> = BTreeMap::new();
         match lower_source(
             grammar,
             SourceText::from(augmented.as_str()),
@@ -1658,6 +1664,12 @@ impl TypeTable
             }) => {
                 let mut importer = TypeImporter::new(&read, &mut arena);
                 for declaration in module.declarations() {
+                    if let DeclarationOutcome::Data(index) = declaration.outcome()
+                        && let Maybe::Present(signature) = module.data(index)
+                    {
+                        let _first =
+                            signatures.insert(declaration.constant(), Arc::clone(signature));
+                    }
                     let name = declaration.name();
                     if !name.as_ref().starts_with("read_back_") {
                         continue;
@@ -1697,9 +1709,11 @@ impl TypeTable
                     {
                         None => RoundTrip::Unparsed,
                         Some(&Err(ref refusal)) => RoundTrip::Refused(refusal.clone()),
-                        Some(&Ok(read)) => match equal_type_syntax(&arena, held, read) {
-                            CertificateEquality::Equal => RoundTrip::Equal,
-                            CertificateEquality::Different => RoundTrip::Different,
+                        Some(&Ok(read)) => {
+                            match equal_type_reading(&arena, &signatures, held, read) {
+                                CertificateEquality::Equal => RoundTrip::Equal,
+                                CertificateEquality::Different => RoundTrip::Different,
+                            }
                         },
                     }
                 });
