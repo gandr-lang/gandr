@@ -6,6 +6,7 @@
 //! daily lane) visits every source and runs every script. A source that fails
 //! in the sample fails the gate, and one outside it fails the daily lane.
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::num::NonZeroUsize;
@@ -15,12 +16,21 @@ use core::sync::atomic::Ordering;
 use std::panic::catch_unwind;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use anodized::spec;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::built_in;
 use gandr_surface_lsp::DocumentUri;
 use gandr_surface_parser::Lexeme;
 use gandr_surface_parser::label;
+use gandr_surface_parser::parse;
+use gandr_surface_syntax::MoldId;
+use gandr_surface_syntax::Node;
+use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
+use gandr_surface_syntax::SourceText;
 use percent_encoding::AsciiSet;
 use percent_encoding::NON_ALPHANUMERIC;
 use percent_encoding::utf8_percent_encode;
@@ -59,6 +69,182 @@ use super::editing::panic_message;
 /// carry comments saying what they demonstrate, so counting them would lower
 /// the share for documentation alone.
 const ANSWERED_FLOOR: usize = 773;
+
+/// The floors each node kind's hovers hold, as [`floor`] reads a row: the kind,
+/// then, in thousandths of the corpus positions whose smallest meaningful node
+/// is of that kind, the least share a hover answers at the node itself, the
+/// greatest share an ancestor answers and the greatest share a `?` answers.
+/// The figures are the shares measured when the row was last changed; a
+/// change that answers a kind at its own nodes moves its row. A kind measured
+/// with no row here and none in [`MEANINGLESS`] fails the sweep, so a new kind
+/// is decided rather than counted silently, and so does a row whose kind the
+/// corpus no longer has.
+const KIND_FLOORS: &[KindFloor] = &[
+    KindFloor("expression become_expression", 0, 932, 56),
+    KindFloor("expression binary_expression", 491, 16, 50),
+    KindFloor("expression block", 263, 540, 25),
+    KindFloor("expression block name", 0, 783, 0),
+    KindFloor("expression boolean", 0, 0, 0),
+    KindFloor("expression break_expression", 1000, 0, 0),
+    KindFloor("expression break_value_expression", 0, 625, 0),
+    KindFloor("expression call_expression", 833, 23, 74),
+    KindFloor("expression case_expression", 858, 5, 61),
+    KindFloor("expression close_expression", 388, 277, 138),
+    KindFloor("expression constructor", 469, 448, 43),
+    KindFloor("expression continue_expression", 400, 0, 0),
+    KindFloor("expression double_quoted_string", 0, 0, 0),
+    KindFloor("expression dup_expression", 0, 0, 0),
+    KindFloor("expression file_descriptor", 0, 0, 0),
+    KindFloor("expression for_expression", 0, 0, 0),
+    KindFloor("expression for_expression name", 0, 0, 0),
+    KindFloor("expression force_expression", 846, 0, 76),
+    KindFloor("expression glob_expression", 0, 0, 0),
+    KindFloor("expression glob_expression name", 0, 0, 0),
+    KindFloor("expression handle_expression", 745, 0, 0),
+    KindFloor("expression handle_expression name", 106, 626, 0),
+    KindFloor("expression hole", 970, 29, 705),
+    KindFloor("expression host_escape", 0, 0, 0),
+    KindFloor("expression identifier", 547, 270, 59),
+    KindFloor("expression if_expression", 0, 0, 0),
+    KindFloor("expression instantiation_expression", 677, 232, 134),
+    KindFloor("expression labelled_sum_expression", 990, 9, 0),
+    KindFloor("expression labelled_sum_expression name", 0, 1000, 0),
+    KindFloor("expression lambda_expression", 672, 0, 28),
+    KindFloor("expression lambda_expression name", 521, 108, 21),
+    KindFloor("expression lazy_record_expression", 1000, 0, 0),
+    KindFloor("expression lazy_record_expression name", 0, 1000, 0),
+    KindFloor("expression list_expression", 0, 0, 0),
+    KindFloor("expression list_operator", 0, 27, 0),
+    KindFloor("expression loop_expression", 696, 0, 0),
+    KindFloor("expression number", 467, 58, 3),
+    KindFloor("expression offer_expression", 1000, 0, 0),
+    KindFloor("expression pack_expression", 0, 0, 0),
+    KindFloor("expression parenthesized_expression", 317, 347, 18),
+    KindFloor("expression pipeline", 0, 0, 0),
+    KindFloor("expression projection_expression", 300, 37, 37),
+    KindFloor("expression projection_expression name", 0, 292, 31),
+    KindFloor("expression pure_expression", 337, 162, 0),
+    KindFloor("expression redirection_operator", 0, 0, 0),
+    KindFloor("expression return_expression", 784, 17, 7),
+    KindFloor("expression run_expression", 1000, 0, 0),
+    KindFloor("expression select_expression", 714, 285, 0),
+    KindFloor("expression select_expression name", 0, 1000, 0),
+    KindFloor("expression send_expression", 1000, 0, 0),
+    KindFloor("expression shell_block", 0, 34, 0),
+    KindFloor("expression shell_word", 0, 25, 0),
+    KindFloor("expression single_quoted_string", 0, 0, 0),
+    KindFloor("expression string", 30, 898, 71),
+    KindFloor("expression subshell", 0, 0, 0),
+    KindFloor("expression telescope_expression", 699, 52, 9),
+    KindFloor("expression telescope_expression name", 847, 60, 0),
+    KindFloor("expression thunk_expression", 892, 0, 37),
+    KindFloor("expression typed_number", 0, 0, 0),
+    KindFloor("expression unary_expression", 0, 0, 0),
+    KindFloor("expression unit", 892, 24, 0),
+    KindFloor("expression variable_expansion", 0, 0, 0),
+    KindFloor("expression while_expression", 1000, 0, 0),
+    KindFloor("instantiation instantiation_expression", 0, 860, 0),
+    KindFloor("instantiation instantiation_expression name", 0, 0, 0),
+    KindFloor("item circuit_declaration", 0, 370, 0),
+    KindFloor("item circuit_declaration name", 227, 181, 0),
+    KindFloor("item codata_declaration", 421, 50, 0),
+    KindFloor("item codata_declaration name", 339, 48, 0),
+    KindFloor("item data_declaration", 166, 118, 0),
+    KindFloor("item data_declaration name", 716, 15, 0),
+    KindFloor("item def_value", 640, 236, 24),
+    KindFloor("item def_value name", 899, 20, 30),
+    KindFloor("item extern_block", 0, 0, 0),
+    KindFloor("item extern_block name", 0, 0, 0),
+    KindFloor("item import_declaration", 0, 0, 0),
+    KindFloor("item import_declaration name", 0, 0, 0),
+    KindFloor("item module_declaration", 62, 0, 0),
+    KindFloor("item module_declaration name", 127, 84, 0),
+    KindFloor("item operator_declaration", 0, 0, 0),
+    KindFloor("item rec_block", 0, 0, 0),
+    KindFloor("item rec_block name", 0, 0, 0),
+    KindFloor("item sign_declaration", 286, 41, 0),
+    KindFloor("item sign_declaration name", 738, 18, 0),
+    KindFloor("module_member module_declaration", 762, 0, 75),
+    KindFloor("module_member module_declaration name", 501, 303, 83),
+    KindFloor("pattern cons_pattern", 1000, 0, 0),
+    KindFloor("pattern cons_pattern name", 666, 333, 0),
+    KindFloor("pattern constructor_pattern", 839, 35, 7),
+    KindFloor("pattern constructor_pattern name", 801, 48, 9),
+    KindFloor("pattern hole", 0, 0, 0),
+    KindFloor("pattern identifier", 711, 98, 2),
+    KindFloor("pattern labelled_sum_pattern", 1000, 0, 0),
+    KindFloor("pattern labelled_sum_pattern name", 1000, 0, 0),
+    KindFloor("pattern literal_pattern", 597, 369, 239),
+    KindFloor("pattern or_pattern", 1000, 0, 0),
+    KindFloor("pattern telescope_pattern", 1000, 0, 0),
+    KindFloor("pattern telescope_pattern name", 125, 875, 0),
+    KindFloor("pattern tuple_pattern", 0, 1000, 0),
+    KindFloor("pattern wildcard", 571, 285, 0),
+    KindFloor("type capability_type", 1000, 0, 0),
+    KindFloor("type capability_type name", 0, 1000, 0),
+    KindFloor("type end_session_type", 847, 43, 0),
+    KindFloor("type f_type", 828, 100, 1),
+    KindFloor("type f_type name", 0, 1000, 0),
+    KindFloor("type function_type", 931, 22, 0),
+    KindFloor("type labelled_sum_type", 989, 0, 0),
+    KindFloor("type lazy_product_type", 166, 833, 0),
+    KindFloor("type lazy_record_type", 865, 134, 0),
+    KindFloor("type mu_session_type", 923, 0, 0),
+    KindFloor("type mu_session_type name", 924, 0, 0),
+    KindFloor("type number", 750, 0, 0),
+    KindFloor("type package_type", 0, 0, 0),
+    KindFloor("type package_type name", 0, 0, 0),
+    KindFloor("type parenthesized_type", 0, 942, 3),
+    KindFloor("type path_type", 975, 24, 0),
+    KindFloor("type primitive_type", 753, 112, 0),
+    KindFloor("type product_type", 840, 160, 40),
+    KindFloor("type receive_session_type", 933, 66, 933),
+    KindFloor("type send_session_type", 914, 28, 0),
+    KindFloor("type static_abstraction", 1000, 0, 0),
+    KindFloor("type static_abstraction name", 0, 1000, 0),
+    KindFloor("type sum_type", 166, 333, 0),
+    KindFloor("type telescope_type", 830, 0, 0),
+    KindFloor("type type_application", 787, 72, 0),
+    KindFloor("type type_application name", 0, 846, 0),
+    KindFloor("type type_identifier", 832, 59, 0),
+    KindFloor("type type_path", 1000, 0, 0),
+    KindFloor("type type_path name", 0, 1000, 0),
+    KindFloor("type type_variable", 835, 26, 0),
+    KindFloor("type u_type", 863, 25, 0),
+    KindFloor("type universe_type", 877, 31, 0),
+    KindFloor("type unknown_type", 0, 1000, 0),
+    KindFloor("type value_function_type", 972, 27, 0),
+];
+
+/// The node kinds with no meaning of their own to hover, each with why: the
+/// sweep counts their positions but pins no floor on them.
+const MEANINGLESS: &[(&str, &str)] = &[
+    (
+        "grout",
+        "the parser's repair of text the source did not write: no node the source wrote",
+    ),
+    (
+        "item attribute_block",
+        "an attribute's brackets and keywords state what its declaration is expected to do: the \
+         declaration's head answers them",
+    ),
+    (
+        "item attribute_block name",
+        "an attribute's name is the expectation it states, no term or type: the declaration's \
+         head answers it",
+    ),
+];
+
+/// The tile labels a form spells a name with: a tile so labelled names
+/// something of its own — a declaration, a parameter, a loop, a word
+/// pattern's letter, a constructor pattern's constructor — so the sweep counts
+/// it as a node apart from the form that holds it.
+const NAMES: [&str; 4] = [
+    "identifier",
+    "constructor",
+    "type_identifier",
+    "type_variable",
+];
 
 /// The random edit scripts each scenario generates in a whole run.
 const CASES: u32 = 32;
@@ -215,6 +401,208 @@ fn corpus() -> Vec<Source>
             }
         })
         .collect()
+}
+
+/// The floors one node kind's hovers hold over the corpus: the kind — its
+/// form's grammar sort, then its named kind — and, in thousandths of its
+/// positions, the least share answered at the node itself, the greatest share
+/// answered by an ancestor of the node and the greatest share answered with a
+/// `?`.
+#[derive(Clone, Copy, Debug)]
+struct KindFloor(&'static str, usize, usize, usize);
+
+/// The shares of one node kind's positions a hover answered each way, in
+/// thousandths.
+#[derive(Clone, Copy, Debug)]
+struct Shares
+{
+    /// Answered at the node itself.
+    at_node: usize,
+    /// Answered by an ancestor of the node.
+    ancestor: usize,
+    /// Answered with a `?`.
+    unknown: usize,
+}
+
+/// How the hovers of one node kind's corpus positions answered.
+#[derive(Clone, Copy, Debug, Default)]
+struct Coverage
+{
+    /// The positions counted.
+    positions: usize,
+    /// Those a hover answered at the position's own node, or inside it.
+    at_node: usize,
+    /// Those a hover answered at a range reaching past the position's node:
+    /// an ancestor's answer.
+    ancestor: usize,
+    /// Those no hover answered.
+    unanswered: usize,
+    /// Those a hover answered with a `?` in it, wherever it answered.
+    unknown: usize,
+}
+
+impl Coverage
+{
+    /// This coverage with `other`'s counts added.
+    ///
+    /// # Specification
+    /// trivial.
+    fn add(
+        &mut self,
+        other: Self,
+    )
+    {
+        self.positions = self.positions.saturating_add(other.positions);
+        self.at_node = self.at_node.saturating_add(other.at_node);
+        self.ancestor = self.ancestor.saturating_add(other.ancestor);
+        self.unanswered = self.unanswered.saturating_add(other.unanswered);
+        self.unknown = self.unknown.saturating_add(other.unknown);
+    }
+
+    /// The answered counts in thousandths of the positions.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shares(self) -> Shares
+    {
+        let share = |count: usize| {
+            count
+                .saturating_mul(1000_usize)
+                .checked_div(self.positions)
+                .unwrap_or_default()
+        };
+        Shares {
+            at_node: share(self.at_node),
+            ancestor: share(self.ancestor),
+            unknown: share(self.unknown),
+        }
+    }
+}
+
+/// The smallest node with a meaning of its own holding one written leaf of a
+/// source.
+#[derive(Clone, Debug)]
+struct Owner
+{
+    /// The leaf's byte range.
+    leaf: (usize, usize),
+    /// The node's byte range.
+    node: (usize, usize),
+    /// The node's kind: its form's grammar sort, then its named kind.
+    kind: String,
+}
+
+/// The owner of every written leaf of `text`, in source order.
+///
+/// # Specification
+/// - requires: `text` parses under `grammar`.
+/// - ensures: one owner per tile and grout of the tree, ordered by where the
+///   leaf starts: a name a form spells as one of its own tiles — an identifier,
+///   a constructor, a type's name or variable, such as a declaration's name, a
+///   parameter, a loop or a word pattern's letter — is owned by itself, as kind
+///   `<sort> <form> name`; any other tile of the form its parent completes — a
+///   keyword, a delimiter, an operator — by that form; any other tile, an atom
+///   such as a name, a constructor or a literal, by itself; grout by itself, as
+///   kind `grout`. A kind is the sort of the owning form's mold and its named
+///   kind, so a name in a pattern and a name in a term are two kinds.
+/// - provides: the node a hover at a leaf answers by node.
+/// - panics: the grammar does not know a mold of the tree, or the parse faults.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sweep's per-kind table separates a pattern's name,
+///   the operator of a cons pattern and the keywords of a match, each measured
+///   against the answers the issue recorded.
+/// - witness: `editor::editor::scenarios::hovering_every_position_of_each_corpus_source_answers_without_fault`
+#[spec(ensures: |ret| ret.is_sorted_by_key(|owner| owner.leaf.0)
+    && ret.iter().all(|owner| owner.node.0 <= owner.leaf.0 && owner.leaf.1 <= owner.node.1))]
+fn owners(
+    grammar: &Pbg,
+    text: SourceText<'_>,
+) -> Vec<Owner>
+{
+    let parsed = parse(grammar, text).expect("a corpus source parses");
+    let tree = parsed.tree();
+    let mut parents: Vec<Option<NodeIndex>> = vec![None; usize::from(tree.node_count())];
+    for position in tree.positions() {
+        for child in tree.children(position) {
+            if let Some(held) = parents.get_mut(usize::from(child)) {
+                *held = Some(position);
+            }
+        }
+    }
+    let kind = |mold: MoldId| {
+        format!(
+            "{} {}",
+            grammar
+                .mold(mold)
+                .expect("a tree's mold is known")
+                .sort
+                .name(),
+            grammar.named_kind(mold).expect("a tree's mold is known").0
+        )
+    };
+    let rule = |mold: MoldId| grammar.rule_of(mold).expect("a tree's mold is known").name;
+    let range = |node: &Node| {
+        (
+            usize::from(node.span().start()),
+            usize::from(node.span().end()),
+        )
+    };
+    let mut owners = Vec::new();
+    for position in tree.positions() {
+        let node = tree.node(position).expect("a position names a node");
+        let (owner, kind) = match node.label() {
+            | NodeLabel::Tile(mold) => {
+                let parent = parents
+                    .get(usize::from(position))
+                    .copied()
+                    .flatten()
+                    .and_then(|parent| tree.node(parent));
+                match parent.map(|parent| (parent, parent.label())) {
+                    | Some((parent, NodeLabel::Meld(form))) if rule(form) == rule(mold) => {
+                        if NAMES
+                            .contains(&grammar.mold(mold).expect("a tree's mold is known").label)
+                        {
+                            (range(node), format!("{} name", kind(form)))
+                        }
+                        else {
+                            (range(parent), kind(form))
+                        }
+                    },
+                    | Some(_) | None => (range(node), kind(mold)),
+                }
+            },
+            | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
+                (range(node), String::from("grout"))
+            },
+            | NodeLabel::Wald | NodeLabel::Meld(_) | NodeLabel::Space | NodeLabel::Doc => continue,
+        };
+        owners.push(Owner {
+            leaf: range(node),
+            node: owner,
+            kind,
+        });
+    }
+    owners.sort_by_key(|owner| owner.leaf.0);
+    owners
+}
+
+/// The protocol position `at`.
+///
+/// # Specification
+/// trivial.
+fn spot(at: &Value) -> Position
+{
+    let coordinate = |name: &str| {
+        at[name]
+            .as_u64()
+            .and_then(|coordinate| u32::try_from(coordinate).ok())
+            .expect("a position's coordinates are 32-bit")
+    };
+    Position {
+        line: coordinate("line"),
+        character: coordinate("character"),
+    }
 }
 
 impl Sweep
@@ -564,9 +952,13 @@ fn hovering_every_position_of_each_corpus_source_answers_without_fault()
         "the corpus is walked whole: {}",
         sources.len()
     );
+    let grammar = built_in().expect("the built-in grammar builds");
     let positions = AtomicUsize::new(0_usize);
     let answered = AtomicUsize::new(0_usize);
+    let by_kind: Mutex<BTreeMap<String, Coverage>> = Mutex::new(BTreeMap::new());
     each_in_parallel(&sources, |source| {
+        let owners = owners(&grammar, SourceText::from(source.text.as_str()));
+        let mut rows: BTreeMap<String, Coverage> = BTreeMap::new();
         let mut client = Client::initialized(Record::Dropped, Quiet::Unheld);
         let _opened = client.notify(
             Method("textDocument/didOpen"),
@@ -606,6 +998,54 @@ fn hovering_every_position_of_each_corpus_source_answers_without_fault()
             if !shown.is_null() {
                 let _counted = answered.fetch_add(1_usize, Ordering::Relaxed);
             }
+            if source
+                .text
+                .get(offset ..)
+                .and_then(|rest| rest.chars().next())
+                .is_none_or(char::is_whitespace)
+            {
+                continue;
+            }
+            let Some(owner) = owners
+                .partition_point(|owner| owner.leaf.0 <= offset)
+                .checked_sub(1_usize)
+                .and_then(|at| owners.get(at))
+                .filter(|owner| offset < owner.leaf.1)
+            else {
+                panic!("{}: byte {offset} is written but in no leaf", source.uri);
+            };
+            let mut row = Coverage {
+                positions: 1_usize,
+                ..Coverage::default()
+            };
+            if shown.is_null() {
+                row.unanswered = 1_usize;
+            }
+            else {
+                let start = spot(&shown["range"]["start"]);
+                let end = spot(&shown["range"]["end"]);
+                let node_start = Position::of(text, Offset(owner.node.0));
+                let node_end = Position::of(text, Offset(owner.node.1));
+                if (node_start.line, node_start.character) <= (start.line, start.character)
+                    && (end.line, end.character) <= (node_end.line, node_end.character)
+                {
+                    row.at_node = 1_usize;
+                }
+                else {
+                    row.ancestor = 1_usize;
+                }
+                if shown["contents"]["value"]
+                    .as_str()
+                    .is_some_and(|value| value.contains('?'))
+                {
+                    row.unknown = 1_usize;
+                }
+            }
+            rows.entry(owner.kind.clone()).or_default().add(row);
+        }
+        let mut by_kind = by_kind.lock().expect("no visit panicked holding the table");
+        for (kind, row) in rows {
+            by_kind.entry(kind).or_default().add(row);
         }
     });
     let positions = positions.into_inner();
@@ -619,6 +1059,60 @@ fn hovering_every_position_of_each_corpus_source_answers_without_fault()
         "hovers answer {answered} of {positions} corpus positions, {share}‰, below the floor of \
          {ANSWERED_FLOOR}‰"
     );
+    let by_kind = by_kind
+        .into_inner()
+        .expect("no visit panicked holding the table");
+    eprintln!("| kind | positions | at the node | by an ancestor | unanswered | `?` |");
+    eprintln!("| --- | --- | --- | --- | --- | --- |");
+    for (kind, row) in &by_kind {
+        eprintln!(
+            "| {kind} | {} | {} | {} | {} | {} |",
+            row.positions, row.at_node, row.ancestor, row.unanswered, row.unknown
+        );
+    }
+    let mut misses = Vec::new();
+    for (kind, row) in &by_kind {
+        if MEANINGLESS
+            .iter()
+            .any(|&(meaningless, _)| meaningless == kind)
+        {
+            continue;
+        }
+        let Some(&KindFloor(_, at_least, ancestors, unknowns)) =
+            KIND_FLOORS.iter().find(|floor| floor.0 == kind)
+        else {
+            misses.push(format!("{kind}: no floor and not meaningless"));
+            continue;
+        };
+        let Shares {
+            at_node,
+            ancestor,
+            unknown,
+        } = row.shares();
+        if at_node < at_least {
+            misses.push(format!(
+                "{kind}: {at_node}‰ answered at the node, below {at_least}‰"
+            ));
+        }
+        if ancestor > ancestors {
+            misses.push(format!(
+                "{kind}: {ancestor}‰ answered by an ancestor, above {ancestors}‰"
+            ));
+        }
+        if unknown > unknowns {
+            misses.push(format!(
+                "{kind}: {unknown}‰ answered with `?`, above {unknowns}‰"
+            ));
+        }
+    }
+    for &KindFloor(kind, ..) in KIND_FLOORS {
+        if !by_kind.contains_key(kind) {
+            misses.push(format!(
+                "{kind}: a floor for a kind the corpus no longer has"
+            ));
+        }
+    }
+    assert_eq!(misses, Vec::<String>::new(), "hover coverage by node");
 }
 
 #[test]

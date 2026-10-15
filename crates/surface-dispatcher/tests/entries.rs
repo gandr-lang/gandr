@@ -61,10 +61,6 @@ mod entries
         Owed(usize),
     }
 
-    /// A pattern's reason: it is matched, not judged.
-    const MATCHED: &str = "a pattern is matched, not judged: the scrutinee answers at its type, \
-                           and a binder at its uses";
-
     /// An exit's reason: the keyword heads the computation its operand ends.
     const EXIT: &str = "an exit keyword ends the computation its operand gives: the operand \
                         answers, and the enclosing body at its type";
@@ -119,16 +115,16 @@ mod entries
             Standing::Design("a block: the computation it holds answers"),
         ),
         ("Expression ∷", Standing::Owed(0)),
-        ("Pattern #{", Standing::Design(MATCHED)),
-        ("Pattern (", Standing::Design(MATCHED)),
-        ("Pattern +", Standing::Design(MATCHED)),
-        ("Pattern _", Standing::Design(MATCHED)),
-        ("Pattern constructor", Standing::Design(MATCHED)),
-        ("Pattern false", Standing::Design(MATCHED)),
-        ("Pattern identifier", Standing::Design(MATCHED)),
-        ("Pattern number", Standing::Design(MATCHED)),
-        ("Pattern true", Standing::Design(MATCHED)),
-        ("Pattern |", Standing::Design(MATCHED)),
+        ("Pattern #{", Standing::Owed(0)),
+        ("Pattern (", Standing::Owed(1)),
+        ("Pattern +", Standing::Owed(0)),
+        ("Pattern _", Standing::Owed(4)),
+        ("Pattern constructor", Standing::Owed(6)),
+        ("Pattern false", Standing::Owed(0)),
+        ("Pattern identifier", Standing::Owed(25)),
+        ("Pattern number", Standing::Owed(8)),
+        ("Pattern true", Standing::Owed(0)),
+        ("Pattern |", Standing::Owed(0)),
         ("Type !", Standing::Owed(0)),
         ("Type #{", Standing::Owed(0)),
         ("Type &", Standing::Owed(0)),
