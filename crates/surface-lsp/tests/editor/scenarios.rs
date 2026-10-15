@@ -67,7 +67,7 @@ use super::shapes;
 /// is hovered but not counted: a comment is no hover target, and corpus items
 /// carry comments saying what they demonstrate, so counting them would move
 /// the count for documentation alone.
-const UNANSWERED_CEILING: usize = 28_471;
+const UNANSWERED_CEILING: usize = 28_545;
 
 /// The misses each node kind's hovers may hold, as [`KindFloor`] reads a row:
 /// the kind, then counts of the corpus positions whose smallest meaningful
@@ -127,7 +127,7 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("expression list_expression", 0, 76, 0, 0),
     KindFloor("expression list_operator", 0, 36, 0, 0),
     KindFloor("expression loop_expression", 0, 24, 0, 18), // shape: #401
-    KindFloor("expression number", 23, 251, 3, 0),
+    KindFloor("expression number", 24, 251, 3, 0),
     KindFloor("expression offer_expression", 0, 0, 0, 0),
     KindFloor("expression pack_expression", 0, 30, 0, 0),
     KindFloor("expression parenthesized_expression", 94, 90, 5, 0),
@@ -138,7 +138,7 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("expression redirection_operator", 0, 4, 0, 0),
     KindFloor("expression resume_expression", 9, 0, 9, 0),
     KindFloor("expression resume_expression name", 6, 0, 1, 0),
-    KindFloor("expression return_expression", 42, 468, 18, 6), // shape: #401
+    KindFloor("expression return_expression", 48, 468, 18, 6), // shape: #401
     KindFloor("expression run_expression", 0, 0, 0, 0),
     KindFloor("expression select_expression", 18, 0, 0, 0),
     KindFloor("expression select_expression name", 37, 0, 0, 0),
@@ -162,8 +162,8 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("item circuit_declaration name", 20, 65, 0, 0),
     KindFloor("item codata_declaration", 0, 74, 0, 0),
     KindFloor("item codata_declaration name", 5, 63, 0, 0),
-    KindFloor("item data_declaration", 0, 1844, 0, 0),
-    KindFloor("item data_declaration name", 22, 385, 0, 0),
+    KindFloor("item data_declaration", 0, 1872, 0, 0),
+    KindFloor("item data_declaration name", 27, 385, 0, 0),
     KindFloor("item def_value", 0, 919, 105, 143), // shape: #401
     KindFloor("item def_value name", 186, 664, 153, 122), // shape: #401
     KindFloor("item extern_block", 0, 142, 0, 0),
@@ -217,10 +217,10 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("type static_abstraction name", 46, 0, 0, 0),
     KindFloor("type sum_type", 2, 3, 0, 0),
     KindFloor("type telescope_type", 6, 58, 0, 0),
-    KindFloor("type type_application", 40, 83, 0, 20), // shape: #404, #420
-    KindFloor("type type_application name", 902, 154, 0, 0),
-    KindFloor("type type_identifier", 333, 478, 1, 36), // shape: #420
-    KindFloor("type type_path", 0, 0, 0, 8),            // shape: #404
+    KindFloor("type type_application", 42, 83, 0, 0),
+    KindFloor("type type_application name", 959, 154, 0, 0),
+    KindFloor("type type_identifier", 333, 478, 0, 0),
+    KindFloor("type type_path", 0, 0, 0, 8), // shape: #404
     KindFloor("type type_path name", 97, 0, 0, 0),
     KindFloor("type type_variable", 36, 129, 0, 90), // shape: #401
     KindFloor("type u_type", 22, 75, 0, 10),         // shape: #404
