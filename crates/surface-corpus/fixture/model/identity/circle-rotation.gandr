@@ -69,7 +69,10 @@ def mul(a : Circle, b : Circle) -> -F Circle {
 
 /// Rotating by `b` and back is the identity (cubical's `rotInv-1`, `b · a ·
 /// invLooper b ≡ a`, `_·_` associating to the left). The loop obligation
-/// reads no map of two arguments, so its transport does not compute (#425).
+/// reads `mul` through its two arguments, but its case is over `b`, which the
+/// loop over `a` leaves standing, and `mul`'s loop arm calls `selfloop`, which
+/// the obligation's δ-free run keeps a call; its transport does not compute
+/// (#425).
 @[ refuses("LoopNotRespected") ]
 def rotInv1(a : Circle, b : Circle) -> -F Path(Circle, mul(mul(b, a), invLooper(b)), a) {
   case a {

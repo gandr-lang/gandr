@@ -127,6 +127,30 @@ enum Action
     Through,
 }
 
+/// One call of an endpoint's chain: the function, every argument it applies
+/// in written order, and which of them carries the family's binder.
+///
+/// # Specification
+/// - ensures: `moving` names an argument of `arguments`, the only one that
+///   reads the binder; for a call bound after the previous one, the one
+///   argument is that call's result.
+/// - executable: none — the ids hold no arena to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `mul(b, Base)` is one link of two arguments moving at the
+///   first, and its loop arm reads the second as `Base`.
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_of_two_arguments`
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Link
+{
+    /// The function called.
+    function: ConstantIndex,
+    /// Every argument the call applies, the first outermost.
+    arguments: Vec<ValueId>,
+    /// The argument the binder runs through.
+    moving: usize,
+}
+
 /// What a word's outermost node is.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Head
@@ -683,7 +707,7 @@ fn reads_through(
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| match *found {
     Some(Action::Moving) => matches!(core.value(endpoint), Some(&Value::Variable { .. })),
-    Some(Action::Through) => calls(core, endpoint).is_some(),
+    Some(Action::Through) => calls(core, endpoint).is_ok_and(|found| found.is_some()),
     Some(Action::Fixed) | None => core.value(endpoint).is_some(),
 }))]
 fn action(
@@ -699,111 +723,213 @@ fn action(
     if reads_through(core, CoreTerm::Value(endpoint), bound)? == Reading::Ignores {
         return Ok(Some(Action::Fixed));
     }
-    Ok(calls(core, endpoint).map(|_| Action::Through))
+    Ok(calls(core, endpoint)?.map(|_| Action::Through))
 }
 
-/// The chain of definitions an endpoint runs the family's binder through,
+/// The chain of calls an endpoint runs the family's binder through,
 /// innermost first.
 ///
 /// # Specification
 /// - requires: `endpoint` is read under the family's one binder.
 /// - ensures: `Some(chain)` exactly when the endpoint is `⟨c⟩` for a call `c`
-///   of the shape `force f a` whose argument `a` is the binder or `⟨c'⟩` for
-///   such a call, or `x ← c'; force f x` for such a call `c'`, every function
-///   `f` a constant; the constants innermost first.
-/// - fails: never.
+///   of the shape `force f a₁ … aₙ` exactly one of whose arguments reads the
+///   binder, that one the binder itself or `⟨c'⟩` for such a call, or `x ← c';
+///   force f x` for such a call `c'`, every function `f` a constant; the links
+///   innermost first, each with its arguments.
+/// - fails: the free-index walk's fault.
 /// - panics: none.
 ///
+/// # Errors
+/// As `- fails:`.
+///
 /// # Termination
-/// - reason: the `loop` descends one call per iteration, never recursing.
+/// - reason: the `loop` descends one call per iteration and the inner `while`
+///   one application of a spine, never recursing.
 /// - measure: the endpoint's nodes left, each a strict subterm.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `flip(y)` reads as a chain of one call, whose loop arm
-///   gives cong its image.
+///   gives cong its image, and `mul(b, Base)` as one call of two arguments
+///   moving at the first.
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
-#[spec(ensures: |ret| ret.as_ref().is_none_or(|chain| !chain.is_empty() && matches!(core.value(endpoint), Some(&Value::Returned(_)))))]
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_of_two_arguments`
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| found.as_ref().is_none_or(|chain| !chain.is_empty()
+    && chain.iter().all(|link| link.moving < link.arguments.len())
+    && matches!(core.value(endpoint), Some(&Value::Returned(_))))))]
 fn calls(
     core: &CoreArena,
     endpoint: ValueId,
-) -> Option<Vec<ConstantIndex>>
+) -> Result<Option<Vec<Link>>, EvalFault>
 {
     let Some(&Value::Returned(mut call)) = core.value(endpoint)
     else {
-        return None;
+        return Ok(None);
     };
-    let bound = |argument: ValueId| matches!(core.value(argument), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == 0);
-    let applied = |call: ComputationId| match core.computation(call) {
-        Some(&Computation::Application(head, argument)) => match core.computation(head) {
-            Some(&Computation::Force(function)) => match core.value(function) {
-                Some(&Value::Constant(constant)) => Some((constant, argument)),
-                _ => None,
-            },
-            _ => None,
-        },
-        _ => None,
-    };
+    let binder = DeBruijnIndex::from(0_u32);
+    let bound = |argument: ValueId| matches!(core.value(argument), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if index == binder);
     let mut outermost_first = Vec::new();
     loop {
         if let Some(&Computation::Bind(first, then)) = core.computation(call) {
-            let (constant, argument) = applied(then)?;
+            let Some((function, arguments)) = spine(core, then)
+            else {
+                return Ok(None);
+            };
+            let [argument] = *arguments.as_slice()
+            else {
+                return Ok(None);
+            };
             if !bound(argument) {
-                return None;
+                return Ok(None);
             }
-            outermost_first.push(constant);
+            outermost_first.push(Link {
+                function,
+                arguments,
+                moving: 0,
+            });
             call = first;
             continue;
         }
-        let (constant, argument) = applied(call)?;
-        outermost_first.push(constant);
+        let Some((function, arguments)) = spine(core, call)
+        else {
+            return Ok(None);
+        };
+        let mut moving = None;
+        for (position, &argument) in arguments.iter().enumerate() {
+            let mut free = FreeIndices::default();
+            if free
+                .of(core, CoreTerm::Value(argument))
+                .map_err(free_fault)?
+                .intuitionistic()
+                .holds(binder)
+                == Membership::Held
+            {
+                if moving.is_some() {
+                    return Ok(None);
+                }
+                moving = Some(position);
+            }
+        }
+        let Some(moving) = moving
+        else {
+            return Ok(None);
+        };
+        let Some(&argument) = arguments.get(moving)
+        else {
+            return Ok(None);
+        };
+        outermost_first.push(Link {
+            function,
+            arguments,
+            moving,
+        });
         if bound(argument) {
             outermost_first.reverse();
-            return Some(outermost_first);
+            return Ok(Some(outermost_first));
         }
         let Some(&Value::Returned(inner)) = core.value(argument)
         else {
-            return None;
+            return Ok(None);
         };
         call = inner;
     }
 }
 
-/// Read a definition as a case over its argument: the thunk of a lambda whose
-/// body is a data case on the lambda's own variable.
+/// The function and the arguments, the first outermost, of the call `call`
+/// when it is `force f a₁ … aₙ` for a constant `f` and at least one argument.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the case, for a constant whose manifest body
-///   ([`super::Definitions::definition`]) is such a thunk; `None` otherwise.
+/// - ensures: as the summary; `None` for any other computation.
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Termination
+/// - reason: the `while` steps to the head of one application per turn.
+/// - measure: the spine's applications left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`calls`].
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_of_two_arguments`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|&(_, ref arguments)| !arguments.is_empty()))]
+fn spine(
+    core: &CoreArena,
+    call: ComputationId,
+) -> Option<(ConstantIndex, Vec<ValueId>)>
+{
+    let mut arguments = Vec::new();
+    let mut head = call;
+    while let Some(&Computation::Application(inner, argument)) = core.computation(head) {
+        arguments.push(argument);
+        head = inner;
+    }
+    let Some(&Computation::Force(function)) = core.computation(head)
+    else {
+        return None;
+    };
+    let Some(&Value::Constant(constant)) = core.value(function)
+    else {
+        return None;
+    };
+    if arguments.is_empty() {
+        return None;
+    }
+    arguments.reverse();
+    Some((constant, arguments))
+}
+
+/// Read a definition as a case over the argument a link moves at: the thunk
+/// of one lambda per argument whose body is a data case on that argument's
+/// variable.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the case and the index its argument has under the lambdas, for a
+///   constant whose manifest body ([`super::Definitions::definition`]) is such
+///   a thunk; `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `for` opens one lambda per argument.
+/// - measure: the arguments left.
+///
 /// # Adequacy
 /// - hypothesis: L3 — `flip`'s manifest body is read as its case, and without
-///   the sort's constructor count the arm after it is not found.
+///   the sort's constructor count the arm after it is not found; `mul`'s as a
+///   case on its first of two arguments.
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
-#[spec(ensures: |ret| ret.is_none_or(|case| matches!(core.computation(case), Some(&Computation::DataCase { .. }))))]
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_of_two_arguments`
+#[spec(ensures: |ret| ret.is_none_or(|(case, _)| matches!(core.computation(case), Some(&Computation::DataCase { .. }))))]
 fn cased(
     core: &CoreArena,
     machine: &Machine<'_>,
-    function: ConstantIndex,
-) -> Option<ComputationId>
+    link: &Link,
+) -> Option<(ComputationId, DeBruijnIndex)>
 {
-    let body = machine.definitions.definition(function)?;
-    let Some(&Value::Thunk(thunk)) = core.value(body)
+    let body = machine.definitions.definition(link.function)?;
+    let Some(&Value::Thunk(mut body)) = core.value(body)
     else {
         return None;
     };
-    let Some(&Computation::Lambda(body)) = core.computation(thunk)
-    else {
-        return None;
-    };
+    for _argument in &link.arguments {
+        let Some(&Computation::Lambda(inner)) = core.computation(body)
+        else {
+            return None;
+        };
+        body = inner;
+    }
     let Some(&Computation::DataCase { scrutinee, .. }) = core.computation(body)
     else {
         return None;
     };
-    matches!(core.value(scrutinee), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == 0)
-        .then_some(body)
+    let after = link
+        .arguments
+        .len()
+        .checked_sub(link.moving)?
+        .checked_sub(1)?;
+    let index = DeBruijnIndex::from(u32::try_from(after).ok()?);
+    matches!(core.value(scrutinee), Some(&Value::Variable { zone: Zone::Intuitionistic, index: read }) if read == index)
+        .then_some((body, index))
 }
 
 /// What a case over a looped sort carries for one of its loops.
@@ -817,11 +943,13 @@ enum Arm
 }
 
 /// The arm a case carries for a letter's loop, or `None` when the case is
-/// over no sort the letter's words loop in, or its arm reads the argument.
+/// over no sort the letter's words loop in, or its arm reads the argument at
+/// `scrutinee`.
 ///
 /// # Specification
-/// - requires: `case` is a data case in `core`; `words` an admitted type of
-///   words whose `cell`'s loop the image is asked of.
+/// - requires: `case` is a data case in `core` over the variable `scrutinee`;
+///   `words` an admitted type of words whose `cell`'s loop the image is asked
+///   of.
 /// - ensures: as the summary, a case's arms after one per constructor of the
 ///   words' sort taken in [`super::Definitions::looping`]'s order.
 /// - fails: the free-index walk's fault.
@@ -832,13 +960,15 @@ enum Arm
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `flip`'s arm after its one constructor branch is the
-///   loop's image, and without the sort's constructor count no arm is read.
+///   loop's image, and without the sort's constructor count no arm is read;
+///   `mul`'s arm reads its second argument and not its first.
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_of_two_arguments`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| found.is_none_or(|arm| match arm { Arm::Written(written) => core.computation(written).is_some(), Arm::Unwritten => matches!(core.computation(case), Some(&Computation::DataCase { .. })) })))]
 fn loop_arm(
     core: &CoreArena,
     machine: &Machine<'_>,
-    case: ComputationId,
+    (case, scrutinee): (ComputationId, DeBruijnIndex),
     (words, cell): (ConstantIndex, CellIndex),
 ) -> Result<Option<Arm>, EvalFault>
 {
@@ -887,8 +1017,13 @@ fn loop_arm(
     else {
         return Ok(None);
     };
-    if reads_through(core, CoreTerm::Computation(arm), DeBruijnIndex::from(0_u32))?
-        == Reading::Reads
+    let mut free = FreeIndices::default();
+    if free
+        .of(core, CoreTerm::Computation(arm))
+        .map_err(free_fault)?
+        .intuitionistic()
+        .holds(scrutinee)
+        == Membership::Held
     {
         return Ok(None);
     }
@@ -1216,6 +1351,10 @@ pub(super) fn map(
         return Err(EvalFault::MachineInvariant);
     };
     let placeholder = state.rest;
+    // The family's own environment under its binder: a fixed argument never
+    // reads the binder, so any value stands for it.
+    let mut within = closure.environment().clone();
+    within.extend(Zone::Intuitionistic, placeholder);
     let Some(&ValueType::Path { left, right, .. }) = core.value_type(family)
     else {
         return Err(stuck);
@@ -1224,9 +1363,9 @@ pub(super) fn map(
         Side::Left => left,
         Side::Right => right,
     };
-    let chain = calls(core, endpoint).ok_or(stuck)?;
+    let chain = calls(core, endpoint)?.ok_or(stuck)?;
     loop {
-        let Some(&function) = chain.get(usize::from(state.call))
+        let Some(link) = chain.get(usize::from(state.call))
         else {
             machine
                 .comps
@@ -1249,7 +1388,7 @@ pub(super) fn map(
             Head::Other => return Err(stuck),
         };
         let cell = FreeCells::generator(tag).ok_or(stuck)?;
-        let case = cased(core, machine, function).ok_or(stuck)?;
+        let case = cased(core, machine, link).ok_or(stuck)?;
         state.rest = rest;
         let Arm::Written(arm) = loop_arm(core, machine, case, (words, cell))?.ok_or(stuck)?
         else {
@@ -1270,14 +1409,111 @@ pub(super) fn map(
             orientation,
         });
         machine.tasks.push(Task::BindClosure(onward));
-        // The arm stands under the case's argument, which it does not read:
-        // any value binds it.
-        let mut arms = Environment::new();
-        arms.extend(Zone::Intuitionistic, placeholder);
-        let env = machine.hold_env(arms);
-        machine.tasks.push(Task::Comp { term: arm, env });
+        // The arm stands under the function's arguments, the first outermost.
+        // It does not read the one the case is over: any value binds it. Each
+        // other argument is its value where the family stands, evaluated by
+        // this machine before the arm runs, the first first.
+        machine.tasks.push(Task::Arm(ArmEntry {
+            arm,
+            count: link.arguments.len(),
+            moving: link.moving,
+            placeholder,
+        }));
+        let within = machine.hold_env(within);
+        for (_, &argument) in link
+            .arguments
+            .iter()
+            .enumerate()
+            .filter(|&(position, _)| position != link.moving)
+            .rev()
+        {
+            machine.tasks.push(Task::Value {
+                term: argument,
+                env: within,
+            });
+        }
         return Ok(());
     }
+}
+
+/// A loop arm waiting for its fixed arguments' values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct ArmEntry
+{
+    /// The loop arm.
+    pub arm: ComputationId,
+    /// How many arguments the function takes.
+    pub count: usize,
+    /// The argument the case is over, which the arm does not read.
+    pub moving: usize,
+    /// The value bound at the moving argument.
+    pub placeholder: DomainValueId,
+}
+
+/// Bind a loop arm's arguments and queue the arm: one value per fixed
+/// argument taken off the stack, the first deepest, and the placeholder at
+/// the moving one.
+///
+/// # Specification
+/// - requires: the stack holds the fixed arguments' values on top, the first
+///   deepest, as [`map`] queues them.
+/// - ensures: those values taken off the stack and the arm queued in the
+///   environment binding every argument in order, the first outermost.
+/// - fails: [`EvalFault::MachineInvariant`] when the stack holds fewer values
+///   than the fixed arguments, or the moving position is no argument's.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `for` loop over the function's arguments, not recursion.
+/// - measure: the arguments left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `first`'s arm reads its fixed second argument at the
+///   value the family gives it; bound in the other order, the image would be
+///   another argument's.
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_of_two_arguments`
+#[spec(
+    captures: [entry_tasks = machine.tasks.len(), entry_values = machine.values.len()],
+    ensures: |ret| ret.is_err() || machine.tasks.len() == entry_tasks.saturating_add(1_usize)
+        && entry_values.checked_sub(entry.count.saturating_sub(1_usize)) == Some(machine.values.len()),
+)]
+pub(super) fn arm_entered(
+    machine: &mut Machine<'_>,
+    entry: ArmEntry,
+) -> Result<(), EvalFault>
+{
+    let ArmEntry {
+        arm,
+        count,
+        moving,
+        placeholder,
+    } = entry;
+    let fixed = count.checked_sub(1).ok_or(EvalFault::MachineInvariant)?;
+    if moving >= count {
+        return Err(EvalFault::MachineInvariant);
+    }
+    let start = machine
+        .values
+        .len()
+        .checked_sub(fixed)
+        .ok_or(EvalFault::MachineInvariant)?;
+    let mut values = machine.values.split_off(start).into_iter();
+    let mut arms = Environment::new();
+    for position in 0 .. count {
+        let bound = if position == moving {
+            placeholder
+        }
+        else {
+            values.next().ok_or(EvalFault::MachineInvariant)?
+        };
+        arms.extend(Zone::Intuitionistic, bound);
+    }
+    let env = machine.hold_env(arms);
+    machine.tasks.push(Task::Comp { term: arm, env });
+    Ok(())
 }
 
 /// Append a letter's image, bound by a [`CompBody::Mapping`] continuation,
@@ -1312,6 +1548,26 @@ pub(super) fn mapped(
 ) -> Result<(), EvalFault>
 {
     let stuck = EvalFault::TransportedNonPath;
+    // An arm answering a cell's name, `loop`, answers its word: the name is
+    // read through its body, as a transport along it is, and the mapping
+    // resumes at the word.
+    if let Some(body) = named(core, domain, machine, image)? {
+        let onward = domain.native_continuation(CompBody::Mapping {
+            motive: state.motive,
+            side: state.side,
+            call: state.call,
+            rest: state.rest,
+            mapped: state.mapped,
+            orientation: state.orientation,
+        });
+        machine.tasks.push(Task::BindClosure(onward));
+        machine.tasks.push(Task::Yield);
+        machine.tasks.push(Task::Value {
+            term: body,
+            env: Machine::root_env(),
+        });
+        return Ok(());
+    }
     let image = match state.orientation {
         Orientation::Forward => image,
         Orientation::Inverse => inverted(core, domain, machine, image)?.ok_or(stuck)?,
@@ -1436,6 +1692,11 @@ mod tests
     const LOOP: usize = 2;
     /// `flip`, the case over `S` whose loop arm answers the inverse letter.
     const FLIP: usize = 3;
+    /// `first`, a case over its first of two arguments whose loop arm answers
+    /// the loop by its name.
+    const FIRST: usize = 4;
+    /// `second`, the same over its second of two arguments.
+    const SECOND: usize = 5;
 
     /// The terms the witnesses build on, in the checker's arena.
     struct Circle
@@ -1455,6 +1716,12 @@ mod tests
         /// `flip`'s body: `thunk (λx. case x { Base ⇒ return Base; loop ⇒
         /// return back(loop) })`.
         flip: ValueId,
+        /// `first`'s body: `thunk (λa. λb. case a { Base ⇒ return b; loop ⇒
+        /// return loop })`.
+        first: ValueId,
+        /// `second`'s body: `thunk (λb. λa. case a { Base ⇒ return b; loop ⇒
+        /// return loop })`.
+        second: ValueId,
     }
 
     /// The circle's terms.
@@ -1477,6 +1744,20 @@ mod tests
         let case = core.computation_data_case(scrutinee, kept, vec![at_point, at_loop]);
         let lambda = core.computation_lambda(case);
         let flip = core.value_thunk(lambda);
+        // Over two arguments, the case over the one at `over`, the other
+        // returned at the point and the loop's name its loop arm.
+        let binary = |core: &mut CoreArena, over: u32, other: u32| {
+            let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(over));
+            let kept_value = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(other));
+            let at_point = core.computation_return(kept_value);
+            let at_loop = core.computation_return(named);
+            let case = core.computation_data_case(scrutinee, kept, vec![at_point, at_loop]);
+            let inner = core.computation_lambda(case);
+            let outer = core.computation_lambda(inner);
+            core.value_thunk(outer)
+        };
+        let first = binary(core, 1, 0);
+        let second = binary(core, 0, 1);
         Circle {
             carrier,
             point,
@@ -1485,6 +1766,8 @@ mod tests
             inverse,
             named,
             flip,
+            first,
+            second,
         }
     }
 
@@ -1529,6 +1812,8 @@ mod tests
         for (constant, global, body) in [
             (ConstantIndex::from(LOOP), 0_u32, circle.letter),
             (ConstantIndex::from(FLIP), 1_u32, circle.flip),
+            (ConstantIndex::from(FIRST), 2_u32, circle.first),
+            (ConstantIndex::from(SECOND), 3_u32, circle.second),
         ] {
             let _height = chain
                 .define(
@@ -1657,6 +1942,42 @@ mod tests
             Some(MachineVerdict::Convertible),
             "without the sort's constructor count the arm is not found"
         );
+    }
+
+    #[test]
+    fn cong_along_the_loop_reads_a_map_of_two_arguments()
+    {
+        let mut core = CoreArena::new();
+        let circle = circle(&mut core);
+        let chain = chain(&circle, Count::Recorded);
+        let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let looped = core.computation_return(circle.letter);
+        let inverted = core.computation_return(circle.inverse);
+        // `cong(y. first(y, Base), loop)` and `cong(y. second(Base, y), loop)`:
+        // the point runs through one argument, the other stays at `Base`.
+        for (constant, arguments) in [
+            (FIRST, [moving, circle.point]),
+            (SECOND, [circle.point, moving]),
+        ] {
+            let named = core.value_constant(ConstantIndex::from(constant));
+            let mut applied = core.computation_force(named);
+            for argument in arguments {
+                applied = core.computation_application(applied, argument);
+            }
+            let through = core.value_returned(applied);
+            let family = core.value_type_path(circle.carrier, circle.point, through);
+            let cong = core.computation_path_transport(family, circle.named, circle.empty);
+            assert_eq!(
+                decided(&core, &chain, (cong, looped)),
+                Some(MachineVerdict::Convertible),
+                "the image of the loop is the arm's answer, the loop read by its name"
+            );
+            assert_eq!(
+                decided(&core, &chain, (cong, inverted)),
+                Some(MachineVerdict::NotConvertible),
+                "and not its inverse"
+            );
+        }
     }
 
     #[test]

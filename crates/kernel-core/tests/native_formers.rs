@@ -1235,6 +1235,19 @@ mod native_formers
         Mapped(ConstantIndex),
         /// `Path(S, ⟨f ⟨f x⟩⟩, x)`.
         Twice(ConstantIndex),
+        /// `Path(S, ⟨f x Base⟩, x)` when the point runs through the first
+        /// argument, `Path(S, ⟨f Base x⟩, x)` through the second.
+        Paired(ConstantIndex, Argument),
+    }
+
+    /// One of a two-argument map's arguments.
+    #[derive(Clone, Copy, Debug)]
+    enum Argument
+    {
+        /// The outer lambda's.
+        First,
+        /// The inner lambda's.
+        Second,
     }
 
     /// `family`'s returner in `arena`.
@@ -1272,6 +1285,20 @@ mod native_formers
                 let image = call(arena, function, inner);
                 arena.value_type_path(carrier, image, x)
             },
+            Family::Paired(function, through) => {
+                let function = arena.value_constant(function);
+                let forced = arena.computation_force(function);
+                let arguments = match through {
+                    Argument::First => [x, point],
+                    Argument::Second => [point, x],
+                };
+                let mut applied = forced;
+                for argument in arguments {
+                    applied = arena.computation_application(applied, argument);
+                }
+                let image = arena.value_returned(applied);
+                arena.value_type_path(carrier, image, x)
+            },
         };
         arena.comp_type_returner(fibre)
     }
@@ -1305,6 +1332,45 @@ mod native_formers
         let pi = arena.comp_type_pi(carrier, motive);
         let declared = arena.value_type_thunk(pi);
         let body = arena.value_thunk(lambda);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment
+            .add_decl(staged)
+            .map(gandr_kernel_core::CheckedId::position)
+    }
+
+    /// Stage `thunk (λa. λb. case v { Base ⇒ return Base; loop ⇒ return loop
+    /// })` at `(a : S) → (b : S) → F S`, `v` the argument `over`, and admit it
+    /// at its position.
+    ///
+    /// # Specification
+    /// trivial.
+    fn binary_over(
+        environment: &mut Environment,
+        over: Argument,
+    ) -> Result<ConstantIndex, KernelError>
+    {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let kept = arena.comp_type_returner(carrier);
+        let point = build(arena, Built::Point);
+        let named = build(arena, Built::Named);
+        let branches = vec![
+            arena.computation_return(point),
+            arena.computation_return(named),
+        ];
+        let over = match over {
+            Argument::First => 1_u32,
+            Argument::Second => 0_u32,
+        };
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(over));
+        let case = arena.computation_data_case(scrutinee, kept, branches);
+        let inner = arena.computation_lambda(case);
+        let outer = arena.computation_lambda(inner);
+        let codomain = arena.comp_type_pi(carrier, kept);
+        let pi = arena.comp_type_pi(carrier, codomain);
+        let declared = arena.value_type_thunk(pi);
+        let body = arena.value_thunk(outer);
         let staged = staging.def(LevelSignature::monomorphic(), declared, body);
         environment
             .add_decl(staged)
@@ -1395,6 +1461,40 @@ mod native_formers
             case_over(&mut environment, Family::Mapped(flip), Built::Empty, &[]),
             Err(KernelError::LoopNotRespected(CellIndex::from(0_usize))),
             "the flip once is no identity: reflexivity is carried to the loop twice"
+        );
+    }
+
+    #[test]
+    fn a_loop_obligation_reads_a_map_of_two_arguments()
+    {
+        let mut environment = one_loop();
+        for through in [Argument::First, Argument::Second] {
+            let pick = binary_over(&mut environment, through)
+                .expect("a non-dependent case over one of two arguments admits");
+            assert!(
+                case_over(
+                    &mut environment,
+                    Family::Paired(pick, through),
+                    Built::Empty,
+                    &[]
+                )
+                .is_ok(),
+                "the map answers the loop by its name, so reflexivity carried along the \
+                 loop meets itself, the point through either argument"
+            );
+        }
+        let over_first =
+            binary_over(&mut environment, Argument::First).expect("the map admits again");
+        assert_eq!(
+            case_over(
+                &mut environment,
+                Family::Paired(over_first, Argument::Second),
+                Built::Empty,
+                &[]
+            ),
+            Err(KernelError::LoopNotRespected(CellIndex::from(0_usize))),
+            "a map whose case is over the argument the point does not run through gives no \
+             image of the loop"
         );
     }
 
