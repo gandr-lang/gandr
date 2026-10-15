@@ -1,0 +1,74 @@
+// The integers' sum and its laws, after cubical Agda's `Cubical/Data/Int`:
+// the sum by recursion on its second summand, zero a unit of it, a successor
+// or a predecessor brought out of its left, and the sum commuting.
+// `circle-group.gandr` reads these laws through the winding number. A row
+// the tree refuses today states the refusal it meets and the issue that holds
+// it.
+
+/// The integers as a presented type: a successor and a predecessor that
+/// cancel.
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
+}
+
+/// One successor more.
+def up(n : Int) -> -F Int {
+  S(n)
+}
+
+/// One predecessor more.
+def down(n : Int) -> -F Int {
+  P(n)
+}
+
+/// The sum of two integers (cubical's `_+_` on `ℤ`), by recursion on the
+/// second. It respects `Int`'s rules: at `S(P(x))` it builds `S(P(plus(a,
+/// x)))`, which the first rule reads as `plus(a, x)`.
+@[ checks ]
+def rec plus(a : Int, b : Int) -> -F Int {
+  case b {
+    Z => a,
+    S(x) => S(plus[<](a, x)),
+    P(x) => P(plus[<](a, x))
+  }
+}
+
+/// A successor on the left of a sum comes out of it. Owed: proved by
+/// induction on `b` with `cong(up, …)` and `cong(down, …)`, it checks and the
+/// kernel refuses it (#424).
+@[ owes(1) ]
+def plusS : (a : Int, b : Int) => Path(Int, plus(S(a), b), S(plus(a, b))) ;
+
+/// A predecessor on the left of a sum comes out of it; owed as `plusS` is
+/// (#424).
+@[ owes(1) ]
+def plusP : (a : Int, b : Int) => Path(Int, plus(P(a), b), P(plus(a, b))) ;
+
+/// Zero is a left unit of the sum, by induction on the right summand.
+@[ checks ]
+def rec plusZ(b : Int) -> -F Path(Int, plus(Z, b), b) {
+  case b {
+    Z => here(Z),
+    S(x) => cong(up, plusZ[<](x)),
+    P(x) => cong(down, plusZ[<](x))
+  }
+}
+
+/// The sum commutes (cubical's `+Comm`), by induction on the second summand,
+/// each step the recursive call carried along `up` or `down` and then the
+/// summand brought out of the left. Composing a `cong` with a call needs a
+/// stated type (#423); with one, the arms compose to no conversion of the
+/// answer at `x`, so the case is refused as not respecting `Int`'s rules
+/// (#427).
+@[ refuses("OutOfFragment") ]
+def rec plusComm(a : Int, b : Int) -> -F Path(Int, plus(a, b), plus(b, a)) {
+  case b {
+    Z => back(plusZ(a)),
+    S(x) => cong(up, plusComm[<](a, x)) then back(plusS(x, a)),
+    P(x) => cong(down, plusComm[<](a, x)) then back(plusP(x, a))
+  }
+}
