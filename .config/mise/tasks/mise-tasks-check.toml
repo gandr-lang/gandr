@@ -298,6 +298,16 @@ fi
 echo 'merge residue check OK: no conflict markers or merge-driver trailers in tracked files'
 """
 
+# A fixture source is read by people as often as by the checker (#355).
+# Every top-level item carries a comment immediately before its attribute
+# block, and the file opens with one. Existing debt is the committed
+# ledger; a finding the ledger does not hold is new debt, and a ledger
+# line the corpus no longer owes is stale. `CORPUS_COMMENTS_WRITE_LEDGER=1`
+# rewrites the ledger and is not this gate.
+["check:corpus-comments"]
+description = "A comment on every fixture item, ratcheted against the ledger"
+run = "cargo test --locked --package gandr-surface-corpus --test comments -- --nocapture"
+
 # Workflow tools are build-time policy, never package dependencies. Check
 # Cargo's resolved metadata, including renamed and transitive dependencies,
 # so a future publishable package cannot acquire an unpublished tool edge.

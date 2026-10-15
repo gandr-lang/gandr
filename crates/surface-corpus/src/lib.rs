@@ -212,6 +212,38 @@
 //! the checker gain a shared declaration type, at which point the adaptation,
 //! and with it the fixture's copy, goes away.
 //!
+//! # A comment on every fixture item
+//!
+//! Every `.gandr` source under `fixture/` opens with a comment, and every
+//! top-level item carries a doc comment or a line comment immediately before
+//! its attribute block. A body on the line after its commented signature
+//! of the same name inherits that comment: one comment per run of a name.
+//! The `comments` test refuses a source that does not, naming the file and
+//! the item, and ratchets against `fixture/uncommented.ledger`.
+//!
+//! **A ledger ratchet, not a one-shot comment pass.** The fixture already
+//! holds sources whose items have no comment. Writing every comment in the
+//! change that adds the gate would mix the rule with a prose pass, and a
+//! later uncommented item would land with nothing to refuse it. The test's
+//! `CORPUS_COMMENTS_WRITE_LEDGER=1` records the debt once, untriaged. The
+//! gate then refuses a finding the ledger does not hold, and refuses a
+//! ledger line that no longer names an uncommented item, so debt is paid
+//! down and never added. The alternative was that one-shot pass with no
+//! ledger: every source green on the day, and no gate afterwards.
+//!
+//! **Content keys, not positions.** A ledger line is `path:name:digest`,
+//! the digest the first sixteen hex digits of BLAKE3 over the item's text
+//! with whitespace collapsed and comments and the attribute block left out;
+//! the ledger's first line states that shape. A key survives edits elsewhere
+//! in the file and a reordering of its items, and two items of one name are
+//! told apart by their text. Editing an item moves its key, so its line goes
+//! stale and the edit owes the item its comment. The alternative was a byte
+//! offset or an ordinal per repeated name, which every unrelated edit above
+//! the item invalidates.
+//!
+//! **Reversal:** the ledger reaching zero. Delete the ledger and the
+//! ratchet; the gate then refuses every uncommented item outright.
+//!
 //! # References
 //!
 //! - The Agda test suite, `test/Succeed` and `test/Fail` in <https://github.com/agda/agda>

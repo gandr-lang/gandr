@@ -11,6 +11,17 @@ keywords = ["corpus", "gandr", "no-std", "testing", "type-checking"]
 categories = ["compilers", "no-std"]
 publish.workspace = true
 
+# The suite builds its synthetic modules from source text, through the same
+# parse, lower and check a driver runs; the library never names the parser.
+# The kernel export suite commits each corpus source's kernel artifact as
+# records and reads it back through the record plane, and replays a tampered
+# artifact through the kernel to name its refusal.
+# The comment gate is a test target, not a library dependency: the library
+# never names the parser. `CORPUS_COMMENTS_WRITE_LEDGER=1` rewrites the ledger.
+[[test]]
+name = "comments"
+path = "tests/comments/lib.rs"
+
 # The settle comparison reads a lowered module — its declarations and its
 # attribute side table — beside the checker's verdicts for the same module,
 # and reads each attribute payload's literal out of the arena both were
@@ -28,12 +39,8 @@ gandr-surface-lowering.workspace = true
 gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 
-# The suite builds its synthetic modules from source text, through the same
-# parse, lower and check a driver runs; the library never names the parser.
-# The kernel export suite commits each corpus source's kernel artifact as
-# records and reads it back through the record plane, and replays a tampered
-# artifact through the kernel to name its refusal.
 [dev-dependencies]
+blake3.workspace = true
 gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-core.workspace = true
 gandr-storage-artifact.workspace = true
