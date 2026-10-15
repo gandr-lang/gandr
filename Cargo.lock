@@ -710,6 +710,7 @@ dependencies = [
  "gandr-surface-pretty",
  "gandr-surface-syntax",
  "gandr-theory-sites",
+ "gandr-workflow-sweep",
  "quenchant-anodized",
  "quenchant-shape",
  "serde",
@@ -733,6 +734,7 @@ dependencies = [
  "gandr-surface-parser",
  "gandr-surface-pretty",
  "gandr-surface-syntax",
+ "gandr-workflow-sweep",
  "quenchant-anodized",
  "quenchant-shape",
  "rayon",
@@ -749,6 +751,7 @@ dependencies = [
  "gandr-surface-layout",
  "gandr-surface-parser",
  "gandr-surface-syntax",
+ "gandr-workflow-sweep",
  "quenchant-anodized",
  "quenchant-shape",
 ]
@@ -816,6 +819,7 @@ dependencies = [
  "gandr-surface-render-remote",
  "gandr-surface-session",
  "gandr-surface-syntax",
+ "gandr-workflow-sweep",
  "percent-encoding",
  "proptest",
  "quenchant-anodized",
@@ -843,6 +847,7 @@ dependencies = [
  "gandr-surface-syntax",
  "gandr-theory-graphs",
  "gandr-theory-spec-combinators",
+ "gandr-workflow-sweep",
  "proptest",
  "quenchant-anodized",
 ]
@@ -1162,6 +1167,14 @@ dependencies = [
  "serde",
  "serde_json",
  "syn 3.0.4",
+]
+
+[[package]]
+name = "gandr-workflow-sweep"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "quenchant-anodized",
 ]
 
 [[package]]

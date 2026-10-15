@@ -166,8 +166,8 @@ impl Reading
     ///   another text, disagrees at the keystroke that changed it.
     /// - witness: `recheck::tests::a_definition_produces_semantic_tokens`
     /// - witness: `outline::tests::declarations_nest_as_symbols`
-    /// - witness: `session::session::corpus_tokens_cover_the_highlighted_bytes`
-    /// - witness: `editor::editor::scenarios::random_edits_keep_every_answer_faithful`
+    /// - witness: `session::session::sweeps::corpus_tokens_cover_the_highlighted_bytes`
+    /// - witness: `editor::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
     #[spec(ensures: |ret| match ret.0 {
         Maybe::Present(ref readout) => readout.spans.iter().zip(readout.spans.iter().skip(1))
             .all(|(first, second)| first.range.end() <= second.range.start())

@@ -1916,7 +1916,7 @@ impl Pbg
     ///   changes one of the observations. The predicate checks a returned
     ///   label's spelling and menu without scanning the table.
     /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
-    #[spec(ensures: |ret| ret.is_none_or(|label| label.0 == spelled.0 && !self.candidates(label).is_empty()))]
+    #[spec(ensures: |ret| ret.is_none_or(|label| label.0 == spelled.0 && !self.molds.candidates(label).is_empty()))]
     #[inline]
     #[must_use]
     pub fn tile_label(

@@ -1,6 +1,7 @@
-//! The formatter through its public surface: the whole corpus kept and
-//! formatted once at three page widths, and each layout rule pinned by a
-//! golden at the narrow page (40 columns) and the wide page (100 columns).
+//! The formatter through its public surface: the corpus kept and formatted
+//! once at three page widths — a sample on every pull request, every source
+//! under the `sweeps` profile — and each layout rule pinned by a golden at
+//! the narrow page (40 columns) and the wide page (100 columns).
 //!
 //! Regenerate the goldens with `UPDATE_EXPECT=1` and review the diff.
 
@@ -8,7 +9,6 @@
 mod tests
 {
     use std::path::Path;
-    use std::path::PathBuf;
 
     use expect_test::expect_file;
     use gandr_surface_format::FormatOptions;
@@ -63,35 +63,6 @@ mod tests
         String::from(<&str>::from(formatted(grammar, source, width).text()))
     }
 
-    /// Every `.gandr` file under `dir`, sorted.
-    ///
-    /// # Specification
-    /// trivial.
-    fn sources(dir: &Path) -> Vec<PathBuf>
-    {
-        let mut found = Vec::new();
-        let mut pending = vec![dir.to_path_buf()];
-        while let Some(next) = pending.pop() {
-            for entry in std::fs::read_dir(next)
-                .expect("the corpus is readable")
-                .flatten()
-            {
-                let path = entry.path();
-                if path.is_dir() {
-                    pending.push(path);
-                }
-                else if path
-                    .extension()
-                    .is_some_and(|extension| extension == "gandr")
-                {
-                    found.push(path);
-                }
-            }
-        }
-        found.sort();
-        found
-    }
-
     /// The fixture `name`, and its goldens at both pages.
     ///
     /// # Specification
@@ -116,33 +87,6 @@ mod tests
                     .join(format!("{}.{page}.txt", name.display()))
             ]
             .assert_eq(&laid);
-        }
-    }
-
-    #[test]
-    fn every_source_keeps_its_meaning_and_formats_once()
-    {
-        let grammar = grammar();
-        let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus");
-        let paths = sources(&corpus);
-        assert!(
-            paths.len() > 100,
-            "the whole corpus is read: {}",
-            paths.len()
-        );
-        for path in paths {
-            let source = std::fs::read_to_string(&path).expect("a corpus source is readable");
-            for width in [NARROW, 80, WIDE] {
-                // The formatter itself refuses a text whose digest, tokens
-                // or comments differ from the source's.
-                let once = text(&grammar, source.as_str(), width);
-                assert_eq!(
-                    text(&grammar, once.as_str(), width),
-                    once,
-                    "{} formats once at {width}",
-                    path.display()
-                );
-            }
         }
     }
 
@@ -282,5 +226,59 @@ mod tests
             ],
             "a form's piece runs from its first token to its trailing comment"
         );
+    }
+
+    /// The formatter's sweep: every corpus source keeps its meaning and
+    /// formats once at three page widths.
+    mod sweeps
+    {
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
+        use gandr_workflow_sweep::corpus;
+
+        use super::NARROW;
+        use super::WIDE;
+        use super::grammar;
+        use super::text;
+
+        /// The sample: sixty-four sources, ranked by their BLAKE3 digest
+        /// under this name, at least one of each corpus class — `strict` and
+        /// each directory below `fixture` — and every source the change adds
+        /// or modifies (`gandr-workflow-sweep`). The `sweeps` profile formats
+        /// every source.
+        const SAMPLE: Sample = Sample {
+            name: SampleName("every_source_keeps_its_meaning_and_formats_once"),
+            size: SampleSize(64),
+        };
+
+        #[test]
+        fn every_source_keeps_its_meaning_and_formats_once()
+        {
+            let grammar = grammar();
+            let sweep = Sweep::asked().expect("the run's sweep resolves");
+            let sources = sweep.visit(SAMPLE, &corpus::sources().expect("the corpus reads"));
+            assert!(
+                sources.len() >= SAMPLE.size.0,
+                "the sample is drawn: {}",
+                sources.len()
+            );
+            for source in sources {
+                let text_of =
+                    std::fs::read_to_string(&source.path).expect("a corpus source is readable");
+                for width in [NARROW, 80, WIDE] {
+                    // The formatter itself refuses a text whose digest, tokens
+                    // or comments differ from the source's.
+                    let once = text(&grammar, text_of.as_str(), width);
+                    assert_eq!(
+                        text(&grammar, once.as_str(), width),
+                        once,
+                        "{} formats once at {width}",
+                        source.name
+                    );
+                }
+            }
+        }
     }
 }

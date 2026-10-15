@@ -1,5 +1,9 @@
 #:tombi toml-version = "v1.0.0"
 
+# Every test finishes within 30 s under every profile a gate runs — `default`
+# locally, `ci` and `ci-enforcing` on each pull request and merge-queue entry —
+# plain and with specifications enforced. A test over the bound is split,
+# sampled or made cheaper; no profile a gate runs raises the limit for one.
 # `status-level = "pass"` keeps every test's elapsed time on the local run, and
 # the CI profile's JUnit report carries per-test durations, so timing outliers
 # stay visible without a separate instrumentation pass.
@@ -7,67 +11,45 @@
 status-level = "pass"
 final-status-level = "slow"
 failure-output = "immediate"
-slow-timeout = { period = "30s", terminate-after = 4 }
-
-# Start the hosted heavy tail first; the ci profile inherits these overrides.
-# Priorities change scheduling only, never cases, domains or timeouts. The
-# tables are the reviewed output of `mise run ci:timing`, which proposes each
-# test's level from the enforcing lane's recent merge-queue durations.
-[[profile.default.overrides]]
-filter = "test(=acceptance::table_verdicts_equal_dry_run_verdicts) or test(=editor::scenarios::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful)"
-priority = 90
-
-[[profile.default.overrides]]
-filter = "test(=inline::tests::every_corpus_cursor_has_a_ghost_text)"
-priority = 80
-
-[[profile.default.overrides]]
-filter = "test(=editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful) or test(=tests::every_source_keeps_its_meaning_and_formats_once)"
-priority = 70
-
-# The editor's scenarios drive the language server one keystroke at a time
-# with specifications enforced, each parallel over the cores or a long
-# sequence of random scripts, and the whole run (`mise run ci:sweeps`) types
-# and erases every corpus source: under parallel load they pass a default
-# kill limit of 120 s. Every profile inherits this override, so its limit is
-# the enforcing profile's own (60 s × 10): the local gate stops losing a
-# scenario to load, the hosted lanes keep the limit they had, and the rule
-# stated below — at least twice the slowest enforcing test — holds everywhere
-# until the specification cost falls. The plain run is unaffected: a limit is
-# a ceiling, never a wait.
-[[profile.default.overrides]]
-filter = "test(editor::scenarios::)"
-slow-timeout = { period = "60s", terminate-after = 10 }
+slow-timeout = { period = "30s", terminate-after = 1 }
 
 [profile.ci]
 status-level = "slow"
 final-status-level = "slow"
 failure-output = "immediate-final"
 fail-fast = false
-slow-timeout = { period = "60s", terminate-after = 4 }
+slow-timeout = { period = "30s", terminate-after = 1 }
 
 [profile.ci.junit]
 path = "junit.xml"
 
 # Nextest stores reports by profile, independently of Cargo's target directory.
 # Separate names prevent the enforcing pass from overwriting the plain report.
-# Enforced specifications cost the slowest tests up to three minutes on a
-# hosted runner, and runner load stretches that further. The kill limit stays
-# at least twice the slowest enforcing test; once the specification cost
-# falls, this profile inherits the ci limit.
 [profile.ci-enforcing]
 inherits = "ci"
-slow-timeout = { period = "60s", terminate-after = 10 }
+
+# The sweeps whole. A sweep drives the whole corpus through one feature and
+# sits in a `sweeps` module, which is all this filter names: a new sweep joins
+# by where it is written. Under every other profile a sweep visits its stated
+# sample, so it never leaves the pull-request lanes; under this one it visits
+# every source (`gandr-workflow-sweep` reads the profile's name). The nightly
+# workflow runs it plain and enforced (`mise run ci:sweeps`), where the limit
+# is the nightly budget, not the 30 s bound. The slowest whole sweep, the
+# typing, measured 756 s enforced on four hosted cores (the table verdicts,
+# 371 s plain); twenty minutes holds it with the margin a slow runner needs,
+# and each lane's whole run, 14 and 7 minutes, sits inside its 60.
+[profile.sweeps]
+default-filter = "test(/(^|::)sweeps::/)"
+status-level = "pass"
+final-status-level = "slow"
+failure-output = "immediate-final"
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 20 }
 
 # The instrumented enforcing run is a report, never a gate, and instrumentation
-# multiplies the specification cost: the editor's whole-corpus scenarios ran
-# 65–549 s and the typing scenario past its 600 s limit on the first hosted
-# measurement (run 38410734551), five tests holding a 4560-test run for a
-# quarter of an hour. They stay in every enforcing lane; coverage leaves them
-# out, because each sweep drives the language server over the corpus through
-# the same paths the per-feature tests execute, and a line is covered when
-# either run reached it. Widen this filter the day a sweep is the only test
-# reaching a line that matters.
+# multiplies the specification cost several times over, so its limit is its
+# own: ten minutes, which the first hosted measurement's slowest test needed.
+# The sweeps run their samples here, as in every pull-request lane.
 [profile.coverage]
 inherits = "ci-enforcing"
-default-filter = "not test(editor::scenarios::)"
+slow-timeout = { period = "60s", terminate-after = 10 }

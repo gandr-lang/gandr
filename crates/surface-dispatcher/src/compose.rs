@@ -236,7 +236,7 @@ impl LoweringCount
     ///   trees and the corpus; a lost or doubled absorption changes that count.
     ///   Saturation is not reached by these witnesses.
     /// - witness: `walk::tests::a_tree_is_walked_in_order`
-    /// - witness: `corpus::corpus::every_width_composes_the_corpus_alike`
+    /// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
     #[inline]
     #[spec(captures: [before = self.0], ensures: |_| self.0 == before.saturating_add(other.0))]
     pub(crate) fn absorb(
@@ -397,7 +397,7 @@ impl Composed<'_>
 ///   the kernel has been offered anything, and admitting it gives the
 ///   composition; the corpus at every width composes alike through it.
 /// - witness: `compose::tests::a_judged_module_renders_before_its_admission`
-/// - witness: `corpus::corpus::every_width_composes_the_corpus_alike`
+/// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
 #[derive(Clone, Debug)]
 pub struct Judged<'source>
 {
@@ -1172,7 +1172,7 @@ pub fn compose<'source>(
 ///   the serial walk.
 /// - witness: `compose::tests::a_module_settles_every_declaration_once`
 /// - witness: `compose::tests::a_root_that_is_no_list_of_declarations_is_refused_whole`
-/// - witness: `corpus::corpus::every_width_composes_the_corpus_alike`
+/// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
 #[inline]
 #[spec(
     captures: [refused = matches!(lowering.lowered, Lowered::Refused(_))],

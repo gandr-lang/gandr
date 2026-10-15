@@ -1734,7 +1734,7 @@ impl<'pbg> MeldState<'pbg>
     ///   or read out of order groups candidates that one of the frontiers a
     ///   push consults tells apart, which the differential witness reads as a
     ///   verdict the dry runs do not reach.
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[inline]
     pub(crate) fn open_frontier_molds(&self) -> impl Iterator<Item = MoldId> + '_
     {
@@ -1777,7 +1777,7 @@ impl<'pbg> MeldState<'pbg>
     ///   stops short shares a window whose tokens meet a member's own
     ///   successors, which the differential witness reads as a window verdict
     ///   the dry runs do not reach.
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

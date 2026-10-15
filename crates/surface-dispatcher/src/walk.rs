@@ -566,7 +566,7 @@ impl Walk
     /// - witness: `walk::tests::every_path_answers_in_order`
     /// - witness: `walk::tests::each_root_stands_its_sources`
     /// - witness: `walk::tests::a_stopped_visit_hands_over_nothing_more`
-    /// - witness: `corpus::corpus::every_width_composes_the_corpus_alike`
+    /// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
     #[inline]
     #[spec(ensures: |ref ret| match *ret {
         ControlFlow::Continue(ref report) => usize::from(report.lowerings())
@@ -1081,7 +1081,7 @@ fn settled<'step>(
 /// - hypothesis: L3 — the corpus at several widths composes equal to the serial
 ///   walk source by source, and the fault trees read their unreadable sources
 ///   alike at both widths.
-/// - witness: `corpus::corpus::every_width_composes_the_corpus_alike`
+/// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
 /// - witness: `walk::tests::every_path_answers_in_order`
 #[spec(ensures: |ref ret| match *ret {
     Forked::Lowered { text: lowered, lowerings, .. } => text.get().is_some_and(|held| lowered == SourceText::from(held.as_str()))

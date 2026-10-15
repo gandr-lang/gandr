@@ -1549,7 +1549,7 @@ impl TypeTable
     ///   census reads back every printed type of every source, failing on a
     ///   class the findings do not pin.
     /// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
-    /// - witness: `census::census::every_printed_type_reads_back_to_its_certificate`
+    /// - witness: `census::census::sweeps::every_printed_type_reads_back_to_its_certificate`
     #[spec(ensures: |ret| ret.len() >= self.entries.len())]
     #[inline]
     #[must_use]

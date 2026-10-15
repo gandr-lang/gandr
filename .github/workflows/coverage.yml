@@ -36,6 +36,9 @@ env:
   # and only a published tag is used: this workflow does not publish.
   GANDR_CI_IMAGE: ${{ vars.GANDR_CI_IMAGE }}
   CI_IMAGE_NAME: ghcr.io/gandr-lang/gandr-ci
+  # The sweeps run their samples here; main measured at its own head has no
+  # change to add to them.
+  GANDR_SWEEP_BASE: HEAD
 
 jobs:
   # Definitions only: aliases run in each consuming job's context. The

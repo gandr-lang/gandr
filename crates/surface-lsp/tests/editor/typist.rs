@@ -52,7 +52,7 @@ impl Session
     ///   empty buffer and the final text must equal the source; a typist that
     ///   loses, duplicates or misplaces material fails that equality or the
     ///   per-keystroke prefix check.
-    /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
     /// - witness: `editor::editor::scenarios::defining_a_missing_name_clears_its_diagnostic`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -143,7 +143,7 @@ impl Session
     /// - hypothesis: L2 — the erasure deletes every corpus source to nothing; a
     ///   deletion spanning newlines that the server applied differently shows
     ///   in the differential answers of the next keystroke.
-    /// - witness: `editor::editor::scenarios::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful`
+    /// - witness: `editor::editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful`
     #[spec(ensures: self.buffer().text().0.is_empty())]
     pub fn erase_lines(&mut self)
     {
@@ -196,7 +196,7 @@ impl Session
     /// - hypothesis: L2 — every line of every corpus source passes here; a
     ///   wrong step leaves the text off its target, which the per-keystroke
     ///   prefix check and the final equality reveal.
-    /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
     #[spec(captures: [newlines = self.buffer().text().0.get(.. self.buffer().cursor().0)
             .map_or(0_usize, |before| before.matches('\n').count())],
         ensures: self.buffer().text().0.get(.. self.buffer().cursor().0)
@@ -258,7 +258,7 @@ impl Session
     /// - hypothesis: L2 — every indented closer of the corpus passes here; a
     ///   wrong correction leaves the text off its target, which the
     ///   per-keystroke prefix check reveals.
-    /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
     #[spec(ensures: self.buffer().text().0.get(.. self.buffer().cursor().0) == Some(target.0))]
     fn repair_outdent(
         &mut self,
@@ -300,7 +300,7 @@ impl Session
     /// # Adequacy
     /// - hypothesis: L2 — every indented corpus line passes here; a wrong width
     ///   shows as a text off its target.
-    /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

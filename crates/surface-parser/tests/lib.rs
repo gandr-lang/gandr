@@ -1,6 +1,6 @@
 //! The integration suites of `gandr-surface-parser`: acceptance over the
-//! built-in surface, the melder's contracts, and the grammar contracts only a
-//! parse can witness.
+//! built-in surface, the melder's contracts, the grammar contracts only a
+//! parse can witness, and the sweeps over the whole corpus.
 
 #[cfg(test)]
 mod acceptance;
@@ -10,3 +10,5 @@ mod common;
 mod contracts;
 #[cfg(test)]
 mod grammar;
+#[cfg(test)]
+mod sweeps;

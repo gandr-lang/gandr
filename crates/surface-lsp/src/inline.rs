@@ -1380,7 +1380,7 @@ fn lead(
 /// - witness: `inline::tests::each_category_is_named_where_its_hole_stands`
 /// - witness: `inline::tests::a_comment_is_closed_before_code_follows`
 /// - witness: `inline::tests::the_ranking_is_pinned`
-/// - witness: `inline::tests::every_corpus_cursor_has_a_ghost_text`
+/// - witness: `inline::tests::sweeps::every_corpus_cursor_has_a_ghost_text`
 #[spec(ensures: |ret| (1 ..= SHOWN).contains(&ret.0.len()) && ret.0.iter().all(|snippet| !snippet.0.contains(":?}")))]
 pub fn ghost(
     grammar: &Pbg,
@@ -1598,8 +1598,6 @@ impl Piece<'_>
 mod tests
 {
     use core::fmt::Write as _;
-    use std::path::Path;
-    use std::path::PathBuf;
 
     use expect_test::expect;
     use gandr_surface_grammar::Pbg;
@@ -1652,40 +1650,6 @@ mod tests
         .into_iter()
         .map(String::from)
         .collect()
-    }
-
-    /// Every `.gandr` source under the corpus's strict and fixture roots, in
-    /// path order.
-    ///
-    /// # Specification
-    /// trivial.
-    fn corpus_sources() -> Vec<(PathBuf, String)>
-    {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus");
-        let mut pending = vec![root.join("strict"), root.join("fixture")];
-        let mut paths = Vec::new();
-        while let Some(directory) = pending.pop() {
-            for entry in std::fs::read_dir(&directory).expect("a corpus directory lists") {
-                let path = entry.expect("a corpus entry reads").path();
-                if path.is_dir() {
-                    pending.push(path);
-                }
-                else if path
-                    .extension()
-                    .is_some_and(|extension| extension == "gandr")
-                {
-                    paths.push(path);
-                }
-            }
-        }
-        paths.sort();
-        paths
-            .into_iter()
-            .map(|path| {
-                let text = std::fs::read_to_string(&path).expect("a corpus source reads");
-                (path, text)
-            })
-            .collect()
     }
 
     #[test]
@@ -1898,58 +1862,75 @@ mod tests
         .assert_eq(&rendered);
     }
 
-    #[test]
-    fn every_corpus_cursor_has_a_ghost_text()
+    /// The ghost-text sweep: every cursor of each corpus source, in the whole
+    /// text and in the prefix before it.
+    mod sweeps
     {
-        /// The gate reads every fourth corpus source by index after the length
-        /// sort, the longest in; `GANDR_SWEEPS_WHOLE=1` (`mise run ci:sweeps`,
-        /// the daily lane) reads every source. On four cores with
-        /// specifications enforced the sample reads in 7 s against the whole
-        /// corpus's 31 s.
-        const SAMPLE_STRIDE: usize = 4;
+        use gandr_surface_render_remote::ByteOffset;
+        use gandr_surface_syntax::SourceText;
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
+        use gandr_workflow_sweep::corpus;
 
-        let tools = tools();
-        let mut sources = corpus_sources();
-        assert!(
-            sources.len() > 100,
-            "the corpus is walked whole: {}",
-            sources.len()
-        );
-        sources.sort_by_key(|source| core::cmp::Reverse(source.1.len()));
-        let sampled = if std::env::var_os("GANDR_SWEEPS_WHOLE").is_some() {
-            1
-        }
-        else {
-            SAMPLE_STRIDE
+        use super::super::ghost;
+        use super::tools;
+
+        /// The sample: twenty-four sources, ranked by their BLAKE3 digest under
+        /// this name, at least one of each corpus class — `strict` and each
+        /// directory below `fixture` — and every source the change adds or
+        /// modifies (`gandr-workflow-sweep`). The `sweeps` profile reads every
+        /// source.
+        const SAMPLE: Sample = Sample {
+            name: SampleName("every_corpus_cursor_has_a_ghost_text"),
+            size: SampleSize(24),
         };
-        // The enforcing build checks every contract on every call; it reads
-        // every sixth cursor.
-        let stride = if cfg!(anodized_panic) { 6 } else { 1 };
-        for (path, text) in sources.into_iter().step_by(sampled) {
-            let cursors = text.char_indices().map(|(at, _)| at).chain([text.len()]);
-            for at in cursors.step_by(stride) {
-                let prefix = text.get(.. at).expect("a cursor is a character boundary");
-                for whole in [text.as_str(), prefix] {
-                    let found = ghost(
-                        &tools.grammar,
-                        &tools.forms,
-                        SourceText::from(whole),
-                        ByteOffset::from(at),
-                    );
-                    let found = found.as_ref();
-                    assert!(
-                        !found.is_empty() && found.len() <= 8,
-                        "{}:{at}: {} ghost texts",
-                        path.display(),
-                        found.len()
-                    );
-                    assert!(
-                        found
-                            .iter()
-                            .all(|ghost| !ghost.as_ref().contains(":?}") && ghost.as_ref() != "?"),
-                        "{}:{at}: a `?` hole is offered: {found:?}",
-                        path.display()
-                    );
+
+        /// Every source's cursors are read without specification enforcement;
+        /// the enforcing build checks every contract on every call and reads
+        /// every sixth cursor, in every run.
+        const CURSOR_STRIDE: usize = if cfg!(anodized_panic) { 6 } else { 1 };
+
+        #[test]
+        fn every_corpus_cursor_has_a_ghost_text()
+        {
+            let tools = tools();
+            let sweep = Sweep::asked().expect("the run's sweep resolves");
+            let sources = sweep.visit(SAMPLE, &corpus::sources().expect("the corpus reads"));
+            assert!(
+                sources.len() >= SAMPLE.size.0,
+                "the sample is drawn: {}",
+                sources.len()
+            );
+            for source in sources {
+                let text = std::fs::read_to_string(&source.path).expect("a corpus source reads");
+                let cursors = text.char_indices().map(|(at, _)| at).chain([text.len()]);
+                for at in cursors.step_by(CURSOR_STRIDE) {
+                    let prefix = text.get(.. at).expect("a cursor is a character boundary");
+                    for whole in [text.as_str(), prefix] {
+                        let found = ghost(
+                            &tools.grammar,
+                            &tools.forms,
+                            SourceText::from(whole),
+                            ByteOffset::from(at),
+                        );
+                        let found = found.as_ref();
+                        assert!(
+                            !found.is_empty() && found.len() <= 8,
+                            "{}:{at}: {} ghost texts",
+                            source.name,
+                            found.len()
+                        );
+                        assert!(
+                            found
+                                .iter()
+                                .all(|ghost| !ghost.as_ref().contains(":?}")
+                                    && ghost.as_ref() != "?"),
+                            "{}:{at}: a `?` hole is offered: {found:?}",
+                            source.name
+                        );
+                    }
                 }
             }
         }

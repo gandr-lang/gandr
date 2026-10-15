@@ -55,7 +55,7 @@
 //! a reader asking what `here` is learns nothing from the match's `?`.
 //!
 //! The editor's corpus sweep
-//! (`editor::scenarios::hovering_every_position_of_each_corpus_source_answers_without_fault`)
+//! (`editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`)
 //! holds every node kind to that rule. It classes each position by the
 //! smallest node holding it — a name a form spells as a node of its own, the
 //! form's keywords and delimiters as the form's — and counts, per kind, the
