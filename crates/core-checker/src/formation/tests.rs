@@ -25,6 +25,7 @@ use super::classify_comp_type;
 use super::classify_value_type;
 use super::form_comp_type;
 use super::form_value_type;
+use super::path_code;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::fixture::dangling_value_type;
@@ -735,5 +736,33 @@ proptest! {
         open_universes(&mut context, &fresh);
         let after = classified(&mut context, weakened);
         prop_assert_eq!(before, after, "a type shifted past fresh binders forms at its classifier still");
+    }
+}
+
+#[test]
+fn a_path_code_is_closed_first_order_and_inhabited()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit = arena.value_type_unit();
+    let lone = arena.value_type_sum(&[unit]);
+    let void = arena.value_type_sum(&[]);
+    let mixed = arena.value_type_product(&[integer, lone]);
+    let hollow = arena.value_type_product(&[integer, void]);
+    for admitted in [integer, mixed] {
+        let code = arena.value_quote(admitted);
+        assert_eq!(
+            path_code(&arena, code),
+            Ok(admitted),
+            "a base atom and a product over a sum of one summand are path codes"
+        );
+    }
+    for refused in [void, hollow] {
+        let code = arena.value_quote(refused);
+        assert_eq!(
+            path_code(&arena, code),
+            Err(CheckRefusal::PathCode(code)),
+            "the empty sum is no path code, alone or inside a product"
+        );
     }
 }

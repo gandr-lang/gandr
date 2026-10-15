@@ -1038,6 +1038,50 @@ fn a_written_statement_derives_the_path_at_its_stratum()
 }
 
 #[test]
+fn a_statement_stands_in_a_product_as_its_derived_path()
+{
+    let mut arena = CoreArena::new();
+    let swap = table(&mut arena, Images(&[1, 0]));
+    let keep = table(&mut arena, Images(&[0]));
+    let fields = [(Spelled("mul"), swap), (Spelled("one"), keep)];
+    let statement = written(&mut arena, Head(1, 4), &fields, &fields);
+    let unit = arena.value_type_unit();
+    let unit_code = arena.value_quote(unit);
+    let here = arena.value_here(unit_code);
+    let product = arena.value_path_product(statement, here);
+    let unsigned = Declaration::new(
+        ConstantIndex::from(0_usize),
+        Maybe::Absent(crate::declaration::signature::Absent::Unsigned),
+        Maybe::Present(product),
+        OriginToken::from(0_usize),
+    );
+    let (report, readmission) = judged(&mut arena, &[unsigned]);
+    assert!(
+        matches!(report.judged()[0].verdict(), Verdict::Synthesised { .. }),
+        "a product of a statement and reflexivity synthesises its identity: {report:?}"
+    );
+    let (Some(&derived), Some(&native)) = (
+        report.natives().get(&statement),
+        report.natives().get(&product),
+    )
+    else {
+        panic!("the statement and the product each record their native path");
+    };
+    assert!(
+        matches!(arena.value(native), Some(&Value::PathProduct(first, _)) if first == derived),
+        "the statement's certificate in the product is the path derived for it"
+    );
+    assert!(
+        matches!(
+            readmission.readmitted()[0].outcome(),
+            Outcome::Defined { .. }
+        ),
+        "and the kernel admits the product: {:?}",
+        readmission.readmitted()[0].outcome()
+    );
+}
+
+#[test]
 fn a_written_statement_refuses_each_defect_by_name()
 {
     let mut arena = CoreArena::new();

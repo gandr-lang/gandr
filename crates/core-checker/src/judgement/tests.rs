@@ -2828,6 +2828,52 @@ fn reflexivity_checks_by_endpoint_conversion()
     );
 }
 
+/// A point the normaliser cannot run meets its endpoints by syntax alone:
+/// `here(y + 0)` checks against `Path(Integer, y + 0, y + 0)` whether the
+/// three sides are one node or three of the same syntax.
+#[test]
+fn reflexivity_at_a_stuck_native_point_meets_it_by_syntax()
+{
+    let mut arena = CoreArena::new();
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let add = gandr_core_term::primitive::PRELUDE
+        .iter()
+        .copied()
+        .find(|primitive| primitive.name().as_ref() == "add")
+        .expect("native add");
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let zero = arena.value_literal(integer_literal());
+    let [point, left, right] = [(), (), ()].map(|()| {
+        let redex = arena.computation_primitive(
+            add,
+            gandr_core_term::primitive::Arguments::Binary([bound, zero]),
+        );
+        arena.value_returned(redex)
+    });
+    // \y. return here(y + 0), against (y : Integer) -> F Path(Integer, l, r).
+    let [(shared, shared_type), (copied, copied_type)] =
+        [(point, point), (left, right)].map(|(left, right)| {
+            let here = arena.value_here(point);
+            let returned = arena.computation_return(here);
+            let lambda = arena.computation_lambda(returned);
+            let path = arena.value_type_path(integer_type, left, right);
+            let returns = arena.comp_type_returner(path);
+            (lambda, arena.comp_type_pi(integer_type, returns))
+        });
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (body, pi, sides) in [
+        (shared, shared_type, "one node"),
+        (copied, copied_type, "three nodes of one syntax"),
+    ] {
+        let pi = form_comp_type(&mut context, pi).unwrap();
+        let checked = check_comp(&mut context, body, pi);
+        assert!(
+            checked.is_ok(),
+            "a stuck native point meets endpoints that are {sides}: {checked:?}"
+        );
+    }
+}
+
 #[test]
 fn identity_at_an_open_type_is_a_neutral_fibre()
 {

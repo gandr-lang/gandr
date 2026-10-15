@@ -226,6 +226,69 @@ fn a_product_of_native_paths_keeps_the_native_classifier()
 }
 
 #[test]
+fn a_product_with_a_native_and_a_written_component_reads_as_an_element()
+{
+    let mut arena = CoreArena::new();
+    let functions = booleans(&mut arena);
+    let unit = arena.value_type_unit();
+    let negation = arena.value_constant(ConstantIndex::from(0_usize));
+    let unit_code = arena.value_quote(unit);
+    // def mixed : Path(Type, #{Unit, Bool}, #{Unit, Bool}) =
+    //   pathProduct(refl(⌜Unit⌝), equiv(not, not)) ;
+    let reflexivity = arena.value_path_refl(unit_code);
+    let written = arena.value_equiv(negation, negation);
+    let mixed = arena.value_path_product(reflexivity, written);
+    let pair = arena.value_type_product(&[unit, functions.ty]);
+    let pairing = identity(&mut arena, (pair, pair));
+    // def nested : Path(Type, #{#{Unit, Bool}, Unit}, …) =
+    //   pathProduct(pathProduct(here(Unit), equiv(not, not)), here(Unit)) ;
+    let here = arena.value_here(unit_code);
+    let inner_equiv = arena.value_equiv(negation, negation);
+    let inner = arena.value_path_product(here, inner_equiv);
+    let outer = arena.value_path_product(inner, here);
+    let nesting = arena.value_type_product(&[pair, unit]);
+    let nesting = identity(&mut arena, (nesting, nesting));
+    let module = [
+        declaration(At(0), functions.function, functions.not),
+        declaration(At(1), pairing, mixed),
+        declaration(At(2), nesting, outer),
+    ];
+    let (report, readmission) = judged(&mut arena, &module);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+        "one written component makes the product an element identity: {report:?}"
+    );
+    let Some(&native) = report.natives().get(&mixed)
+    else {
+        panic!("a product with one written component records its native path");
+    };
+    assert!(
+        matches!(arena.value(native), Some(&Value::PathProduct(first, _)) if first == reflexivity),
+        "the native reflexivity is its own certificate"
+    );
+    let (Some(&inner_native), Some(&outer_native)) =
+        (report.natives().get(&inner), report.natives().get(&outer))
+    else {
+        panic!("both products record their native paths");
+    };
+    assert!(
+        matches!(arena.value(outer_native), Some(&Value::PathProduct(first, _)) if first == inner_native),
+        "a product component's certificate is its recorded native"
+    );
+    assert!(
+        readmission
+            .readmitted()
+            .iter()
+            .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. })),
+        "and the kernel admits each native path: {:?}",
+        readmission.readmitted()
+    );
+}
+
+#[test]
 fn what_the_product_cannot_read_it_refuses_by_name()
 {
     let mut arena = CoreArena::new();
