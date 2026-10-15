@@ -24,6 +24,19 @@
 //! body is no case over the sort, or a piece that does not splice keeps the
 //! transport where the evaluator had it, so it sticks as it did.
 //!
+//! **`then` appends on its first word.** In the singleton family `y. Path(C,
+//! a, y)` — `p then q` is `p` transported along `q` there — a path no row
+//! above reads, a parameter or a word that does not splice, still moves the
+//! empty word and a letter-headed word, as the free model's append computes
+//! on its first argument: `tr(P, q, ε) = q` and `tr(P, q, ℓ ∷ p) = ℓ ∷ tr(P,
+//! q, p)`, every letter looping at the one point. When the rest's transport
+//! sticks, the letter stands before it held as the value it returns, as `ℓ ∷
+//! ⟨c⟩` reads its field, so the composite and the word written with the
+//! composite inside are one value. The rows are list append's on words; the
+//! alternative, a row on the path (`tr(P, q ∷ ℓ, v)`), would need the path
+//! closed, which a parameter is not. Reversal: a presented sort whose letters
+//! join two points, where the rest's family starts at the letter's end.
+//!
 //! **The functions are read through their definitions in every stance.** The
 //! case a constant's body holds is read as the scope reads it manifest,
 //! whatever the run's constant stance, the transparency scope still sealing
@@ -454,7 +467,7 @@ fn inverse(tag: ConstructorTag) -> ConstructorTag
 ///   letter; a letter copied onto the wrong rest drops the rest of the word.
 /// - witness: `eval::words::tests::the_loop_conjugates_a_loop_to_itself`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|&built| matches!(domain.value(built), Some(&DomainValue::Constructor { tag: written, .. }) if written == tag)))]
-fn relettered(
+pub(super) fn relettered(
     domain: &mut DomainArena,
     letter: DomainValueId,
     tag: ConstructorTag,
@@ -1010,6 +1023,71 @@ pub(super) fn transport(
             Ok(Moved::Stepped)
         },
     }
+}
+
+/// Take one transport step in a singleton family by the word moved, where the
+/// word moved along reads no further: `then` appends on its first word.
+///
+/// # Specification
+/// - requires: `path` is the evaluated path and `value` the evaluated operand
+///   of a transport in `motive`, both already taken off the value stack.
+/// - ensures: in a family `y. Path(C, a, y)` whose carrier and left endpoint
+///   never read `y`, [`Moved::Stepped`] with `path` returned when `value` is
+///   the empty word — `tr(P, q, here(a)) ⇝ q` — with the transport of the rest
+///   bound into `w. return ℓ ∷ w` when `value` is `ℓ ∷ p` — `tr(P, q, ℓ ∷ p) ⇝
+///   ℓ ∷ tr(P, q, p)`, a letter looping at the one point — and with the operand
+///   reread when a definition names it; [`Moved::Unmoved`] with the machine
+///   unchanged otherwise.
+/// - fails: as [`head`] and [`family_actions`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the empty word moved along a path parameter is that
+///   parameter, and a letter before a parameter moved along another is the
+///   letter before the parameters' composite, as the free model's append
+///   computes on its first word; a row on the path instead leaves both stuck.
+/// - witness: `eval::words::tests::a_word_appends_on_its_first_word`
+#[spec(
+    captures: [tasks = machine.tasks.len(), comps = machine.comps.len()],
+    ensures: |ret| ret.is_err() || matches!(ret, Ok(Moved::Unmoved)) && machine.tasks.len() == tasks && machine.comps.len() == comps
+        || matches!(ret, Ok(Moved::Stepped)) && (machine.tasks.len() > tasks || machine.comps.len() > comps),
+)]
+pub(super) fn appended(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    motive: ValueClosureId,
+    (path, value): (DomainValueId, DomainValueId),
+) -> Result<Moved, EvalFault>
+{
+    let Some((Action::Fixed, Action::Moving)) = family_actions(core, domain, motive)?
+    else {
+        return Ok(Moved::Unmoved);
+    };
+    match head(core, domain, machine, value)? {
+        Head::Empty => {
+            machine
+                .comps
+                .push(domain.comp_return(path, CompTermFace::Reduced));
+        },
+        Head::Letter { rest, .. } => {
+            let onward = domain.native_continuation(CompBody::Prefixed(value));
+            machine.tasks.push(Task::BindClosure(onward));
+            machine.tasks.push(Task::PathTransport(motive));
+            machine.values.extend([path, rest]);
+        },
+        Head::Other => {
+            let Some(body) = named(core, domain, machine, value)?
+            else {
+                return Ok(Moved::Unmoved);
+            };
+            reread(machine, motive, (path, value), (Side::Right, body));
+        },
+    }
+    Ok(Moved::Stepped)
 }
 
 /// How a path family's two endpoints act on a letter, or `None` for a family
@@ -1578,6 +1656,56 @@ mod tests
             decided(&core, &chain(&circle, Count::Missing), (cong, image)),
             Some(MachineVerdict::Convertible),
             "without the sort's constructor count the arm is not found"
+        );
+    }
+
+    #[test]
+    fn a_word_appends_on_its_first_word()
+    {
+        let mut core = CoreArena::new();
+        let circle = circle(&mut core);
+        let chain = chain(&circle, Count::Recorded);
+        let own = core.value_type_data(ConstantIndex::from(WORDS), Vec::new());
+        let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let family = core.value_type_path(circle.carrier, circle.point, moving);
+        // Under `λq. λp.`: `q` is index 1, `p` index 0.
+        let after = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let before = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let binary = |core: &mut CoreArena, body: ComputationId| {
+            let inner = core.computation_lambda(body);
+            core.computation_lambda(inner)
+        };
+        // `here(Base) then q` is `q`.
+        let unit = core.computation_path_transport(family, after, circle.empty);
+        let unit = binary(&mut core, unit);
+        let itself = core.computation_return(after);
+        let itself = binary(&mut core, itself);
+        assert_eq!(
+            decided(&core, &chain, (unit, itself)),
+            Some(MachineVerdict::Convertible),
+            "the empty word moved along a path is the path"
+        );
+        // `(loop ∷ p) then q` is `loop ∷ (p then q)`.
+        let consed = core.value_constructor(own, ConstructorTag::from(1_usize), vec![before]);
+        let appended = core.computation_path_transport(family, after, consed);
+        let appended = binary(&mut core, appended);
+        let rest = core.computation_path_transport(family, after, before);
+        let held = core.value_returned(rest);
+        let prefixed = core.value_constructor(own, ConstructorTag::from(1_usize), vec![held]);
+        let prefixed = core.computation_return(prefixed);
+        let prefixed = binary(&mut core, prefixed);
+        assert_eq!(
+            decided(&core, &chain, (appended, prefixed)),
+            Some(MachineVerdict::Convertible),
+            "a letter before a path moved along another stays first"
+        );
+        let inverted = core.value_constructor(own, ConstructorTag::from(2_usize), vec![held]);
+        let inverted = core.computation_return(inverted);
+        let inverted = binary(&mut core, inverted);
+        assert_eq!(
+            decided(&core, &chain, (appended, inverted)),
+            Some(MachineVerdict::NotConvertible),
+            "and is no other letter"
         );
     }
 }

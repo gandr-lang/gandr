@@ -1,0 +1,40 @@
+// `p then q` moves `p` along `q` in `y. Path(A, a, y)`, and that transport
+// appends on its first word whatever `q` is: the empty word is the unit, and
+// a letter stays first (#422).
+
+/// The circle: one point and one loop.
+@[ checks ]
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+/// The composite of two loops at the point.
+@[ checks ]
+def comp(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+  p then q
+}
+
+/// Reflexivity is the composite's left unit.
+@[ checks ]
+def leftUnit(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), here(Base) then p, p) {
+  here(p)
+}
+
+/// So it is through the composite's definition.
+@[ checks ]
+def leftUnitComp(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(here(Base), p), p) {
+  here(p)
+}
+
+/// A letter before the empty word stays before a path composed after it.
+@[ checks ]
+def letterFirst(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(loop ∷ here(Base), p), loop ∷ p) {
+  here(loop ∷ p)
+}
+
+/// And no letter is dropped: the loop composed with `p` is not `p`.
+@[ refuses("EndpointMismatch") ]
+def letterKept(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(loop ∷ here(Base), p), p) {
+  here(p)
+}

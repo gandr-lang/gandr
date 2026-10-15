@@ -531,6 +531,10 @@ pub enum CompBody
         /// The rest of the word.
         rest: DomainValueId,
     },
+    /// Return the held word's first letter before the newly bound word: the
+    /// continuation `w. return ℓ ∷ w` the transport of a word `ℓ ∷ p` in a
+    /// singleton family binds `p`'s transport into.
+    Prefixed(DomainValueId),
     /// After the image of a letter under one endpoint of a path family ran,
     /// run the other's or splice the transported path between them.
     Conjugated

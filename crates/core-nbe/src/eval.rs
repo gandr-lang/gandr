@@ -3243,6 +3243,10 @@ fn run(
             Task::Body { body: crate::closure::CompBody::AlongWord { motive, rest }, env } => machine.comps.len() == entry_comps
                 && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)).is_some_and(|bound| machine.values.ends_with(&[rest, bound])))
                 && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::PathTransport(held)]) if held == motive),
+            Task::Body { body: crate::closure::CompBody::Prefixed(word), .. } => machine.values.len() == entry_values
+                && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
+                && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. })
+                    if matches!((domain.value(value), domain.value(word)), (Some(&DomainValue::Constructor { tag, .. }), Some(&DomainValue::Constructor { tag: first, .. })) if tag == first)),
             Task::Body { body: crate::closure::CompBody::Conjugated { .. } | crate::closure::CompBody::Mapping { .. }, .. } => machine.values.len() == entry_values
                 && (machine.comps.len() == entry_comps.saturating_add(1) || machine.tasks.len() > entry_tasks),
             Task::PathProduct(_) => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
@@ -3517,6 +3521,19 @@ fn step(
                 crate::closure::CompBody::AlongWord { motive, rest } => {
                     machine.tasks.push(Task::PathTransport(motive));
                     machine.values.extend([rest, bound]);
+                    Ok(())
+                },
+                // `w. return ℓ ∷ w`: the word's first letter goes back before
+                // the rest's transport.
+                crate::closure::CompBody::Prefixed(word) => {
+                    let Some(&DomainValue::Constructor { tag, .. }) = domain.value(word)
+                    else {
+                        return Err(EvalFault::MachineInvariant);
+                    };
+                    let prefixed = words::relettered(domain, word, tag, bound)?;
+                    machine
+                        .comps
+                        .push(domain.comp_return(prefixed, CompTermFace::Reduced));
                     Ok(())
                 },
                 crate::closure::CompBody::Conjugated {
@@ -5008,8 +5025,10 @@ fn step_case(
 ///   refused.
 /// - ensures: a returner pushes the continuation's body with the returned value
 ///   bound innermost in its own environment; a neutral grows its spine by the
-///   same bind, the closure reused rather than re-captured; a fixpoint unfolds
-///   once beneath the same bind.
+///   same bind, the closure reused rather than re-captured, except under a
+///   word's first letter ([`crate::closure::CompBody::Prefixed`]), which
+///   returns the letter before the neutral held as the value it stands for; a
+///   fixpoint unfolds once beneath the same bind.
 /// - provides: [`step_bind`] for a continuation a spine already captured, which
 ///   is how an unfolding re-applies a stuck bind.
 /// - fails: [`EvalFault::MachineInvariant`] when the operand is missing,
@@ -5024,6 +5043,7 @@ fn step_case(
 /// - witness: `eval::tests::reapplied_eliminations_preserve_captures_and_argument_order`
 /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
 /// - witness: `eval::tests::reapplied_closures_keep_stuck_spines_and_refuse_wrong_formers`
+/// - witness: `eval::words::tests::a_word_appends_on_its_first_word`
 #[spec(
     captures: [entry_values = machine.values.len(), entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
     ensures: |ret| ((ret == Err(EvalFault::MachineInvariant)) == (entry_comps == 0_usize))
@@ -5058,6 +5078,25 @@ fn step_bind_closure(
             Ok(())
         },
         DomainComp::Neutral { neutral, .. } => {
+            // A word's first letter goes back before its rest's stuck
+            // transport, held as the value it stands for, as `ℓ ∷ ⟨c⟩` reads
+            // its field: the transport is pure, so the bind is that field.
+            if let Some(&crate::closure::CompBody::Prefixed(word)) = domain
+                .comp_closure(body)
+                .map(crate::closure::CompClosure::body)
+                .as_ref()
+            {
+                let held = returned_value(domain, bound)?;
+                let Some(&DomainValue::Constructor { tag, .. }) = domain.value(word)
+                else {
+                    return Err(EvalFault::MachineInvariant);
+                };
+                let prefixed = words::relettered(domain, word, tag, held)?;
+                machine
+                    .comps
+                    .push(domain.comp_return(prefixed, CompTermFace::Reduced));
+                return Ok(());
+            }
             let grown = extend_spine(domain, neutral, Elimination::Bind(body))?;
             machine
                 .comps
@@ -5310,8 +5349,10 @@ fn step_transport(
 ///   of the motive's own binder hands a universe path to native transport; the
 ///   singleton `y. Path(D, l, y)`, its carrier and left endpoint closed over
 ///   the binder, read against reflexivity returns the path itself; a word moves
-///   by the rules of the `words` module; any other configuration over a stuck
-///   path stacks the transport on the path's spine.
+///   by the rules of the `words` module, and in that singleton a path no word
+///   rule reads moves the empty word or a letter-headed word by appending on
+///   it; any other configuration over a stuck path stacks the transport on the
+///   path's spine.
 /// - provides: transport's computation rules — identity on `here` and in a
 ///   constant motive, through the motive's constructors, the singleton's, and
 ///   along a word — and its stuck form.
@@ -5338,6 +5379,7 @@ fn step_transport(
 /// - witness: `identity::tests::transport_in_the_singleton_returns_the_path`
 /// - witness: `identity::tests::transport_along_a_stuck_path_is_stuck`
 /// - witness: `identity::tests::transport_moves_a_list_through_a_universe_path`
+/// - witness: `eval::words::tests::a_word_appends_on_its_first_word`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err()
@@ -5478,6 +5520,11 @@ fn step_path_transport(
             (path, value),
             (gandr_kernel_term::Side::Left, body),
         );
+        return Ok(());
+    }
+    // `then` appends on its first word when the path moved along reads no
+    // further.
+    if words::appended(core, domain, machine, motive, (path, value))? == words::Moved::Stepped {
         return Ok(());
     }
     let DomainValue::Neutral { neutral, .. } = carried

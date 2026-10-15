@@ -1490,4 +1490,74 @@ mod native_formers
             "the composite is not reflexivity: {empty:?}"
         );
     }
+
+    #[test]
+    fn a_word_appends_on_its_first_word()
+    {
+        /// The word moved along the parameter `p` and the endpoint it is
+        /// stated to reach.
+        #[derive(Clone, Copy, Debug)]
+        enum Case
+        {
+            /// `ε then p` against `p`.
+            Unit,
+            /// `(loop ∷ ε) then p` against `loop ∷ p`.
+            Letter,
+            /// `(loop ∷ ε) then p` against `loop⁻¹ ∷ p`.
+            Inverted,
+        }
+        let mut environment = one_loop();
+        // `(p : Path(S, Base, Base)) → F Path(Path(S, Base, Base), ⟨w then
+        // p⟩, right)` at reflexivity on `right`, `p` moved along nothing.
+        let mut states = |case: Case| {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+            let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+            let point = build(arena, Built::Point);
+            let empty = build(arena, Built::Empty);
+            let parameter = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let letter = |arena: &mut TermArena, tag: usize, rest: ValueId| {
+                arena.value_constructor(words, ConstructorTag::from(tag), vec![rest])
+            };
+            let (moved, right) = match case {
+                Case::Unit => (empty, parameter),
+                Case::Letter => (letter(arena, 1, empty), letter(arena, 1, parameter)),
+                Case::Inverted => (letter(arena, 1, empty), letter(arena, 2, parameter)),
+            };
+            let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let joined = arena.value_type_path(carrier, point, moving);
+            let composite = arena.computation_path_transport(joined, parameter, moved);
+            let composite = arena.value_returned(composite);
+            let at_point = arena.value_type_path(carrier, point, point);
+            let stated = arena.value_type_path(at_point, composite, right);
+            let returner = arena.comp_type_returner(stated);
+            let pi = arena.comp_type_pi(at_point, returner);
+            let declared = arena.value_type_thunk(pi);
+            let reflexive = arena.value_here(right);
+            let returned = arena.computation_return(reflexive);
+            let lambda = arena.computation_lambda(returned);
+            let body = arena.value_thunk(lambda);
+            let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(staged)
+        };
+        assert!(
+            states(Case::Unit).is_ok(),
+            "the empty word moved along a path is the path"
+        );
+        assert!(
+            states(Case::Letter).is_ok(),
+            "a letter moved along a path stays before it"
+        );
+        let inverted = states(Case::Inverted);
+        assert!(
+            matches!(
+                inverted,
+                Err(KernelError::Identity(
+                    gandr_kernel_core::IdentityError::EndpointsDiffer { .. }
+                ))
+            ),
+            "and is no other letter: {inverted:?}"
+        );
+    }
 }
