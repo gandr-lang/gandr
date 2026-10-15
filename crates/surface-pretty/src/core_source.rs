@@ -343,6 +343,9 @@ pub struct CoreSource<'arena>
     /// The names of the capability scopes the root stands in, outermost
     /// first.
     regions: &'arena [Option<Name<'arena>>],
+    /// The name the source writes for each dependent arrow's binder,
+    /// ascending by the arrow.
+    arrows: &'arena [(CompTypeId, Name<'arena>)],
 }
 
 impl<'arena> CoreSource<'arena>
@@ -365,6 +368,7 @@ impl<'arena> CoreSource<'arena>
             constructors: UNNAMED,
             context: &[],
             regions: &[],
+            arrows: &[],
         }
     }
 
@@ -431,6 +435,21 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { regions, ..self }
+    }
+
+    /// This source, naming each dependent arrow's binder as `arrows` writes
+    /// it, ascending by the arrow.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn naming_arrows(
+        self,
+        arrows: &'arena [(CompTypeId, Name<'arena>)],
+    ) -> Self
+    {
+        Self { arrows, ..self }
     }
 
     /// The name at admission position `constant`.
@@ -1666,6 +1685,27 @@ impl Source for CoreSource<'_>
     fn regions(&self) -> &[Option<Name<'_>>]
     {
         self.regions
+    }
+
+    /// The name the source writes for a dependent arrow's binder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn arrow_binder(
+        &self,
+        node: CoreNode,
+    ) -> Option<Name<'_>>
+    {
+        let CoreNode::CompType(id) = self.restoration.restored(node)
+        else {
+            return None;
+        };
+        self.arrows
+            .binary_search_by_key(&id, |&(arrow, _)| arrow)
+            .ok()
+            .and_then(|at| self.arrows.get(at))
+            .map(|&(_, name)| name)
     }
 }
 

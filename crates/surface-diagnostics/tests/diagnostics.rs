@@ -695,7 +695,8 @@ mod diagnostics
     }
 
     /// A refusal spells a type under the binders in scope by the names the
-    /// source wrote, never `?` (#418).
+    /// source wrote, never `?`, and the declared type a frame names by the
+    /// parameters the declaration writes, never fresh letters (#418).
     #[test]
     fn a_refusal_spells_its_binders_by_name()
     {
@@ -729,6 +730,19 @@ mod diagnostics
                 "n : counted_at(presented)"
             ],
             "a hypothesis's type names the binders before it"
+        );
+        let notes: Vec<String> = contexts(text, &diagnostic)
+            .into_iter()
+            .map(|(_, note)| note)
+            .collect();
+        assert!(
+            notes.iter().any(|note| {
+                note.contains(
+                    "(presented : Sig) -> (other : Sig) -> counted_at(presented) -> -F \
+                     counted_at(other)",
+                )
+            }),
+            "the declared type a frame names binds the declaration's parameters: {notes:?}"
         );
     }
 

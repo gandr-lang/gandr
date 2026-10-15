@@ -1083,4 +1083,35 @@ pub trait Source
     {
         &[]
     }
+
+    /// The name the source writes for the one binder `node` opens, when
+    /// `node` is a dependent arrow whose binder the source names: the core
+    /// carries no name, so a source that keeps one beside the node answers it
+    /// here.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the written name, or none; the default names nothing, so
+    ///   every binder takes a generated name.
+    /// - provides: the name a printed declared type spells its parameters by,
+    ///   as the declaration writes them.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dependent arrow whose binder the source names
+    ///   spells that name at the binder and at every occurrence.
+    /// - witness: `goldens::tests::an_arrow_binder_spells_as_the_source_names_it`
+    #[inline]
+    fn arrow_binder(
+        &self,
+        node: Self::Node,
+    ) -> Option<Name<'_>>
+    {
+        let _ = node;
+        None
+    }
 }

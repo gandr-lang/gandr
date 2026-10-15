@@ -10784,7 +10784,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
             let id = if bool::from(self.scope.mentioned(parameter.frame)) {
-                sink.arena.comp_type_pi(domain, declared)
+                let id = sink.arena.comp_type_pi(domain, declared);
+                sink.origins.record_arrow(id, binder);
+                id
             }
             else {
                 sink.arena.comp_type_arrow(domain, declared)

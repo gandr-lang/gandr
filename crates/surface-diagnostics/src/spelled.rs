@@ -51,6 +51,7 @@ use anodized::spec;
 use gandr_core_checker::Failure;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::TypeNode;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_corpus::Refusal;
@@ -221,11 +222,12 @@ impl Spellings
     ///   [`present_type`] in its sugared form on a page of [`SPELLING_WIDTH`]
     ///   columns, constants by their paths from the top level, so a member of a
     ///   module, a sealed abstract type among them, reads as it is written
-    ///   outside it; a type a failure names is spelled under the hypotheses it
-    ///   stands under, each by the name [`crate::frame::contexts`] gives it, a
-    ///   failure's first naming of a node winning; a type the printer cannot
-    ///   lay out, or lays out over more than one line, is left unkeyed; nothing
-    ///   else is keyed.
+    ///   outside it; a dependent arrow's binder is named as the source writes
+    ///   it, where it captures nothing; a type a failure names is spelled under
+    ///   the hypotheses it stands under, each by the name
+    ///   [`crate::frame::contexts`] gives it, a failure's first naming of a
+    ///   node winning; a type the printer cannot lay out, or lays out over more
+    ///   than one line, is left unkeyed; nothing else is keyed.
     /// - provides: the spellings a diagnostic reads a refusal's types from once
     ///   the arena is gone.
     /// - fails: never.
@@ -354,7 +356,19 @@ impl Spellings
                     .collect()
             })
             .collect();
-        let source = CoreSource::new(arena, &names).naming(&constructors);
+        let text: &str = text.into();
+        let arrows: Vec<(CompTypeId, Name<'_>)> = origins
+            .arrows()
+            .iter()
+            .filter_map(|&(arrow, origin)| {
+                let span = origin.span();
+                text.get(usize::from(span.start()) .. usize::from(span.end()))
+                    .map(|name| (arrow, Name::from(name)))
+            })
+            .collect();
+        let source = CoreSource::new(arena, &names)
+            .naming(&constructors)
+            .naming_arrows(&arrows);
         for (node, Scoped { scope, depth }) in named {
             if spelled.contains_key(&node) {
                 continue;

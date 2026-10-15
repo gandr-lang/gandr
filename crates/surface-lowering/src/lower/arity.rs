@@ -2793,7 +2793,11 @@ impl<'source> Lowerer<'_, 'source>
         sink.origins.record_comp_type(arrow, origin);
         for (parameter, &domain) in written.iter().zip(&domains).rev() {
             arrow = if bool::from(self.scope.mentioned(parameter.frame)) {
-                sink.arena.comp_type_pi(domain, arrow)
+                let id = sink.arena.comp_type_pi(domain, arrow);
+                if let Maybe::Present(binder) = self.origin_at(parameter.binder) {
+                    sink.origins.record_arrow(id, binder);
+                }
+                id
             }
             else {
                 sink.arena.comp_type_arrow(domain, arrow)
@@ -2832,6 +2836,7 @@ impl<'source> Lowerer<'_, 'source>
         let Some(&Parameter {
             declared: Maybe::Present(declared),
             frame,
+            binder,
             ..
         }) = stretch(&self.parameters, entries).first()
         else {
@@ -2844,7 +2849,11 @@ impl<'source> Lowerer<'_, 'source>
             },
         };
         let id = if bool::from(self.scope.mentioned(frame)) {
-            sink.arena.comp_type_pi(domain, body)
+            let id = sink.arena.comp_type_pi(domain, body);
+            if let Maybe::Present(binder) = self.origin_at(binder) {
+                sink.origins.record_arrow(id, binder);
+            }
+            id
         }
         else {
             sink.arena.comp_type_arrow(domain, body)

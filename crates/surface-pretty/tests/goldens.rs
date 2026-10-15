@@ -28,6 +28,7 @@ mod tests
     use gandr_core_nbe::ReadbackMode;
     use gandr_core_nbe::eval_value;
     use gandr_core_nbe::readback_value;
+    use gandr_core_term::CompTypeId;
     use gandr_core_term::ComponentCount;
     use gandr_core_term::CoreArena;
     use gandr_core_term::DefinitionalEnvironment;
@@ -1429,6 +1430,65 @@ mod tests
             faithful(Written("(b : Type) -> (c : Type) -> a -> -F b")),
             "the binders skip the abstract type `a`"
         );
+    }
+
+    /// A dependent arrow's binder spells as the source names it where that
+    /// name captures nothing: a name the type mentions, or one a binder
+    /// around it took, falls back to a generated name, and a generated name
+    /// skips the written ones around it (#418).
+    #[test]
+    fn an_arrow_binder_spells_as_the_source_names_it()
+    {
+        let names = [Name::from("a")];
+        let mut core = CoreArena::new();
+        let universe = small_universe(&mut core);
+        let abstract_a = core.value_type_abstract(ConstantIndex::from(0_usize));
+        let outer = bound(&mut core, DeBruijnIndex::from(1_u32));
+        let returns_outer = core.comp_type_returner(outer);
+        let body = core.comp_type_arrow(abstract_a, returns_outer);
+        let pi_inner = core.comp_type_pi(universe, body);
+        let pi_outer = core.comp_type_pi(universe, pi_inner);
+        for (outer_name, inner_name, expected, what) in [
+            (
+                Some("presented"),
+                Some("other"),
+                "(presented : Type) -> (other : Type) -> a -> -F presented",
+                "both binders as written",
+            ),
+            (
+                Some("a"),
+                Some("other"),
+                "(b : Type) -> (other : Type) -> a -> -F b",
+                "a name the type mentions falls back",
+            ),
+            (
+                Some("b"),
+                None,
+                "(b : Type) -> (c : Type) -> a -> -F b",
+                "a generated name skips a written one around it",
+            ),
+            (
+                Some("x"),
+                Some("x"),
+                "(x : Type) -> (b : Type) -> a -> -F x",
+                "a name a binder around it took falls back",
+            ),
+        ] {
+            let mut arrows: Vec<(CompTypeId, Name<'_>)> =
+                [(pi_outer, outer_name), (pi_inner, inner_name)]
+                    .into_iter()
+                    .filter_map(|(arrow, name)| name.map(|name| (arrow, Name::from(name))))
+                    .collect();
+            arrows.sort_by_key(|&(arrow, _)| arrow);
+            assert_eq!(
+                spelled(
+                    &CoreSource::new(&core, &names).naming_arrows(&arrows),
+                    Root::Type(CoreNode::CompType(pi_outer))
+                ),
+                faithful(Written(expected)),
+                "{what}"
+            );
+        }
     }
 
     /// The static formers spell as the grammar writes them: a static Pi as an

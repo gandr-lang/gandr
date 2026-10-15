@@ -324,8 +324,9 @@ mod census
     ///
     /// - `Equal`: the spelling reads back to the certificate's type.
     /// - `Different`: a spelling that reads back as another type.
-    /// - `Open`: a type naming a binder or a capability scope of its context,
-    ///   not read under it (#403).
+    /// - `Open`: a type naming a binder or a capability scope of its context
+    ///   that no parameter list declares: a binder the table keeps no type for,
+    ///   a capability scope, or a context the read under it refuses.
     /// - `Refused`: a spelling that parses and refuses to lower.
     /// - `Unknown`: a type the printer writes with `?`, which the census of
     ///   honest `?` holds; nothing to read back.
