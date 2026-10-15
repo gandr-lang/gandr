@@ -368,7 +368,7 @@ impl Walk<'_>
             CommandNode::Cut { producer, consumer, .. } => work.checked_add(2) == Some(self.stack.len())
                 && matches!(self.stack.get(work), Some(&Visit::Consumer(found, under)) if found == consumer && under == depth)
                 && matches!(self.stack.last(), Some(&Visit::Producer(found, under)) if found == producer && under == depth),
-            _ => self.stack.len() > work,
+            CommandNode::Perform { .. } | CommandNode::Handle { .. } | CommandNode::Resume { .. } | CommandNode::Reset { .. } | CommandNode::Shift { .. } => self.stack.len() > work,
         }),
     )]
     fn command(

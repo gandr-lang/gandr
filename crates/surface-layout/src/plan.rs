@@ -530,7 +530,7 @@ impl PlanArena
             else { self.free.len() == before.2.saturating_add(1)
                 && self.free.last() == Some(&id)
                 && usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)) == Some(&PlanSlot { generation: old.generation, references: 0, node: Maybe::Absent(lookup::Absent::Released) })
-                && *released == match old.node { Maybe::Present(PlanNode::Seq { left, right }) => Released::FreedSequence { left, right }, _ => Released::Freed } }))
+                && *released == match old.node { Maybe::Present(PlanNode::Seq { left, right }) => Released::FreedSequence { left, right }, Maybe::Present(PlanNode::Empty | PlanNode::Text(_) | PlanNode::Verbatim(_) | PlanNode::Newline { .. }) | Maybe::Absent(_) => Released::Freed } }))
     )]
     pub(crate) fn release_one(
         &mut self,

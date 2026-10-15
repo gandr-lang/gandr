@@ -3840,7 +3840,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Computation::TupleProjection(..) => spine.as_slice() == [Elimination::TupleProjection(computation)],
                     Computation::Project(side, _) => spine.last() == Some(&Elimination::Project(side)),
                     Computation::ListFold { on_nil, on_cons, .. } => spine.as_slice() == [Elimination::ListFold(on_nil, on_cons)],
-                    _ => false,
+                    Computation::Lambda(_) | Computation::Return(_) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Fixpoint { .. } => false,
                 },
                 Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
                 _ => false,
@@ -5561,7 +5561,7 @@ fn bind_rule(
         (Elimination::TupleProjection(a),Elimination::TupleProjection(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::TupleProjection(_,a)),Some(Computation::TupleProjection(_,b))) if a == b),
         (Elimination::DataCase(a),Elimination::DataCase(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::DataCase{branches:a,..}),Some(Computation::DataCase{branches:b,..})) if a.len() == b.len()),
         (Elimination::Case(a),Elimination::Case(b)) => {
-            let width = |case: ComputationId| match *arena.computation(case)? { Computation::Case { ref branches, .. } => Some(branches.len()), _ => None };
+            let width = |case: ComputationId| match *arena.computation(case)? { Computation::Case { ref branches, .. } => Some(branches.len()), Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::SigmaSplit { .. } | Computation::ListFold { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Ride { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Project(..) | Computation::Fixpoint { .. } => None };
             width(a).is_some() && width(a) == width(b)
         },
         (Elimination::Project(a), Elimination::Project(b)) => a == b,

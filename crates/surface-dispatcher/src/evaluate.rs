@@ -1507,7 +1507,7 @@ mod tests
         requires: program.declarations.values().any(|declared| declared.name == name),
         captures: [declarations = program.declarations.len()],
         ensures: |ref ret| program.declarations.len() == declarations
-            && match *ret { Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => !program.declarations.contains_key(&index), _ => true }
+            && match *ret { Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => !program.declarations.contains_key(&index), Evaluation::Value(_) | Evaluation::Blamed(_) | Evaluation::Stuck(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_) => true }
     )]
     fn run<'source>(
         program: &mut Program<'source>,

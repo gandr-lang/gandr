@@ -1348,7 +1348,7 @@ where
                 && matches!(left_store.get(cell), Maybe::Absent(_)))
             || right.primitives.values().any(|graded| graded.0.step().cell == cell
                 && matches!(right_store.get(cell), Maybe::Absent(_))),
-        _ => false,
+        NormalFormObstruction::InvalidReplayLevel { .. } | NormalFormObstruction::StepDoesNotFire { .. } | NormalFormObstruction::PathMissesTheJoin { .. } | NormalFormObstruction::ContentAddressCollision { .. } | NormalFormObstruction::ShiftedScheduleDoesNotFire { .. } | NormalFormObstruction::CanonicalKeyCollision { .. } | NormalFormObstruction::ShiftedScheduleMissesTheJoin { .. } => false,
     },
     |equality| {
         let same_boundary = left.peak == right.peak && left.joins_at == right.joins_at

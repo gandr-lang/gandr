@@ -467,7 +467,7 @@ impl Under
                         ValueGraft::Thunk(body) => Ok(Self { listed: [child(OverlayId::Computation(body), Lowering::NONE), None, None] }),
                         ValueGraft::Quote(_) | ValueGraft::QuoteComputation(_) => Err(DuplicationFault::Quote { node }),
                     },
-                    _ => Err(DuplicationFault::MachineInvariant),
+                    ValueNode::Opaque(_) | ValueNode::Bound(_) | ValueNode::Shared(_) => Err(DuplicationFault::MachineInvariant),
                 }),
                 OverlayId::Computation(id) => overlay.computation(id).map_or(Err(DuplicationFault::MachineInvariant), |held| match *held {
                     CompNode::Grafted(graft) => match graft {
@@ -477,7 +477,7 @@ impl Under
                         CompGraft::Bind(bound, body) => Ok(Self { listed: [child(OverlayId::Computation(bound), Lowering::NONE), child(OverlayId::Computation(body), Lowering::ONE), None] }),
                         CompGraft::Case { scrutinee, on_left, on_right } => Ok(Self { listed: [child(OverlayId::Value(scrutinee), Lowering::NONE), child(OverlayId::Computation(on_left), Lowering::ONE), child(OverlayId::Computation(on_right), Lowering::ONE)] }),
                     },
-                    _ => Err(DuplicationFault::MachineInvariant),
+                    CompNode::Opaque(_) | CompNode::Bound(_) | CompNode::Shared(_) => Err(DuplicationFault::MachineInvariant),
                 }),
                 OverlayId::ValueType(_) | OverlayId::CompType(_) => Err(DuplicationFault::MachineInvariant),
             };
@@ -804,7 +804,7 @@ enum LegShape
     ensures: |ret| (ret == LegShape::Abstraction) == match leg {
         OverlayId::Value(id) => overlay.value(id).is_some_and(|held| match *held {
             ValueNode::Grafted(ValueGraft::Thunk(body)) => matches!(overlay.computation(body), Some(&CompNode::Grafted(CompGraft::Lambda(_)))),
-            _ => false,
+            ValueNode::Opaque(_) | ValueNode::Bound(_) | ValueNode::Shared(_) | ValueNode::Grafted(_) => false,
         }),
         OverlayId::Computation(id) => matches!(overlay.computation(id), Some(&CompNode::Grafted(CompGraft::Lambda(_)))),
         OverlayId::ValueType(_) | OverlayId::CompType(_) => false,
@@ -1942,7 +1942,7 @@ impl Walk<'_>
         ensures: |ret| ret.is_err() || held.is_some_and(|held| usize::try_from(held.met.0).is_ok_and(|count| {
             let mut inner = self.results.last().copied();
             for _ in 0..count {
-                inner = inner.and_then(|node| self.overlay.shape(node).ok()).and_then(|shape| match shape { Shape::Shared(sharing) => Some(sharing.body), _ => None });
+                inner = inner.and_then(|node| self.overlay.shape(node).ok()).and_then(|shape| match shape { Shape::Shared(sharing) => Some(sharing.body), Shape::Opaque(_) | Shape::Bound(_) | Shape::Grafted(_) => None });
             }
             self.results.len().saturating_add(count) == results && self.frames.len().saturating_add(count) == frames && inner == body
         }))
@@ -2046,7 +2046,7 @@ impl Walk<'_>
         captures: taken = self.frames.get(frame.0).copied(),
         ensures: |ret| ret.map_or(true, |pointed| taken.is_some_and(|taken| self.frames.get(frame.0).is_some_and(|next| taken.0.checked_add(1_u32) == Some(next.0)) && core::mem::discriminant(&pointed) == core::mem::discriminant(&node) && self.overlay.shape(pointed).is_ok_and(|shape| match shape {
             Shape::Bound(bound) => u32::from(bound.position) == taken.0 && usize::try_from(u32::from(bound.distance)).ok() == self.frames.len().checked_sub(frame.0).and_then(|remaining| remaining.checked_sub(1)),
-            _ => false,
+            Shape::Opaque(_) | Shape::Shared(_) | Shape::Grafted(_) => false,
         })))
     )]
     fn point(
@@ -2290,7 +2290,7 @@ impl Walk<'_>
     /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
     #[spec(
         captures: [count = self.results.len(), top = self.results.last().copied()],
-        ensures: |ret| self.results.len() == count.saturating_sub(1) && ret == top.and_then(|node| match node { OverlayId::Value(id) => Some(id), _ => None }).ok_or(DuplicationFault::MachineInvariant)
+        ensures: |ret| self.results.len() == count.saturating_sub(1) && ret == top.and_then(|node| match node { OverlayId::Value(id) => Some(id), OverlayId::Computation(_) | OverlayId::ValueType(_) | OverlayId::CompType(_) => None }).ok_or(DuplicationFault::MachineInvariant)
     )]
     fn value(&mut self) -> Result<OverlayValueId, DuplicationFault>
     {
@@ -2320,7 +2320,7 @@ impl Walk<'_>
     /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
     #[spec(
         captures: [count = self.results.len(), top = self.results.last().copied()],
-        ensures: |ret| self.results.len() == count.saturating_sub(1) && ret == top.and_then(|node| match node { OverlayId::Computation(id) => Some(id), _ => None }).ok_or(DuplicationFault::MachineInvariant)
+        ensures: |ret| self.results.len() == count.saturating_sub(1) && ret == top.and_then(|node| match node { OverlayId::Computation(id) => Some(id), OverlayId::Value(_) | OverlayId::ValueType(_) | OverlayId::CompType(_) => None }).ok_or(DuplicationFault::MachineInvariant)
     )]
     fn computation(&mut self) -> Result<OverlayCompId, DuplicationFault>
     {
@@ -2351,7 +2351,7 @@ impl Walk<'_>
     /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
     /// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
     #[spec(
-        ensures: |ret| ret == self.overlay.shape(share).ok().and_then(|shape| match shape { Shape::Shared(sharing) => Some(sharing), _ => None }).ok_or(DuplicationFault::MachineInvariant)
+        ensures: |ret| ret == self.overlay.shape(share).ok().and_then(|shape| match shape { Shape::Shared(sharing) => Some(sharing), Shape::Opaque(_) | Shape::Bound(_) | Shape::Grafted(_) => None }).ok_or(DuplicationFault::MachineInvariant)
     )]
     fn sharing(
         &self,

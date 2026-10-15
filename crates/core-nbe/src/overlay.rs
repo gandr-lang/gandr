@@ -2711,7 +2711,7 @@ impl Erasure<'_>
         ensures: |ret| match ret {
          Ok(id) => (matches!((id,node),(CoreId::Value(_),OverlayId::Value(_))|(CoreId::Computation(_),OverlayId::Computation(_))|(CoreId::ValueType(_),OverlayId::ValueType(_))|(CoreId::CompType(_),OverlayId::CompType(_)))) && (match id { CoreId::Value(id) => self.core.value(id).is_some(), CoreId::Computation(id) => self.core.computation(id).is_some(), CoreId::ValueType(id) => self.core.value_type(id).is_some(), CoreId::CompType(id) => self.core.comp_type(id).is_some() })
           && self.overlay.shape(node).is_ok_and(|shape| match shape {
-           Shape::Grafted(children) => results.checked_sub(match children { Children::Leaf => 0, Children::One(_) => 1, Children::Two(..) => 2, Children::Three(..) => 3 }) == Some(self.results.len()), _ => false,
+           Shape::Grafted(children) => results.checked_sub(match children { Children::Leaf => 0, Children::One(_) => 1, Children::Two(..) => 2, Children::Three(..) => 3 }) == Some(self.results.len()), Shape::Opaque(_) | Shape::Bound(_) | Shape::Shared(_) => false,
           }),
          Err(fault) => fault == EraseFault::MachineInvariant && self.core.watermark() == mark && self.results.len() <= results,
         }
@@ -3579,7 +3579,7 @@ mod tests
          && mark.computations.checked_add(1) == Some(overlay.computations.len()) && mark.values.checked_add(1) == Some(overlay.values.len())
          && overlay.computation(ret).is_some_and(|node| match *node {
          CompNode::Grafted(CompGraft::Return(value)) => usize::try_from(value.0).ok() == Some(mark.values)
-          && overlay.value(value) == Some(&ValueNode::Bound(Bound{distance:ShareDistance(0),position:SharePosition(0)})), _ => false,
+          && overlay.value(value) == Some(&ValueNode::Bound(Bound{distance:ShareDistance(0),position:SharePosition(0)})), CompNode::Opaque(_) | CompNode::Bound(_) | CompNode::Shared(_) | CompNode::Grafted(_) => false,
         })
     )]
     fn occurrence_in_return(overlay: &mut Overlay) -> OverlayCompId

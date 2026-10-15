@@ -671,7 +671,7 @@ mod tests
     /// - witness: `stream::tests::an_unretained_submission_is_published_not_omitted`
     #[spec(ensures: |ret| ret.iter().copied().eq(events.iter().filter_map(|event| match *event {
         SynthesisEvent::Match { origin, .. } => Some(origin),
-        _ => None,
+        SynthesisEvent::Started { .. } | SynthesisEvent::Item { .. } | SynthesisEvent::SourceNotRetained { .. } | SynthesisEvent::Completed => None,
     })))]
     fn match_origins(events: &[SynthesisEvent]) -> Vec<MatchOrigin>
     {

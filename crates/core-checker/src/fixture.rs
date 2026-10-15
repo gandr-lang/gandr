@@ -410,7 +410,7 @@ impl TypeRecipe
             && matches!(ret.get(1), Some(Entry::Comp(CompShape::Returner(Position(0)))))
             && ret.iter().all(|entry| match *entry {
                 | Entry::Value(shape) => {
-                    let valid = match shape { ValueShape::Thunk(body) => body.0 < comps, _ => true };
+                    let valid = match shape { ValueShape::Thunk(body) => body.0 < comps, ValueShape::Integer | ValueShape::String | ValueShape::Unit => true };
                     values = values.saturating_add(1);
                     valid
                 },

@@ -434,7 +434,7 @@ impl FreeIndices
                 free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty(),
             Value::Constant(_) | Value::Literal(_) =>
                 free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty(),
-            _ => true,
+            Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => true,
         }),
         CoreTerm::Computation(id) => core.computation(id).is_some(),
     }))]
@@ -921,7 +921,7 @@ Ok(ref children) => children.listed.iter().skip_while(|item| item.is_some()).all
                 _ => true,
             },
             Reached::Term(CoreTerm::Computation(id)) => match core.computation(id) { Some(&Computation::Transport(path, value)) => children.listed == [Some((Reached::Term(CoreTerm::Value(path)), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(value)), Lowering::NONE)), None, None, None], _ => true },
-            _ => true,
+            Reached::ValueType(_) | Reached::CompType(_) => true,
         },
 Err(FreeFault::Dangling) => match node { Reached::Term(CoreTerm::Value(id)) => core.value(id).is_none(), Reached::Term(CoreTerm::Computation(id)) => core.computation(id).is_none(), Reached::ValueType(id) => core.value_type(id).is_none(), Reached::CompType(id) => core.comp_type(id).is_none() },
 Err(_) => false,

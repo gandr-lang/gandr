@@ -320,7 +320,7 @@ impl ProtypeIso
 ///   certificate from an unbound certificate id, and projects the actual bound
 ///   derivation.
 /// - witness: `tests::laws::tests::a_reflexive_witness_pair_is_a_valid_iso`
-#[spec(ensures: |out| match *term.to_node().kind() { ProtermKind::Cert { id } => match out { Maybe::Present(derivation) => derivations.get(usize::from(DerivationIndex::from(id))) == Some(derivation), Maybe::Absent(witness_resolution::Absent::Unbound(missing)) => id == missing && derivations.get(usize::from(DerivationIndex::from(id))).is_none(), Maybe::Absent(witness_resolution::Absent::NotCertificate) => false }, _ => matches!(out, Maybe::Absent(witness_resolution::Absent::NotCertificate)) })]
+#[spec(ensures: |out| match *term.to_node().kind() { ProtermKind::Cert { id } => match out { Maybe::Present(derivation) => derivations.get(usize::from(DerivationIndex::from(id))) == Some(derivation), Maybe::Absent(witness_resolution::Absent::Unbound(missing)) => id == missing && derivations.get(usize::from(DerivationIndex::from(id))).is_none(), Maybe::Absent(witness_resolution::Absent::NotCertificate) => false }, ProtermKind::Var { .. } | ProtermKind::Refl { .. } | ProtermKind::PathInd { .. } | ProtermKind::Pair { .. } | ProtermKind::SeamInd | ProtermKind::Lam { .. } | ProtermKind::App | ProtermKind::ProdIntro | ProtermKind::ProjL | ProtermKind::ProjR | ProtermKind::UnitTerm => matches!(out, Maybe::Absent(witness_resolution::Absent::NotCertificate)) })]
 fn resolve_cert<'env>(
     term: &Proterm,
     derivations: &'env [Derivation],

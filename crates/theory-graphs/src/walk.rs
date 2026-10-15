@@ -1239,7 +1239,7 @@ impl<S: WalkSym> WalkIndex<S>
     /// - witness: `tests::walk::converged_equality_prefixes_all_expand_through_shared_endpoint`
     /// - witness: `tests::walk::small_chain_keyings_agree_under_permuted_insertion`
     #[spec(ensures: |ref result| result.as_ref().map_or_else(
-        |error| match *error { WalkBuildError::ChainLengthExceeded { max, actual } => max == spec.max_chain_len && actual > max, WalkBuildError::ArithmeticOverflow => true, _ => false },
+        |error| match *error { WalkBuildError::ChainLengthExceeded { max, actual } => max == spec.max_chain_len && actual > max, WalkBuildError::ArithmeticOverflow => true, WalkBuildError::EmptySwing | WalkBuildError::InvalidWalkShape | WalkBuildError::ZeroMaxChainLen | WalkBuildError::UselessArc => false },
         |index| index.ends.iter().eq(spec.ends.iter())
             && index.transitive_rows.values().all(|walks| !walks.is_empty() && walks.iter().all(|walk| (walk.is_eq().is_ok_and(bool::from) || walk.is_neq().is_ok_and(bool::from)) && minimal::<S>(walk).is_ok_and(bool::from) && walk.chain_len().is_ok_and(|length| length <= spec.max_chain_len)))
             && index.eq_rows.values().all(|walks| !walks.is_empty() && walks.iter().all(|walk| walk.is_eq().is_ok_and(bool::from)))
@@ -1296,7 +1296,7 @@ impl<S: WalkSym> WalkIndex<S>
     /// - witness: `tests::walk::same_sort_bounds_different_identity_continuation_is_suppressed`
     /// - witness: `tests::walk::small_chain_keyings_agree_under_permuted_insertion`
     #[spec(ensures: |ref result| result.as_ref().map_or_else(
-        |error| match *error { WalkBuildError::ChainLengthExceeded { max, actual } => max == spec.max_chain_len && actual > max, WalkBuildError::ArithmeticOverflow => true, _ => false },
+        |error| match *error { WalkBuildError::ChainLengthExceeded { max, actual } => max == spec.max_chain_len && actual > max, WalkBuildError::ArithmeticOverflow => true, WalkBuildError::EmptySwing | WalkBuildError::InvalidWalkShape | WalkBuildError::ZeroMaxChainLen | WalkBuildError::UselessArc => false },
         |verdict| *verdict == SeenKeyVerdict::Equivalent || (!spec.swing_seeds.is_empty() && !spec.swing_arcs.is_empty()),
     ))]
     #[inline]
@@ -1535,7 +1535,7 @@ where
 /// - witness: `tests::walk::small_chain_keyings_agree_under_permuted_insertion`
 /// - witness: `tests::walk::cyclic_outer_closure_terminates_and_cap_errors_are_typed`
 #[spec(ensures: |ref result| result.as_ref().map_or_else(
-    |error| match *error { WalkBuildError::ChainLengthExceeded { max, actual } => max == spec.max_chain_len && actual > max, WalkBuildError::ArithmeticOverflow => true, _ => false },
+    |error| match *error { WalkBuildError::ChainLengthExceeded { max, actual } => max == spec.max_chain_len && actual > max, WalkBuildError::ArithmeticOverflow => true, WalkBuildError::EmptySwing | WalkBuildError::InvalidWalkShape | WalkBuildError::ZeroMaxChainLen | WalkBuildError::UselessArc => false },
     |rows| rows.iter().all(|(key, walks)| spec.ends.contains(&key.1) && spec.ends.contains(&key.2) && !walks.is_empty() && walks.iter().is_sorted_by(|left, right| left < right) && walks.iter().all(|walk| walk.chain_len().is_ok_and(|length| length <= spec.max_chain_len))) && rows.values().map(Vec::len).sum::<usize>() >= spec.direct_steps.len(),
 ))]
 fn direct_rows<S>(
@@ -1595,7 +1595,7 @@ where
 /// - witness: `tests::walk::converged_equality_prefixes_all_expand_through_shared_endpoint`
 /// - witness: `tests::walk::cyclic_outer_closure_terminates_and_cap_errors_are_typed`
 #[spec(ensures: |ref result| result.as_ref().map_or_else(
-    |error| match *error { WalkBuildError::ChainLengthExceeded { max, actual } => max == spec.max_chain_len && actual > max, WalkBuildError::ArithmeticOverflow => true, _ => false },
+    |error| match *error { WalkBuildError::ChainLengthExceeded { max, actual } => max == spec.max_chain_len && actual > max, WalkBuildError::ArithmeticOverflow => true, WalkBuildError::EmptySwing | WalkBuildError::InvalidWalkShape | WalkBuildError::ZeroMaxChainLen | WalkBuildError::UselessArc => false },
     |rows| rows.iter().all(|(key, walks)| spec.ends.contains(&key.1) && spec.ends.contains(&key.2) && !walks.is_empty() && walks.iter().is_sorted_by(|left, right| left < right) && walks.iter().all(|walk| walk.chain_len().is_ok_and(|length| length <= spec.max_chain_len))) && rows.values().flatten().all(|walk| minimal::<S>(walk).is_ok_and(bool::from)),
 ))]
 fn transitive_rows<S>(

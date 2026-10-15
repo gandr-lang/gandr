@@ -1277,7 +1277,7 @@ impl DomainArena
     /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| match *value { DomainValue::Tuple { fields, .. } => ret == self.fields(fields).ok(), _ => ret.is_none() })]
+    #[spec(ensures: |ret| match *value { DomainValue::Tuple { fields, .. } => ret == self.fields(fields).ok(), DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Neutral { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret.is_none() })]
     pub fn components(
         &self,
         value: &DomainValue,

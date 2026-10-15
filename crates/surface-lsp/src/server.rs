@@ -1440,38 +1440,38 @@ impl Server
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Tokens(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    _ => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
                 },
             (Phase::Running, "textDocument/inlineCompletion") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Inline(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    _ => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
                 },
             (Phase::Running, "textDocument/documentSymbol" | "textDocument/foldingRange" | "textDocument/selectionRange") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    _ => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
                 },
             (Phase::Running, "textDocument/hover") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Hover(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    _ => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
                 },
             (Phase::Running, "textDocument/codeLens" | "textDocument/codeAction") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Lenses(_) | Answer::Actions(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
-                    _ => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
                 },
             (Phase::Running, "textDocument/formatting" | "textDocument/rangeFormatting") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Edits(_), .. } => true,
                     Outgoing::Failure { ref error, .. } =>
                         error.code == ErrorCode::INVALID_PARAMS || error.code == ErrorCode::REQUEST_FAILED,
-                    _ => false,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
                 },
             (Phase::Running, _) => self.phase == phase && matches!(ret,
                 Outgoing::Failure { ref error, .. } if error.code == ErrorCode::METHOD_NOT_FOUND),
@@ -1723,7 +1723,7 @@ impl Server
                                 .is_none_or(|held| matches!(held.own(self.peer), Maybe::Absent(_))),
                         _ => false,
                     },
-                    _ => false,
+                    Outgoing::Success { .. } | Outgoing::Failure { .. } => false,
                 })
             },
     )]
@@ -1902,7 +1902,7 @@ impl Workspace
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
             && tokens.data.as_ref().len().is_multiple_of(5)
-            && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), _ => true },
+            && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
         Answer::Initialize(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Actions(_) => false,
     })]
@@ -2108,7 +2108,7 @@ impl Workspace
         Outgoing::Success { result: Answer::Nothing, .. } => !self.documents.contains_key(uri),
         Outgoing::Success { result: Answer::Edits(_), .. } => self.documents.contains_key(uri),
         Outgoing::Failure { ref error, .. } => error.code == ErrorCode::REQUEST_FAILED,
-        _ => false,
+        Outgoing::Success { .. } | Outgoing::Notification { .. } => false,
     })]
     fn format(
         &self,

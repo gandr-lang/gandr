@@ -533,7 +533,7 @@ impl<'source> DeclarationReport<'source>
                 Stated::Verdict(Outcome::Normalizes(_)) => {
                     matches!(ret, Outcome::Normalizes(ref actual) if actual == spelled)
                 }
-                _ => matches!(ret, Outcome::Runs(ref actual) if actual == spelled),
+                Stated::Verdict(_) | Stated::Malformed(_) => matches!(ret, Outcome::Runs(ref actual) if actual == spelled),
             },
             Maybe::Absent(_) => ret == Outcome::Checks(self.owed),
         }
@@ -656,7 +656,7 @@ impl<'source> DeclarationReport<'source>
         ensures: |ret| {
     let declared = match self.stated {
         Stated::Verdict(Outcome::Checks(count)) => usize::from(count),
-        _ => 0_usize,
+        Stated::Verdict(_) | Stated::Malformed(_) => 0_usize,
     };
     let owed = usize::from(self.owed);
     usize::from(ret.undeclared) == owed.saturating_sub(declared)

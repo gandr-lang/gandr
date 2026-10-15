@@ -1719,7 +1719,7 @@ impl Revision
 /// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
 #[spec(ensures: |output| output.as_ref().ok().is_none_or(|fitness| match *fitness {
     Fitness::Unfit(Unfit::Collapsed(point)) => arms.get(usize::from(point)).is_some(),
-    _ => true,
+    Fitness::Fits | Fitness::Unfit(_) => true,
 }))]
 fn departure(
     graph: &Graph,
