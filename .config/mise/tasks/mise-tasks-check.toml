@@ -207,6 +207,13 @@ quenchant-gates obligations --manifest-path Cargo.toml --base "$base" \
 # selection would change the features of shared dependencies and rebuild
 # every crate above them. Only this task unifies so: elsewhere `-p` keeps
 # its own features, which `cargo tree -p` and the shipped build rely on.
+# The selection is `-p` per package, then `-E` and one filterset whose
+# alternatives join with ` | `. A change obligating thousands of witnesses
+# makes that one argument longer than the kernel accepts (Linux refuses an
+# argument over 128 KiB), so the alternatives run in batches of at most
+# 64 KiB of filterset, each under every selected package. A failing batch
+# fails the task once the rest have run; with more than one batch, each
+# batch's JUnit report is kept beside the others as `junit-<n>.xml`.
 ["evidence:witnesses"]
 description = "Rerun the obligated witnesses with specifications enforced"
 env.RUSTFLAGS = "--cfg anodized_panic"
@@ -221,7 +228,30 @@ if (( ${#selection[@]} == 0 )); then
   echo 'no obligated witness to rerun'
   exit 0
 fi
-cargo nextest run --locked --profile "${NEXTEST_PROFILE:-default}" "${selection[@]}"
+profile=${NEXTEST_PROFILE:-default}
+packages=("${selection[@]:0:${#selection[@]}-2}")
+filterset=${selection[-1]}
+mapfile -t alternatives <<< "${filterset// | /$'\n'}"
+limit=65536
+batches=()
+batch=''
+for alternative in "${alternatives[@]}"; do
+  if [[ -n $batch ]] && (( ${#batch} + 3 + ${#alternative} > limit )); then
+    batches+=("$batch")
+    batch=''
+  fi
+  batch=${batch:+$batch | }$alternative
+done
+batches+=("$batch")
+status=0
+for index in "${!batches[@]}"; do
+  cargo nextest run --locked --profile "$profile" "${packages[@]}" -E "${batches[index]}" || status=1
+  report=target/nextest/$profile/junit.xml
+  if (( ${#batches[@]} > 1 )) && [[ -f $report ]]; then
+    mv "$report" "target/nextest/$profile/junit-$((index + 1)).xml"
+  fi
+done
+exit "$status"
 {% endraw %}'''
 
 # `RUSTDOCFLAGS="-D warnings"` makes every rustdoc lint fatal, so a broken

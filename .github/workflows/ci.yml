@@ -201,6 +201,7 @@ jobs:
           path: |
             target/nextest/ci/junit.xml
             target/nextest/ci-enforcing/junit.xml
+            target/nextest/ci-enforcing/junit-*.xml
           if-no-files-found: ignore
       # Each lane's summary names where its state came from and what each
       # step took, so a slow run says where its time went; the nightly lane
@@ -784,6 +785,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       comment: ${{ steps.obligations.outcome == 'success' }}
+      report: ${{ steps.report.outputs.artifact-url }}
     env:
       # The witnesses reuse main's enforcing test state, and the listing main's
       # policy state: its library, records and rustdoc JSON. Nothing is saved.
@@ -820,19 +822,23 @@ jobs:
         env:
           NEXTEST_PROFILE: ci-enforcing
         run: mise run evidence:witnesses
+      # The full report: the posted comment links here when it is truncated,
+      # so it is kept as long as any artifact.
       - name: upload the obligations comment
+        id: report
         if: ${{ !cancelled() && env.ACT != 'true' && steps.obligations.outcome == 'success' }}
         uses: *upload-artifact
         with:
           name: obligations-comment
           path: target/evidence/comment.md
           if-no-files-found: error
-          retention-days: 1
       - *upload-test-report
       - *lane-timing
 
   # Posted whatever the witnesses' verdict, once the report exists: the prose
-  # obligations stand either way.
+  # obligations stand either way. GitHub refuses a comment body over 65,536
+  # characters, so a longer report is cut at a line boundary below that, and
+  # the comment links the full report's artifact.
   obligations-comment:
     name: post the obligations comment
     needs: [obligations-comment-read, obligations]
@@ -850,7 +856,16 @@ jobs:
         shell: bash
         env:
           COMMENT_ID: ${{ needs.obligations-comment-read.outputs.id }}
+          REPORT_URL: ${{ needs.obligations.outputs.report }}
         run: |
+          if (( $(wc -c < comment.md) > 60000 )); then
+            body=$(head -c 60000 comment.md)
+            {
+              printf '%s\n\n' "${body%$'\n'*}"
+              printf -- '---\n\nThe report is cut here at the comment size limit. The full report is the [obligations-comment artifact](%s).\n' "$REPORT_URL"
+            } > comment.cut.md
+            mv comment.cut.md comment.md
+          fi
           if [[ -n $COMMENT_ID ]]; then
             gh api --method PATCH "repos/$GH_REPO/issues/comments/$COMMENT_ID" -F body=@comment.md --silent
           else
