@@ -1399,4 +1399,52 @@ mod native_formers
             "the flip once is no identity: reflexivity is carried to the loop twice"
         );
     }
+
+    #[test]
+    fn a_composite_along_a_returned_path_cancels_to_the_empty_word()
+    {
+        let mut environment = one_loop();
+        // `Path(Path(S, Base, Base), ⟨loop then back(loop)⟩, right)` at
+        // reflexivity on `right`, the composite running along the inverse's
+        // returned transport.
+        let mut cancels_to = |right: Built| {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+            let point = build(arena, Built::Point);
+            let named = build(arena, Built::Named);
+            let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let reversed = arena.value_type_path(carrier, moving, point);
+            let base = arena.value_here(point);
+            let inverse = arena.computation_path_transport(reversed, named, base);
+            let inverse = arena.value_returned(inverse);
+            let joined = arena.value_type_path(carrier, point, moving);
+            let composite = arena.computation_path_transport(joined, inverse, named);
+            let composite = arena.value_returned(composite);
+            let at_point = arena.value_type_path(carrier, point, point);
+            let right = build(arena, right);
+            let declared = arena.value_type_path(at_point, composite, right);
+            let body = arena.value_here(right);
+            let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(staged)
+        };
+        assert!(
+            cancels_to(Built::Empty).is_ok(),
+            "the returned path runs before the composite transports along it, and the loop \
+             cancels against its inverse"
+        );
+        let named = cancels_to(Built::Named);
+        assert!(
+            matches!(
+                named,
+                Err(KernelError::Identity(
+                    gandr_kernel_core::IdentityError::EndpointsDiffer {
+                        side: gandr_kernel_core::EndpointSide::Left,
+                        ..
+                    }
+                ))
+            ),
+            "the composite is not the loop: {named:?}"
+        );
+    }
 }

@@ -708,6 +708,109 @@ fn a_derived_operation_needs_a_written_path_answer()
 }
 
 #[test]
+fn a_derived_operation_synthesises_its_path_at_the_words()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
+            "def collapse(x : Circle) -> -F Circle {\n  case x {\n    Base => Base\n  }\n}\n",
+            "def two : Path(Circle, Base, Base);\ndef two = loop then loop;\n",
+            "def undone : Path(Circle, Base, Base);\ndef undone = back(loop then loop);\n",
+            "def collapsed : Path(Path(Circle, Base, Base), cong(collapse, loop), here(Base));\n",
+            "def unread : Path(Integer, 1, 1);\ndef unread = back(here(1));\n",
+            "def pointed : Path(Circle, Base, Base);\ndef pointed = cong(Base, loop);\n",
+            "def broken(x : Circle) -> -F Bogus {\n  case x {\n    Base => Base\n  }\n}\n",
+            "def over_broken : Path(Circle, Base, Base);\ndef over_broken = cong(broken, loop);\n",
+        )),
+        &mut arena,
+    );
+    let transport = |value, name: &str| {
+        let Some(&Value::Returned(computation)) = arena.value(value)
+        else {
+            panic!("`{name}` is the value its transport returns");
+        };
+        match arena.computation(computation) {
+            | Some(&Computation::PathTransport {
+                motive,
+                path,
+                value,
+            }) => (motive, path, value),
+            | other => panic!("`{name}` unfolds to a transport: {other:?}"),
+        }
+    };
+    let body = |name: &str| match outcome_of(&module, name.into()) {
+        | DeclarationOutcome::Completed { body, .. } => body,
+        | other => panic!("`{name}` lowers both halves: {other:?}"),
+    };
+    let moving = |at| arena.value(at) == Some(&variable(0_u32.into()));
+
+    let (motive, path, value) = transport(body("two"), "two");
+    assert!(
+        matches!(arena.value(path), Some(&Value::Constant(_)))
+            && matches!(arena.value(value), Some(&Value::Constant(_))),
+        "`loop then loop` transports the loop along the loop"
+    );
+    assert!(
+        matches!(
+            arena.value_type(motive),
+            Some(&ValueType::Path { left, right, .. })
+                if matches!(arena.value(left), Some(&Value::Constructor { .. })) && moving(right)
+        ),
+        "the composite starts at the point the loop's words spell and moves its end"
+    );
+
+    let (motive, path, _) = transport(body("undone"), "undone");
+    let (inner, ..) = transport(path, "the composite under `back`");
+    assert!(
+        matches!(arena.value_type(motive), Some(&ValueType::Path { left, .. }) if moving(left))
+            && matches!(arena.value_type(inner), Some(&ValueType::Path { right, .. }) if moving(right)),
+        "`back` reads the composite's own path type, the composite standing as its value"
+    );
+
+    let DeclarationOutcome::Uncompleted { declared_type } = outcome_of(&module, "collapsed".into())
+    else {
+        panic!("`collapsed` lowers its signature");
+    };
+    let Some(&ValueType::Path { left, .. }) = arena.value_type(declared_type)
+    else {
+        panic!("`collapsed` states a path type");
+    };
+    let (motive, ..) = transport(left, "`cong(collapse, loop)`");
+    assert!(
+        matches!(
+            arena.value_type(motive),
+            Some(&ValueType::Path { left, right, .. })
+                if matches!(arena.value(left), Some(&Value::Returned(_)))
+                    && matches!(arena.value(right), Some(&Value::Returned(_)))
+        ),
+        "`cong` in a type maps the loop's point and its moving end through the collapse"
+    );
+    assert!(
+        matches!(
+            module.origins().value_type(motive),
+            Maybe::Present(origin) if origin.provenance() == Provenance::Inserted(Insertion::Identity)
+        ),
+        "the synthesised motive is the lowering's insertion"
+    );
+
+    for (name, refused) in [
+        ("unread", FragmentBoundary::Unannotated),
+        ("pointed", FragmentBoundary::NotAFunction),
+        ("over_broken", FragmentBoundary::Unannotated),
+    ] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment { boundary, .. })
+                    if boundary == refused
+            ),
+            "`{name}` is refused as {refused:?}"
+        );
+    }
+}
+
+#[test]
 fn a_dependent_transport_lowers_to_its_telescope()
 {
     let mut arena = CoreArena::new();

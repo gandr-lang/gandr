@@ -729,6 +729,7 @@ fn lowering_row(
                 | FragmentBoundary::Arity(_)
                 | FragmentBoundary::Indexed
                 | FragmentBoundary::Unannotated
+                | FragmentBoundary::NotAFunction
                 | FragmentBoundary::NonUniform
                 | FragmentBoundary::NotInTail
                 | FragmentBoundary::JoinsBlock

@@ -206,9 +206,9 @@ impl fmt::Display for FragmentSort
 /// # Specification
 /// - requires: the producer identifies the boundary crossed by the source form.
 /// - ensures: reserved, unadmitted, wrong-sort, wrong-arity, indexed,
-///   unannotated, non-uniform, not-in-tail, joins-block, empty-list, endpoint
-///   and non-contractive reports remain distinct; an arity report carries the
-///   number of operands offered.
+///   unannotated, not-a-function, non-uniform, not-in-tail, joins-block,
+///   empty-list, endpoint and non-contractive reports remain distinct; an arity
+///   report carries the number of operands offered.
 /// - provides: why a parsed form has no representation at this position.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -250,10 +250,15 @@ pub enum FragmentBoundary
     /// The form needs a type the source does not state: a match over nominal
     /// data with no answer type written or known from its function, a
     /// constructor of a parameterized family with no classifier, `back`,
-    /// `then` or `cong` standing where no written path type is answered, `then`
-    /// where no written flow type is either, or a transport or ride whose
-    /// motive is no static abstraction.
+    /// `then` or `cong` standing where no written path type is answered and
+    /// its path's type is not read off a word or an operation over one, `cong`
+    /// so standing at a map that is no function definition with a closed
+    /// written result that lowers, `then` where no written flow type is either,
+    /// or a transport or ride whose motive is no static abstraction.
     Unannotated,
+    /// The form is `cong` at a constructor, which is not a function: `cong`
+    /// maps a path by a function definition.
+    NotAFunction,
     /// The form is a recursive call passing, where one of the definition's
     /// unchanging parameters stands, something other than that parameter: only
     /// the last parameter descends.
@@ -301,6 +306,9 @@ impl fmt::Display for FragmentBoundary
                 f.write_str("applies its family to an index, which the fragment does not read")
             },
             | Self::Unannotated => f.write_str("needs a type the source does not state"),
+            | Self::NotAFunction => {
+                f.write_str("maps a path by a constructor, which is not a function")
+            },
             | Self::NonUniform => f.write_str(
                 "passes something other than the parameter itself where an earlier parameter \
                  stands; only the last parameter descends",

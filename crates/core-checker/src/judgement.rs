@@ -4428,8 +4428,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a force awaits its value's synthesised type; an application
-    ///   awaits its head's; a bind awaits its bound computation's; a hole and a
-    ///   mark have the unknown computation type, minted, and ascend.
+    ///   awaits its head's; a bind awaits its bound computation's; a transport
+    ///   awaits its path's, running a computation nested at the path first, so
+    ///   it alone waits a second frame, the run's; a hole and a mark have the
+    ///   unknown computation type, minted, and ascend.
     /// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda, a return or a
     ///   fixpoint; [`CheckRefusal::OutOfFragment`] for a case.
     ///
@@ -4440,10 +4442,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
+    /// - witness: `native_formers::native_formers::a_composite_along_a_returned_path_cancels_in_both_checkers`
     #[spec(
         captures: before = self.frames.len(),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_)))
-            && self.frames.len().checked_sub(before) == Some(1))
+            && (self.frames.len().checked_sub(before) == Some(1)
+                || (self.frames.len().checked_sub(before) == Some(2)
+                    && matches!(self.frames.last().map(|waiting| waiting.frame), Some(Frame::Ran { .. })))))
             || (matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))) && self.frames.len() == before),
     )]
     fn synthesise_comp(
@@ -4585,6 +4590,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     motive,
                     value,
                 });
+                // A path is never a thunk, so a computation written where the
+                // path is read runs, and its type is the one it returns.
+                if let Value::Nested(computation) = *self.value(path)? {
+                    self.wait(Frame::Ran { at: path });
+                    return Ok(Step::Descend(Goal::Computation {
+                        term: computation,
+                        direction: Direction::Synthesise,
+                    }));
+                }
                 Ok(Step::Descend(Goal::Value {
                     term: path,
                     direction: Direction::Synthesise,

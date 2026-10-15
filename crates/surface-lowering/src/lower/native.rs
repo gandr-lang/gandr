@@ -340,6 +340,7 @@ use crate::module::Generators;
 use crate::module::Half;
 use crate::module::Operand;
 use crate::module::SlotIndex;
+use crate::module::WordsForm;
 use crate::module::closed_term;
 use crate::origin::ArmOrigin;
 use crate::origin::CaseOrigin;
@@ -420,6 +421,19 @@ quenchant_shape::reason_enum! {
             Adopted,
             /// The nodes carry a classifier the lowering inserted.
             Classifier,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a constant is a word of no words.
+    pub mod worded {
+        /// The constant names no words.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The constant is neither a loop nor the words a loop is a
+            /// letter of.
+            Unworded,
         }
     }
 }
@@ -4259,19 +4273,10 @@ impl<'source> Lowerer<'_, 'source>
             ));
             self.constructors.push(names);
             let _first = self.worded.insert(index, data);
-            let carrier = sink.arena.value_type_data(family, Vec::new());
-            sink.origins.record_value_type(carrier, origin);
-            let arities: Vec<gandr_kernel_term::FieldCount> = form
-                .generators
-                .iter()
-                .map(|generator| gandr_kernel_term::FieldCount::from(generator.fields.len()))
-                .collect();
-            let mut minted = Vec::new();
-            let point = spelled_point(sink.arena, carrier, (&words.point, &arities), &mut minted);
-            for &value in &minted {
-                sink.origins.record_value(value, origin);
-            }
-            let Maybe::Present(point) = point
+            let mark = sink.arena.watermark();
+            let pointed_at = self.words_point(sink.arena, words);
+            record_since(sink, mark, origin, Maybe::Absent(rooted::Absent::Unminted));
+            let Maybe::Present((carrier, point)) = pointed_at
             else {
                 continue;
             };
@@ -4313,6 +4318,94 @@ impl<'source> Lowerer<'_, 'source>
                 let _first = self.looped.insert(bound, (path, letter));
             }
         }
+    }
+
+    /// The carrier and the point of `words`: the family's type, and the closed
+    /// term the point spells over it.
+    ///
+    /// # Specification
+    /// - requires: `words` is an entry of the collection's words list.
+    /// - ensures: the family's type without arguments, and the point as
+    ///   [`spelled_point`] mints it over that type.
+    /// - provides: the path type `Path(carrier, point, point)` a word at that
+    ///   point stands at, for the words' own binding and for a derived
+    ///   operation reading its path's type.
+    /// - fails: the unminted absence for words over a family the collection
+    ///   does not hold, or a point that spells nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_words`], and a derived operation over
+    ///   a word.
+    /// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
+    /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present((carrier, point)) => arena.value_type(carrier).is_some() && arena.value(point).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    pub(super) fn words_point(
+        &self,
+        arena: &mut CoreArena,
+        words: &WordsForm,
+    ) -> Maybe<(ValueTypeId, ValueId), lowered::Absent>
+    {
+        let Some(form) = self.collected.data.get(words.family)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let Some(family) = self.collected.slots.get(usize::from(form.slot))
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let carrier = arena.value_type_data(family.constant, Vec::new());
+        let arities: Vec<gandr_kernel_term::FieldCount> = form
+            .generators
+            .iter()
+            .map(|generator| gandr_kernel_term::FieldCount::from(generator.fields.len()))
+            .collect();
+        let mut minted = Vec::new();
+
+        spelled_point(arena, carrier, (&words.point, &arities), &mut minted)
+            .map(|point| (carrier, point))
+    }
+
+    /// The words a constant is a word of: a loop's, or the words' own.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the entry of the collection's words list whose slot or one of
+    ///   whose loops' slots `constant` is.
+    /// - fails: [`worded::Absent::Unworded`] for any other constant.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the loop and the empty word read at their words, and
+    ///   a function at none.
+    /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(
+        self.collected.slots.get(usize::from(constant)).map(|slot| slot.definition),
+        Some(Maybe::Present(Half { operand: Operand::Loop { .. } | Operand::Words(_), .. }))
+    ))]
+    pub(super) fn words_at(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<&WordsForm, worded::Absent>
+    {
+        let Some(Maybe::Present(Half {
+            operand: Operand::Loop { words, .. } | Operand::Words(words),
+            ..
+        })) = self
+            .collected
+            .slots
+            .get(usize::from(constant))
+            .map(|slot| slot.definition)
+        else {
+            return Maybe::Absent(worded::Absent::Unworded);
+        };
+        self.collected
+            .words
+            .get(words)
+            .map_or(Maybe::Absent(worded::Absent::Unworded), Maybe::Present)
     }
 
     /// The rules a data declaration's presented reading writes over its own

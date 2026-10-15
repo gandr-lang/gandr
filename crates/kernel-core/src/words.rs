@@ -12,8 +12,9 @@
 //! - along the empty word, the operand: `tr(P, ε, v) ⇝ return v`;
 //! - along a longer word, letter by letter: `tr(P, ℓ ∷ u, v) ⇝ y ← tr(P, ℓ ∷ ε,
 //!   v); tr(P↑, u↑, y)`;
-//! - with a returned operand, the operand first, as an elimination meeting one
-//!   runs it: `tr(P, w, ⟨c⟩) ⇝ y ← c; tr(P↑, w↑, y)`;
+//! - with a returned path or operand, that value first, as the evaluator reads
+//!   every returned value and an elimination meeting one runs it: `tr(P, ⟨c⟩,
+//!   v) ⇝ w ← c; tr(P↑, w, v↑)` and `tr(P, w, ⟨c⟩) ⇝ y ← c; tr(P↑, w↑, y)`;
 //! - along one letter in a path family `y. Path(C, l, r)` whose carrier never
 //!   reads `y`, by conjugation (the book's lemma 2.11.2), `l(ℓ)⁻¹ · v · r(ℓ)`:
 //!   with both endpoints fixed or moving the word is spliced at once; with an
@@ -735,14 +736,14 @@ where
 ///
 /// # Specification
 /// - requires: nothing; an ill-typed term reduces or sticks without panicking.
-/// - ensures: `Reduced` with the transport along a named path's word; with the
-///   operand returned along the empty word, or its named word reread; with the
-///   first letter's transport bound into the rest's along a longer word; with a
-///   returned operand run first; along one letter in a path family over a
-///   carrier its binder never reads, with the spliced word returned when both
-///   endpoints are fixed or moving and the words splice, or with the images of
-///   the endpoints bound and the operand transported along them as the module
-///   states; `Stuck` otherwise.
+/// - ensures: `Reduced` with the transport along a named path's word; with a
+///   returned path run first; with the operand returned along the empty word,
+///   or its named word reread; with the first letter's transport bound into the
+///   rest's along a longer word; with a returned operand run first; along one
+///   letter in a path family over a carrier its binder never reads, with the
+///   spliced word returned when both endpoints are fixed or moving and the
+///   words splice, or with the images of the endpoints bound and the operand
+///   transported along them as the module states; `Stuck` otherwise.
 /// - provides: the replay's reading of transport along a word, the engine's
 ///   evaluator's rows as reducts.
 /// - fails: never.
@@ -752,11 +753,14 @@ where
 /// - hypothesis: L3 — the loop moves reflexivity to the loop in `y. Path(S,
 ///   Base, y)`, conjugates a loop to itself in `y. Path(S, y, y)`, and a map
 ///   with a loop arm carries the loop to the arm's image, as the loop
-///   obligations the witnesses admit and refuse read them. The circle's corpus
-///   rows replay through the same reducts in `gandr-surface-corpus`'s
+///   obligations the witnesses admit and refuse read them; a composite along
+///   the inverse's returned transport runs that path and cancels to the empty
+///   word. The circle's corpus rows replay through the same reducts in
+///   `gandr-surface-corpus`'s
 ///   `kernel_export::kernel_loop_elimination_readmission`.
 /// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
 /// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
+/// - witness: `native_formers::native_formers::a_composite_along_a_returned_path_cancels_to_the_empty_word`
 #[spec(ensures: |ret| match ret {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
@@ -780,6 +784,16 @@ where
     // A path a definition names reads as its word, as the evaluator reads it.
     if let Some(body) = named(arena, unfoldings, path) {
         return Reduction::Reduced(arena.computation_path_transport(motive, body, value));
+    }
+    // A returned path runs first, as the evaluator reads every returned
+    // value: `tr(P, ⟨c⟩, v) ⇝ w ← c; tr(P↑, w, v↑)`.
+    if let Some(&Value::Returned(along)) = arena.value(path) {
+        let one = BinderDepth::from(1_u32);
+        let lifted = shift_value_type(arena, table, memo, motive, one, one);
+        let onward = shift_value(arena, table, memo, value, BinderDepth::NONE, one);
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let transported = arena.computation_path_transport(lifted, bound, onward);
+        return Reduction::Reduced(arena.computation_bind(along, transported));
     }
     let (tag, words, rest) = match head(arena, presentations, path) {
         | Head::Empty => (FreeCells::nil(), None, path),

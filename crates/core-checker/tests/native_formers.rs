@@ -873,6 +873,57 @@ mod native_formers
     }
 
     #[test]
+    fn a_composite_along_a_returned_path_cancels_in_both_checkers()
+    {
+        let mut arena = CoreArena::new();
+        let (mut declarations, circle) = one_loop(&mut arena);
+        // `loop then back(loop)`: the composite runs along the inverse's
+        // returned transport, which only computes once that path has run.
+        let inverse =
+            gandr_core_term::identity::back(&mut arena, circle.carrier, circle.point, circle.named);
+        let inverse = arena.value_returned(inverse);
+        let composite = gandr_core_term::identity::then(
+            &mut arena,
+            circle.carrier,
+            circle.point,
+            circle.named,
+            inverse,
+        );
+        let composite = arena.value_returned(composite);
+        let at_point = arena.value_type_path(circle.carrier, circle.point, circle.point);
+        let cancelled = arena.value_type_path(at_point, composite, circle.empty);
+        let reflexivity = arena.value_here(circle.empty);
+        declarations.push(definition(
+            ConstantIndex::from(3_usize),
+            cancelled,
+            reflexivity,
+        ));
+        // The same composite is not the loop.
+        let apart = arena.value_type_path(at_point, composite, circle.named);
+        let wrong = arena.value_here(circle.named);
+        declarations.push(definition(ConstantIndex::from(4_usize), apart, wrong));
+        let (report, crossed) = run(&mut arena, &declarations);
+        assert!(
+            matches!(report.judged()[3].verdict(), Verdict::Checked { .. }),
+            "the composite cancels to the empty word: {:?}",
+            report.judged()[3].verdict()
+        );
+        assert!(
+            matches!(crossed.readmitted()[3].outcome(), Outcome::Defined { .. }),
+            "and the kernel runs the returned path before transporting along it: {:?}",
+            crossed.readmitted()[3].outcome()
+        );
+        assert!(
+            matches!(
+                report.judged()[4].verdict(),
+                Verdict::Refused(CheckRefusal::EndpointMismatch { .. })
+            ),
+            "the composite is not the loop: {:?}",
+            report.judged()[4].verdict()
+        );
+    }
+
+    #[test]
     fn an_absurd_case_rests_on_apart_endpoints_in_both_checkers()
     {
         let looped = ConstructorTag::from(1_usize);
