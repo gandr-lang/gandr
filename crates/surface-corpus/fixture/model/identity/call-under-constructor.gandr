@@ -1,0 +1,56 @@
+// A recursive path whose endpoint calls a definition under a constructor of
+// a presented type (#424): the kernel reads the endpoint by the type's rules,
+// which may rewrite the constructor away to the call beneath it, and reads a
+// transport the recursive path leaves standing as a neutral on that path.
+
+/// The integers as a presented type: a successor and a predecessor that
+/// cancel.
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
+}
+
+/// The sum, by recursion on the second summand.
+@[ checks ]
+def rec plus(a : Int, b : Int) -> -F Int {
+  case b {
+    Z => a,
+    S(x) => S(plus[<](a, x)),
+    P(x) => P(plus[<](a, x))
+  }
+}
+
+/// One successor more.
+def up(n : Int) -> -F Int {
+  S(n)
+}
+
+/// One predecessor more.
+def down(n : Int) -> -F Int {
+  P(n)
+}
+
+/// At `P(x)` the endpoint `S(plus(Z, P(x)))` is `S(P(plus(Z, x)))`, which the
+/// first rule reads as the call `plus(Z, x)` itself.
+@[ checks ]
+def rec underSuccessor(b : Int) -> -F Path(Int, S(plus(Z, b)), S(b)) {
+  case b {
+    Z => here(S(Z)),
+    S(x) => cong(up, underSuccessor[<](x)),
+    P(x) => cong(down, underSuccessor[<](x))
+  }
+}
+
+/// Reflexivity at `S(Z)` is no path to `Z`: the zero arm is refused, so
+/// reading the endpoint admits no path the rules do not.
+@[ refuses("EndpointMismatch") ]
+def rec offByOne(b : Int) -> -F Path(Int, S(plus(Z, b)), b) {
+  case b {
+    Z => here(S(Z)),
+    S(x) => cong(up, offByOne[<](x)),
+    P(x) => cong(down, offByOne[<](x))
+  }
+}

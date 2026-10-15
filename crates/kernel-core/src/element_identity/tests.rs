@@ -2520,6 +2520,41 @@ fn a_returned_endpoint_replays_as_its_computation()
     );
 }
 
+#[test]
+fn a_returned_endpoint_a_computation_returns_replays_as_its_computation()
+{
+    let mut arena = TermArena::new();
+    let function = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(function);
+    let endpoint = arena.value_returned(forced);
+    let returns_endpoint = arena.computation_return(endpoint);
+    let other_function = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let other_forced = arena.computation_force(other_function);
+    let converted = |arena: &mut TermArena, left, right| {
+        crate::replay::convert(
+            arena,
+            &Unfoldings::default(),
+            ReplaySides::Computations(left, right),
+            ReplayBudget::DEFAULT,
+        )
+    };
+
+    // `return (returned (force f))` is `force f`, on either side.
+    assert_eq!(
+        converted(&mut arena, returns_endpoint, forced),
+        KernelVerdict::Convertible
+    );
+    assert_eq!(
+        converted(&mut arena, forced, returns_endpoint),
+        KernelVerdict::Convertible
+    );
+    // And not `force g`.
+    assert_ne!(
+        converted(&mut arena, returns_endpoint, other_forced),
+        KernelVerdict::Convertible
+    );
+}
+
 /// A suspended function of dependent type: `body` under one lambda per
 /// domain, typed by the Pi chain over `domains`, the first outermost, each
 /// domain standing under the binders before it, returning `result`.
