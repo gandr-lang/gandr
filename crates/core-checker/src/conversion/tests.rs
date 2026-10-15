@@ -720,3 +720,378 @@ fn sealed_atoms_relate_by_identity_alone()
         "two atoms with one representation stay apart"
     );
 }
+
+/// Two codes of one former agree exactly where every part the former
+/// compares agrees: each former's twin at a fresh id converts, and changing
+/// one part at a time — the literal, the arity, the summand, the tag, the
+/// labels, the constant, the moves — sets the pair apart.
+#[test]
+fn codes_agree_exactly_where_their_parts_do()
+{
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+    use alloc::sync::Arc;
+    use alloc::vec;
+
+    use gandr_core_term::Summand;
+    use gandr_core_term::session::RecordedMove;
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::FieldLabel;
+
+    use crate::fixture::integer_literal;
+    use crate::fixture::text_literal;
+
+    let mut arena = CoreArena::new();
+    let zero = arena.value_literal(integer_literal());
+    let unit = arena.value_type_unit();
+    let record = |arena: &mut CoreArena, labels: &[&str]| {
+        let fields = labels
+            .iter()
+            .map(|&label| (FieldLabel::from(String::from(label)), zero))
+            .collect::<BTreeMap<_, _>>();
+        arena.value_record(fields)
+    };
+    let recorded =
+        |arena: &mut CoreArena, moves: &[RecordedMove]| arena.value_recorded(Arc::from(moves));
+    let twins = [
+        (
+            arena.value_literal(integer_literal()),
+            arena.value_literal(integer_literal()),
+            "a literal",
+        ),
+        (
+            arena.value_tuple(&[zero, zero]),
+            arena.value_tuple(&[zero, zero]),
+            "a tuple",
+        ),
+        (
+            arena.value_injection(Summand::from(0_usize), zero),
+            arena.value_injection(Summand::from(0_usize), zero),
+            "an injection",
+        ),
+        (
+            arena.value_constructor(unit, ConstructorTag::from(0_usize), vec![zero]),
+            arena.value_constructor(unit, ConstructorTag::from(0_usize), vec![zero]),
+            "a constructor",
+        ),
+        (
+            record(&mut arena, &["a"]),
+            record(&mut arena, &["a"]),
+            "a record",
+        ),
+        (
+            arena.value_constant(ConstantIndex::from(0_usize)),
+            arena.value_constant(ConstantIndex::from(0_usize)),
+            "a constant",
+        ),
+        (
+            recorded(&mut arena, &[RecordedMove::Sent(zero)]),
+            recorded(&mut arena, &[RecordedMove::Sent(zero)]),
+            "a recorded run",
+        ),
+    ];
+    let apart = [
+        (
+            twins[0].0,
+            arena.value_literal(text_literal()),
+            "literals that differ",
+        ),
+        (
+            twins[1].0,
+            arena.value_tuple(&[zero, zero, zero]),
+            "tuples of different arities",
+        ),
+        (
+            twins[2].0,
+            arena.value_injection(Summand::from(1_usize), zero),
+            "injections into different summands",
+        ),
+        (
+            twins[3].0,
+            arena.value_constructor(unit, ConstructorTag::from(1_usize), vec![zero]),
+            "constructors with different tags",
+        ),
+        (
+            twins[3].0,
+            arena.value_constructor(unit, ConstructorTag::from(0_usize), vec![zero, zero]),
+            "constructors with different field counts",
+        ),
+        (
+            twins[4].0,
+            record(&mut arena, &["a", "b"]),
+            "records with different field counts",
+        ),
+        (
+            twins[4].0,
+            record(&mut arena, &["b"]),
+            "records with different labels",
+        ),
+        (
+            twins[5].0,
+            arena.value_constant(ConstantIndex::from(1_usize)),
+            "different constants",
+        ),
+        (
+            twins[6].0,
+            recorded(&mut arena, &[
+                RecordedMove::Sent(zero),
+                RecordedMove::Closed,
+            ]),
+            "runs of different lengths",
+        ),
+        (
+            twins[6].0,
+            recorded(&mut arena, &[RecordedMove::Received(zero)]),
+            "runs whose moves differ",
+        ),
+    ];
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (left, right, what) in twins {
+        assert_ne!(left, right, "{what}'s twin sits at a fresh id");
+        assert_eq!(
+            convert(&mut context, Pairing::Codes(left, right)),
+            Ok(Agreement::Convertible),
+            "{what} converts with its twin"
+        );
+    }
+    for (left, right, what) in apart {
+        assert_eq!(
+            convert(&mut context, Pairing::Codes(left, right)),
+            Ok(Agreement::Apart),
+            "{what} are apart"
+        );
+    }
+}
+
+/// Outside subtyping a type agrees only with its own shape: record types by
+/// their labels, staged types by their stage, decoded computations by their
+/// target, and a staged type never with its bare base in either order.
+#[test]
+fn invariant_types_agree_exactly_where_their_parts_do()
+{
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+
+    use gandr_kernel_term::FieldLabel;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageId;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let record = |arena: &mut CoreArena, labels: &[&str]| {
+        let fields = labels
+            .iter()
+            .map(|&label| (FieldLabel::from(String::from(label)), integer))
+            .collect::<BTreeMap<_, _>>();
+        arena.value_type_record(fields)
+    };
+    let at = |arena: &mut CoreArena, stage: usize| {
+        arena.value_type_staged(integer, Stage::At(StageId::from(stage)))
+    };
+    let code = arena.value_constant(ConstantIndex::from(0_usize));
+    let one = Level::constant(LevelConstant::from(1_u64));
+    let values = [
+        (
+            record(&mut arena, &["a"]),
+            record(&mut arena, &["a"]),
+            Agreement::Convertible,
+            "a record type converts with its twin",
+        ),
+        (
+            record(&mut arena, &["a"]),
+            record(&mut arena, &["a", "b"]),
+            Agreement::Apart,
+            "record types with different field counts are apart",
+        ),
+        (
+            record(&mut arena, &["a"]),
+            record(&mut arena, &["b"]),
+            Agreement::Apart,
+            "record types with different labels are apart",
+        ),
+        (
+            at(&mut arena, 0),
+            at(&mut arena, 0),
+            Agreement::Convertible,
+            "a staged type converts with its twin",
+        ),
+        (
+            at(&mut arena, 0),
+            at(&mut arena, 1),
+            Agreement::Apart,
+            "staged types at different stages are apart",
+        ),
+        (
+            at(&mut arena, 0),
+            integer,
+            Agreement::Apart,
+            "a staged type is apart from its bare base",
+        ),
+        (
+            integer,
+            at(&mut arena, 0),
+            Agreement::Apart,
+            "a bare base is apart from its staged type",
+        ),
+    ];
+    let element = arena.comp_type_element(code, Level::zero());
+    let twin = arena.comp_type_element(code, Level::zero());
+    let higher = arena.comp_type_element(code, one);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (left, right, agreement, what) in values {
+        assert_eq!(
+            convert(&mut context, Pairing::Values(left, right)),
+            Ok(agreement),
+            "{what}"
+        );
+    }
+    assert_eq!(
+        convert(&mut context, Pairing::Comps(element, twin)),
+        Ok(Agreement::Convertible),
+        "a decoded computation converts with its twin"
+    );
+    assert_eq!(
+        convert(&mut context, Pairing::Comps(element, higher)),
+        Ok(Agreement::Apart),
+        "decoded computations at different targets are apart"
+    );
+}
+
+/// A row's signatures meet a wider row's in name order: `{B}` stands below
+/// `{A, B}` only when the walk passes over `A` to find `B`, and the wider
+/// row does not stand below the narrower one.
+#[test]
+fn a_row_meets_its_signatures_in_a_wider_row_by_name()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let signature = |name: &str| {
+        EffectSig::new(EffectName::from(name), alloc::vec![EffectOp {
+            name: OperationName::from("get"),
+            payload: unit,
+            reply: unit
+        }])
+        .unwrap()
+    };
+    let narrow = EffectRow::from_signatures([signature("B")]).unwrap();
+    let wide = EffectRow::from_signatures([signature("A"), signature("B")]).unwrap();
+    let narrow = arena.comp_type_returner_with_effects(unit, narrow);
+    let wide = arena.comp_type_returner_with_effects(unit, wide);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert_eq!(
+        convert(&mut context, Pairing::SubComps(narrow, wide)),
+        Ok(Agreement::Convertible),
+        "`{{B}}` meets its one signature past `A` in `{{A, B}}`"
+    );
+    assert_eq!(
+        convert(&mut context, Pairing::SubComps(wide, narrow)),
+        Ok(Agreement::Apart),
+        "`{{A, B}}` has a signature `{{B}}` lacks"
+    );
+}
+
+/// Outside subtyping two capabilities agree only when each authority grants
+/// within the other and the grade and region match: a capability converts
+/// with its twin, and a wider or narrower authority, another grade or
+/// another region sets the pair apart.
+#[test]
+fn invariant_capabilities_agree_on_authority_grade_and_region()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    use gandr_core_term::effect::capability::CapabilityGrade;
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionDepth;
+
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let signature = |name: &str| {
+        EffectSig::new(EffectName::from(name), alloc::vec![EffectOp {
+            name: OperationName::from("get"),
+            payload: unit,
+            reply: unit
+        }])
+        .unwrap()
+    };
+    let both = EffectRow::from_signatures([signature("A"), signature("B")]).unwrap();
+    let one = EffectRow::from_signatures([signature("A")]).unwrap();
+    let durable = CapabilityGrade::Durable;
+    let held = Region::Held;
+    let found = arena.value_type_capability(both.clone(), durable, held);
+    let twin = arena.value_type_capability(both.clone(), durable, held);
+    let narrower = arena.value_type_capability(one, durable, held);
+    let consumable = arena.value_type_capability(both.clone(), CapabilityGrade::Consumable, held);
+    let scoped =
+        arena.value_type_capability(both, durable, Region::Scoped(RegionDepth::from(1_u32)));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (left, right, agreement, what) in [
+        (
+            found,
+            twin,
+            Agreement::Convertible,
+            "a capability converts with its twin",
+        ),
+        (
+            found,
+            narrower,
+            Agreement::Apart,
+            "a wider authority is apart from a narrower one",
+        ),
+        (
+            narrower,
+            found,
+            Agreement::Apart,
+            "a narrower authority is apart from a wider one",
+        ),
+        (
+            found,
+            consumable,
+            Agreement::Apart,
+            "another grade is apart",
+        ),
+        (found, scoped, Agreement::Apart, "another region is apart"),
+    ] {
+        assert_eq!(
+            convert(&mut context, Pairing::Values(left, right)),
+            Ok(agreement),
+            "{what}"
+        );
+    }
+}
+
+/// A path type converts with a data type only when the carrier's words name
+/// that data type at the endpoints: over a carrier with no words, the path
+/// and an unrelated parameterless data type are apart in either order.
+#[test]
+fn a_path_type_is_apart_from_data_it_does_not_read_as()
+{
+    let mut arena = CoreArena::new();
+    let carrier = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+    let unrelated = arena.value_type_data(ConstantIndex::from(1_usize), alloc::vec![]);
+    let point = arena.value_constructor(
+        carrier,
+        gandr_kernel_term::ConstructorTag::from(0_usize),
+        alloc::vec![],
+    );
+    let path = arena.value_type_path(carrier, point, point);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert_eq!(
+        convert(&mut context, Pairing::Values(path, unrelated)),
+        Ok(Agreement::Apart),
+        "a path no words read is apart from a data type"
+    );
+    assert_eq!(
+        convert(&mut context, Pairing::Values(unrelated, path)),
+        Ok(Agreement::Apart),
+        "and so is the data type from the path"
+    );
+}
