@@ -463,6 +463,7 @@ use gandr_core_term::shift_value_type_under;
 use gandr_core_term::strengthen_comp_type;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
@@ -6404,7 +6405,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     carrier,
                     left,
                     right,
-                } = self.path_expected(TermNode::Computation(at), classifier)?
+                } = self.transported_path(TermNode::Computation(at), classifier)?
                 else {
                     return Err(CheckRefusal::ShapeMismatch {
                         at: TermNode::Computation(at),
@@ -6617,7 +6618,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     carrier,
                     left,
                     right,
-                } = self.path_expected(TermNode::Computation(at), classifier)?
+                } = self.transported_path(TermNode::Computation(at), classifier)?
                 else {
                     return Err(CheckRefusal::ShapeMismatch {
                         at: TermNode::Computation(at),
@@ -7338,6 +7339,78 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 found: TypeNode::Value(classifier),
             }),
         }
+    }
+
+    /// Read the type of the path a transport follows: a parameterless type of
+    /// words as the path at its cells' point it is, any other type as
+    /// [`Self::path_expected`] reads it.
+    ///
+    /// # Specification
+    /// - requires: nothing; a classifier of another former is refused.
+    /// - ensures: for a weak head `Data(words, [])` whose signature carries
+    ///   free cells, `Path(S, pt, pt)`, `S` the cells' sort and `pt` their
+    ///   point ([`crate::loops::point`]), the path type conversion identifies
+    ///   the words with ([`CheckingContext::words`]); as
+    ///   [`Self::path_expected`] otherwise.
+    /// - provides: the reading a transport and a telescope transport give the
+    ///   path they follow, so a word written where the path stands is followed
+    ///   as the path it is.
+    /// - fails: as [`Self::path_expected`]; as [`crate::loops::point`] for
+    ///   cells whose point does not build.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a composite along the empty word and an inverse along
+    ///   the inverse letter's word, each written as a constructor of the words,
+    ///   read the path at the circle's point and replay in the kernel; the
+    ///   composite set against reflexivity is refused at its endpoints, where
+    ///   reading the words as their own type would refuse by shape.
+    /// - witness: `native_formers::native_formers::a_word_written_as_a_transport_path_is_that_path_in_both_checkers`
+    #[spec(ensures: |ret| match ret {
+        | Ok(PathReading::Known { carrier, left, right }) => self.context.arena().value_type(carrier).is_some()
+            && self.context.arena().value(left).is_some()
+            && self.context.arena().value(right).is_some(),
+        | Ok(PathReading::Unknown(_)) | Err(_) => true,
+    })]
+    fn transported_path(
+        &mut self,
+        at: TermNode,
+        classifier: ValueTypeId,
+    ) -> Result<PathReading, CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(classifier)?;
+        let ValueTypeView::Data {
+            declaration: words,
+            arguments: &[],
+        } = value_type_view(self.context.arena(), head)?
+        else {
+            return self.path_expected(at, classifier);
+        };
+        let signatures = self.context.data_signatures();
+        let Some(sort) = signatures
+            .get(&words)
+            .and_then(|signature| signature.presentation().cells())
+            .map(gandr_core_term::FreeCells::sort)
+        else {
+            return self.path_expected(at, classifier);
+        };
+        let arities: Vec<FieldCount> = signatures
+            .get(&sort)
+            .ok_or(CheckRefusal::MachineInvariant)?
+            .constructors()
+            .iter()
+            .map(|fields| FieldCount::from(fields.len()))
+            .collect();
+        let carrier = self.context.arena_mut().value_type_data(sort, Vec::new());
+        let point = crate::loops::point(self.context, (carrier, &arities), words)?;
+        Ok(PathReading::Known {
+            carrier,
+            left: point,
+            right: point,
+        })
     }
 
     /// Read the motive of the telescope transport `at` as its three layers.

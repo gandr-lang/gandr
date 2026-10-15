@@ -89,6 +89,18 @@ def two = loop then loop ;
 def undone : Path(Circle, Base, Base) ;
 def undone = back(loop then loop) ;
 
+/// A word written where the path stands is followed as the path it is: the
+/// loop composed with the empty word at the point is the loop.
+@[ checks ]
+def joined : Path(Path(Circle, Base, Base), loop then here(Base), loop) ;
+def joined = here(loop) ;
+
+/// The inverse of the loop's one-letter word, written out, is the loop's
+/// inverse.
+@[ checks ]
+def unwound_word : Path(Path(Circle, Base, Base), back(loop ∷ here(Base)), back(loop)) ;
+def unwound_word = here(back(loop)) ;
+
 /// Transport in a family of paths from the point moves the endpoint: it
 /// post-composes with the loop.
 @[ checks ]

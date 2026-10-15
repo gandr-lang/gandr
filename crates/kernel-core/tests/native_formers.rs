@@ -1447,4 +1447,49 @@ mod native_formers
             "the composite is not the loop: {named:?}"
         );
     }
+
+    #[test]
+    fn a_word_written_as_a_transport_path_is_that_path()
+    {
+        let mut environment = one_loop();
+        // `Path(Path(S, Base, Base), ⟨loop then ε⟩, right)` at reflexivity on
+        // `right`, the loop transported along the empty word, written as a
+        // constructor of the words, whose type is the words' own.
+        let mut composes_to = |right: Built| {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+            let point = build(arena, Built::Point);
+            let named = build(arena, Built::Named);
+            let empty = build(arena, Built::Empty);
+            let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let joined = arena.value_type_path(carrier, point, moving);
+            let composite = arena.computation_path_transport(joined, empty, named);
+            let composite = arena.value_returned(composite);
+            let at_point = arena.value_type_path(carrier, point, point);
+            let right = build(arena, right);
+            let declared = arena.value_type_path(at_point, composite, right);
+            let body = arena.value_here(right);
+            let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(staged)
+        };
+        assert!(
+            composes_to(Built::Named).is_ok(),
+            "the empty word is followed as the path at the point, and the loop composed with \
+             it is the loop"
+        );
+        let empty = composes_to(Built::Empty);
+        assert!(
+            matches!(
+                empty,
+                Err(KernelError::Identity(
+                    gandr_kernel_core::IdentityError::EndpointsDiffer {
+                        side: gandr_kernel_core::EndpointSide::Left,
+                        ..
+                    }
+                ))
+            ),
+            "the composite is not reflexivity: {empty:?}"
+        );
+    }
 }
