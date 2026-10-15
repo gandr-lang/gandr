@@ -2993,3 +2993,33 @@ fn transport_reads_its_family_s_shape_before_it_reduces()
         "to the path it was carried along"
     );
 }
+
+#[test]
+fn a_decoded_endpoint_passes_exactly_where_its_code_reads_as_the_other_type()
+{
+    use crate::conv::ConversionGoal;
+    use crate::replay::EndpointReading;
+    use crate::replay::Unfoldings;
+
+    let mut arena = TermArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let code = arena.value_quote(integer);
+    let returns = arena.computation_return(code);
+    let returned = arena.value_returned(returns);
+    let decoded = arena.value_type_element(returned, Level::zero());
+    for (other, reading) in [
+        (integer, EndpointReading::Converts),
+        (string, EndpointReading::Apart),
+    ] {
+        assert_eq!(
+            super::related_endpoints(
+                &mut arena,
+                &Unfoldings::default(),
+                &[],
+                ConversionGoal::ValueType(decoded, other),
+            ),
+            Ok(reading)
+        );
+    }
+}

@@ -408,6 +408,27 @@
 //! tag values rather than the length of the sparse table, and a named unused
 //! constant would not establish that build-time guard.
 //!
+//! ## Where witnesses live
+//!
+//! A module's tests live in a child file, `src/<module>/tests.rs`, declared
+//! `#[cfg(test)] mod tests;`. The library build never reads that file, so a
+//! test-only edit rebuilds this crate's test target and nothing else. An
+//! edit to the module's own file, a doc line included, rebuilds this crate
+//! and every workspace crate above it. On a warm enforcing build, with every
+//! core available, touching `stage/tests.rs` recompiled 1 unit in 16 s and
+//! touching `stage.rs` recompiled 18 units in 43 s. On a four-core hosted
+//! runner, a landing that dirtied this crate spent 348 s building.
+//!
+//! A mutation survivor's witness therefore lands in the child file alone.
+//! The `- witness:` lines that register survivor witnesses under the items'
+//! `# Adequacy` are added once per crate, in its last survivor change, so
+//! each campaign rebuilds the cone once rather than once per batch. A defect
+//! fix registers its own witness in the same change, because the fix edits
+//! the library anyway. The alternative, an inline `mod tests { … }`, keeps a
+//! module's tests beside it at the price of a cone rebuild for every added
+//! test. Revisit this if the build tracks test-only items finely enough that
+//! an inline test module no longer dirties the library.
+//!
 //! # Arithmetic and absence
 //!
 //! Arithmetic uses

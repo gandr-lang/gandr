@@ -607,12 +607,11 @@ fn rows_absent_from_the_binding_refuse()
                 .substitute(schema.classifiers(), &only(Guard(guard)), &mut buffer)
                 .unwrap()
                 .admit(&shared, step, &mut Budget(10_000));
+            // A fresh row over an equal copy of the classifiers: the schema
+            // compares by content where the slice is not its own.
+            let copied = schema.classifiers().to_vec();
             let fresh = schema
-                .substitute(
-                    schema.classifiers(),
-                    &only(Guard(guard)),
-                    &mut Row::default(),
-                )
+                .substitute(&copied, &only(Guard(guard)), &mut Row::default())
                 .unwrap()
                 .admit(&shared, step, &mut Budget(10_000));
             assert_eq!(reused, fresh);
