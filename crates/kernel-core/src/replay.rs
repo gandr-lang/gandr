@@ -1642,6 +1642,10 @@ enum Continuation
     /// It eliminates the variable there: the continuation `E[x]` of a bind
     /// that a returned endpoint's elimination was rebuilt into.
     Eliminates,
+    /// It returns the variable as it is, `return x`: the η-expansion of `F`
+    /// that [`BindRule::ReturnEta`] builds, which reading through only folds
+    /// back into the call it expanded.
+    Returns,
     /// Anything else.
     Other,
 }
@@ -5448,10 +5452,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             || self.reading == Reading::Forced
                                 && self.shut_recursion(call).is_some() =>
                     {
-                        if self.continuation_of(body) == Continuation::Eliminates {
+                        if matches!(
+                            self.continuation_of(body),
+                            Continuation::Eliminates | Continuation::Returns
+                        ) {
                             // Read through, this bind restores the elimination
                             // of a returned endpoint it came from, which binds
-                            // the same call again: it never returns. It stays
+                            // the same call again: it never returns; or it is
+                            // the call's own η-expansion, which the goal reads
+                            // back as the call and expands again. It stays
                             // over its call, and the next bind out is tried
                             // over both.
                             let call = self.arena.computation_bind(call, body);
@@ -5542,17 +5551,23 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
 
     /// What `body` does with its own bound variable at its head: eliminates
     /// it, as the continuation `E[x]` of a bind [`Self::bind_returned`]
-    /// builds, or anything else.
+    /// builds, returns it as it is, or anything else.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Continuation::Eliminates`] exactly when `body` is a force,
     ///   a projection, a case, a data case, a dependent split or a list fold
-    ///   inspecting the innermost variable, or a fixpoint applied to it.
+    ///   inspecting the innermost variable, a fixpoint applied to it, or a
+    ///   transport along it or of it — the continuation the transport rows
+    ///   build when they run a returned path or operand;
+    ///   [`Continuation::Returns`] exactly when `body` is `return` of the
+    ///   innermost variable.
     /// - provides: the binds an endpoint reading in [`Self::whnf`] passes over:
-    ///   run with the call as a returned endpoint, such a continuation meets
-    ///   that endpoint at its head and binds the same call again, so it never
-    ///   returns, and a reading nested into it would never end.
+    ///   run with the call as a returned endpoint, an eliminating continuation
+    ///   meets that endpoint at its head and binds the same call again, so it
+    ///   never returns, and a reading nested into it would never end; read
+    ///   through, a returning one is the call's η-expansion folded back, which
+    ///   the goal expands again without end.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -5562,6 +5577,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   the engine reads it; nesting into the bind a fixpoint's gate builds
     ///   loops until the budget declines the endpoint.
     /// - witness: `replay::tests::an_endpoint_passes_over_a_bind_its_own_elimination_built`
+    /// - witness: `replay::tests::an_endpoint_stays_over_the_eta_expansion_of_its_stuck_call_473`
+    /// - witness: `replay::tests::an_endpoint_stays_over_the_run_of_its_transported_operand_473`
     #[spec(ensures: |ret| ret == Continuation::Other || self.arena.computation(body).is_some())]
     fn continuation_of(
         &self,
@@ -5595,6 +5612,21 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             && let Some(&Computation::Fixpoint { .. }) = self.arena.computation(head)
         {
             argument
+        }
+        else if let Some(&Computation::PathTransport { path, value, .. }) =
+            self.arena.computation(body)
+        {
+            let bound = Some(&Value::Variable(DeBruijnIndex::from(0_u32)));
+            if self.arena.value(path) == bound || self.arena.value(value) == bound {
+                return Continuation::Eliminates;
+            }
+            return Continuation::Other;
+        }
+        else if let Some(&Computation::Return(returned)) = self.arena.computation(body) {
+            if self.arena.value(returned) == Some(&Value::Variable(DeBruijnIndex::from(0_u32))) {
+                return Continuation::Returns;
+            }
+            return Continuation::Other;
         }
         else {
             return Continuation::Other;
@@ -8226,6 +8258,76 @@ mod tests
                 &mut arena,
                 &Unfoldings::default(),
                 ReplaySides::Values(endpoint, expected),
+                ReplayBudget::default()
+            ),
+            KernelVerdict::Convertible
+        );
+    }
+
+    #[test]
+    fn an_endpoint_stays_over_the_eta_expansion_of_its_stuck_call_473()
+    {
+        // `⟨f a⟩` against `⟨x ← f Z; force x⟩`, `f` opaque: one bind short, the
+        // left takes the η-rule of `F` to `x ← f a; return x`. Read through,
+        // that bind is `return ⟨f a⟩`, the goal reads it back as `f a` and
+        // expands it again until the budget declines; staying over its call,
+        // the two binds compare and the calls stand apart long before the
+        // budget.
+        let mut arena = TermArena::new();
+        let nat = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+        let opaque = arena.value_constant(ConstantIndex::from(0_usize));
+        let forced = arena.computation_force(opaque);
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let held = arena.computation_application(forced, variable);
+        let at_zero = arena.computation_application(forced, zero);
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let eliminated = arena.computation_force(bound);
+        let right = arena.computation_bind(at_zero, eliminated);
+        let left = arena.value_returned(held);
+        let right = arena.value_returned(right);
+
+        let verdict = convert(
+            &mut arena,
+            &Unfoldings::default(),
+            ReplaySides::Values(left, right),
+            ReplayBudget::default(),
+        );
+        assert_ne!(verdict, KernelVerdict::Declined(ReplayDecline::Budget));
+        assert_ne!(verdict, KernelVerdict::Convertible);
+    }
+
+    #[test]
+    fn an_endpoint_stays_over_the_run_of_its_transported_operand_473()
+    {
+        // `⟨tr(z. Path(N, Z, z), p, ⟨f Z⟩)⟩` against itself, `f` opaque and
+        // `p` a variable: the operand runs first, `y ← f Z; tr(P↑, p↑, y)`.
+        // Read through, that bind's continuation is the transport of the
+        // returned call again, which runs it again until the budget
+        // declines; staying over its call, the two sides are one bind each
+        // and convert.
+        let mut arena = TermArena::new();
+        let nat = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+        let opaque = arena.value_constant(ConstantIndex::from(0_usize));
+        let forced = arena.computation_force(opaque);
+        let endpoint = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let family = arena.value_type_path(nat, zero, endpoint);
+        let path = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let mut sides = [zero; 2];
+        for side in &mut sides {
+            let call = arena.computation_application(forced, zero);
+            let operand = arena.value_returned(call);
+            let transported = arena.computation_path_transport(family, path, operand);
+            *side = arena.value_returned(transported);
+        }
+        let [left, right] = sides;
+
+        assert_eq!(
+            convert(
+                &mut arena,
+                &Unfoldings::default(),
+                ReplaySides::Values(left, right),
                 ReplayBudget::default()
             ),
             KernelVerdict::Convertible
