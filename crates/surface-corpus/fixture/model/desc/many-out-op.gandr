@@ -4,11 +4,11 @@ data NatDiv : Type {
   Succ : (n : NatDiv) --> NatDiv;
   oper walk(m : NatDiv, g : NatDiv, d : NatDiv, q : NatDiv, r : NatDiv) -> (quot : NatDiv, rem : NatDiv);
   oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);
-  rule walk(Zero, g, d, q, r) ==> (q, r);
-  rule walk(Succ(m), Zero, d, q, r) ==> walk(m, d, d, Succ(q), Zero);
-  rule walk(Succ(m), Succ(g), d, q, r) ==> walk(m, g, d, q, Succ(r));
-  rule divmod(m, Zero) ==> (Zero, m);
-  rule divmod(m, Succ(d)) ==> walk(m, d, d, Zero, Zero);
+  rule walk(Zero, g, d, q, r) <=> (q, r);
+  rule walk(Succ(m), Zero, d, q, r) <=> walk(m, d, d, Succ(q), Zero);
+  rule walk(Succ(m), Succ(g), d, q, r) <=> walk(m, g, d, q, Succ(r));
+  rule divmod(m, Zero) <=> (Zero, m);
+  rule divmod(m, Succ(d)) <=> walk(m, d, d, Zero, Zero);
 }
 
 @[ runs("(Succ(Succ(Zero)), Succ(Zero))") ]

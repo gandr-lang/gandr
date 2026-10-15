@@ -34,7 +34,7 @@
 117..118 Variable "x"
 118..119 Other ")"
 119..120 Other ")"
-121..124 Operator "==>"
+121..124 Operator "<=>"
 125..126 Variable "x"
 126..127 Other ";"
 128..129 Other "}"

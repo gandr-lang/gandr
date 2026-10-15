@@ -248,9 +248,9 @@ fn a_port_name_on_both_sides_is_two_ports()
 }
 
 #[test]
-fn both_reversible_glyphs_are_reserved()
+fn a_reversible_map_is_reserved_and_an_equation_is_a_face()
 {
-    let source = "sign R { sort Bit : Type; oper negate : (b : Bit) <-> (c : Bit); rule involutive : (b : Bit) <=> (c : Bit); }";
+    let source = "sign R { sort Bit : Type; oper negate : (b : Bit) <-> (c : Bit); rule involutive : (b : Bit) <=> (c : Bit); rule face : b <=> c; }";
     let report = described(source);
     let reserved: Vec<_> = report
         .diagnostics
@@ -262,8 +262,15 @@ fn both_reversible_glyphs_are_reserved()
             source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
         })
         .collect();
-    assert_eq!(reserved, ["<->", "<=>"]);
-    assert_eq!(report.declarations[0].description.opers.as_ref(), []);
+    assert_eq!(reserved, ["<->"]);
+    assert!(
+        report.declarations[0]
+            .written
+            .faces
+            .iter()
+            .any(|face| face.orientation == crate::description::written::RuleOrientation::Unpinned),
+        "a term equation lowers unpinned"
+    );
 }
 
 #[test]

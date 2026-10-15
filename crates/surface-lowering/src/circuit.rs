@@ -42,8 +42,7 @@ pub enum SignatureFault
     MissingOutput,
     /// A feed line needs wheel semantics, not a term-shaped cell.
     Wheel,
-    /// The glyph is reserved for reversible rewrites and maps: `<=>` and
-    /// `<->`.
+    /// The glyph is reserved for reversible maps: `<->`.
     Reversible,
     /// The written arrow's row differs from the subject's declared kind.
     ArrowMismatch

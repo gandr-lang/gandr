@@ -217,6 +217,10 @@ pub fn hover<Store, Blocks>(
         );
     }
     let offset = ByteOffset::from(usize::from(position.byte(&index)));
+    let oriented = table
+        .orientations()
+        .iter()
+        .find_map(|&(span, note)| (span.start() <= offset && offset < span.end()).then_some(note));
     if let Maybe::Present(entry) = table.at(offset, PageWidth::from(HOVER_WIDTH), style.form)
         && let Ok(range) = Range::of_bytes(
             &index,
@@ -224,13 +228,55 @@ pub fn hover<Store, Blocks>(
             RenderOffset::from(usize::from(entry.span().end())),
         )
     {
+        let mut value = typed(&quoted, &entry, style.markup);
+        if let Some(note) = oriented {
+            value.push_str("\n\n");
+            value.push_str(match note {
+                | gandr_surface_dispatcher::ChosenDirection::LeftToRight => {
+                    "oriented left to right"
+                },
+                | gandr_surface_dispatcher::ChosenDirection::RightToLeft => {
+                    "oriented right to left"
+                },
+            });
+        }
         return Maybe::Present(Hover {
             contents: MarkupContent {
                 kind: "markdown",
-                value: typed(&quoted, &entry, style.markup),
+                value,
             },
             range,
         });
+    }
+    if let Some(note) = oriented {
+        let found = table
+            .orientations()
+            .iter()
+            .find(|&&(span, _)| span.start() <= offset && offset < span.end());
+        if let Some(&(span, _)) = found
+            && let Ok(range) = Range::of_bytes(
+                &index,
+                RenderOffset::from(usize::from(span.start())),
+                RenderOffset::from(usize::from(span.end())),
+            )
+        {
+            let mut code = Code::new(style.markup);
+            code.plain(SourceText::from(match note {
+                | gandr_surface_dispatcher::ChosenDirection::LeftToRight => {
+                    "oriented left to right"
+                },
+                | gandr_surface_dispatcher::ChosenDirection::RightToLeft => {
+                    "oriented right to left"
+                },
+            }));
+            return Maybe::Present(Hover {
+                contents: MarkupContent {
+                    kind: "markdown",
+                    value: code.block(),
+                },
+                range,
+            });
+        }
     }
     let enclosing = found.iter().rfind(|found| {
         found.symbol.kind != SymbolKind::MODULE
@@ -752,7 +798,7 @@ mod tests
                     oper id : (a : Ob) --> Hom(a, a);\n  \
                     oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
                     rule unitL : comp(id(a), f) ==> f;\n}\n";
-        let rows: [Row<'_>; 14] = [
+        let rows: [Row<'_>; 15] = [
             (
                 "a data family's name",
                 data,
@@ -790,6 +836,12 @@ mod tests
                 Ok(fenced(SourceText::from(
                     "+U (NatDiv -> NatDiv -> -F #{NatDiv, NatDiv})",
                 ))),
+            ),
+            (
+                "a rule's arrow",
+                data,
+                (4, 23),
+                Ok(fenced(SourceText::from("oriented left to right"))),
             ),
             (
                 "a rule's pattern variable",

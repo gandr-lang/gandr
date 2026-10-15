@@ -12,8 +12,8 @@ data Circle : Type {
   Base : Circle;
   Loop : (x : Circle) --> Circle;
   Unloop : (x : Circle) --> Circle;
-  rule Loop(Unloop(x)) ==> x;
-  rule Unloop(Loop(x)) ==> x;
+  rule Loop(Unloop(x)) <=> x;
+  rule Unloop(Loop(x)) <=> x;
 }
 
 /// The integers presented by zero, a successor and a predecessor, which
@@ -23,8 +23,8 @@ data Int : Type {
   Z : Int;
   S : (x : Int) --> Int;
   P : (x : Int) --> Int;
-  rule S(P(x)) ==> x;
-  rule P(S(x)) ==> x;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
 }
 
 /// The winding number: each arm returns a constructor over the call on the

@@ -1165,7 +1165,13 @@ impl<'source> Collector<'_, 'source>
                 }
                 let mut faces = Vec::new();
                 let mut declined = false;
-                for (rule, face) in described.description.rules.iter().enumerate() {
+                let written = if cells.oriented.is_empty() {
+                    described.description.rules.as_ref()
+                }
+                else {
+                    cells.oriented.as_slice()
+                };
+                for (rule, face) in written.iter().enumerate() {
                     if matches!(face.lhs.view(), TermView::Op { name: head, .. } if *head == operation.name)
                     {
                         declined |= cells

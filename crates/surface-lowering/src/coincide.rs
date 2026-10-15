@@ -59,6 +59,22 @@
 //! rules with each one's earlier overlaps subtracted, and this check reads
 //! that.
 //!
+//! # The equation
+//!
+//! `<=>` states the equation and leaves the direction to the order.
+//! [`orient_block`] tries the written left-to-right direction, then the
+//! written right-to-left direction, and refuses
+//! [`LoweringRefusal::RulesUnoriented`] when
+//! neither puts one side above the other. `==>` pins left to right: a pinned
+//! rule the order refuses stays [`LoweringRefusal::RulesUnoriented`], as a rule
+//! written only that way always has. The kernel-facing table receives the
+//! oriented rule only — left above right — and the declaration's rules keep the
+//! written arrow so the printer reads `<=>` back. **Alternative.** Completion
+//! choosing a direction per critical pair, which would add equations the
+//! author did not write. **Reversal.** The opt-in to ordered rules above:
+//! pinning becomes the default again, and `<=>` is sugar for whichever
+//! direction the order admits.
+//!
 //! # A presented type
 //!
 //! A `data` family whose rules rewrite its own constructor words — the
@@ -151,10 +167,15 @@ use gandr_theory_computads::read_command;
 use gandr_theory_computads::term_reading;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
+use gandr_theory_levitation::Precedence;
+use gandr_theory_levitation::RuleFace;
+use gandr_theory_levitation::RuleIndex;
 use gandr_theory_levitation::SignDesc;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::Termination;
+use gandr_theory_levitation::derive_cell_var_meta;
 use gandr_theory_levitation::orient_rules;
+use gandr_theory_levitation::path_greater;
 use quenchant_shape::shape::Maybe;
 
 use crate::LoweringRefusal;
@@ -162,6 +183,8 @@ use crate::desc_cells::CellDiagnosticIndex;
 use crate::desc_cells::CircuitCell;
 use crate::desc_cells::DeclarationCells;
 use crate::desc_cells::located;
+use crate::description::written::RuleDirection;
+use crate::description::written::RuleOrientation;
 
 /// The most steps one reduct of a critical pair may take before the pair is
 /// left undecided.
@@ -170,6 +193,108 @@ pub const JOIN_STEPS: usize = 4_096;
 /// The most steps a call's normalization may take before it reports no normal
 /// form.
 pub const NORMAL_FORM_STEPS: usize = 1 << 16;
+
+/// A block's rules oriented so each left side is above its right, with the
+/// direction the order chose for each written rule.
+pub(crate) struct OrientedBlock<G>
+{
+    /// The description the kernel-facing table is read from.
+    pub description: SignDesc<G>,
+    /// The direction chosen for each written rule, in rule order.
+    pub directions: Vec<RuleDirection>,
+}
+
+/// Orient `description`'s rules by the path order, honouring each written
+/// arrow.
+///
+/// # Specification
+/// - requires: `orientations` is parallel to `description.rules`; a missing
+///   entry is read as pinned left to right.
+/// - ensures: [`Ok`] when every rule orients: an unpinned rule left to right
+///   when the order admits that, otherwise right to left, and a pinned rule
+///   only in its pinned direction. The returned description's corresponding
+///   rule has its left side above its right. [`Err`] names the first rule, in
+///   rule order, that does not orient.
+/// - panics: none.
+///
+/// # Errors
+/// The index of the first rule the order does not orient.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a cancellation written right to left flips, the same
+///   cancellation pinned left to right is refused, and a growing pinned rule is
+///   refused at itself.
+/// - witness: `coincide::tests::an_equation_written_backwards_orients_forwards`
+/// - witness: `coincide::tests::a_rule_that_rebuilds_its_own_call_refuses_the_block`
+#[spec(ensures: |ret| match ret.as_ref() {
+    Ok(oriented) => oriented.directions.len() == description.rules.len()
+        && oriented.description.rules.len() == description.rules.len()
+        && orient_rules(&oriented.description) == Termination::Oriented,
+    Err(index) => usize::from(*index) < description.rules.len(),
+})]
+pub(crate) fn orient_block<G>(
+    description: &SignDesc<G>,
+    orientations: &[RuleOrientation],
+) -> Result<OrientedBlock<G>, RuleIndex>
+where
+    G: Clone,
+{
+    let precedence = Precedence::of(description);
+    let mut rules = Vec::with_capacity(description.rules.len());
+    let mut directions = Vec::with_capacity(description.rules.len());
+    for (index, face) in description.rules.iter().enumerate() {
+        let orientation = orientations
+            .get(index)
+            .copied()
+            .unwrap_or(RuleOrientation::Pinned(RuleDirection::LeftToRight));
+        let forward = bool::from(path_greater(&precedence, &face.lhs, &face.rhs));
+        let backward = bool::from(path_greater(&precedence, &face.rhs, &face.lhs));
+        let direction = match orientation {
+            | RuleOrientation::Pinned(RuleDirection::LeftToRight) if forward => {
+                RuleDirection::LeftToRight
+            },
+            | RuleOrientation::Pinned(RuleDirection::RightToLeft) if backward => {
+                RuleDirection::RightToLeft
+            },
+            | RuleOrientation::Unpinned if forward => RuleDirection::LeftToRight,
+            | RuleOrientation::Unpinned if backward => RuleDirection::RightToLeft,
+            | RuleOrientation::Pinned(_) | RuleOrientation::Unpinned => {
+                return Err(RuleIndex::from(index));
+            },
+        };
+        rules.push(facing(face, direction));
+        directions.push(direction);
+    }
+    let mut oriented = description.clone();
+    oriented.rules = rules.into();
+    Ok(OrientedBlock {
+        description: oriented,
+        directions,
+    })
+}
+
+/// `face` with its sides ordered as `direction` says.
+///
+/// # Specification
+/// trivial.
+fn facing(
+    face: &RuleFace,
+    direction: RuleDirection,
+) -> RuleFace
+{
+    match direction {
+        | RuleDirection::LeftToRight => face.clone(),
+        | RuleDirection::RightToLeft => {
+            let variables = derive_cell_var_meta(&face.rhs);
+            RuleFace::new(
+                face.rhs.clone(),
+                face.lhs.clone(),
+                variables,
+                face.provenance,
+            )
+        },
+    }
+}
 
 /// How a description's rules stand as one rewriting system.
 #[derive(Clone, Debug, Eq, PartialEq)]

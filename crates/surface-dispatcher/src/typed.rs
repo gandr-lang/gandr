@@ -444,6 +444,19 @@ enum Held
     Refused(String),
 }
 
+/// The direction the order chose for a written rule.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChosenDirection
+{
+    /// The written left side rewrites to the written right.
+    LeftToRight,
+    /// The written right side rewrites to the written left.
+    RightToLeft,
+}
+
 /// The type of every node of one source a face can point at, and of every
 /// declaration.
 ///
@@ -478,6 +491,8 @@ pub struct TypeTable
     families: Families,
     /// The names each described member's context binds, outermost first.
     contexts: Vec<Vec<String>>,
+    /// Each oriented rule's span and the direction the order chose.
+    orientations: Vec<(ByteSpan, ChosenDirection)>,
 }
 
 /// The intuitionistic binder at or around `at`.
@@ -963,6 +978,20 @@ impl TypeTable
                 }
             }
         }
+        let mut orientations = Vec::new();
+        for cells in &module.cells().declarations {
+            for (&span, direction) in cells.rule_spans.iter().zip(&cells.directions) {
+                let note = match *direction {
+                    | gandr_surface_lowering::description::written::RuleDirection::LeftToRight => {
+                        ChosenDirection::LeftToRight
+                    },
+                    | gandr_surface_lowering::description::written::RuleDirection::RightToLeft => {
+                        ChosenDirection::RightToLeft
+                    },
+                };
+                orientations.push((span, note));
+            }
+        }
         Ok(Self {
             entries,
             declared,
@@ -971,7 +1000,19 @@ impl TypeTable
             naming: Naming::of(&module, source),
             families: Families::of(&module),
             contexts,
+            orientations,
         })
+    }
+
+    /// Each oriented rule's span and the direction the order chose.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn orientations(&self) -> &[(ByteSpan, ChosenDirection)]
+    {
+        &self.orientations
     }
 
     /// The innermost typed node whose span holds `offset`, spelled in `form`

@@ -262,6 +262,23 @@ pub struct DescribedDeclaration
     pub written: written::WrittenMembers,
 }
 
+impl DescribedDeclaration
+{
+    /// The written rules, in rule order, each with the arrow it stated.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn rules(&self) -> impl Iterator<Item = written::SurfaceRule<'_>>
+    {
+        self.description
+            .rules
+            .iter()
+            .zip(&self.written.faces)
+            .map(|(face, written)| written::SurfaceRule { face, written })
+    }
+}
+
 /// Descriptions and member-local refusals in declaration order.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DescriptionReport
@@ -339,6 +356,15 @@ impl<'pieces> Run<'pieces>
     fn remaining(&self) -> &'pieces [Piece]
     {
         self.cursor.remaining()
+    }
+
+    /// The bytes the next piece covers, or the member span when none remains.
+    ///
+    /// # Specification
+    /// trivial.
+    fn here(&self) -> ByteSpan
+    {
+        self.cursor.here()
     }
 
     /// Inspect the next grammar tile without advancing.

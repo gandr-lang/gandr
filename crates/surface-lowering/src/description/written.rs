@@ -4,10 +4,14 @@
 //! the description reads, so a face can answer each node with the type its
 //! member states ([`crate::described`]).
 
+use alloc::format;
+use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::Name;
+use gandr_theory_levitation::RuleFace;
 use quenchant_shape::shape::Maybe;
 
 quenchant_shape::reason_enum! {
@@ -45,6 +49,111 @@ quenchant_shape::reason_enum! {
             /// its operation rather than itself.
             Anonymous,
         }
+    }
+}
+
+/// Which way a written rule runs.
+///
+/// # Specification
+/// - provides: the two directions the order can admit.
+/// - panics: none.
+/// - executable: none — a closed pair of directions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuleDirection
+{
+    /// The written left side rewrites to the written right.
+    LeftToRight,
+    /// The written right side rewrites to the written left.
+    RightToLeft,
+}
+
+/// How a written rule states its direction.
+///
+/// `<=>` leaves the direction to the order. `==>` pins left to right, the
+/// direction the order must admit.
+///
+/// # Specification
+/// - provides: the two ways a rule states its direction.
+/// - panics: none.
+/// - executable: none — a closed pair of statements.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuleOrientation
+{
+    /// `<=>`: the order chooses the direction.
+    Unpinned,
+    /// The written arrow pins a direction the order must admit.
+    Pinned(RuleDirection),
+}
+
+/// One written rule, as the declaration keeps it for the printer.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+pub struct SurfaceRule<'rule>
+{
+    /// The written terms.
+    pub face: &'rule RuleFace,
+    /// The written arrow and its nodes.
+    pub written: &'rule WrittenFace,
+}
+
+impl SurfaceRule<'_>
+{
+    /// The data spelling, `rule lhs <=> rhs`.
+    ///
+    /// # Specification
+    /// - ensures: the written sides in written order, separated by the arrow
+    ///   the orientation states.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an unpinned face prints `<=>` between its written
+    ///   sides.
+    /// - witness: `description::tests::an_equation_states_no_direction`
+    #[spec(ensures: |ref text| text.contains("<=>") || text.contains("==>"))]
+    #[inline]
+    #[must_use]
+    pub fn print_data(&self) -> String
+    {
+        format!(
+            "rule {} {} {}",
+            self.face.lhs,
+            match self.written.orientation {
+                | RuleOrientation::Unpinned => "<=>",
+                | RuleOrientation::Pinned(_) => "==>",
+            },
+            self.face.rhs
+        )
+    }
+
+    /// The sign spelling, `rule name : lhs <=> rhs`.
+    ///
+    /// # Specification
+    /// - ensures: `name`, then the written sides in written order, separated by
+    ///   the arrow the orientation states.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an unpinned face prints `<=>` in the sign spelling.
+    /// - witness: `description::tests::an_equation_states_no_direction`
+    #[spec(ensures: |ref text| text.contains(name.as_ref()) && (text.contains("<=>") || text.contains("==>")))]
+    #[inline]
+    #[must_use]
+    pub fn print_sign(
+        &self,
+        name: &Name,
+    ) -> String
+    {
+        format!(
+            "rule {name} : {} {} {}",
+            self.face.lhs,
+            match self.written.orientation {
+                | RuleOrientation::Unpinned => "<=>",
+                | RuleOrientation::Pinned(_) => "==>",
+            },
+            self.face.rhs
+        )
     }
 }
 
@@ -144,6 +253,10 @@ pub struct WrittenFace
     pub left: WrittenTerm,
     /// The side it rewrites to.
     pub right: WrittenTerm,
+    /// The bytes the written arrow covers.
+    pub arrow: ByteSpan,
+    /// How the written arrow states its direction.
+    pub orientation: RuleOrientation,
 }
 
 /// A name a circuit writes, where it writes it.

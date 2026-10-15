@@ -185,6 +185,7 @@ pub use crate::stage::StageRun;
 pub use crate::stage::StageVerdict;
 pub use crate::stage::Staged;
 pub use crate::stage::Staging;
+pub use crate::typed::ChosenDirection;
 pub use crate::typed::Declared;
 pub use crate::typed::Subject;
 pub use crate::typed::TypeTable;
