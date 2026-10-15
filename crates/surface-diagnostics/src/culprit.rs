@@ -204,6 +204,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
         LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",
         LoweringRefusal::UnknownMold { .. } => "a mold the grammar does not hold",
+        LoweringRefusal::Unminted { .. } => "a declaration the lowering dropped",
     })
 }
 

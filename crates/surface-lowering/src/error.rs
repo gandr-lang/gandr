@@ -1049,6 +1049,17 @@ pub enum LoweringRefusal<'source>
         /// The mold the node carries.
         mold: MoldId,
     },
+
+    /// A declaration the lowering collected and refused nothing in, whose
+    /// type and body it minted neither of: a gap in the lowering, never a
+    /// fault of the source.
+    Unminted
+    {
+        /// The bytes of the declaration.
+        span: ByteSpan,
+        /// The declared name.
+        name: SurfaceName<'source>,
+    },
 }
 
 impl fmt::Display for LoweringRefusal<'_>
@@ -1229,6 +1240,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 "the mold {} is not in the grammar's table",
                 u32::from(mold)
             ),
+            Self::Unminted { name, .. } => write!(
+                f,
+                "the lowering minted neither a type nor a body for `{name}`, and refused nothing \
+                 in it"
+            ),
         }
     }
 }
@@ -1307,7 +1323,8 @@ impl LoweringRefusal<'_>
             | Self::RulesUnoriented { span }
             | Self::RulesDiverge { span, .. }
             | Self::RulesUndecided { span, .. }
-            | Self::UnknownMold { span, .. } => Maybe::Present(span),
+            | Self::UnknownMold { span, .. }
+            | Self::Unminted { span, .. } => Maybe::Present(span),
             Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {
                 Maybe::Absent(refusal_span::Absent::Run)
             },
@@ -1348,7 +1365,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the current 35-variant fixture has no repeated variant tag;
+    /// - ensures: the current 36-variant fixture has no repeated variant tag;
     ///   source-bearing variants carry separately observable rejected spans.
     /// - provides: a finite domain for the exact span projection witness.
     /// - fails: never.
@@ -1369,7 +1386,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 35_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 36_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1532,6 +1549,10 @@ mod tests
                 span: s(65_usize, 66_usize),
                 first: s(0_usize, 1_usize),
             },
+            LoweringRefusal::Unminted {
+                span: s(67_usize, 68_usize),
+                name: SurfaceName::from("windHom"),
+            },
         ]
     }
 
@@ -1578,6 +1599,7 @@ mod tests
             s(61_usize, 62_usize),
             s(63_usize, 64_usize),
             s(65_usize, 66_usize),
+            s(67_usize, 68_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

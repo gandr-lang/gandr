@@ -2267,6 +2267,30 @@ enum Lowered
     },
 }
 
+/// Whether a module's own slot holds a half that lowers to a core term.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: two distinct answers, so [`Lowerer::outcome`] reads an absent
+///   outcome of a slot that owes a declaration as a refusal and of any other
+///   slot as the absence it is.
+/// - provides: the answer of [`Lowerer::lowers_a_half`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function whose halves the mint left unminted owes a
+///   declaration and is refused by name.
+/// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Owed
+{
+    /// A half lowers to a core term, so the slot owes a declaration.
+    Owed,
+    /// No half lowers to a core term.
+    Nothing,
+}
+
 /// Whether a form can stand where a value is expected.
 ///
 /// # Specification
@@ -11588,20 +11612,35 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   [`Self::own_outcome`] refuses it, so a refusal inside a functor is
     ///   reported once, where it was written, and templated otherwise; a slot
     ///   of an application is the declaration its renaming minted, unminted
-    ///   when its template refused or its argument's type did not lower; any
-    ///   other slot is [`Self::own_outcome`].
-    /// - provides: the per-slot row [`Self::assemble`] files.
+    ///   when its template refused or its argument's type did not lower; a
+    ///   module's own slot is [`Self::own_outcome`], except that one
+    ///   [`Self::own_outcome`] leaves absent while it holds a half that lowers
+    ///   to a core term — any but a top-level `oper`'s, or a witness of a
+    ///   member refused where it was written — is refused
+    ///   [`LoweringRefusal::Unminted`] at the declaration, by its name.
+    /// - provides: the per-slot row [`Self::assemble`] files, so a declaration
+    ///   the lowering collected either lowers or is refused by name, never
+    ///   dropped from the module.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a functor's body yields no declaration and each of
-    ///   two applications yields its own.
+    ///   two applications yields its own; a function whose two halves the mint
+    ///   left unminted, with no refusal filed, is refused by name where it used
+    ///   to vanish.
     /// - witness: `modules::modules::functors::a_functor_body_never_reaches_the_kernel`
     /// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name`
     #[spec(
         ensures: |ret| match self.collected.stratum_of(slot.container) {
-            | Stratum::Module => ret == self.own_outcome(position, slot),
+            | Stratum::Module => match self.own_outcome(position, slot) {
+                | Maybe::Absent(_) if self.lowers_a_half(slot) == Owed::Owed => ret == Maybe::Present(DeclarationOutcome::Refused(LoweringRefusal::Unminted {
+                    span: slot.introduced_by.span,
+                    name: slot.name,
+                })),
+                | own => ret == own,
+            },
             | Stratum::Functor(_) | Stratum::Parameter(_) => match self.own_outcome(position, slot) {
                 | Maybe::Present(DeclarationOutcome::Refused(refusal)) => ret == Maybe::Present(DeclarationOutcome::Refused(refusal)),
                 | _ => ret == Maybe::Absent(lowered::Absent::Templated),
@@ -11616,7 +11655,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<DeclarationOutcome<'source>, lowered::Absent>
     {
         match self.collected.stratum_of(slot.container) {
-            Stratum::Module => self.own_outcome(position, slot),
+            Stratum::Module => match self.own_outcome(position, slot) {
+                Maybe::Absent(reason) => match self.lowers_a_half(slot) {
+                    Owed::Owed => {
+                        Maybe::Present(DeclarationOutcome::Refused(LoweringRefusal::Unminted {
+                            span: slot.introduced_by.span,
+                            name: slot.name,
+                        }))
+                    },
+                    Owed::Nothing => Maybe::Absent(reason),
+                },
+                Maybe::Present(outcome) => Maybe::Present(outcome),
+            },
             Stratum::Functor(_) | Stratum::Parameter(_) => match self.own_outcome(position, slot) {
                 Maybe::Present(DeclarationOutcome::Refused(refusal)) => {
                     Maybe::Present(DeclarationOutcome::Refused(refusal))
@@ -11629,6 +11679,73 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .copied()
                 .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
         }
+    }
+
+    /// Whether the slot holds a half that lowers to a core term.
+    ///
+    /// # Specification
+    /// - requires: the slot's member coordinates are interpreted in this
+    ///   lowering run.
+    /// - ensures: [`Owed::Owed`] when either half is present and is neither a
+    ///   top-level `oper`'s, which lowers to no core term, nor a witness of a
+    ///   member that carries a refusal, which is reported where the member is
+    ///   written; [`Owed::Nothing`] otherwise.
+    /// - provides: the halves whose absence [`Self::outcome`] refuses.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function whose halves the mint left unminted owes a
+    ///   declaration; reading a top-level `oper` as owing one would refuse
+    ///   every such declaration across the corpus.
+    /// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name`
+    #[spec(
+        ensures: |ret| (ret == Owed::Owed) == [slot.signature, slot.definition].into_iter().any(|half| match half {
+            | Maybe::Present(Half { operand: Operand::Signature, .. }) | Maybe::Absent(_) => false,
+            | Maybe::Present(Half { operand: Operand::Member(target), .. }) => !self
+                .collected
+                .slots
+                .get(usize::from(target))
+                .is_some_and(|member| matches!(member.refusal, Maybe::Present(_))),
+            | Maybe::Present(_) => true,
+        }),
+    )]
+    fn lowers_a_half(
+        &self,
+        slot: &DeclarationSlot<'source>,
+    ) -> Owed
+    {
+        let owed = [slot.signature, slot.definition]
+            .into_iter()
+            .any(|half| match half {
+                Maybe::Present(Half {
+                    operand: Operand::Signature,
+                    ..
+                })
+                | Maybe::Absent(_) => false,
+                Maybe::Present(Half {
+                    operand: Operand::Member(target),
+                    ..
+                }) => !self
+                    .collected
+                    .slots
+                    .get(usize::from(target))
+                    .is_some_and(|member| matches!(member.refusal, Maybe::Present(_))),
+                Maybe::Present(Half {
+                    operand:
+                        Operand::Written(_)
+                        | Operand::Function
+                        | Operand::Data(_)
+                        | Operand::Words(_)
+                        | Operand::Loop { .. }
+                        | Operand::Operation
+                        | Operand::Presented
+                        | Operand::Code
+                        | Operand::Model(_),
+                    ..
+                }) => true,
+            });
+        if owed { Owed::Owed } else { Owed::Nothing }
     }
 
     /// What the slot at `position` amounts to by its own halves, whatever
@@ -14875,6 +14992,68 @@ mod tests
                 "`{source}` writes no signature"
             );
         }
+    }
+
+    #[test]
+    fn a_declaration_minting_neither_half_is_refused_by_name()
+    {
+        let pbg = grammar();
+        let tree = parsed(
+            &pbg,
+            SourceText::from("def f(x: Integer) -> -F Integer { return x }"),
+        );
+        let mut arena = CoreArena::new();
+        let mut fuel = Fuel::new(LoweringBudget::DEFAULT);
+        let collected = super::collect(&pbg, &tree, &mut fuel).unwrap();
+        let mut lowerer = super::Lowerer::new(&pbg, &tree, collected, fuel, Recognition::default());
+        lowerer.declare();
+        lowerer.seed().unwrap();
+        lowerer.survey().unwrap();
+        lowerer.classify().unwrap();
+        lowerer.refuse_unsynthesised().unwrap();
+        lowerer.propagate_manifests();
+        while lowerer.refuse_unrepresented().0 {
+            lowerer.propagate_manifests();
+        }
+        let mut origins = super::OriginTable::new();
+        let mut sink = super::Sink {
+            arena: &mut arena,
+            origins: &mut origins,
+            exits: super::BTreeSet::new(),
+            distributed: super::BTreeMap::new(),
+            host: super::capability::Host::Unminted,
+            loops: super::BTreeSet::new(),
+            breaks: super::BTreeSet::new(),
+            identities: super::BTreeMap::new(),
+        };
+        lowerer.mint(&mut sink).unwrap();
+        let [ref slot] = *lowerer.collected.slots
+        else {
+            panic!("`f` is the one declared name");
+        };
+        let Maybe::Present(half) = slot.definition
+        else {
+            panic!("`f` has a definition half");
+        };
+        // The two halves of the issue's `windHom`: the function tail's node
+        // left unminted, with no refusal filed against the name.
+        let node = usize::from(half.declaration.node);
+        lowerer.lowered[node] = Maybe::Absent(super::lowered::Absent::Unminted);
+        let declarations = lowerer.assemble(&mut origins);
+        let [ref declaration] = *declarations
+        else {
+            panic!("`f` is assembled, not dropped: {declarations:?}");
+        };
+        let DeclarationOutcome::Refused(refusal) = declaration.outcome()
+        else {
+            panic!("`f` is refused: {:?}", declaration.outcome());
+        };
+
+        assert!(
+            matches!(refusal, LoweringRefusal::Unminted { name, .. } if name == SurfaceName::from("f")),
+            "the refusal names `f`: {refusal:?}"
+        );
+        assert_eq!(refusal.classify(), FailureClass::EngineFault);
     }
 
     #[test]
