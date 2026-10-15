@@ -13,6 +13,7 @@ use quenchant_shape::shape::Maybe;
 use crate::budget::Budget;
 use crate::budget::Lane;
 use crate::budget::Seconds;
+use crate::cone::Cone;
 
 /// A workflow run's identifier.
 #[repr(transparent)]
@@ -184,13 +185,16 @@ impl fmt::Display for SampleCount
 /// One budgeted lane's line of the report.
 ///
 /// # Specification
-/// - provides: the lane, its median over the samples, how many there were, and
-///   its budget.
+/// - provides: the lane, its cone, its median over the samples of that cone,
+///   how many there were, and its budget.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Row
 {
     /// The lane, by its job's name.
     pub lane: Lane,
+    /// The cone this row holds; a lane without a deep budget is not
+    /// cone-classified and its single row is held to its one budget.
+    pub cone: Cone,
     /// The lower median of its samples.
     pub median: Maybe<Seconds, Unsampled>,
     /// How many samples the median comes from.
@@ -275,41 +279,49 @@ pub struct Report
 
 impl Report
 {
-    /// Each budget's lane summarised over `samples` from `runs`.
+    /// Each budget's lane summarised over `samples`, each in the cone its run
+    /// touched.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one row per budget, in order, whose median is the lower
-    ///   median of the samples of its lane and whose count is theirs; samples
-    ///   of lanes without a budget are ignored.
+    ///   median of the samples of its lane in its cone and whose count is
+    ///   theirs; samples of lanes without a budget are ignored.
     /// - provides: the report.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the grouping is the clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two budgeted lanes, one sampled three times and one
-    ///   never, beside an unbudgeted lane; grouping by the wrong name or
-    ///   dropping the unsampled row changes the rendered report.
+    /// - hypothesis: L3 — a cone-classified lane sampled in both cones beside a
+    ///   single-budget lane, one sampled three times and one never; grouping by
+    ///   the lane alone, or dropping the unsampled row, changes the rendered
+    ///   report.
     /// - witness: `report::tests::the_report_lists_every_budget_in_order`
     #[inline]
     #[must_use]
     pub fn new(
         budgets: &[Budget],
         runs: Vec<RunId>,
-        samples: Vec<Sample>,
+        samples: Vec<(Cone, Sample)>,
     ) -> Self
     {
-        let mut by_lane: BTreeMap<Lane, Vec<Seconds>> = BTreeMap::new();
-        for sample in samples {
-            by_lane.entry(sample.lane).or_default().push(sample.time);
+        let mut by_lane: BTreeMap<(Lane, Cone), Vec<Seconds>> = BTreeMap::new();
+        for (cone, sample) in samples {
+            by_lane
+                .entry((sample.lane, cone))
+                .or_default()
+                .push(sample.time);
         }
         let rows = budgets
             .iter()
             .map(|budget| {
-                let times = by_lane.remove(&budget.lane).unwrap_or_default();
+                let times = by_lane
+                    .remove(&(budget.lane.clone(), budget.cone))
+                    .unwrap_or_default();
                 Row {
                     lane: budget.lane.clone(),
+                    cone: budget.cone,
                     samples: SampleCount(times.len()),
                     median: lower_median(times),
                     limit: budget.limit,
@@ -349,12 +361,13 @@ impl Report
 impl fmt::Display for Report
 {
     /// Writes the report as Markdown: a sentence naming the window, a table
-    /// of lane, median, budget, sample count and standing, and the runs.
+    /// of lane, class, median, budget, sample count and standing, and the
+    /// runs.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one table row per budget, in order, an unmeasured median
-    ///   written as `—`.
+    /// - ensures: one table row per budget, in order, the class beside each
+    ///   row, and an unmeasured median written as `—`.
     /// - provides: the job summary and the issue body.
     /// - fails: propagates the formatter's own write failure.
     /// - panics: none.
@@ -372,11 +385,12 @@ impl fmt::Display for Report
         writeln!(
             f,
             "Median job time over the last {} merge-queue and pull-request runs of `ci.yml`, \
-             against the budgets in `nightly.yml`.\n",
+             against the budgets in `nightly.yml`, each lane held by the cone its \
+             landing touched.\n",
             self.runs.len()
         )?;
-        writeln!(f, "| lane | median | budget | jobs | standing |")?;
-        writeln!(f, "| --- | ---: | ---: | ---: | --- |")?;
+        writeln!(f, "| lane | class | median | budget | jobs | standing |")?;
+        writeln!(f, "| --- | --- | ---: | ---: | ---: | --- |")?;
         for row in &self.rows {
             let median = match row.median {
                 | Maybe::Present(median) => median.to_string(),
@@ -384,8 +398,9 @@ impl fmt::Display for Report
             };
             writeln!(
                 f,
-                "| {} | {median} | {} | {} | {} |",
+                "| {} | {} | {median} | {} | {} | {} |",
                 row.lane,
+                row.cone,
                 row.limit,
                 row.samples,
                 row.standing()
@@ -416,6 +431,7 @@ mod tests
     use crate::budget::Budget;
     use crate::budget::Lane;
     use crate::budget::Seconds;
+    use crate::cone::Cone;
 
     #[test]
     fn a_sample_reads_seconds_then_name()
@@ -461,9 +477,11 @@ mod tests
             "check Clippy wall=300".parse::<Budget>().unwrap(),
             "test enforcing targets (macos-arm64)=900".parse().unwrap(),
         ];
-        let sample = |time: u64, lane: &str| Sample {
-            lane: Lane::from(lane),
-            time: Seconds::from(time),
+        let sample = |time: u64, lane: &str| {
+            (Cone::Surface, Sample {
+                lane: Lane::from(lane),
+                time: Seconds::from(time),
+            })
         };
         let report = Report::new(
             &budgets,
@@ -478,11 +496,51 @@ mod tests
         assert_eq!(
             report.to_string(),
             "Median job time over the last 2 merge-queue and pull-request runs of `ci.yml`, \
-             against the budgets in `nightly.yml`.\n\n\
-             | lane | median | budget | jobs | standing |\n\
-             | --- | ---: | ---: | ---: | --- |\n\
-             | check Clippy wall | 3m 20s | 5m 0s | 3 | within |\n\
-             | test enforcing targets (macos-arm64) | — | 15m 0s | 0 | unmeasured |\n\
+             against the budgets in `nightly.yml`, each lane held by the cone its \
+             landing touched.\n\n\
+             | lane | class | median | budget | jobs | standing |\n\
+             | --- | --- | ---: | ---: | ---: | --- |\n\
+             | check Clippy wall | surface | 3m 20s | 5m 0s | 3 | within |\n\
+             | test enforcing targets (macos-arm64) | surface | — | 15m 0s | 0 | unmeasured |\n\
+             \nRuns: 12, 11.\n"
+        );
+        assert_eq!(report.standing(), Standing::Within);
+    }
+
+    #[test]
+    fn a_cone_classified_lane_holds_each_cone_to_its_own_budget()
+    {
+        let budgets = [
+            "test enforcing targets (linux)=360"
+                .parse::<Budget>()
+                .unwrap(),
+            "test enforcing targets (linux):deep=540".parse().unwrap(),
+        ];
+        let sample = |cone: Cone, time: u64| {
+            (cone, Sample {
+                lane: Lane::from("test enforcing targets (linux)"),
+                time: Seconds::from(time),
+            })
+        };
+        let report = Report::new(
+            &budgets,
+            vec!["12".parse::<RunId>().unwrap(), "11".parse().unwrap()],
+            vec![
+                sample(Cone::Surface, 300),
+                sample(Cone::Surface, 350),
+                sample(Cone::Deep, 500),
+                sample(Cone::Deep, 530),
+            ],
+        );
+        assert_eq!(
+            report.to_string(),
+            "Median job time over the last 2 merge-queue and pull-request runs of `ci.yml`, \
+             against the budgets in `nightly.yml`, each lane held by the cone its \
+             landing touched.\n\n\
+             | lane | class | median | budget | jobs | standing |\n\
+             | --- | --- | ---: | ---: | ---: | --- |\n\
+             | test enforcing targets (linux) | surface | 5m 0s | 6m 0s | 2 | within |\n\
+             | test enforcing targets (linux) | deep | 8m 20s | 9m 0s | 2 | within |\n\
              \nRuns: 12, 11.\n"
         );
         assert_eq!(report.standing(), Standing::Within);
@@ -494,14 +552,14 @@ mod tests
         let budgets = ["a=100".parse::<Budget>().unwrap(), "b=100".parse().unwrap()];
         let report = |a: u64, b: u64| {
             Report::new(&budgets, Vec::new(), vec![
-                Sample {
+                (Cone::Surface, Sample {
                     lane: Lane::from("a"),
                     time: Seconds::from(a),
-                },
-                Sample {
+                }),
+                (Cone::Surface, Sample {
                     lane: Lane::from("b"),
                     time: Seconds::from(b),
-                },
+                }),
             ])
         };
         assert_eq!(report(100, 100).standing(), Standing::Within);
@@ -511,7 +569,7 @@ mod tests
         assert!(
             unmeasured
                 .to_string()
-                .contains("| a | — | 1m 40s | 0 | unmeasured |")
+                .contains("| a | surface | — | 1m 40s | 0 | unmeasured |")
         );
     }
 }

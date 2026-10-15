@@ -2,8 +2,9 @@
 //! merge-queue and pull-request runs, against its budget.
 //!
 //! `lane-budget --budget NAME=SECONDS... [--runs N] [--issue TITLE]` samples
-//! the newest `N` runs through `gh`, prints the Markdown report, and with
-//! `--issue` opens, updates, reopens or closes the one issue of that title.
+//! the newest `N` runs through `gh`, classifies each by the cone its landing
+//! touched, prints the Markdown report, and with `--issue` opens, updates,
+//! reopens or closes the one issue of that title.
 //!
 //! # Exit codes
 //!
@@ -21,6 +22,7 @@ use gandr_workflow_lane_budget::BudgetError;
 use gandr_workflow_lane_budget::IssueTitle;
 use gandr_workflow_lane_budget::Report;
 use gandr_workflow_lane_budget::RunCount;
+use gandr_workflow_lane_budget::cone;
 use gandr_workflow_lane_budget::github;
 
 /// The exit code of a refusal or a malformed invocation.
@@ -31,8 +33,9 @@ const REFUSED: u8 = 2;
 #[command(name = "lane-budget", version, about)]
 struct Cli
 {
-    /// A job's display name and the whole seconds its median may take, as
-    /// `NAME=SECONDS`; repeat for each lane.
+    /// A job's display name, an optional `:deep` or `:surface` cone, and the
+    /// whole seconds its median may take, as `NAME=SECONDS` or
+    /// `NAME:deep=SECONDS`; repeat for each lane and cone.
     #[arg(long = "budget", required = true)]
     budgets: Vec<Budget>,
     /// How many of the newest merge-queue and pull-request runs to sample.
@@ -108,7 +111,10 @@ fn run(cli: Cli) -> Result<(), BudgetError>
     let runs = github::recent_runs(cli.runs)?;
     let mut samples = Vec::new();
     for &run_id in &runs {
-        samples.extend(github::samples(run_id)?);
+        let cone = cone::classify(run_id)?;
+        for sample in github::samples(run_id)? {
+            samples.push((cone, sample));
+        }
     }
     let report = Report::new(&cli.budgets, runs, samples);
     let output = |error: std::io::Error| BudgetError::Output {

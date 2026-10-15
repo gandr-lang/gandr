@@ -122,7 +122,7 @@ struct Listed
 
 /// What a `gh` invocation reads on standard input.
 #[derive(Clone, Copy, Debug)]
-enum Feed<'report>
+pub enum Feed<'report>
 {
     /// Nothing: standard input stays the parent's.
     Nothing,
@@ -153,7 +153,7 @@ enum Feed<'report>
 ///   message or an unfed body changes the observed result.
 /// - witness: `cli::cli::an_over_budget_lane_opens_the_issue`
 /// - witness: `cli::cli::a_failing_gh_is_reported_with_its_message`
-fn run(
+pub(crate) fn run(
     command: &mut Command,
     feed: Feed<'_>,
 ) -> Result<String, BudgetError>
