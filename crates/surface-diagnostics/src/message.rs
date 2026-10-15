@@ -137,6 +137,48 @@ impl fmt::Display for Spoken
     }
 }
 
+/// A form's name with the indefinite article its spoken name takes: `an`
+/// before a vowel sound, `a` otherwise.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Indefinite(FormName);
+
+impl fmt::Display for Indefinite
+{
+    /// Writes `an ` before a name whose first letter is a vowel spoken as
+    /// one, `a ` before any other, then the name as [`Spoken`] writes it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the article is `an` exactly when the name opens with a vowel
+    ///   letter and not with `uni` or `use`, which open on a `y` sound (`a
+    ///   unit`, `an unpack statement`).
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer.
+    ///
+    /// # Errors
+    /// The formatter's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the wrong-sort refusal writes `an identifier`, `an
+    ///   instantiation expression`, `a unit` and `a hole`.
+    /// - witness: `message::tests::a_form_takes_the_article_its_name_is_spoken_with`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        let name = self.0.as_ref();
+        let vowel = name.starts_with(['a', 'e', 'i', 'o', 'u'])
+            && !name.starts_with("uni")
+            && !name.starts_with("use");
+        let article = if vowel { "an" } else { "a" };
+        write!(f, "{article} {}", Spoken(self.0))
+    }
+}
+
 /// Writes the plain message of a lowering refusal.
 ///
 /// # Specification
@@ -192,22 +234,23 @@ fn lowered(
             boundary,
             ..
         } => {
-            let form = Spoken(form);
+            let spoken = Spoken(form);
+            let indefinite = Indefinite(form);
             match boundary {
                 FragmentBoundary::Reserved => {
-                    write!(f, "the {form} is reserved, and not available yet")
+                    write!(f, "the {spoken} is reserved, and not available yet")
                 },
-                FragmentBoundary::Unadmitted => write!(f, "the {form} is not supported yet"),
+                FragmentBoundary::Unadmitted => write!(f, "the {spoken} is not supported yet"),
                 FragmentBoundary::WrongSort => {
-                    write!(f, "a {form} cannot stand where {sort} is expected")
+                    write!(f, "{indefinite} cannot stand where {sort} is expected")
                 },
                 FragmentBoundary::Arity(operands) => {
-                    write!(f, "the {form} cannot take {operands} operands")
+                    write!(f, "the {spoken} cannot take {operands} operands")
                 },
                 FragmentBoundary::Indexed => {
                     f.write_str("indexed datatype families are not supported yet")
                 },
-                FragmentBoundary::Unannotated => write!(f, "the {form} needs a type annotation"),
+                FragmentBoundary::Unannotated => write!(f, "the {spoken} needs a type annotation"),
                 FragmentBoundary::NotAFunction => f.write_str(
                     "`cong` maps a path by a function, and a constructor is not one; write a \
                      function definition that applies it",
@@ -218,7 +261,7 @@ fn lowered(
                 ),
                 FragmentBoundary::NotInTail => write!(
                     f,
-                    "a {form} leaves only the body of a function, a lambda, a thunk or a \
+                    "{indefinite} leaves only the body of a function, a lambda, a thunk or a \
                      copattern clause, and cannot stand here"
                 ),
                 FragmentBoundary::JoinsBlock => f.write_str(
@@ -1400,6 +1443,36 @@ mod tests
                 !message.contains("admission position") && !message.contains("node "),
                 "no producer bookkeeping: {message}"
             );
+        }
+    }
+
+    /// A refusal that names a form with an article writes the one its name is
+    /// spoken with (#417).
+    #[test]
+    fn a_form_takes_the_article_its_name_is_spoken_with()
+    {
+        let span = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(1_usize))
+            .expect("an ordered span");
+        let refused = |form: FormName, boundary: FragmentBoundary| {
+            Plain(Refusal::Lowering(LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary,
+            }))
+            .to_string()
+        };
+        for (form, opening) in [
+            (FormName::IDENTIFIER, "an identifier "),
+            (FormName::INSTANTIATION, "an instantiation expression "),
+            (FormName::UNPACK_STATEMENT, "an unpack statement "),
+            (FormName::UNIT, "a unit "),
+            (FormName::HOLE, "a hole "),
+        ] {
+            for boundary in [FragmentBoundary::WrongSort, FragmentBoundary::NotInTail] {
+                let message = refused(form, boundary);
+                assert!(message.starts_with(opening), "{opening:?}: {message}");
+            }
         }
     }
 }
