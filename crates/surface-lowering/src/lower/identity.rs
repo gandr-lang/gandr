@@ -187,6 +187,8 @@ use gandr_core_term::Binders;
 use gandr_core_term::Carried;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
@@ -195,10 +197,12 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::SessionRelation;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
+use super::Code;
 use super::Former;
 use super::Function;
 use super::Lowered;
@@ -232,6 +236,7 @@ use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
+use crate::resolve::ScopeId;
 use crate::resolve::TypeFormer;
 use crate::resolve::type_former;
 
@@ -460,21 +465,47 @@ enum Stance
 {
     /// The path type the position answers.
     Answered(Answer),
-    /// The operands' path types, the position answering none.
-    Synthesised(Synthesis),
+    /// The operands' path types, the position answering none, with what the
+    /// classification read them off where their own form spells none.
+    Synthesised(Synthesis, Typings),
+}
+
+/// What a synthesised derived operation's two paths read their types off
+/// where their own form spells none, as [`Lowerer::refuse_unsynthesised`]
+/// read it: kept in the plan, because the mint sweep consumes the operands'
+/// plans before it reaches the operation.
+///
+/// # Specification
+/// - ensures: the motive's path — `back`'s and `cong`'s path, `then`'s first —
+///   and `then`'s second, each a parameter or a call, or nothing.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an operation over a parameter and over a call each mint
+///   their path type.
+/// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+struct Typings
+{
+    /// The motive's path.
+    transported: Option<Typed>,
+    /// `then`'s second path.
+    onward: Option<Typed>,
 }
 
 /// What a synthesised derived operation reads besides its paths' types.
 ///
 /// # Specification
 /// - ensures: nothing for `back` and `then`; for `cong`, the written result
-///   type of the function it maps by.
+///   type of the function it maps by, or, for a parameter, its written type
+///   until [`Lowerer::refuse_unsynthesised`] reads its arrow's codomain.
 /// - executable: none — a tag holds no tree to check its reading against.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `cong` reads its codomain off its function, the others
 ///   off their paths alone.
 /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+/// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Synthesis
 {
@@ -488,6 +519,13 @@ enum Synthesis
         codomain: NodeIndex,
         /// The frame the result type is read under.
         frame: Frame,
+    },
+    /// A parameter's written type, the thunk of the arrow whose codomain
+    /// `cong` reads once every node is classified.
+    Thunked
+    {
+        /// The binder's written type.
+        declared: NodeIndex,
     },
 }
 
@@ -513,6 +551,247 @@ pub(super) struct Identity
     left: ValueId,
     /// The path's right endpoint.
     right: ValueId,
+}
+
+/// What a derived operation's path operand reads its type off when its own
+/// form spells none.
+///
+/// # Specification
+/// - ensures: the node of the written type the path's type is read from.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a parameter and a call each mint the path type they
+///   state.
+/// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Typed
+{
+    /// A parameter, by its binder's written type: named in a body, or in a
+    /// type under the frame it is read from.
+    Parameter
+    {
+        /// The binder's written type.
+        declared: NodeIndex,
+        /// The frame a type naming the binder reads it under; nothing in a
+        /// body.
+        in_type: Option<Frame>,
+    },
+    /// A call, by its function's written result.
+    Called(Callee),
+}
+
+impl Typed
+{
+    /// The written type's node.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn node(self) -> NodeIndex
+    {
+        match self {
+            Self::Parameter { declared, .. } => declared,
+            Self::Called(callee) => callee.result,
+        }
+    }
+}
+
+/// A call whose function writes its result: what the call's path type is
+/// instantiated from.
+///
+/// # Specification
+/// - ensures: the function's parameters, its arity, whether it recurses, its
+///   written result and whether that is a returner, the arguments the call
+///   applies, and whether it is a recursive call's descent.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a call of a definition, of a signature and a recursive
+///   call each mint their result at their arguments.
+/// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct Callee
+{
+    /// The function's binders, in the lowerer's parameter store: a tail's
+    /// parameters or a telescope's entries; none for a plain value function.
+    parameters: Stretch,
+    /// How many arguments the function takes.
+    arity: usize,
+    /// Whether a recursive tail binds its own name between its last
+    /// parameter and the ones before it.
+    recursive: bool,
+    /// The written result: a tail's computation type, or a signature's
+    /// value type.
+    result: NodeIndex,
+    /// Whether the result is a computation type, a returner over the path.
+    returned: bool,
+    /// The arguments the call applies, in the lowerer's operand store: every
+    /// one, or a descent's last.
+    arguments: Stretch,
+    /// Whether the head is a recursive call's descent claim, which passes
+    /// the parameters before the last as themselves.
+    descends: bool,
+}
+
+/// The carrier and the endpoints of the path type `ty`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the path type's carrier and endpoints.
+/// - fails: [`synthesised::Absent::Unread`] for any other type.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::identity_of`].
+/// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(read) => arena.value_type(ty) == Some(&ValueType::Path { carrier: read.carrier, left: read.left, right: read.right }),
+    | Maybe::Absent(_) => true,
+})]
+fn path_identity(
+    arena: &CoreArena,
+    ty: ValueTypeId,
+) -> Maybe<Identity, synthesised::Absent>
+{
+    match arena.value_type(ty) {
+        Some(&ValueType::Path {
+            carrier,
+            left,
+            right,
+        }) => Maybe::Present(Identity {
+            carrier,
+            left,
+            right,
+        }),
+        _ => Maybe::Absent(synthesised::Absent::Unread),
+    }
+}
+
+/// A node of the spine [`as_endpoint`] rewrites.
+///
+/// # Specification
+/// - ensures: a value or a computation of the arena.
+/// - executable: none — an id holds no arena to check it against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`as_endpoint`].
+/// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Spine
+{
+    /// A value along the spine.
+    Value(ValueId),
+    /// A computation along the spine.
+    Computation(ComputationId),
+}
+
+/// `value` as an endpoint: each computation written where a value is read,
+/// along `value` and the spines of the computations it returns, read as the
+/// value it returns.
+///
+/// # Specification
+/// - requires: `value` is live in `arena`.
+/// - ensures: `value` itself when it holds no nested computation along its
+///   spine; otherwise a copy with each [`Value::Nested`] along the spine of
+///   applications and forces read as [`Value::Returned`] over the same rewrite
+///   of its computation, each node rebuilt only when a node under it changed.
+/// - provides: a call's argument, which a body reads as a run, carried into the
+///   path type the call answers, where it is an endpoint: the same node would
+///   be a run the type cannot enclose.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: each node is pushed once unexpanded and once expanded, and an
+///   unexpanded node pushes only the nodes directly under it, of a finite term.
+/// - measure: twice the nodes along `value`'s spine, less the pops so far.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a call whose arguments are calls, its path type read at
+///   those arguments.
+/// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+#[spec(ensures: |ret| arena.value(ret).is_some() || ret == value)]
+fn as_endpoint(
+    arena: &mut CoreArena,
+    value: ValueId,
+) -> ValueId
+{
+    use alloc::collections::BTreeMap;
+    let mut values: BTreeMap<ValueId, ValueId> = BTreeMap::new();
+    let mut computations: BTreeMap<ComputationId, ComputationId> = BTreeMap::new();
+    let mut pending = alloc::vec![(Spine::Value(value), false)];
+    while let Some((node, expanded)) = pending.pop() {
+        if !expanded {
+            pending.push((node, true));
+            match node {
+                Spine::Value(at) => {
+                    if let Some(&(Value::Nested(computation) | Value::Returned(computation))) =
+                        arena.value(at)
+                    {
+                        pending.push((Spine::Computation(computation), false));
+                    }
+                },
+                Spine::Computation(at) => match arena.computation(at) {
+                    Some(&Computation::Application(head, argument)) => {
+                        pending.push((Spine::Value(argument), false));
+                        pending.push((Spine::Computation(head), false));
+                    },
+                    Some(&Computation::Force(forced)) => {
+                        pending.push((Spine::Value(forced), false));
+                    },
+                    _ => {},
+                },
+            }
+            continue;
+        }
+        match node {
+            Spine::Value(at) => {
+                let read = match arena.value(at) {
+                    Some(&Value::Nested(computation)) => {
+                        let spine = computations
+                            .get(&computation)
+                            .copied()
+                            .unwrap_or(computation);
+                        arena.value_returned(spine)
+                    },
+                    Some(&Value::Returned(computation)) => {
+                        match computations.get(&computation).copied() {
+                            Some(spine) if spine != computation => arena.value_returned(spine),
+                            Some(_) | None => at,
+                        }
+                    },
+                    _ => at,
+                };
+                let _held = values.insert(at, read);
+            },
+            Spine::Computation(at) => {
+                let read = match arena.computation(at) {
+                    Some(&Computation::Application(head, argument)) => {
+                        let spine = computations.get(&head).copied().unwrap_or(head);
+                        let read = values.get(&argument).copied().unwrap_or(argument);
+                        if spine == head && read == argument {
+                            at
+                        }
+                        else {
+                            arena.computation_application(spine, read)
+                        }
+                    },
+                    Some(&Computation::Force(forced)) => {
+                        let read = values.get(&forced).copied().unwrap_or(forced);
+                        if read == forced {
+                            at
+                        }
+                        else {
+                            arena.computation_force(read)
+                        }
+                    },
+                    _ => at,
+                };
+                let _held = computations.insert(at, read);
+            },
+        }
+    }
+    values.get(&value).copied().unwrap_or(value)
 }
 
 /// The identity type a derived operation stands at where it is minted, as
@@ -1276,10 +1555,13 @@ impl<'source> Lowerer<'_, 'source>
         }
         let stance = match self.answers.get(&site.at.node) {
             Some(&answer) => Stance::Answered(answer),
-            None => Stance::Synthesised(match derivation {
-                Derivation::Cong { function, .. } => self.mapped(site, frame, function)?,
-                Derivation::Back { .. } | Derivation::Then { .. } => Synthesis::Paths,
-            }),
+            None => Stance::Synthesised(
+                match derivation {
+                    Derivation::Cong { function, .. } => self.mapped(site, frame, function)?,
+                    Derivation::Back { .. } | Derivation::Then { .. } => Synthesis::Paths,
+                },
+                Typings::default(),
+            ),
         };
         if let Stance::Answered(answer) = stance {
             // A loop arm answers the path over its loop, whatever its case
@@ -1314,7 +1596,7 @@ impl<'source> Lowerer<'_, 'source>
                 self.read(second, Reading::Value(frame));
             },
         }
-        if let Stance::Synthesised(_) = stance {
+        if let Stance::Synthesised(..) = stance {
             self.synthesised.push(site);
         }
         // The operation is the path its transport returns: pure, so where a
@@ -1337,14 +1619,16 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// What a synthesised `cong` reads its codomain off: the written result
-    /// of the function definition `function` names.
+    /// of the function definition `function` names, or the codomain of the
+    /// arrow a parameter's written type thunks.
     ///
     /// # Specification
     /// - requires: `function` is the first operand of the `cong` at `site`,
     ///   which stands under `frame`.
     /// - ensures: the result type node and the frame it is read under, when
     ///   `function` is a bare name resolving to an earlier declaration written
-    ///   as a function tail with a result type.
+    ///   as a function tail with a result type, or to a binder whose written
+    ///   type is the thunk of an arrow, `+U (A -> C)`, under any parentheses.
     /// - fails: the unannotated refusal for any other operand; the name's own
     ///   refusal from its resolution.
     /// - panics: none.
@@ -1353,13 +1637,15 @@ impl<'source> Lowerer<'_, 'source>
     /// The operand's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a function definition gives its codomain, and a
-    ///   parameter gives none.
+    /// - hypothesis: L3 — a function definition gives its codomain, a parameter
+    ///   thunking an arrow gives the arrow's, and a parameter of another type
+    ///   gives none.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     #[spec(ensures: |ret| match ret {
-        | Ok(Synthesis::Mapped { codomain, frame: read }) => self.reading(codomain) == Reading::Result(read),
+        | Ok(Synthesis::Mapped { codomain, frame: read }) => self.reading(codomain).frame() == read,
+        | Ok(Synthesis::Thunked { .. }) | Err(_) => true,
         | Ok(Synthesis::Paths) => false,
-        | Err(_) => true,
     })]
     fn mapped(
         &mut self,
@@ -1382,41 +1668,103 @@ impl<'source> Lowerer<'_, 'source>
             return Err(unannotated);
         };
         let name = self.name_at(named);
-        let Maybe::Present(super::Resolved::Declaration { constant, .. }) =
-            self.resolve_name(Site { at: named, ..site }, frame, name)?
-        else {
-            return Err(unannotated);
-        };
-        let tail = self
-            .collected
-            .slots
-            .get(usize::from(constant))
-            .and_then(|slot| {
-                [slot.signature, slot.definition]
-                    .into_iter()
-                    .find_map(|half| match half {
-                        Maybe::Present(Half {
-                            declaration,
-                            operand: Operand::Function,
-                        }) => Some(declaration.node),
-                        Maybe::Present(_) | Maybe::Absent(_) => None,
-                    })
-            });
-        let result = tail.and_then(
-            |declaration| match self.plans.get(usize::from(declaration)) {
-                Some(&Plan::Function(Function {
-                    result: Maybe::Present(result),
-                    ..
-                })) => Some(result),
-                _ => None,
+        match self.resolve_name(Site { at: named, ..site }, frame, name)? {
+            Maybe::Present(super::Resolved::Declaration { constant, .. }) => {
+                match self.function_of(constant) {
+                    Some(Function {
+                        result: Maybe::Present(codomain),
+                        ..
+                    }) => Ok(Synthesis::Mapped {
+                        codomain,
+                        frame: self.reading(codomain).frame(),
+                    }),
+                    Some(_) | None => Err(unannotated),
+                }
             },
-        );
-        match result.map(|result| (result, self.reading(result))) {
-            Some((codomain, Reading::Result(read))) => Ok(Synthesis::Mapped {
-                codomain,
-                frame: read,
-            }),
-            _ => Err(unannotated),
+            // The binder's written type may be classified after this
+            // operation, so its arrow is read once the sweep is done.
+            Maybe::Present(super::Resolved::Binder(bound)) => {
+                match self.scope.declared(bound.binder) {
+                    Maybe::Present(declared) => Ok(Synthesis::Thunked { declared }),
+                    Maybe::Absent(_) => Err(unannotated),
+                }
+            },
+            Maybe::Absent(_) => Err(unannotated),
+        }
+    }
+
+    /// The function tail the declaration at `constant` is written with, by
+    /// its signature or its definition.
+    ///
+    /// # Specification
+    /// - requires: the ascending sweep has classified the declaration.
+    /// - ensures: the tail's plan when either half of the slot is written as a
+    ///   function tail; nothing otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function definition answers its tail, a value
+    ///   declaration none.
+    /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    #[spec(ensures: |ret| ret.is_none() || usize::from(constant) < self.collected.slots.len())]
+    fn function_of(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<Function>
+    {
+        let slot = self.collected.slots.get(usize::from(constant))?;
+        let tail = [slot.signature, slot.definition]
+            .into_iter()
+            .find_map(|half| match half {
+                Maybe::Present(Half {
+                    declaration,
+                    operand: Operand::Function,
+                }) => Some(declaration.node),
+                Maybe::Present(_) | Maybe::Absent(_) => None,
+            })?;
+        match self.plans.get(usize::from(tail)) {
+            Some(&Plan::Function(function)) => Some(function),
+            _ => None,
+        }
+    }
+
+    /// The codomain of the arrow the value type at `declared` thunks: `C` of
+    /// `+U (A -> C)`, through parentheses.
+    ///
+    /// # Specification
+    /// - requires: the ascending sweep has classified `declared`.
+    /// - ensures: the codomain node when the walk through transparent plans
+    ///   meets one thunk and then an arrow; nothing otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn steps to an operand of the node it read, strictly deeper in
+    /// a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter at a thunked arrow gives its codomain,
+    ///   one at a path type none.
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    #[spec(ensures: |ret| ret.is_none_or(|codomain| codomain != declared))]
+    fn thunked_codomain(
+        &self,
+        declared: NodeIndex,
+    ) -> Option<NodeIndex>
+    {
+        let mut at = declared;
+        let mut thunked = false;
+        loop {
+            match self.plans.get(usize::from(at)) {
+                Some(&Plan::Transparent(inner)) => at = inner,
+                Some(&Plan::Former(TypeFormer::Thunk, inner)) if !thunked => {
+                    thunked = true;
+                    at = inner;
+                },
+                Some(&Plan::Arrow(_, codomain)) if thunked => return Some(codomain),
+                _ => return None,
+            }
         }
     }
 
@@ -1449,9 +1797,11 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a word, a composite of words and an operation over
-    ///   one admitted, an operation over a parameter refused, and `cong` over a
+    ///   one admitted, an operation over a parameter or a call stating its path
+    ///   admitted, one over a parameter stating none refused, and `cong` over a
     ///   refused function refused.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     #[spec(captures: before = self.synthesised.len(), ensures: |ret| ret.is_err() || self.synthesised.len() == before)]
     pub(super) fn refuse_unsynthesised(&mut self) -> Result<(), LoweringRefusal<'source>>
     {
@@ -1470,7 +1820,7 @@ impl<'source> Lowerer<'_, 'source>
             }
             let Some(&Plan::Derived(Derived {
                 derivation,
-                stance: Stance::Synthesised(synthesis),
+                stance: Stance::Synthesised(synthesis, _),
                 ..
             })) = self.plans.get(usize::from(at))
             else {
@@ -1480,12 +1830,23 @@ impl<'source> Lowerer<'_, 'source>
                 Derivation::Back { path } | Derivation::Cong { path, .. } => (path, None),
                 Derivation::Then { first, second } => (first, Some(second)),
             };
+            let synthesis = match synthesis {
+                Synthesis::Thunked { declared } => {
+                    self.thunked_codomain(declared)
+                        .map_or(synthesis, |codomain| Synthesis::Mapped {
+                            codomain,
+                            frame: self.reading(codomain).frame(),
+                        })
+                },
+                Synthesis::Paths | Synthesis::Mapped { .. } => synthesis,
+            };
             let closed = match synthesis {
                 Synthesis::Paths => true,
                 Synthesis::Mapped { codomain, frame } => {
                     !self.collected.refused(codomain).0
                         && self.scope.telescope_binders(frame).all(|binds| !binds)
                 },
+                Synthesis::Thunked { .. } => false,
             };
             let transported = self.reads_path(path, &read)?;
             if !closed || matches!(transported, Maybe::Absent(_)) {
@@ -1500,38 +1861,302 @@ impl<'source> Lowerer<'_, 'source>
             if let Maybe::Present(_) = whole {
                 let _first = read.insert(at);
             }
+            let typed = |path| match self.typed(path) {
+                Maybe::Present(typed) => Some(typed),
+                Maybe::Absent(_) => None,
+            };
+            let typings = Typings {
+                transported: typed(path),
+                onward: rest.and_then(typed),
+            };
+            if let Some(&mut Plan::Derived(Derived {
+                stance: Stance::Synthesised(ref mut held_synthesis, ref mut held_typings),
+                ..
+            })) = self.plans.get_mut(usize::from(at))
+            {
+                *held_synthesis = synthesis;
+                *held_typings = typings;
+            }
         }
 
         Ok(())
     }
 
-    /// The result types the synthesised `cong`s read their codomains off,
-    /// for the mint sweep to mint before any operation over them.
+    /// The types the synthesised operations read off other declarations and
+    /// binders — each `cong`'s codomain, and the written type of each
+    /// parameter and the written result of each call a path operand is — for
+    /// the mint sweep to mint before any operation over them.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the codomain node of every recorded site still planned as a
-    ///   synthesised `cong`, in the record's order.
+    /// - ensures: for every recorded site still planned as a synthesised
+    ///   operation, its codomain when it is a `cong` and the node each of its
+    ///   [`Typings`] reads its path's type at, each once, in source order: a
+    ///   type a synthesised operation inside another such type reads — an
+    ///   earlier declaration's result, or a parameter written before it — is
+    ///   minted before the type that holds it.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a `cong` in a type finds its function's result
-    ///   minted.
+    ///   minted, and an operation over a parameter or a call its type.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
-    #[spec(ensures: |ret| ret.len() <= self.synthesised.len())]
-    pub(super) fn codomains(&self) -> Vec<NodeIndex>
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    #[spec(ensures: |ret| ret.len() <= self.synthesised.len().saturating_mul(3)
+        && ret.is_sorted_by_key(|&node| (self.tree.node(node).map(|held| held.span().start()), node)))]
+    pub(super) fn synthesised_types(&self) -> Vec<NodeIndex>
     {
-        self.synthesised
-            .iter()
-            .filter_map(|site| match self.plans.get(usize::from(site.at.node)) {
-                Some(&Plan::Derived(Derived {
-                    stance: Stance::Synthesised(Synthesis::Mapped { codomain, .. }),
-                    ..
-                })) => Some(codomain),
-                _ => None,
-            })
-            .collect()
+        let mut types = Vec::new();
+        for site in &self.synthesised {
+            let Some(&Plan::Derived(Derived {
+                stance: Stance::Synthesised(synthesis, typings),
+                ..
+            })) = self.plans.get(usize::from(site.at.node))
+            else {
+                continue;
+            };
+            if let Synthesis::Mapped { codomain, .. } = synthesis {
+                types.push(codomain);
+            }
+            types.extend(
+                [typings.transported, typings.onward]
+                    .into_iter()
+                    .flatten()
+                    .map(Typed::node),
+            );
+        }
+        // Source order, not the tree's level order: a parameter's type sits
+        // deeper than the result written after it, so a later index, yet an
+        // operation inside that result reads it.
+        types.sort_unstable_by_key(|&node| {
+            (self.tree.node(node).map(|held| held.span().start()), node)
+        });
+        types.dedup();
+        types
+    }
+
+    /// What the path operand `path` is read at when its own form does not
+    /// spell its type: a parameter by its binder's written type, a call by
+    /// its function's written result.
+    ///
+    /// # Specification
+    /// - requires: the ascending sweep has classified every node.
+    /// - ensures: through transparent plans, a variable, or a binder named in a
+    ///   type, whose binder's written type is a path type under any
+    ///   parentheses, as [`Typed::Parameter`]; a call whose head is a
+    ///   declaration whose tail or signature writes a path result, or a
+    ///   recursive call's descent claim, as [`Typed::Called`].
+    /// - fails: [`synthesised::Absent::Unread`] for any other path.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn steps to the operand of a transparent node, strictly deeper
+    /// in a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path parameter in a body and in a type, a call of a
+    ///   definition, of a signature and a recursive call each read, a parameter
+    ///   of no path type not.
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(typed) => self.path_written(typed.node()).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn typed(
+        &self,
+        path: NodeIndex,
+    ) -> Maybe<Typed, synthesised::Absent>
+    {
+        let unread = Maybe::Absent(synthesised::Absent::Unread);
+        let mut at = path;
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(usize::from(at)) {
+            at = inner;
+        }
+        let parameter = |binder: ScopeId, in_type: Option<Frame>| match self.scope.declared(binder)
+        {
+            Maybe::Present(declared) if self.path_written(declared).is_some() => {
+                Maybe::Present(Typed::Parameter { declared, in_type })
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => unread,
+        };
+        match self.plans.get(usize::from(at)) {
+            Some(&Plan::Variable(_, binder)) => parameter(binder, None),
+            Some(&Plan::StaticApplication(Code::Bound { from, binder }, arguments))
+                if arguments.start == arguments.end =>
+            {
+                parameter(binder, Some(from))
+            },
+            Some(&Plan::Application(head, arguments)) => {
+                let mut head = head;
+                while let Some(&Plan::Transparent(inner)) = self.plans.get(usize::from(head)) {
+                    head = inner;
+                }
+                let (callee, descends) = match self.plans.get(usize::from(head)) {
+                    Some(&Plan::Constant(constant)) => (self.callee_of(constant), false),
+                    Some(&Plan::Variable(_, binder)) if self.recursions.contains_key(&binder) => {
+                        let tail = match self.scope.declared(binder) {
+                            Maybe::Present(tail) => match self.plans.get(usize::from(tail)) {
+                                Some(&Plan::Function(function)) => Self::tail_callee(function),
+                                _ => None,
+                            },
+                            Maybe::Absent(_) => None,
+                        };
+                        (tail, true)
+                    },
+                    _ => (None, false),
+                };
+                // A descent passes the parameters before the last as the
+                // variables they are in the body, which a type never binds.
+                let descends_in_type = descends && self.in_type.contains(&at);
+                match callee {
+                    Some(callee)
+                        if self.path_written(callee.result).is_some() && !descends_in_type =>
+                    {
+                        Maybe::Present(Typed::Called(Callee {
+                            arguments,
+                            descends,
+                            ..callee
+                        }))
+                    },
+                    Some(_) | None => unread,
+                }
+            },
+            _ => unread,
+        }
+    }
+
+    /// What a call of the declaration at `constant` reads its result off: a
+    /// function tail's written result, or the codomain of the telescope or
+    /// the value function its signature writes.
+    ///
+    /// # Specification
+    /// - requires: the ascending sweep has classified the declaration.
+    /// - ensures: the tail's parameters and result when either half is a tail
+    ///   writing a result; otherwise, when the signature is written as `(x : A,
+    ///   …) => B` through parentheses, its entries and `B`, and as `A => B`, no
+    ///   binders, the domains' count and `B`; the call's own fields left empty.
+    /// - fails: none otherwise.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn steps to the operand of a transparent node, strictly deeper
+    /// in a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of a definition and of a signature each read
+    ///   their result.
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    #[spec(ensures: |ret| ret.is_none_or(|callee| callee.arguments.start == callee.arguments.end))]
+    fn callee_of(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<Callee>
+    {
+        if let Some(callee) = self.function_of(constant).and_then(Self::tail_callee) {
+            return Some(callee);
+        }
+        let Maybe::Present(Half {
+            operand: Operand::Written(written),
+            ..
+        }) = self.collected.slots.get(usize::from(constant))?.signature
+        else {
+            return None;
+        };
+        let mut at = written.node;
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(usize::from(at)) {
+            at = inner;
+        }
+        let none = Stretch { start: 0, end: 0 };
+        let (parameters, arity, result) = match self.plans.get(usize::from(at)) {
+            Some(&Plan::Telescope(entries, codomain)) => {
+                (entries, entries.end.saturating_sub(entries.start), codomain)
+            },
+            Some(&Plan::ValueFunction(domains, codomain)) => {
+                (none, domains.end.saturating_sub(domains.start), codomain)
+            },
+            _ => return None,
+        };
+        Some(Callee {
+            parameters,
+            arity,
+            recursive: false,
+            result,
+            returned: false,
+            arguments: none,
+            descends: false,
+        })
+    }
+
+    /// What a call of the function tail `function` reads its result off.
+    ///
+    /// # Specification
+    /// - ensures: the tail's parameters, whether it recurses and its written
+    ///   result, a returner, when it writes one; the call's own fields left
+    ///   empty.
+    /// - fails: none for a tail with no written result.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::callee_of`].
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    #[spec(ensures: |ret| ret.is_none_or(|callee| callee.returned))]
+    fn tail_callee(function: Function) -> Option<Callee>
+    {
+        let Maybe::Present(result) = function.result
+        else {
+            return None;
+        };
+        let none = Stretch { start: 0, end: 0 };
+        Some(Callee {
+            parameters: function.parameters,
+            arity: function
+                .parameters
+                .end
+                .saturating_sub(function.parameters.start),
+            recursive: matches!(function.recursion, Maybe::Present(_)),
+            result,
+            returned: true,
+            arguments: none,
+            descends: false,
+        })
+    }
+
+    /// The path type the type at `written` writes, under at most one returner
+    /// and any parentheses.
+    ///
+    /// # Specification
+    /// - requires: the ascending sweep has classified `written`.
+    /// - ensures: the path type's node exactly when the walk through
+    ///   transparent plans and at most one returner meets one.
+    /// - fails: none for any other type.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn steps to an operand of the node it read, strictly deeper in
+    /// a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::typed`].
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    #[spec(ensures: |ret| ret.is_none_or(|path| matches!(self.plans.get(usize::from(path)), Some(&Plan::Path(..)))))]
+    fn path_written(
+        &self,
+        written: NodeIndex,
+    ) -> Option<NodeIndex>
+    {
+        let mut at = written;
+        let mut returned = false;
+        loop {
+            match self.plans.get(usize::from(at)) {
+                Some(&Plan::Transparent(inner)) => at = inner,
+                Some(&Plan::Former(TypeFormer::Returner, inner)) if !returned => {
+                    returned = true;
+                    at = inner;
+                },
+                Some(&Plan::Path(..)) => return Some(at),
+                _ => return None,
+            }
+        }
     }
 
     /// The node a derived operation's path operand `path` reads its type at.
@@ -1540,8 +2165,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the ascending sweep has classified every node; `read` holds
     ///   the synthesised operations whose own type is read.
     /// - ensures: through parentheses, the node itself when it is a loop, a
-    ///   word of a loop's words, an answered derived operation or one in
-    ///   `read`.
+    ///   word of a loop's words, an answered derived operation, one in `read`,
+    ///   or a parameter or a call [`Self::typed`] reads in a declaration that
+    ///   lowers.
     /// - fails: [`synthesised::Absent::Unread`] for any other path;
     ///   [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
     ///   allowance.
@@ -1557,6 +2183,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::refuse_unsynthesised`].
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     #[spec(captures: before = self.fuel.remaining, ensures: self.fuel.remaining <= before)]
     fn reads_path(
         &mut self,
@@ -1583,7 +2210,10 @@ impl<'source> Lowerer<'_, 'source>
                     ..
                 })) => true,
                 Some(&Plan::Derived(_)) => read.contains(&at),
-                _ => false,
+                _ => match self.typed(at) {
+                    Maybe::Present(typed) => !self.collected.refused(typed.node()).0,
+                    Maybe::Absent(_) => false,
+                },
             };
             return Ok(if worded {
                 Maybe::Present(at)
@@ -1814,9 +2444,12 @@ impl<'source> Lowerer<'_, 'source>
         let inserted = origin.inserted(Insertion::Identity);
         let stood = match derived.stance {
             Stance::Answered(answer) => self.answered_at(answer, derived.frame, sink),
-            Stance::Synthesised(synthesis) => {
-                self.synthesised_at(derived.derivation, synthesis, first, sink)
-            },
+            Stance::Synthesised(synthesis, typings) => self.synthesised_at(
+                (derived.derivation, synthesis, typings),
+                first,
+                derived.frame,
+                sink,
+            ),
         };
         let Stood {
             answered,
@@ -1964,32 +2597,37 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The path type a synthesised derived operation stands at, read off its
-    /// operands, `function` the first operand's value.
+    /// operands, `function` the first operand's value, the operation standing
+    /// under `frame`.
     ///
     /// # Specification
-    /// - requires: the operands and a `cong`'s codomain are already minted or
-    ///   absent; [`Self::refuse_unsynthesised`] admitted the operation.
+    /// - requires: the operands, a `cong`'s codomain and the types
+    ///   [`Self::synthesised_types`] lists are already minted or absent;
+    ///   [`Self::refuse_unsynthesised`] admitted the operation.
     /// - ensures: for `back(p)` at `p : Path(A, a, b)`, `Path(A, b, a)`; for `p
     ///   then q`, `Path(A, a, c)` with `c` read when `q : Path(A, b, c)` is,
     ///   absent otherwise; for `cong(f, p)`, `Path(B, ⟨force f a⟩, ⟨force f
-    ///   b⟩)` with `B` the returner's result the codomain mints, closed.
+    ///   b⟩)` with `B` the returner's result the codomain mints, closed. Each
+    ///   path's type is read as [`Self::identity_of`] reads it under `frame`.
     /// - fails: the unminted absence when the motive's path's type is not read;
     ///   the codomain's absence, or the other-sort absence when it mints no
     ///   returner.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — each operation over a word, and over another.
+    /// - hypothesis: L3 — each operation over a word, over another, over a
+    ///   parameter and over a call.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(stood) => stood.answered == Answered::Path,
         | Maybe::Absent(_) => true,
     })]
     fn synthesised_at(
         &self,
-        derivation: Derivation,
-        synthesis: Synthesis,
+        (derivation, synthesis, typings): (Derivation, Synthesis, Typings),
         function: ValueId,
+        frame: Frame,
         sink: &mut Sink<'_>,
     ) -> Maybe<Stood, lowered::Absent>
     {
@@ -1997,7 +2635,7 @@ impl<'source> Lowerer<'_, 'source>
             Derivation::Back { path } | Derivation::Cong { path, .. } => path,
             Derivation::Then { first, .. } => first,
         };
-        let Maybe::Present(read) = self.identity_of(transported, sink)
+        let Maybe::Present(read) = self.identity_of(transported, typings.transported, frame, sink)
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
@@ -2012,7 +2650,9 @@ impl<'source> Lowerer<'_, 'source>
                 answered: Answered::Path,
                 carrier: read.carrier,
                 left: read.left,
-                right: self.identity_of(second, sink).map(|onward| onward.right),
+                right: self
+                    .identity_of(second, typings.onward, frame, sink)
+                    .map(|onward| onward.right),
             },
             (Derivation::Cong { .. }, Synthesis::Mapped { codomain, .. }) => {
                 let written = match self.comp_type_at(codomain) {
@@ -2037,7 +2677,7 @@ impl<'source> Lowerer<'_, 'source>
                     right: Maybe::Present(right),
                 }
             },
-            (Derivation::Cong { .. }, Synthesis::Paths) => {
+            (Derivation::Cong { .. }, Synthesis::Paths | Synthesis::Thunked { .. }) => {
                 return Maybe::Absent(lowered::Absent::Unminted);
             },
         };
@@ -2045,22 +2685,28 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(stood)
     }
 
-    /// The path type the derived operation's operand `path` stands at, as its
-    /// minted value reads it.
+    /// The path type the derived operation's operand `path` stands at, read
+    /// off `typed` when the classification recorded one, the operation
+    /// standing under `frame`.
     ///
     /// # Specification
-    /// - requires: `path` is already minted or absent.
-    /// - ensures: a loop, or a word of a loop's words, stands at `Path(F, x,
-    ///   x)`, `F` its family and `x` the point the words spell, minted as
-    ///   [`Self::words_point`] mints them; a derived operation's returned
-    ///   transport at the path type recorded against it.
+    /// - requires: `path` and the type `typed` names are already minted or
+    ///   absent.
+    /// - ensures: a parameter at its binder's written type and a call at its
+    ///   function's written result at its arguments, each carried to where the
+    ///   operation stands; otherwise a loop, or a word of a loop's words,
+    ///   stands at `Path(F, x, x)`, `F` its family and `x` the point the words
+    ///   spell, minted as [`Self::words_point`] mints them, and a derived
+    ///   operation's returned transport at the path type recorded against it.
     /// - fails: [`synthesised::Absent::Unread`] for any other value, and for a
-    ///   path that did not lower.
+    ///   path or a type that did not lower.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a loop, the empty word and an operation over a word.
+    /// - hypothesis: L3 — a loop, the empty word, an operation over a word, a
+    ///   parameter and a call.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(read) => sink.arena.value_type(read.carrier).is_some(),
         | Maybe::Absent(_) => true,
@@ -2068,10 +2714,19 @@ impl<'source> Lowerer<'_, 'source>
     fn identity_of(
         &self,
         path: NodeIndex,
+        typed: Option<Typed>,
+        frame: Frame,
         sink: &mut Sink<'_>,
     ) -> Maybe<Identity, synthesised::Absent>
     {
         let unread = Maybe::Absent(synthesised::Absent::Unread);
+        match typed {
+            Some(Typed::Parameter { declared, in_type }) => {
+                return self.parameter_identity(declared, in_type, frame, sink);
+            },
+            Some(Typed::Called(callee)) => return self.called_identity(callee, frame, sink),
+            None => {},
+        }
         let Maybe::Present(value) = self.value_at(path)
         else {
             return unread;
@@ -2102,6 +2757,191 @@ impl<'source> Lowerer<'_, 'source>
                 right: point,
             }),
             Maybe::Absent(_) => unread,
+        }
+    }
+
+    /// The path type a parameter's binder writes, `declared`, carried to the
+    /// parameter's use: a body under `frame`, or a type under `in_type`.
+    ///
+    /// # Specification
+    /// - requires: `declared` is minted or absent, read where a value type is
+    ///   read under the frame its binder extends.
+    /// - ensures: the written path type with a binder inserted at each frame of
+    ///   its chain no telescope counts and every index raised past the frames
+    ///   between it and `frame`, for a use in a body; raised past the
+    ///   telescope's binders between it and `in_type`, for a use in a type.
+    /// - fails: [`synthesised::Absent::Unread`] when the type did not lower or
+    ///   is no path type.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path parameter in a body and in a type.
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(read) => sink.arena.value_type(read.carrier).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn parameter_identity(
+        &self,
+        declared: NodeIndex,
+        in_type: Option<Frame>,
+        frame: Frame,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<Identity, synthesised::Absent>
+    {
+        let unread = Maybe::Absent(synthesised::Absent::Unread);
+        let (Maybe::Present(written), super::Reading::ValueType(from)) =
+            (self.value_type_at(declared), self.reading(declared))
+        else {
+            return unread;
+        };
+        let between = |inner: Frame, outer: Frame, counted: fn(bool) -> bool| {
+            let depth = |at: Frame| {
+                self.scope
+                    .telescope_binders(at)
+                    .filter(|&binds| counted(binds))
+                    .count()
+            };
+            Binders::from(
+                u32::try_from(depth(inner).saturating_sub(depth(outer))).unwrap_or(u32::MAX),
+            )
+        };
+        let carried = if let Some(read) = in_type {
+            let lift = between(read, from, |binds| binds);
+            gandr_core_term::shift_value_type(sink.arena, written, lift)
+        }
+        else {
+            let lift = between(frame, from, |_| true);
+            let wrapped = sink.arena.comp_type_returner(written);
+            let relocated = self.relocate(sink.arena, wrapped, from, lift, None);
+            match sink.arena.comp_type(relocated) {
+                Some(&CompType::Returner { result, .. }) => result,
+                _ => return unread,
+            }
+        };
+        path_identity(sink.arena, carried)
+    }
+
+    /// The path type a call's function writes as its result, at the call's
+    /// arguments, the call standing under `frame`.
+    ///
+    /// # Specification
+    /// - requires: the result and every argument the call applies are minted or
+    ///   absent; the function is declared at the outermost frame, so its result
+    ///   is closed but for its binders.
+    /// - ensures: the written path type, under its returner for a tail, with
+    ///   each binder the result's telescope counts replaced by its argument,
+    ///   the innermost first: the applied arguments in order, and for a descent
+    ///   the parameters before the last as the variables they are where the
+    ///   call stands.
+    /// - fails: [`synthesised::Absent::Unread`] when the result or an argument
+    ///   did not lower, the arguments do not match the arity, a frame other
+    ///   than a binder of the function counts in the result's telescope, a
+    ///   descent stands in a type, or the result is no path type.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of a definition whose result names its
+    ///   parameter, in a body and in a type, a call of a signature, and a
+    ///   recursive call over a uniform leading parameter.
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(read) => sink.arena.value_type(read.carrier).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn called_identity(
+        &self,
+        callee: Callee,
+        frame: Frame,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<Identity, synthesised::Absent>
+    {
+        let unread = Maybe::Absent(synthesised::Absent::Unread);
+        let written = if callee.returned {
+            self.comp_type_at(callee.result)
+        }
+        else {
+            self.value_type_at(callee.result)
+                .map(|written| sink.arena.comp_type_returner(written))
+        };
+        let Maybe::Present(written) = written
+        else {
+            return unread;
+        };
+        let from = self.reading(callee.result).frame();
+        let parameters = super::stretch(&self.parameters, callee.parameters);
+        let applied = super::stretch(&self.operands, callee.arguments);
+        let mut arguments = Vec::with_capacity(callee.arity);
+        if callee.descends {
+            let (Some((_, leading)), &[last]) = (parameters.split_last(), applied)
+            else {
+                return unread;
+            };
+            let depth = |at: Frame| self.scope.telescope_binders(at).count();
+            for parameter in leading {
+                let index = depth(frame).saturating_sub(depth(Frame::Inner(parameter.frame)));
+                arguments.push(sink.arena.value_variable(
+                    gandr_core_term::Zone::Intuitionistic,
+                    gandr_kernel_term::DeBruijnIndex::from(
+                        u32::try_from(index).unwrap_or(u32::MAX),
+                    ),
+                ));
+            }
+            let Maybe::Present(last) = self.value_at(last)
+            else {
+                return unread;
+            };
+            arguments.push(as_endpoint(sink.arena, last));
+        }
+        else {
+            if applied.len() != callee.arity {
+                return unread;
+            }
+            for &argument in applied {
+                let Maybe::Present(value) = self.value_at(argument)
+                else {
+                    return unread;
+                };
+                arguments.push(as_endpoint(sink.arena, value));
+            }
+        }
+        // The result's chain, innermost first: the binders from the last,
+        // the frame a recursive tail binds its own name at between the last
+        // and the ones before it.
+        let mut chain: Vec<Option<usize>> = (0 .. parameters.len()).rev().map(Some).collect();
+        if callee.recursive {
+            chain.insert(1_usize.min(chain.len()), None);
+        }
+        let binds: Vec<bool> = self.scope.telescope_binders(from).collect();
+        if binds.len() != chain.len() {
+            return unread;
+        }
+        let mut bound = Vec::with_capacity(chain.len());
+        for (position, binds) in chain.into_iter().zip(binds) {
+            match (binds, position) {
+                (false, _) => {},
+                (true, Some(position)) => bound.push(position),
+                (true, None) => return unread,
+            }
+        }
+        let mut instantiated = written;
+        for (depth, &position) in bound.iter().enumerate() {
+            let Some(&argument) = arguments.get(position)
+            else {
+                return unread;
+            };
+            let outside = bound.len().saturating_sub(depth).saturating_sub(1);
+            let carried = gandr_core_term::shift_value(
+                sink.arena,
+                argument,
+                Binders::from(u32::try_from(outside).unwrap_or(u32::MAX)),
+            );
+            instantiated =
+                gandr_core_term::instantiate_comp_type(sink.arena, instantiated, carried);
+        }
+        match sink.arena.comp_type(instantiated) {
+            Some(&CompType::Returner { result, .. }) => path_identity(sink.arena, result),
+            _ => unread,
         }
     }
 

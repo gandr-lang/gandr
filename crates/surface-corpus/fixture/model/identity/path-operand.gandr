@@ -1,0 +1,92 @@
+// A derived path operation reads its operand's path type off what the
+// operand is when its form does not spell one: a parameter by the type its
+// binder writes, a call by the result its declaration writes, a recursive
+// call by its own function's result, and `cong` over a parameter function by
+// that function's written result. In a body and in a type alike, none of
+// these needs a stated type (#423).
+
+/// The circle: a point and a loop at it.
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+/// The naturals, for the paths a recursion builds.
+data Nat : Type {
+  Z : Nat;
+  S : (x : Nat) --> Nat;
+}
+
+/// One successor more.
+def up(n : Nat) -> -F Nat {
+  S(n)
+}
+
+/// A parameter's inverse, read at the parameter's written type, then the
+/// parameter again.
+@[ checks ]
+def undone(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+  back(p) then p
+}
+
+/// A parameter composed in a type, and reflexivity at it.
+@[ checks ]
+def stated(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p then loop, p then loop) {
+  here(p then loop)
+}
+
+/// A loop walked twice.
+@[ checks ]
+def twice(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+  p then p
+}
+
+/// A call's inverse, read at the result `twice` writes, then the loop.
+@[ checks ]
+def untwice(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+  back(twice(p)) then loop
+}
+
+/// A call composed in a type.
+@[ checks ]
+def thrice(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), twice(p) then p, twice(p) then p) {
+  here(twice(p) then p)
+}
+
+/// A call of a declaration whose own type holds a derived operation: that
+/// type is read before the operation over it.
+@[ checks ]
+def unthrice(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), twice(p) then p, twice(p) then p) {
+  back(thrice(p))
+}
+
+/// A path the signature alone states.
+@[ owes(1) ]
+def stay : (a : Nat) => Path(Nat, a, a) ;
+
+/// A call of a signature, read at the result it states.
+@[ checks ]
+def stayUp(a : Nat) -> -F Path(Nat, S(a), S(a)) {
+  cong(up, stay(a)) then here(S(a))
+}
+
+/// A recursive call, read at its function's own result.
+@[ checks ]
+def rec still(b : Nat) -> -F Path(Nat, b, b) {
+  case b {
+    Z => here(Z),
+    S(x) => cong(up, still[<](x)) then here(S(x))
+  }
+}
+
+/// `cong` over a parameter function, read at the result its type writes.
+@[ checks ]
+def mapped(f : +U[ω] (Circle -> -F Nat)) -> -F Path(Nat, f(Base), f(Base)) {
+  back(cong(f, loop))
+}
+
+/// A parameter of no path type gives no path to read.
+@[ refuses("OutOfFragment") ]
+def pointed(c : Circle) -> -F Path(Circle, Base, Base) {
+  back(c) then loop
+}

@@ -60,11 +60,10 @@ def rec plusZ(b : Int) -> -F Path(Int, plus(Z, b), b) {
 
 /// The sum commutes (cubical's `+Comm`), by induction on the second summand,
 /// each step the recursive call carried along `up` or `down` and then the
-/// summand brought out of the left. Composing a `cong` with a call needs a
-/// stated type (#423); with one, the arms compose to no conversion of the
+/// summand brought out of the left. The arms compose to no conversion of the
 /// answer at `x`, so the case is refused as not respecting `Int`'s rules
 /// (#427).
-@[ refuses("OutOfFragment") ]
+@[ refuses("RuleNotRespected") ]
 def rec plusComm(a : Int, b : Int) -> -F Path(Int, plus(a, b), plus(b, a)) {
   case b {
     Z => back(plusZ(a)),
