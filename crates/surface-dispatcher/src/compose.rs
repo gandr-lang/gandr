@@ -853,8 +853,8 @@ pub fn lower_parsed<'source>(
 /// Judge and settle one lowered module, its kernel admission left to run.
 ///
 /// # Specification
-/// - requires: `module` was lowered into `arena`; `root` is the corpus root the
-///   source sits under.
+/// - requires: `module` was lowered from `text` into `arena`; `root` is the
+///   corpus root the source sits under.
 /// - ensures: the module is adapted to the checker's input, judged with its
 ///   held capabilities bounded by `grant` minted into `arena`, built into a
 ///   [`Program`] and settled under `root`, the program running each declaration
@@ -863,11 +863,12 @@ pub fn lower_parsed<'source>(
 ///   refusals of the declarations refused at their own form, which no
 ///   expectation can state, the lowering's origin table, moved rather than
 ///   copied, the spellings of the types its checker refusals compare and its
-///   failures name, the failures themselves, every builtin the source shadowed,
-///   every exit the lowering inferred, every run the checker inferred, the
-///   program, and no kernel artifact yet ([`admitted::Absent::Pending`]); a
-///   settle fault is carried in its place. The admission holds the arena the
-///   verdicts were judged over, the verdicts and the module's structured names.
+///   failures name, each under its binders' names in `text`, the failures
+///   themselves, every builtin the source shadowed, every exit the lowering
+///   inferred, every run the checker inferred, the program, and no kernel
+///   artifact yet ([`admitted::Absent::Pending`]); a settle fault is carried in
+///   its place. The admission holds the arena the verdicts were judged over,
+///   the verdicts and the module's structured names.
 /// - provides: the composition a face renders before the kernel has been
 ///   offered anything; the readmission mints nothing the settle comparison or
 ///   the program reads.
@@ -897,7 +898,7 @@ pub fn lower_parsed<'source>(
 )]
 pub fn judge<'source>(
     root: CorpusRoot,
-    module: LoweredModule<'source>,
+    (mut module, text): (LoweredModule<'source>, SourceText<'source>),
     mut arena: CoreArena,
     grant: &HostGrant,
 ) -> Judged<'source>
@@ -914,7 +915,14 @@ pub fn judge<'source>(
             let exercised = Exercised::of(&arena, &module, &report);
             let unstatable = unstatable(&module);
             let failures = Failures::of(&verdicts);
-            let spellings = Spellings::of(&arena, &module, &report, &failures);
+            located(module.origins_mut(), &verdicts);
+            let spellings = Spellings::of(
+                &arena,
+                &module,
+                &report,
+                &failures,
+                (module.origins(), text),
+            );
             let shadowed = module.recognition().shadowed().to_vec();
             let inferred = module.inferred_exits().to_vec();
             let runs = inferred_runs(&module, &verdicts);
@@ -922,7 +930,7 @@ pub fn judge<'source>(
                 report,
                 exercised,
                 unstatable,
-                origins: located(module.into_origins(), &verdicts),
+                origins: module.into_origins(),
                 spellings,
                 failures,
                 shadowed,
@@ -1008,15 +1016,15 @@ fn inferred_runs(
 ///   by the rule it tells apart, refuse at one case block.
 /// - witness: `entry::tests::a_second_run_refusal_is_located_where_its_bound_spelling_is`
 #[spec(captures: [declarations = origins.declaration_count(), recorded = origins.recorded_count()],
-    ensures: |ret| ret.declaration_count() == declarations && ret.recorded_count() >= recorded)]
+    ensures: origins.declaration_count() == declarations && origins.recorded_count() >= recorded)]
 fn located(
-    mut origins: OriginTable,
+    origins: &mut OriginTable,
     verdicts: &ModuleReport,
-) -> OriginTable
+)
 {
     let elaborations = verdicts.nested_elaborations();
     if elaborations.is_empty() {
-        return origins;
+        return;
     }
     let carried: Vec<_> = elaborations
         .values()
@@ -1027,14 +1035,13 @@ fn located(
         .flat_map(|elaboration| elaboration.binds().iter().copied())
         .collect();
     origins.carry(&carried, &binds);
-    origins
 }
 
 /// Judge one lowered module: the second half of the composition.
 ///
 /// # Specification
-/// - requires: `module` was lowered into `arena`; `root` is the corpus root the
-///   source sits under.
+/// - requires: the module was lowered from its text into `arena`; `root` is the
+///   corpus root the source sits under.
 /// - ensures: [`judge`] under `grant`, then [`Judged::admit`]: the result is
 ///   [`Composed::Settled`] with one report per declared name, the exercised
 ///   rows its settled declarations carry, the refusals of the declarations
@@ -1081,12 +1088,12 @@ fn located(
 )]
 pub fn judge_module<'source>(
     root: CorpusRoot,
-    module: LoweredModule<'source>,
+    (module, text): (LoweredModule<'source>, SourceText<'source>),
     arena: CoreArena,
     grant: &HostGrant,
 ) -> Result<Composed<'source>, ComposeFault<'source>>
 {
-    judge(root, module, arena, grant).admit()
+    judge(root, (module, text), arena, grant).admit()
 }
 
 /// Carry one source through the pipeline: parse, lower, adapt, check, settle.
@@ -1148,13 +1155,14 @@ pub fn compose<'source>(
 ) -> Result<Composed<'source>, ComposeFault<'source>>
 {
     let lowering = lower_source(grammar, source, lowerings)?;
-    judge_lowering(root, lowering, &HostGrant::UNBOUNDED)
+    judge_lowering(root, (lowering, source), &HostGrant::UNBOUNDED)
 }
 
 /// Judge what the lowering made of one source, its obligations given up.
 ///
 /// # Specification
-/// - requires: `root` is the corpus root the source sits under.
+/// - requires: the lowering read the text beside it; `root` is the corpus root
+///   the source sits under.
 /// - ensures: a module the lowering read is judged by [`judge_module`] under
 ///   `grant`; a whole-source refusal is [`Composed::Refused`].
 /// - provides: the half of [`compose()`] that stays in walk order when a wider
@@ -1184,12 +1192,12 @@ pub fn compose<'source>(
 )]
 pub fn judge_lowering<'source>(
     root: CorpusRoot,
-    lowering: Lowering<'source>,
+    (lowering, text): (Lowering<'source>, SourceText<'source>),
     grant: &HostGrant,
 ) -> Result<Composed<'source>, ComposeFault<'source>>
 {
     match lowering.into_lowered() {
-        Lowered::Module { module, arena } => judge_module(root, module, arena, grant),
+        Lowered::Module { module, arena } => judge_module(root, (module, text), arena, grant),
         Lowered::Refused(refusal) => Ok(Composed::Refused(refusal)),
     }
 }
@@ -2020,7 +2028,7 @@ def h = 1 ;"#,
                 (module, arena)
             };
             // The order the composition ran before: readmit, then settle.
-            let (module, mut arena) = lower(&mut lowerings);
+            let (mut module, mut arena) = lower(&mut lowerings);
             let verdicts = check_module(
                 &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
                 &adapt(&module),
@@ -2040,7 +2048,14 @@ def h = 1 ;"#,
             let exercised = Exercised::of(&arena, &module, &report);
             let unstatable = super::unstatable(&module);
             let failures = super::Failures::of(&verdicts);
-            let spellings = super::Spellings::of(&arena, &module, &report, &failures);
+            super::located(module.origins_mut(), &verdicts);
+            let spellings = super::Spellings::of(
+                &arena,
+                &module,
+                &report,
+                &failures,
+                (module.origins(), SourceText::from(source)),
+            );
             let shadowed = module.recognition().shadowed().to_vec();
             let inferred = module.inferred_exits().to_vec();
             let runs = super::inferred_runs(&module, &verdicts);
@@ -2048,7 +2063,7 @@ def h = 1 ;"#,
                 report,
                 exercised,
                 unstatable,
-                origins: super::located(module.into_origins(), &verdicts),
+                origins: module.into_origins(),
                 spellings,
                 failures,
                 shadowed,
@@ -2058,7 +2073,12 @@ def h = 1 ;"#,
                 program,
             };
             let (module, arena) = lower(&mut lowerings);
-            let judged = judge(CorpusRoot::Fixture, module, arena, &HostGrant::UNBOUNDED);
+            let judged = judge(
+                CorpusRoot::Fixture,
+                (module, SourceText::from(source)),
+                arena,
+                &HostGrant::UNBOUNDED,
+            );
             let Ok(
                 ref settled @ Composed::Settled {
                     kernel: Maybe::Absent(admitted::Absent::Pending),

@@ -694,6 +694,44 @@ mod diagnostics
         );
     }
 
+    /// A refusal spells a type under the binders in scope by the names the
+    /// source wrote, never `?` (#418).
+    #[test]
+    fn a_refusal_spells_its_binders_by_name()
+    {
+        let text = SourceText::from(
+            "data Sig : Type {\n  Monoid : Sig;\n  Group : Sig;\n}\ndef counted_at(s : Sig) -> \
+             -F Type {\n  case s {\n    Monoid => return Integer,\n    Group => return \
+             String\n  }\n}\ndef moved(presented : Sig, other : Sig, n : counted_at(presented)) \
+             -> -F counted_at(other) {\n  n\n}\n",
+        );
+        let diagnostic = only(Path::new("moved.gandr"), text);
+        assert_eq!(
+            (
+                diagnostic.detail.compared.expected.clone(),
+                diagnostic.detail.compared.found.clone()
+            ),
+            (
+                Maybe::Present(String::from("counted_at(other)")),
+                Maybe::Present(String::from("counted_at(presented)"))
+            ),
+            "the mismatch names the two binders it is over"
+        );
+        assert_eq!(
+            diagnostic
+                .hypotheses
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            [
+                "presented : Sig",
+                "other : Sig",
+                "n : counted_at(presented)"
+            ],
+            "a hypothesis's type names the binders before it"
+        );
+    }
+
     #[test]
     fn an_unlocated_rule_becomes_a_note()
     {

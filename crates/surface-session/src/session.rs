@@ -1968,7 +1968,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         let snapshot = Snapshot::of(&items, module.origins());
         let (settled, admission) = judge(
             self.root.corpus_root(),
-            module,
+            (module, revision),
             arena,
             &HostGrant::UNBOUNDED,
         )
@@ -2490,8 +2490,13 @@ fn try_candidate<'text>(
             Maybe::Absent(admitted::Absent::RefusedWhole),
         ),
         Lowered::Module { module, arena } => {
-            let (settled, admission) =
-                judge(root.corpus_root(), module, arena, &HostGrant::UNBOUNDED).into_parts();
+            let (settled, admission) = judge(
+                root.corpus_root(),
+                (module, candidate),
+                arena,
+                &HostGrant::UNBOUNDED,
+            )
+            .into_parts();
             let composed = settled.map_err(|fault| {
                 SessionFault::Compose(match admission.admit() {
                     Ok(_) => ComposeFault::Settle(fault),

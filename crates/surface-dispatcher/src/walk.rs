@@ -702,7 +702,7 @@ impl Walk
                             } => {
                                 self.report.lowerings_mut().absorb(lowerings);
                                 let composed = lowering.and_then(|lowering| {
-                                    judge_lowering(root.corpus_root(), lowering, grant)
+                                    judge_lowering(root.corpus_root(), (lowering, text), grant)
                                 });
                                 settled(&mut self.report, path, root, text, composed)
                             },
@@ -997,7 +997,7 @@ impl Walk
         };
         let text = SourceText::from(self.text.as_str());
         let composed = lower_source(grammar, text, self.report.lowerings_mut())
-            .and_then(|lowering| judge_lowering(root.corpus_root(), lowering, &self.grant));
+            .and_then(|lowering| judge_lowering(root.corpus_root(), (lowering, text), &self.grant));
         settled(&mut self.report, &self.traversal.path, root, text, composed)
     }
 }

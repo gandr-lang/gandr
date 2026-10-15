@@ -48,6 +48,7 @@ use gandr_core_checker::CoreNode;
 use gandr_core_checker::Failure;
 use gandr_core_checker::FoldPremise;
 use gandr_core_checker::FrameRole;
+use gandr_core_checker::Obligation;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::judged;
@@ -298,40 +299,14 @@ where
     let mut contexts: Vec<DiagnosticContext> = Vec::new();
     let mut named: Vec<Binding> = Vec::with_capacity(failure.hypotheses().len());
     for obligation in failure.obligations() {
-        let binders: Vec<Binding> = match obligation.at() {
-            CoreNode::Term(TermNode::Computation(opener)) if !obligation.binders().is_empty() => {
-                let name = match origins.binder(opener) {
-                    Maybe::Present(origin) => text
-                        .fragment(origin.span())
-                        .map_or(Maybe::Absent(binding::Absent::Unnamed), |fragment| {
-                            Maybe::Present(String::from(fragment.as_ref()))
-                        }),
-                    Maybe::Absent(_) => Maybe::Absent(binding::Absent::Unnamed),
-                };
-                obligation
-                    .binders()
-                    .iter()
-                    .enumerate()
-                    .map(|(at, &ty)| Binding {
-                        name: if at == 0_usize {
-                            name.clone()
-                        }
-                        else {
-                            Maybe::Absent(binding::Absent::Unnamed)
-                        },
-                        ty: spelled(spellings, ty),
-                    })
-                    .collect()
-            },
-            CoreNode::Term(_) | CoreNode::Type(_) => obligation
-                .binders()
-                .iter()
-                .map(|&ty| Binding {
-                    name: Maybe::Absent(binding::Absent::Unnamed),
-                    ty: spelled(spellings, ty),
-                })
-                .collect(),
-        };
+        let binders: Vec<Binding> = opened(obligation, origins, text)
+            .into_iter()
+            .zip(obligation.binders())
+            .map(|(name, &ty)| Binding {
+                name,
+                ty: spelled(spellings, ty),
+            })
+            .collect();
         named.extend(binders.iter().cloned());
         let judged = match obligation.expected() {
             Maybe::Present(expected) => Judged::Checked(match spellings.get(expected) {
@@ -393,6 +368,55 @@ where
             .collect()
     };
     (contexts, hypotheses)
+}
+
+/// The names of the binders `obligation` opens, outermost first, read through
+/// `origins` and `text`.
+///
+/// # Specification
+/// - requires: `origins` was built over the arena `obligation` names; `text` is
+///   the source `origins` measures.
+/// - ensures: one name per binder the obligation opens: the first binder of a
+///   computation opener the table records a binder for is named by the bytes
+///   the table locates; every other binder is [`binding::Absent::Unnamed`].
+/// - provides: the names a context's binders, the diagnostic's hypotheses and
+///   the spelling of every type under them read ([`Spellings::of`]).
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `run` binder and a function's parameters are named, and
+///   a type over them spells them by those names.
+/// - witness: `diagnostics::diagnostics::a_mismatch_under_a_binder_names_it`
+/// - witness: `diagnostics::diagnostics::a_refusal_spells_its_binders_by_name`
+#[spec(ensures: |ret| ret.len() == obligation.binders().len())]
+pub fn opened(
+    obligation: &Obligation,
+    origins: &OriginTable,
+    text: SourceText<'_>,
+) -> Vec<Maybe<String, binding::Absent>>
+{
+    let name = match obligation.at() {
+        CoreNode::Term(TermNode::Computation(opener)) => match origins.binder(opener) {
+            Maybe::Present(origin) => text
+                .fragment(origin.span())
+                .map_or(Maybe::Absent(binding::Absent::Unnamed), |fragment| {
+                    Maybe::Present(String::from(fragment.as_ref()))
+                }),
+            Maybe::Absent(_) => Maybe::Absent(binding::Absent::Unnamed),
+        },
+        CoreNode::Term(_) | CoreNode::Type(_) => Maybe::Absent(binding::Absent::Unnamed),
+    };
+    (0_usize .. obligation.binders().len())
+        .map(|at| {
+            if at == 0_usize {
+                name.clone()
+            }
+            else {
+                Maybe::Absent(binding::Absent::Unnamed)
+            }
+        })
+        .collect()
 }
 
 /// The spelling of the value type `ty`.
