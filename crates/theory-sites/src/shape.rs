@@ -123,10 +123,10 @@ impl Ends
     pub const fn kind(self) -> WireKind
     {
         match (self.producer, self.consumer) {
-            | (End::Open, End::Open) => WireKind::Stick,
-            | (End::Open, End::Vertex(_)) => WireKind::InputLeg,
-            | (End::Vertex(_), End::Open) => WireKind::OutputLeg,
-            | (End::Vertex(_), End::Vertex(_)) => WireKind::Inner,
+            (End::Open, End::Open) => WireKind::Stick,
+            (End::Open, End::Vertex(_)) => WireKind::InputLeg,
+            (End::Vertex(_), End::Open) => WireKind::OutputLeg,
+            (End::Vertex(_), End::Vertex(_)) => WireKind::Inner,
         }
     }
 }
@@ -219,13 +219,13 @@ impl fmt::Display for ShapeObstruction
     ) -> fmt::Result
     {
         match *self {
-            | Self::TooManyVertices { .. } => f.write_str("more vertices than a vertex set holds"),
-            | Self::UnknownVertex { .. } => f.write_str("a wire end names an absent vertex"),
-            | Self::Stick { wire } => {
+            Self::TooManyVertices { .. } => f.write_str("more vertices than a vertex set holds"),
+            Self::UnknownVertex { .. } => f.write_str("a wire end names an absent vertex"),
+            Self::Stick { wire } => {
                 write!(f, "wire {} is a stick component", usize::from(wire))
             },
-            | Self::UnknownWire { .. } => f.write_str("a generator names an undeclared wire"),
-            | Self::Carrier(ref refusal) => write!(f, "the carrier refused the shape: {refusal}"),
+            Self::UnknownWire { .. } => f.write_str("a generator names an undeclared wire"),
+            Self::Carrier(ref refusal) => write!(f, "the carrier refused the shape: {refusal}"),
         }
     }
 }
@@ -379,12 +379,13 @@ pub fn presented(wiring: &Wiring) -> Result<Vec<Ends>, ShapeObstruction>
 })]
 fn refuse_sticks(ends: &[Ends]) -> Result<(), ShapeObstruction>
 {
-    match ends.iter().position(|wire| wire.kind() == WireKind::Stick) {
-        | Some(index) => Err(ShapeObstruction::Stick {
-            wire: Wire::from(index),
-        }),
-        | None => Ok(()),
-    }
+    ends.iter()
+        .position(|wire| wire.kind() == WireKind::Stick)
+        .map_or(Ok(()), |index| {
+            Err(ShapeObstruction::Stick {
+                wire: Wire::from(index),
+            })
+        })
 }
 
 /// A shape: the graph one carrier wiring presents, with no stick component.
@@ -852,10 +853,8 @@ impl Shape
             }
         }
         let rename = |end: End| match end {
-            | End::Open => End::Open,
-            | End::Vertex(vertex) => {
-                End::Vertex(renumbered.get(&vertex).copied().unwrap_or(vertex))
-            },
+            End::Open => End::Open,
+            End::Vertex(vertex) => End::Vertex(renumbered.get(&vertex).copied().unwrap_or(vertex)),
         };
         let ends: Vec<Ends> = self
             .ends
@@ -955,8 +954,8 @@ impl Shape
         let vertices = usize::from(self.vertices);
         let relabel = |order: &[usize]| -> Box<[Ends]> {
             let rename = |end: End| match end {
-                | End::Open => End::Open,
-                | End::Vertex(vertex) => End::Vertex(Edge::from(
+                End::Open => End::Open,
+                End::Vertex(vertex) => End::Vertex(Edge::from(
                     order.get(usize::from(vertex)).copied().unwrap_or(0),
                 )),
             };
@@ -1048,8 +1047,8 @@ impl fmt::Display for EndLabel
     ) -> fmt::Result
     {
         match self.0 {
-            | End::Open => f.write_str("·"),
-            | End::Vertex(vertex) => write!(f, "{}", usize::from(vertex)),
+            End::Open => f.write_str("·"),
+            End::Vertex(vertex) => write!(f, "{}", usize::from(vertex)),
         }
     }
 }
@@ -1099,13 +1098,11 @@ pub fn shapes_up_to(bound: ShapeSize) -> Result<Vec<Shape>, ShapeObstruction>
                     .filter_map(|kind| kinds.get(*kind).copied())
                     .collect();
                 match Shape::from_ends(EdgeCount::from(vertices), ends) {
-                    | Ok(shape) => {
+                    Ok(shape) => {
                         classes.entry(shape.key()).or_insert(shape);
                     },
-                    | Err(ShapeObstruction::Carrier(WiringObstruction::DirectedCycle {
-                        ..
-                    })) => {},
-                    | Err(refusal) => return Err(refusal),
+                    Err(ShapeObstruction::Carrier(WiringObstruction::DirectedCycle { .. })) => {},
+                    Err(refusal) => return Err(refusal),
                 }
                 let Some(position) = cursor
                     .iter()

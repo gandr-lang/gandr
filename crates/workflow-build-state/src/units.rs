@@ -211,22 +211,22 @@ impl Units
                     message: error.to_string(),
                 })?;
             match message {
-                | Message::Artifact { filenames } => {
+                Message::Artifact { filenames } => {
                     for file in filenames {
                         self.insert(PathBuf::from(file));
                     }
                 },
-                | Message::BuildScript { out_dir } => self.insert(PathBuf::from(out_dir)),
-                | Message::Finished { success } => finished = Some(success),
-                | Message::Other => {},
+                Message::BuildScript { out_dir } => self.insert(PathBuf::from(out_dir)),
+                Message::Finished { success } => finished = Some(success),
+                Message::Other => {},
             }
         }
         match finished {
-            | Some(true) => Ok(()),
-            | Some(false) => Err(BuildStateError::Failed {
+            Some(true) => Ok(()),
+            Some(false) => Err(BuildStateError::Failed {
                 path: path.to_owned(),
             }),
-            | None => Err(BuildStateError::Unfinished {
+            None => Err(BuildStateError::Unfinished {
                 path: path.to_owned(),
             }),
         }
@@ -258,10 +258,10 @@ impl Units
             .filter_map(|name| name.to_str())
             .find_map(|name| name.parse::<UnitHash>().ok());
         match named {
-            | Some(hash) => {
+            Some(hash) => {
                 self.hashes.insert(hash);
             },
-            | None => {
+            None => {
                 self.uplifted.insert(path);
             },
         }

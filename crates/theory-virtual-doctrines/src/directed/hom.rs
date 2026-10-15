@@ -217,17 +217,17 @@ pub fn check_directed_j(
         return Err(JError::MotiveNotCovariant);
     }
     match j.motive {
-        | MotiveShape::CovariantTarget => Ok(DirectedHom {
+        MotiveShape::CovariantTarget => Ok(DirectedHom {
             sig: scrut.sig.clone(),
             src: j.fixed.clone(),
             tgt: scrut.tgt.clone(),
         }),
-        | MotiveShape::Constant => Ok(DirectedHom {
+        MotiveShape::Constant => Ok(DirectedHom {
             sig: scrut.sig.clone(),
             src: j.fixed.clone(),
             tgt: j.fixed.clone(),
         }),
-        | MotiveShape::ContravariantSource => Err(JError::MotiveNotCovariant),
+        MotiveShape::ContravariantSource => Err(JError::MotiveNotCovariant),
     }
 }
 

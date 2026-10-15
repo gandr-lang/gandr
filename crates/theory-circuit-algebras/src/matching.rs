@@ -245,11 +245,11 @@ impl MatchBudget
     fn spend(&mut self) -> Spend
     {
         match self.0.checked_sub(1) {
-            | Some(remaining) => {
+            Some(remaining) => {
                 self.0 = remaining;
                 Spend::Spent
             },
-            | None => Spend::Exhausted,
+            None => Spend::Exhausted,
         }
     }
 
@@ -363,10 +363,10 @@ impl Embedding
         edge: Edge,
     ) -> Maybe<Edge, embedding_image::Absent>
     {
-        match self.image.get(usize::from(edge)) {
-            | Some(image) => Maybe::Present(*image),
-            | None => Maybe::Absent(embedding_image::Absent::OutOfRange),
-        }
+        self.image.get(usize::from(edge)).map_or(
+            Maybe::Absent(embedding_image::Absent::OutOfRange),
+            |image| Maybe::Present(*image),
+        )
     }
 
     /// The image, in pattern generator order.
@@ -642,8 +642,8 @@ impl Embedding
         }
         let covered: BTreeSet<Edge> = self.image.iter().copied().collect();
         match sweep(target, &covered) {
-            | Sweep::Convex => Ok(self.convexity),
-            | Sweep::Escapes(detour) => Err(EmbeddingObstruction::NotConvex {
+            Sweep::Convex => Ok(self.convexity),
+            Sweep::Escapes(detour) => Err(EmbeddingObstruction::NotConvex {
                 escape: detour.escape,
                 through: detour.through,
                 re_entry: detour.re_entry,
@@ -1061,7 +1061,7 @@ impl core::fmt::Display for MatchObstruction
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::BudgetExhausted { .. } => {
+            Self::BudgetExhausted { .. } => {
                 "the search budget ran out before every candidate was enumerated"
             },
         })
@@ -1205,24 +1205,20 @@ impl core::fmt::Display for EmbeddingObstruction
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::ImageLength { .. } => "the image does not hold one slot per pattern generator",
-            | Self::ImageOutOfRange { .. } => "a claimed image is not a generator of the target",
-            | Self::LabelMismatch { .. } => "a claimed image carries another label",
-            | Self::ArityMismatch { .. } => "a claimed image has another arity",
-            | Self::IncidenceMismatch { .. } => {
-                "the wire map disagrees with a claimed image's ports"
-            },
-            | Self::NonInjectiveImage { .. } => "two pattern generators claim one target generator",
-            | Self::WireUnmapped { .. } => "a pattern wire has no image",
-            | Self::WireImageOutOfRange { .. } => "a pattern wire is mapped outside the target",
-            | Self::WireMapOverwide { .. } => {
-                "the wire map assigns wires the pattern does not have"
-            },
-            | Self::SeamMismatch { .. } => "the seam is not the wire map's boundary restriction",
-            | Self::UnearnedWarrant { .. } => {
+            Self::ImageLength { .. } => "the image does not hold one slot per pattern generator",
+            Self::ImageOutOfRange { .. } => "a claimed image is not a generator of the target",
+            Self::LabelMismatch { .. } => "a claimed image carries another label",
+            Self::ArityMismatch { .. } => "a claimed image has another arity",
+            Self::IncidenceMismatch { .. } => "the wire map disagrees with a claimed image's ports",
+            Self::NonInjectiveImage { .. } => "two pattern generators claim one target generator",
+            Self::WireUnmapped { .. } => "a pattern wire has no image",
+            Self::WireImageOutOfRange { .. } => "a pattern wire is mapped outside the target",
+            Self::WireMapOverwide { .. } => "the wire map assigns wires the pattern does not have",
+            Self::SeamMismatch { .. } => "the seam is not the wire map's boundary restriction",
+            Self::UnearnedWarrant { .. } => {
                 "the discharge is claimed for a pattern that is not strongly connected"
             },
-            | Self::NotConvex { .. } => "a directed path leaves the image and returns to it",
+            Self::NotConvex { .. } => "a directed path leaves the image and returns to it",
         })
     }
 }
@@ -1297,8 +1293,8 @@ pub fn connectivity(pattern: &Wiring) -> Connectivity
 pub fn convexity_warrant(pattern: &Wiring) -> ConvexityWarrant
 {
     match connectivity(pattern) {
-        | Connectivity::StronglyConnected => ConvexityWarrant::StronglyConnectedOverAcyclicTarget,
-        | Connectivity::Disconnected { .. } => ConvexityWarrant::SweptOverTheComplement,
+        Connectivity::StronglyConnected => ConvexityWarrant::StronglyConnectedOverAcyclicTarget,
+        Connectivity::Disconnected { .. } => ConvexityWarrant::SweptOverTheComplement,
     }
 }
 
@@ -1622,7 +1618,7 @@ fn extend(
             return Extension::Exhausted;
         }
         match item {
-            | Pending::Generator(source, image) => {
+            Pending::Generator(source, image) => {
                 let Some(slot) = state.generators.get_mut(usize::from(source))
                 else {
                     return Extension::Clash;
@@ -1653,7 +1649,7 @@ fn extend(
                     queue.push(Pending::Wire(*wire, *onto_wire));
                 }
             },
-            | Pending::Wire(source, image) => {
+            Pending::Wire(source, image) => {
                 if state.wires.extend(source, image).is_err() {
                     return Extension::Clash;
                 }
@@ -1749,16 +1745,16 @@ fn sweep(
         };
         for wire in generator.sources() {
             match target.producer_of(*wire) {
-                | Maybe::Present(producer) if image.contains(&producer) => {},
-                | Maybe::Present(_) | Maybe::Absent(_) => {
+                Maybe::Present(producer) if image.contains(&producer) => {},
+                Maybe::Present(_) | Maybe::Absent(_) => {
                     entries.insert(*wire);
                 },
             }
         }
         for wire in generator.targets() {
             match target.consumer_of(*wire) {
-                | Maybe::Present(consumer) if image.contains(&consumer) => {},
-                | Maybe::Present(_) | Maybe::Absent(_) => exits.push(*wire),
+                Maybe::Present(consumer) if image.contains(&consumer) => {},
+                Maybe::Present(_) | Maybe::Absent(_) => exits.push(*wire),
             }
         }
     }
@@ -1858,13 +1854,13 @@ fn search(
             let candidate = frame.next;
             frame.next = frame.next.saturating_add(1);
             let pending = match seeds.get(component).copied() {
-                | Some(Seed::Generator(edge)) if candidate < usize::from(target.edge_count()) => {
+                Some(Seed::Generator(edge)) if candidate < usize::from(target.edge_count()) => {
                     Pending::Generator(edge, Edge::from(candidate))
                 },
-                | Some(Seed::Wire(wire)) if candidate < usize::from(target.wire_count()) => {
+                Some(Seed::Wire(wire)) if candidate < usize::from(target.wire_count()) => {
                     Pending::Wire(wire, Wire::from(candidate))
                 },
-                | Some(Seed::Generator(_) | Seed::Wire(_)) | None => {
+                Some(Seed::Generator(_) | Seed::Wire(_)) | None => {
                     frames.pop();
                     continue;
                 },
@@ -1873,13 +1869,13 @@ fn search(
             // seed fan-out on large targets shows in a profile.
             let mut state = frame.state.clone();
             match extend(pattern, target, &mut state, pending, &mut remaining) {
-                | Extension::Exhausted => {
+                Extension::Exhausted => {
                     return Err(MatchObstruction::BudgetExhausted {
                         consumed: remaining.spent_since(budget),
                     });
                 },
-                | Extension::Clash => {},
-                | Extension::Consistent => {
+                Extension::Clash => {},
+                Extension::Consistent => {
                     let next = component.saturating_add(1);
                     if next >= seeds.len() {
                         completions.push(state);
@@ -1952,19 +1948,19 @@ fn admit(
             continue;
         };
         let verdict = match warrant {
-            | ConvexityWarrant::StronglyConnectedOverAcyclicTarget => Sweep::Convex,
-            | ConvexityWarrant::SweptOverTheComplement => {
+            ConvexityWarrant::StronglyConnectedOverAcyclicTarget => Sweep::Convex,
+            ConvexityWarrant::SweptOverTheComplement => {
                 sweep(target, &image.iter().copied().collect())
             },
         };
         match verdict {
-            | Sweep::Escapes(detour) => refused.push(ConvexityRefusal {
+            Sweep::Escapes(detour) => refused.push(ConvexityRefusal {
                 image: image.into_boxed_slice(),
                 escape: detour.escape,
                 through: detour.through,
                 re_entry: detour.re_entry,
             }),
-            | Sweep::Convex => {
+            Sweep::Convex => {
                 let seam = seam_of(pattern, &completion.wires);
                 admitted.push(Embedding {
                     image: image.into_boxed_slice(),

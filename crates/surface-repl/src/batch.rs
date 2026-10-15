@@ -45,10 +45,10 @@ impl fmt::Display for Fault
     ) -> fmt::Result
     {
         match *self {
-            | Self::Grammar(ref error) => write!(f, "the built-in grammar did not build: {error}"),
-            | Self::Input(ref error) => write!(f, "cannot read the input: {error}"),
-            | Self::Editor(ref error) => write!(f, "the line editor failed: {error}"),
-            | Self::Session(ref error) => write!(f, "{error}"),
+            Self::Grammar(ref error) => write!(f, "the built-in grammar did not build: {error}"),
+            Self::Input(ref error) => write!(f, "cannot read the input: {error}"),
+            Self::Editor(ref error) => write!(f, "the line editor failed: {error}"),
+            Self::Session(ref error) => write!(f, "{error}"),
         }
     }
 }
@@ -174,25 +174,25 @@ where
     Output: Write,
 {
     let mut repl = match SessionLoop::new(style) {
-        | Ok(repl) => repl,
-        | Err(error) => return Ok(Ended::Faulted(Fault::Grammar(error))),
+        Ok(repl) => repl,
+        Err(error) => return Ok(Ended::Faulted(Fault::Grammar(error))),
     };
     for line in input.lines() {
         let line = match line {
-            | Ok(line) => line,
-            | Err(error) => return Ok(Ended::Faulted(Fault::Input(error))),
+            Ok(line) => line,
+            Err(error) => return Ok(Ended::Faulted(Fault::Input(error))),
         };
         match repl.offer(SourceText::from(line.as_str())) {
-            | Ok(LoopEvent::Continue) => {},
-            | Ok(LoopEvent::Block(block)) => write_block(output, &block)?,
-            | Ok(LoopEvent::Quit) => break,
-            | Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
+            Ok(LoopEvent::Continue) => {},
+            Ok(LoopEvent::Block(block)) => write_block(output, &block)?,
+            Ok(LoopEvent::Quit) => break,
+            Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
         }
     }
     match repl.finish() {
-        | Ok(Maybe::Present(block)) => write_block(output, &block)?,
-        | Ok(Maybe::Absent(_)) => {},
-        | Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
+        Ok(Maybe::Present(block)) => write_block(output, &block)?,
+        Ok(Maybe::Absent(_)) => {},
+        Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
     }
     Ok(Ended::Completed)
 }

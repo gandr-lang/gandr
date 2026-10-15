@@ -111,14 +111,28 @@ fn first_order(
             continue;
         }
         match arena.value_type(id).ok_or(FlowError::Arena)? {
-            | &ValueType::Base(_) => {},
-            | &ValueType::Sum(ref parts) if parts.is_empty() => {
+            &ValueType::Base(_) => {},
+            &ValueType::Sum(ref parts) if parts.is_empty() => {
                 return Err(FlowError::UnsupportedType(id));
             },
-            | &ValueType::Sum(ref parts) | &ValueType::Product(ref parts) => {
+            &ValueType::Sum(ref parts) | &ValueType::Product(ref parts) => {
                 pending.extend(parts.iter().rev().copied());
             },
-            | _ => return Err(FlowError::UnsupportedType(id)),
+            &ValueType::Data { .. }
+            | &ValueType::Record(_)
+            | &ValueType::Session { .. }
+            | &ValueType::PathUniverse(..)
+            | &ValueType::FlowUniverse(..)
+            | &ValueType::Path { .. }
+            | &ValueType::Flow { .. }
+            | &ValueType::Sigma { .. }
+            | &ValueType::List(_)
+            | &ValueType::Thunk(_)
+            | &ValueType::Universe { .. }
+            | &ValueType::Lift { .. }
+            | &ValueType::Element { .. }
+            | &ValueType::Abstract(_)
+            | &ValueType::StaticPi { .. } => return Err(FlowError::UnsupportedType(id)),
         }
     }
     Ok(())
@@ -327,25 +341,39 @@ fn patterns(
     while let Some(task) = pending.pop() {
         allowance.charge()?;
         match task {
-            | Cover::Visit(id) => match arena.value_type(id).ok_or(FlowError::Arena)? {
-                | &ValueType::Base(base) => results.push(Vec::from([Pattern {
+            Cover::Visit(id) => match arena.value_type(id).ok_or(FlowError::Arena)? {
+                &ValueType::Base(base) => results.push(Vec::from([Pattern {
                     value: arena.value_variable(DeBruijnIndex::from(0_u32)),
                     leaves: Vec::from([base]),
                 }])),
-                | &ValueType::Sum(ref parts) if parts.is_empty() => {
+                &ValueType::Sum(ref parts) if parts.is_empty() => {
                     return Err(FlowError::UnsupportedType(id));
                 },
-                | &ValueType::Sum(ref parts) => {
+                &ValueType::Sum(ref parts) => {
                     pending.push(Cover::Sum(parts.len()));
                     pending.extend(parts.iter().rev().copied().map(Cover::Visit));
                 },
-                | &ValueType::Product(ref parts) => {
+                &ValueType::Product(ref parts) => {
                     pending.push(Cover::Product(parts.len()));
                     pending.extend(parts.iter().rev().copied().map(Cover::Visit));
                 },
-                | _ => return Err(FlowError::UnsupportedType(id)),
+                &ValueType::Data { .. }
+                | &ValueType::Record(_)
+                | &ValueType::Session { .. }
+                | &ValueType::PathUniverse(..)
+                | &ValueType::FlowUniverse(..)
+                | &ValueType::Path { .. }
+                | &ValueType::Flow { .. }
+                | &ValueType::Sigma { .. }
+                | &ValueType::List(_)
+                | &ValueType::Thunk(_)
+                | &ValueType::Universe { .. }
+                | &ValueType::Lift { .. }
+                | &ValueType::Element { .. }
+                | &ValueType::Abstract(_)
+                | &ValueType::StaticPi { .. } => return Err(FlowError::UnsupportedType(id)),
             },
-            | Cover::Sum(arity) => {
+            Cover::Sum(arity) => {
                 let start = results.len().checked_sub(arity).ok_or(FlowError::Arena)?;
                 let mut joined = Vec::new();
                 for (summand, branch) in results.drain(start ..).enumerate() {
@@ -362,7 +390,7 @@ fn patterns(
             // Each step crosses the tuples so far with the next component's
             // shapes; the earlier components' leaves shift past the new
             // component's, so every leaf stays distinct.
-            | Cover::Product(arity) => {
+            Cover::Product(arity) => {
                 let start = results.len().checked_sub(arity).ok_or(FlowError::Arena)?;
                 let mut tuples = Vec::from([(Vec::<ValueId>::new(), Vec::<BaseType>::new())]);
                 for component in results.drain(start ..) {
@@ -449,7 +477,7 @@ fn natural(
         allowance.charge()?;
         let ty = arena.value_type(ty).ok_or(FlowError::Arena)?;
         match (arena.value(value), ty) {
-            | (Some(&Value::Variable(index)), &ValueType::Base(base)) => {
+            (Some(&Value::Variable(index)), &ValueType::Base(base)) => {
                 let index =
                     usize::try_from(u32::from(index)).map_err(|_overflow| FlowError::Budget)?;
                 let source = leaves
@@ -460,19 +488,19 @@ fn natural(
                     return Err(FlowError::NonNatural(value));
                 }
             },
-            | (Some(&Value::Tuple(ref components)), &ValueType::Product(ref parts))
+            (Some(&Value::Tuple(ref components)), &ValueType::Product(ref parts))
                 if components.len() == parts.len() =>
             {
                 pending.extend(components.iter().copied().zip(parts.iter().copied()).rev());
             },
-            | (Some(&Value::Injection(summand, value)), &ValueType::Sum(ref summands)) => {
+            (Some(&Value::Injection(summand, value)), &ValueType::Sum(ref summands)) => {
                 let summand = summands
                     .get(usize::from(summand))
                     .copied()
                     .ok_or(FlowError::NonNatural(value))?;
                 pending.push((value, summand));
             },
-            | _ => return Err(FlowError::NonNatural(value)),
+            _ => return Err(FlowError::NonNatural(value)),
         }
     }
     Ok(())
@@ -522,8 +550,8 @@ fn peel(
         body = inner;
     }
     match arena.computation(body) {
-        | Some(&Computation::Return(output)) => Ok(output),
-        | _ => Err(FlowError::NonNatural(image)),
+        Some(&Computation::Return(output)) => Ok(output),
+        _ => Err(FlowError::NonNatural(image)),
     }
 }
 
@@ -634,8 +662,8 @@ mod tests
             .expect("a tuple")
             .iter()
             .map(|&component| match arena.value(component) {
-                | Some(&Value::Variable(index)) => u32::from(index),
-                | _ => panic!("a base position is a variable"),
+                Some(&Value::Variable(index)) => u32::from(index),
+                _ => panic!("a base position is a variable"),
             })
             .collect::<Vec<_>>();
         assert_eq!(vec![2_u32, 1_u32, 0_u32], indices);

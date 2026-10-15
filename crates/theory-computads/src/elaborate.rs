@@ -693,13 +693,13 @@ impl fmt::Display for EtaElaborateError
     ) -> fmt::Result
     {
         match *self {
-            | Self::NotSingleConstructor(count) => write!(
+            Self::NotSingleConstructor(count) => write!(
                 f,
                 "no η cell: the declaration has {count} constructors, and an η law cancels a \
                  destructor against the one constructor it inverts. Write the declaration with \
                  one constructor, or state the per-constructor laws as ordinary `rule` members."
             ),
-            | Self::NoInverseFace => f.write_str(
+            Self::NoInverseFace => f.write_str(
                 "no η cell: no operation of the declaration carries the face `f(K(x)) ==> x`, so \
                  nothing in the declaration says that an operation destructs the constructor. An \
                  η law is licensed by the inverse face, never assumed from an operation's \
@@ -995,8 +995,8 @@ fn elaborate_desc<G>(
     let mut unrepresentable: Vec<&Name> = Vec::new();
     for (index, op) in desc.opers.iter().enumerate() {
         match admit_op(op) {
-            | Ok(frame) => opers.push(frame),
-            | Err(error) => {
+            Ok(frame) => opers.push(frame),
+            Err(error) => {
                 unrepresentable.push(&op.name);
                 declined_opers.push((DeclinedOpIndex::from(index), error));
             },
@@ -1018,20 +1018,20 @@ fn elaborate_desc<G>(
         }
         else {
             match admit_face(&mut store, face, desc.polarity, &opers, &unrepresentable) {
-                | Ok(cell) => {
+                Ok(cell) => {
                     admitted_faces.push((AdmittedFaceIndex::from(index), cell));
                     Ok(false)
                 },
-                | Err(ElaborateError::UnsupportedShape) if laws_over_terms => Ok(true),
-                | Err(error) => Err(error),
+                Err(ElaborateError::UnsupportedShape) if laws_over_terms => Ok(true),
+                Err(error) => Err(error),
             }
         };
         match outcome {
-            | Ok(terms) => {
+            Ok(terms) => {
                 presents |= terms;
                 read.push((AdmittedFaceIndex::from(index), face));
             },
-            | Err(error) => declined_faces.push((DeclinedFaceIndex::from(index), error)),
+            Err(error) => declined_faces.push((DeclinedFaceIndex::from(index), error)),
         }
     }
     let presented = if presents {
@@ -1162,8 +1162,8 @@ fn admit_circuit_rule(
 ) -> CircuitElaboration
 {
     let composite = match elaborate_body(&rule.body) {
-        | Ok(composite) => composite,
-        | Err(error) => {
+        Ok(composite) => composite,
+        Err(error) => {
             return CircuitElaboration::Declined(ElaborateError::NoCircuitComposite(error));
         },
     };
@@ -1171,8 +1171,8 @@ fn admit_circuit_rule(
         .and_then(|()| elaborate_rule(&rule.sphere, polarity, opers))
         .and_then(|cell| admit_cell(store, cell));
     match admitted {
-        | Ok(cell) => CircuitElaboration::Admitted { cell, composite },
-        | Err(error) => CircuitElaboration::Declined(error),
+        Ok(cell) => CircuitElaboration::Admitted { cell, composite },
+        Err(error) => CircuitElaboration::Declined(error),
     }
 }
 
@@ -1527,8 +1527,8 @@ fn frame_cell(
 const fn eta_kind(polarity: DeclPolarity) -> EtaKind
 {
     match polarity {
-        | DeclPolarity::Data => EtaKind::Data,
-        | DeclPolarity::Codata => EtaKind::Codata,
+        DeclPolarity::Data => EtaKind::Data,
+        DeclPolarity::Codata => EtaKind::Codata,
     }
 }
 
@@ -1614,8 +1614,8 @@ fn admit_op(op: &OperDesc) -> Result<OpFrame, OpElaborateError>
             .ok()
             .and_then(|dest| fed.get_mut(dest))
         {
-            | Some(count) => *count = count.saturating_add(1),
-            | None => return Err(OpElaborateError::AggregatedOutput),
+            Some(count) => *count = count.saturating_add(1),
+            None => return Err(OpElaborateError::AggregatedOutput),
         }
     }
     if fed.iter().any(|&count| count != 1) {
@@ -1680,14 +1680,14 @@ fn declined_operation(
     let mut stack: Vec<TermNode<'_>> = alloc::vec![face.lhs.to_node(), face.rhs.to_node()];
     while let Some(node) = stack.pop() {
         match node.view() {
-            | TermView::Var(_) => {},
-            | TermView::Op { name, args } => {
+            TermView::Var(_) => {},
+            TermView::Op { name, args } => {
                 if declined.contains(&name) {
                     return Err(ElaborateError::UnrepresentableOperation);
                 }
                 stack.extend(args);
             },
-            | TermView::Ctor { args, .. } | TermView::Results { args } => stack.extend(args),
+            TermView::Ctor { args, .. } | TermView::Results { args } => stack.extend(args),
         }
     }
     Ok(())
@@ -1985,13 +1985,13 @@ pub fn read_command(command: &CmdPat) -> Maybe<FreeTerm, command_reading::Absent
     let mut consumer = command.consumer().to_ref();
     loop {
         match consumer.view() {
-            | ConsView::Meta(_) => return Maybe::Present(term),
-            | ConsView::Top => return Maybe::Absent(command_reading::Absent::Terminal),
-            | ConsView::Frame { ctor, ret } => {
+            ConsView::Meta(_) => return Maybe::Present(term),
+            ConsView::Top => return Maybe::Absent(command_reading::Absent::Terminal),
+            ConsView::Frame { ctor, ret } => {
                 term = FreeTerm::ctor(ctor.as_ref(), [term]);
                 consumer = ret;
             },
-            | ConsView::Op { op, args, mut rets } => {
+            ConsView::Op { op, args, mut rets } => {
                 let arguments: Vec<FreeTerm> = core::iter::once(term)
                     .chain(args.map(read_producer))
                     .collect();
@@ -2036,8 +2036,8 @@ fn read_producer(producer: ProdRef<'_>) -> FreeTerm
 {
     let mut built: Vec<FreeTerm> = Vec::new();
     let take = |built: &mut Vec<FreeTerm>, head: &ProdHead| match *head {
-        | ProdHead::Meta(ref var) => FreeTerm::var(var.hole().as_ref()),
-        | ProdHead::Ctor(ref ctor, arity) => {
+        ProdHead::Meta(ref var) => FreeTerm::var(var.hole().as_ref()),
+        ProdHead::Ctor(ref ctor, arity) => {
             let split = built.len().saturating_sub(usize::from(arity));
             let arguments: Vec<FreeTerm> = built.drain(split ..).rev().collect();
             FreeTerm::ctor(ctor.as_ref(), arguments)
@@ -2085,8 +2085,8 @@ fn outputs_of(
 fn return_continuations(outputs: ContinuationCount) -> Vec<ConsPat>
 {
     match usize::from(outputs) {
-        | 1 => alloc::vec![ConsPat::meta(RETURN_CONT)],
-        | ports => (0 .. ports)
+        1 => alloc::vec![ConsPat::meta(RETURN_CONT)],
+        ports => (0 .. ports)
             .map(|port| ConsPat::meta(alloc::format!("{RETURN_CONT}.{port}").as_str()))
             .collect(),
     }
@@ -2201,26 +2201,26 @@ fn elaborate_result(
     let outputs = ContinuationCount::from(conts.len());
     let mismatch = |results| ElaborateError::ResultArity { outputs, results };
     match term.view() {
-        | TermView::Op { name, args } => {
+        TermView::Op { name, args } => {
             let produced = outputs_of(name, opers);
             if produced != outputs {
                 return Err(mismatch(produced));
             }
             operation_cut(name, args, conts, polarity)
         },
-        | TermView::Results { mut args } => {
+        TermView::Results { mut args } => {
             let width = ContinuationCount::from(args.len());
             if width != outputs {
                 return Err(mismatch(width));
             }
             let conts = match <[ConsPat; 1]>::try_from(conts) {
-                | Ok([cont]) => {
-                    return match args.next() {
-                        | Some(only) => elaborate_value(only, cont, polarity, opers),
-                        | None => Err(mismatch(width)),
-                    };
+                Ok([cont]) => {
+                    return args.next().map_or_else(
+                        || Err(mismatch(width)),
+                        |only| elaborate_value(only, cont, polarity, opers),
+                    );
                 },
-                | Err(conts) => conts,
+                Err(conts) => conts,
             };
             let mut components = elaborate_producers(args)?.into_iter();
             let Some(first) = components.next()
@@ -2233,9 +2233,9 @@ fn elaborate_result(
                 ConsPat::operation(Sym::from(DELIVER), components, conts),
             ))
         },
-        | TermView::Var(_) | TermView::Ctor { .. } => match <[ConsPat; 1]>::try_from(conts) {
-            | Ok([cont]) => elaborate_value(term, cont, polarity, opers),
-            | Err(_) => Err(mismatch(ContinuationCount::ONE)),
+        TermView::Var(_) | TermView::Ctor { .. } => match <[ConsPat; 1]>::try_from(conts) {
+            Ok([cont]) => elaborate_value(term, cont, polarity, opers),
+            Err(_) => Err(mismatch(ContinuationCount::ONE)),
         },
     }
 }
@@ -2296,10 +2296,10 @@ fn elaborate_value(
     let mut cont = cont;
     loop {
         match current.view() {
-            | TermView::Var(name) => {
+            TermView::Var(name) => {
                 return Ok(CmdPat::cut(polarity, ProdPat::meta(hole(name)), cont));
             },
-            | TermView::Op { name, args } => {
+            TermView::Op { name, args } => {
                 let produced = outputs_of(name, opers);
                 if produced != ContinuationCount::ONE {
                     return Err(ElaborateError::ResultArity {
@@ -2309,8 +2309,8 @@ fn elaborate_value(
                 }
                 return operation_cut(name, args, alloc::vec![cont], polarity);
             },
-            | TermView::Results { .. } => return Err(ElaborateError::UnsupportedShape),
-            | TermView::Ctor { name, args } => {
+            TermView::Results { .. } => return Err(ElaborateError::UnsupportedShape),
+            TermView::Ctor { name, args } => {
                 if let Ok(producers) = elaborate_producers(args.clone()) {
                     return Ok(CmdPat::cut(
                         polarity,
@@ -2425,12 +2425,12 @@ fn elaborate_producer(term: TermNode<'_>) -> Result<ProdPat, ElaborateError>
     let mut current = term;
     loop {
         let mut value = match current.view() {
-            | TermView::Var(name) => ProdPat::meta(hole(name)),
-            | TermView::Op { .. } | TermView::Results { .. } => {
+            TermView::Var(name) => ProdPat::meta(hole(name)),
+            TermView::Op { .. } | TermView::Results { .. } => {
                 return Err(ElaborateError::UnsupportedShape);
             },
-            | TermView::Ctor { name, mut args } => match args.next() {
-                | Some(first) => {
+            TermView::Ctor { name, mut args } => match args.next() {
+                Some(first) => {
                     let built = Vec::with_capacity(args.len().saturating_add(1));
                     pending.push(Pending {
                         name,
@@ -2440,7 +2440,7 @@ fn elaborate_producer(term: TermNode<'_>) -> Result<ProdPat, ElaborateError>
                     current = first;
                     continue;
                 },
-                | None => ProdPat::ctor(sym(name), []),
+                None => ProdPat::ctor(sym(name), []),
             },
         };
         // Hand the finished value up until a constructor still awaits an

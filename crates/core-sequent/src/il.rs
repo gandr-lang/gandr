@@ -191,12 +191,12 @@ impl ConstructorTag
     pub fn producer_arity(&self) -> ProducerArity
     {
         match *self {
-            | Self::ListNil => ProducerArity::ZERO,
-            | Self::ListCons => ProducerArity::TWO,
-            | Self::Injection(_) | Self::Lift(_) => ProducerArity::ONE,
-            | Self::Tuple(arity) | Self::Data { arity, .. } => arity,
-            | Self::Record(ref labels) => ProducerArity::from(labels.len()),
-            | Self::Recorded(ref moves) => recorded_payloads(moves),
+            Self::ListNil => ProducerArity::ZERO,
+            Self::ListCons => ProducerArity::TWO,
+            Self::Injection(_) | Self::Lift(_) => ProducerArity::ONE,
+            Self::Tuple(arity) | Self::Data { arity, .. } => arity,
+            Self::Record(ref labels) => ProducerArity::from(labels.len()),
+            Self::Recorded(ref moves) => recorded_payloads(moves),
         }
     }
 
@@ -222,7 +222,7 @@ impl ConstructorTag
     pub const fn consumer_arity(&self) -> ConsumerArity
     {
         match *self {
-            | Self::Tuple(_)
+            Self::Tuple(_)
             | Self::Record(_)
             | Self::ListNil
             | Self::ListCons
@@ -291,10 +291,10 @@ impl Ord for DestructorTag
     ) -> core::cmp::Ordering
     {
         let rank = |tag: &Self| match *tag {
-            | Self::Apply => 0_u8,
-            | Self::Force => 1,
-            | Self::Project(gandr_kernel_term::Side::Left) => 2,
-            | Self::Project(gandr_kernel_term::Side::Right) => 3,
+            Self::Apply => 0_u8,
+            Self::Force => 1,
+            Self::Project(gandr_kernel_term::Side::Left) => 2,
+            Self::Project(gandr_kernel_term::Side::Right) => 3,
         };
         rank(self).cmp(&rank(other))
     }
@@ -341,8 +341,8 @@ impl DestructorTag
     pub const fn producer_arity(self) -> ProducerArity
     {
         match self {
-            | Self::Apply => ProducerArity::ONE,
-            | Self::Force | Self::Project(_) => ProducerArity::ZERO,
+            Self::Apply => ProducerArity::ONE,
+            Self::Force | Self::Project(_) => ProducerArity::ZERO,
         }
     }
 
@@ -368,7 +368,7 @@ impl DestructorTag
     pub const fn consumer_arity(self) -> ConsumerArity
     {
         match self {
-            | Self::Apply | Self::Force | Self::Project(_) => ConsumerArity::ONE,
+            Self::Apply | Self::Force | Self::Project(_) => ConsumerArity::ONE,
         }
     }
 
@@ -395,8 +395,8 @@ impl DestructorTag
     pub const fn polarity(self) -> Polarity
     {
         match self {
-            | Self::Apply | Self::Project(_) => Polarity::Negative,
-            | Self::Force => Polarity::Positive,
+            Self::Apply | Self::Project(_) => Polarity::Negative,
+            Self::Force => Polarity::Positive,
         }
     }
 }
@@ -723,15 +723,15 @@ impl fmt::Display for MintRefusal
     ) -> fmt::Result
     {
         match *self {
-            | Self::DanglingProducer(id) => write!(f, "producer {id} is not in the arena"),
-            | Self::DanglingConsumer(id) => write!(f, "consumer {id} is not in the arena"),
-            | Self::DanglingCommand(id) => write!(f, "command {id} is not in the arena"),
-            | Self::DanglingAnnotation(_) => f.write_str("a List-fold annotation does not resolve"),
-            | Self::FamilyFull(family) => {
+            Self::DanglingProducer(id) => write!(f, "producer {id} is not in the arena"),
+            Self::DanglingConsumer(id) => write!(f, "consumer {id} is not in the arena"),
+            Self::DanglingCommand(id) => write!(f, "command {id} is not in the arena"),
+            Self::DanglingAnnotation(_) => f.write_str("a List-fold annotation does not resolve"),
+            Self::FamilyFull(family) => {
                 let name = match family {
-                    | NodeFamily::Producer => "producer",
-                    | NodeFamily::Consumer => "consumer",
-                    | NodeFamily::Command => "command",
+                    NodeFamily::Producer => "producer",
+                    NodeFamily::Consumer => "consumer",
+                    NodeFamily::Command => "command",
                 };
                 write!(f, "the {name} family is full")
             },
@@ -1134,13 +1134,13 @@ impl CommandArena
     ) -> Result<CommandId, MintRefusal>
     {
         match node {
-            | CommandNode::Cut {
+            CommandNode::Cut {
                 producer, consumer, ..
             } => {
                 self.producer_resolves(producer)?;
                 self.consumer_resolves(consumer)?;
             },
-            | CommandNode::Perform {
+            CommandNode::Perform {
                 ref signature,
                 route,
                 payload,
@@ -1154,7 +1154,7 @@ impl CommandArena
                 self.producer_resolves(payload)?;
                 self.consumer_resolves(continuation)?;
             },
-            | CommandNode::Handle {
+            CommandNode::Handle {
                 ref signature,
                 subject,
                 on_return,
@@ -1170,7 +1170,7 @@ impl CommandArena
                 }
                 self.consumer_resolves(continuation)?;
             },
-            | CommandNode::Resume {
+            CommandNode::Resume {
                 stack,
                 body,
                 continuation,
@@ -1179,7 +1179,7 @@ impl CommandArena
                 self.command_resolves(body)?;
                 self.consumer_resolves(continuation)?;
             },
-            | CommandNode::Reset { body, continuation }
+            CommandNode::Reset { body, continuation }
             | CommandNode::Shift { body, continuation } => {
                 self.command_resolves(body)?;
                 self.consumer_resolves(continuation)?;
@@ -1361,33 +1361,33 @@ impl CommandArena
     ) -> Result<(), MintRefusal>
     {
         match *node {
-            | ProducerNode::Reify(ref frames) => {
+            ProducerNode::Reify(ref frames) => {
                 for frame in frames.iter() {
                     match *frame {
-                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                        gandr_core_term::control::StackFrame::Apply(value) => {
                             self.producer_resolves(value)?;
                         },
-                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                        gandr_core_term::control::StackFrame::Bind(body) => {
                             self.command_resolves(body)?;
                         },
-                        | gandr_core_term::control::StackFrame::Project(_) => {},
+                        gandr_core_term::control::StackFrame::Project(_) => {},
                     }
                 }
                 Ok(())
             },
-            | ProducerNode::Primitive { arguments, .. } => self.children_resolve(&arguments, &[]),
-            | ProducerNode::Variable { .. }
+            ProducerNode::Primitive { arguments, .. } => self.children_resolve(&arguments, &[]),
+            ProducerNode::Variable { .. }
             | ProducerNode::Constant(_)
             | ProducerNode::Literal(_) => Ok(()),
-            | ProducerNode::Constructor {
+            ProducerNode::Constructor {
                 ref producers,
                 ref consumers,
                 ..
             } => self.children_resolve(producers, consumers),
-            | ProducerNode::Thunk { body }
+            ProducerNode::Thunk { body }
             | ProducerNode::Mu { body }
             | ProducerNode::Fixpoint { body, .. } => self.command_resolves(body),
-            | ProducerNode::Cocase { ref arms } => {
+            ProducerNode::Cocase { ref arms } => {
                 for arm in arms {
                     self.command_resolves(arm.body)?;
                 }
@@ -1456,8 +1456,8 @@ impl CommandArena
     ) -> Result<(), MintRefusal>
     {
         match *node {
-            | ConsumerNode::Covariable(_) | ConsumerNode::Top => Ok(()),
-            | ConsumerNode::ListFold {
+            ConsumerNode::Covariable(_) | ConsumerNode::Top => Ok(()),
+            ConsumerNode::ListFold {
                 element,
                 result,
                 on_nil,
@@ -1473,17 +1473,17 @@ impl CommandArena
                 self.command_resolves(on_cons)?;
                 self.consumer_resolves(continuation)
             },
-            | ConsumerNode::MuTilde { body } => self.command_resolves(body),
-            | ConsumerNode::Select { then, .. } => self.consumer_resolves(then),
-            | ConsumerNode::Destructor {
+            ConsumerNode::MuTilde { body } => self.command_resolves(body),
+            ConsumerNode::Select { then, .. } => self.consumer_resolves(then),
+            ConsumerNode::Destructor {
                 ref producers,
                 ref consumers,
                 ..
             } => self.children_resolve(producers, consumers),
-            | ConsumerNode::DataCase { ref branches, then } => {
+            ConsumerNode::DataCase { ref branches, then } => {
                 self.children_resolve(branches, core::slice::from_ref(&then))
             },
-            | ConsumerNode::Case { ref arms } => {
+            ConsumerNode::Case { ref arms } => {
                 for arm in arms {
                     self.command_resolves(arm.body)?;
                 }

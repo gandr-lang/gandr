@@ -917,7 +917,7 @@ pub fn candidate_labels<'text>(
     let text = <&str>::from(text);
     let mut labels = TokenLabels::new();
     match lexeme {
-        | Lexeme::LowerWord => {
+        Lexeme::LowerWord => {
             labels.push(CandidateLabel::from(text));
             // A reserved keyword is never an identifier; only its keyword tile
             // is a candidate (tree-sitter `word` reservation).
@@ -934,7 +934,7 @@ pub fn candidate_labels<'text>(
                 labels.push(CandidateLabel::from("hole_name"));
             }
         },
-        | Lexeme::UpperWord => {
+        Lexeme::UpperWord => {
             labels.push(CandidateLabel::from(text));
             // A reserved primitive/type keyword is never a constructor or a
             // type identifier; only its own tile is a candidate.
@@ -943,34 +943,34 @@ pub fn candidate_labels<'text>(
                 labels.push(CandidateLabel::from("type_identifier"));
             }
         },
-        | Lexeme::Number => labels.push(CandidateLabel::from("number")),
-        | Lexeme::TypedNumber => labels.push(CandidateLabel::from("typed_number")),
-        | Lexeme::Character => labels.push(CandidateLabel::from("character")),
-        | Lexeme::Quote => labels.push(CandidateLabel::from("\"")),
-        | Lexeme::StringFragment => labels.push(CandidateLabel::from("string_fragment")),
-        | Lexeme::ShellStringFragment => {
+        Lexeme::Number => labels.push(CandidateLabel::from("number")),
+        Lexeme::TypedNumber => labels.push(CandidateLabel::from("typed_number")),
+        Lexeme::Character => labels.push(CandidateLabel::from("character")),
+        Lexeme::Quote => labels.push(CandidateLabel::from("\"")),
+        Lexeme::StringFragment => labels.push(CandidateLabel::from("string_fragment")),
+        Lexeme::ShellStringFragment => {
             labels.push(CandidateLabel::from("double_string_fragment"));
         },
-        | Lexeme::EscapeSequence => labels.push(CandidateLabel::from("escape_sequence")),
+        Lexeme::EscapeSequence => labels.push(CandidateLabel::from("escape_sequence")),
         // ONE label: the grammar's single shell-word atom class.
         // The former `command_name` / `argument` labels rode the
         // dead composite shell rules; with those folded away, a shell word has
         // exactly one mold and takes the molder's sole-admissible fast path —
         // no dry-run, no lookahead, per word.
-        | Lexeme::ShellWord => labels.push(CandidateLabel::from("shell_word")),
+        Lexeme::ShellWord => labels.push(CandidateLabel::from("shell_word")),
         // ONE label, like the shell word: the labeler has already decided the
         // `NAME=value` shape, so the assignment takes the sole-admissible fast
         // path too (no dry-run, no lookahead). The mold and its walk-index entry
         // already existed — only the tile was missing.
-        | Lexeme::EnvAssign => labels.push(CandidateLabel::from("environment_assignment")),
-        | Lexeme::SingleQuotedContent => {
+        Lexeme::EnvAssign => labels.push(CandidateLabel::from("environment_assignment")),
+        Lexeme::SingleQuotedContent => {
             labels.push(CandidateLabel::from("single_quoted_content"));
         },
-        | Lexeme::VariableName => labels.push(CandidateLabel::from("variable_name")),
-        | Lexeme::SubshellOpen => labels.push(CandidateLabel::from("subshell_open")),
-        | Lexeme::SubshellClose => labels.push(CandidateLabel::from("subshell_close")),
-        | Lexeme::FileDescriptor => labels.push(CandidateLabel::from("file_descriptor")),
-        | Lexeme::Punct => {
+        Lexeme::VariableName => labels.push(CandidateLabel::from("variable_name")),
+        Lexeme::SubshellOpen => labels.push(CandidateLabel::from("subshell_open")),
+        Lexeme::SubshellClose => labels.push(CandidateLabel::from("subshell_close")),
+        Lexeme::FileDescriptor => labels.push(CandidateLabel::from("file_descriptor")),
+        Lexeme::Punct => {
             labels.push(CandidateLabel::from(text));
             // A dialect-bearing shell opener (`#!sh{`, `$!py{`) lexes as one
             // punctuation token; map it to the canonical opener label.
@@ -981,7 +981,7 @@ pub fn candidate_labels<'text>(
                 labels.push(CandidateLabel::from("command_substitution_start"));
             }
         },
-        | Lexeme::Space | Lexeme::Unknown => {},
+        Lexeme::Space | Lexeme::Unknown => {},
     }
     labels
 }
@@ -1699,9 +1699,9 @@ impl<'pbg> Molder<'pbg>
             let slice = token.text(&source);
             let text = AsRef::<str>::as_ref(&slice);
             match bracket(token, TokenText::from(text)) {
-                | Bracket::Open => depth = depth.saturating_add(1),
-                | Bracket::Close => depth = depth.saturating_sub(1),
-                | Bracket::Neither => {},
+                Bracket::Open => depth = depth.saturating_add(1),
+                Bracket::Close => depth = depth.saturating_sub(1),
+                Bracket::Neither => {},
             }
             after_terminator = matches!(token.lexeme, Lexeme::Punct) && matches!(text, ";" | "}");
         }
@@ -1889,11 +1889,11 @@ impl<'pbg> Molder<'pbg>
     )
     {
         match choice {
-            | Some(mold) => state.push_text(mold, TileText::from(text)),
+            Some(mold) => state.push_text(mold, TileText::from(text)),
             // No candidate mold: the totally-defined unmolded path. An
             // out-of-range mold id routes `push` to `UnmoldedTok` (grammar-total
             // fallback) while preserving the token text.
-            | None => state.push_text(MoldId::from(u32::MAX), TileText::from(text)),
+            None => state.push_text(MoldId::from(u32::MAX), TileText::from(text)),
         }
     }
 
@@ -2239,8 +2239,8 @@ impl<'pbg> Molder<'pbg>
                 continue;
             };
             let candidates = match menu {
-                | CandidateMenu::Fresh => self.pbg.fresh_candidates(label),
-                | CandidateMenu::Declared => self.pbg.candidates(label),
+                CandidateMenu::Fresh => self.pbg.fresh_candidates(label),
+                CandidateMenu::Declared => self.pbg.candidates(label),
             };
             for &mold in candidates {
                 self.candidates.push(mold);
@@ -2466,24 +2466,26 @@ impl<'pbg> Molder<'pbg>
                     continue;
                 }
                 let delta = match procedure {
-                    | Procedure::DryRuns => Self::push_delta(state, mold, text),
-                    | Procedure::Tables => {
+                    Procedure::DryRuns => Self::push_delta(state, mold, text),
+                    Procedure::Tables => {
                         let class = self.chain.key(self.pbg, mold);
-                        match self.pushes.iter().find(|&&(held, _)| held == class) {
-                            | Some(&(_, delta)) => delta,
-                            | None => {
-                                let delta = Self::push_delta(state, mold, text);
-                                self.pushes.push((class, delta));
-                                delta
-                            },
+                        if let Some(&(_, delta)) =
+                            self.pushes.iter().find(|&&(held, _)| held == class)
+                        {
+                            delta
+                        }
+                        else {
+                            let delta = Self::push_delta(state, mold, text);
+                            self.pushes.push((class, delta));
+                            delta
                         }
                     },
                 };
                 let key = CandidateKey { delta, ..floor };
                 match least {
-                    | Some(found) if key > found => {},
-                    | Some(found) if key == found => self.tied.push(mold),
-                    | _ => {
+                    Some(found) if key > found => {},
+                    Some(found) if key == found => self.tied.push(mold),
+                    _ => {
                         least = Some(key);
                         self.tied.clear();
                         self.tied.push(mold);
@@ -2589,9 +2591,9 @@ impl<'pbg> Molder<'pbg>
     ) -> Option<MoldId>
     {
         let procedure = match self.verdicts {
-            | MoldVerdicts::Tables => Procedure::Tables,
-            | MoldVerdicts::DryRuns => Procedure::DryRuns,
-            | MoldVerdicts::Differential => return self.choose_both(state, text, ahead),
+            MoldVerdicts::Tables => Procedure::Tables,
+            MoldVerdicts::DryRuns => Procedure::DryRuns,
+            MoldVerdicts::Differential => return self.choose_both(state, text, ahead),
         };
         self.choose_by(state, text, ahead, procedure)
     }
@@ -2717,16 +2719,18 @@ impl<'pbg> Molder<'pbg>
                 break;
             };
             let completion = match procedure {
-                | Procedure::DryRuns => Self::completion(state, mold, text),
-                | Procedure::Tables => {
+                Procedure::DryRuns => Self::completion(state, mold, text),
+                Procedure::Tables => {
                     let class = self.chain.key(self.pbg, mold);
-                    match self.completions.iter().find(|&&(held, _)| held == class) {
-                        | Some(&(_, completion)) => completion,
-                        | None => {
-                            let completion = Self::completion(state, mold, text);
-                            self.completions.push((class, completion));
-                            completion
-                        },
+                    if let Some(&(_, completion)) =
+                        self.completions.iter().find(|&&(held, _)| held == class)
+                    {
+                        completion
+                    }
+                    else {
+                        let completion = Self::completion(state, mold, text);
+                        self.completions.push((class, completion));
+                        completion
                     }
                 },
             };
@@ -2788,15 +2792,15 @@ impl<'pbg> Molder<'pbg>
             else {
                 break;
             };
-            let admitted = match admission.as_mut() {
-                | Some(admission) => admission.admits(mold),
-                | None => state.admits_at(mold, frontier),
-            };
+            let admitted = admission.as_mut().map_or_else(
+                || state.admits_at(mold, frontier),
+                |admission| admission.admits(mold),
+            );
             let kept = match binder {
-                | Some((tokens, index, source)) => bool::from(
+                Some((tokens, index, source)) => bool::from(
                     self.direct_rule_binder_admits(mold, frontier, admitted, tokens, index, source),
                 ),
-                | None => bool::from(admitted),
+                None => bool::from(admitted),
             };
             if kept {
                 self.eligible.push(mold);
@@ -2957,9 +2961,9 @@ impl<'pbg> Molder<'pbg>
     ) -> Option<MoldId>
     {
         let procedure = match self.verdicts {
-            | MoldVerdicts::Tables => Procedure::Tables,
-            | MoldVerdicts::DryRuns => Procedure::DryRuns,
-            | MoldVerdicts::Differential => {
+            MoldVerdicts::Tables => Procedure::Tables,
+            MoldVerdicts::DryRuns => Procedure::DryRuns,
+            MoldVerdicts::Differential => {
                 return self.choose_stream_both(state, tokens, index, source);
             },
         };
@@ -3159,18 +3163,18 @@ impl<'pbg> Molder<'pbg>
                 None
             };
             let first_of_class = match class {
-                | Some((key, signature)) => {
+                Some((key, signature)) => {
                     match self
                         .windowed
                         .iter()
                         .find(|&&(held, seen, _)| (held, seen) == (key, signature))
                     {
-                        | Some(&(_, _, WindowRun::Shared)) => continue,
-                        | Some(&(_, _, WindowRun::Exposed)) => false,
-                        | None => true,
+                        Some(&(_, _, WindowRun::Shared)) => continue,
+                        Some(&(_, _, WindowRun::Exposed)) => false,
+                        None => true,
                     }
                 },
-                | None => false,
+                None => false,
             };
             self.exposed = false;
             let mark = state.mark();
@@ -4657,11 +4661,11 @@ mod tests
                     .children(tree.root())
                     .filter_map(|child| {
                         match tree.node(child).map(gandr_surface_syntax::Node::label) {
-                            | Some(NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) => pbg
+                            Some(NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) => pbg
                                 .rule_of(mold)
                                 .ok()
                                 .map(gandr_surface_grammar::Rule::name),
-                            | _ => None,
+                            _ => None,
                         }
                     })
                     .collect();

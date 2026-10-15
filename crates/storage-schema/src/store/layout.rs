@@ -481,7 +481,7 @@ impl Store
                 return Err(fail(LayoutFault::Family));
             };
             match Family(family) {
-                | PART => {
+                PART => {
                     let part = exact_part(KeySuffix(rest)).map_err(fail)?;
                     if part >= next {
                         return Err(fail(LayoutFault::Counter));
@@ -490,7 +490,7 @@ impl Store
                         table.restore(part);
                     }
                 },
-                | ARROW => {
+                ARROW => {
                     let (ordinal, part) = column_part(KeySuffix(rest)).map_err(fail)?;
                     let arrow = self
                         .schema
@@ -517,7 +517,7 @@ impl Store
                         }
                     }
                 },
-                | VALUE => {
+                VALUE => {
                     let (ordinal, part) = column_part(KeySuffix(rest)).map_err(fail)?;
                     let attribute = self
                         .schema
@@ -540,8 +540,8 @@ impl Store
                         }
                     }
                 },
-                | ARROW_INDEX | VALUE_INDEX => {},
-                | _ => return Err(fail(LayoutFault::Family)),
+                ARROW_INDEX | VALUE_INDEX => {},
+                _ => return Err(fail(LayoutFault::Family)),
             }
         }
         Ok(())
@@ -713,8 +713,8 @@ where
     let stored = blocks.load(root)?;
     let node = decode_node(stored.bytes(), &mut DecodeWork::new())?;
     let internal = match node {
-        | DecodedNode::Leaf(leaf) => return Ok(leaf.records().to_vec()),
-        | DecodedNode::Internal(internal) => internal,
+        DecodedNode::Leaf(leaf) => return Ok(leaf.records().to_vec()),
+        DecodedNode::Internal(internal) => internal,
     };
     let mut records = Vec::new();
     for child in internal.children() {

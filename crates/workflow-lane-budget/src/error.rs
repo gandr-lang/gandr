@@ -57,15 +57,15 @@ impl fmt::Display for BudgetError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Budget { ref text } => write!(
+            Self::Budget { ref text } => write!(
                 f,
                 "`{text}` is not a job name, `=`, and a whole number of seconds"
             ),
-            | Self::Gh {
+            Self::Gh {
                 ref command,
                 ref message,
             } => write!(f, "`{command}` failed: {message}"),
-            | Self::Output { ref message } => write!(f, "standard output: {message}"),
+            Self::Output { ref message } => write!(f, "standard output: {message}"),
         }
     }
 }

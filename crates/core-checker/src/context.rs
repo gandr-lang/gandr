@@ -551,17 +551,16 @@ impl<'arena> CheckingContext<'arena>
             return;
         }
         let wanted = match self.formations {
-            | Wanted::All => None,
-            | Wanted::Firsts(ref types) => match types.binary_search_by_key(&ty, |&(held, _)| held)
-            {
-                | Ok(at)
+            Wanted::All => None,
+            Wanted::Firsts(ref types) => match types.binary_search_by_key(&ty, |&(held, _)| held) {
+                Ok(at)
                     if types
                         .get(at)
                         .is_some_and(|&(_, first)| first == First::Pending) =>
                 {
                     Some(at)
                 },
-                | Ok(_) | Err(_) => return,
+                Ok(_) | Err(_) => return,
             },
         };
         let Ok(level) = crate::formation::level_of(self, ty)
@@ -610,8 +609,8 @@ impl<'arena> CheckingContext<'arena>
     )
     {
         self.formations = match formations {
-            | Formations::All => Wanted::All,
-            | Formations::Firsts(types) => {
+            Formations::All => Wanted::All,
+            Formations::Firsts(types) => {
                 Wanted::Firsts(types.into_iter().map(|ty| (ty, First::Pending)).collect())
             },
         };
@@ -643,8 +642,8 @@ impl<'arena> CheckingContext<'arena>
     {
         let forming = self.typings.is_some()
             && match self.formations {
-                | Wanted::All => true,
-                | Wanted::Firsts(ref types) => types
+                Wanted::All => true,
+                Wanted::Firsts(ref types) => types
                     .binary_search_by_key(&ty, |&(held, _)| held)
                     .ok()
                     .and_then(|at| types.get(at))
@@ -1062,14 +1061,14 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             return Maybe::Absent(unfolding::Absent::Rigid);
         };
         match self.sealed.get(&atom) {
-            | Some(sealed)
+            Some(sealed)
                 if reader > atom
                     && usize::from(reader).saturating_sub(usize::from(atom))
                         <= usize::from(sealed.declared.extent()) =>
             {
                 Maybe::Present(sealed.declared.representation())
             },
-            | Some(_) | None => Maybe::Absent(unfolding::Absent::Rigid),
+            Some(_) | None => Maybe::Absent(unfolding::Absent::Rigid),
         }
     }
 
@@ -1112,16 +1111,15 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         constant: ConstantIndex,
     ) -> Maybe<FormedValueType, signature_table::Absent>
     {
-        match self
-            .signatures
+        self.signatures
             .binary_search_by_key(&constant, |&(held, _)| held)
-        {
-            | Ok(found) => match self.signatures.get(found) {
-                | Some(&(_, declared)) => Maybe::Present(declared),
-                | None => Maybe::Absent(signature_table::Absent::Untyped),
-            },
-            | Err(_) => Maybe::Absent(signature_table::Absent::Untyped),
-        }
+            .map_or(
+                Maybe::Absent(signature_table::Absent::Untyped),
+                |found| match self.signatures.get(found) {
+                    Some(&(_, declared)) => Maybe::Present(declared),
+                    None => Maybe::Absent(signature_table::Absent::Untyped),
+                },
+            )
     }
 
     /// Admit the declaration at `constant` with the type an earlier judgement
@@ -1266,8 +1264,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub(crate) fn finish_support(&mut self) -> Support
     {
         match core::mem::replace(&mut self.support, SupportLog::Off) {
-            | SupportLog::Recording { values, data } => Support::from_log(values, data),
-            | SupportLog::Off => Support::default(),
+            SupportLog::Recording { values, data } => Support::from_log(values, data),
+            SupportLog::Off => Support::default(),
         }
     }
 
@@ -1341,8 +1339,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         let elaborated = match self.natives.get(&body) {
-            | Some(&path) => path,
-            | None => self.elaborate(declared, body).unwrap_or(body),
+            Some(&path) => path,
+            None => self.elaborate(declared, body).unwrap_or(body),
         };
         self.definitions.define(constant, elaborated);
     }
@@ -1762,8 +1760,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub(crate) fn admitted_laws(&self) -> &[ConstantIndex]
     {
         match self.admitted {
-            | Maybe::Present(constant) => self.laws.get(&constant).map_or(&[], Vec::as_slice),
-            | Maybe::Absent(_) => &[],
+            Maybe::Present(constant) => self.laws.get(&constant).map_or(&[], Vec::as_slice),
+            Maybe::Absent(_) => &[],
         }
     }
 
@@ -1956,15 +1954,15 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         let mut head = value_type;
         loop {
             let (code, target) = match value_type_view(self.arena, head)? {
-                | ValueTypeView::Element { code, target } => (code, target.clone()),
-                | ValueTypeView::Abstract(atom) => match self.manifest(atom) {
-                    | Maybe::Present(representation) => {
+                ValueTypeView::Element { code, target } => (code, target.clone()),
+                ValueTypeView::Abstract(atom) => match self.manifest(atom) {
+                    Maybe::Present(representation) => {
                         head = representation;
                         continue;
                     },
-                    | Maybe::Absent(_) => return Ok(head),
+                    Maybe::Absent(_) => return Ok(head),
                 },
-                | ValueTypeView::Data { .. }
+                ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
                 | ValueTypeView::Stack { .. }
                 | ValueTypeView::Capability { .. }
@@ -2036,8 +2034,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             carrier,
             (left, right),
         ) {
-            | Maybe::Present(words) => Some(words),
-            | Maybe::Absent(gandr_core_term::unworded::Absent::Unlooped) => None,
+            Maybe::Present(words) => Some(words),
+            Maybe::Absent(gandr_core_term::unworded::Absent::Unlooped) => None,
         };
         if let Some(words) = found {
             let _logged = self.consult_data(words);
@@ -2208,8 +2206,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         let mut head = code;
         loop {
             match self.unfold(head)? {
-                | Maybe::Present(reduct) => head = reduct,
-                | Maybe::Absent(_) => return Ok(head),
+                Maybe::Present(reduct) => head = reduct,
+                Maybe::Absent(_) => return Ok(head),
             }
         }
     }
@@ -2260,12 +2258,12 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             });
         };
         match *node {
-            | Value::Quote(quoted) => level_of(self, TypeNode::Value(quoted)),
-            | Value::QuoteComputation(quoted) => level_of(self, TypeNode::Computation(quoted)),
-            | Value::Constant(constant) => match self.consult(constant) {
-                | Maybe::Present(declared) => match value_type_view(self.arena, declared.id())? {
-                    | ValueTypeView::Universe { level, .. } => Ok(level.clone()),
-                    | ValueTypeView::PathUniverse(..)
+            Value::Quote(quoted) => level_of(self, TypeNode::Value(quoted)),
+            Value::QuoteComputation(quoted) => level_of(self, TypeNode::Computation(quoted)),
+            Value::Constant(constant) => match self.consult(constant) {
+                Maybe::Present(declared) => match value_type_view(self.arena, declared.id())? {
+                    ValueTypeView::Universe { level, .. } => Ok(level.clone()),
+                    ValueTypeView::PathUniverse(..)
                     | ValueTypeView::Path { .. }
                     | ValueTypeView::Flow { .. }
                     | ValueTypeView::Run(_)
@@ -2288,9 +2286,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Session(_)
                     | ValueTypeView::Unknown => Ok(otherwise.clone()),
                 },
-                | Maybe::Absent(_) => Ok(otherwise.clone()),
+                Maybe::Absent(_) => Ok(otherwise.clone()),
             },
-            | Value::PathRefl(_)
+            Value::PathRefl(_)
             | Value::Here(_)
             | Value::Stay(_)
             | Value::Then(..)
@@ -2357,9 +2355,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ) -> FormedValueType
     {
         match atom {
-            | Atom::Unit => self.atoms.unit,
-            | Atom::Integer => self.atoms.integer,
-            | Atom::String => self.atoms.string,
+            Atom::Unit => self.atoms.unit,
+            Atom::Integer => self.atoms.integer,
+            Atom::String => self.atoms.string,
         }
     }
 

@@ -750,12 +750,12 @@ impl RecordTree
         })?;
         let selected = self.selected_leaf(key)?;
         let nodes = match selected {
-            | Some(position) => {
+            Some(position) => {
                 let leaf = self.leaf_node(position)?.clone();
 
                 vec![self.root_node.clone(), leaf]
             },
-            | None => vec![self.root_node.clone()],
+            None => vec![self.root_node.clone()],
         };
 
         Ok(MembershipProof::new(
@@ -827,13 +827,13 @@ impl RecordTree
             let leaf = self.leaf_node(position)?.clone();
 
             match (requirement, next) {
-                | (SuccessorLeaf::Required, Some(next_records)) => {
+                (SuccessorLeaf::Required, Some(next_records)) => {
                     let next_leaf = self.leaf_node(next_position)?.clone();
                     let evidence = bracket(selected, Some(next_records), key)?;
 
                     (vec![self.root_node.clone(), leaf, next_leaf], evidence)
                 },
-                | (SuccessorLeaf::Required | SuccessorLeaf::NotRequired, _) => {
+                (SuccessorLeaf::Required | SuccessorLeaf::NotRequired, _) => {
                     let evidence = bracket(selected, None, key)?;
 
                     (vec![self.root_node.clone(), leaf], evidence)

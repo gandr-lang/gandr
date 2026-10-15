@@ -124,10 +124,10 @@ impl core::fmt::Display for ObservationError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Stage(ref error) => error.fmt(f),
-            | Self::Image(ref error) => error.fmt(f),
-            | Self::Output(ref error) => error.fmt(f),
-            | Self::Admission(ref error) => error.fmt(f),
+            Self::Stage(ref error) => error.fmt(f),
+            Self::Image(ref error) => error.fmt(f),
+            Self::Output(ref error) => error.fmt(f),
+            Self::Admission(ref error) => error.fmt(f),
         }
     }
 }
@@ -218,11 +218,11 @@ impl core::fmt::Display for Case
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Power(n) => write!(f, "pow:{}", n.0),
-            | Self::DoubleProduct(n) => write!(f, "double:{}", n.0),
-            | Self::PowerSeries => f.write_str("pow:0..8"),
-            | Self::DoubleProductSeries => f.write_str("double:0..8"),
-            | Self::Generated { members, arms } => write!(f, "generated:{}:{}", members.0, arms.0),
+            Self::Power(n) => write!(f, "pow:{}", n.0),
+            Self::DoubleProduct(n) => write!(f, "double:{}", n.0),
+            Self::PowerSeries => f.write_str("pow:0..8"),
+            Self::DoubleProductSeries => f.write_str("double:0..8"),
+            Self::Generated { members, arms } => write!(f, "generated:{}:{}", members.0, arms.0),
         }
     }
 }
@@ -334,15 +334,12 @@ fn fixture(case: Case) -> Result<Fixture, StageError>
     let token = arena.alloc_type(Type::In(Model(0)))?;
     let mut certificates = Vec::new();
     match case {
-        | Case::Power(_)
-        | Case::DoubleProduct(_)
-        | Case::PowerSeries
-        | Case::DoubleProductSeries => {
+        Case::Power(_) | Case::DoubleProduct(_) | Case::PowerSeries | Case::DoubleProductSeries => {
             let power = matches!(case, Case::Power(_) | Case::PowerSeries);
             let exponents = match case {
-                | Case::Power(n) | Case::DoubleProduct(n) => n.0 ..= n.0,
-                | Case::PowerSeries | Case::DoubleProductSeries => 0_usize ..= 8,
-                | Case::Generated { .. } => return Err(StageError::Unbalanced),
+                Case::Power(n) | Case::DoubleProduct(n) => n.0 ..= n.0,
+                Case::PowerSeries | Case::DoubleProductSeries => 0_usize ..= 8,
+                Case::Generated { .. } => return Err(StageError::Unbalanced),
             };
             let inner = arena.alloc_type(Type::Nat(Stage::Inner(Model(0))))?;
             let program = if power {
@@ -386,7 +383,7 @@ fn fixture(case: Case) -> Result<Fixture, StageError>
                 }
             }
         },
-        | Case::Generated { members, arms } => {
+        Case::Generated { members, arms } => {
             for member in 0 .. members.0 {
                 let arm = member.checked_rem(arms.0).ok_or(StageError::Overflow)?;
                 let source = cancellation(&mut arena, Natural(arm))?;
@@ -633,8 +630,8 @@ fn observe_family(
             .ok_or(StageError::Overflow)?;
     }
     let candidate = match analyze(arena, &family.members)? {
-        | Analysis::Candidate(candidate) => candidate,
-        | Analysis::Refused {
+        Analysis::Candidate(candidate) => candidate,
+        Analysis::Refused {
             reason: gandr_theory_deep_inference::TemplateRefusal::EntryOutsidePeak { .. },
             ..
         } => {
@@ -643,7 +640,7 @@ fn observe_family(
                 plain: ImageSize(plain),
             });
         },
-        | Analysis::Refused { .. } => return Err(StageError::InvalidCertificate.into()),
+        Analysis::Refused { .. } => return Err(StageError::InvalidCertificate.into()),
     };
     let image = candidate.image()?;
     let template = serde_json::to_vec(&image)?.len();
@@ -806,8 +803,8 @@ fn main() -> Result<(), ObservationError>
             .collect::<Result<Vec<_>, _>>()?;
         for gate in [PriceGate::Unmemoized, PriceGate::Memoized] {
             let gate_name = match gate {
-                | PriceGate::Unmemoized => "unmemoized",
-                | PriceGate::Memoized => "memoized",
+                PriceGate::Unmemoized => "unmemoized",
+                PriceGate::Memoized => "memoized",
             };
             let mut cache = InheritanceCache::new();
             let mut productions = Vec::new();
@@ -848,38 +845,36 @@ fn main() -> Result<(), ObservationError>
                 cost.admissions = gandr_theory_deep_inference::AdmissionCount::from(admissions);
                 let rule = family.members.first().ok_or(StageError::Unbalanced)?.rule;
                 let rule = match rule {
-                    | gandr_kernel_term::stage::Rule::Congruence => "congruence",
-                    | gandr_kernel_term::stage::Rule::Beta => "beta",
-                    | gandr_kernel_term::stage::Rule::SpliceQuote => "splice-quote",
-                    | gandr_kernel_term::stage::Rule::QuoteSplice => "quote-splice",
-                    | gandr_kernel_term::stage::Rule::IterateZero => "iterate-zero",
-                    | gandr_kernel_term::stage::Rule::IterateSuccessor => "iterate-successor",
-                    | gandr_kernel_term::stage::Rule::Eliminate => "eliminate",
+                    gandr_kernel_term::stage::Rule::Congruence => "congruence",
+                    gandr_kernel_term::stage::Rule::Beta => "beta",
+                    gandr_kernel_term::stage::Rule::SpliceQuote => "splice-quote",
+                    gandr_kernel_term::stage::Rule::QuoteSplice => "quote-splice",
+                    gandr_kernel_term::stage::Rule::IterateZero => "iterate-zero",
+                    gandr_kernel_term::stage::Rule::IterateSuccessor => "iterate-successor",
+                    gandr_kernel_term::stage::Rule::Eliminate => "eliminate",
                 };
                 let verdict = match *production {
-                    | Production::Go(_) => "pays",
-                    | Production::WorkBoundExceeded { .. } => "no-pay:check-bound",
-                    | Production::SchemaWorkBound { .. } => "no-pay:schema-bound",
-                    | Production::Plain { reason, .. } => match reason {
-                        | gandr_theory_deep_inference::TemplateRefusal::DoesNotPay { .. } => {
+                    Production::Go(_) => "pays",
+                    Production::WorkBoundExceeded { .. } => "no-pay:check-bound",
+                    Production::SchemaWorkBound { .. } => "no-pay:schema-bound",
+                    Production::Plain { reason, .. } => match reason {
+                        gandr_theory_deep_inference::TemplateRefusal::DoesNotPay { .. } => {
                             "no-pay:price"
                         },
-                        | gandr_theory_deep_inference::TemplateRefusal::EntryOutsidePeak {
+                        gandr_theory_deep_inference::TemplateRefusal::EntryOutsidePeak {
                             ..
                         } => "no-pay:target-only-point",
-                        | gandr_theory_deep_inference::TemplateRefusal::NotInherited { .. } => {
+                        gandr_theory_deep_inference::TemplateRefusal::NotInherited { .. } => {
                             "no-pay:inheritance"
                         },
-                        | gandr_theory_deep_inference::TemplateRefusal::EmptyFamily => {
-                            "no-pay:empty"
-                        },
-                        | gandr_theory_deep_inference::TemplateRefusal::SkeletonDivergence {
+                        gandr_theory_deep_inference::TemplateRefusal::EmptyFamily => "no-pay:empty",
+                        gandr_theory_deep_inference::TemplateRefusal::SkeletonDivergence {
                             ..
                         } => "no-pay:divergence",
-                        | gandr_theory_deep_inference::TemplateRefusal::Ungeneralizable => {
+                        gandr_theory_deep_inference::TemplateRefusal::Ungeneralizable => {
                             "no-pay:anti-unification"
                         },
-                        | gandr_theory_deep_inference::TemplateRefusal::ArmAddressCollision {
+                        gandr_theory_deep_inference::TemplateRefusal::ArmAddressCollision {
                             ..
                         } => "no-pay:collision",
                     },
@@ -944,11 +939,11 @@ fn main() -> Result<(), ObservationError>
         if matches!(case, Case::Power(_) | Case::PowerSeries) {
             for (index, certificate) in input.certificates.iter().enumerate() {
                 let exponent = match case {
-                    | Case::Power(n) => n,
-                    | Case::PowerSeries => Natural(index),
-                    | Case::DoubleProduct(_)
-                    | Case::DoubleProductSeries
-                    | Case::Generated { .. } => return Err(StageError::Unbalanced.into()),
+                    Case::Power(n) => n,
+                    Case::PowerSeries => Natural(index),
+                    Case::DoubleProduct(_) | Case::DoubleProductSeries | Case::Generated { .. } => {
+                        return Err(StageError::Unbalanced.into());
+                    },
                 };
                 let residual = gandr_core_checker::stage::compile(
                     &mut input.arena,

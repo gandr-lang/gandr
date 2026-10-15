@@ -228,14 +228,14 @@ mod level_oracle
         for shape in shapes {
             let built = TermId(nodes.len());
             let node = match *shape {
-                | TermShape::Zero => TermNode::Zero,
-                | TermShape::Var(index) => TermNode::Var(index),
-                | TermShape::Succ(selector) => {
+                TermShape::Zero => TermNode::Zero,
+                TermShape::Var(index) => TermNode::Var(index),
+                TermShape::Succ(selector) => {
                     pick(selector, built).map_or(TermNode::Zero, TermNode::Succ)
                 },
-                | TermShape::Max(left, right) => match (pick(left, built), pick(right, built)) {
-                    | (Some(left), Some(right)) => TermNode::Max(left, right),
-                    | _ => TermNode::Zero,
+                TermShape::Max(left, right) => match (pick(left, built), pick(right, built)) {
+                    (Some(left), Some(right)) => TermNode::Max(left, right),
+                    _ => TermNode::Zero,
                 },
             };
             nodes.push(node);
@@ -405,15 +405,15 @@ mod level_oracle
     ) -> Result<LevelValue, TermFailure>
     {
         let value = fold_root(term, |node, values| match node {
-            | TermNode::Zero => Ok(0_u128),
-            | TermNode::Var(index) => Ok(valuation.get(&index).copied().map_or(0_u128, u128::from)),
-            | TermNode::Succ(inner) => {
+            TermNode::Zero => Ok(0_u128),
+            TermNode::Var(index) => Ok(valuation.get(&index).copied().map_or(0_u128, u128::from)),
+            TermNode::Succ(inner) => {
                 let inner = child(values, inner)?;
                 inner
                     .checked_add(1_u128)
                     .ok_or(TermFailure::ReferenceOverflow)
             },
-            | TermNode::Max(left, right) => {
+            TermNode::Max(left, right) => {
                 let left = child(values, left)?;
                 let right = child(values, right)?;
                 Ok(left.max(right))
@@ -450,14 +450,14 @@ mod level_oracle
     fn to_level(term: &Term) -> Result<Level, TermFailure>
     {
         fold_root(term, |node, values| match node {
-            | TermNode::Zero => Ok(Level::zero()),
-            | TermNode::Var(index) => Ok(Level::var(LevelVar::new(index))),
-            | TermNode::Succ(inner) => {
+            TermNode::Zero => Ok(Level::zero()),
+            TermNode::Var(index) => Ok(Level::var(LevelVar::new(index))),
+            TermNode::Succ(inner) => {
                 let inner = child(values, inner)?;
                 let bumped = inner.succ()?;
                 Ok(bumped)
             },
-            | TermNode::Max(left, right) => {
+            TermNode::Max(left, right) => {
                 let left = child(values, left)?;
                 let right = child(values, right)?;
                 Ok(left.max(&right))
@@ -490,14 +490,14 @@ mod level_oracle
     fn succ_count(term: &Term) -> Result<SuccCount, TermFailure>
     {
         let count = fold_root(term, |node, values| match node {
-            | TermNode::Zero | TermNode::Var(_) => Ok(0_u128),
-            | TermNode::Succ(inner) => {
+            TermNode::Zero | TermNode::Var(_) => Ok(0_u128),
+            TermNode::Succ(inner) => {
                 let inner = child(values, inner)?;
                 inner
                     .checked_add(1_u128)
                     .ok_or(TermFailure::ReferenceOverflow)
             },
-            | TermNode::Max(left, right) => {
+            TermNode::Max(left, right) => {
                 let left = child(values, left)?;
                 let right = child(values, right)?;
                 left.checked_add(right)
@@ -773,7 +773,7 @@ mod level_oracle
                 left_level.leq_with_evidence(&right_level)
             };
             match decision {
-                | Ok(witness) => {
+                Ok(witness) => {
                     assert_eq!(witness.strict(), strict, "the witness records its mode");
                     assert_eq!(
                         validate_witness(&left_level, &right_level, &witness),
@@ -781,7 +781,7 @@ mod level_oracle
                         "every oracle witness must validate"
                     );
                 },
-                | Err(refutation) => {
+                Err(refutation) => {
                     assert_eq!(
                         refutation.strict(),
                         strict,
@@ -1211,21 +1211,21 @@ mod level_oracle
         let mut seen = BTreeSet::new();
         for _draw in 0_u32 .. 256 {
             let kind = match shapes.new_tree(&mut runner).expect("shape draw").current() {
-                | TermShape::Zero => 0_u8,
-                | TermShape::Var(index) => {
+                TermShape::Zero => 0_u8,
+                TermShape::Var(index) => {
                     assert!(u32::from(index) < VARIABLE_COUNT);
                     1
                 },
-                | TermShape::Succ(_) => 2,
-                | TermShape::Max(..) => 3,
+                TermShape::Succ(_) => 2,
+                TermShape::Max(..) => 3,
             };
             let _fresh = seen.insert(kind);
             let term = terms.new_tree(&mut runner).expect("term draw").current();
             assert!((1 ..= NODE_BUDGET).contains(&term.nodes.len()));
             assert!(term.nodes.iter().enumerate().all(|(at, node)| match *node {
-                | TermNode::Zero | TermNode::Var(_) => true,
-                | TermNode::Succ(child) => child.0 < at,
-                | TermNode::Max(left, right) => left.0 < at && right.0 < at,
+                TermNode::Zero | TermNode::Var(_) => true,
+                TermNode::Succ(child) => child.0 < at,
+                TermNode::Max(left, right) => left.0 < at && right.0 < at,
             }));
         }
         assert_eq!(seen, BTreeSet::from([0_u8, 1, 2, 3]));

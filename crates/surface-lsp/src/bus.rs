@@ -174,15 +174,15 @@ pub fn serve(
         }));
         for event in &inbox {
             let (frames, ending) = match event {
-                | Event::Closed => break,
-                | Event::Changed(uri) => (lock(workspace).rendered(&uri), false),
-                | Event::Sent(frame) => match (frame.scope(), frame.body()) {
-                    | (&FrameScope::Document(ref document), &FrameBody::Resync) => (
+                Event::Closed => break,
+                Event::Changed(uri) => (lock(workspace).rendered(&uri), false),
+                Event::Sent(frame) => match (frame.scope(), frame.body()) {
+                    (&FrameScope::Document(ref document), &FrameBody::Resync) => (
                         lock(workspace).rendered(&DocumentUri::from(&document.uri)),
                         false,
                     ),
-                    | (_, &FrameBody::Detach) => (Some(RenderFrame::detach()), true),
-                    | (
+                    (_, &FrameBody::Detach) => (Some(RenderFrame::detach()), true),
+                    (
                         _,
                         &(FrameBody::Hello { .. } | FrameBody::Frame { .. } | FrameBody::Resync),
                     ) => (None, false),

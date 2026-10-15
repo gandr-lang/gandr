@@ -99,8 +99,8 @@ impl Markup
     pub const fn opener(self) -> Opener
     {
         Opener(match self {
-            | Self::Markdown => "```gandr\n",
-            | Self::Html => "<pre><code>",
+            Self::Markdown => "```gandr\n",
+            Self::Html => "<pre><code>",
         })
     }
 }
@@ -135,9 +135,9 @@ impl Host
     ) -> (String, ByteOffset)
     {
         let (before, after) = match self {
-            | Self::Type => ("def h : ", " ;"),
-            | Self::Signature => ("def h ", " ;"),
-            | Self::Term => ("def h = ", " ;"),
+            Self::Type => ("def h : ", " ;"),
+            Self::Signature => ("def h ", " ;"),
+            Self::Term => ("def h = ", " ;"),
         };
         (
             format!("{before}{}{after}", <&str>::from(text)),
@@ -160,29 +160,29 @@ struct Variable(&'static str);
 const fn colour(role: HlRole) -> Option<Variable>
 {
     Some(Variable(match role {
-        | HlRole::Keyword => "keyword",
-        | HlRole::Operator => "operator",
-        | HlRole::FunctionDef => "functionDef",
-        | HlRole::FunctionCall => "functionCall",
-        | HlRole::VariableDef => "variableDef",
-        | HlRole::VariableParam => "variableParam",
-        | HlRole::Member => "member",
-        | HlRole::Variable => "variable",
-        | HlRole::Constructor => "constructor",
-        | HlRole::Type => "type",
-        | HlRole::TypeBuiltin => "typeBuiltin",
-        | HlRole::TypeVariable => "typeVariable",
-        | HlRole::Number => "number",
-        | HlRole::Boolean => "boolean",
-        | HlRole::Character => "character",
-        | HlRole::StringLit => "stringLit",
-        | HlRole::Escape => "escape",
-        | HlRole::Comment => "comment",
-        | HlRole::Hole => "hole",
-        | HlRole::Label => "label",
-        | HlRole::Path => "path",
-        | HlRole::Directive => "directive",
-        | HlRole::Other => return None,
+        HlRole::Keyword => "keyword",
+        HlRole::Operator => "operator",
+        HlRole::FunctionDef => "functionDef",
+        HlRole::FunctionCall => "functionCall",
+        HlRole::VariableDef => "variableDef",
+        HlRole::VariableParam => "variableParam",
+        HlRole::Member => "member",
+        HlRole::Variable => "variable",
+        HlRole::Constructor => "constructor",
+        HlRole::Type => "type",
+        HlRole::TypeBuiltin => "typeBuiltin",
+        HlRole::TypeVariable => "typeVariable",
+        HlRole::Number => "number",
+        HlRole::Boolean => "boolean",
+        HlRole::Character => "character",
+        HlRole::StringLit => "stringLit",
+        HlRole::Escape => "escape",
+        HlRole::Comment => "comment",
+        HlRole::Hole => "hole",
+        HlRole::Label => "label",
+        HlRole::Path => "path",
+        HlRole::Directive => "directive",
+        HlRole::Other => return None,
     }))
 }
 
@@ -280,11 +280,11 @@ impl Code
         }
         let (hosted, at) = host.host(text);
         let spans = match (grammar(), roles()) {
-            | (Ok(grammar), Ok(roles)) => parse(grammar, SourceText::from(hosted.as_str()))
+            (Ok(grammar), Ok(roles)) => parse(grammar, SourceText::from(hosted.as_str()))
                 .ok()
                 .and_then(|parsed| roles.highlight(&parsed.into_tree()).ok())
                 .unwrap_or_default(),
-            | _ => alloc::vec::Vec::new(),
+            _ => alloc::vec::Vec::new(),
         };
         self.quoted(text, at, &spans);
     }
@@ -365,8 +365,8 @@ impl Code
     pub fn block(self) -> String
     {
         match self.markup {
-            | Markup::Markdown => format!("```gandr\n{}\n```", self.written),
-            | Markup::Html => format!("<pre><code>{}</code></pre>", self.written),
+            Markup::Markdown => format!("```gandr\n{}\n```", self.written),
+            Markup::Html => format!("<pre><code>{}</code></pre>", self.written),
         }
     }
 
@@ -380,31 +380,31 @@ impl Code
     pub fn inline(self) -> String
     {
         match self.markup {
-            | Markup::Markdown => format!("`{}`", self.written),
-            | Markup::Html => {
+            Markup::Markdown => format!("`{}`", self.written),
+            Markup::Html => {
                 let mut inline = String::from("<code>");
                 let mut tag = false;
                 for character in self.written.chars() {
                     match character {
-                        | '<' => {
+                        '<' => {
                             tag = true;
                             inline.push(character);
                         },
-                        | '>' => {
+                        '>' => {
                             tag = false;
                             inline.push(character);
                         },
-                        | _ if tag => inline.push(character),
-                        | '*' => inline.push_str("&#42;"),
-                        | '_' => inline.push_str("&#95;"),
-                        | '`' => inline.push_str("&#96;"),
-                        | '\\' => inline.push_str("&#92;"),
-                        | '[' => inline.push_str("&#91;"),
-                        | ']' => inline.push_str("&#93;"),
-                        | '~' => inline.push_str("&#126;"),
-                        | '|' => inline.push_str("&#124;"),
-                        | '!' => inline.push_str("&#33;"),
-                        | _ => inline.push(character),
+                        _ if tag => inline.push(character),
+                        '*' => inline.push_str("&#42;"),
+                        '_' => inline.push_str("&#95;"),
+                        '`' => inline.push_str("&#96;"),
+                        '\\' => inline.push_str("&#92;"),
+                        '[' => inline.push_str("&#91;"),
+                        ']' => inline.push_str("&#93;"),
+                        '~' => inline.push_str("&#126;"),
+                        '|' => inline.push_str("&#124;"),
+                        '!' => inline.push_str("&#33;"),
+                        _ => inline.push(character),
                     }
                 }
                 inline.push_str("</code>");
@@ -425,10 +425,10 @@ fn escape(
 {
     for character in <&str>::from(text).chars() {
         match character {
-            | '&' => out.push_str("&amp;"),
-            | '<' => out.push_str("&lt;"),
-            | '>' => out.push_str("&gt;"),
-            | _ => out.push(character),
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            _ => out.push(character),
         }
     }
 }

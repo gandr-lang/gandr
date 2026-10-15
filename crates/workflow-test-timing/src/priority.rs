@@ -289,8 +289,13 @@ impl Overrides
                 continue;
             };
             let described = || match *priority {
-                | toml::Value::Integer(value) => format!("`{value}`"),
-                | ref other => format!("a {}", other.type_str()),
+                toml::Value::Integer(value) => format!("`{value}`"),
+                ref other @ (toml::Value::String(_)
+                | toml::Value::Float(_)
+                | toml::Value::Boolean(_)
+                | toml::Value::Datetime(_)
+                | toml::Value::Array(_)
+                | toml::Value::Table(_)) => format!("a {}", other.type_str()),
             };
             let priority = priority
                 .as_integer()
@@ -308,10 +313,10 @@ impl Overrides
                     .and_then(|rest| rest.strip_suffix(')'))
                     .filter(|inner| !inner.contains(['(', ')', ' ']))
                     .ok_or_else(|| refuse(ConfigDefect::Term(term.to_owned())))?;
-                terms.push(match inner.strip_prefix('=') {
-                    | Some(name) => Term::Exact(TestName::from(name)),
-                    | None => Term::Contains(TestName::from(inner)),
-                });
+                terms.push(inner.strip_prefix('=').map_or_else(
+                    || Term::Contains(TestName::from(inner)),
+                    |name| Term::Exact(TestName::from(name)),
+                ));
             }
             rules.push(Rule { priority, terms });
         }
@@ -350,8 +355,8 @@ impl Overrides
     {
         for rule in &self.0 {
             let matches = rule.terms.iter().any(|term| match *term {
-                | Term::Exact(ref name) => name == test,
-                | Term::Contains(ref text) => test.contains(text) == Containment::Contains,
+                Term::Exact(ref name) => name == test,
+                Term::Contains(ref text) => test.contains(text) == Containment::Contains,
             });
             if matches {
                 return rule.priority;
@@ -469,8 +474,8 @@ impl fmt::Display for Table<'_>
         for proposal in self.0 {
             let timing = &proposal.timing;
             let flag = match timing.stability() {
-                | Stability::Steady => "",
-                | Stability::Unsteady => "  unsteady",
+                Stability::Steady => "",
+                Stability::Unsteady => "  unsteady",
             };
             writeln!(
                 f,

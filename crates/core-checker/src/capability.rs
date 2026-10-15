@@ -217,11 +217,11 @@ impl HostGrant
             return Grants::Unbounded;
         };
         let authority = match HostSignatures::new(arena) {
-            | Ok(host) => match host.authority(named) {
-                | Ok(authority) => authority,
-                | Err(_refused) => EffectRow::EMPTY,
+            Ok(host) => match host.authority(named) {
+                Ok(authority) => authority,
+                Err(_refused) => EffectRow::EMPTY,
             },
-            | Err(_conflict) => EffectRow::EMPTY,
+            Err(_conflict) => EffectRow::EMPTY,
         };
         Grants::Within(authority)
     }
@@ -275,20 +275,20 @@ pub fn authorise(
 ) -> Result<(), CheckRefusal>
 {
     match value_type_view(arena, head)? {
-        | ValueTypeView::Capability { authority, .. } => {
+        ValueTypeView::Capability { authority, .. } => {
             let requested = signature
                 .restrict([operation])
                 .map_err(|_unknown| CheckRefusal::UnknownOperation { at })?;
             match EffectRow::singleton(requested).grants_within(authority, arena) {
-                | RowInclusion::Included => Ok(()),
-                | RowInclusion::Excluded => Err(CheckRefusal::CapabilityOutsideAuthority {
+                RowInclusion::Included => Ok(()),
+                RowInclusion::Excluded => Err(CheckRefusal::CapabilityOutsideAuthority {
                     at,
                     capability: classifier,
                 }),
             }
         },
-        | ValueTypeView::Unknown => Ok(()),
-        | ValueTypeView::PathUniverse(..)
+        ValueTypeView::Unknown => Ok(()),
+        ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
@@ -353,50 +353,50 @@ pub fn reaches(
             node: CoreNode::Type(node),
         };
         match node {
-            | TypeNode::Value(at) => match *arena.value_type(at).ok_or(dangling)? {
-                | ValueType::Capability {
+            TypeNode::Value(at) => match *arena.value_type(at).ok_or(dangling)? {
+                ValueType::Capability {
                     region: Region::Scoped(depth),
                     ..
                 } if depth >= floor => return Ok(Reach::Mentions),
-                | ValueType::Capability { ref authority, .. } => {
+                ValueType::Capability { ref authority, .. } => {
                     pending.extend(authority.types().map(TypeNode::Value));
                 },
-                | ValueType::Data { ref arguments, .. } => {
+                ValueType::Data { ref arguments, .. } => {
                     pending.extend(arguments.iter().filter_map(|&argument| {
                         match arena.value(argument) {
-                            | Some(&Value::Quote(quoted)) => Some(TypeNode::Value(quoted)),
-                            | Some(&Value::QuoteComputation(quoted)) => {
+                            Some(&Value::Quote(quoted)) => Some(TypeNode::Value(quoted)),
+                            Some(&Value::QuoteComputation(quoted)) => {
                                 Some(TypeNode::Computation(quoted))
                             },
-                            | Some(_) | None => None,
+                            Some(_) | None => None,
                         }
                     }));
                 },
-                | ValueType::Record(ref fields) => {
+                ValueType::Record(ref fields) => {
                     pending.extend(fields.values().copied().map(TypeNode::Value));
                 },
-                | ValueType::Product(ref components) | ValueType::Sum(ref components) => {
+                ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                     pending.extend(components.iter().copied().map(TypeNode::Value));
                 },
-                | ValueType::List(inner)
+                ValueType::List(inner)
                 | ValueType::Lift { inner, .. }
                 | ValueType::Path { carrier: inner, .. }
                 | ValueType::Flow { carrier: inner, .. } => pending.push(TypeNode::Value(inner)),
-                | ValueType::Thunk(body) => pending.push(TypeNode::Computation(body)),
-                | ValueType::StaticPi { domain, codomain }
+                ValueType::Thunk(body) => pending.push(TypeNode::Computation(body)),
+                ValueType::StaticPi { domain, codomain }
                 | ValueType::Sigma {
                     first: domain,
                     second: codomain,
                 } => {
                     pending.extend([TypeNode::Value(domain), TypeNode::Value(codomain)]);
                 },
-                | ValueType::Stack { input, output } => {
+                ValueType::Stack { input, output } => {
                     pending.extend([TypeNode::Computation(input), TypeNode::Computation(output)]);
                 },
-                | ValueType::Session(ref session) => {
+                ValueType::Session(ref session) => {
                     pending.extend(session.payloads().iter().copied().map(TypeNode::Value));
                 },
-                | ValueType::PathUniverse(..)
+                ValueType::PathUniverse(..)
                 | ValueType::Run(_)
                 | ValueType::Base(_)
                 | ValueType::Universe { .. }
@@ -404,21 +404,21 @@ pub fn reaches(
                 | ValueType::Abstract(_)
                 | ValueType::Unknown => {},
             },
-            | TypeNode::Computation(at) => match *arena.comp_type(at).ok_or(dangling)? {
-                | CompType::Returner {
+            TypeNode::Computation(at) => match *arena.comp_type(at).ok_or(dangling)? {
+                CompType::Returner {
                     result,
                     ref effects,
                 } => {
                     pending.push(TypeNode::Value(result));
                     pending.extend(effects.types().map(TypeNode::Value));
                 },
-                | CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
+                CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
                     pending.extend([TypeNode::Value(domain), TypeNode::Computation(codomain)]);
                 },
-                | CompType::With(left, right) => {
+                CompType::With(left, right) => {
                     pending.extend([TypeNode::Computation(left), TypeNode::Computation(right)]);
                 },
-                | CompType::Element { .. } | CompType::Unknown => {},
+                CompType::Element { .. } | CompType::Unknown => {},
             },
         }
     }

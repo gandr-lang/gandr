@@ -154,12 +154,10 @@ impl Head for ProtypeKind
     fn arity(&self) -> ArgumentCount
     {
         match *self {
-            | Self::Path { .. } | Self::Rel { .. } | Self::Tabulate { .. } | Self::Unit => {
+            Self::Path { .. } | Self::Rel { .. } | Self::Tabulate { .. } | Self::Unit => {
                 0_usize.into()
             },
-            | Self::Compose { .. } | Self::ExtendR | Self::ExtendL | Self::Product => {
-                2_usize.into()
-            },
+            Self::Compose { .. } | Self::ExtendR | Self::ExtendL | Self::Product => 2_usize.into(),
         }
     }
 }
@@ -401,11 +399,11 @@ impl Head for ProtermKind
     fn arity(&self) -> ArgumentCount
     {
         match *self {
-            | Self::Var { .. } | Self::Refl { .. } | Self::UnitTerm | Self::Cert { .. } => {
+            Self::Var { .. } | Self::Refl { .. } | Self::UnitTerm | Self::Cert { .. } => {
                 0_usize.into()
             },
-            | Self::Lam { .. } | Self::ProjL | Self::ProjR => 1_usize.into(),
-            | Self::PathInd { .. }
+            Self::Lam { .. } | Self::ProjL | Self::ProjR => 1_usize.into(),
+            Self::PathInd { .. }
             | Self::Pair { .. }
             | Self::SeamInd
             | Self::App

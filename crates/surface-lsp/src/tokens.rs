@@ -174,24 +174,24 @@ fn token_of_role(role: HlRole) -> Maybe<(TokenType, TokenModifiers), token_of_ro
 {
     let plain = |index: u32| Maybe::Present((TokenType(index), TokenModifiers::NONE));
     match role {
-        | HlRole::Keyword | HlRole::Boolean => plain(0),
-        | HlRole::Operator => plain(1),
-        | HlRole::FunctionDef => Maybe::Present((TokenType(2), TokenModifiers::DECLARATION)),
-        | HlRole::FunctionCall => plain(2),
-        | HlRole::VariableDef => Maybe::Present((TokenType(3), TokenModifiers::DECLARATION)),
-        | HlRole::Variable => plain(3),
-        | HlRole::VariableParam => plain(4),
-        | HlRole::Member => plain(5),
-        | HlRole::Constructor => plain(6),
-        | HlRole::Type => plain(7),
-        | HlRole::TypeBuiltin => Maybe::Present((TokenType(7), TokenModifiers::DEFAULT_LIBRARY)),
-        | HlRole::TypeVariable => plain(8),
-        | HlRole::Number => plain(9),
-        | HlRole::StringLit | HlRole::Character | HlRole::Escape | HlRole::Path => plain(10),
-        | HlRole::Comment => plain(11),
-        | HlRole::Hole | HlRole::Directive => plain(12),
-        | HlRole::Label => plain(13),
-        | HlRole::Other => Maybe::Absent(token_of_role::Absent::Unclassified),
+        HlRole::Keyword | HlRole::Boolean => plain(0),
+        HlRole::Operator => plain(1),
+        HlRole::FunctionDef => Maybe::Present((TokenType(2), TokenModifiers::DECLARATION)),
+        HlRole::FunctionCall => plain(2),
+        HlRole::VariableDef => Maybe::Present((TokenType(3), TokenModifiers::DECLARATION)),
+        HlRole::Variable => plain(3),
+        HlRole::VariableParam => plain(4),
+        HlRole::Member => plain(5),
+        HlRole::Constructor => plain(6),
+        HlRole::Type => plain(7),
+        HlRole::TypeBuiltin => Maybe::Present((TokenType(7), TokenModifiers::DEFAULT_LIBRARY)),
+        HlRole::TypeVariable => plain(8),
+        HlRole::Number => plain(9),
+        HlRole::StringLit | HlRole::Character | HlRole::Escape | HlRole::Path => plain(10),
+        HlRole::Comment => plain(11),
+        HlRole::Hole | HlRole::Directive => plain(12),
+        HlRole::Label => plain(13),
+        HlRole::Other => Maybe::Absent(token_of_role::Absent::Unclassified),
     }
 }
 
@@ -423,26 +423,26 @@ mod tests
         const PLAIN: &[&str] = &[];
         let means = |name, modifiers| Maybe::Present(Meaning { name, modifiers });
         match role {
-            | HlRole::Keyword | HlRole::Boolean => means("keyword", PLAIN),
-            | HlRole::Operator => means("operator", PLAIN),
-            | HlRole::FunctionDef => means("function", DECLARED),
-            | HlRole::FunctionCall => means("function", PLAIN),
-            | HlRole::VariableDef => means("variable", DECLARED),
-            | HlRole::Variable => means("variable", PLAIN),
-            | HlRole::VariableParam => means("parameter", PLAIN),
-            | HlRole::Member => means("property", PLAIN),
-            | HlRole::Constructor => means("enumMember", PLAIN),
-            | HlRole::Type => means("type", PLAIN),
-            | HlRole::TypeBuiltin => means("type", BUILT_IN),
-            | HlRole::TypeVariable => means("typeParameter", PLAIN),
-            | HlRole::Number => means("number", PLAIN),
-            | HlRole::StringLit | HlRole::Character | HlRole::Escape | HlRole::Path => {
+            HlRole::Keyword | HlRole::Boolean => means("keyword", PLAIN),
+            HlRole::Operator => means("operator", PLAIN),
+            HlRole::FunctionDef => means("function", DECLARED),
+            HlRole::FunctionCall => means("function", PLAIN),
+            HlRole::VariableDef => means("variable", DECLARED),
+            HlRole::Variable => means("variable", PLAIN),
+            HlRole::VariableParam => means("parameter", PLAIN),
+            HlRole::Member => means("property", PLAIN),
+            HlRole::Constructor => means("enumMember", PLAIN),
+            HlRole::Type => means("type", PLAIN),
+            HlRole::TypeBuiltin => means("type", BUILT_IN),
+            HlRole::TypeVariable => means("typeParameter", PLAIN),
+            HlRole::Number => means("number", PLAIN),
+            HlRole::StringLit | HlRole::Character | HlRole::Escape | HlRole::Path => {
                 means("string", PLAIN)
             },
-            | HlRole::Comment => means("comment", PLAIN),
-            | HlRole::Hole | HlRole::Directive => means("macro", PLAIN),
-            | HlRole::Label => means("label", PLAIN),
-            | HlRole::Other => Maybe::Absent(()),
+            HlRole::Comment => means("comment", PLAIN),
+            HlRole::Hole | HlRole::Directive => means("macro", PLAIN),
+            HlRole::Label => means("label", PLAIN),
+            HlRole::Other => Maybe::Absent(()),
         }
     }
 

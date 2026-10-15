@@ -99,8 +99,8 @@ impl RenderStyle
     pub const fn for_terminal(capability: TerminalCapability) -> Self
     {
         match capability {
-            | TerminalCapability::NonTerminal => Self::Plain,
-            | TerminalCapability::Terminal => Self::Styled,
+            TerminalCapability::NonTerminal => Self::Plain,
+            TerminalCapability::Terminal => Self::Styled,
         }
     }
 }

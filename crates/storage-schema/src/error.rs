@@ -113,9 +113,9 @@ impl fmt::Display for Refusal
     ) -> fmt::Result
     {
         match *self {
-            | Self::Schema(ref error) => write!(f, "{error}"),
-            | Self::NotLive { ref object, part } => write!(f, "`{object}` part {part} is not live"),
-            | Self::Referenced {
+            Self::Schema(ref error) => write!(f, "{error}"),
+            Self::NotLive { ref object, part } => write!(f, "`{object}` part {part} is not live"),
+            Self::Referenced {
                 ref object,
                 part,
                 ref arrow,
@@ -124,12 +124,12 @@ impl fmt::Display for Refusal
                 f,
                 "`{object}` part {part} is referred to by `{arrow}` of part {by}, so it is not deleted"
             ),
-            | Self::Unset {
+            Self::Unset {
                 ref field,
                 ref object,
                 part,
             } => write!(f, "`{object}` part {part} has no value for `{field}`"),
-            | Self::EquationViolated {
+            Self::EquationViolated {
                 ref equation,
                 ref object,
                 part,
@@ -139,12 +139,12 @@ impl fmt::Display for Refusal
                 f,
                 "equation `{equation}` fails at `{object}` part {part}: the left side reaches {left}, the right {right}"
             ),
-            | Self::NotIndexed { ref field } => write!(f, "`{field}` keeps no inverse"),
-            | Self::ForeignField {
+            Self::NotIndexed { ref field } => write!(f, "`{field}` keeps no inverse"),
+            Self::ForeignField {
                 ref field,
                 ref object,
             } => write!(f, "`{field}` is not a column of `{object}`"),
-            | Self::Exhausted { ref object } => write!(f, "`{object}` has minted its last key"),
+            Self::Exhausted { ref object } => write!(f, "`{object}` has minted its last key"),
         }
     }
 }
@@ -207,12 +207,12 @@ impl fmt::Display for LayoutFault
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Family => "a key opens with no family of the layout",
-            | Self::Width => "a key or value has the wrong width",
-            | Self::Column => "a key names a column of another table",
-            | Self::Counter => "a key names a part at or past the counter",
-            | Self::Root => "the records do not rebuild the committed tree",
-            | Self::NotCanonical => "the records are not the canonical records of what they hold",
+            Self::Family => "a key opens with no family of the layout",
+            Self::Width => "a key or value has the wrong width",
+            Self::Column => "a key names a column of another table",
+            Self::Counter => "a key names a part at or past the counter",
+            Self::Root => "the records do not rebuild the committed tree",
+            Self::NotCanonical => "the records are not the canonical records of what they hold",
         })
     }
 }
@@ -254,10 +254,10 @@ impl fmt::Display for ManifestFault
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Domain => "the domain is not the store manifest domain",
-            | Self::Version => "the manifest version is unknown",
-            | Self::Truncated => "the manifest ends inside a field",
-            | Self::Trailing => "bytes follow the last table",
+            Self::Domain => "the domain is not the store manifest domain",
+            Self::Version => "the manifest version is unknown",
+            Self::Truncated => "the manifest ends inside a field",
+            Self::Trailing => "bytes follow the last table",
         })
     }
 }
@@ -334,21 +334,19 @@ impl fmt::Display for StoreError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Records(ref error) => write!(f, "{error}"),
-            | Self::Refused(ref refusal) => write!(f, "{refusal}"),
-            | Self::SchemaMismatch { expected, found } => {
+            Self::Records(ref error) => write!(f, "{error}"),
+            Self::Refused(ref refusal) => write!(f, "{refusal}"),
+            Self::SchemaMismatch { expected, found } => {
                 write!(f, "the manifest commits schema {found}, not {expected}")
             },
-            | Self::ProfileMismatch => {
-                f.write_str("the manifest commits other boundary parameters")
-            },
-            | Self::TableCount => f.write_str("the manifest's table count is not the schema's"),
-            | Self::Manifest { fault } => write!(f, "malformed store manifest: {fault}"),
-            | Self::RootMismatch { expected, found } => {
+            Self::ProfileMismatch => f.write_str("the manifest commits other boundary parameters"),
+            Self::TableCount => f.write_str("the manifest's table count is not the schema's"),
+            Self::Manifest { fault } => write!(f, "malformed store manifest: {fault}"),
+            Self::RootMismatch { expected, found } => {
                 write!(f, "the proof's manifest hashes to {found}, not {expected}")
             },
-            | Self::Layout { ref object, fault } => write!(f, "table `{object}`: {fault}"),
-            | Self::WrongQuestion => f.write_str("the proof answers a different question"),
+            Self::Layout { ref object, fault } => write!(f, "table `{object}`: {fault}"),
+            Self::WrongQuestion => f.write_str("the proof answers a different question"),
         }
     }
 }

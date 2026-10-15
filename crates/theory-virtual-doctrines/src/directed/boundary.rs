@@ -48,8 +48,8 @@ impl CutOutcome
     pub fn tracelet(&self) -> Result<&Tracelet, &CompositionObstruction>
     {
         match *self {
-            | Self::Coherent(ref t) | Self::Directed(ref t) => Ok(t),
-            | Self::Declined(ref reason) => Err(reason),
+            Self::Coherent(ref t) | Self::Directed(ref t) => Ok(t),
+            Self::Declined(ref reason) => Err(reason),
         }
     }
 
@@ -135,8 +135,8 @@ pub fn directed_cut(
         return CutOutcome::Coherent(compose_invertible(a, b));
     }
     match compose_directed(a, b, store) {
-        | Ok(composite) => CutOutcome::Directed(composite),
-        | Err(obstruction) => CutOutcome::Declined(obstruction),
+        Ok(composite) => CutOutcome::Directed(composite),
+        Err(obstruction) => CutOutcome::Declined(obstruction),
     }
 }
 

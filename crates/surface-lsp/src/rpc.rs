@@ -178,12 +178,12 @@ impl Malformed
     pub fn response(self) -> Outgoing
     {
         match self {
-            | Self::Parse => failure(
+            Self::Parse => failure(
                 RequestId::unread(),
                 ErrorCode::PARSE_ERROR,
                 "the body is not JSON".to_owned(),
             ),
-            | Self::Invalid(id) => failure(
+            Self::Invalid(id) => failure(
                 id,
                 ErrorCode::INVALID_REQUEST,
                 "the message is not a JSON-RPC 2.0 request, notification or response".to_owned(),
@@ -289,33 +289,33 @@ pub fn classify(body: &Body) -> Result<Incoming, Malformed>
         return Err(Malformed::Invalid(RequestId::unread()));
     };
     let id = match object.remove("id") {
-        | None => None,
-        | Some(id @ (Value::Number(_) | Value::String(_))) => Some(RequestId(id)),
-        | Some(_) => return Err(Malformed::Invalid(RequestId::unread())),
+        None => None,
+        Some(id @ (Value::Number(_) | Value::String(_))) => Some(RequestId(id)),
+        Some(_) => return Err(Malformed::Invalid(RequestId::unread())),
     };
     let invalid = || Malformed::Invalid(id.clone().unwrap_or_else(RequestId::unread));
     if object.get("jsonrpc").and_then(Value::as_str) != Some(VERSION) {
         return Err(invalid());
     }
     let params = match object.remove("params") {
-        | None | Some(Value::Null) => Value::Null,
-        | Some(params @ (Value::Object(_) | Value::Array(_))) => params,
-        | Some(_) => return Err(invalid()),
+        None | Some(Value::Null) => Value::Null,
+        Some(params @ (Value::Object(_) | Value::Array(_))) => params,
+        Some(_) => return Err(invalid()),
     };
     match (object.remove("method"), id.clone()) {
-        | (Some(Value::String(method)), Some(id)) => Ok(Incoming::Request {
+        (Some(Value::String(method)), Some(id)) => Ok(Incoming::Request {
             id,
             method: Method(method),
             params,
         }),
-        | (Some(Value::String(method)), None) => Ok(Incoming::Notification {
+        (Some(Value::String(method)), None) => Ok(Incoming::Notification {
             method: Method(method),
             params,
         }),
-        | (None, Some(_)) if object.contains_key("result") || object.contains_key("error") => {
+        (None, Some(_)) if object.contains_key("result") || object.contains_key("error") => {
             Ok(Incoming::Response)
         },
-        | (Some(_) | None, _) => Err(invalid()),
+        (Some(_) | None, _) => Err(invalid()),
     }
 }
 

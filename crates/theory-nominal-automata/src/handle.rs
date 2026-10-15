@@ -283,13 +283,13 @@ impl<A: Copy + Ord> Store<A>
         let mut values = Vec::with_capacity(slots.len());
         for slot in slots {
             match slot {
-                | Maybe::Present(atom) => {
+                Maybe::Present(atom) => {
                     if !seen.insert(atom) {
                         return Err(StoreError { atom });
                     }
                     values.push(Some(atom));
                 },
-                | Maybe::Absent(EmptyRegister::Empty) => values.push(None),
+                Maybe::Absent(EmptyRegister::Empty) => values.push(None),
             }
         }
         Ok(Self { slots: values })
@@ -349,9 +349,9 @@ impl<A: Copy + Ord> Store<A>
     ) -> Maybe<A, RegisterAbsent>
     {
         match self.slots.get(register.0).copied() {
-            | Some(Some(atom)) => Maybe::Present(atom),
-            | Some(None) => Maybe::Absent(RegisterAbsent::Empty),
-            | None => Maybe::Absent(RegisterAbsent::OutOfRange),
+            Some(Some(atom)) => Maybe::Present(atom),
+            Some(None) => Maybe::Absent(RegisterAbsent::Empty),
+            None => Maybe::Absent(RegisterAbsent::OutOfRange),
         }
     }
 
@@ -409,15 +409,15 @@ impl<A: Copy + Ord> Store<A>
     ) -> Self
     {
         let allocated = match allocated {
-            | Maybe::Present(atom) => Some(atom),
-            | Maybe::Absent(EmptyRegister::Empty) => None,
+            Maybe::Present(atom) => Some(atom),
+            Maybe::Absent(EmptyRegister::Empty) => None,
         };
         let slots = transfer
             .iter()
             .map(|entry| match *entry {
-                | Transfer::Keep(register) => self.slots.get(register.0).copied().flatten(),
-                | Transfer::Allocated => allocated,
-                | Transfer::Empty => None,
+                Transfer::Keep(register) => self.slots.get(register.0).copied().flatten(),
+                Transfer::Allocated => allocated,
+                Transfer::Empty => None,
             })
             .collect();
         Self { slots }
@@ -568,12 +568,12 @@ impl core::fmt::Display for AutomatonError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::InvalidControl { control, controls } => write!(
+            Self::InvalidControl { control, controls } => write!(
                 f,
                 "control {} is outside {} controls",
                 control.0, controls.0
             ),
-            | Self::ArityMismatch {
+            Self::ArityMismatch {
                 control,
                 expected,
                 actual,
@@ -582,16 +582,16 @@ impl core::fmt::Display for AutomatonError
                 "control {} requires {} registers, received {}",
                 control.0, expected.0, actual.0
             ),
-            | Self::UnknownRegister { control, register } => {
+            Self::UnknownRegister { control, register } => {
                 write!(f, "control {} has no register {}", control.0, register.0)
             },
-            | Self::RepeatedRegister { control, register } => {
+            Self::RepeatedRegister { control, register } => {
                 write!(f, "control {} repeats register {}", control.0, register.0)
             },
-            | Self::MisplacedAllocatedName { control } => {
+            Self::MisplacedAllocatedName { control } => {
                 write!(f, "control {} misplaces an allocated name", control.0)
             },
-            | Self::KeptDeallocatedName { control, register } => write!(
+            Self::KeptDeallocatedName { control, register } => write!(
                 f,
                 "control {} keeps erased register {}",
                 control.0, register.0
@@ -713,7 +713,7 @@ pub(crate) fn validate_transfer(
     let mut allocated = false;
     for entry in transfer {
         match *entry {
-            | Transfer::Keep(register) => {
+            Transfer::Keep(register) => {
                 if register.0 >= source_arity.0 {
                     return Err(AutomatonError::UnknownRegister {
                         control: source,
@@ -727,13 +727,13 @@ pub(crate) fn validate_transfer(
                     });
                 }
             },
-            | Transfer::Allocated => {
+            Transfer::Allocated => {
                 if allocation == Allocation::Forbidden || allocated {
                     return Err(AutomatonError::MisplacedAllocatedName { control: source });
                 }
                 allocated = true;
             },
-            | Transfer::Empty => {},
+            Transfer::Empty => {},
         }
     }
     Ok(())

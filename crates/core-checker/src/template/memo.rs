@@ -577,8 +577,8 @@ fn sampled(
 ) -> Tracked
 {
     match tracked {
-        | Tracked::Unsampled => Tracked::Sampled(sample),
-        | Tracked::Sampled(average) => Tracked::Sampled(toward(average, sample)),
+        Tracked::Unsampled => Tracked::Sampled(sample),
+        Tracked::Sampled(average) => Tracked::Sampled(toward(average, sample)),
     }
 }
 
@@ -682,8 +682,8 @@ impl Switch
         self.acceptance = toward(self.acceptance, acceptance.sample());
         if let Tracked::Sampled(share) = share {
             let shares = match acceptance {
-                | Acceptance::Accepted => &mut self.accepted,
-                | Acceptance::Refused => &mut self.refused,
+                Acceptance::Accepted => &mut self.accepted,
+                Acceptance::Refused => &mut self.refused,
             };
             *shares = sampled(*shares, share);
         }
@@ -708,8 +708,8 @@ impl Switch
             return Decision::Draft;
         };
         match break_even(accepted, refused) {
-            | Maybe::Present(bound) if self.acceptance > bound => Decision::Draft,
-            | _ => Decision::Decline(Decline::Off),
+            Maybe::Present(bound) if self.acceptance > bound => Decision::Draft,
+            Maybe::Present(_) | Maybe::Absent(_) => Decision::Decline(Decline::Off),
         }
     }
 }
@@ -755,9 +755,9 @@ impl Controls
             return Decision::Draft;
         };
         match break_even(share(accepted, producing), share(refused, producing)) {
-            | Maybe::Present(bound) if self.acceptance > bound => Decision::Draft,
-            | Maybe::Present(_) => Decision::Decline(Decline::BelowBreakEven),
-            | Maybe::Absent(decline) => Decision::Decline(decline),
+            Maybe::Present(bound) if self.acceptance > bound => Decision::Draft,
+            Maybe::Present(_) => Decision::Decline(Decline::BelowBreakEven),
+            Maybe::Absent(decline) => Decision::Decline(decline),
         }
     }
 
@@ -784,9 +784,9 @@ impl Controls
     ) -> Decision
     {
         let (decline, declined) = match (switch.off(), self.verdict()) {
-            | (Decision::Decline(decline), _) => (decline, &mut switch.declined),
-            | (Decision::Draft, Decision::Decline(decline)) => (decline, &mut self.declined),
-            | (Decision::Draft, Decision::Draft) => {
+            (Decision::Decline(decline), _) => (decline, &mut switch.declined),
+            (Decision::Draft, Decision::Decline(decline)) => (decline, &mut self.declined),
+            (Decision::Draft, Decision::Draft) => {
                 self.declined = DeclineCount(0);
                 return Decision::Draft;
             },
@@ -827,14 +827,14 @@ impl Controls
     {
         self.acceptance = toward(self.acceptance, accepted.sample());
         match accepted {
-            | Acceptance::Accepted => self.accepted = Estimate::Measured(spent),
-            | Acceptance::Refused => self.refused = Estimate::Measured(spent),
+            Acceptance::Accepted => self.accepted = Estimate::Measured(spent),
+            Acceptance::Refused => self.refused = Estimate::Measured(spent),
         }
         let share = match self.producing {
-            | Estimate::Measured(producing) if !producing.is_zero() => {
+            Estimate::Measured(producing) if !producing.is_zero() => {
                 Tracked::Sampled(share(spent, producing))
             },
-            | Estimate::Measured(_) | Estimate::Unmeasured => Tracked::Unsampled,
+            Estimate::Measured(_) | Estimate::Unmeasured => Tracked::Unsampled,
         };
         DraftSample::Drafted {
             acceptance: accepted,
@@ -863,8 +863,8 @@ impl Acceptance
     const fn sample(self) -> Share
     {
         match self {
-            | Self::Accepted => Share(1.0),
-            | Self::Refused => Share(0.0),
+            Self::Accepted => Share(1.0),
+            Self::Refused => Share(0.0),
         }
     }
 }
@@ -926,23 +926,32 @@ fn judge(
         return Err(StageError::Unbalanced);
     }
     let refused = |refusal| match refusal {
-        | Refusal::Syntax(StageError::Exhausted) => Err(StageError::Exhausted),
-        | refusal => Ok(Judged::Refused(refusal)),
+        Refusal::Syntax(StageError::Exhausted) => Err(StageError::Exhausted),
+        refusal @ (Refusal::Syntax(_)
+        | Refusal::Malformed
+        | Refusal::SchemaWorkBound
+        | Refusal::Transparency
+        | Refusal::CorruptStep
+        | Refusal::MissingPoint(_)
+        | Refusal::UnknownArm(_)
+        | Refusal::Correlation(_)
+        | Refusal::ClassifierMismatch
+        | Refusal::SidesMismatch) => Ok(Judged::Refused(refusal)),
     };
     let schema = match Schema::check(proposal, budget) {
-        | Ok(schema) => schema,
-        | Err(refusal) => return refused(refusal),
+        Ok(schema) => schema,
+        Err(refusal) => return refused(refusal),
     };
     {
         let consumer = match schema.bind(arena.clone(), budget) {
-            | Ok(consumer) => consumer,
-            | Err(refusal) => return refused(refusal),
+            Ok(consumer) => consumer,
+            Err(refusal) => return refused(refusal),
         };
         for (step, choices) in members.iter().zip(rows) {
             let substitution = schema.substitute(schema.classifiers(), choices, row);
             let mut substitution = match substitution {
-                | Ok(substitution) => substitution,
-                | Err(refusal) => return refused(refusal),
+                Ok(substitution) => substitution,
+                Err(refusal) => return refused(refusal),
             };
             if let Err(refusal) = substitution.admit(&consumer, *step, budget) {
                 return refused(refusal);
@@ -1034,12 +1043,12 @@ impl Template
             drafter,
         )?;
         let (template, kind) = match walk {
-            | Walk::Matched { template, kind } => (template, kind),
-            | Walk::Missed(miss) => return Ok(Attempt::Withdrawn(Drafting::Missed(miss))),
+            Walk::Matched { template, kind } => (template, kind),
+            Walk::Missed(miss) => return Ok(Attempt::Withdrawn(Drafting::Missed(miss))),
         };
         let fresh = match kind {
-            | DraftKind::Exact => ArmCount(0),
-            | DraftKind::Widened(fresh) | DraftKind::Rebased(_, fresh) => fresh,
+            DraftKind::Exact => ArmCount(0),
+            DraftKind::Widened(fresh) | DraftKind::Rebased(_, fresh) => fresh,
         };
         if let (Tracked::Sampled(arm), Estimate::Measured(producing)) = (cap.arm, cap.producing) {
             let count = u32::try_from(fresh.0).map_or(f64::INFINITY, f64::from);
@@ -1055,7 +1064,7 @@ impl Template
             cap.measured = Tracked::Sampled(Share(each));
         }
         Ok(match finished {
-            | Finished::Ready(mut draft) => {
+            Finished::Ready(mut draft) => {
                 if let Cow::Owned(mut rebased) = template {
                     let revision =
                         core::mem::replace(&mut draft.revision, Revision::Kept(Vec::new()));
@@ -1064,7 +1073,7 @@ impl Template
                 }
                 Attempt::Ready(draft, kind)
             },
-            | Finished::Unfit(unfit) => Attempt::Withdrawn(Drafting::Unfit(unfit)),
+            Finished::Unfit(unfit) => Attempt::Withdrawn(Drafting::Unfit(unfit)),
         })
     }
 }
@@ -1098,12 +1107,12 @@ impl Memo
     ) -> Maybe<&Template, Unheld>
     {
         match self.slots.iter().find(|slot| slot.key == *family.key()) {
-            | Some(&Slot {
+            Some(&Slot {
                 held: Held::Template(ref template),
                 ..
             }) => Maybe::Present(template),
-            | Some(_) => Maybe::Absent(Unheld::Vacated),
-            | None => Maybe::Absent(Unheld::Unseen),
+            Some(_) => Maybe::Absent(Unheld::Vacated),
+            None => Maybe::Absent(Unheld::Unseen),
         }
     }
 
@@ -1136,8 +1145,8 @@ impl Memo
     )
     {
         match self.slots.iter_mut().find(|slot| slot.key == *family.key()) {
-            | Some(slot) => slot.held = Held::Template(template),
-            | None => self.slots.push(Slot {
+            Some(slot) => slot.held = Held::Template(template),
+            None => self.slots.push(Slot {
                 key: *family.key(),
                 held: Held::Template(template),
                 controls: Controls::fresh(),
@@ -1349,24 +1358,25 @@ impl Memo
         family: &Family,
     ) -> (SlotIndex, Plan)
     {
-        let index = match self.slots.iter().position(|slot| slot.key == *family.key()) {
-            | Some(index) => index,
-            | None => {
+        let index =
+            if let Some(index) = self.slots.iter().position(|slot| slot.key == *family.key()) {
+                index
+            }
+            else {
                 self.slots.push(Slot {
                     key: *family.key(),
                     held: Held::Vacant,
                     controls: Controls::fresh(),
                 });
                 self.slots.len().saturating_sub(1)
-            },
-        };
+            };
         let plan = match self.slots.get_mut(index) {
-            | Some(&mut Slot {
+            Some(&mut Slot {
                 held: Held::Template(_),
                 ref mut controls,
                 ..
             }) => Plan::Decided(controls.decide(&mut self.switch)),
-            | Some(_) | None => Plan::Unmemoized,
+            Some(_) | None => Plan::Unmemoized,
         };
         (SlotIndex(index), plan)
     }
@@ -1443,8 +1453,8 @@ where
         && let Held::Template(ref memo) = slot.held
     {
         match decision {
-            | Decision::Decline(decline) => drafting = Drafting::Declined(decline),
-            | Decision::Draft => {
+            Decision::Decline(decline) => drafting = Drafting::Declined(decline),
+            Decision::Draft => {
                 let begun = clock.now();
                 let mut cap = Cap {
                     producing: slot.controls.producing,
@@ -1455,8 +1465,8 @@ where
                 samples.arm = cap.measured;
                 spent.drafting = since(clock, begun);
                 drafting = match attempt {
-                    | Attempt::Withdrawn(withdrawn) => withdrawn,
-                    | Attempt::Ready(draft, kind) => {
+                    Attempt::Withdrawn(withdrawn) => withdrawn,
+                    Attempt::Ready(draft, kind) => {
                         let begun = clock.now();
                         let choices = rows(
                             &draft.choices,
@@ -1467,14 +1477,14 @@ where
                         spent.admitting = since(clock, begun);
                         let allowance = usize::from(draft.cost.template_size);
                         match judged {
-                            | Judged::Refused(refusal) => Drafting::Refused(refusal),
-                            | Judged::Admitted(schema)
+                            Judged::Refused(refusal) => Drafting::Refused(refusal),
+                            Judged::Admitted(schema)
                                 if gate == PriceGate::Memoized
                                     && schema.largest_replay().0 > allowance =>
                             {
                                 Drafting::ReplayBound(schema.largest_replay())
                             },
-                            | Judged::Admitted(schema) => {
+                            Judged::Admitted(schema) => {
                                 samples.draft =
                                     slot.controls.observe(Acceptance::Accepted, spent.drafting);
                                 if let Held::Template(ref mut held) = slot.held {
@@ -1499,8 +1509,8 @@ where
     let begun = clock.now();
     let analysis = analyze(arena, members)?;
     let candidate = match analysis {
-        | Analysis::Candidate(candidate) => candidate,
-        | Analysis::Refused { reason, .. } => {
+        Analysis::Candidate(candidate) => candidate,
+        Analysis::Refused { reason, .. } => {
             spent.producing = since(clock, begun);
             slot.controls.producing = Estimate::Measured(spent.producing);
             slot.held = Held::Vacant;
@@ -1513,8 +1523,8 @@ where
     };
     let prices = candidate.prices();
     let pays = match gate {
-        | PriceGate::Unmemoized => prices.unmemoized.is_ok(),
-        | PriceGate::Memoized => prices.memoized.is_ok(),
+        PriceGate::Unmemoized => prices.unmemoized.is_ok(),
+        PriceGate::Memoized => prices.memoized.is_ok(),
     };
     if !pays {
         let cost = candidate.cost();
@@ -1535,13 +1545,13 @@ where
     spent.producing = since(clock, begun);
     slot.controls.producing = Estimate::Measured(spent.producing);
     let refusal = match production {
-        | Production::Go(template) => {
+        Production::Go(template) => {
             let begun = clock.now();
             let choices: Vec<&[Choice]> = admission.rows.iter().map(Vec::as_slice).collect();
             let judged = judge(arena, members, admission.proposal, &choices, row, budget)?;
             spent.admitting = spent.admitting.saturating_add(since(clock, begun));
             match judged {
-                | Judged::Admitted(schema) => {
+                Judged::Admitted(schema) => {
                     let begun = clock.now();
                     let held = template.compacted()?;
                     spent.drafting = spent.drafting.saturating_add(since(clock, begun));
@@ -1555,11 +1565,11 @@ where
                         spent,
                     });
                 },
-                | Judged::Refused(refusal) => refusal,
+                Judged::Refused(refusal) => refusal,
             }
         },
-        | Production::SchemaWorkBound { .. } => Refusal::SchemaWorkBound,
-        | Production::Plain { reason, .. } => {
+        Production::SchemaWorkBound { .. } => Refusal::SchemaWorkBound,
+        Production::Plain { reason, .. } => {
             slot.held = Held::Vacant;
             return Ok(FamilyReport {
                 admission: FamilyAdmission::Plain(reason),
@@ -1567,7 +1577,7 @@ where
                 spent,
             });
         },
-        | Production::WorkBoundExceeded { bound, .. } => {
+        Production::WorkBoundExceeded { bound, .. } => {
             return Ok(FamilyReport {
                 admission: FamilyAdmission::WorkBoundExceeded(bound),
                 drafting,

@@ -562,12 +562,12 @@ impl Presentation
                     for &node in rule.right() {
                         fuel.charge()?;
                         match node {
-                            | RuleNode::Constructor(tag) => built.push(RuleTerm::Constructor {
+                            RuleNode::Constructor(tag) => built.push(RuleTerm::Constructor {
                                 tag,
                                 arity: arities.get(usize::from(tag)).copied().unwrap_or_default(),
                                 payload: fresh(&payload),
                             }),
-                            | RuleNode::Variable(variable) => {
+                            RuleNode::Variable(variable) => {
                                 let ordinal =
                                     usize::try_from(u32::from(variable)).unwrap_or(usize::MAX);
                                 let Some(&(from, to)) = bindings.get(ordinal)
@@ -818,7 +818,7 @@ where
         fields.clear();
         let reading = read(at, &mut fields);
         match (slot, reading) {
-            | (RuleSlot::Own, TermReading::Constructor(tag)) => {
+            (RuleSlot::Own, TermReading::Constructor(tag)) => {
                 let Some(row) = table.get(usize::from(tag))
                 else {
                     term.push(RuleTerm::Leaf(at));
@@ -833,8 +833,8 @@ where
                     pending.push((field, row.get(index).copied().unwrap_or(RuleSlot::Own)));
                 }
             },
-            | (RuleSlot::Own, TermReading::Defined(body)) => pending.push((body, RuleSlot::Own)),
-            | (RuleSlot::Own, TermReading::Other) | (RuleSlot::Other(_), _) => {
+            (RuleSlot::Own, TermReading::Defined(body)) => pending.push((body, RuleSlot::Own)),
+            (RuleSlot::Own, TermReading::Other) | (RuleSlot::Other(_), _) => {
                 term.push(RuleTerm::Leaf(at));
             },
         }
@@ -949,7 +949,7 @@ where
     for (one, other) in left.iter().zip(right.iter()) {
         fuel.charge()?;
         match (*one, *other) {
-            | (
+            (
                 RuleTerm::Constructor { tag: first, .. },
                 RuleTerm::Constructor { tag: second, .. },
             ) => {
@@ -957,8 +957,8 @@ where
                     return Ok(Apartness::Apart);
                 }
             },
-            | (RuleTerm::Leaf(first), RuleTerm::Leaf(second)) if first == second => {},
-            | (RuleTerm::Constructor { .. } | RuleTerm::Leaf(_), _) => return Ok(Apartness::Leaf),
+            (RuleTerm::Leaf(first), RuleTerm::Leaf(second)) if first == second => {},
+            (RuleTerm::Constructor { .. } | RuleTerm::Leaf(_), _) => return Ok(Apartness::Leaf),
         }
     }
     if left.len() == right.len() {
@@ -1017,14 +1017,14 @@ where
             return Closure::Open;
         };
         match *node {
-            | RuleTerm::Constructor { tag, .. } => {
+            RuleTerm::Constructor { tag, .. } => {
                 let Some(fields) = table.get(usize::from(tag))
                 else {
                     return Closure::Open;
                 };
                 expected.extend(fields.iter().rev().copied());
             },
-            | RuleTerm::Leaf(_) => {
+            RuleTerm::Leaf(_) => {
                 if slot == RuleSlot::Own {
                     return Closure::Open;
                 }
@@ -1130,28 +1130,28 @@ fn overlap(
     while let Some(&node) = at.get(a) {
         fuel.charge()?;
         match (node, overlapping.get(b)) {
-            | (RuleNode::Constructor(one), Some(&RuleNode::Constructor(other))) => {
+            (RuleNode::Constructor(one), Some(&RuleNode::Constructor(other))) => {
                 if one != other {
                     return Ok(Overlap::Disjoint);
                 }
                 a = a.saturating_add(1);
                 b = b.saturating_add(1);
             },
-            | (RuleNode::Variable(variable), Some(_)) => {
+            (RuleNode::Variable(variable), Some(_)) => {
                 let TermPosition(to) = subterm_end(overlapping, TermPosition(b), arities, fuel)?;
                 let span = overlapping.get(b .. to).unwrap_or(&[]);
                 outer_bound.push((variable, flattened(span, PairVariable::Inner, arities)));
                 a = a.saturating_add(1);
                 b = to;
             },
-            | (RuleNode::Constructor(_), Some(&RuleNode::Variable(variable))) => {
+            (RuleNode::Constructor(_), Some(&RuleNode::Variable(variable))) => {
                 let TermPosition(to) = subterm_end(at, TermPosition(a), arities, fuel)?;
                 let span = at.get(a .. to).unwrap_or(&[]);
                 inner_bound.push((variable, flattened(span, PairVariable::Outer, arities)));
                 a = to;
                 b = b.saturating_add(1);
             },
-            | (RuleNode::Constructor(_) | RuleNode::Variable(_), None) => {
+            (RuleNode::Constructor(_) | RuleNode::Variable(_), None) => {
                 return Ok(Overlap::Disjoint);
             },
         }
@@ -1204,11 +1204,11 @@ fn subterm_end(
     while let Some(next) = owed.checked_sub(1) {
         fuel.charge()?;
         owed = match side.get(at) {
-            | Some(&RuleNode::Constructor(tag)) => {
+            Some(&RuleNode::Constructor(tag)) => {
                 next.saturating_add(arities.get(usize::from(tag)).map_or(0, |count| count.0))
             },
-            | Some(&RuleNode::Variable(_)) => next,
-            | None => return Ok(TermPosition(side.len().max(start.0))),
+            Some(&RuleNode::Variable(_)) => next,
+            None => return Ok(TermPosition(side.len().max(start.0))),
         };
         at = at.saturating_add(1);
     }
@@ -1228,12 +1228,12 @@ fn flattened(
     nodes
         .iter()
         .map(|&node| match node {
-            | RuleNode::Constructor(tag) => RuleTerm::Constructor {
+            RuleNode::Constructor(tag) => RuleTerm::Constructor {
                 tag,
                 arity: arities.get(usize::from(tag)).copied().unwrap_or_default(),
                 payload: (),
             },
-            | RuleNode::Variable(variable) => RuleTerm::Leaf(side(variable)),
+            RuleNode::Variable(variable) => RuleTerm::Leaf(side(variable)),
         })
         .collect()
 }
@@ -1253,15 +1253,15 @@ fn substituted(
     let mut term = Vec::with_capacity(nodes.len());
     for &node in nodes {
         match node {
-            | RuleNode::Constructor(tag) => term.push(RuleTerm::Constructor {
+            RuleNode::Constructor(tag) => term.push(RuleTerm::Constructor {
                 tag,
                 arity: arities.get(usize::from(tag)).copied().unwrap_or_default(),
                 payload: (),
             }),
-            | RuleNode::Variable(variable) => {
+            RuleNode::Variable(variable) => {
                 match bound.iter().find(|&&(named, _)| named == variable) {
-                    | Some(&(_, ref value)) => term.extend_from_slice(value),
-                    | None => term.push(RuleTerm::Leaf(side(variable))),
+                    Some(&(_, ref value)) => term.extend_from_slice(value),
+                    None => term.push(RuleTerm::Leaf(side(variable))),
                 }
             },
         }
@@ -1712,8 +1712,8 @@ where
     let mut built: Vec<T> = Vec::new();
     for &written in side.iter().rev() {
         let fields = match written {
-            | RuleNode::Variable(_) => Vec::new(),
-            | RuleNode::Constructor(tag) => {
+            RuleNode::Variable(_) => Vec::new(),
+            RuleNode::Constructor(tag) => {
                 let arity = arities
                     .get(usize::from(tag))
                     .copied()
@@ -1730,8 +1730,8 @@ where
         built.push(node(written, fields));
     }
     match (built.pop(), built.is_empty()) {
-        | (Some(root), true) => Ok(root),
-        | (Some(_) | None, _) => Err(RuleFault::Arity),
+        (Some(root), true) => Ok(root),
+        (Some(_) | None, _) => Err(RuleFault::Arity),
     }
 }
 
@@ -2041,7 +2041,7 @@ where
     for &node in side {
         let slot = expected.pop().ok_or(RuleFault::Arity)?;
         match node {
-            | RuleNode::Constructor(tag) => {
+            RuleNode::Constructor(tag) => {
                 let fields = table
                     .get(usize::from(tag))
                     .ok_or(RuleFault::UnknownConstructor)?;
@@ -2051,7 +2051,7 @@ where
                 expected.extend(fields.iter().rev().copied());
                 reading.constructors = reading.constructors.saturating_add(1);
             },
-            | RuleNode::Variable(variable) => reading.variables.push((variable, slot)),
+            RuleNode::Variable(variable) => reading.variables.push((variable, slot)),
         }
     }
     if !expected.is_empty() {
@@ -2127,28 +2127,28 @@ fn matched<C, L>(
     for &node in left {
         fuel.charge()?;
         match (node, term.get(at)) {
-            | (RuleNode::Constructor(wanted), Some(&RuleTerm::Constructor { tag, arity, .. }))
+            (RuleNode::Constructor(wanted), Some(&RuleTerm::Constructor { tag, arity, .. }))
                 if wanted == tag && arities.get(usize::from(tag)) == Some(&arity) =>
             {
                 at = at.saturating_add(1);
             },
-            | (RuleNode::Variable(_), Some(_)) => {
+            (RuleNode::Variable(_), Some(_)) => {
                 let from = at;
                 let mut owed = 1_usize;
                 while let Some(next) = owed.checked_sub(1) {
                     fuel.charge()?;
                     owed = match term.get(at) {
-                        | Some(&RuleTerm::Constructor { arity, .. }) => {
+                        Some(&RuleTerm::Constructor { arity, .. }) => {
                             next.saturating_add(usize::from(arity))
                         },
-                        | Some(&RuleTerm::Leaf(_)) => next,
-                        | None => return Ok(Matched::No),
+                        Some(&RuleTerm::Leaf(_)) => next,
+                        None => return Ok(Matched::No),
                     };
                     at = at.saturating_add(1);
                 }
                 bindings.push((from, at));
             },
-            | (RuleNode::Constructor(_) | RuleNode::Variable(_), _) => return Ok(Matched::No),
+            (RuleNode::Constructor(_) | RuleNode::Variable(_), _) => return Ok(Matched::No),
         }
     }
     Ok(Matched::At { end: at, bindings })
@@ -2492,8 +2492,8 @@ mod tests
         let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
         let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
         let shown = |node: RuleNode, fields: Vec<String>| match node {
-            | RuleNode::Variable(variable) => alloc::format!("x{}", u32::from(variable)),
-            | RuleNode::Constructor(tag) => {
+            RuleNode::Variable(variable) => alloc::format!("x{}", u32::from(variable)),
+            RuleNode::Constructor(tag) => {
                 alloc::format!("c{}({})", usize::from(tag), fields.join(","))
             },
         };
@@ -2614,14 +2614,14 @@ mod tests
             for &node in nodes.iter().rev() {
                 let stored =
                     match node {
-                        | Node::C(tag) => {
+                        Node::C(tag) => {
                             let mut fields = Vec::new();
                             for _ in 0 .. arities[tag].0 {
                                 fields.push(built.pop().expect("a field is written"));
                             }
                             Stored::Constructor(tag, fields)
                         },
-                        | Node::L(id) => {
+                        Node::L(id) => {
                             if let Some(found) = self.0.iter().position(
                                 |stored| matches!(*stored, Stored::Leaf(held) if held == id),
                             ) {
@@ -2630,7 +2630,7 @@ mod tests
                             }
                             Stored::Leaf(id)
                         },
-                        | Node::R(target) => Stored::Defined(target),
+                        Node::R(target) => Stored::Defined(target),
                     };
                 built.push(Id(self.0.len()));
                 self.0.push(stored);
@@ -2649,12 +2649,12 @@ mod tests
         ) -> TermReading<Id>
         {
             match self.0[at.0] {
-                | Stored::Constructor(tag, ref written) => {
+                Stored::Constructor(tag, ref written) => {
                     fields.extend_from_slice(written);
                     TermReading::Constructor(ConstructorTag::from(tag))
                 },
-                | Stored::Defined(body) => TermReading::Defined(body),
-                | Stored::Leaf(_) => TermReading::Other,
+                Stored::Defined(body) => TermReading::Defined(body),
+                Stored::Leaf(_) => TermReading::Other,
             }
         }
     }

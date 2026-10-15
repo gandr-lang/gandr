@@ -125,11 +125,11 @@ pub fn kind_level(
 ) -> Result<Level, CheckRefusal>
 {
     match context.arena().value_type(kind) {
-        | Some(&ValueType::Universe {
+        Some(&ValueType::Universe {
             sort: Sort::Ground(GroundSort::Value),
             ref level,
         }) => Ok(level.clone()),
-        | _ => Err(CheckRefusal::DataKindNotUniverse(kind)),
+        _ => Err(CheckRefusal::DataKindNotUniverse(kind)),
     }
 }
 
@@ -273,10 +273,10 @@ pub fn slot_table(
             fields
                 .iter()
                 .map(|&field| match arena.value_type(field) {
-                    | Some(&ValueType::Data { declaration, .. }) if declaration == position => {
+                    Some(&ValueType::Data { declaration, .. }) if declaration == position => {
                         RuleSlot::Own
                     },
-                    | _ => RuleSlot::Other(field),
+                    _ => RuleSlot::Other(field),
                 })
                 .collect()
         })
@@ -383,7 +383,7 @@ fn node(
 ) -> TermReading<ValueId>
 {
     match arena.value(at) {
-        | Some(&Value::Constructor {
+        Some(&Value::Constructor {
             datatype,
             tag,
             fields: ref written,
@@ -395,14 +395,14 @@ fn node(
             fields.extend_from_slice(written);
             TermReading::Constructor(tag)
         },
-        | Some(&Value::Constant(constant)) => match definitions.body(constant) {
-            | Maybe::Present(body) => {
+        Some(&Value::Constant(constant)) => match definitions.body(constant) {
+            Maybe::Present(body) => {
                 unfolded.push(constant);
                 TermReading::Defined(body)
             },
-            | Maybe::Absent(_) => TermReading::Other,
+            Maybe::Absent(_) => TermReading::Other,
         },
-        | _ => TermReading::Other,
+        _ => TermReading::Other,
     }
 }
 
@@ -442,11 +442,11 @@ pub fn form_abstract(
     let kind = declared.kind();
     let _formed = form_value_type(context, kind)?;
     let level = match context.arena().value_type(kind) {
-        | Some(&ValueType::Universe {
+        Some(&ValueType::Universe {
             sort: Sort::Ground(GroundSort::Value),
             ref level,
         }) => level.clone(),
-        | _ => return Err(CheckRefusal::AbstractKindNotUniverse(kind)),
+        _ => return Err(CheckRefusal::AbstractKindNotUniverse(kind)),
     };
     let upper = level
         .succ()
@@ -487,11 +487,11 @@ pub fn signature(
 ) -> Result<Arc<DataSignature>, CheckRefusal>
 {
     let (declaration, count) = match context.arena().value_type(datatype) {
-        | Some(&ValueType::Data {
+        Some(&ValueType::Data {
             ref declaration,
             ref arguments,
         }) => (*declaration, arguments.len()),
-        | _ => return Err(CheckRefusal::MachineInvariant),
+        _ => return Err(CheckRefusal::MachineInvariant),
     };
     let signature = context
         .consult_data(declaration)
@@ -527,11 +527,11 @@ pub fn instantiate(
 {
     for index in (0 .. usize::from(prefix)).rev() {
         let argument = match context.arena().value_type(datatype) {
-            | Some(&ValueType::Data { ref arguments, .. }) => arguments
+            Some(&ValueType::Data { ref arguments, .. }) => arguments
                 .get(index)
                 .copied()
                 .ok_or(CheckRefusal::MachineInvariant)?,
-            | _ => return Err(CheckRefusal::MachineInvariant),
+            _ => return Err(CheckRefusal::MachineInvariant),
         };
         let depth =
             Binders::from(u32::try_from(index).map_err(|_cause| CheckRefusal::MachineInvariant)?);

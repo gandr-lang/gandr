@@ -341,10 +341,11 @@ impl NamePath
         prefix: &Self,
     ) -> Maybe<Self, remainder::Absent>
     {
-        match self.0.strip_prefix(prefix.0.as_slice()) {
-            | Some(suffix) => Maybe::Present(Self(suffix.to_vec())),
-            | None => Maybe::Absent(remainder::Absent::NotAPrefix),
-        }
+        self.0
+            .strip_prefix(prefix.0.as_slice())
+            .map_or(Maybe::Absent(remainder::Absent::NotAPrefix), |suffix| {
+                Maybe::Present(Self(suffix.to_vec()))
+            })
     }
 }
 
@@ -741,15 +742,15 @@ mod tests
         ) -> core::fmt::Result
         {
             match self.step {
-                | WriteStep::First => {
+                WriteStep::First => {
                     self.step = WriteStep::Separator;
                     Ok(())
                 },
-                | WriteStep::Separator => {
+                WriteStep::Separator => {
                     self.step = WriteStep::Refused;
                     Err(core::fmt::Error)
                 },
-                | WriteStep::Refused | WriteStep::Continued => {
+                WriteStep::Refused | WriteStep::Continued => {
                     self.step = WriteStep::Continued;
                     Ok(())
                 },

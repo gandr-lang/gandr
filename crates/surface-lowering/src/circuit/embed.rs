@@ -52,13 +52,13 @@ impl core::fmt::Display for CircuitWiringError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::ArgumentIsNotAPort(ref head) => {
+            Self::ArgumentIsNotAPort(ref head) => {
                 write!(f, "the argument headed by `{head}` is a term, not a wire")
             },
-            | Self::ResultsAreNotAPort => {
+            Self::ResultsAreNotAPort => {
                 f.write_str("a results tuple is not a wire; it stands only at a rule's root")
             },
-            | Self::NotAWiring(ref obstruction) => {
+            Self::NotAWiring(ref obstruction) => {
                 write!(f, "the circuit body is not a wiring: {obstruction}")
             },
         }
@@ -92,8 +92,8 @@ impl core::fmt::Display for CircuitEmbedError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Wiring(ref error) => error.fmt(f),
-            | Self::Matching(ref obstruction) => {
+            Self::Wiring(ref error) => error.fmt(f),
+            Self::Matching(ref obstruction) => {
                 write!(f, "the circuit embedding search declined: {obstruction}")
             },
         }
@@ -135,11 +135,11 @@ pub fn circuit_wiring(body: &CircuitBody) -> Result<Wiring, CircuitWiringError>
         let mut sources = Vec::with_capacity(arguments.len());
         for argument in arguments {
             let port = match argument.view() {
-                | TermView::Var(name) => name,
-                | TermView::Ctor { name, .. } | TermView::Op { name, .. } => {
+                TermView::Var(name) => name,
+                TermView::Ctor { name, .. } | TermView::Op { name, .. } => {
                     return Err(CircuitWiringError::ArgumentIsNotAPort(name.clone()));
                 },
-                | TermView::Results { .. } => return Err(CircuitWiringError::ResultsAreNotAPort),
+                TermView::Results { .. } => return Err(CircuitWiringError::ResultsAreNotAPort),
             };
             let wire = intern(port, &mut index);
             read.insert(wire);
@@ -231,8 +231,8 @@ fn intern<'body>(
 fn node_arguments(node: &CircuitNode) -> &[FreeTerm]
 {
     match *node {
-        | CircuitNode::Frame(ref frame) => &frame.args,
-        | CircuitNode::Redex(ref redex) => core::slice::from_ref(&redex.source),
+        CircuitNode::Frame(ref frame) => &frame.args,
+        CircuitNode::Redex(ref redex) => core::slice::from_ref(&redex.source),
     }
 }
 
@@ -243,11 +243,11 @@ fn node_arguments(node: &CircuitNode) -> &[FreeTerm]
 const fn node_sort(node: &CircuitNode) -> GeneratorSort
 {
     match *node {
-        | CircuitNode::Frame(ref frame) => match frame.head {
-            | FrameHead::Ctor(_) => GeneratorSort::Value,
-            | FrameHead::Op(_) => GeneratorSort::Operation,
+        CircuitNode::Frame(ref frame) => match frame.head {
+            FrameHead::Ctor(_) => GeneratorSort::Value,
+            FrameHead::Op(_) => GeneratorSort::Operation,
         },
-        | CircuitNode::Redex(_) => GeneratorSort::Rewrite,
+        CircuitNode::Redex(_) => GeneratorSort::Rewrite,
     }
 }
 
@@ -258,8 +258,8 @@ const fn node_sort(node: &CircuitNode) -> GeneratorSort
 const fn node_head(node: &CircuitNode) -> &Name
 {
     match *node {
-        | CircuitNode::Frame(ref frame) => frame.head.name(),
-        | CircuitNode::Redex(ref redex) => &redex.rewrite,
+        CircuitNode::Frame(ref frame) => frame.head.name(),
+        CircuitNode::Redex(ref redex) => &redex.rewrite,
     }
 }
 

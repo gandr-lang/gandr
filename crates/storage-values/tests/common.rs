@@ -154,12 +154,12 @@ impl CanonicalValue for Fixture
 
         for node in &self.0 {
             match *node {
-                | Node::Pair => {
+                Node::Pair => {
                     sink.open(ConstructorTag::from(PAIR))?;
                     owed.push(2_u8);
                     continue;
                 },
-                | Node::Leaf(word) => {
+                Node::Leaf(word) => {
                     sink.open(ConstructorTag::from(LEAF))?;
                     sink.word(word)?;
                     sink.close()?;
@@ -226,19 +226,19 @@ where
         let tag = reader.read_tag()?;
         observe(reader);
         match u8::from(tag) {
-            | PAIR => {
+            PAIR => {
                 nodes.push(Node::Pair);
                 owed.push(2_u8);
                 continue;
             },
-            | LEAF => {
+            LEAF => {
                 let word = reader.read_word()?;
                 observe(reader);
                 reader.read_close()?;
                 observe(reader);
                 nodes.push(Node::Leaf(word));
             },
-            | _ => {
+            _ => {
                 return Err(ValueError::UnexpectedConstructor {
                     found: tag,
                     position: reader.position(),
@@ -381,8 +381,8 @@ impl CanonicalValue for Embedding
     {
         sink.open(ConstructorTag::from(EMBED))?;
         match self.0 {
-            | Inner::Pointer(pointer) => sink.child_pointer(pointer)?,
-            | Inner::Value(ref value) => value.emit_tokens(sink)?,
+            Inner::Pointer(pointer) => sink.child_pointer(pointer)?,
+            Inner::Value(ref value) => value.emit_tokens(sink)?,
         }
         sink.close()
     }
@@ -473,9 +473,9 @@ impl CanonicalValue for Script
     {
         for step in &self.0 {
             match *step {
-                | Step::Open => sink.open(ConstructorTag::from(LEAF))?,
-                | Step::Word => sink.word(CanonicalWord::from(0_u64))?,
-                | Step::Close => sink.close()?,
+                Step::Open => sink.open(ConstructorTag::from(LEAF))?,
+                Step::Word => sink.word(CanonicalWord::from(0_u64))?,
+                Step::Close => sink.close()?,
             }
         }
 
@@ -614,8 +614,8 @@ pub fn edit_leaf(
     let leaf = nodes
         .iter_mut()
         .filter_map(|node| match *node {
-            | Node::Leaf(ref mut word) => Some(word),
-            | Node::Pair => None,
+            Node::Leaf(ref mut word) => Some(word),
+            Node::Pair => None,
         })
         .nth(index.0)
         .expect("the fixture has that many leaves");
@@ -697,9 +697,9 @@ pub fn scan(body: TokenBody<'_>) -> Vec<Scanned>
 
     while let Some((&kind, after)) = rest.split_first() {
         let (record, length) = match kind {
-            | 0x01 => (Scanned::Open, 1_usize),
-            | 0x02 => (Scanned::Other, 8_usize),
-            | 0x03 => {
+            0x01 => (Scanned::Open, 1_usize),
+            0x02 => (Scanned::Other, 8_usize),
+            0x03 => {
                 let declared = after.first_chunk::<8>().expect("a bytes length");
                 let payload =
                     usize::try_from(u64::from_le_bytes(*declared)).expect("a fixture length");
@@ -708,7 +708,7 @@ pub fn scan(body: TokenBody<'_>) -> Vec<Scanned>
                     payload.checked_add(8_usize).expect("a fixture length"),
                 )
             },
-            | 0x04 => {
+            0x04 => {
                 let digest = after.first_chunk::<32>().expect("a child digest");
                 let offset = after
                     .get(32 ..)
@@ -720,8 +720,8 @@ pub fn scan(body: TokenBody<'_>) -> Vec<Scanned>
                 );
                 (Scanned::Child(pointer), 36_usize)
             },
-            | 0x05 => (Scanned::Other, 0_usize),
-            | other => panic!("a fixture body holds no record kind {other:#04x}"),
+            0x05 => (Scanned::Other, 0_usize),
+            other => panic!("a fixture body holds no record kind {other:#04x}"),
         };
         records.push(record);
         rest = after.get(length ..).expect("a whole record");

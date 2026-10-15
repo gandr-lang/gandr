@@ -154,8 +154,8 @@ impl<Node: Copy + Eq + Hash> Scopes<Node>
             roots.into_iter().map(|root| (root, None)).collect();
         while let Some((node, scope)) = pending.pop() {
             match scopes.standing.entry(node) {
-                | Entry::Occupied(_) => continue,
-                | Entry::Vacant(vacant) => {
+                Entry::Occupied(_) => continue,
+                Entry::Vacant(vacant) => {
                     let _fresh = vacant.insert(scope);
                 },
             }

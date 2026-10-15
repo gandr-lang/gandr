@@ -963,8 +963,8 @@ impl<'run> Definitions<'run>
     ) -> Option<ValueId>
     {
         match self.manifest().unfolding(constant) {
-            | Unfolding::Unforced(entry) => self.bodies().get(&entry).copied(),
-            | Unfolding::Rigid | Unfolding::Forced(_) => None,
+            Unfolding::Unforced(entry) => self.bodies().get(&entry).copied(),
+            Unfolding::Rigid | Unfolding::Forced(_) => None,
         }
     }
 
@@ -1055,8 +1055,8 @@ impl<'run> Definitions<'run>
             .environment
             .transparency(self.scope, constant, entry.declared());
         match stance {
-            | Ok(Transparency::Manifest) => Unfolding::Unforced(entry.body()),
-            | Ok(Transparency::Opaque) | Err(_) => Unfolding::Rigid,
+            Ok(Transparency::Manifest) => Unfolding::Unforced(entry.body()),
+            Ok(Transparency::Opaque) | Err(_) => Unfolding::Rigid,
         }
     }
 }
@@ -1809,8 +1809,8 @@ impl<'run> Machine<'run>
             return Err(EvalFault::MachineInvariant);
         };
         let produced = match configuration.term {
-            | CoreTerm::Value(_) => self.values.last().copied().map(Glued::Value),
-            | CoreTerm::Computation(_) => self.comps.last().copied().map(Glued::Computation),
+            CoreTerm::Value(_) => self.values.last().copied().map(Glued::Value),
+            CoreTerm::Computation(_) => self.comps.last().copied().map(Glued::Computation),
         };
         let Some(produced) = produced
         else {
@@ -1893,8 +1893,8 @@ impl SourceKept
     ) -> Self
     {
         match (self, other) {
-            | (Self::Kept, Self::Kept) => Self::Kept,
-            | (Self::Kept, Self::Lost) | (Self::Lost, Self::Kept | Self::Lost) => Self::Lost,
+            (Self::Kept, Self::Kept) => Self::Kept,
+            (Self::Kept, Self::Lost) | (Self::Lost, Self::Kept | Self::Lost) => Self::Lost,
         }
     }
 }
@@ -2001,8 +2001,8 @@ fn composite_face(
 ) -> TermFace
 {
     match kept {
-        | SourceKept::Kept => TermFace::Source(term),
-        | SourceKept::Lost => TermFace::Reduced,
+        SourceKept::Kept => TermFace::Source(term),
+        SourceKept::Lost => TermFace::Reduced,
     }
 }
 
@@ -2032,8 +2032,8 @@ fn composite_comp_face(
 ) -> CompTermFace
 {
     match kept {
-        | SourceKept::Kept => CompTermFace::Source(term),
-        | SourceKept::Lost => CompTermFace::Reduced,
+        SourceKept::Kept => CompTermFace::Source(term),
+        SourceKept::Lost => CompTermFace::Reduced,
     }
 }
 
@@ -2497,13 +2497,13 @@ pub fn eval_sharing(
     machine.sharing.legs = legs;
     let env = Machine::root_env();
     machine.tasks.push(match root {
-        | CoreTerm::Value(term) => Task::Value { term, env },
-        | CoreTerm::Computation(term) => Task::Comp { term, env },
+        CoreTerm::Value(term) => Task::Value { term, env },
+        CoreTerm::Computation(term) => Task::Comp { term, env },
     });
     run(core, domain, &mut machine)?;
     let produced = match root {
-        | CoreTerm::Value(_) => machine.pop_value().map(Glued::Value),
-        | CoreTerm::Computation(_) => machine.pop_comp().map(Glued::Computation),
+        CoreTerm::Value(_) => machine.pop_value().map(Glued::Value),
+        CoreTerm::Computation(_) => machine.pop_comp().map(Glued::Computation),
     };
     let produced = produced?;
     Ok((produced, machine.fuel))
@@ -2799,9 +2799,9 @@ impl<'run> Evaluation<'run>
             .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
         let mut environment = held.environment().clone();
         match bound {
-            | Bound::Nothing => {},
-            | Bound::Variable(variable) => environment.extend(Zone::Intuitionistic, variable),
-            | Bound::Variables(variables) => {
+            Bound::Nothing => {},
+            Bound::Variable(variable) => environment.extend(Zone::Intuitionistic, variable),
+            Bound::Variables(variables) => {
                 for &variable in variables {
                     environment.extend(Zone::Intuitionistic, variable);
                 }
@@ -2866,11 +2866,11 @@ impl<'run> Evaluation<'run>
         let end = run_slice(core, domain, &mut self.machine)?;
         let spent = Fuel(u32::from(slice).saturating_sub(u32::from(self.machine.fuel)));
         match end {
-            | SliceEnd::Spent => Ok((Progress::Paused, spent)),
-            | SliceEnd::Drained => {
+            SliceEnd::Spent => Ok((Progress::Paused, spent)),
+            SliceEnd::Drained => {
                 let answer = match self.answer {
-                    | Answer::Value => Glued::Value(self.machine.pop_value()?),
-                    | Answer::Computation => Glued::Computation(self.machine.pop_comp()?),
+                    Answer::Value => Glued::Value(self.machine.pop_value()?),
+                    Answer::Computation => Glued::Computation(self.machine.pop_comp()?),
                 };
                 Ok((Progress::Finished(answer), spent))
             },
@@ -3153,11 +3153,11 @@ fn step(
 ) -> Result<(), EvalFault>
 {
     match task {
-        | Task::Constructor { term, env } => step_constructor(core, domain, machine, term, env),
-        | Task::Record(term) => step_record(core, domain, machine, term),
-        | Task::DataCase { term, env } => step_data_case(core, domain, machine, term, env),
-        | Task::Projection(term) => step_projection(core, domain, machine, term),
-        | Task::DataCaseClosure(closure) => {
+        Task::Constructor { term, env } => step_constructor(core, domain, machine, term, env),
+        Task::Record(term) => step_record(core, domain, machine, term),
+        Task::DataCase { term, env } => step_data_case(core, domain, machine, term, env),
+        Task::Projection(term) => step_projection(core, domain, machine, term),
+        Task::DataCaseClosure(closure) => {
             let closure = domain
                 .comp_closure(closure)
                 .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
@@ -3168,8 +3168,8 @@ fn step(
             let env = machine.hold_env(closure.environment().clone());
             step_data_case(core, domain, machine, term, env)
         },
-        | Task::Split { term, env } => step_split(core, domain, machine, term, env),
-        | Task::SplitClosure(closure) => {
+        Task::Split { term, env } => step_split(core, domain, machine, term, env),
+        Task::SplitClosure(closure) => {
             let closure = domain
                 .comp_closure(closure)
                 .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
@@ -3180,37 +3180,35 @@ fn step(
             let env = machine.hold_env(closure.environment().clone());
             step_split(core, domain, machine, term, env)
         },
-        | Task::Value { term, env } => {
+        Task::Value { term, env } => {
             let recalled = machine.recall(CoreTerm::Value(term), env)?;
             match recalled {
-                | Recall::Remembered(Glued::Value(remembered)) => {
+                Recall::Remembered(Glued::Value(remembered)) => {
                     machine.values.push(remembered);
                     Ok(())
                 },
-                | Recall::Remembered(Glued::Computation(_)) => Err(EvalFault::MachineInvariant),
-                | Recall::Unshared | Recall::Pending => {
-                    step_value(core, domain, machine, term, env)
-                },
+                Recall::Remembered(Glued::Computation(_)) => Err(EvalFault::MachineInvariant),
+                Recall::Unshared | Recall::Pending => step_value(core, domain, machine, term, env),
             }
         },
-        | Task::Body {
+        Task::Body {
             body: crate::closure::CompBody::Source(term),
             env,
         }
         | Task::Comp { term, env } => {
             let recalled = machine.recall(CoreTerm::Computation(term), env)?;
             match recalled {
-                | Recall::Remembered(Glued::Computation(remembered)) => {
+                Recall::Remembered(Glued::Computation(remembered)) => {
                     machine.comps.push(remembered);
                     Ok(())
                 },
-                | Recall::Remembered(Glued::Value(_)) => Err(EvalFault::MachineInvariant),
-                | Recall::Unshared | Recall::Pending => step_comp(core, domain, machine, term, env),
+                Recall::Remembered(Glued::Value(_)) => Err(EvalFault::MachineInvariant),
+                Recall::Unshared | Recall::Pending => step_comp(core, domain, machine, term, env),
             }
         },
         // The thunk a function flow rides a function to, forced: the lambda
         // that rides its argument, applies the function and rides the result.
-        | Task::Body {
+        Task::Body {
             body:
                 crate::closure::CompBody::RideFunction {
                     motive,
@@ -3229,22 +3227,22 @@ fn step(
                 .push(domain.comp_lambda(applied, CompTermFace::Reduced));
             Ok(())
         },
-        | Task::Body { body, env } => {
+        Task::Body { body, env } => {
             let bound = machine
                 .env(env)?
                 .lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))
                 .ok_or(EvalFault::MachineInvariant)?;
             match body {
-                | crate::closure::CompBody::Source(_)
+                crate::closure::CompBody::Source(_)
                 | crate::closure::CompBody::RideFunction { .. } => Err(EvalFault::MachineInvariant),
-                | crate::closure::CompBody::Pair(first) => {
+                crate::closure::CompBody::Pair(first) => {
                     let pair = domain.value_tuple([first, bound], TermFace::Reduced);
                     machine
                         .comps
                         .push(domain.comp_return(pair, CompTermFace::Reduced));
                     Ok(())
                 },
-                | crate::closure::CompBody::TransportPair { path, value } => {
+                crate::closure::CompBody::TransportPair { path, value } => {
                     let continuation =
                         domain.native_continuation(crate::closure::CompBody::Pair(bound));
                     machine.tasks.push(Task::BindClosure(continuation));
@@ -3252,7 +3250,7 @@ fn step(
                     machine.values.extend([path, value]);
                     Ok(())
                 },
-                | crate::closure::CompBody::Returned => {
+                crate::closure::CompBody::Returned => {
                     machine
                         .comps
                         .push(domain.comp_return(bound, CompTermFace::Reduced));
@@ -3261,7 +3259,7 @@ fn step(
                 // `x. (N to y. P)`: the inner continuation runs at the bound
                 // value under its own environment, and its result binds into
                 // the outer one as it stands.
-                | crate::closure::CompBody::Then { first, then } => {
+                crate::closure::CompBody::Then { first, then } => {
                     let held = domain
                         .comp_closure(first)
                         .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
@@ -3275,7 +3273,7 @@ fn step(
                 },
                 // After the first leg of a composite rode, ride its result
                 // along the second leg in the same motive.
-                | crate::closure::CompBody::RideAlong { motive, flow } => {
+                crate::closure::CompBody::RideAlong { motive, flow } => {
                     machine.tasks.push(Task::Ride(motive));
                     machine.values.extend([flow, bound]);
                     Ok(())
@@ -3283,7 +3281,7 @@ fn step(
                 // `a'. a ← ride(El, d, a'); b ← force f a; ride(El, c, b)`:
                 // the argument rides the domain flow, the function applies,
                 // and the result rides the codomain flow.
-                | crate::closure::CompBody::RideArgument {
+                crate::closure::CompBody::RideArgument {
                     motive,
                     flow,
                     function,
@@ -3312,7 +3310,7 @@ fn step(
                     machine.values.extend([argument, bound]);
                     Ok(())
                 },
-                | crate::closure::CompBody::ForceApplied(function) => {
+                crate::closure::CompBody::ForceApplied(function) => {
                     machine.values.push(bound);
                     machine.tasks.push(Task::Apply);
                     machine.tasks.push(Task::Force);
@@ -3321,7 +3319,7 @@ fn step(
                 },
                 // `x. y ← ride(P, g, b); return (x, y)`: the right component
                 // rides only once the left one returned.
-                | crate::closure::CompBody::RidePair {
+                crate::closure::CompBody::RidePair {
                     motive,
                     flow,
                     value,
@@ -3333,7 +3331,7 @@ fn step(
                     machine.values.extend([flow, value]);
                     Ok(())
                 },
-                | crate::closure::CompBody::Components {
+                crate::closure::CompBody::Components {
                     mover,
                     motive,
                     along,
@@ -3354,7 +3352,7 @@ fn step(
                         (environment, moved),
                     )
                 },
-                | crate::closure::CompBody::Inject(summand) => {
+                crate::closure::CompBody::Inject(summand) => {
                     let injected = domain.value_injection(summand, bound, TermFace::Reduced);
                     machine
                         .comps
@@ -3363,7 +3361,7 @@ fn step(
                 },
                 // `h. t ← step(List E, p, tail); return cons(h, t)`: the tail
                 // moves only once the head returned.
-                | crate::closure::CompBody::MoveTail {
+                crate::closure::CompBody::MoveTail {
                     mover,
                     motive,
                     along,
@@ -3376,7 +3374,7 @@ fn step(
                     machine.values.extend([along, tail]);
                     Ok(())
                 },
-                | crate::closure::CompBody::Cons(head) => {
+                crate::closure::CompBody::Cons(head) => {
                     let cell = domain.value_list_cons(head, bound, TermFace::Reduced);
                     machine
                         .comps
@@ -3385,12 +3383,12 @@ fn step(
                 },
                 // `y. tr(P, u, y)`: the rest of the word moves the value the
                 // first letter moved.
-                | crate::closure::CompBody::AlongWord { motive, rest } => {
+                crate::closure::CompBody::AlongWord { motive, rest } => {
                     machine.tasks.push(Task::PathTransport(motive));
                     machine.values.extend([rest, bound]);
                     Ok(())
                 },
-                | crate::closure::CompBody::Conjugated {
+                crate::closure::CompBody::Conjugated {
                     motive,
                     along,
                     value,
@@ -3402,7 +3400,7 @@ fn step(
                     (motive, along, value),
                     (stage, bound),
                 ),
-                | crate::closure::CompBody::Mapping {
+                crate::closure::CompBody::Mapping {
                     motive,
                     side,
                     call,
@@ -3425,7 +3423,7 @@ fn step(
                 ),
             }
         },
-        | Task::PathProduct(term) => {
+        Task::PathProduct(term) => {
             let second = machine.pop_value()?;
             let first = machine.pop_value()?;
             let Some(&Value::PathProduct(left, right)) = core.value(term)
@@ -3441,17 +3439,17 @@ fn step(
                 .push(domain.value_path_product(first, second, face));
             Ok(())
         },
-        | Task::Transport => step_transport(core, domain, machine),
-        | Task::ProductTransport(path) => {
+        Task::Transport => step_transport(core, domain, machine),
+        Task::ProductTransport(path) => {
             let value = machine.pop_value()?;
             machine.values.extend([path, value]);
             step_transport(core, domain, machine)
         },
-        | Task::PathTransport(motive) => step_path_transport(core, domain, machine, motive),
-        | Task::Ride(motive) => step_ride(core, domain, machine, motive),
-        | Task::Flow { term } => {
+        Task::PathTransport(motive) => step_path_transport(core, domain, machine, motive),
+        Task::Ride(motive) => step_ride(core, domain, machine, motive),
+        Task::Flow { term } => {
             let flow = match core.value(term) {
-                | Some(&(Value::Stay(part) | Value::Forward(part))) => {
+                Some(&(Value::Stay(part) | Value::Forward(part))) => {
                     let former = if matches!(core.value(term), Some(Value::Stay(_))) {
                         crate::domain::FlowFormer::Stay
                     }
@@ -3462,15 +3460,15 @@ fn step(
                     let face = composite_face(denotes(domain, evaluated, part), term);
                     domain.value_flow(former, [evaluated], face)
                 },
-                | Some(
+                Some(
                     &(Value::Then(left, right)
                     | Value::FunctionFlow(left, right)
                     | Value::FlowProduct(left, right)),
                 ) => {
                     let former = match core.value(term) {
-                        | Some(&Value::Then(..)) => crate::domain::FlowFormer::Then,
-                        | Some(&Value::FlowProduct(..)) => crate::domain::FlowFormer::Product,
-                        | _ => crate::domain::FlowFormer::Function,
+                        Some(&Value::Then(..)) => crate::domain::FlowFormer::Then,
+                        Some(&Value::FlowProduct(..)) => crate::domain::FlowFormer::Product,
+                        _ => crate::domain::FlowFormer::Function,
                     };
                     let second = machine.pop_value()?;
                     let first = machine.pop_value()?;
@@ -3480,15 +3478,13 @@ fn step(
                     );
                     domain.value_flow(former, [first, second], face)
                 },
-                | _ => return Err(EvalFault::DanglingTerm),
+                _ => return Err(EvalFault::DanglingTerm),
             };
             machine.values.push(flow);
             Ok(())
         },
-        | Task::TelescopeTransport(motive) => {
-            step_telescope_transport(core, domain, machine, motive)
-        },
-        | Task::Here { term } => {
+        Task::TelescopeTransport(motive) => step_telescope_transport(core, domain, machine, motive),
+        Task::Here { term } => {
             let point = machine.pop_value()?;
             let Some(&Value::Here(source)) = core.value(term)
             else {
@@ -3498,11 +3494,11 @@ fn step(
             machine.values.push(domain.value_here(point, face));
             Ok(())
         },
-        | Task::Returned => {
+        Task::Returned => {
             let produced = machine.pop_comp()?;
             resume_returned(domain, machine, produced)
         },
-        | Task::ListCons(term) => {
+        Task::ListCons(term) => {
             let second = machine.pop_value()?;
             let first = machine.pop_value()?;
             let Some(&Value::ListCons(left, right)) = core.value(term)
@@ -3518,7 +3514,7 @@ fn step(
                 .push(domain.value_list_cons(first, second, face));
             Ok(())
         },
-        | Task::ListFold {
+        Task::ListFold {
             element,
             result,
             on_nil,
@@ -3529,7 +3525,7 @@ fn step(
                 .value(list)
                 .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
             match node {
-                | DomainValue::ListNil { .. } => {
+                DomainValue::ListNil { .. } => {
                     let closure = domain
                         .comp_closure(on_nil)
                         .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
@@ -3537,7 +3533,7 @@ fn step(
                     let env = machine.hold_env(closure.environment().clone());
                     machine.tasks.push(Task::Body { body, env });
                 },
-                | DomainValue::ListCons { first, second, .. } => {
+                DomainValue::ListCons { first, second, .. } => {
                     let closure = domain
                         .comp_closure(on_cons)
                         .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
@@ -3557,7 +3553,7 @@ fn step(
                     });
                     machine.values.push(second);
                 },
-                | DomainValue::Neutral { neutral, .. } => {
+                DomainValue::Neutral { neutral, .. } => {
                     let grown = extend_spine(domain, neutral, Elimination::ListFold {
                         element,
                         result,
@@ -3568,11 +3564,23 @@ fn step(
                         .comps
                         .push(domain.comp_neutral(grown, CompTermFace::Reduced));
                 },
-                | _ => return Err(EvalFault::FoldedNonList),
+                DomainValue::Constructor { .. }
+                | DomainValue::Record { .. }
+                | DomainValue::PathCertificate { .. }
+                | DomainValue::PathProduct { .. }
+                | DomainValue::Here { .. }
+                | DomainValue::Flow { .. }
+                | DomainValue::Literal { .. }
+                | DomainValue::Tuple { .. }
+                | DomainValue::Injection { .. }
+                | DomainValue::Thunk { .. }
+                | DomainValue::Lift { .. }
+                | DomainValue::Code { .. }
+                | DomainValue::StaticLambda { .. } => return Err(EvalFault::FoldedNonList),
             }
             Ok(())
         },
-        | Task::Tuple { term } => {
+        Task::Tuple { term } => {
             let Some(source) = core.value(term).and_then(Value::components)
             else {
                 return Err(EvalFault::DanglingTerm);
@@ -3595,7 +3603,7 @@ fn step(
             machine.values.push(tuple);
             Ok(())
         },
-        | Task::Inject { term } => {
+        Task::Inject { term } => {
             let body = machine.pop_value()?;
             let Some(&Value::Injection(summand, source)) = core.value(term)
             else {
@@ -3607,7 +3615,7 @@ fn step(
                 .push(domain.value_injection(summand, body, face));
             Ok(())
         },
-        | Task::Lift { term, target } => {
+        Task::Lift { term, target } => {
             let body = machine.pop_value()?;
             let Some(&Value::Lift { body: source, .. }) = core.value(term)
             else {
@@ -3617,7 +3625,7 @@ fn step(
             machine.values.push(domain.value_lift(target, body, face));
             Ok(())
         },
-        | Task::Return { term } => {
+        Task::Return { term } => {
             let produced = machine.pop_value()?;
             let Some(&(Computation::Return(source) | Computation::Ride { value: source, .. })) =
                 core.computation(term)
@@ -3628,25 +3636,25 @@ fn step(
             machine.comps.push(domain.comp_return(produced, face));
             Ok(())
         },
-        | Task::Force => step_force(domain, machine),
-        | Task::Apply => step_apply(core, domain, machine),
-        | Task::StaticApply => step_static_apply(core, domain, machine),
-        | Task::Bind { body, env } => step_bind(core, domain, machine, body, env),
-        | Task::Case { term, env } => step_case(core, domain, machine, term, env),
-        | Task::Supply(value) => {
+        Task::Force => step_force(domain, machine),
+        Task::Apply => step_apply(core, domain, machine),
+        Task::StaticApply => step_static_apply(core, domain, machine),
+        Task::Bind { body, env } => step_bind(core, domain, machine, body, env),
+        Task::Case { term, env } => step_case(core, domain, machine, term, env),
+        Task::Supply(value) => {
             machine.values.push(value);
             Ok(())
         },
-        | Task::BindClosure(body) => step_bind_closure(core, domain, machine, body),
-        | Task::CaseBranches(branches) => step_case_branches(domain, machine, branches),
-        | Task::Remember(pending) => machine.remember(pending),
-        | Task::FixpointClosure(recursive) => {
+        Task::BindClosure(body) => step_bind_closure(core, domain, machine, body),
+        Task::CaseBranches(branches) => step_case_branches(domain, machine, branches),
+        Task::Remember(pending) => machine.remember(pending),
+        Task::FixpointClosure(recursive) => {
             machine
                 .comps
                 .push(domain.comp_fixpoint(recursive, CompTermFace::Reduced));
             step_apply(core, domain, machine)
         },
-        | Task::ReadThrough { computation, bind } => {
+        Task::ReadThrough { computation, bind } => {
             let continued = machine.pop_comp()?;
             if !matches!(
                 domain.computation(continued),
@@ -3729,7 +3737,7 @@ fn step_value(
         return Err(EvalFault::DanglingTerm);
     };
     match *node {
-        | Value::Constructor { ref fields, .. } => {
+        Value::Constructor { ref fields, .. } => {
             machine.tasks.push(Task::Constructor { term, env });
             machine.tasks.extend(
                 fields
@@ -3739,7 +3747,7 @@ fn step_value(
             );
             Ok(())
         },
-        | Value::Record(ref fields) => {
+        Value::Record(ref fields) => {
             machine.tasks.push(Task::Record(term));
             machine.tasks.extend(
                 fields
@@ -3749,16 +3757,16 @@ fn step_value(
             );
             Ok(())
         },
-        | Value::Reify(_) => Err(EvalFault::RuntimeControl(
+        Value::Reify(_) => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Reify,
         )),
-        | Value::ListNil => {
+        Value::ListNil => {
             machine
                 .values
                 .push(domain.value_list_nil(TermFace::Source(term)));
             Ok(())
         },
-        | Value::ListCons(first, second) => {
+        Value::ListCons(first, second) => {
             machine.tasks.push(Task::ListCons(term));
             machine.tasks.push(Task::Value { term: second, env });
             machine.tasks.push(Task::Value { term: first, env });
@@ -3768,7 +3776,7 @@ fn step_value(
         // univalence statement, a session statement and a recorded run are
         // inert certificates: nothing reduces them, and transport reads their
         // syntax.
-        | Value::PathRefl(_)
+        Value::PathRefl(_)
         | Value::PathEquiv { .. }
         | Value::Funext(..)
         | Value::Equiv(..)
@@ -3783,12 +3791,12 @@ fn step_value(
         // A flow introduction evaluates its parts where it stands, so a ride
         // reads a composite's or a function flow's parts in the environment
         // they were written in.
-        | Value::Stay(part) | Value::Forward(part) => {
+        Value::Stay(part) | Value::Forward(part) => {
             machine.tasks.push(Task::Flow { term });
             machine.tasks.push(Task::Value { term: part, env });
             Ok(())
         },
-        | Value::Then(first, second)
+        Value::Then(first, second)
         | Value::FunctionFlow(first, second)
         | Value::FlowProduct(first, second) => {
             machine.tasks.push(Task::Flow { term });
@@ -3796,7 +3804,7 @@ fn step_value(
             machine.tasks.push(Task::Value { term: first, env });
             Ok(())
         },
-        | Value::Here(point) => {
+        Value::Here(point) => {
             machine.tasks.push(Task::Here { term });
             machine.tasks.push(Task::Value { term: point, env });
             Ok(())
@@ -3806,7 +3814,7 @@ fn step_value(
         // nested computation and a written run evaluate the same way: only the
         // checker meets them, before elaboration, and it reads one standing in
         // a dependent position by what it returns.
-        | Value::Returned(computation) | Value::Nested(computation) | Value::Run(computation) => {
+        Value::Returned(computation) | Value::Nested(computation) | Value::Run(computation) => {
             machine.tasks.push(Task::Returned);
             machine.tasks.push(Task::Comp {
                 term: computation,
@@ -3814,13 +3822,13 @@ fn step_value(
             });
             Ok(())
         },
-        | Value::PathProduct(first, second) => {
+        Value::PathProduct(first, second) => {
             machine.tasks.push(Task::PathProduct(term));
             machine.tasks.push(Task::Value { term: second, env });
             machine.tasks.push(Task::Value { term: first, env });
             Ok(())
         },
-        | Value::Variable { zone, index } => {
+        Value::Variable { zone, index } => {
             let environment = machine.env(env)?;
             let bound = environment
                 .lookup(zone, index)
@@ -3828,7 +3836,7 @@ fn step_value(
             machine.values.push(bound);
             Ok(())
         },
-        | Value::Constant(constant) => {
+        Value::Constant(constant) => {
             let unfolding = machine.definitions.unfolding(constant);
             let neutral = domain
                 .neutral_node(NeutralHead::Constant(constant), Vec::new(), unfolding)
@@ -3839,20 +3847,20 @@ fn step_value(
             machine.values.push(stood);
             Ok(())
         },
-        | Value::Literal(ref payload) => {
+        Value::Literal(ref payload) => {
             machine
                 .values
                 .push(domain.value_literal(term, payload, TermFace::Source(term)));
             Ok(())
         },
         // The empty tuple is the unit, a leaf: it has no assembly to defer.
-        | Value::Tuple(ref components) if components.is_empty() => {
+        Value::Tuple(ref components) if components.is_empty() => {
             machine
                 .values
                 .push(domain.value_unit(TermFace::Source(term)));
             Ok(())
         },
-        | Value::Tuple(ref components) => {
+        Value::Tuple(ref components) => {
             machine.tasks.push(Task::Tuple { term });
             for &component in components.iter().rev() {
                 machine.tasks.push(Task::Value {
@@ -3862,12 +3870,12 @@ fn step_value(
             }
             Ok(())
         },
-        | Value::Injection(_, body) => {
+        Value::Injection(_, body) => {
             machine.tasks.push(Task::Inject { term });
             machine.tasks.push(Task::Value { term: body, env });
             Ok(())
         },
-        | Value::Thunk(body) | Value::Primitive { body, .. } => {
+        Value::Thunk(body) | Value::Primitive { body, .. } => {
             let captured = machine.capture(env)?;
             let closed = capture_keeps_source(&captured);
             let closure = domain.comp_closure_node(body, captured);
@@ -3875,7 +3883,7 @@ fn step_value(
             machine.values.push(domain.value_thunk(closure, face));
             Ok(())
         },
-        | Value::Lift { ref target, body } => {
+        Value::Lift { ref target, body } => {
             let target = domain.hold_level(target.clone());
             machine.tasks.push(Task::Lift { term, target });
             machine.tasks.push(Task::Value { term: body, env });
@@ -3884,7 +3892,7 @@ fn step_value(
         // A quote is suspended whole over the environment its type reads: a
         // type has no weak head, so the codes inside it are evaluated where a
         // readback or a comparison reaches them.
-        | Value::Quote(_) | Value::QuoteComputation(_) => {
+        Value::Quote(_) | Value::QuoteComputation(_) => {
             let captured = machine.capture(env)?;
             let closed = capture_keeps_source(&captured);
             let closure = domain.value_closure_node(crate::ValueBody::Source(term), captured);
@@ -3895,7 +3903,7 @@ fn step_value(
         // A static lambda is suspended whole, as a quote is: the closure's
         // body is the lambda itself, which a comparison reads whole and a
         // static application enters.
-        | Value::StaticLambda(_) => {
+        Value::StaticLambda(_) => {
             let captured = machine.capture(env)?;
             let closed = capture_keeps_source(&captured);
             let closure = domain.value_closure_node(crate::ValueBody::Source(term), captured);
@@ -3905,7 +3913,7 @@ fn step_value(
                 .push(domain.value_static_lambda(closure, face));
             Ok(())
         },
-        | Value::StaticApplication(head, argument) => {
+        Value::StaticApplication(head, argument) => {
             machine.tasks.push(Task::StaticApply);
             machine.tasks.push(Task::Value {
                 term: argument,
@@ -3918,12 +3926,12 @@ fn step_value(
         // suspended whole over the environment it was met in, which is what a
         // fill reads its filling in and what a mark's body is read back
         // through.
-        | Value::Hole(hole) => {
+        Value::Hole(hole) => {
             let (closure, face) = suspend_value(domain, machine, term, env)?;
             let head = NeutralHead::Hole { hole, closure };
             stand_value(domain, machine, head, face)
         },
-        | Value::Mark { mark, .. } => {
+        Value::Mark { mark, .. } => {
             let (closure, face) = suspend_value(domain, machine, term, env)?;
             let head = NeutralHead::Mark { mark, closure };
             stand_value(domain, machine, head, face)
@@ -4043,35 +4051,35 @@ fn step_comp(
         return Err(EvalFault::DanglingTerm);
     };
     match *node {
-        | Computation::Perform { .. } => Err(EvalFault::RuntimeControl(
+        Computation::Perform { .. } => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Perform,
         )),
-        | Computation::Handle { .. } => Err(EvalFault::RuntimeControl(
+        Computation::Handle { .. } => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Handle,
         )),
-        | Computation::Resume(..) => Err(EvalFault::RuntimeControl(
+        Computation::Resume(..) => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Resume,
         )),
-        | Computation::Reset(_) => Err(EvalFault::RuntimeControl(
+        Computation::Reset(_) => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Reset,
         )),
-        | Computation::Shift(_) => Err(EvalFault::RuntimeControl(
+        Computation::Shift(_) => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Shift,
         )),
-        | Computation::With(..) => Err(EvalFault::RuntimeControl(
+        Computation::With(..) => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::With,
         )),
-        | Computation::Project(..) => Err(EvalFault::RuntimeControl(
+        Computation::Project(..) => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Project,
         )),
-        | Computation::Session(_) => Err(EvalFault::SessionAction),
-        | Computation::Exercise { .. } => Err(EvalFault::RuntimeControl(
+        Computation::Session(_) => Err(EvalFault::SessionAction),
+        Computation::Exercise { .. } => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Exercise,
         )),
-        | Computation::Scope { .. } => Err(EvalFault::RuntimeControl(
+        Computation::Scope { .. } => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Scope,
         )),
-        | Computation::ListFold {
+        Computation::ListFold {
             element,
             result,
             list,
@@ -4090,8 +4098,8 @@ fn step_comp(
             machine.tasks.push(Task::Value { term: list, env });
             Ok(())
         },
-        | Computation::Primitive { primitive, .. } => Err(EvalFault::NativePrimitive(primitive)),
-        | Computation::Split { scrutinee, .. } => {
+        Computation::Primitive { primitive, .. } => Err(EvalFault::NativePrimitive(primitive)),
+        Computation::Split { scrutinee, .. } => {
             machine.tasks.push(Task::Split { term, env });
             machine.tasks.push(Task::Value {
                 term: scrutinee,
@@ -4099,7 +4107,7 @@ fn step_comp(
             });
             Ok(())
         },
-        | Computation::DataCase { scrutinee, .. } => {
+        Computation::DataCase { scrutinee, .. } => {
             machine.tasks.push(Task::DataCase { term, env });
             machine.tasks.push(Task::Value {
                 term: scrutinee,
@@ -4107,18 +4115,18 @@ fn step_comp(
             });
             Ok(())
         },
-        | Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => {
+        Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => {
             machine.tasks.push(Task::Projection(term));
             machine.tasks.push(Task::Value { term: record, env });
             Ok(())
         },
-        | Computation::Transport(path, value) => {
+        Computation::Transport(path, value) => {
             machine.tasks.push(Task::Transport);
             machine.tasks.push(Task::Value { term: value, env });
             machine.tasks.push(Task::Value { term: path, env });
             Ok(())
         },
-        | Computation::PathTransport {
+        Computation::PathTransport {
             motive,
             path,
             value,
@@ -4130,7 +4138,7 @@ fn step_comp(
             machine.tasks.push(Task::Value { term: path, env });
             Ok(())
         },
-        | Computation::TelescopeTransport {
+        Computation::TelescopeTransport {
             motive,
             path,
             start,
@@ -4145,7 +4153,7 @@ fn step_comp(
             }
             Ok(())
         },
-        | Computation::Lambda(body) => {
+        Computation::Lambda(body) => {
             let captured = machine.capture(env)?;
             let closed = capture_keeps_source(&captured);
             let closure = domain.comp_closure_node(body, captured);
@@ -4155,7 +4163,7 @@ fn step_comp(
         },
         // A fixpoint is inert until a gate observes it: it closes over its
         // own source node, which is what the self thunk suspends.
-        | Computation::Fixpoint { .. } => {
+        Computation::Fixpoint { .. } => {
             let captured = machine.capture(env)?;
             let closed = capture_keeps_source(&captured);
             let closure = domain.comp_closure_node(term, captured);
@@ -4163,7 +4171,7 @@ fn step_comp(
             machine.comps.push(domain.comp_fixpoint(closure, face));
             Ok(())
         },
-        | Computation::Ride {
+        Computation::Ride {
             motive,
             flow,
             value,
@@ -4175,12 +4183,12 @@ fn step_comp(
             machine.tasks.push(Task::Value { term: flow, env });
             Ok(())
         },
-        | Computation::Return(value) => {
+        Computation::Return(value) => {
             machine.tasks.push(Task::Return { term });
             machine.tasks.push(Task::Value { term: value, env });
             Ok(())
         },
-        | Computation::Application(head, argument) => {
+        Computation::Application(head, argument) => {
             machine.tasks.push(Task::Apply);
             machine.tasks.push(Task::Comp { term: head, env });
             machine.tasks.push(Task::Value {
@@ -4189,17 +4197,17 @@ fn step_comp(
             });
             Ok(())
         },
-        | Computation::Force(value) => {
+        Computation::Force(value) => {
             machine.tasks.push(Task::Force);
             machine.tasks.push(Task::Value { term: value, env });
             Ok(())
         },
-        | Computation::Bind(bound, body) => {
+        Computation::Bind(bound, body) => {
             machine.tasks.push(Task::Bind { body, env });
             machine.tasks.push(Task::Comp { term: bound, env });
             Ok(())
         },
-        | Computation::Case { scrutinee, .. } => {
+        Computation::Case { scrutinee, .. } => {
             machine.tasks.push(Task::Case { term, env });
             machine.tasks.push(Task::Value {
                 term: scrutinee,
@@ -4207,11 +4215,11 @@ fn step_comp(
             });
             Ok(())
         },
-        | Computation::Hole(hole) => {
+        Computation::Hole(hole) => {
             let (closure, face) = suspend_comp(domain, machine, term, env)?;
             stand_comp(domain, machine, NeutralHead::Hole { hole, closure }, face)
         },
-        | Computation::Mark { mark, .. } => {
+        Computation::Mark { mark, .. } => {
             let (closure, face) = suspend_comp(domain, machine, term, env)?;
             stand_comp(domain, machine, NeutralHead::Mark { mark, closure }, face)
         },
@@ -4337,7 +4345,7 @@ fn step_force(
         return Err(EvalFault::Domain(DomainFault::Dangling));
     };
     match *node {
-        | DomainValue::Thunk { body, .. } => {
+        DomainValue::Thunk { body, .. } => {
             let Some(closure) = domain.comp_closure(body)
             else {
                 return Err(EvalFault::Domain(DomainFault::Dangling));
@@ -4347,14 +4355,14 @@ fn step_force(
             machine.tasks.push(Task::Body { body: term, env });
             Ok(())
         },
-        | DomainValue::Neutral { neutral, .. } => {
+        DomainValue::Neutral { neutral, .. } => {
             let grown = extend_spine(domain, neutral, Elimination::Force)?;
             machine
                 .comps
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
-        | DomainValue::PathCertificate { .. }
+        DomainValue::PathCertificate { .. }
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
@@ -4432,7 +4440,7 @@ fn step_apply(
         return Err(EvalFault::Domain(DomainFault::Dangling));
     };
     match *node {
-        | DomainComp::Lambda { body, .. } => {
+        DomainComp::Lambda { body, .. } => {
             let Some(closure) = domain.comp_closure(body)
             else {
                 return Err(EvalFault::Domain(DomainFault::Dangling));
@@ -4456,31 +4464,31 @@ fn step_apply(
             machine.tasks.push(Task::Body { body: term, env });
             Ok(())
         },
-        | DomainComp::Neutral { neutral, .. } => {
+        DomainComp::Neutral { neutral, .. } => {
             let grown = extend_spine(domain, neutral, Elimination::Apply(argument))?;
             machine
                 .comps
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
-        | DomainComp::Return { .. } => Err(EvalFault::AppliedNonFunction),
+        DomainComp::Return { .. } => Err(EvalFault::AppliedNonFunction),
         // The `<` gate: a canonical argument unfolds the fixpoint once and
         // the application follows; a stuck one carries the fixpoint on its
         // spine until its head unfolds.
-        | DomainComp::Fixpoint { recursive, .. } => {
+        DomainComp::Fixpoint { recursive, .. } => {
             let Some(&argument_node) = domain.value(argument)
             else {
                 return Err(EvalFault::Domain(DomainFault::Dangling));
             };
             match argument_node {
-                | DomainValue::Neutral { neutral, .. } => {
+                DomainValue::Neutral { neutral, .. } => {
                     let grown = extend_spine(domain, neutral, Elimination::Fixpoint(recursive))?;
                     machine
                         .comps
                         .push(domain.comp_neutral(grown, CompTermFace::Reduced));
                     Ok(())
                 },
-                | DomainValue::Constructor { .. }
+                DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
@@ -4618,7 +4626,7 @@ fn step_static_apply(
         return Err(EvalFault::Domain(DomainFault::Dangling));
     };
     match *node {
-        | DomainValue::StaticLambda { lambda, .. } => {
+        DomainValue::StaticLambda { lambda, .. } => {
             let Some(closure) = domain.value_closure(lambda)
             else {
                 return Err(EvalFault::Domain(DomainFault::Dangling));
@@ -4637,7 +4645,7 @@ fn step_static_apply(
             machine.tasks.push(Task::Value { term, env });
             Ok(())
         },
-        | DomainValue::Neutral { neutral, .. } => {
+        DomainValue::Neutral { neutral, .. } => {
             let grown = extend_spine(domain, neutral, Elimination::StaticApply(argument))?;
             let stood = domain
                 .value_neutral(grown, TermFace::Reduced)
@@ -4645,7 +4653,7 @@ fn step_static_apply(
             machine.values.push(stood);
             Ok(())
         },
-        | DomainValue::PathCertificate { .. }
+        DomainValue::PathCertificate { .. }
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
@@ -4716,12 +4724,12 @@ fn step_bind(
         return Err(EvalFault::Domain(DomainFault::Dangling));
     };
     match *node {
-        | DomainComp::Return { value, .. } => {
+        DomainComp::Return { value, .. } => {
             let env = machine.extended(env, Zone::Intuitionistic, value)?;
             machine.tasks.push(Task::Comp { term: body, env });
             Ok(())
         },
-        | DomainComp::Neutral { neutral, .. } => {
+        DomainComp::Neutral { neutral, .. } => {
             let captured = machine.capture(env)?;
             let closure = domain.comp_closure_node(body, captured);
             let grown = extend_spine(domain, neutral, Elimination::Bind(closure))?;
@@ -4730,10 +4738,10 @@ fn step_bind(
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
-        | DomainComp::Lambda { .. } => Err(EvalFault::BoundNonReturner),
+        DomainComp::Lambda { .. } => Err(EvalFault::BoundNonReturner),
         // The `>` gate: the observation stays, and the fixpoint beneath it
         // unfolds once.
-        | DomainComp::Fixpoint { recursive, .. } => {
+        DomainComp::Fixpoint { recursive, .. } => {
             machine.tasks.push(Task::Bind { body, env });
             unfold(core, domain, machine, recursive)
         },
@@ -4800,7 +4808,7 @@ fn step_case(
         return Err(EvalFault::Domain(DomainFault::Dangling));
     };
     match *node {
-        | DomainValue::Injection { summand, body, .. } => {
+        DomainValue::Injection { summand, body, .. } => {
             let term = *branches
                 .get(usize::from(summand))
                 .ok_or(EvalFault::UnknownSummand { summand })?;
@@ -4808,7 +4816,7 @@ fn step_case(
             machine.tasks.push(Task::Comp { term, env });
             Ok(())
         },
-        | DomainValue::Neutral { neutral, .. } => {
+        DomainValue::Neutral { neutral, .. } => {
             let captured = machine.capture(env)?;
             let mut closures = Vec::with_capacity(branches.len());
             for &branch in branches {
@@ -4821,7 +4829,7 @@ fn step_case(
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
-        | DomainValue::PathCertificate { .. }
+        DomainValue::PathCertificate { .. }
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
@@ -4884,7 +4892,7 @@ fn step_bind_closure(
         return Err(EvalFault::Domain(DomainFault::Dangling));
     };
     match *node {
-        | DomainComp::Return { value, .. } => {
+        DomainComp::Return { value, .. } => {
             let closure = domain
                 .comp_closure(body)
                 .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
@@ -4895,15 +4903,15 @@ fn step_bind_closure(
             machine.tasks.push(Task::Body { body: term, env });
             Ok(())
         },
-        | DomainComp::Neutral { neutral, .. } => {
+        DomainComp::Neutral { neutral, .. } => {
             let grown = extend_spine(domain, neutral, Elimination::Bind(body))?;
             machine
                 .comps
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
-        | DomainComp::Lambda { .. } => Err(EvalFault::BoundNonReturner),
-        | DomainComp::Fixpoint { recursive, .. } => {
+        DomainComp::Lambda { .. } => Err(EvalFault::BoundNonReturner),
+        DomainComp::Fixpoint { recursive, .. } => {
             machine.tasks.push(Task::BindClosure(body));
             unfold(core, domain, machine, recursive)
         },
@@ -4955,7 +4963,7 @@ fn step_case_branches(
         return Err(EvalFault::Domain(DomainFault::Dangling));
     };
     match *node {
-        | DomainValue::Injection { summand, body, .. } => {
+        DomainValue::Injection { summand, body, .. } => {
             let chosen = *domain
                 .branches(branches)
                 .map_err(EvalFault::Domain)?
@@ -4971,14 +4979,14 @@ fn step_case_branches(
             machine.tasks.push(Task::Body { body: term, env });
             Ok(())
         },
-        | DomainValue::Neutral { neutral, .. } => {
+        DomainValue::Neutral { neutral, .. } => {
             let grown = extend_spine(domain, neutral, Elimination::Case(branches))?;
             machine
                 .comps
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
-        | DomainValue::PathCertificate { .. }
+        DomainValue::PathCertificate { .. }
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
@@ -5043,14 +5051,14 @@ fn step_transport(
         .copied()
         .ok_or(EvalFault::Domain(DomainFault::Dangling))?
     {
-        | DomainValue::PathCertificate { certificate, .. } => match core.value(certificate) {
-            | Some(&Value::PathRefl(_)) => {
+        DomainValue::PathCertificate { certificate, .. } => match core.value(certificate) {
+            Some(&Value::PathRefl(_)) => {
                 machine
                     .comps
                     .push(domain.comp_return(value, CompTermFace::Reduced));
                 Ok(())
             },
-            | Some(&(Value::PathEquiv { forward, .. } | Value::Equiv(forward, _))) => {
+            Some(&(Value::PathEquiv { forward, .. } | Value::Equiv(forward, _))) => {
                 machine.values.push(value);
                 machine.tasks.push(Task::Apply);
                 machine.tasks.push(Task::Force);
@@ -5060,16 +5068,16 @@ fn step_transport(
                 });
                 Ok(())
             },
-            | Some(&Value::Ua { .. }) => Err(EvalFault::TransportedUnderived),
-            | _ => Err(EvalFault::DanglingTerm),
+            Some(&Value::Ua { .. }) => Err(EvalFault::TransportedUnderived),
+            _ => Err(EvalFault::DanglingTerm),
         },
-        | DomainValue::PathProduct { first, second, .. } => {
+        DomainValue::PathProduct { first, second, .. } => {
             match domain
                 .value(value)
                 .copied()
                 .ok_or(EvalFault::Domain(DomainFault::Dangling))?
             {
-                | DomainValue::Tuple { fields, .. } => {
+                DomainValue::Tuple { fields, .. } => {
                     let &[left, right] = domain.fields(fields).map_err(EvalFault::Domain)?
                     else {
                         return Err(EvalFault::TransportedNonPath);
@@ -5084,24 +5092,49 @@ fn step_transport(
                     machine.values.extend([first, left]);
                     Ok(())
                 },
-                | DomainValue::Neutral { neutral, .. } => {
+                DomainValue::Neutral { neutral, .. } => {
                     let grown = extend_spine(domain, neutral, Elimination::ProductTransport(path))?;
                     machine
                         .comps
                         .push(domain.comp_neutral(grown, CompTermFace::Reduced));
                     Ok(())
                 },
-                | _ => Err(EvalFault::TransportedNonPath),
+                DomainValue::Constructor { .. }
+                | DomainValue::Record { .. }
+                | DomainValue::PathCertificate { .. }
+                | DomainValue::PathProduct { .. }
+                | DomainValue::Here { .. }
+                | DomainValue::Flow { .. }
+                | DomainValue::Literal { .. }
+                | DomainValue::ListNil { .. }
+                | DomainValue::ListCons { .. }
+                | DomainValue::Injection { .. }
+                | DomainValue::Thunk { .. }
+                | DomainValue::Lift { .. }
+                | DomainValue::Code { .. }
+                | DomainValue::StaticLambda { .. } => Err(EvalFault::TransportedNonPath),
             }
         },
-        | DomainValue::Neutral { neutral, .. } => {
+        DomainValue::Neutral { neutral, .. } => {
             let grown = extend_spine(domain, neutral, Elimination::Transport(value))?;
             machine
                 .comps
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
-        | _ => Err(EvalFault::TransportedNonPath),
+        DomainValue::Constructor { .. }
+        | DomainValue::Record { .. }
+        | DomainValue::Here { .. }
+        | DomainValue::Flow { .. }
+        | DomainValue::Literal { .. }
+        | DomainValue::Tuple { .. }
+        | DomainValue::ListNil { .. }
+        | DomainValue::ListCons { .. }
+        | DomainValue::Injection { .. }
+        | DomainValue::Thunk { .. }
+        | DomainValue::Lift { .. }
+        | DomainValue::Code { .. }
+        | DomainValue::StaticLambda { .. } => Err(EvalFault::TransportedNonPath),
     }
 }
 
@@ -5182,8 +5215,8 @@ fn step_path_transport(
     };
     let environment = closure.environment().clone();
     let read = crate::identity::binder_read(core, family).map_err(|fault| match fault {
-        | crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
-        | crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
+        crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
+        crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
     })?;
     if read == crate::free::Membership::Absent {
         machine
@@ -5195,7 +5228,7 @@ fn step_path_transport(
         core.value_type(family),
         *domain.value(value).ok_or(dangling)?,
     ) {
-        | (Some(&ValueType::Product(ref components)), DomainValue::Tuple { fields, .. }) => {
+        (Some(&ValueType::Product(ref components)), DomainValue::Tuple { fields, .. }) => {
             if domain.fields(fields).map_err(EvalFault::Domain)?.len() == components.len() {
                 return move_components(
                     core,
@@ -5211,7 +5244,7 @@ fn step_path_transport(
                 );
             }
         },
-        | (
+        (
             Some(&ValueType::Sum(ref summands)),
             DomainValue::Injection {
                 summand,
@@ -5229,13 +5262,13 @@ fn step_path_transport(
                 return Ok(());
             }
         },
-        | (Some(&ValueType::List(_)), DomainValue::ListNil { .. }) => {
+        (Some(&ValueType::List(_)), DomainValue::ListNil { .. }) => {
             machine
                 .comps
                 .push(domain.comp_return(value, CompTermFace::Reduced));
             return Ok(());
         },
-        | (Some(&ValueType::List(element)), DomainValue::ListCons { first, second, .. }) => {
+        (Some(&ValueType::List(element)), DomainValue::ListCons { first, second, .. }) => {
             let head = domain.value_closure_node(crate::ValueBody::ValueType(element), environment);
             let continuation = domain.native_continuation(CompBody::MoveTail {
                 mover: Mover::Transport,
@@ -5250,7 +5283,7 @@ fn step_path_transport(
         },
         // The motive's own binder decoded: the universe path itself carries
         // the operand, as native transport does.
-        | (Some(&ValueType::Element { code, .. }), _)
+        (Some(&ValueType::Element { code, .. }), _)
             if matches!(
                 core.value(code),
                 Some(&Value::Variable { zone: gandr_core_term::Zone::Intuitionistic, index }) if u32::from(index) == 0
@@ -5264,11 +5297,11 @@ fn step_path_transport(
             machine.tasks.push(Task::Supply(path));
             return Ok(());
         },
-        | (Some(&ValueType::Path { .. }), DomainValue::Here { .. }) => {
+        (Some(&ValueType::Path { .. }), DomainValue::Here { .. }) => {
             let read =
                 crate::identity::transport_family(core, family).map_err(|fault| match fault {
-                    | crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
-                    | crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
+                    crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
+                    crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
                 })?;
             if read == crate::identity::TransportFamily::Singleton {
                 machine
@@ -5277,7 +5310,7 @@ fn step_path_transport(
                 return Ok(());
             }
         },
-        | _ => {},
+        _ => {},
     }
     if let DomainValue::Constructor { .. } = carried
         && words::transport(core, domain, machine, motive, (path, value))? == words::Moved::Stepped
@@ -5372,7 +5405,7 @@ fn step_ride(
     let dangling = EvalFault::Domain(DomainFault::Dangling);
     let carried = *domain.value(flow).ok_or(dangling)?;
     match carried {
-        | DomainValue::Flow {
+        DomainValue::Flow {
             former: crate::domain::FlowFormer::Stay,
             ..
         } => {
@@ -5381,7 +5414,7 @@ fn step_ride(
                 .push(domain.comp_return(value, CompTermFace::Reduced));
             return Ok(());
         },
-        | DomainValue::Flow {
+        DomainValue::Flow {
             former: crate::domain::FlowFormer::Then,
             parts,
             ..
@@ -5399,7 +5432,7 @@ fn step_ride(
             machine.values.extend([first, value]);
             return Ok(());
         },
-        | DomainValue::PathCertificate { certificate, .. }
+        DomainValue::PathCertificate { certificate, .. }
             if matches!(core.value(certificate), Some(Value::SessionRelated { .. })) =>
         {
             machine
@@ -5407,7 +5440,22 @@ fn step_ride(
                 .push(domain.comp_return(value, CompTermFace::Reduced));
             return Ok(());
         },
-        | _ => {},
+        DomainValue::Constructor { .. }
+        | DomainValue::Record { .. }
+        | DomainValue::PathCertificate { .. }
+        | DomainValue::PathProduct { .. }
+        | DomainValue::Here { .. }
+        | DomainValue::Flow { .. }
+        | DomainValue::Literal { .. }
+        | DomainValue::Tuple { .. }
+        | DomainValue::ListNil { .. }
+        | DomainValue::ListCons { .. }
+        | DomainValue::Injection { .. }
+        | DomainValue::Thunk { .. }
+        | DomainValue::Lift { .. }
+        | DomainValue::Neutral { .. }
+        | DomainValue::Code { .. }
+        | DomainValue::StaticLambda { .. } => {},
     }
     let closure = domain.value_closure(motive).ok_or(dangling)?;
     let crate::ValueBody::ValueType(family) = closure.body()
@@ -5416,8 +5464,8 @@ fn step_ride(
     };
     let environment = closure.environment().clone();
     let free = |fault| match fault {
-        | crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
-        | crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
+        crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
+        crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
     };
     if crate::identity::binder_read(core, family).map_err(free)? == crate::free::Membership::Absent
     {
@@ -5430,7 +5478,7 @@ fn step_ride(
         core.value_type(family),
         *domain.value(value).ok_or(dangling)?,
     ) {
-        | (Some(&ValueType::Product(ref components)), DomainValue::Tuple { fields, .. }) => {
+        (Some(&ValueType::Product(ref components)), DomainValue::Tuple { fields, .. }) => {
             if domain.fields(fields).map_err(EvalFault::Domain)?.len() == components.len() {
                 return move_components(
                     core,
@@ -5446,7 +5494,7 @@ fn step_ride(
                 );
             }
         },
-        | (
+        (
             Some(&ValueType::Sum(ref summands)),
             DomainValue::Injection {
                 summand,
@@ -5464,13 +5512,13 @@ fn step_ride(
                 return Ok(());
             }
         },
-        | (Some(&ValueType::List(_)), DomainValue::ListNil { .. }) => {
+        (Some(&ValueType::List(_)), DomainValue::ListNil { .. }) => {
             machine
                 .comps
                 .push(domain.comp_return(value, CompTermFace::Reduced));
             return Ok(());
         },
-        | (Some(&ValueType::List(element)), DomainValue::ListCons { first, second, .. }) => {
+        (Some(&ValueType::List(element)), DomainValue::ListCons { first, second, .. }) => {
             let head = domain.value_closure_node(crate::ValueBody::ValueType(element), environment);
             let continuation = domain.native_continuation(CompBody::MoveTail {
                 mover: Mover::Ride,
@@ -5486,14 +5534,14 @@ fn step_ride(
         // The motive's own binder decoded: a forward flow applies its
         // translator, and a function flow wraps the function in its
         // boundaries.
-        | (Some(&ValueType::Element { code, .. }), _)
+        (Some(&ValueType::Element { code, .. }), _)
             if matches!(
                 core.value(code),
                 Some(&Value::Variable { zone: gandr_core_term::Zone::Intuitionistic, index }) if u32::from(index) == 0
             ) =>
         {
             match carried {
-                | DomainValue::Flow {
+                DomainValue::Flow {
                     former: crate::domain::FlowFormer::Forward,
                     parts,
                     ..
@@ -5508,7 +5556,7 @@ fn step_ride(
                     machine.tasks.push(Task::Supply(translator));
                     return Ok(());
                 },
-                | DomainValue::Flow {
+                DomainValue::Flow {
                     former: crate::domain::FlowFormer::Function,
                     ..
                 } => {
@@ -5527,7 +5575,7 @@ fn step_ride(
                 // A flow product rides a pair's left component along its first
                 // flow, then the right along its second, each at the decode of
                 // the binder, and pairs them.
-                | DomainValue::Flow {
+                DomainValue::Flow {
                     former: crate::domain::FlowFormer::Product,
                     parts,
                     ..
@@ -5555,31 +5603,60 @@ fn step_ride(
                         return Ok(());
                     }
                 },
-                | _ => {},
+                DomainValue::Constructor { .. }
+                | DomainValue::Record { .. }
+                | DomainValue::PathCertificate { .. }
+                | DomainValue::PathProduct { .. }
+                | DomainValue::Here { .. }
+                | DomainValue::Flow { .. }
+                | DomainValue::Literal { .. }
+                | DomainValue::Tuple { .. }
+                | DomainValue::ListNil { .. }
+                | DomainValue::ListCons { .. }
+                | DomainValue::Injection { .. }
+                | DomainValue::Thunk { .. }
+                | DomainValue::Lift { .. }
+                | DomainValue::Neutral { .. }
+                | DomainValue::Code { .. }
+                | DomainValue::StaticLambda { .. } => {},
             }
         },
-        | (Some(&ValueType::Flow { .. }), held) => {
+        (Some(&ValueType::Flow { .. }), held)
             if crate::identity::transport_family(core, family).map_err(free)?
-                == crate::identity::TransportFamily::Singleton
-            {
-                let result = match held {
-                    | DomainValue::Flow {
-                        former: crate::domain::FlowFormer::Stay,
-                        ..
-                    } => flow,
-                    | _ => domain.value_flow(
-                        crate::domain::FlowFormer::Then,
-                        [value, flow],
-                        TermFace::Reduced,
-                    ),
-                };
-                machine
-                    .comps
-                    .push(domain.comp_return(result, CompTermFace::Reduced));
-                return Ok(());
-            }
+                == crate::identity::TransportFamily::Singleton =>
+        {
+            let result = match held {
+                DomainValue::Flow {
+                    former: crate::domain::FlowFormer::Stay,
+                    ..
+                } => flow,
+                DomainValue::Constructor { .. }
+                | DomainValue::Record { .. }
+                | DomainValue::PathCertificate { .. }
+                | DomainValue::PathProduct { .. }
+                | DomainValue::Here { .. }
+                | DomainValue::Flow { .. }
+                | DomainValue::Literal { .. }
+                | DomainValue::Tuple { .. }
+                | DomainValue::ListNil { .. }
+                | DomainValue::ListCons { .. }
+                | DomainValue::Injection { .. }
+                | DomainValue::Thunk { .. }
+                | DomainValue::Lift { .. }
+                | DomainValue::Neutral { .. }
+                | DomainValue::Code { .. }
+                | DomainValue::StaticLambda { .. } => domain.value_flow(
+                    crate::domain::FlowFormer::Then,
+                    [value, flow],
+                    TermFace::Reduced,
+                ),
+            };
+            machine
+                .comps
+                .push(domain.comp_return(result, CompTermFace::Reduced));
+            return Ok(());
         },
-        | _ => {},
+        _ => {},
     }
     let DomainValue::Neutral { neutral, .. } = carried
     else {
@@ -5603,8 +5680,8 @@ const fn moving(
 ) -> Task
 {
     match mover {
-        | Mover::Transport => Task::PathTransport(motive),
-        | Mover::Ride => Task::Ride(motive),
+        Mover::Transport => Task::PathTransport(motive),
+        Mover::Ride => Task::Ride(motive),
     }
 }
 
@@ -5694,7 +5771,7 @@ fn move_components(
         .get(moved)
         .copied();
     match (parts.get(moved), field) {
-        | (Some(&part), Some(field)) => {
+        (Some(&part), Some(field)) => {
             let part = domain.value_closure_node(crate::ValueBody::ValueType(part), environment);
             let next = moved
                 .checked_add(1_usize)
@@ -5714,7 +5791,7 @@ fn move_components(
             machine.values.extend([moving_tuple.along, field]);
             Ok(())
         },
-        | (None, None) => {
+        (None, None) => {
             let mut components = Vec::with_capacity(moved);
             for index in (0 .. moved).rev() {
                 let index =
@@ -5730,7 +5807,7 @@ fn move_components(
                 .push(domain.comp_return(tuple, CompTermFace::Reduced));
             Ok(())
         },
-        | (Some(_), None) | (None, Some(_)) => Err(EvalFault::MachineInvariant),
+        (Some(_), None) | (None, Some(_)) => Err(EvalFault::MachineInvariant),
     }
 }
 
@@ -5783,7 +5860,7 @@ fn step_telescope_transport(
     let path = machine.pop_value()?;
     let dangling = EvalFault::Domain(DomainFault::Dangling);
     match *domain.value(path).ok_or(dangling)? {
-        | DomainValue::Here { point, .. } => {
+        DomainValue::Here { point, .. } => {
             if let DomainValue::Here { .. } = *domain.value(over).ok_or(dangling)? {
                 machine
                     .comps
@@ -5804,7 +5881,7 @@ fn step_telescope_transport(
             machine.tasks.push(Task::Supply(over));
             Ok(())
         },
-        | DomainValue::Neutral { neutral, .. } => {
+        DomainValue::Neutral { neutral, .. } => {
             let grown = extend_spine(domain, neutral, Elimination::TelescopeTransport {
                 motive,
                 start,
@@ -5816,7 +5893,20 @@ fn step_telescope_transport(
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
-        | _ => Err(EvalFault::TransportedNonPath),
+        DomainValue::Constructor { .. }
+        | DomainValue::Record { .. }
+        | DomainValue::PathCertificate { .. }
+        | DomainValue::PathProduct { .. }
+        | DomainValue::Flow { .. }
+        | DomainValue::Literal { .. }
+        | DomainValue::Tuple { .. }
+        | DomainValue::ListNil { .. }
+        | DomainValue::ListCons { .. }
+        | DomainValue::Injection { .. }
+        | DomainValue::Thunk { .. }
+        | DomainValue::Lift { .. }
+        | DomainValue::Code { .. }
+        | DomainValue::StaticLambda { .. } => Err(EvalFault::TransportedNonPath),
     }
 }
 
@@ -5855,10 +5945,8 @@ fn telescope_body(
         return Err(EvalFault::MachineInvariant);
     };
     match core.comp_type(innermost) {
-        | Some(&CompType::Returner { result, .. }) if core.value_type(result).is_some() => {
-            Ok(result)
-        },
-        | _ => Err(EvalFault::MachineInvariant),
+        Some(&CompType::Returner { result, .. }) if core.value_type(result).is_some() => Ok(result),
+        _ => Err(EvalFault::MachineInvariant),
     }
 }
 
@@ -5897,19 +5985,19 @@ fn push_eliminations(
     let mut answer = Answer::Value;
     for elimination in spine.iter().rev() {
         match *elimination {
-            | Elimination::DataCase(closure) => {
+            Elimination::DataCase(closure) => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::DataCaseClosure(closure));
             },
-            | Elimination::Split(closure) => {
+            Elimination::Split(closure) => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::SplitClosure(closure));
             },
-            | Elimination::Projection(term) => {
+            Elimination::Projection(term) => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::Projection(term));
             },
-            | Elimination::ListFold {
+            Elimination::ListFold {
                 element,
                 result,
                 on_nil,
@@ -5923,26 +6011,26 @@ fn push_eliminations(
                     on_cons,
                 });
             },
-            | Elimination::Transport(value) => {
+            Elimination::Transport(value) => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::Transport);
                 machine.tasks.push(Task::Supply(value));
             },
-            | Elimination::ProductTransport(path) => {
+            Elimination::ProductTransport(path) => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::ProductTransport(path));
             },
-            | Elimination::PathTransport { motive, value } => {
+            Elimination::PathTransport { motive, value } => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::PathTransport(motive));
                 machine.tasks.push(Task::Supply(value));
             },
-            | Elimination::Ride { motive, value } => {
+            Elimination::Ride { motive, value } => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::Ride(motive));
                 machine.tasks.push(Task::Supply(value));
             },
-            | Elimination::TelescopeTransport {
+            Elimination::TelescopeTransport {
                 motive,
                 start,
                 over,
@@ -5954,28 +6042,28 @@ fn push_eliminations(
                     machine.tasks.push(Task::Supply(held));
                 }
             },
-            | Elimination::StaticApply(argument) => {
+            Elimination::StaticApply(argument) => {
                 machine.tasks.push(Task::StaticApply);
                 machine.tasks.push(Task::Supply(argument));
             },
-            | Elimination::Apply(argument) => {
+            Elimination::Apply(argument) => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::Apply);
                 machine.tasks.push(Task::Supply(argument));
             },
-            | Elimination::Force => {
+            Elimination::Force => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::Force);
             },
-            | Elimination::Bind(body) => {
+            Elimination::Bind(body) => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::BindClosure(body));
             },
-            | Elimination::Case(branches) => {
+            Elimination::Case(branches) => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::CaseBranches(branches));
             },
-            | Elimination::Fixpoint(recursive) => {
+            Elimination::Fixpoint(recursive) => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::FixpointClosure(recursive));
             },
@@ -6038,8 +6126,8 @@ fn resume_returned(
             .neutral(neutral)
             .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
         let head = match held.unfolding() {
-            | Unfolding::Forced(Glued::Value(body)) => Some(Task::Supply(body)),
-            | Unfolding::Unforced(entry) => {
+            Unfolding::Forced(Glued::Value(body)) => Some(Task::Supply(body)),
+            Unfolding::Unforced(entry) => {
                 machine
                     .definitions
                     .bodies()
@@ -6049,7 +6137,7 @@ fn resume_returned(
                         env: Machine::root_env(),
                     })
             },
-            | Unfolding::Rigid | Unfolding::Forced(Glued::Computation(_)) => None,
+            Unfolding::Rigid | Unfolding::Forced(Glued::Computation(_)) => None,
         };
         if let Some(head) = head {
             machine.tasks.push(Task::Returned);
@@ -6178,8 +6266,21 @@ fn read_through(
             .enumerate()
             .skip(from.0)
             .find_map(|(position, elimination)| match *elimination {
-                | Elimination::Bind(continuation) => Some((SpinePosition(position), continuation)),
-                | _ => None,
+                Elimination::Bind(continuation) => Some((SpinePosition(position), continuation)),
+                Elimination::DataCase(_)
+                | Elimination::Split(_)
+                | Elimination::Projection(_)
+                | Elimination::Transport(_)
+                | Elimination::ProductTransport(_)
+                | Elimination::PathTransport { .. }
+                | Elimination::Ride { .. }
+                | Elimination::TelescopeTransport { .. }
+                | Elimination::Apply(_)
+                | Elimination::Force
+                | Elimination::Case(_)
+                | Elimination::ListFold { .. }
+                | Elimination::StaticApply(_)
+                | Elimination::Fixpoint(_) => None,
             })
     else {
         return Ok(None);
@@ -6190,7 +6291,7 @@ fn read_through(
             .ok_or(EvalFault::MachineInvariant)?,
     );
     let waits = match head {
-        | NeutralHead::Returned(inner) => {
+        NeutralHead::Returned(inner) => {
             let Some(inner) = crate::rules::held_call(domain, inner)
                 .map_err(|_fault| EvalFault::Domain(DomainFault::Dangling))?
             else {
@@ -6201,7 +6302,11 @@ fn read_through(
                 .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
             (node.head(), node.unfolding())
         },
-        | _ => (head, unfolding),
+        NeutralHead::Variable { .. }
+        | NeutralHead::Constant(_)
+        | NeutralHead::Module(_)
+        | NeutralHead::Hole { .. }
+        | NeutralHead::Mark { .. } => (head, unfolding),
     };
     if !matches!(
         waits,
@@ -6256,8 +6361,8 @@ fn returned_value(
         .computation(computation)
         .ok_or(EvalFault::Domain(DomainFault::Dangling))?
     {
-        | DomainComp::Return { value, .. } => Ok(value),
-        | DomainComp::Neutral { .. } => {
+        DomainComp::Return { value, .. } => Ok(value),
+        DomainComp::Neutral { .. } => {
             let stuck = domain
                 .neutral_node(
                     NeutralHead::Returned(computation),
@@ -6269,7 +6374,7 @@ fn returned_value(
                 .value_neutral(stuck, TermFace::Reduced)
                 .map_err(EvalFault::Domain)
         },
-        | DomainComp::Lambda { .. } | DomainComp::Fixpoint { .. } => {
+        DomainComp::Lambda { .. } | DomainComp::Fixpoint { .. } => {
             Err(EvalFault::ReturnedNonReturner)
         },
     }
@@ -6323,8 +6428,13 @@ pub fn run_held(
             .neutral(neutral)
             .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
         Ok(match node.head() {
-            | NeutralHead::Returned(computation) if node.spine().is_empty() => Some(computation),
-            | _ => None,
+            NeutralHead::Returned(computation) if node.spine().is_empty() => Some(computation),
+            NeutralHead::Variable { .. }
+            | NeutralHead::Constant(_)
+            | NeutralHead::Module(_)
+            | NeutralHead::Hole { .. }
+            | NeutralHead::Mark { .. }
+            | NeutralHead::Returned(_) => None,
         })
     };
     let Some(computation) = held(domain, value)?
@@ -6495,7 +6605,7 @@ fn step_data_case(
         .value(scrutinee)
         .ok_or(EvalFault::Domain(DomainFault::Dangling))?
     {
-        | DomainValue::Constructor { tag, fields, .. } => {
+        DomainValue::Constructor { tag, fields, .. } => {
             let branch = *branches
                 .get(usize::from(tag))
                 .ok_or(EvalFault::UnknownConstructor { tag })?;
@@ -6511,7 +6621,7 @@ fn step_data_case(
             machine.tasks.push(Task::Comp { term: branch, env });
             Ok(())
         },
-        | DomainValue::Neutral { neutral, .. } => {
+        DomainValue::Neutral { neutral, .. } => {
             let closure = domain.comp_closure_node(term, machine.capture(env)?);
             let grown = extend_spine(domain, neutral, Elimination::DataCase(closure))?;
             machine
@@ -6519,7 +6629,20 @@ fn step_data_case(
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
-        | _ => Err(EvalFault::CasedNonConstructor),
+        DomainValue::Record { .. }
+        | DomainValue::PathCertificate { .. }
+        | DomainValue::PathProduct { .. }
+        | DomainValue::Here { .. }
+        | DomainValue::Flow { .. }
+        | DomainValue::Literal { .. }
+        | DomainValue::Tuple { .. }
+        | DomainValue::ListNil { .. }
+        | DomainValue::ListCons { .. }
+        | DomainValue::Injection { .. }
+        | DomainValue::Thunk { .. }
+        | DomainValue::Lift { .. }
+        | DomainValue::Code { .. }
+        | DomainValue::StaticLambda { .. } => Err(EvalFault::CasedNonConstructor),
     }
 }
 
@@ -6560,7 +6683,7 @@ fn step_split(
         .value(scrutinee)
         .ok_or(EvalFault::Domain(DomainFault::Dangling))?
     {
-        | DomainValue::Tuple { fields, .. } => {
+        DomainValue::Tuple { fields, .. } => {
             let components = domain.fields(fields).map_err(EvalFault::Domain)?.to_vec();
             if components.len() != usize::from(arity) {
                 return Err(EvalFault::SplitArity);
@@ -6575,7 +6698,7 @@ fn step_split(
             });
             Ok(())
         },
-        | DomainValue::Neutral { neutral, .. } => {
+        DomainValue::Neutral { neutral, .. } => {
             let closure = domain.comp_closure_node(term, machine.capture(env)?);
             let grown = extend_spine(domain, neutral, Elimination::Split(closure))?;
             machine
@@ -6583,7 +6706,20 @@ fn step_split(
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
-        | _ => Err(EvalFault::SplitNonTuple),
+        DomainValue::Constructor { .. }
+        | DomainValue::Record { .. }
+        | DomainValue::PathCertificate { .. }
+        | DomainValue::PathProduct { .. }
+        | DomainValue::Here { .. }
+        | DomainValue::Flow { .. }
+        | DomainValue::Literal { .. }
+        | DomainValue::ListNil { .. }
+        | DomainValue::ListCons { .. }
+        | DomainValue::Injection { .. }
+        | DomainValue::Thunk { .. }
+        | DomainValue::Lift { .. }
+        | DomainValue::Code { .. }
+        | DomainValue::StaticLambda { .. } => Err(EvalFault::SplitNonTuple),
     }
 }
 
@@ -6625,7 +6761,7 @@ fn step_projection(
         .value(projected)
         .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
     let (fields, position) = match (matched_native_node, operand) {
-        | (
+        (
             &Computation::RecordProjection(_, ref label),
             DomainValue::Record { source, fields, .. },
         ) => {
@@ -6643,10 +6779,10 @@ fn step_projection(
                 .ok_or(EvalFault::AbsentRecordField)?;
             (fields, position)
         },
-        | (&Computation::TupleProjection(_, component), DomainValue::Tuple { fields, .. }) => {
+        (&Computation::TupleProjection(_, component), DomainValue::Tuple { fields, .. }) => {
             (fields, usize::from(component))
         },
-        | (
+        (
             &(Computation::RecordProjection(..) | Computation::TupleProjection(..)),
             DomainValue::Neutral { neutral, .. },
         ) => {
@@ -6656,17 +6792,44 @@ fn step_projection(
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             return Ok(());
         },
-        | (&Computation::RecordProjection(..), _) => return Err(EvalFault::ProjectedNonRecord),
-        | (&Computation::TupleProjection(..), _) => return Err(EvalFault::ProjectedNonTuple),
-        | _ => return Err(EvalFault::DanglingTerm),
+        (&Computation::RecordProjection(..), _) => return Err(EvalFault::ProjectedNonRecord),
+        (&Computation::TupleProjection(..), _) => return Err(EvalFault::ProjectedNonTuple),
+        _ => return Err(EvalFault::DanglingTerm),
     };
     let value = *domain
         .fields(fields)
         .map_err(EvalFault::Domain)?
         .get(position)
         .ok_or(match *matched_native_node {
-            | Computation::TupleProjection(..) => EvalFault::AbsentTupleComponent,
-            | _ => EvalFault::MachineInvariant,
+            Computation::TupleProjection(..) => EvalFault::AbsentTupleComponent,
+            Computation::Primitive { .. }
+            | Computation::Transport(..)
+            | Computation::PathTransport { .. }
+            | Computation::Ride { .. }
+            | Computation::TelescopeTransport { .. }
+            | Computation::Lambda(_)
+            | Computation::Fixpoint { .. }
+            | Computation::Application(..)
+            | Computation::Return(_)
+            | Computation::Bind(..)
+            | Computation::Force(_)
+            | Computation::Case { .. }
+            | Computation::Split { .. }
+            | Computation::DataCase { .. }
+            | Computation::RecordProjection(..)
+            | Computation::Hole(_)
+            | Computation::Mark { .. }
+            | Computation::ListFold { .. }
+            | Computation::Perform { .. }
+            | Computation::Handle { .. }
+            | Computation::Exercise { .. }
+            | Computation::Scope { .. }
+            | Computation::Resume(..)
+            | Computation::Reset(_)
+            | Computation::Shift(_)
+            | Computation::With(..)
+            | Computation::Project(..)
+            | Computation::Session(_) => EvalFault::MachineInvariant,
         })?;
     machine
         .comps

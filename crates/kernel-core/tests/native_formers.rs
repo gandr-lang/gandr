@@ -1006,8 +1006,8 @@ mod native_formers
             let arena = staging.arena();
             let (_, components) = fixture(arena);
             let (component, classifier) = match side {
-                | Side::Left => components[0],
-                | Side::Right => components[1],
+                Side::Left => components[0],
+                Side::Right => components[1],
             };
             let named = arena.value_constant(record);
             let forced = arena.computation_force(named);
@@ -1156,15 +1156,13 @@ mod native_formers
         let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
         let empty = arena.value_constructor(words, ConstructorTag::from(0_usize), vec![]);
         match built {
-            | Built::Point => {
-                arena.value_constructor(carrier, ConstructorTag::from(0_usize), vec![])
-            },
-            | Built::Empty => empty,
-            | Built::Named => arena.value_constant(ConstantIndex::from(LOOP)),
-            | Built::Inverse => {
+            Built::Point => arena.value_constructor(carrier, ConstructorTag::from(0_usize), vec![]),
+            Built::Empty => empty,
+            Built::Named => arena.value_constant(ConstantIndex::from(LOOP)),
+            Built::Inverse => {
                 arena.value_constructor(words, ConstructorTag::from(2_usize), vec![empty])
             },
-            | Built::Stays => arena.value_here(empty),
+            Built::Stays => arena.value_here(empty),
         }
     }
 
@@ -1258,18 +1256,18 @@ mod native_formers
             arena.value_returned(applied)
         };
         let fibre = match family {
-            | Family::Joined => arena.value_type_path(carrier, point, x),
-            | Family::Looped => arena.value_type_path(carrier, x, x),
-            | Family::Kept => carrier,
-            | Family::Collapsed(function) => {
+            Family::Joined => arena.value_type_path(carrier, point, x),
+            Family::Looped => arena.value_type_path(carrier, x, x),
+            Family::Kept => carrier,
+            Family::Collapsed(function) => {
                 let image = call(arena, function, x);
                 arena.value_type_path(carrier, image, point)
             },
-            | Family::Mapped(function) => {
+            Family::Mapped(function) => {
                 let image = call(arena, function, x);
                 arena.value_type_path(carrier, image, x)
             },
-            | Family::Twice(function) => {
+            Family::Twice(function) => {
                 let inner = call(arena, function, x);
                 let image = call(arena, function, inner);
                 arena.value_type_path(carrier, image, x)

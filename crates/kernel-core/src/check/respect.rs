@@ -204,11 +204,11 @@ pub(super) fn obliged(
         return Maybe::Absent(obligation::Absent::NotData);
     };
     match entries.get(usize::from(declaration)) {
-        | Some(entry) if !entry.declaration().presentation().rules().is_empty() => {
+        Some(entry) if !entry.declaration().presentation().rules().is_empty() => {
             Maybe::Present(reading)
         },
-        | Some(_) => Maybe::Absent(obligation::Absent::Free),
-        | None => Maybe::Absent(obligation::Absent::NotData),
+        Some(_) => Maybe::Absent(obligation::Absent::Free),
+        None => Maybe::Absent(obligation::Absent::NotData),
     }
 }
 
@@ -261,10 +261,10 @@ pub(super) fn respected(
 ) -> Result<(), KernelError>
 {
     let (head, datatype) = match reading {
-        | Reading::Fold {
+        Reading::Fold {
             fixpoint, domain, ..
         } => (fixpoint, domain),
-        | Reading::Case { datatype } => (case, datatype),
+        Reading::Case { datatype } => (case, datatype),
     };
     let Some(&ValueType::Data { declaration, .. }) = arena.value_type(datatype)
     else {
@@ -293,7 +293,7 @@ pub(super) fn respected(
                     return Ok(());
                 }
                 match (reading, laws.get(index)) {
-                    | (Reading::Fold { arrow, .. }, Some(&law)) => {
+                    (Reading::Fold { arrow, .. }, Some(&law)) => {
                         let related = lawful(
                             arena,
                             (entries, unfoldings),
@@ -302,11 +302,11 @@ pub(super) fn respected(
                             law,
                         )?;
                         match related {
-                            | Related::Related => Ok(()),
-                            | Related::Apart => Err(refusal),
+                            Related::Related => Ok(()),
+                            Related::Apart => Err(refusal),
                         }
                     },
-                    | (Reading::Fold { .. } | Reading::Case { .. }, _) => Err(refusal),
+                    (Reading::Fold { .. } | Reading::Case { .. }, _) => Err(refusal),
                 }
             });
         arena.truncate_to(watermark);
@@ -388,21 +388,21 @@ fn obligation(
     );
     let mut side = |nodes: &[RuleNode]| {
         build_side(nodes, arities, |node, fields| match node {
-            | RuleNode::Variable(variable) => {
+            RuleNode::Variable(variable) => {
                 arena.value_variable(pattern_binder(rule.variables(), variable))
             },
-            | RuleNode::Constructor(tag) => arena.value_constructor(datatype, tag, fields),
+            RuleNode::Constructor(tag) => arena.value_constructor(datatype, tag, fields),
         })
         .map_err(|_fault| KernelError::ArenaFault)
     };
     let left = side(rule.left())?;
     let right = side(rule.right())?;
     let (left, right) = match reading {
-        | Reading::Fold { .. } => (
+        Reading::Fold { .. } => (
             arena.computation_application(head, left),
             arena.computation_application(head, right),
         ),
-        | Reading::Case { .. } => {
+        Reading::Case { .. } => {
             let Some(&Computation::DataCase {
                 motive,
                 ref branches,
@@ -536,28 +536,28 @@ fn lawful(
     // behind one parameter per variable.
     let declared = entry.declaration().declared_id();
     let statement = match arena.value_type(declared) {
-        | Some(&ValueType::Path { .. }) if bound == 0 => declared,
-        | Some(&ValueType::Thunk(parameters)) => {
+        Some(&ValueType::Path { .. }) if bound == 0 => declared,
+        Some(&ValueType::Thunk(parameters)) => {
             let mut at = parameters;
             for (variable, slot) in (0_u32 ..).map(RuleVariable::from).zip(slots) {
                 let bound_at = arena.value_variable(pattern_binder(rule.variables(), variable));
                 let (instance, classifier) = match slot {
-                    | RuleSlot::Own => {
+                    RuleSlot::Own => {
                         let folded = arena.computation_application(obliged.head, bound_at);
                         (arena.value_returned(folded), codomain)
                     },
-                    | RuleSlot::Other(field) => (
+                    RuleSlot::Other(field) => (
                         bound_at,
                         instantiate_field(arena, &mut table, field, obliged.datatype, signature)?,
                     ),
                 };
                 let (domain, rest) = match arena.comp_type(at) {
-                    | Some(&CompType::Arrow { domain, codomain }) => (domain, codomain),
-                    | Some(&CompType::Pi { domain, codomain }) => (
+                    Some(&CompType::Arrow { domain, codomain }) => (domain, codomain),
+                    Some(&CompType::Pi { domain, codomain }) => (
                         domain,
                         substitute_comp_type(arena, &mut table, &mut NullMemo, codomain, instance),
                     ),
-                    | _ => return Ok(Related::Apart),
+                    _ => return Ok(Related::Apart),
                 };
                 if crate::conv::convert_value_type(arena, classifier, domain).is_err() {
                     return Ok(Related::Apart);
@@ -570,7 +570,7 @@ fn lawful(
             };
             stated
         },
-        | _ => return Ok(Related::Apart),
+        _ => return Ok(Related::Apart),
     };
     let Some(&ValueType::Path {
         domain: carrier,
@@ -585,8 +585,8 @@ fn lawful(
     }
     for (side, endpoint) in [(obliged.left, left), (obliged.right, right)] {
         let in_place = match arena.value(endpoint) {
-            | Some(&Value::Returned(run)) => run,
-            | _ => arena.computation_return(endpoint),
+            Some(&Value::Returned(run)) => run,
+            _ => arena.computation_return(endpoint),
         };
         let sides = ReplaySides::Computations(side, in_place);
         if crate::replay::convert(arena, unfoldings, sides, ReplayBudget::DEFAULT)
@@ -733,10 +733,10 @@ fn sequenced(
         );
         for &argument in &spine.read {
             let value = match argument {
-                | Argument::Kept(kept) => {
+                Argument::Kept(kept) => {
                     shift_value(arena, table, &mut NullMemo, kept, BinderDepth::NONE, amount)
                 },
-                | Argument::Bound(position) => {
+                Argument::Bound(position) => {
                     let past = depth.saturating_sub(position).saturating_sub(1);
                     arena.value_variable(DeBruijnIndex::from(
                         u32::try_from(past).unwrap_or(u32::MAX),
@@ -746,11 +746,11 @@ fn sequenced(
             built = arena.computation_application(built, value);
         }
         match spines.last_mut() {
-            | Some(holder) => {
+            Some(holder) => {
                 holder.read.push(Argument::Bound(depth));
                 bound.push(built);
             },
-            | None => body = built,
+            None => body = built,
         }
     }
     bound
@@ -797,11 +797,11 @@ fn instantiate_field(
     let mut result = field;
     for index in (0 .. signature.parameters.len()).rev() {
         let argument = match arena.value_type(datatype) {
-            | Some(&ValueType::Data { ref arguments, .. }) => arguments
+            Some(&ValueType::Data { ref arguments, .. }) => arguments
                 .get(index)
                 .copied()
                 .ok_or(KernelError::DataArgumentArity)?,
-            | _ => return Err(KernelError::ArenaFault),
+            _ => return Err(KernelError::ArenaFault),
         };
         let depth = BinderDepth::from(
             u32::try_from(index).map_err(|_cause| KernelError::DataArgumentArity)?,

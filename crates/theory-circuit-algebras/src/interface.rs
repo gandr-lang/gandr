@@ -519,8 +519,8 @@ impl core::fmt::Display for BijectionClash
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::SourceBound { .. } => "the source wire is already mapped to another image",
-            | Self::ImageBound { .. } => "the image wire is already reached by another source",
+            Self::SourceBound { .. } => "the source wire is already mapped to another image",
+            Self::ImageBound { .. } => "the image wire is already reached by another source",
         })
     }
 }
@@ -604,10 +604,11 @@ impl PartialBijection
         source: Wire,
     ) -> Maybe<Wire, wire_image::Absent>
     {
-        match self.forward.get(&source) {
-            | Some(image) => Maybe::Present(*image),
-            | None => Maybe::Absent(wire_image::Absent::Unmapped),
-        }
+        self.forward
+            .get(&source)
+            .map_or(Maybe::Absent(wire_image::Absent::Unmapped), |image| {
+                Maybe::Present(*image)
+            })
     }
 
     /// The source that reaches `image`.
@@ -634,10 +635,11 @@ impl PartialBijection
         image: Wire,
     ) -> Maybe<Wire, wire_preimage::Absent>
     {
-        match self.backward.get(&image) {
-            | Some(source) => Maybe::Present(*source),
-            | None => Maybe::Absent(wire_preimage::Absent::Unreached),
-        }
+        self.backward
+            .get(&image)
+            .map_or(Maybe::Absent(wire_preimage::Absent::Unreached), |source| {
+                Maybe::Present(*source)
+            })
     }
 
     /// How many pairs the map carries.
@@ -928,20 +930,18 @@ impl core::fmt::Display for WiringObstruction
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::UnknownWire { .. } => "a generator names a wire the diagram does not declare",
-            | Self::UnknownBoundaryWire { .. } => {
+            Self::UnknownWire { .. } => "a generator names a wire the diagram does not declare",
+            Self::UnknownBoundaryWire { .. } => {
                 "the boundary names a wire the diagram does not declare"
             },
-            | Self::FanIn { .. } => "a wire is produced twice",
-            | Self::FanOut { .. } => "a wire is consumed twice",
-            | Self::RepeatedBoundaryPort { .. } => "a boundary list names a wire twice",
-            | Self::BoundaryInputIsProduced { .. } => "a boundary input is produced by a generator",
-            | Self::BoundaryOutputIsConsumed { .. } => {
-                "a boundary output is consumed by a generator"
-            },
-            | Self::UndeclaredInput { .. } => "a wire no generator produces is not an input port",
-            | Self::UndeclaredOutput { .. } => "a wire no generator consumes is not an output port",
-            | Self::DirectedCycle { .. } => "the diagram has a directed cycle",
+            Self::FanIn { .. } => "a wire is produced twice",
+            Self::FanOut { .. } => "a wire is consumed twice",
+            Self::RepeatedBoundaryPort { .. } => "a boundary list names a wire twice",
+            Self::BoundaryInputIsProduced { .. } => "a boundary input is produced by a generator",
+            Self::BoundaryOutputIsConsumed { .. } => "a boundary output is consumed by a generator",
+            Self::UndeclaredInput { .. } => "a wire no generator produces is not an input port",
+            Self::UndeclaredOutput { .. } => "a wire no generator consumes is not an output port",
+            Self::DirectedCycle { .. } => "the diagram has a directed cycle",
         })
     }
 }
@@ -1215,10 +1215,10 @@ impl Wiring
         edge: Edge,
     ) -> Maybe<&Generator, generator_lookup::Absent>
     {
-        match self.generators.get(edge.0) {
-            | Some(generator) => Maybe::Present(generator),
-            | None => Maybe::Absent(generator_lookup::Absent::OutOfRange),
-        }
+        self.generators.get(edge.0).map_or(
+            Maybe::Absent(generator_lookup::Absent::OutOfRange),
+            Maybe::Present,
+        )
     }
 
     /// The discrete boundary.
@@ -1284,8 +1284,8 @@ impl Wiring
             return Maybe::Present(*edge);
         }
         match self.wires.declares(wire) {
-            | Declaration::Declared => Maybe::Absent(wire_producer::Absent::BoundaryInput),
-            | Declaration::Undeclared => Maybe::Absent(wire_producer::Absent::OutOfRange),
+            Declaration::Declared => Maybe::Absent(wire_producer::Absent::BoundaryInput),
+            Declaration::Undeclared => Maybe::Absent(wire_producer::Absent::OutOfRange),
         }
     }
 
@@ -1319,8 +1319,8 @@ impl Wiring
             return Maybe::Present(*edge);
         }
         match self.wires.declares(wire) {
-            | Declaration::Declared => Maybe::Absent(wire_consumer::Absent::BoundaryOutput),
-            | Declaration::Undeclared => Maybe::Absent(wire_consumer::Absent::OutOfRange),
+            Declaration::Declared => Maybe::Absent(wire_consumer::Absent::BoundaryOutput),
+            Declaration::Undeclared => Maybe::Absent(wire_consumer::Absent::OutOfRange),
         }
     }
 
@@ -1450,10 +1450,9 @@ fn place(
     edge: Edge,
 ) -> Placement
 {
-    match placed.get_mut(edge.0) {
-        | Some(slot) => core::mem::replace(slot, Placement::Placed),
-        | None => Placement::Placed,
-    }
+    placed.get_mut(edge.0).map_or(Placement::Placed, |slot| {
+        core::mem::replace(slot, Placement::Placed)
+    })
 }
 
 quenchant_shape::reason_enum! {
@@ -1521,18 +1520,18 @@ impl Components
         component: ComponentIndex,
     ) -> Maybe<&[Edge], component_lookup::Absent>
     {
-        let start = match component.0.checked_sub(1) {
-            | Some(previous) => self.ends.get(previous).copied(),
-            | None => Some(0),
-        };
+        let start = component
+            .0
+            .checked_sub(1)
+            .map_or(Some(0), |previous| self.ends.get(previous).copied());
         let end = self.ends.get(component.0).copied();
         let run = start
             .zip(end)
             .and_then(|(start, end)| self.members.get(start .. end));
-        match run {
-            | Some(members) => Maybe::Present(members),
-            | None => Maybe::Absent(component_lookup::Absent::OutOfRange),
-        }
+        run.map_or(
+            Maybe::Absent(component_lookup::Absent::OutOfRange),
+            Maybe::Present,
+        )
     }
 }
 

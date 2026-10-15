@@ -190,12 +190,12 @@ pub fn fill_and_resume(
     let (read, remaining) = read_written(core, domain, definitions, fuel, result, hole, filling)
         .map_err(LiveFault::Readback)?;
     match fill_hole(core, read, hole, filling) {
-        | TermId::Value(value) => {
+        TermId::Value(value) => {
             let (filled, left) = eval_closed_value(core, domain, definitions, remaining, value)
                 .map_err(LiveFault::Eval)?;
             Ok((Glued::Value(filled), left))
         },
-        | TermId::Computation(comp) => {
+        TermId::Computation(comp) => {
             let (filled, left) = eval_comp_within(
                 core,
                 domain,
@@ -249,9 +249,9 @@ impl Matched
     pub const fn status(&self) -> BranchStatus
     {
         match *self {
-            | Self::Satisfied(_) => BranchStatus::Satisfied,
-            | Self::Possibly => BranchStatus::Possibly,
-            | Self::Refuted => BranchStatus::Refuted,
+            Self::Satisfied(_) => BranchStatus::Satisfied,
+            Self::Possibly => BranchStatus::Possibly,
+            Self::Refuted => BranchStatus::Refuted,
         }
     }
 }
@@ -365,8 +365,8 @@ pub fn match_pattern(
             .value(value)
             .ok_or(MatchFault::Domain(DomainFault::Dangling))?;
         let local = match (shape, node) {
-            | (&Pattern::Wildcard, _) => BranchStatus::Satisfied,
-            | (&Pattern::Unit, DomainValue::Tuple { fields, .. }) => {
+            (&Pattern::Wildcard, _) => BranchStatus::Satisfied,
+            (&Pattern::Unit, DomainValue::Tuple { fields, .. }) => {
                 if domain
                     .fields(fields)
                     .map_err(MatchFault::Domain)?
@@ -378,11 +378,11 @@ pub fn match_pattern(
                     return Err(MatchFault::Mismatched);
                 }
             },
-            | (&Pattern::Binder, _) => {
+            (&Pattern::Binder, _) => {
                 bindings.push(value);
                 BranchStatus::Satisfied
             },
-            | (&Pattern::Hole(_), _)
+            (&Pattern::Hole(_), _)
             | (
                 &(Pattern::Unit
                 | Pattern::Literal(_)
@@ -391,7 +391,7 @@ pub fn match_pattern(
                 | Pattern::Constructor { .. }),
                 DomainValue::Neutral { .. },
             ) => BranchStatus::Possibly,
-            | (
+            (
                 &(Pattern::Unit
                 | Pattern::Literal(_)
                 | Pattern::Pair(..)
@@ -402,14 +402,14 @@ pub fn match_pattern(
                 pending.push((part, body));
                 BranchStatus::Satisfied
             },
-            | (&Pattern::Literal(ref expected), DomainValue::Literal { literal, .. }) => match core
+            (&Pattern::Literal(ref expected), DomainValue::Literal { literal, .. }) => match core
                 .value(literal)
             {
-                | Some(&Value::Literal(ref found)) if found == expected => BranchStatus::Satisfied,
-                | Some(&Value::Literal(_)) => BranchStatus::Refuted,
-                | Some(_) | None => return Err(MatchFault::LiteralPayload),
+                Some(&Value::Literal(ref found)) if found == expected => BranchStatus::Satisfied,
+                Some(&Value::Literal(_)) => BranchStatus::Refuted,
+                Some(_) | None => return Err(MatchFault::LiteralPayload),
             },
-            | (&Pattern::Pair(first, second), DomainValue::Tuple { fields, .. }) => {
+            (&Pattern::Pair(first, second), DomainValue::Tuple { fields, .. }) => {
                 let &[left, right] = domain.fields(fields).map_err(MatchFault::Domain)?
                 else {
                     return Err(MatchFault::Mismatched);
@@ -418,7 +418,7 @@ pub fn match_pattern(
                 pending.push((first, left));
                 BranchStatus::Satisfied
             },
-            | (
+            (
                 &Pattern::Injection(side, body),
                 DomainValue::Injection {
                     summand: found,
@@ -434,7 +434,7 @@ pub fn match_pattern(
                     BranchStatus::Refuted
                 }
             },
-            | (
+            (
                 &Pattern::Constructor { tag, ref fields },
                 DomainValue::Constructor {
                     tag: found,
@@ -454,7 +454,7 @@ pub fn match_pattern(
                     BranchStatus::Refuted
                 }
             },
-            | (
+            (
                 &(Pattern::Unit
                 | Pattern::Literal(_)
                 | Pattern::Pair(..)
@@ -482,9 +482,9 @@ pub fn match_pattern(
         }
     }
     Ok(match status {
-        | BranchStatus::Satisfied => Matched::Satisfied(bindings),
-        | BranchStatus::Possibly => Matched::Possibly,
-        | BranchStatus::Refuted => Matched::Refuted,
+        BranchStatus::Satisfied => Matched::Satisfied(bindings),
+        BranchStatus::Possibly => Matched::Possibly,
+        BranchStatus::Refuted => Matched::Refuted,
     })
 }
 
@@ -525,18 +525,18 @@ pub fn select_arm(
 {
     for (index, &arm) in arms.iter().enumerate() {
         match match_pattern(core, domain, patterns, arm, scrutinee)? {
-            | Matched::Satisfied(bindings) => {
+            Matched::Satisfied(bindings) => {
                 return Ok(Selection::Taken {
                     arm: ArmIndex(index),
                     bindings,
                 });
             },
-            | Matched::Possibly => {
+            Matched::Possibly => {
                 return Ok(Selection::Indeterminate {
                     arm: ArmIndex(index),
                 });
             },
-            | Matched::Refuted => {},
+            Matched::Refuted => {},
         }
     }
     Ok(Selection::Exhausted)

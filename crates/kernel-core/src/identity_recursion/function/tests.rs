@@ -172,47 +172,71 @@ fn children(
 ) -> Vec<AnyNode>
 {
     match node {
-        | AnyNode::Value(id) => match arena.value(id).expect("value") {
-            | &Value::Tuple(ref components) => {
+        AnyNode::Value(id) => match arena.value(id).expect("value") {
+            &Value::Tuple(ref components) => {
                 components.iter().copied().map(AnyNode::Value).collect()
             },
-            | &Value::Injection(_, value) => vec![AnyNode::Value(value)],
-            | &Value::Thunk(body) => vec![AnyNode::Computation(body)],
-            | &Value::Variable(_) => Vec::new(),
-            | _ => panic!("outside producer fixture"),
+            &Value::Injection(_, value) => vec![AnyNode::Value(value)],
+            &Value::Thunk(body) => vec![AnyNode::Computation(body)],
+            &Value::Variable(_) => Vec::new(),
+            &Value::Constructor { .. }
+            | &Value::Record(_)
+            | &Value::SessionPath { .. }
+            | &Value::SessionFlow { .. }
+            | &Value::Stay { .. }
+            | &Value::ForwardFlow { .. }
+            | &Value::FunctionFlow { .. }
+            | &Value::Then { .. }
+            | &Value::FlowProduct(..)
+            | &Value::PathRefl(_)
+            | &Value::PathProduct(..)
+            | &Value::PathEquiv { .. }
+            | &Value::Here { .. }
+            | &Value::Returned(_)
+            | &Value::Higher { .. }
+            | &Value::HigherEvaluation { .. }
+            | &Value::QuantifiedEvaluation { .. }
+            | &Value::Constant(_)
+            | &Value::Literal(_)
+            | &Value::ListNil
+            | &Value::ListCons(..)
+            | &Value::Lift { .. }
+            | &Value::Quote(_)
+            | &Value::QuoteComputation(_)
+            | &Value::StaticApplication(..) => panic!("outside producer fixture"),
         },
-        | AnyNode::Computation(id) => match *arena.computation(id).expect("computation") {
-            | Computation::Lambda(body) => vec![AnyNode::Computation(body)],
-            | Computation::Application(head, value) => {
+        AnyNode::Computation(id) => match *arena.computation(id).expect("computation") {
+            Computation::Lambda(body) => vec![AnyNode::Computation(body)],
+            Computation::Application(head, value) => {
                 vec![AnyNode::Computation(head), AnyNode::Value(value)]
             },
-            | Computation::Return(value) | Computation::Force(value) => vec![AnyNode::Value(value)],
-            | Computation::Bind(a, b) => vec![AnyNode::Computation(a), AnyNode::Computation(b)],
-            | Computation::Case {
+            Computation::Return(value) | Computation::Force(value) => vec![AnyNode::Value(value)],
+            Computation::Bind(a, b) => vec![AnyNode::Computation(a), AnyNode::Computation(b)],
+            Computation::Case {
                 scrutinee,
                 ref branches,
             } => core::iter::once(AnyNode::Value(scrutinee))
                 .chain(branches.iter().copied().map(AnyNode::Computation))
                 .collect(),
-            | Computation::Transport(..)
+            Computation::Transport(..)
             | Computation::PathTransport { .. }
             | Computation::TelescopeTransport { .. }
             | Computation::Ride { .. }
             | Computation::TelescopeRide { .. }
             | Computation::RelatedApplication { .. } => panic!("no native transport in fixtures"),
-            | Computation::DataCase { .. }
+            Computation::DataCase { .. }
             | Computation::SigmaSplit { .. }
             | Computation::RecordProjection(..)
             | Computation::TupleProjection(..) => {
                 panic!("no nominal or record eliminator in this fixture")
             },
-            | Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),
-            | Computation::With(..) | Computation::Project(..) => {
+            Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),
+            Computation::With(..) | Computation::Project(..) => {
                 panic!("no lazy product in this fixture")
             },
-            | Computation::ListFold { .. } => panic!("eliminator outside fixture fragment"),
+            Computation::ListFold { .. } => panic!("eliminator outside fixture fragment"),
         },
-        | AnyNode::ValueType(_) | AnyNode::CompType(_) => panic!("no type nodes"),
+        AnyNode::ValueType(_) | AnyNode::CompType(_) => panic!("no type nodes"),
     }
 }
 
@@ -246,9 +270,9 @@ fn translate(
     while let Some((node, expanded)) = pending.pop() {
         if !expanded {
             let known = match node {
-                | AnyNode::Value(id) => values.contains_key(&id),
-                | AnyNode::Computation(id) => computations.contains_key(&id),
-                | _ => false,
+                AnyNode::Value(id) => values.contains_key(&id),
+                AnyNode::Computation(id) => computations.contains_key(&id),
+                AnyNode::ValueType(_) | AnyNode::CompType(_) => false,
             };
             if known {
                 continue;
@@ -260,35 +284,59 @@ fn translate(
             continue;
         }
         match node {
-            | AnyNode::Value(id) => {
+            AnyNode::Value(id) => {
                 let value = match *arena.value(id).expect("value") {
-                    | Value::Variable(index) => core.value_variable(Zone::Intuitionistic, index),
-                    | Value::Tuple(ref components) => core.value_tuple(
+                    Value::Variable(index) => core.value_variable(Zone::Intuitionistic, index),
+                    Value::Tuple(ref components) => core.value_tuple(
                         &components
                             .iter()
                             .map(|component| values[component])
                             .collect::<Vec<_>>(),
                     ),
-                    | Value::Injection(summand, value) => {
+                    Value::Injection(summand, value) => {
                         core.value_injection(summand, values[&value])
                     },
-                    | Value::Thunk(body) => core.value_thunk(computations[&body]),
-                    | _ => panic!("unsupported value"),
+                    Value::Thunk(body) => core.value_thunk(computations[&body]),
+                    Value::Constructor { .. }
+                    | Value::Record(_)
+                    | Value::SessionPath { .. }
+                    | Value::SessionFlow { .. }
+                    | Value::Stay { .. }
+                    | Value::ForwardFlow { .. }
+                    | Value::FunctionFlow { .. }
+                    | Value::Then { .. }
+                    | Value::FlowProduct(..)
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
+                    | Value::Here { .. }
+                    | Value::Returned(_)
+                    | Value::Higher { .. }
+                    | Value::HigherEvaluation { .. }
+                    | Value::QuantifiedEvaluation { .. }
+                    | Value::Constant(_)
+                    | Value::Literal(_)
+                    | Value::ListNil
+                    | Value::ListCons(..)
+                    | Value::Lift { .. }
+                    | Value::Quote(_)
+                    | Value::QuoteComputation(_)
+                    | Value::StaticApplication(..) => panic!("unsupported value"),
                 };
                 values.insert(id, value);
             },
-            | AnyNode::Computation(id) => {
+            AnyNode::Computation(id) => {
                 let computation = match *arena.computation(id).expect("computation") {
-                    | Computation::Return(value) => core.computation_return(values[&value]),
-                    | Computation::Force(value) => core.computation_force(values[&value]),
-                    | Computation::Lambda(body) => core.computation_lambda(computations[&body]),
-                    | Computation::Application(head, value) => {
+                    Computation::Return(value) => core.computation_return(values[&value]),
+                    Computation::Force(value) => core.computation_force(values[&value]),
+                    Computation::Lambda(body) => core.computation_lambda(computations[&body]),
+                    Computation::Application(head, value) => {
                         core.computation_application(computations[&head], values[&value])
                     },
-                    | Computation::Bind(a, b) => {
+                    Computation::Bind(a, b) => {
                         core.computation_bind(computations[&a], computations[&b])
                     },
-                    | Computation::Case {
+                    Computation::Case {
                         scrutinee,
                         ref branches,
                     } => core.computation_case(
@@ -298,7 +346,7 @@ fn translate(
                             .map(|branch| computations[branch])
                             .collect::<Vec<_>>(),
                     ),
-                    | Computation::Transport(..)
+                    Computation::Transport(..)
                     | Computation::PathTransport { .. }
                     | Computation::TelescopeTransport { .. }
                     | Computation::Ride { .. }
@@ -306,21 +354,21 @@ fn translate(
                     | Computation::RelatedApplication { .. } => {
                         panic!("no native transport in fixtures")
                     },
-                    | Computation::DataCase { .. }
+                    Computation::DataCase { .. }
                     | Computation::SigmaSplit { .. }
                     | Computation::RecordProjection(..)
                     | Computation::TupleProjection(..) => {
                         panic!("no nominal or record eliminator in this fixture")
                     },
-                    | Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),
-                    | Computation::With(..) | Computation::Project(..) => {
+                    Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),
+                    Computation::With(..) | Computation::Project(..) => {
                         panic!("no lazy product in this fixture")
                     },
-                    | Computation::ListFold { .. } => panic!("unsupported computation"),
+                    Computation::ListFold { .. } => panic!("unsupported computation"),
                 };
                 computations.insert(id, computation);
             },
-            | _ => panic!("unsupported node"),
+            AnyNode::ValueType(_) | AnyNode::CompType(_) => panic!("unsupported node"),
         }
     }
     (core, values[&left], values[&right])
@@ -333,8 +381,8 @@ fn translate(
 fn decision(step: ConversionDecision<TraceNode>) -> ConversionDecision<ReplayNode>
 {
     step.map(|node| match node {
-        | TraceNode::Constant(_) => panic!("fixtures contain no constants"),
-        | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
+        TraceNode::Constant(_) => panic!("fixtures contain no constants"),
+        TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
     })
 }
 

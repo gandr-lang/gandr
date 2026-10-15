@@ -282,8 +282,8 @@ pub fn duplicate_value(
 {
     let rebuilt = duplicate(overlay, core, policy, OverlayId::Value(root))?;
     match rebuilt {
-        | OverlayId::Value(id) => Ok(id),
-        | OverlayId::Computation(_) | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+        OverlayId::Value(id) => Ok(id),
+        OverlayId::Computation(_) | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
             Err(DuplicationFault::MachineInvariant)
         },
     }
@@ -323,8 +323,8 @@ pub fn duplicate_computation(
 {
     let rebuilt = duplicate(overlay, core, policy, OverlayId::Computation(root))?;
     match rebuilt {
-        | OverlayId::Computation(id) => Ok(id),
-        | OverlayId::Value(_) | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+        OverlayId::Computation(id) => Ok(id),
+        OverlayId::Value(_) | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
             Err(DuplicationFault::MachineInvariant)
         },
     }
@@ -372,8 +372,8 @@ pub fn duplicate(
         policy.copies(SharedPart::Spine),
         policy.copies(SharedPart::Rib),
     ) {
-        | (Copied::Copied, Copied::Shared) => survey(overlay, core, root)?,
-        | (Copied::Copied | Copied::Shared, Copied::Copied) | (Copied::Shared, Copied::Shared) => {
+        (Copied::Copied, Copied::Shared) => survey(overlay, core, root)?,
+        (Copied::Copied | Copied::Shared, Copied::Copied) | (Copied::Shared, Copied::Shared) => {
             BTreeMap::new()
         },
     };
@@ -491,7 +491,7 @@ impl Under
     {
         let child = |node: OverlayId, binders: Lowering| Some(Child { node, binders });
         let listed = match node {
-            | OverlayId::Value(id) => {
+            OverlayId::Value(id) => {
                 let Some(held) = overlay.value(id)
                 else {
                     return Err(DuplicationFault::MachineInvariant);
@@ -501,53 +501,53 @@ impl Under
                     return Err(DuplicationFault::MachineInvariant);
                 };
                 match *graft {
-                    | ValueGraft::Variable { .. }
+                    ValueGraft::Variable { .. }
                     | ValueGraft::Constant(_)
                     | ValueGraft::Unit
                     | ValueGraft::Literal(_) => [None; 3],
-                    | ValueGraft::Pair(first, second) => [
+                    ValueGraft::Pair(first, second) => [
                         child(OverlayId::Value(first), Lowering::NONE),
                         child(OverlayId::Value(second), Lowering::NONE),
                         None,
                     ],
-                    | ValueGraft::Injection(_, body) | ValueGraft::Lift { body, .. } => {
+                    ValueGraft::Injection(_, body) | ValueGraft::Lift { body, .. } => {
                         [child(OverlayId::Value(body), Lowering::NONE), None, None]
                     },
-                    | ValueGraft::Thunk(body) => [
+                    ValueGraft::Thunk(body) => [
                         child(OverlayId::Computation(body), Lowering::NONE),
                         None,
                         None,
                     ],
-                    | ValueGraft::Quote(_) | ValueGraft::QuoteComputation(_) => {
+                    ValueGraft::Quote(_) | ValueGraft::QuoteComputation(_) => {
                         return Err(DuplicationFault::Quote { node });
                     },
                 }
             },
-            | OverlayId::Computation(id) => {
+            OverlayId::Computation(id) => {
                 let Some(&CompNode::Grafted(graft)) = overlay.computation(id)
                 else {
                     return Err(DuplicationFault::MachineInvariant);
                 };
                 match graft {
-                    | CompGraft::Lambda(body) => [
+                    CompGraft::Lambda(body) => [
                         child(OverlayId::Computation(body), Lowering::ONE),
                         None,
                         None,
                     ],
-                    | CompGraft::Application(head, argument) => [
+                    CompGraft::Application(head, argument) => [
                         child(OverlayId::Computation(head), Lowering::NONE),
                         child(OverlayId::Value(argument), Lowering::NONE),
                         None,
                     ],
-                    | CompGraft::Return(value) | CompGraft::Force(value) => {
+                    CompGraft::Return(value) | CompGraft::Force(value) => {
                         [child(OverlayId::Value(value), Lowering::NONE), None, None]
                     },
-                    | CompGraft::Bind(bound, body) => [
+                    CompGraft::Bind(bound, body) => [
                         child(OverlayId::Computation(bound), Lowering::NONE),
                         child(OverlayId::Computation(body), Lowering::ONE),
                         None,
                     ],
-                    | CompGraft::Case {
+                    CompGraft::Case {
                         scrutinee,
                         on_left,
                         on_right,
@@ -558,7 +558,7 @@ impl Under
                     ],
                 }
             },
-            | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+            OverlayId::ValueType(_) | OverlayId::CompType(_) => {
                 return Err(DuplicationFault::MachineInvariant);
             },
         };
@@ -666,20 +666,20 @@ fn survey(
     let mut tasks = Vec::from([Survey::Enter(root)]);
     while let Some(task) = tasks.pop() {
         match task {
-            | Survey::Enter(node) => {
+            Survey::Enter(node) => {
                 let shape = overlay.shape(node).map_err(DuplicationFault::Refused)?;
                 match shape {
-                    | Shape::Opaque(held) => {
+                    Shape::Opaque(held) => {
                         let term = match held {
-                            | CoreId::Value(id) => CoreTerm::Value(id),
-                            | CoreId::Computation(id) => CoreTerm::Computation(id),
-                            | CoreId::ValueType(_) | CoreId::CompType(_) => {
+                            CoreId::Value(id) => CoreTerm::Value(id),
+                            CoreId::Computation(id) => CoreTerm::Computation(id),
+                            CoreId::ValueType(_) | CoreId::CompType(_) => {
                                 return Err(DuplicationFault::MachineInvariant);
                             },
                         };
                         let answered = free.of(core, term).map_err(|fault| match fault {
-                            | FreeFault::Dangling => DuplicationFault::UnresolvedOpaque { node },
-                            | FreeFault::MachineInvariant => DuplicationFault::MachineInvariant,
+                            FreeFault::Dangling => DuplicationFault::UnresolvedOpaque { node },
+                            FreeFault::MachineInvariant => DuplicationFault::MachineInvariant,
                         })?;
                         let reads = answered.intuitionistic().clone();
                         reached.insert(node, Reach {
@@ -687,7 +687,7 @@ fn survey(
                             escapes: Outward::default(),
                         });
                     },
-                    | Shape::Bound(bound) => {
+                    Shape::Bound(bound) => {
                         let leg = innermost(&legs, bound.distance)?;
                         let Some(read) = reached.get(&leg)
                         else {
@@ -699,13 +699,13 @@ fn survey(
                             escapes: Outward::single(bound.distance),
                         });
                     },
-                    | Shape::Shared(sharing) => {
+                    Shape::Shared(sharing) => {
                         tasks.push(Survey::Unbind(node));
                         tasks.push(Survey::Enter(sharing.body));
                         tasks.push(Survey::Bind(sharing.leg));
                         tasks.push(Survey::Enter(sharing.leg));
                     },
-                    | Shape::Grafted(_) => {
+                    Shape::Grafted(_) => {
                         let under = Under::of(overlay, node)?;
                         tasks.push(Survey::Assemble(node));
                         for child in under.listed.into_iter().rev().flatten() {
@@ -714,8 +714,8 @@ fn survey(
                     },
                 }
             },
-            | Survey::Bind(leg) => legs.push(leg),
-            | Survey::Unbind(share) => {
+            Survey::Bind(leg) => legs.push(leg),
+            Survey::Unbind(share) => {
                 if legs.pop().is_none() {
                     return Err(DuplicationFault::MachineInvariant);
                 }
@@ -734,7 +734,7 @@ fn survey(
                 let reads = body.reads.clone();
                 reached.insert(share, Reach { reads, escapes });
             },
-            | Survey::Assemble(node) => {
+            Survey::Assemble(node) => {
                 let under = Under::of(overlay, node)?;
                 let mut reach = Reach::default();
                 if let OverlayId::Value(id) = node
@@ -816,16 +816,16 @@ fn leg_shape(
 ) -> LegShape
 {
     let lambda = match leg {
-        | OverlayId::Value(id) => match overlay.value(id) {
-            | Some(&ValueNode::Grafted(ValueGraft::Thunk(body))) => Some(body),
-            | Some(_) | None => None,
+        OverlayId::Value(id) => match overlay.value(id) {
+            Some(&ValueNode::Grafted(ValueGraft::Thunk(body))) => Some(body),
+            Some(_) | None => None,
         },
-        | OverlayId::Computation(id) => Some(id),
-        | OverlayId::ValueType(_) | OverlayId::CompType(_) => None,
+        OverlayId::Computation(id) => Some(id),
+        OverlayId::ValueType(_) | OverlayId::CompType(_) => None,
     };
     match lambda.and_then(|id| overlay.computation(id)) {
-        | Some(&CompNode::Grafted(CompGraft::Lambda(_))) => LegShape::Abstraction,
-        | Some(_) | None => LegShape::Whole,
+        Some(&CompNode::Grafted(CompGraft::Lambda(_))) => LegShape::Abstraction,
+        Some(_) | None => LegShape::Whole,
     }
 }
 
@@ -864,12 +864,12 @@ fn treatment(
         policy.copies(SharedPart::Spine),
         policy.copies(SharedPart::Rib),
     ) {
-        | (LegShape::Whole, _, Copied::Copied)
+        (LegShape::Whole, _, Copied::Copied)
         | (LegShape::Abstraction, Copied::Copied, Copied::Copied) => Treatment::Inline,
-        | (LegShape::Whole, _, Copied::Shared) | (LegShape::Abstraction, Copied::Shared, _) => {
+        (LegShape::Whole, _, Copied::Shared) | (LegShape::Abstraction, Copied::Shared, _) => {
             Treatment::Keep
         },
-        | (LegShape::Abstraction, Copied::Copied, Copied::Shared) => Treatment::Distribute,
+        (LegShape::Abstraction, Copied::Copied, Copied::Shared) => Treatment::Distribute,
     }
 }
 
@@ -1259,22 +1259,22 @@ impl Walk<'_>
     ) -> Result<(), DuplicationFault>
     {
         match task {
-            | Task::Enter { node, scope, mode } => self.enter(node, scope, mode),
-            | Task::Assemble(node) => {
+            Task::Enter { node, scope, mode } => self.enter(node, scope, mode),
+            Task::Assemble(node) => {
                 let rebuilt = self.assemble(node)?;
                 self.results.push(rebuilt);
                 Ok(())
             },
-            | Task::Open { share, scope, mode } => self.open(share, scope, mode),
-            | Task::Close => self.close(),
-            | Task::OpenRib(cursor) => self.open_rib(cursor),
-            | Task::Distribute {
+            Task::Open { share, scope, mode } => self.open(share, scope, mode),
+            Task::Close => self.close(),
+            Task::OpenRib(cursor) => self.open_rib(cursor),
+            Task::Distribute {
                 share,
                 scope,
                 mode,
                 cursor,
             } => self.distribute(share, scope, mode, cursor),
-            | Task::CloseRibs(cursor) => self.close_ribs(cursor),
+            Task::CloseRibs(cursor) => self.close_ribs(cursor),
         }
     }
 
@@ -1310,13 +1310,13 @@ impl Walk<'_>
     ) -> Result<(), DuplicationFault>
     {
         match mode {
-            | Mode::Spine { cursor, at } => {
+            Mode::Spine { cursor, at } => {
                 let part = self.part(node, at)?;
                 if part == SharedPart::Rib {
                     return self.rib_occurrence(node, cursor);
                 }
             },
-            | Mode::Dry { cursor, at } => {
+            Mode::Dry { cursor, at } => {
                 let part = self.part(node, at)?;
                 if part == SharedPart::Rib {
                     self.tasks.push(Task::OpenRib(cursor));
@@ -1328,17 +1328,17 @@ impl Walk<'_>
                     return Ok(());
                 }
             },
-            | Mode::Plain | Mode::Prefix { .. } | Mode::DryPrefix { .. } => {},
+            Mode::Plain | Mode::Prefix { .. } | Mode::DryPrefix { .. } => {},
         }
         let shape = self
             .overlay
             .shape(node)
             .map_err(DuplicationFault::Refused)?;
         match shape {
-            | Shape::Opaque(_) => self.opaque(node, mode),
-            | Shape::Bound(bound) => self.occurrence(node, bound, scope, mode),
-            | Shape::Shared(sharing) => self.share(node, sharing, scope, mode),
-            | Shape::Grafted(_) => self.graft(node, scope, mode),
+            Shape::Opaque(_) => self.opaque(node, mode),
+            Shape::Bound(bound) => self.occurrence(node, bound, scope, mode),
+            Shape::Shared(sharing) => self.share(node, sharing, scope, mode),
+            Shape::Grafted(_) => self.graft(node, scope, mode),
         }
     }
 
@@ -1381,8 +1381,8 @@ impl Walk<'_>
             return Ok(SharedPart::Spine);
         }
         match reach.escapes.least() {
-            | Some(least) if u32::from(least) < at.inner.0 => Ok(SharedPart::Spine),
-            | Some(_) | None => Ok(SharedPart::Rib),
+            Some(least) if u32::from(least) < at.inner.0 => Ok(SharedPart::Spine),
+            Some(_) | None => Ok(SharedPart::Rib),
         }
     }
 
@@ -1422,27 +1422,25 @@ impl Walk<'_>
     ) -> Result<(), DuplicationFault>
     {
         match mode {
-            | Mode::Dry { .. } => Ok(()),
-            | Mode::Prefix { .. } | Mode::DryPrefix { .. } => {
-                Err(DuplicationFault::MachineInvariant)
-            },
-            | Mode::Plain | Mode::Spine { .. } => {
+            Mode::Dry { .. } => Ok(()),
+            Mode::Prefix { .. } | Mode::DryPrefix { .. } => Err(DuplicationFault::MachineInvariant),
+            Mode::Plain | Mode::Spine { .. } => {
                 let copied = match node {
-                    | OverlayId::Value(id) => match self.overlay.value(id) {
-                        | Some(&ValueNode::Opaque(term)) => self
+                    OverlayId::Value(id) => match self.overlay.value(id) {
+                        Some(&ValueNode::Opaque(term)) => self
                             .overlay
                             .mint_value(ValueNode::Opaque(term))
                             .map(OverlayId::Value),
-                        | Some(_) | None => return Err(DuplicationFault::MachineInvariant),
+                        Some(_) | None => return Err(DuplicationFault::MachineInvariant),
                     },
-                    | OverlayId::Computation(id) => match self.overlay.computation(id) {
-                        | Some(&CompNode::Opaque(term)) => self
+                    OverlayId::Computation(id) => match self.overlay.computation(id) {
+                        Some(&CompNode::Opaque(term)) => self
                             .overlay
                             .mint_computation(CompNode::Opaque(term))
                             .map(OverlayId::Computation),
-                        | Some(_) | None => return Err(DuplicationFault::MachineInvariant),
+                        Some(_) | None => return Err(DuplicationFault::MachineInvariant),
                     },
-                    | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+                    OverlayId::ValueType(_) | OverlayId::CompType(_) => {
                         return Err(DuplicationFault::MachineInvariant);
                     },
                 };
@@ -1499,24 +1497,24 @@ impl Walk<'_>
     ) -> Result<(), DuplicationFault>
     {
         match mode {
-            | Mode::Dry { .. } => return Ok(()),
-            | Mode::Prefix { .. } | Mode::DryPrefix { .. } => {
+            Mode::Dry { .. } => return Ok(()),
+            Mode::Prefix { .. } | Mode::DryPrefix { .. } => {
                 return Err(DuplicationFault::MachineInvariant);
             },
-            | Mode::Plain | Mode::Spine { .. } => {},
+            Mode::Plain | Mode::Spine { .. } => {},
         }
         let binding = self.binding(scope, bound.distance)?;
         match binding {
-            | Binding::Kept { frame } => {
+            Binding::Kept { frame } => {
                 let pointed = self.point(node, frame)?;
                 self.results.push(pointed);
             },
-            | Binding::Inlined { leg, scope } => self.tasks.push(Task::Enter {
+            Binding::Inlined { leg, scope } => self.tasks.push(Task::Enter {
                 node: leg,
                 scope,
                 mode: Mode::Plain,
             }),
-            | Binding::Distributed { leg, scope, ribs } => {
+            Binding::Distributed { leg, scope, ribs } => {
                 let cursor = self.cursor(ribs);
                 self.tasks.push(Task::Enter {
                     node: leg,
@@ -1524,7 +1522,7 @@ impl Walk<'_>
                     mode: Mode::Prefix { cursor },
                 });
             },
-            | Binding::Empty | Binding::Covered => return Err(DuplicationFault::MachineInvariant),
+            Binding::Empty | Binding::Covered => return Err(DuplicationFault::MachineInvariant),
         }
         Ok(())
     }
@@ -1573,12 +1571,12 @@ impl Walk<'_>
     ) -> Result<(), DuplicationFault>
     {
         let body_mode = match mode {
-            | Mode::Plain => Mode::Plain,
-            | Mode::Spine { cursor, at } => {
+            Mode::Plain => Mode::Plain,
+            Mode::Spine { cursor, at } => {
                 let at = at.within()?;
                 Mode::Spine { cursor, at }
             },
-            | Mode::Dry { cursor, at } => {
+            Mode::Dry { cursor, at } => {
                 let at = at.within()?;
                 let covered = self.bind(scope, Binding::Covered);
                 self.tasks.push(Task::Enter {
@@ -1588,12 +1586,12 @@ impl Walk<'_>
                 });
                 return Ok(());
             },
-            | Mode::Prefix { .. } | Mode::DryPrefix { .. } => {
+            Mode::Prefix { .. } | Mode::DryPrefix { .. } => {
                 return Err(DuplicationFault::MachineInvariant);
             },
         };
         match treatment(self.policy, leg_shape(self.overlay, sharing.leg)) {
-            | Treatment::Keep => {
+            Treatment::Keep => {
                 self.tasks.push(Task::Close);
                 self.tasks.push(Task::Open {
                     share: node,
@@ -1606,7 +1604,7 @@ impl Walk<'_>
                     mode: Mode::Plain,
                 });
             },
-            | Treatment::Inline => {
+            Treatment::Inline => {
                 let inner = self.bind(scope, Binding::Inlined {
                     leg: sharing.leg,
                     scope,
@@ -1617,7 +1615,7 @@ impl Walk<'_>
                     mode: body_mode,
                 });
             },
-            | Treatment::Distribute => {
+            Treatment::Distribute => {
                 let cursor = self.cursor(FrameIndex(self.frames.len()));
                 self.tasks.push(Task::Distribute {
                     share: node,
@@ -1688,47 +1686,45 @@ impl Walk<'_>
     {
         let under = Under::of(self.overlay, node)?;
         let prefix = match mode {
-            | Mode::Prefix { .. } | Mode::DryPrefix { .. } => {
-                Some(prefix_below(self.overlay, node)?)
-            },
-            | Mode::Plain | Mode::Spine { .. } | Mode::Dry { .. } => None,
+            Mode::Prefix { .. } | Mode::DryPrefix { .. } => Some(prefix_below(self.overlay, node)?),
+            Mode::Plain | Mode::Spine { .. } | Mode::Dry { .. } => None,
         };
         let rebuilds = match mode {
-            | Mode::Plain | Mode::Prefix { .. } | Mode::Spine { .. } => Rebuilds::Yes,
-            | Mode::DryPrefix { .. } | Mode::Dry { .. } => Rebuilds::No,
+            Mode::Plain | Mode::Prefix { .. } | Mode::Spine { .. } => Rebuilds::Yes,
+            Mode::DryPrefix { .. } | Mode::Dry { .. } => Rebuilds::No,
         };
         if rebuilds == Rebuilds::Yes {
             self.tasks.push(Task::Assemble(node));
         }
         for child in under.listed.into_iter().rev().flatten() {
             let mode = match mode {
-                | Mode::Plain => Mode::Plain,
-                | Mode::Prefix { cursor } | Mode::DryPrefix { cursor } => {
+                Mode::Plain => Mode::Plain,
+                Mode::Prefix { cursor } | Mode::DryPrefix { cursor } => {
                     let below = prefix.ok_or(DuplicationFault::MachineInvariant)?;
                     match (below, rebuilds) {
-                        | (Below::Lambda, _) => Mode::Prefix { cursor },
-                        | (Below::Body, Rebuilds::Yes) => Mode::Spine {
+                        (Below::Lambda, _) => Mode::Prefix { cursor },
+                        (Below::Body, Rebuilds::Yes) => Mode::Spine {
                             cursor,
                             at: RibSite::default(),
                         },
-                        | (Below::Body, Rebuilds::No) => Mode::Dry {
+                        (Below::Body, Rebuilds::No) => Mode::Dry {
                             cursor,
                             at: RibSite::default(),
                         },
                     }
                 },
-                | Mode::Spine { cursor, at } => {
+                Mode::Spine { cursor, at } => {
                     let at = at.under(child.binders)?;
                     Mode::Spine { cursor, at }
                 },
-                | Mode::Dry { cursor, at } => {
+                Mode::Dry { cursor, at } => {
                     let at = at.under(child.binders)?;
                     Mode::Dry { cursor, at }
                 },
             };
             let mode = match (mode, rebuilds) {
-                | (Mode::Prefix { cursor }, Rebuilds::No) => Mode::DryPrefix { cursor },
-                | (other, _) => other,
+                (Mode::Prefix { cursor }, Rebuilds::No) => Mode::DryPrefix { cursor },
+                (other, _) => other,
             };
             self.tasks.push(Task::Enter {
                 node: child.node,
@@ -2080,15 +2076,15 @@ impl Walk<'_>
             position,
         };
         let pointed = match node {
-            | OverlayId::Value(_) => self
+            OverlayId::Value(_) => self
                 .overlay
                 .mint_value(ValueNode::Bound(bound))
                 .map(OverlayId::Value),
-            | OverlayId::Computation(_) => self
+            OverlayId::Computation(_) => self
                 .overlay
                 .mint_computation(CompNode::Bound(bound))
                 .map(OverlayId::Computation),
-            | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+            OverlayId::ValueType(_) | OverlayId::CompType(_) => {
                 return Err(DuplicationFault::MachineInvariant);
             },
         };
@@ -2126,15 +2122,15 @@ impl Walk<'_>
     ) -> Result<OverlayId, DuplicationFault>
     {
         let shared = match body {
-            | OverlayId::Value(body) => self
+            OverlayId::Value(body) => self
                 .overlay
                 .mint_value(ValueNode::Shared(Sharing { arity, leg, body }))
                 .map(OverlayId::Value),
-            | OverlayId::Computation(body) => self
+            OverlayId::Computation(body) => self
                 .overlay
                 .mint_computation(CompNode::Shared(Sharing { arity, leg, body }))
                 .map(OverlayId::Computation),
-            | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+            OverlayId::ValueType(_) | OverlayId::CompType(_) => {
                 return Err(DuplicationFault::MachineInvariant);
             },
         };
@@ -2177,7 +2173,7 @@ impl Walk<'_>
     ) -> Result<OverlayId, DuplicationFault>
     {
         match node {
-            | OverlayId::Value(id) => {
+            OverlayId::Value(id) => {
                 let Some(held) = self.overlay.value(id)
                 else {
                     return Err(DuplicationFault::MachineInvariant);
@@ -2188,29 +2184,29 @@ impl Walk<'_>
                 };
                 let graft = graft.clone();
                 let rebuilt = match graft {
-                    | ValueGraft::Variable { .. }
+                    ValueGraft::Variable { .. }
                     | ValueGraft::Constant(_)
                     | ValueGraft::Unit
                     | ValueGraft::Literal(_) => graft,
-                    | ValueGraft::Pair(..) => {
+                    ValueGraft::Pair(..) => {
                         let second = self.value()?;
                         let first = self.value()?;
                         ValueGraft::Pair(first, second)
                     },
-                    | ValueGraft::Injection(side, _) => {
+                    ValueGraft::Injection(side, _) => {
                         let body = self.value()?;
                         ValueGraft::Injection(side, body)
                     },
-                    | ValueGraft::Thunk(_) => {
+                    ValueGraft::Thunk(_) => {
                         let body = self.computation()?;
                         ValueGraft::Thunk(body)
                     },
-                    | ValueGraft::Lift { target, .. } => {
+                    ValueGraft::Lift { target, .. } => {
                         let body = self.value()?;
                         ValueGraft::Lift { target, body }
                     },
                     // `Under::of` refuses a quote before its assembly is queued.
-                    | ValueGraft::Quote(_) | ValueGraft::QuoteComputation(_) => {
+                    ValueGraft::Quote(_) | ValueGraft::QuoteComputation(_) => {
                         return Err(DuplicationFault::MachineInvariant);
                     },
                 };
@@ -2220,35 +2216,35 @@ impl Walk<'_>
                     .map_err(DuplicationFault::Mint)?;
                 Ok(OverlayId::Value(minted))
             },
-            | OverlayId::Computation(id) => {
+            OverlayId::Computation(id) => {
                 let Some(&CompNode::Grafted(graft)) = self.overlay.computation(id)
                 else {
                     return Err(DuplicationFault::MachineInvariant);
                 };
                 let rebuilt = match graft {
-                    | CompGraft::Lambda(_) => {
+                    CompGraft::Lambda(_) => {
                         let body = self.computation()?;
                         CompGraft::Lambda(body)
                     },
-                    | CompGraft::Application(..) => {
+                    CompGraft::Application(..) => {
                         let argument = self.value()?;
                         let head = self.computation()?;
                         CompGraft::Application(head, argument)
                     },
-                    | CompGraft::Return(_) => {
+                    CompGraft::Return(_) => {
                         let value = self.value()?;
                         CompGraft::Return(value)
                     },
-                    | CompGraft::Bind(..) => {
+                    CompGraft::Bind(..) => {
                         let body = self.computation()?;
                         let bound = self.computation()?;
                         CompGraft::Bind(bound, body)
                     },
-                    | CompGraft::Force(_) => {
+                    CompGraft::Force(_) => {
                         let value = self.value()?;
                         CompGraft::Force(value)
                     },
-                    | CompGraft::Case { .. } => {
+                    CompGraft::Case { .. } => {
                         let on_right = self.computation()?;
                         let on_left = self.computation()?;
                         let scrutinee = self.value()?;
@@ -2265,7 +2261,7 @@ impl Walk<'_>
                     .map_err(DuplicationFault::Mint)?;
                 Ok(OverlayId::Computation(minted))
             },
-            | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+            OverlayId::ValueType(_) | OverlayId::CompType(_) => {
                 Err(DuplicationFault::MachineInvariant)
             },
         }
@@ -2359,8 +2355,8 @@ impl Walk<'_>
     ) -> Result<Sharing<OverlayId>, DuplicationFault>
     {
         match self.overlay.shape(share) {
-            | Ok(Shape::Shared(sharing)) => Ok(sharing),
-            | Ok(Shape::Opaque(_) | Shape::Bound(_) | Shape::Grafted(_)) | Err(_) => {
+            Ok(Shape::Shared(sharing)) => Ok(sharing),
+            Ok(Shape::Opaque(_) | Shape::Bound(_) | Shape::Grafted(_)) | Err(_) => {
                 Err(DuplicationFault::MachineInvariant)
             },
         }
@@ -2531,17 +2527,15 @@ fn prefix_below(
 ) -> Result<Below, DuplicationFault>
 {
     match node {
-        | OverlayId::Value(id) => match overlay.value(id) {
-            | Some(&ValueNode::Grafted(ValueGraft::Thunk(_))) => Ok(Below::Lambda),
-            | Some(_) | None => Err(DuplicationFault::MachineInvariant),
+        OverlayId::Value(id) => match overlay.value(id) {
+            Some(&ValueNode::Grafted(ValueGraft::Thunk(_))) => Ok(Below::Lambda),
+            Some(_) | None => Err(DuplicationFault::MachineInvariant),
         },
-        | OverlayId::Computation(id) => match overlay.computation(id) {
-            | Some(&CompNode::Grafted(CompGraft::Lambda(_))) => Ok(Below::Body),
-            | Some(_) | None => Err(DuplicationFault::MachineInvariant),
+        OverlayId::Computation(id) => match overlay.computation(id) {
+            Some(&CompNode::Grafted(CompGraft::Lambda(_))) => Ok(Below::Body),
+            Some(_) | None => Err(DuplicationFault::MachineInvariant),
         },
-        | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
-            Err(DuplicationFault::MachineInvariant)
-        },
+        OverlayId::ValueType(_) | OverlayId::CompType(_) => Err(DuplicationFault::MachineInvariant),
     }
 }
 

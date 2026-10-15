@@ -229,10 +229,10 @@ pub fn cover(
         constructors: Constructors::Closed,
     })?;
     let exhaustiveness = match (widest, least) {
-        | (Usefulness::Useless, Usefulness::Useless) => Exhaustiveness::Exhaustive,
-        | (Usefulness::Useful, Usefulness::Useful) => Exhaustiveness::Inexhaustive,
-        | (Usefulness::Useful, Usefulness::Useless) => Exhaustiveness::Possibly,
-        | (Usefulness::Useless, Usefulness::Useful) => {
+        (Usefulness::Useless, Usefulness::Useless) => Exhaustiveness::Exhaustive,
+        (Usefulness::Useful, Usefulness::Useful) => Exhaustiveness::Inexhaustive,
+        (Usefulness::Useful, Usefulness::Useless) => Exhaustiveness::Possibly,
+        (Usefulness::Useless, Usefulness::Useful) => {
             return Err(CoverageFault::Refused(CheckRefusal::MachineInvariant));
         },
     };
@@ -252,10 +252,10 @@ pub fn cover(
             constructors: Constructors::Closed,
         })?;
         redundancy.push(match (widest, least) {
-            | (Usefulness::Useless, Usefulness::Useless) => Redundancy::Redundant,
-            | (Usefulness::Useful, Usefulness::Useful) => Redundancy::Irredundant,
-            | (Usefulness::Useful, Usefulness::Useless) => Redundancy::Possibly,
-            | (Usefulness::Useless, Usefulness::Useful) => {
+            (Usefulness::Useless, Usefulness::Useless) => Redundancy::Redundant,
+            (Usefulness::Useful, Usefulness::Useful) => Redundancy::Irredundant,
+            (Usefulness::Useful, Usefulness::Useless) => Redundancy::Possibly,
+            (Usefulness::Useless, Usefulness::Useful) => {
                 return Err(CoverageFault::Refused(CheckRefusal::MachineInvariant));
             },
         });
@@ -490,7 +490,7 @@ impl Walker<'_, '_, '_>
                 .ok_or(CoverageFault::Refused(CheckRefusal::MachineInvariant))?;
             let kind = self.kind(column)?;
             match self.read(first)? {
-                | Read::Head {
+                Read::Head {
                     head,
                     parts,
                     pattern,
@@ -498,14 +498,14 @@ impl Walker<'_, '_, '_>
                     let fields = self.fields(column, kind, &head, Arity(parts.len()), pattern)?;
                     stack.push(self.specialise(&problem, &head, &fields)?);
                 },
-                | Read::Anything => {
+                Read::Anything => {
                     match self.complete(&problem, column, kind, reading.constructors)? {
-                        | Completeness::Complete(constructors) => {
+                        Completeness::Complete(constructors) => {
                             for (head, fields) in constructors {
                                 stack.push(self.specialise(&problem, &head, &fields)?);
                             }
                         },
-                        | Completeness::Incomplete => stack.push(self.default(&problem)?),
+                        Completeness::Incomplete => stack.push(self.default(&problem)?),
                     }
                 },
             }
@@ -626,12 +626,12 @@ impl Walker<'_, '_, '_>
             return Ok(Read::Anything);
         };
         let (head, parts) = match *self.pattern(pattern)? {
-            | Pattern::Wildcard | Pattern::Binder | Pattern::Hole(_) => return Ok(Read::Anything),
-            | Pattern::Unit => (Head::Unit, Vec::new()),
-            | Pattern::Literal(ref literal) => (Head::Literal(literal.clone()), Vec::new()),
-            | Pattern::Pair(first, second) => (Head::Pair, vec![first, second]),
-            | Pattern::Injection(side, body) => (Head::Injection(side), vec![body]),
-            | Pattern::Constructor { tag, ref fields } => (Head::Constructor(tag), fields.clone()),
+            Pattern::Wildcard | Pattern::Binder | Pattern::Hole(_) => return Ok(Read::Anything),
+            Pattern::Unit => (Head::Unit, Vec::new()),
+            Pattern::Literal(ref literal) => (Head::Literal(literal.clone()), Vec::new()),
+            Pattern::Pair(first, second) => (Head::Pair, vec![first, second]),
+            Pattern::Injection(side, body) => (Head::Injection(side), vec![body]),
+            Pattern::Constructor { tag, ref fields } => (Head::Constructor(tag), fields.clone()),
         };
         Ok(Read::Head {
             head,
@@ -667,23 +667,23 @@ impl Walker<'_, '_, '_>
     ) -> Result<Kind, CoverageFault>
     {
         match self.context.arena().value_type(column) {
-            | None => Err(CoverageFault::Refused(CheckRefusal::DanglingNode {
+            None => Err(CoverageFault::Refused(CheckRefusal::DanglingNode {
                 node: CoreNode::Type(TypeNode::Value(column)),
             })),
-            | Some(&ValueType::Product(ref parts)) => match **parts {
-                | [] => Ok(Kind::Unit),
-                | [first, second] => Ok(Kind::Product(first, second)),
-                | _ => Ok(Kind::Opaque),
+            Some(&ValueType::Product(ref parts)) => match **parts {
+                [] => Ok(Kind::Unit),
+                [first, second] => Ok(Kind::Product(first, second)),
+                _ => Ok(Kind::Opaque),
             },
-            | Some(&ValueType::Sigma { first, second }) => Ok(Kind::Product(first, second)),
-            | Some(&ValueType::Sum(ref parts)) => match **parts {
-                | [left, right] => Ok(Kind::Sum(left, right)),
-                | _ => Ok(Kind::Opaque),
+            Some(&ValueType::Sigma { first, second }) => Ok(Kind::Product(first, second)),
+            Some(&ValueType::Sum(ref parts)) => match **parts {
+                [left, right] => Ok(Kind::Sum(left, right)),
+                _ => Ok(Kind::Opaque),
             },
-            | Some(&ValueType::Data { .. }) => Ok(Kind::Data),
-            | Some(&ValueType::Base(_)) => Ok(Kind::Literals),
-            | Some(&ValueType::Unknown) => Ok(Kind::Unknown),
-            | Some(
+            Some(&ValueType::Data { .. }) => Ok(Kind::Data),
+            Some(&ValueType::Base(_)) => Ok(Kind::Literals),
+            Some(&ValueType::Unknown) => Ok(Kind::Unknown),
+            Some(
                 &(ValueType::Record(_)
                 | ValueType::List(_)
                 | ValueType::Stack { .. }
@@ -735,11 +735,11 @@ impl Walker<'_, '_, '_>
     {
         let ill = CoverageFault::IllTypedPattern { pattern, column };
         let fields = match (kind, head) {
-            | (Kind::Unit, &Head::Unit) | (Kind::Literals, &Head::Literal(_)) => Vec::new(),
-            | (Kind::Product(first, second), &Head::Pair) => vec![first, second],
-            | (Kind::Sum(left, _), &Head::Injection(Side::Left)) => vec![left],
-            | (Kind::Sum(_, right), &Head::Injection(Side::Right)) => vec![right],
-            | (Kind::Data, &Head::Constructor(tag)) => {
+            (Kind::Unit, &Head::Unit) | (Kind::Literals, &Head::Literal(_)) => Vec::new(),
+            (Kind::Product(first, second), &Head::Pair) => vec![first, second],
+            (Kind::Sum(left, _), &Head::Injection(Side::Left)) => vec![left],
+            (Kind::Sum(_, right), &Head::Injection(Side::Right)) => vec![right],
+            (Kind::Data, &Head::Constructor(tag)) => {
                 let signature = self.signature(column)?;
                 let declared = signature.constructors().get(usize::from(tag)).ok_or(ill)?;
                 let mut fields = Vec::with_capacity(declared.len());
@@ -756,8 +756,8 @@ impl Walker<'_, '_, '_>
                 }
                 fields
             },
-            | (Kind::Unknown, _) => vec![self.unknown; arity.0],
-            | (
+            (Kind::Unknown, _) => vec![self.unknown; arity.0],
+            (
                 Kind::Unit,
                 &(Head::Literal(_) | Head::Pair | Head::Injection(_) | Head::Constructor(_)),
             )
@@ -858,13 +858,13 @@ impl Walker<'_, '_, '_>
         }
         let named = |wanted: &Head| present.iter().any(|entry| entry.0 == *wanted);
         let completeness = match kind {
-            | Kind::Unit if named(&Head::Unit) => {
+            Kind::Unit if named(&Head::Unit) => {
                 Completeness::Complete(vec![(Head::Unit, Vec::new())])
             },
-            | Kind::Product(first, second) if named(&Head::Pair) => {
+            Kind::Product(first, second) if named(&Head::Pair) => {
                 Completeness::Complete(vec![(Head::Pair, vec![first, second])])
             },
-            | Kind::Sum(left, right)
+            Kind::Sum(left, right)
                 if named(&Head::Injection(Side::Left)) && named(&Head::Injection(Side::Right)) =>
             {
                 Completeness::Complete(vec![
@@ -872,7 +872,7 @@ impl Walker<'_, '_, '_>
                     (Head::Injection(Side::Right), vec![right]),
                 ])
             },
-            | Kind::Data => {
+            Kind::Data => {
                 let count = self.signature(column)?.constructors().len();
                 if (0 .. count).all(|tag| named(&Head::Constructor(ConstructorTag::from(tag)))) {
                     let mut all = Vec::with_capacity(count);
@@ -891,8 +891,8 @@ impl Walker<'_, '_, '_>
                     Completeness::Incomplete
                 }
             },
-            | Kind::Unknown => self.unknown_signature(column, &present, constructors)?,
-            | Kind::Unit | Kind::Product(..) | Kind::Sum(..) | Kind::Literals | Kind::Opaque => {
+            Kind::Unknown => self.unknown_signature(column, &present, constructors)?,
+            Kind::Unit | Kind::Product(..) | Kind::Sum(..) | Kind::Literals | Kind::Opaque => {
                 Completeness::Incomplete
             },
         };
@@ -946,9 +946,9 @@ impl Walker<'_, '_, '_>
         let named = |wanted: &Head| present.iter().any(|entry| entry.0 == *wanted);
         let unknown = self.unknown;
         Ok(match *first {
-            | Head::Unit => Completeness::Complete(vec![(Head::Unit, Vec::new())]),
-            | Head::Pair => Completeness::Complete(vec![(Head::Pair, vec![unknown, unknown])]),
-            | Head::Injection(_)
+            Head::Unit => Completeness::Complete(vec![(Head::Unit, Vec::new())]),
+            Head::Pair => Completeness::Complete(vec![(Head::Pair, vec![unknown, unknown])]),
+            Head::Injection(_)
                 if named(&Head::Injection(Side::Left)) && named(&Head::Injection(Side::Right)) =>
             {
                 Completeness::Complete(vec![
@@ -956,12 +956,12 @@ impl Walker<'_, '_, '_>
                     (Head::Injection(Side::Right), vec![unknown]),
                 ])
             },
-            | Head::Constructor(_) if constructors == Constructors::Closed => {
+            Head::Constructor(_) if constructors == Constructors::Closed => {
                 let largest = present
                     .iter()
                     .filter_map(|entry| match entry.0 {
-                        | Head::Constructor(tag) => Some(usize::from(tag)),
-                        | Head::Unit | Head::Literal(_) | Head::Pair | Head::Injection(_) => None,
+                        Head::Constructor(tag) => Some(usize::from(tag)),
+                        Head::Unit | Head::Literal(_) | Head::Pair | Head::Injection(_) => None,
                     })
                     .max()
                     .unwrap_or(0);
@@ -976,7 +976,7 @@ impl Walker<'_, '_, '_>
                 }
                 Completeness::Complete(all)
             },
-            | Head::Injection(_) | Head::Constructor(_) | Head::Literal(_) => {
+            Head::Injection(_) | Head::Constructor(_) | Head::Literal(_) => {
                 Completeness::Incomplete
             },
         })
@@ -1062,8 +1062,8 @@ impl Walker<'_, '_, '_>
     ) -> Result<Option<Vec<Cell>>, CoverageFault>
     {
         let mut row = match self.read(first)? {
-            | Read::Anything => vec![Cell::Anything; fields.len()],
-            | Read::Head {
+            Read::Anything => vec![Cell::Anything; fields.len()],
+            Read::Head {
                 head: named,
                 parts,
                 pattern,
@@ -1116,8 +1116,8 @@ impl Walker<'_, '_, '_>
                 return Err(invariant);
             };
             match self.read(first)? {
-                | Read::Anything => rows.push(rest.to_vec()),
-                | Read::Head { .. } => {},
+                Read::Anything => rows.push(rest.to_vec()),
+                Read::Head { .. } => {},
             }
         }
         Ok(Problem {

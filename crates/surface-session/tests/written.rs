@@ -101,8 +101,12 @@ pub fn refusal<'source, 'function>(
         panic!("`{function}` is declared");
     };
     match declaration.outcome() {
-        | DeclarationOutcome::Refused(refusal) => Some(refusal),
-        | _ => None,
+        DeclarationOutcome::Refused(refusal) => Some(refusal),
+        DeclarationOutcome::Completed { .. }
+        | DeclarationOutcome::Uncompleted { .. }
+        | DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Abstract(_) => None,
     }
 }
 
@@ -168,21 +172,33 @@ impl Written
         for declaration in module.declarations() {
             let name = declaration.name().to_string();
             match declaration.outcome() {
-                | DeclarationOutcome::Data(index) => {
+                DeclarationOutcome::Data(index) => {
                     let Maybe::Present(signature) = module.data(index)
                     else {
                         panic!("`{name}` keeps its signature");
                     };
                     families.push((name, declaration.constant(), Arc::clone(signature)));
                 },
-                | DeclarationOutcome::Completed { body: held, .. }
+                DeclarationOutcome::Completed { body: held, .. }
                 | DeclarationOutcome::Bodied { body: held }
                     if name == function =>
                 {
                     body = Some(held);
                 },
-                | other if name == function => panic!("`{function}` lowers a body: {other:?}"),
-                | _ => {},
+                other @ (DeclarationOutcome::Completed { .. }
+                | DeclarationOutcome::Uncompleted { .. }
+                | DeclarationOutcome::Bodied { .. }
+                | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::Refused(_))
+                    if name == function =>
+                {
+                    panic!("`{function}` lowers a body: {other:?}")
+                },
+                DeclarationOutcome::Completed { .. }
+                | DeclarationOutcome::Uncompleted { .. }
+                | DeclarationOutcome::Bodied { .. }
+                | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::Refused(_) => {},
             }
         }
         let Some(function) = body
@@ -412,22 +428,22 @@ impl Written
         )
         .expect("the match runs");
         match domain.computation(result) {
-            | Some(&DomainComp::Return { value, .. }) => match domain.value(value) {
-                | Some(&DomainValue::Literal { literal, .. }) => match self.core.value(literal) {
-                    | Some(&Value::Literal(Literal::Integer(ref integer))) => {
+            Some(&DomainComp::Return { value, .. }) => match domain.value(value) {
+                Some(&DomainValue::Literal { literal, .. }) => match self.core.value(literal) {
+                    Some(&Value::Literal(Literal::Integer(ref integer))) => {
                         Ran::Returned(String::from(integer.magnitude().as_ref()))
                     },
-                    | other => panic!("the arm returns an integer: {other:?}"),
+                    other => panic!("the arm returns an integer: {other:?}"),
                 },
-                | other => panic!("the arm returns a literal: {other:?}"),
+                other => panic!("the arm returns a literal: {other:?}"),
             },
-            | Some(&DomainComp::Neutral { neutral, .. }) => {
+            Some(&DomainComp::Neutral { neutral, .. }) => {
                 match domain.neutral(neutral).map(gandr_core_nbe::Neutral::head) {
-                    | Some(NeutralHead::Hole { hole, .. }) => Ran::Hole(hole),
-                    | other => panic!("the match stops only at a hole: {other:?}"),
+                    Some(NeutralHead::Hole { hole, .. }) => Ran::Hole(hole),
+                    other => panic!("the match stops only at a hole: {other:?}"),
                 }
             },
-            | other => panic!("the match returns or stops: {other:?}"),
+            other => panic!("the match returns or stops: {other:?}"),
         }
     }
 }

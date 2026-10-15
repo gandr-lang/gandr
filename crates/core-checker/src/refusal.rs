@@ -1065,7 +1065,7 @@ impl CheckRefusal
     pub const fn classify(&self) -> FailureClass
     {
         match *self {
-            | Self::PathCode(_)
+            Self::PathCode(_)
             | Self::EndpointMismatch { .. }
             | Self::CompoundEndpoint { .. }
             | Self::PointwiseDistinct { .. }
@@ -1126,14 +1126,14 @@ impl CheckRefusal
             | Self::NonCovariantMotive { .. }
             | Self::RunNotAdmitted { .. }
             | Self::Boundary { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. }
+            Self::OutOfFragment { .. }
             | Self::FunextUnsupported { .. }
             | Self::EquivUnsupported { .. }
             | Self::UncertifiedStratum { .. }
             | Self::UaUncertified { .. }
             | Self::RideUnsupported { .. }
             | Self::ForwardUnsupported { .. } => FailureClass::Unrepresentable,
-            | Self::UnboundIndex { .. }
+            Self::UnboundIndex { .. }
             | Self::BudgetExceeded { .. }
             | Self::DanglingNode { .. }
             | Self::AdmissionOrder { .. }
@@ -1195,7 +1195,7 @@ impl CheckRefusal
     pub fn compared(&self) -> Compared
     {
         let (expected, found) = match *self {
-            | Self::TypeMismatch(Mismatch::Value {
+            Self::TypeMismatch(Mismatch::Value {
                 synthesised,
                 expected,
                 ..
@@ -1228,7 +1228,7 @@ impl CheckRefusal
                 Maybe::Present(TypeNode::Value(expected)),
                 Maybe::Present(TypeNode::Value(synthesised)),
             ),
-            | Self::TypeMismatch(Mismatch::Computation {
+            Self::TypeMismatch(Mismatch::Computation {
                 synthesised,
                 expected,
                 ..
@@ -1241,18 +1241,18 @@ impl CheckRefusal
                 Maybe::Present(TypeNode::Computation(expected)),
                 Maybe::Present(TypeNode::Computation(synthesised)),
             ),
-            | Self::ShapeMismatch { found, .. } | Self::CapabilityEscaped { found, .. } => {
+            Self::ShapeMismatch { found, .. } | Self::CapabilityEscaped { found, .. } => {
                 (UNNAMED, Maybe::Present(found))
             },
-            | Self::CapabilityForged { expected, .. } => {
+            Self::CapabilityForged { expected, .. } => {
                 (Maybe::Present(TypeNode::Value(expected)), UNNAMED)
             },
-            | Self::DependentBind { synthesised, .. }
+            Self::DependentBind { synthesised, .. }
             | Self::DependentStack { synthesised, .. }
             | Self::CompoundEndpoint { synthesised, .. } => {
                 (UNNAMED, Maybe::Present(TypeNode::Computation(synthesised)))
             },
-            | Self::StaticClassifierExpected { found, .. }
+            Self::StaticClassifierExpected { found, .. }
             | Self::CapabilityOutsideAuthority {
                 capability: found, ..
             }
@@ -1272,7 +1272,7 @@ impl CheckRefusal
                 defect: crate::session::LinearityDefect::Residue { state: found, .. },
                 ..
             } => (UNNAMED, Maybe::Present(TypeNode::Value(found))),
-            | Self::NotADataType(_)
+            Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
             | Self::RuleNotPresentable { .. }

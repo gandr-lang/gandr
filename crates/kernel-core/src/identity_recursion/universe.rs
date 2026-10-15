@@ -45,8 +45,8 @@ impl Fibers
     ) -> Result<(ValueId, ValueId), RelationError>
     {
         match (self.get_index(left)?, self.get_index(right)?) {
-            | (Index::Value(left), Index::Value(right)) => Ok((left, right)),
-            | _ => Err(RelationError::NeutralFiber),
+            (Index::Value(left), Index::Value(right)) => Ok((left, right)),
+            _ => Err(RelationError::NeutralFiber),
         }
     }
 

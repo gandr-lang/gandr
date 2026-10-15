@@ -327,21 +327,21 @@ impl core::fmt::Display for ProtocolError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::MissingNode(ProtocolState(at)) => write!(f, "missing protocol node {at}"),
-            | Self::RepeatedNode(ProtocolState(at)) => {
+            Self::MissingNode(ProtocolState(at)) => write!(f, "missing protocol node {at}"),
+            Self::RepeatedNode(ProtocolState(at)) => {
                 write!(f, "protocol node {at} reached twice")
             },
-            | Self::UnboundRecursion(ProtocolState(at)) => {
+            Self::UnboundRecursion(ProtocolState(at)) => {
                 write!(f, "unbound recursion variable at node {at}")
             },
-            | Self::NonContractive(ProtocolState(at)) => {
+            Self::NonContractive(ProtocolState(at)) => {
                 write!(f, "non-contractive recursion at node {at}")
             },
-            | Self::UnreachableNode(ProtocolState(at)) => {
+            Self::UnreachableNode(ProtocolState(at)) => {
                 write!(f, "protocol node {at} is unreachable")
             },
-            | Self::MissingPayload(PayloadSlot(slot)) => write!(f, "missing payload slot {slot}"),
-            | Self::PayloadCount { expected, found } => write!(
+            Self::MissingPayload(PayloadSlot(slot)) => write!(f, "missing payload slot {slot}"),
+            Self::PayloadCount { expected, found } => write!(
                 f,
                 "the protocol reads {} payload types, {} supplied",
                 expected.0, found.0
@@ -450,11 +450,11 @@ impl Protocol
         let mut pending = alloc::vec![Visit::Enter(root)];
         while let Some(visit) = pending.pop() {
             let state = match visit {
-                | Visit::Leave => {
+                Visit::Leave => {
                     let _binder = binders.pop();
                     continue;
                 },
-                | Visit::Enter(state) => state,
+                Visit::Enter(state) => state,
             };
             let node = syntax
                 .get(state.0)
@@ -463,18 +463,18 @@ impl Protocol
                 return Err(ProtocolError::RepeatedNode(state));
             }
             match *node {
-                | ProtocolSyntax::Send { payload, next }
+                ProtocolSyntax::Send { payload, next }
                 | ProtocolSyntax::Receive { payload, next } => {
                     if payload.0 >= payloads.0 {
                         return Err(ProtocolError::MissingPayload(payload));
                     }
                     pending.push(Visit::Enter(next));
                 },
-                | ProtocolSyntax::Select(ref branches) | ProtocolSyntax::Offer(ref branches) => {
+                ProtocolSyntax::Select(ref branches) | ProtocolSyntax::Offer(ref branches) => {
                     pending.extend(branches.values().copied().map(Visit::Enter));
                 },
-                | ProtocolSyntax::End => {},
-                | ProtocolSyntax::Mu(body) => {
+                ProtocolSyntax::End => {},
+                ProtocolSyntax::Mu(body) => {
                     let written = syntax.get(body.0).ok_or(ProtocolError::MissingNode(body))?;
                     if matches!(*written, ProtocolSyntax::Mu(_) | ProtocolSyntax::Recur(_)) {
                         return Err(ProtocolError::NonContractive(state));
@@ -483,7 +483,7 @@ impl Protocol
                     pending.push(Visit::Leave);
                     pending.push(Visit::Enter(body));
                 },
-                | ProtocolSyntax::Recur(RecursionIndex(outward)) => {
+                ProtocolSyntax::Recur(RecursionIndex(outward)) => {
                     let binder = binders
                         .len()
                         .checked_sub(outward)
@@ -504,15 +504,15 @@ impl Protocol
         let mut nodes = Vec::with_capacity(syntax.len());
         for (position, written) in syntax.into_iter().enumerate() {
             nodes.push(match written {
-                | ProtocolSyntax::Send { payload, next } => ProtocolNode::Send { payload, next },
-                | ProtocolSyntax::Receive { payload, next } => {
+                ProtocolSyntax::Send { payload, next } => ProtocolNode::Send { payload, next },
+                ProtocolSyntax::Receive { payload, next } => {
                     ProtocolNode::Receive { payload, next }
                 },
-                | ProtocolSyntax::Select(branches) => ProtocolNode::Select(branches),
-                | ProtocolSyntax::Offer(branches) => ProtocolNode::Offer(branches),
-                | ProtocolSyntax::End => ProtocolNode::End,
-                | ProtocolSyntax::Mu(body) => ProtocolNode::Mu(body),
-                | ProtocolSyntax::Recur(_) => ProtocolNode::Recur(
+                ProtocolSyntax::Select(branches) => ProtocolNode::Select(branches),
+                ProtocolSyntax::Offer(branches) => ProtocolNode::Offer(branches),
+                ProtocolSyntax::End => ProtocolNode::End,
+                ProtocolSyntax::Mu(body) => ProtocolNode::Mu(body),
+                ProtocolSyntax::Recur(_) => ProtocolNode::Recur(
                     resolved
                         .get(&ProtocolState(position))
                         .copied()
@@ -590,42 +590,40 @@ impl Protocol
             .nodes
             .iter()
             .map(|node| match *node {
-                | ProtocolNode::Send { payload, next } => ProtocolSyntax::Send { payload, next },
-                | ProtocolNode::Receive { payload, next } => {
+                ProtocolNode::Send { payload, next } => ProtocolSyntax::Send { payload, next },
+                ProtocolNode::Receive { payload, next } => {
                     ProtocolSyntax::Receive { payload, next }
                 },
-                | ProtocolNode::Select(ref branches) => ProtocolSyntax::Select(branches.clone()),
-                | ProtocolNode::Offer(ref branches) => ProtocolSyntax::Offer(branches.clone()),
-                | ProtocolNode::End => ProtocolSyntax::End,
-                | ProtocolNode::Mu(body) => ProtocolSyntax::Mu(body),
-                | ProtocolNode::Recur(_) => ProtocolSyntax::Recur(RecursionIndex::default()),
+                ProtocolNode::Select(ref branches) => ProtocolSyntax::Select(branches.clone()),
+                ProtocolNode::Offer(ref branches) => ProtocolSyntax::Offer(branches.clone()),
+                ProtocolNode::End => ProtocolSyntax::End,
+                ProtocolNode::Mu(body) => ProtocolSyntax::Mu(body),
+                ProtocolNode::Recur(_) => ProtocolSyntax::Recur(RecursionIndex::default()),
             })
             .collect();
         let mut binders: Vec<ProtocolState> = Vec::new();
         let mut pending = alloc::vec![Visit::Enter(self.root)];
         while let Some(visit) = pending.pop() {
             let state = match visit {
-                | Visit::Leave => {
+                Visit::Leave => {
                     let _binder = binders.pop();
                     continue;
                 },
-                | Visit::Enter(state) => state,
+                Visit::Enter(state) => state,
             };
             match self.nodes.get(state.0) {
-                | Some(&ProtocolNode::Send { next, .. } | &ProtocolNode::Receive { next, .. }) => {
+                Some(&ProtocolNode::Send { next, .. } | &ProtocolNode::Receive { next, .. }) => {
                     pending.push(Visit::Enter(next));
                 },
-                | Some(
-                    &(ProtocolNode::Select(ref branches) | ProtocolNode::Offer(ref branches)),
-                ) => {
+                Some(&(ProtocolNode::Select(ref branches) | ProtocolNode::Offer(ref branches))) => {
                     pending.extend(branches.values().copied().map(Visit::Enter));
                 },
-                | Some(&ProtocolNode::Mu(body)) => {
+                Some(&ProtocolNode::Mu(body)) => {
                     binders.push(state);
                     pending.push(Visit::Leave);
                     pending.push(Visit::Enter(body));
                 },
-                | Some(&ProtocolNode::Recur(binder)) => {
+                Some(&ProtocolNode::Recur(binder)) => {
                     let outward = binders
                         .iter()
                         .rev()
@@ -634,7 +632,7 @@ impl Protocol
                         *slot = ProtocolSyntax::Recur(RecursionIndex(outward));
                     }
                 },
-                | Some(&ProtocolNode::End) | None => {},
+                Some(&ProtocolNode::End) | None => {},
             }
         }
         written
@@ -700,8 +698,12 @@ impl Protocol
         let mut current = state;
         for _step in 0 .. 3_u8 {
             match *self.node(current)? {
-                | ProtocolNode::Mu(next) | ProtocolNode::Recur(next) => current = next,
-                | ref observable => return Ok((current, observable)),
+                ProtocolNode::Mu(next) | ProtocolNode::Recur(next) => current = next,
+                ref observable @ (ProtocolNode::Send { .. }
+                | ProtocolNode::Receive { .. }
+                | ProtocolNode::Select(_)
+                | ProtocolNode::Offer(_)
+                | ProtocolNode::End) => return Ok((current, observable)),
             }
         }
         Err(ProtocolError::NonContractive(current))
@@ -746,13 +748,13 @@ impl Protocol
             .nodes
             .iter()
             .map(|node| match *node {
-                | ProtocolNode::Send { payload, next } => ProtocolNode::Receive { payload, next },
-                | ProtocolNode::Receive { payload, next } => ProtocolNode::Send { payload, next },
-                | ProtocolNode::Select(ref branches) => ProtocolNode::Offer(branches.clone()),
-                | ProtocolNode::Offer(ref branches) => ProtocolNode::Select(branches.clone()),
-                | ProtocolNode::End => ProtocolNode::End,
-                | ProtocolNode::Mu(body) => ProtocolNode::Mu(body),
-                | ProtocolNode::Recur(binder) => ProtocolNode::Recur(binder),
+                ProtocolNode::Send { payload, next } => ProtocolNode::Receive { payload, next },
+                ProtocolNode::Receive { payload, next } => ProtocolNode::Send { payload, next },
+                ProtocolNode::Select(ref branches) => ProtocolNode::Offer(branches.clone()),
+                ProtocolNode::Offer(ref branches) => ProtocolNode::Select(branches.clone()),
+                ProtocolNode::End => ProtocolNode::End,
+                ProtocolNode::Mu(body) => ProtocolNode::Mu(body),
+                ProtocolNode::Recur(binder) => ProtocolNode::Recur(binder),
             })
             .collect();
         Self {
@@ -989,24 +991,24 @@ impl<Id: Copy> SessionType<Id>
     {
         let (_, node) = self.protocol.head(self.state)?;
         Ok(match *node {
-            | ProtocolNode::Send { payload, next } => Step::Send {
+            ProtocolNode::Send { payload, next } => Step::Send {
                 payload: self.payload(payload)?,
                 next: self.at(next)?,
             },
-            | ProtocolNode::Receive { payload, next } => Step::Receive {
+            ProtocolNode::Receive { payload, next } => Step::Receive {
                 payload: self.payload(payload)?,
                 next: self.at(next)?,
             },
-            | ProtocolNode::Select(ref branches) => Step::Select(Branches {
+            ProtocolNode::Select(ref branches) => Step::Select(Branches {
                 session: self,
                 branches,
             }),
-            | ProtocolNode::Offer(ref branches) => Step::Offer(Branches {
+            ProtocolNode::Offer(ref branches) => Step::Offer(Branches {
                 session: self,
                 branches,
             }),
-            | ProtocolNode::End => Step::End,
-            | ProtocolNode::Mu(_) | ProtocolNode::Recur(_) => {
+            ProtocolNode::End => Step::End,
+            ProtocolNode::Mu(_) | ProtocolNode::Recur(_) => {
                 return Err(ProtocolError::NonContractive(self.state));
             },
         })
@@ -1144,12 +1146,12 @@ where
 {
     let mut images = Vec::with_capacity(payloads.len());
     match order {
-        | ChildOrder::Forward => {
+        ChildOrder::Forward => {
             for &payload in payloads {
                 images.push(map(payload)?);
             }
         },
-        | ChildOrder::Reverse => {
+        ChildOrder::Reverse => {
             for &payload in payloads.iter().rev() {
                 images.push(map(payload)?);
             }
@@ -1198,11 +1200,11 @@ impl<Id> Step<'_, Id>
     pub const fn action(&self) -> ActionKind
     {
         match *self {
-            | Self::Send { .. } => ActionKind::Send,
-            | Self::Receive { .. } => ActionKind::Receive,
-            | Self::Select(_) => ActionKind::Select,
-            | Self::Offer(_) => ActionKind::Offer,
-            | Self::End => ActionKind::Close,
+            Self::Send { .. } => ActionKind::Send,
+            Self::Receive { .. } => ActionKind::Receive,
+            Self::Select(_) => ActionKind::Select,
+            Self::Offer(_) => ActionKind::Offer,
+            Self::End => ActionKind::Close,
         }
     }
 }
@@ -1272,8 +1274,8 @@ impl<'session, Id: Copy> Branches<'session, Id>
     ) -> Result<Maybe<SessionType<Id>, branch::Absent>, ProtocolError>
     {
         match self.branches.get(label) {
-            | Some(&state) => Ok(Maybe::Present(self.session.at(state)?)),
-            | None => Ok(Maybe::Absent(branch::Absent::Unlabelled)),
+            Some(&state) => Ok(Maybe::Present(self.session.at(state)?)),
+            None => Ok(Maybe::Absent(branch::Absent::Unlabelled)),
         }
     }
 }
@@ -1362,12 +1364,12 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
     pub const fn endpoint(&self) -> Maybe<DeBruijnIndex, subject::Absent>
     {
         match *self {
-            | Self::Send { endpoint, .. }
+            Self::Send { endpoint, .. }
             | Self::Receive { endpoint }
             | Self::Select { endpoint, .. }
             | Self::Offer { endpoint, .. }
             | Self::Close { endpoint } => Maybe::Present(endpoint),
-            | Self::Fork { .. } => Maybe::Absent(subject::Absent::Fork),
+            Self::Fork { .. } => Maybe::Absent(subject::Absent::Fork),
         }
     }
 
@@ -1386,12 +1388,12 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
     pub const fn kind(&self) -> Maybe<ActionKind, subject::Absent>
     {
         match *self {
-            | Self::Send { .. } => Maybe::Present(ActionKind::Send),
-            | Self::Receive { .. } => Maybe::Present(ActionKind::Receive),
-            | Self::Select { .. } => Maybe::Present(ActionKind::Select),
-            | Self::Offer { .. } => Maybe::Present(ActionKind::Offer),
-            | Self::Close { .. } => Maybe::Present(ActionKind::Close),
-            | Self::Fork { .. } => Maybe::Absent(subject::Absent::Fork),
+            Self::Send { .. } => Maybe::Present(ActionKind::Send),
+            Self::Receive { .. } => Maybe::Present(ActionKind::Receive),
+            Self::Select { .. } => Maybe::Present(ActionKind::Select),
+            Self::Offer { .. } => Maybe::Present(ActionKind::Offer),
+            Self::Close { .. } => Maybe::Present(ActionKind::Close),
+            Self::Fork { .. } => Maybe::Absent(subject::Absent::Fork),
         }
     }
 
@@ -1403,8 +1405,8 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
     pub fn values(&self) -> impl DoubleEndedIterator<Item = V> + '_
     {
         match *self {
-            | Self::Send { payload, .. } => Some(payload),
-            | Self::Receive { .. }
+            Self::Send { payload, .. } => Some(payload),
+            Self::Receive { .. }
             | Self::Select { .. }
             | Self::Offer { .. }
             | Self::Close { .. }
@@ -1422,12 +1424,11 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
     pub fn computations(&self) -> impl DoubleEndedIterator<Item = C> + '_
     {
         let (arms, fork) = match *self {
-            | Self::Offer { ref arms, .. } => (Some(arms.values().copied()), None),
-            | Self::Fork { child, parent, .. } => (None, Some([child, parent])),
-            | Self::Send { .. }
-            | Self::Receive { .. }
-            | Self::Select { .. }
-            | Self::Close { .. } => (None, None),
+            Self::Offer { ref arms, .. } => (Some(arms.values().copied()), None),
+            Self::Fork { child, parent, .. } => (None, Some([child, parent])),
+            Self::Send { .. } | Self::Receive { .. } | Self::Select { .. } | Self::Close { .. } => {
+                (None, None)
+            },
         };
         arms.into_iter().flatten().chain(fork.into_iter().flatten())
     }
@@ -1440,8 +1441,8 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
     pub fn value_types(&self) -> impl DoubleEndedIterator<Item = T> + '_
     {
         match *self {
-            | Self::Fork { protocol, .. } => Some(protocol),
-            | Self::Send { .. }
+            Self::Fork { protocol, .. } => Some(protocol),
+            Self::Send { .. }
             | Self::Receive { .. }
             | Self::Select { .. }
             | Self::Offer { .. }
@@ -1474,8 +1475,8 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
             |&mut (), _| Ok(()),
             |&mut (), _| Ok(()),
         ) {
-            | Ok(shape) => shape,
-            | Err(never) => match never {},
+            Ok(shape) => shape,
+            Err(never) => match never {},
         }
     }
 
@@ -1524,27 +1525,27 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
         ValueTypes: FnMut(&mut S, T) -> Result<T2, E>,
     {
         Ok(match *self {
-            | Self::Send { endpoint, payload } => SessionAction::Send {
+            Self::Send { endpoint, payload } => SessionAction::Send {
                 endpoint,
                 payload: value(state, payload)?,
             },
-            | Self::Receive { endpoint } => SessionAction::Receive { endpoint },
-            | Self::Select {
+            Self::Receive { endpoint } => SessionAction::Receive { endpoint },
+            Self::Select {
                 endpoint,
                 ref label,
             } => SessionAction::Select {
                 endpoint,
                 label: label.clone(),
             },
-            | Self::Offer { endpoint, ref arms } => {
+            Self::Offer { endpoint, ref arms } => {
                 let mut images = BTreeMap::new();
                 match order {
-                    | ChildOrder::Forward => {
+                    ChildOrder::Forward => {
                         for (label, &arm) in arms {
                             let _first = images.insert(label.clone(), computation(state, arm)?);
                         }
                     },
-                    | ChildOrder::Reverse => {
+                    ChildOrder::Reverse => {
                         for (label, &arm) in arms.iter().rev() {
                             let _first = images.insert(label.clone(), computation(state, arm)?);
                         }
@@ -1555,13 +1556,13 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
                     arms: images,
                 }
             },
-            | Self::Close { endpoint } => SessionAction::Close { endpoint },
-            | Self::Fork {
+            Self::Close { endpoint } => SessionAction::Close { endpoint },
+            Self::Fork {
                 protocol,
                 child,
                 parent,
             } => match order {
-                | ChildOrder::Forward => {
+                ChildOrder::Forward => {
                     let protocol = value_type(state, protocol)?;
                     let child = computation(state, child)?;
                     SessionAction::Fork {
@@ -1570,7 +1571,7 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
                         parent: computation(state, parent)?,
                     }
                 },
-                | ChildOrder::Reverse => {
+                ChildOrder::Reverse => {
                     let parent = computation(state, parent)?;
                     let child = computation(state, child)?;
                     SessionAction::Fork {
@@ -1651,11 +1652,11 @@ impl<V: Copy> RecordedMove<V>
     pub const fn kind(&self) -> ActionKind
     {
         match *self {
-            | Self::Sent(_) => ActionKind::Send,
-            | Self::Received(_) => ActionKind::Receive,
-            | Self::Selected(_) => ActionKind::Select,
-            | Self::Offered(_) => ActionKind::Offer,
-            | Self::Closed => ActionKind::Close,
+            Self::Sent(_) => ActionKind::Send,
+            Self::Received(_) => ActionKind::Receive,
+            Self::Selected(_) => ActionKind::Select,
+            Self::Offered(_) => ActionKind::Offer,
+            Self::Closed => ActionKind::Close,
         }
     }
 
@@ -1675,9 +1676,9 @@ impl<V: Copy> RecordedMove<V>
     pub const fn payload(&self) -> Maybe<V, carried::Absent>
     {
         match *self {
-            | Self::Sent(value) | Self::Received(value) => Maybe::Present(value),
-            | Self::Selected(_) | Self::Offered(_) => Maybe::Absent(carried::Absent::Choice),
-            | Self::Closed => Maybe::Absent(carried::Absent::Close),
+            Self::Sent(value) | Self::Received(value) => Maybe::Present(value),
+            Self::Selected(_) | Self::Offered(_) => Maybe::Absent(carried::Absent::Choice),
+            Self::Closed => Maybe::Absent(carried::Absent::Close),
         }
     }
 
@@ -1704,11 +1705,11 @@ impl<V: Copy> RecordedMove<V>
         W: Copy,
     {
         match *self {
-            | Self::Sent(_) => RecordedMove::Sent(payload),
-            | Self::Received(_) => RecordedMove::Received(payload),
-            | Self::Selected(ref label) => RecordedMove::Selected(label.clone()),
-            | Self::Offered(ref label) => RecordedMove::Offered(label.clone()),
-            | Self::Closed => RecordedMove::Closed,
+            Self::Sent(_) => RecordedMove::Sent(payload),
+            Self::Received(_) => RecordedMove::Received(payload),
+            Self::Selected(ref label) => RecordedMove::Selected(label.clone()),
+            Self::Offered(ref label) => RecordedMove::Offered(label.clone()),
+            Self::Closed => RecordedMove::Closed,
         }
     }
 
@@ -1738,11 +1739,11 @@ impl<V: Copy> RecordedMove<V>
         Mapper: FnOnce(V) -> Result<W, E>,
     {
         Ok(match *self {
-            | Self::Sent(payload) => RecordedMove::Sent(mapper(payload)?),
-            | Self::Received(payload) => RecordedMove::Received(mapper(payload)?),
-            | Self::Selected(ref label) => RecordedMove::Selected(label.clone()),
-            | Self::Offered(ref label) => RecordedMove::Offered(label.clone()),
-            | Self::Closed => RecordedMove::Closed,
+            Self::Sent(payload) => RecordedMove::Sent(mapper(payload)?),
+            Self::Received(payload) => RecordedMove::Received(mapper(payload)?),
+            Self::Selected(ref label) => RecordedMove::Selected(label.clone()),
+            Self::Offered(ref label) => RecordedMove::Offered(label.clone()),
+            Self::Closed => RecordedMove::Closed,
         })
     }
 }

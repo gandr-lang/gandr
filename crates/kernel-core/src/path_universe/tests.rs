@@ -119,22 +119,22 @@ fn children(
     use AnyNode::Value as V;
     use AnyNode::ValueType as A;
     match node {
-        | V(id) => match *(arena.value(id).expect("fixture value")) {
-            | Value::Constructor {
+        V(id) => match *(arena.value(id).expect("fixture value")) {
+            Value::Constructor {
                 ref datatype,
                 ref fields,
                 ..
             } => core::iter::once(A(*datatype))
                 .chain(fields.iter().copied().map(V))
                 .collect(),
-            | Value::Record(ref fields) => fields.values().copied().map(V).collect(),
-            | Value::ListNil
+            Value::Record(ref fields) => fields.values().copied().map(V).collect(),
+            Value::ListNil
             | Value::ListCons(..)
             | Value::SessionPath { .. }
             | Value::SessionFlow { .. } => {
                 panic!("session evidence has a separate finite producer")
             },
-            | Value::Here { .. }
+            Value::Here { .. }
             | Value::Stay { .. }
             | Value::ForwardFlow { .. }
             | Value::FunctionFlow { .. }
@@ -146,24 +146,24 @@ fn children(
             | Value::QuantifiedEvaluation { .. } => {
                 panic!("element identity is outside the universe-path fixture fragment")
             },
-            | Value::PathEquiv {
+            Value::PathEquiv {
                 path_type,
                 forward,
                 backward,
                 ..
             } => vec![A(path_type), V(forward), V(backward)],
-            | Value::PathProduct(a, b) | Value::StaticApplication(a, b) => vec![V(a), V(b)],
-            | Value::Tuple(ref components) => components.iter().copied().map(V).collect(),
-            | Value::PathRefl(a) | Value::Injection(_, a) | Value::Lift { body: a, .. } => {
+            Value::PathProduct(a, b) | Value::StaticApplication(a, b) => vec![V(a), V(b)],
+            Value::Tuple(ref components) => components.iter().copied().map(V).collect(),
+            Value::PathRefl(a) | Value::Injection(_, a) | Value::Lift { body: a, .. } => {
                 vec![V(a)]
             },
-            | Value::Thunk(a) => vec![M(a)],
-            | Value::Quote(a) => vec![A(a)],
-            | Value::QuoteComputation(a) => vec![C(a)],
-            | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => Vec::new(),
+            Value::Thunk(a) => vec![M(a)],
+            Value::Quote(a) => vec![A(a)],
+            Value::QuoteComputation(a) => vec![C(a)],
+            Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => Vec::new(),
         },
-        | M(id) => match *arena.computation(id).expect("fixture computation") {
-            | Computation::DataCase {
+        M(id) => match *arena.computation(id).expect("fixture computation") {
+            Computation::DataCase {
                 scrutinee,
                 motive,
                 ref branches,
@@ -171,55 +171,54 @@ fn children(
                 .into_iter()
                 .chain(branches.iter().copied().map(M))
                 .collect(),
-            | Computation::SigmaSplit {
+            Computation::SigmaSplit {
                 scrutinee,
                 motive,
                 body,
             } => vec![V(scrutinee), C(motive), M(body)],
-            | Computation::RecordProjection(record, _)
-            | Computation::TupleProjection(record, _) => {
+            Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => {
                 vec![V(record)]
             },
-            | Computation::ListFold { .. } => {
+            Computation::ListFold { .. } => {
                 panic!("list elimination is outside the path fixture fragment")
             },
-            | Computation::PathTransport { .. }
+            Computation::PathTransport { .. }
             | Computation::TelescopeTransport { .. }
             | Computation::Ride { .. }
             | Computation::TelescopeRide { .. }
             | Computation::RelatedApplication { .. } => {
                 panic!("element identity is outside the universe-path fixture fragment")
             },
-            | Computation::Fixpoint { .. } => {
+            Computation::Fixpoint { .. } => {
                 panic!("recursion is outside the path fixture fragment")
             },
-            | Computation::Transport(a, b) => vec![V(a), V(b)],
-            | Computation::Lambda(a) | Computation::Project(_, a) => vec![M(a)],
-            | Computation::Application(a, b) => vec![M(a), V(b)],
-            | Computation::Return(a) | Computation::Force(a) => vec![V(a)],
-            | Computation::Bind(a, b) | Computation::With(a, b) => vec![M(a), M(b)],
-            | Computation::Case {
+            Computation::Transport(a, b) => vec![V(a), V(b)],
+            Computation::Lambda(a) | Computation::Project(_, a) => vec![M(a)],
+            Computation::Application(a, b) => vec![M(a), V(b)],
+            Computation::Return(a) | Computation::Force(a) => vec![V(a)],
+            Computation::Bind(a, b) | Computation::With(a, b) => vec![M(a), M(b)],
+            Computation::Case {
                 scrutinee,
                 ref branches,
             } => core::iter::once(V(scrutinee))
                 .chain(branches.iter().copied().map(M))
                 .collect(),
         },
-        | A(id) => match *(arena.value_type(id).expect("fixture value type")) {
-            | ValueType::Data { ref arguments, .. } => arguments.iter().copied().map(V).collect(),
-            | ValueType::Record(ref fields) => fields.values().copied().map(A).collect(),
-            | ValueType::List(_)
+        A(id) => match *(arena.value_type(id).expect("fixture value type")) {
+            ValueType::Data { ref arguments, .. } => arguments.iter().copied().map(V).collect(),
+            ValueType::Record(ref fields) => fields.values().copied().map(A).collect(),
+            ValueType::List(_)
             | ValueType::Session { .. }
             | ValueType::Path { .. }
             | ValueType::Flow { .. }
             | ValueType::FlowUniverse(..) => {
                 panic!("recursive inhabitants stay outside the first-order path producer")
             },
-            | ValueType::PathUniverse(a, b) => vec![V(a), V(b)],
-            | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+            ValueType::PathUniverse(a, b) => vec![V(a), V(b)],
+            ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                 parts.iter().copied().map(A).collect()
             },
-            | ValueType::StaticPi {
+            ValueType::StaticPi {
                 domain: a,
                 codomain: b,
             }
@@ -227,16 +226,14 @@ fn children(
                 first: a,
                 second: b,
             } => vec![A(a), A(b)],
-            | ValueType::Thunk(a) => vec![C(a)],
-            | ValueType::Lift { inner: a, .. } => vec![A(a)],
-            | ValueType::Element { code: a, .. } => vec![V(a)],
-            | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => {
-                Vec::new()
-            },
+            ValueType::Thunk(a) => vec![C(a)],
+            ValueType::Lift { inner: a, .. } => vec![A(a)],
+            ValueType::Element { code: a, .. } => vec![V(a)],
+            ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => Vec::new(),
         },
-        | C(id) => match arena.comp_type(id).expect("fixture computation type") {
-            | &CompType::Returner(a) => vec![A(a)],
-            | &CompType::Arrow {
+        C(id) => match arena.comp_type(id).expect("fixture computation type") {
+            &CompType::Returner(a) => vec![A(a)],
+            &CompType::Arrow {
                 domain: a,
                 codomain: b,
             }
@@ -244,8 +241,8 @@ fn children(
                 domain: a,
                 codomain: b,
             } => vec![A(a), C(b)],
-            | &CompType::Element { code: a, .. } => vec![V(a)],
-            | &CompType::With(a, b) => vec![C(a), C(b)],
+            &CompType::Element { code: a, .. } => vec![V(a)],
+            &CompType::With(a, b) => vec![C(a), C(b)],
         },
     }
 }
@@ -433,9 +430,9 @@ fn translate(
             continue;
         }
         match node {
-            | AnyNode::Value(id) => {
+            AnyNode::Value(id) => {
                 let value = match *(arena.value(id).expect("fixture value")) {
-                    | Value::Constructor {
+                    Value::Constructor {
                         ref datatype,
                         ref tag,
                         ref fields,
@@ -444,19 +441,19 @@ fn translate(
                         *tag,
                         fields.iter().map(|field| values[field]).collect(),
                     ),
-                    | Value::Record(ref fields) => core.value_record(
+                    Value::Record(ref fields) => core.value_record(
                         fields
                             .iter()
                             .map(|(label, field)| (label.clone(), values[field]))
                             .collect(),
                     ),
-                    | Value::ListNil
+                    Value::ListNil
                     | Value::ListCons(..)
                     | Value::SessionPath { .. }
                     | Value::SessionFlow { .. } => {
                         panic!("session evidence has a separate finite producer")
                     },
-                    | Value::Here { .. }
+                    Value::Here { .. }
                     | Value::Stay { .. }
                     | Value::ForwardFlow { .. }
                     | Value::FunctionFlow { .. }
@@ -468,11 +465,11 @@ fn translate(
                     | Value::QuantifiedEvaluation { .. } => {
                         panic!("element identity is outside the universe-path fixture fragment")
                     },
-                    | Value::PathRefl(code) => core.value_path_refl(values[&code]),
-                    | Value::PathProduct(first, second) => {
+                    Value::PathRefl(code) => core.value_path_refl(values[&code]),
+                    Value::PathProduct(first, second) => {
                         core.value_path_product(values[&first], values[&second])
                     },
-                    | Value::PathEquiv {
+                    Value::PathEquiv {
                         path_type,
                         forward,
                         backward,
@@ -483,35 +480,33 @@ fn translate(
                         values[&backward],
                         Arc::clone(evidence),
                     ),
-                    | Value::Variable(index) => core.value_variable(Zone::Intuitionistic, index),
-                    | Value::Constant(index) => core.value_constant(index),
-                    | Value::Literal(ref literal) => core.value_literal(literal.clone()),
-                    | Value::Tuple(ref components) => core.value_tuple(
+                    Value::Variable(index) => core.value_variable(Zone::Intuitionistic, index),
+                    Value::Constant(index) => core.value_constant(index),
+                    Value::Literal(ref literal) => core.value_literal(literal.clone()),
+                    Value::Tuple(ref components) => core.value_tuple(
                         &components
                             .iter()
                             .map(|component| values[component])
                             .collect::<Vec<_>>(),
                     ),
-                    | Value::Injection(summand, body) => {
-                        core.value_injection(summand, values[&body])
-                    },
-                    | Value::Thunk(body) => core.value_thunk(computations[&body]),
-                    | Value::Lift { ref target, body } => {
+                    Value::Injection(summand, body) => core.value_injection(summand, values[&body]),
+                    Value::Thunk(body) => core.value_thunk(computations[&body]),
+                    Value::Lift { ref target, body } => {
                         core.value_lift(target.clone(), values[&body])
                     },
-                    | Value::Quote(quoted) => core.value_quote(types[&quoted]),
-                    | Value::QuoteComputation(quoted) => {
+                    Value::Quote(quoted) => core.value_quote(types[&quoted]),
+                    Value::QuoteComputation(quoted) => {
                         core.value_quote_computation(comp_types[&quoted])
                     },
-                    | Value::StaticApplication(head, argument) => {
+                    Value::StaticApplication(head, argument) => {
                         core.value_static_application(values[&head], values[&argument])
                     },
                 };
                 values.insert(id, value);
             },
-            | AnyNode::Computation(id) => {
+            AnyNode::Computation(id) => {
                 let computation = match *arena.computation(id).expect("fixture computation") {
-                    | Computation::DataCase {
+                    Computation::DataCase {
                         scrutinee,
                         motive,
                         ref branches,
@@ -520,7 +515,7 @@ fn translate(
                         comp_types[&motive],
                         branches.iter().map(|branch| computations[branch]).collect(),
                     ),
-                    | Computation::SigmaSplit {
+                    Computation::SigmaSplit {
                         scrutinee,
                         motive,
                         body,
@@ -530,44 +525,44 @@ fn translate(
                         comp_types[&motive],
                         computations[&body],
                     ),
-                    | Computation::RecordProjection(record, ref label) => {
+                    Computation::RecordProjection(record, ref label) => {
                         core.computation_record_projection(values[&record], label.clone())
                     },
-                    | Computation::TupleProjection(tuple, component) => {
+                    Computation::TupleProjection(tuple, component) => {
                         core.computation_tuple_projection(values[&tuple], component)
                     },
-                    | Computation::ListFold { .. } => {
+                    Computation::ListFold { .. } => {
                         panic!("list elimination is outside the path fixture fragment")
                     },
-                    | Computation::PathTransport { .. }
+                    Computation::PathTransport { .. }
                     | Computation::TelescopeTransport { .. }
                     | Computation::Ride { .. }
                     | Computation::TelescopeRide { .. }
                     | Computation::RelatedApplication { .. } => {
                         panic!("element identity is outside the universe-path fixture fragment")
                     },
-                    | Computation::Fixpoint { .. } => {
+                    Computation::Fixpoint { .. } => {
                         panic!("recursion is outside the path fixture fragment")
                     },
-                    | Computation::Transport(path, value) => {
+                    Computation::Transport(path, value) => {
                         core.computation_transport(values[&path], values[&value])
                     },
-                    | Computation::Return(value) => core.computation_return(values[&value]),
-                    | Computation::Force(value) => core.computation_force(values[&value]),
-                    | Computation::Lambda(body) => core.computation_lambda(computations[&body]),
-                    | Computation::Application(head, value) => {
+                    Computation::Return(value) => core.computation_return(values[&value]),
+                    Computation::Force(value) => core.computation_force(values[&value]),
+                    Computation::Lambda(body) => core.computation_lambda(computations[&body]),
+                    Computation::Application(head, value) => {
                         core.computation_application(computations[&head], values[&value])
                     },
-                    | Computation::Bind(first, second) => {
+                    Computation::Bind(first, second) => {
                         core.computation_bind(computations[&first], computations[&second])
                     },
-                    | Computation::With(first, second) => {
+                    Computation::With(first, second) => {
                         core.computation_with(computations[&first], computations[&second])
                     },
-                    | Computation::Project(side, pair) => {
+                    Computation::Project(side, pair) => {
                         core.computation_project(side, computations[&pair])
                     },
-                    | Computation::Case {
+                    Computation::Case {
                         scrutinee,
                         ref branches,
                     } => core.computation_case(
@@ -580,70 +575,70 @@ fn translate(
                 };
                 computations.insert(id, computation);
             },
-            | AnyNode::ValueType(id) => {
+            AnyNode::ValueType(id) => {
                 let ty = match *(arena.value_type(id).expect("fixture value type")) {
-                    | ValueType::Data {
+                    ValueType::Data {
                         ref declaration,
                         ref arguments,
                     } => core.value_type_data(
                         *declaration,
                         arguments.iter().map(|argument| values[argument]).collect(),
                     ),
-                    | ValueType::Record(ref fields) => core.value_type_record(
+                    ValueType::Record(ref fields) => core.value_type_record(
                         fields
                             .iter()
                             .map(|(label, field)| (label.clone(), types[field]))
                             .collect(),
                     ),
-                    | ValueType::List(_)
+                    ValueType::List(_)
                     | ValueType::Session { .. }
                     | ValueType::Path { .. }
                     | ValueType::Flow { .. }
                     | ValueType::FlowUniverse(..) => {
                         panic!("recursive inhabitants stay outside the first-order path producer")
                     },
-                    | ValueType::PathUniverse(source, target) => {
+                    ValueType::PathUniverse(source, target) => {
                         core.value_type_path_universe(values[&source], values[&target])
                     },
-                    | ValueType::Base(base) => core.value_type_base(base),
-                    | ValueType::Product(ref parts) => core.value_type_product(
+                    ValueType::Base(base) => core.value_type_base(base),
+                    ValueType::Product(ref parts) => core.value_type_product(
                         &parts.iter().map(|part| types[part]).collect::<Vec<_>>(),
                     ),
-                    | ValueType::Sum(ref parts) => core
+                    ValueType::Sum(ref parts) => core
                         .value_type_sum(&parts.iter().map(|part| types[part]).collect::<Vec<_>>()),
-                    | ValueType::Thunk(body) => core.value_type_thunk(comp_types[&body]),
-                    | ValueType::Universe { sort, ref level } => {
+                    ValueType::Thunk(body) => core.value_type_thunk(comp_types[&body]),
+                    ValueType::Universe { sort, ref level } => {
                         core.value_type_universe(gandr_core_term::Sort::Ground(sort), level.clone())
                     },
-                    | ValueType::Lift { inner, ref target } => {
+                    ValueType::Lift { inner, ref target } => {
                         core.value_type_lift(types[&inner], target.clone())
                     },
-                    | ValueType::Element { code, ref target } => {
+                    ValueType::Element { code, ref target } => {
                         core.value_type_element(values[&code], target.clone())
                     },
-                    | ValueType::Abstract(index) => core.value_type_abstract(index),
-                    | ValueType::StaticPi { domain, codomain } => {
+                    ValueType::Abstract(index) => core.value_type_abstract(index),
+                    ValueType::StaticPi { domain, codomain } => {
                         core.value_type_static_pi(types[&domain], types[&codomain])
                     },
-                    | ValueType::Sigma { first, second } => {
+                    ValueType::Sigma { first, second } => {
                         core.value_type_sigma(types[&first], types[&second])
                     },
                 };
                 types.insert(id, ty);
             },
-            | AnyNode::CompType(id) => {
-                let ty = match arena.comp_type(id).expect("fixture computation type") {
-                    | &CompType::Returner(result) => core.comp_type_returner(types[&result]),
-                    | &CompType::Arrow { domain, codomain } => {
+            AnyNode::CompType(id) => {
+                let ty = match *arena.comp_type(id).expect("fixture computation type") {
+                    CompType::Returner(result) => core.comp_type_returner(types[&result]),
+                    CompType::Arrow { domain, codomain } => {
                         core.comp_type_arrow(types[&domain], comp_types[&codomain])
                     },
-                    | &CompType::Pi { domain, codomain } => {
+                    CompType::Pi { domain, codomain } => {
                         core.comp_type_pi(types[&domain], comp_types[&codomain])
                     },
-                    | &CompType::Element { code, ref target } => {
+                    CompType::Element { code, ref target } => {
                         core.comp_type_element(values[&code], target.clone())
                     },
-                    | &CompType::With(first, second) => {
+                    CompType::With(first, second) => {
                         core.comp_type_with(comp_types[&first], comp_types[&second])
                     },
                 };
@@ -757,9 +752,9 @@ fn defining_engine(
     )
     .expect("engine verdict");
     let claim = match report.verdict() {
-        | MachineVerdict::Convertible => EngineClaim::Convertible,
-        | MachineVerdict::NotConvertible => EngineClaim::NotConvertible,
-        | MachineVerdict::Declined(_) => EngineClaim::Declined,
+        MachineVerdict::Convertible => EngineClaim::Convertible,
+        MachineVerdict::NotConvertible => EngineClaim::NotConvertible,
+        MachineVerdict::Declined(_) => EngineClaim::Declined,
     };
     (
         claim,

@@ -230,7 +230,7 @@ impl CorpusRoot
     ) -> Result<(), CorpusRefusal>
     {
         match (self, schema) {
-            | (
+            (
                 Self::Fixture,
                 ExpectationSchema::Checks
                 | ExpectationSchema::Owes
@@ -242,7 +242,7 @@ impl CorpusRoot
                 Self::Strict,
                 ExpectationSchema::Checks | ExpectationSchema::Runs | ExpectationSchema::Normalizes,
             ) => Ok(()),
-            | (Self::Strict, ExpectationSchema::Owes | ExpectationSchema::Refuses) => {
+            (Self::Strict, ExpectationSchema::Owes | ExpectationSchema::Refuses) => {
                 Err(CorpusRefusal::ExpectationOutsideFixtureRoot { schema, span })
             },
         }
@@ -276,8 +276,8 @@ impl fmt::Display for CorpusRoot
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Strict => "strict",
-            | Self::Fixture => "fixture",
+            Self::Strict => "strict",
+            Self::Fixture => "fixture",
         })
     }
 }

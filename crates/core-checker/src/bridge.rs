@@ -457,8 +457,81 @@ quenchant_shape::reason_enum! {
 fn fault(refusal: CheckRefusal) -> Refusal
 {
     match refusal {
-        | CheckRefusal::DanglingNode { node } => Refusal::DanglingNode { node },
-        | _ => Refusal::MachineInvariant,
+        CheckRefusal::DanglingNode { node } => Refusal::DanglingNode { node },
+        CheckRefusal::NotADataType(_)
+        | CheckRefusal::DataKindNotUniverse(_)
+        | CheckRefusal::DataFieldLevel { .. }
+        | CheckRefusal::RuleNotPresentable { .. }
+        | CheckRefusal::RuleNotRespected { .. }
+        | CheckRefusal::NotApart { .. }
+        | CheckRefusal::LoopNotRespected { .. }
+        | CheckRefusal::AbstractKindNotUniverse(_)
+        | CheckRefusal::RepresentationAboveKind { .. }
+        | CheckRefusal::NotAnAbstractType(_)
+        | CheckRefusal::SealSiteRepeated(_)
+        | CheckRefusal::DataArgumentArity(_)
+        | CheckRefusal::UnknownConstructor { .. }
+        | CheckRefusal::ConstructorArity(_)
+        | CheckRefusal::NonExhaustiveDataCase(_)
+        | CheckRefusal::AbsentRecordField(_)
+        | CheckRefusal::AbsentTupleComponent(_)
+        | CheckRefusal::MissingRecordField { .. }
+        | CheckRefusal::UnknownOperation { .. }
+        | CheckRefusal::HandlerCoverage { .. }
+        | CheckRefusal::ShiftWithoutReset { .. }
+        | CheckRefusal::DependentStack { .. }
+        | CheckRefusal::PathCode(_)
+        | CheckRefusal::EndpointMismatch { .. }
+        | CheckRefusal::CompoundEndpoint { .. }
+        | CheckRefusal::FunextUnsupported { .. }
+        | CheckRefusal::PointwiseDistinct { .. }
+        | CheckRefusal::EquivUnsupported { .. }
+        | CheckRefusal::UncertifiedStratum { .. }
+        | CheckRefusal::RoundTripDistinct { .. }
+        | CheckRefusal::NotOver { .. }
+        | CheckRefusal::UaUncertified { .. }
+        | CheckRefusal::UaInequivalent { .. }
+        | CheckRefusal::TypeMismatch(_)
+        | CheckRefusal::EffectSignatureConflict { .. }
+        | CheckRefusal::ShapeMismatch { .. }
+        | CheckRefusal::NotSynthesisable { .. }
+        | CheckRefusal::UnknownConstant { .. }
+        | CheckRefusal::OutOfFragment { .. }
+        | CheckRefusal::UnboundIndex { .. }
+        | CheckRefusal::BudgetExceeded { .. }
+        | CheckRefusal::AdmissionOrder { .. }
+        | CheckRefusal::MachineInvariant
+        | CheckRefusal::SortMismatch { .. }
+        | CheckRefusal::LevelMismatch { .. }
+        | CheckRefusal::DependentBind { .. }
+        | CheckRefusal::Undecided { .. }
+        | CheckRefusal::FamilyArity { .. }
+        | CheckRefusal::FamilyArgumentClassifier { .. }
+        | CheckRefusal::StaticLambdaArgument { .. }
+        | CheckRefusal::StaticClassifierExpected { .. }
+        | CheckRefusal::NegativeOccurrence(_)
+        | CheckRefusal::NestedOccurrence(_)
+        | CheckRefusal::IndexOccurrence(_)
+        | CheckRefusal::NonUniformOccurrence(_)
+        | CheckRefusal::CrossBlockReference { .. }
+        | CheckRefusal::DescentNotReplayed { .. }
+        | CheckRefusal::SessionMismatch { .. }
+        | CheckRefusal::Linearity { .. }
+        | CheckRefusal::UnenclosedRun { .. }
+        | CheckRefusal::CapabilityForged { .. }
+        | CheckRefusal::CapabilityAmplified(_)
+        | CheckRefusal::CapabilityOutsideAuthority { .. }
+        | CheckRefusal::CapabilityEscaped { .. }
+        | CheckRefusal::CapabilityConsumable(_)
+        | CheckRefusal::CapabilityUngranted { .. }
+        | CheckRefusal::SessionNotEquivalent { .. }
+        | CheckRefusal::SessionNotSubtype { .. }
+        | CheckRefusal::SessionCodeExpected { .. }
+        | CheckRefusal::NonCovariantMotive { .. }
+        | CheckRefusal::RideUnsupported { .. }
+        | CheckRefusal::RunNotAdmitted { .. }
+        | CheckRefusal::ForwardUnsupported { .. }
+        | CheckRefusal::Boundary { .. } => Refusal::MachineInvariant,
     }
 }
 
@@ -597,13 +670,13 @@ impl Refusal
     pub const fn classify(&self) -> FailureClass
     {
         match *self {
-            | Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. } | Self::Session { .. } => FailureClass::Unrepresentable,
-            | Self::DanglingNode { .. }
+            Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
+            Self::OutOfFragment { .. } | Self::Session { .. } => FailureClass::Unrepresentable,
+            Self::DanglingNode { .. }
             | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. }
             | Self::MachineInvariant => FailureClass::EngineFault,
-            | Self::Hole { .. } | Self::Unknown { .. } => FailureClass::UserAbsence,
+            Self::Hole { .. } | Self::Unknown { .. } => FailureClass::UserAbsence,
         }
     }
 }
@@ -631,8 +704,8 @@ impl From<FragmentRefusal> for Refusal
     fn from(refusal: FragmentRefusal) -> Self
     {
         match refusal {
-            | FragmentRefusal::DanglingNode { node } => Self::DanglingNode { node },
-            | FragmentRefusal::OutOfFragment { at, former } => Self::OutOfFragment { at, former },
+            FragmentRefusal::DanglingNode { node } => Self::DanglingNode { node },
+            FragmentRefusal::OutOfFragment { at, former } => Self::OutOfFragment { at, former },
         }
     }
 }
@@ -1147,24 +1220,22 @@ where
         }
         let constant = judged.constant();
         let definition = match judged.verdict() {
-            | Verdict::Checked { declared, body, .. } => Some((declared.id(), body)),
-            | Verdict::Synthesised { body, synthesised } => {
-                Some((synthesised.produced().id(), body))
-            },
-            | Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_) => None,
+            Verdict::Checked { declared, body, .. } => Some((declared.id(), body)),
+            Verdict::Synthesised { body, synthesised } => Some((synthesised.produced().id(), body)),
+            Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_) => None,
         };
         // A type operator — a definition whose type views as a static Pi — stays
         // on the checker's side; a type the view refuses is not one, and its
         // own erasure refuses it.
         let (outcome, certificates) = match (definition, judged.verdict()) {
-            | (None, Verdict::Data) => {
+            (None, Verdict::Data) => {
                 let offer = match (
                     report.data_signatures().get(&constant),
                     report.abstract_types().get(&constant),
                 ) {
-                    | (Some(signature), _) => Offer::Data(signature),
-                    | (None, Some(&declared)) => Offer::Abstract(declared),
-                    | (None, None) => {
+                    (Some(signature), _) => Offer::Data(signature),
+                    (None, Some(&declared)) => Offer::Abstract(declared),
+                    (None, None) => {
                         readmitted.push(Readmitted {
                             constant,
                             origin: judged.origin(),
@@ -1184,7 +1255,7 @@ where
                     &vouch,
                 )
             },
-            | (Some((declared, body)), _)
+            (Some((declared, body)), _)
                 if matches!(
                     value_type_view(arena, declared),
                     Ok(ValueTypeView::StaticPi { .. })
@@ -1194,7 +1265,7 @@ where
                 positions.definitions.define(constant, defined);
                 (Outcome::Static, Vec::new())
             },
-            | (Some((declared, body)), _) => cross(
+            (Some((declared, body)), _) => cross(
                 &mut environment,
                 arena,
                 source,
@@ -1208,7 +1279,7 @@ where
                 },
                 &vouch,
             ),
-            | (None, Verdict::Owed(entry)) => cross(
+            (None, Verdict::Owed(entry)) => cross(
                 &mut environment,
                 arena,
                 source,
@@ -1219,8 +1290,8 @@ where
                 },
                 &vouch,
             ),
-            | (None, Verdict::Refused(refusal)) => (Outcome::Marked(refusal), Vec::new()),
-            | (None, Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
+            (None, Verdict::Refused(refusal)) => (Outcome::Marked(refusal), Vec::new()),
+            (None, Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
                 (Outcome::Refused(Refusal::MachineInvariant), Vec::new())
             },
         };
@@ -1310,12 +1381,12 @@ fn close_seals(
     positions.open = open;
     for seal in closing {
         match environment.seal(seal.atom) {
-            | Ok(extent) => {
+            Ok(extent) => {
                 if let Some(export) = positions.exports.get_mut(usize::from(seal.atom.position())) {
                     *export = export.clone().closed(extent);
                 }
             },
-            | Err(error) => {
+            Err(error) => {
                 if let Some(entry) = readmitted.get_mut(seal.readmitted) {
                     entry.outcome = Outcome::Rejected(error);
                 }
@@ -1505,18 +1576,18 @@ where
             })
     };
     let (erased, replayed) = match erased {
-        | Ok(crossing) => crossing,
-        | Err((refusal, replayed)) => {
+        Ok(crossing) => crossing,
+        Err((refusal, replayed)) => {
             staging.discard();
             return (Outcome::Refused(refusal), replayed);
         },
     };
     let defined_image = match erased {
-        | Erased::Definition { ref body, .. } => Some(*body),
-        | Erased::Data { .. } | Erased::Axiom { .. } | Erased::Abstract { .. } => None,
+        Erased::Definition { ref body, .. } => Some(*body),
+        Erased::Data { .. } | Erased::Axiom { .. } | Erased::Abstract { .. } => None,
     };
     let staged = match erased {
-        | Erased::Data {
+        Erased::Data {
             parameters,
             constructors,
             kind,
@@ -1533,10 +1604,10 @@ where
             // that did not cross is named by the words' own position, which
             // the kernel refuses as no earlier sort.
             match offer {
-                | Offer::Data(signature) => {
+                Offer::Data(signature) => {
                     let presentation = signature.presentation();
                     staged.presented(match presentation.cells() {
-                        | Some(cells) => {
+                        Some(cells) => {
                             let sort = positions
                                 .admitted
                                 .get(&cells.sort())
@@ -1548,13 +1619,13 @@ where
                                     cells.cells().to_vec(),
                                 ))
                         },
-                        | None => presentation.clone(),
+                        None => presentation.clone(),
                     })
                 },
-                | Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => staged,
+                Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => staged,
             }
         },
-        | Erased::Definition {
+        Erased::Definition {
             declared,
             body,
             related,
@@ -1563,8 +1634,8 @@ where
             .def(LevelSignature::monomorphic(), declared, body)
             .relating(related)
             .lawful(laws),
-        | Erased::Axiom { declared } => staging.axiom(LevelSignature::monomorphic(), declared),
-        | Erased::Abstract {
+        Erased::Axiom { declared } => staging.axiom(LevelSignature::monomorphic(), declared),
+        Erased::Abstract {
             kind,
             representation,
         } => staging.abstract_type(
@@ -1576,18 +1647,18 @@ where
     };
     let staged_as = staged.declaration().clone();
     let admitted = match environment.add_decl(staged) {
-        | Ok(admitted) => admitted,
-        | Err(error) => return (Outcome::Rejected(error), replayed),
+        Ok(admitted) => admitted,
+        Err(error) => return (Outcome::Rejected(error), replayed),
     };
     positions.exports.push(staged_as);
     let audit = environment.audit(admitted);
     match (offer, defined_image) {
-        | (Offer::Definition { body, .. }, Some(image)) => {
+        (Offer::Definition { body, .. }, Some(image)) => {
             let defined = source.definitions.get(&constant).copied().unwrap_or(body);
             positions.define(constant, admitted, defined, image);
             (Outcome::Defined { admitted, audit }, replayed)
         },
-        | (Offer::Data(signature), _) => {
+        (Offer::Data(signature), _) => {
             positions.declare(constant, admitted);
             positions.definitions.present(constant, signature);
             if !signature.presentation().rules().is_empty() {
@@ -1595,11 +1666,11 @@ where
             }
             (Outcome::Data { admitted, audit }, replayed)
         },
-        | (Offer::Abstract(_), _) => {
+        (Offer::Abstract(_), _) => {
             positions.declare(constant, admitted);
             (Outcome::Data { admitted, audit }, replayed)
         },
-        | (Offer::Axiom { .. } | Offer::Definition { .. }, _) => {
+        (Offer::Axiom { .. } | Offer::Definition { .. }, _) => {
             positions.declare(constant, admitted);
             (Outcome::Assumed { admitted, audit }, replayed)
         },
@@ -1664,8 +1735,8 @@ impl Positions
             let mut staging = environment.stage();
             let arena = staging.arena();
             let classifier = |arena: &mut TermArena, ty: PrimitiveType| match ty {
-                | PrimitiveType::Integer => arena.value_type_base(BaseType::Integer),
-                | PrimitiveType::Boolean => {
+                PrimitiveType::Integer => arena.value_type_base(BaseType::Integer),
+                PrimitiveType::Boolean => {
                     let unit = arena.value_type_unit();
                     arena.value_type_sum(&[unit, unit])
                 },
@@ -1865,14 +1936,14 @@ impl Positions
     ) -> ConversionDecision<ReplayNode>
     {
         decision.map(|node: TraceNode| match node {
-            | TraceNode::Constant(constant) => match self.admitted.get(&constant) {
-                | Some(&position) => ReplayNode::Constant(position),
-                | None => match operators.get(&Unfolded::Definition(constant)) {
-                    | Some(&position) => ReplayNode::Constant(position),
-                    | None => ReplayNode::Other,
+            TraceNode::Constant(constant) => match self.admitted.get(&constant) {
+                Some(&position) => ReplayNode::Constant(position),
+                None => match operators.get(&Unfolded::Definition(constant)) {
+                    Some(&position) => ReplayNode::Constant(position),
+                    None => ReplayNode::Other,
                 },
             },
-            | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
+            TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
         })
     }
 }
@@ -2810,8 +2881,8 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     const fn memo(&mut self) -> &mut Memo
     {
         match self.mode {
-            | Mode::Normalizing => &mut self.normalized,
-            | Mode::Verbatim => &mut self.verbatim,
+            Mode::Normalizing => &mut self.normalized,
+            Mode::Verbatim => &mut self.verbatim,
         }
     }
 
@@ -2855,7 +2926,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ) -> Result<Erased, Refusal>
     {
         match offer {
-            | Offer::Data(signature) => {
+            Offer::Data(signature) => {
                 let parameters = signature
                     .parameters()
                     .iter()
@@ -2878,7 +2949,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     kind,
                 })
             },
-            | Offer::Definition {
+            Offer::Definition {
                 declared,
                 body,
                 relations,
@@ -2925,11 +2996,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     laws,
                 })
             },
-            | Offer::Axiom { declared } => {
+            Offer::Axiom { declared } => {
                 let declared = self.value_type(target, declared)?;
                 Ok(Erased::Axiom { declared })
             },
-            | Offer::Abstract(declared) => {
+            Offer::Abstract(declared) => {
                 let kind = self.value_type(target, declared.kind())?;
                 let representation = self.value_type(target, declared.representation())?;
                 Ok(Erased::Abstract {
@@ -3015,23 +3086,23 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 let certificate = vouch(certificate);
                 let unfolded = certificate.unfolded();
                 match self.replay_one(target, &certificate, &mut met) {
-                    | Ok(Maybe::Present(entry)) => {
+                    Ok(Maybe::Present(entry)) => {
                         replayed.push(entry);
                         match entry.verdict {
-                            | KernelVerdict::Convertible => {},
-                            | KernelVerdict::Declined(reason) => {
+                            KernelVerdict::Convertible => {},
+                            KernelVerdict::Declined(reason) => {
                                 return Err((
                                     Refusal::CertificateDeclined { unfolded, reason },
                                     replayed,
                                 ));
                             },
-                            | KernelVerdict::NotConvertible => {
+                            KernelVerdict::NotConvertible => {
                                 return Err((Refusal::MachineInvariant, replayed));
                             },
                         }
                     },
-                    | Ok(Maybe::Absent(_)) => {},
-                    | Err(refusal) => return Err((refusal, replayed)),
+                    Ok(Maybe::Absent(_)) => {},
+                    Err(refusal) => return Err((refusal, replayed)),
                 }
             }
         }
@@ -3063,54 +3134,56 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     {
         let unfolded = certificate.unfolded();
         let crossed = match unfolded {
-            | Unfolded::Definition(constant) => self.positions.admitted.get(&constant).copied(),
-            | Unfolded::Abstraction(_) | Unfolded::Returned(_) => None,
+            Unfolded::Definition(constant) => self.positions.admitted.get(&constant).copied(),
+            Unfolded::Abstraction(_) | Unfolded::Returned(_) => None,
         };
         let left = match crossed {
-            | Some(position) => target.value_constant(position),
-            | None => self.value_in(Mode::Verbatim, target, certificate.redex())?,
+            Some(position) => target.value_constant(position),
+            None => self.value_in(Mode::Verbatim, target, certificate.redex())?,
         };
         let redex = content_digest(target, AnyNode::Value(left));
         if !met.insert((unfolded, redex)) {
             return Ok(Maybe::Absent(replay_entry::Absent::Met));
         }
         let right = match crossed {
-            | Some(_) => self.value_in(Mode::Normalizing, target, certificate.reduct())?,
-            | None => self.value_in(Mode::Verbatim, target, certificate.reduct())?,
+            Some(_) => self.value_in(Mode::Normalizing, target, certificate.reduct())?,
+            None => self.value_in(Mode::Verbatim, target, certificate.reduct())?,
         };
         self.erase_operators(target)?;
-        let decisions =
-            match crossed {
-                | Some(position) => Vec::from([
-                    ConversionDecision::Unfold {
-                        constant: ReplayNode::Constant(position),
-                    },
-                    ConversionDecision::ReduceLeft {
-                        redex: ReplayNode::Constant(position),
-                    },
-                    ConversionDecision::ComparedShared {
-                        left: ReplayNode::Other,
-                        right: ReplayNode::Other,
-                    },
-                ]),
-                | None => {
-                    let mut decisions = Vec::new();
-                    if let Unfolded::Abstraction(_) = unfolded
-                        && let Some(&position) = self.operators.get(&unfolded)
-                    {
-                        decisions.push(ConversionDecision::Unfold {
-                            constant: ReplayNode::Constant(position),
-                        });
-                        decisions.push(ConversionDecision::ReduceLeft {
-                            redex: ReplayNode::Constant(position),
-                        });
-                    }
-                    decisions.extend(certificate.decisions().iter().map(|&decision| {
-                        self.positions.kernel_decision(&self.operators, decision)
-                    }));
-                    decisions
+        let decisions = if let Some(position) = crossed {
+            Vec::from([
+                ConversionDecision::Unfold {
+                    constant: ReplayNode::Constant(position),
                 },
-            };
+                ConversionDecision::ReduceLeft {
+                    redex: ReplayNode::Constant(position),
+                },
+                ConversionDecision::ComparedShared {
+                    left: ReplayNode::Other,
+                    right: ReplayNode::Other,
+                },
+            ])
+        }
+        else {
+            let mut decisions = Vec::new();
+            if let Unfolded::Abstraction(_) = unfolded
+                && let Some(&position) = self.operators.get(&unfolded)
+            {
+                decisions.push(ConversionDecision::Unfold {
+                    constant: ReplayNode::Constant(position),
+                });
+                decisions.push(ConversionDecision::ReduceLeft {
+                    redex: ReplayNode::Constant(position),
+                });
+            }
+            decisions.extend(
+                certificate
+                    .decisions()
+                    .iter()
+                    .map(|&decision| self.positions.kernel_decision(&self.operators, decision)),
+            );
+            decisions
+        };
         let verdict = replay(
             target,
             &self.positions.unfoldings(&self.bodies),
@@ -3288,10 +3361,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             return Ok(position);
         }
         match (self.mode, self.positions.definitions.body(constant)) {
-            | (Mode::Verbatim, Maybe::Present(body)) => {
+            (Mode::Verbatim, Maybe::Present(body)) => {
                 self.operator(Unfolded::Definition(constant), body)
             },
-            | (Mode::Verbatim | Mode::Normalizing, _) => Err(Refusal::Withheld { at, constant }),
+            (Mode::Verbatim | Mode::Normalizing, _) => Err(Refusal::Withheld { at, constant }),
         }
     }
 
@@ -3379,8 +3452,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     {
         let image = self.erase(target, CoreNode::Type(TypeNode::Value(root)))?;
         match image {
-            | AnyNode::ValueType(erased) => Ok(erased),
-            | AnyNode::Value(_) | AnyNode::Computation(_) | AnyNode::CompType(_) => {
+            AnyNode::ValueType(erased) => Ok(erased),
+            AnyNode::Value(_) | AnyNode::Computation(_) | AnyNode::CompType(_) => {
                 Err(Refusal::MachineInvariant)
             },
         }
@@ -3418,8 +3491,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     {
         let image = self.erase(target, CoreNode::Term(TermNode::Value(root)))?;
         match image {
-            | AnyNode::Value(erased) => Ok(erased),
-            | AnyNode::Computation(_) | AnyNode::ValueType(_) | AnyNode::CompType(_) => {
+            AnyNode::Value(erased) => Ok(erased),
+            AnyNode::Computation(_) | AnyNode::ValueType(_) | AnyNode::CompType(_) => {
                 Err(Refusal::MachineInvariant)
             },
         }
@@ -3491,10 +3564,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let mut step = Step::Descend(root);
         loop {
             step = match step {
-                | Step::Descend(node) => self.descend(target, node)?,
-                | Step::Ascend(image) => match self.frames.pop() {
-                    | Some(frame) => self.resume(target, frame, image)?,
-                    | None => return Ok(image),
+                Step::Descend(node) => self.descend(target, node)?,
+                Step::Ascend(image) => match self.frames.pop() {
+                    Some(frame) => self.resume(target, frame, image)?,
+                    None => return Ok(image),
                 },
             };
         }
@@ -3537,10 +3610,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ) -> Result<Step, Refusal>
     {
         match node {
-            | CoreNode::Term(TermNode::Value(at)) => self.descend_value(target, at),
-            | CoreNode::Term(TermNode::Computation(at)) => self.descend_computation(target, at),
-            | CoreNode::Type(TypeNode::Value(at)) => self.descend_value_type(target, at),
-            | CoreNode::Type(TypeNode::Computation(at)) => self.descend_comp_type(target, at),
+            CoreNode::Term(TermNode::Value(at)) => self.descend_value(target, at),
+            CoreNode::Term(TermNode::Computation(at)) => self.descend_computation(target, at),
+            CoreNode::Type(TypeNode::Value(at)) => self.descend_value_type(target, at),
+            CoreNode::Type(TypeNode::Computation(at)) => self.descend_comp_type(target, at),
         }
     }
 
@@ -3583,9 +3656,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     {
         let node = CoreNode::Term(TermNode::Value(at));
         match self.memo().values.get(&at) {
-            | Some(&Image::Erased(erased)) => return Ok(Step::Ascend(AnyNode::Value(erased))),
-            | Some(&Image::Open) => return Err(Refusal::Cyclic { node }),
-            | None => {},
+            Some(&Image::Erased(erased)) => return Ok(Step::Ascend(AnyNode::Value(erased))),
+            Some(&Image::Open) => return Err(Refusal::Cyclic { node }),
+            None => {},
         }
         if let Some(lift) = self.source.lifts.get(&at) {
             self.memo().values.insert(at, Image::Open);
@@ -3601,16 +3674,16 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         };
         let unadmitted = |former| Refusal::OutOfFragment { at: node, former };
         let (frame, child) = match *value {
-            | Value::Constructor { .. } | Value::Record(_) => {
+            Value::Constructor { .. } | Value::Record(_) => {
                 return self.prepare_native(target, node);
             },
-            | Value::Reify(_) => return Err(unadmitted(UnadmittedFormer::Reify)),
-            | Value::ListNil => return Ok(self.erased_value(at, target.value_list_nil())),
-            | Value::ListCons(head, tail) => (
+            Value::Reify(_) => return Err(unadmitted(UnadmittedFormer::Reify)),
+            Value::ListNil => return Ok(self.erased_value(at, target.value_list_nil())),
+            Value::ListCons(head, tail) => (
                 Frame::ListHead { at, tail },
                 CoreNode::Term(TermNode::Value(head)),
             ),
-            | Value::Primitive { primitive, .. } => {
+            Value::Primitive { primitive, .. } => {
                 let position = self
                     .positions
                     .native
@@ -3619,22 +3692,22 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     .ok_or(Refusal::MachineInvariant)?;
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
-            | Value::PathRefl(code) => (
+            Value::PathRefl(code) => (
                 Frame::PathRefl { at },
                 CoreNode::Term(TermNode::Value(code)),
             ),
-            | Value::PathProduct(first, second) => match self.source.natives.get(&at) {
-                | Some(&native) if native != at => {
+            Value::PathProduct(first, second) => match self.source.natives.get(&at) {
+                Some(&native) if native != at => {
                     self.memo().values.insert(at, Image::Open);
                     self.frames.push(Frame::Reduced { at });
                     return Ok(Step::Descend(CoreNode::Term(TermNode::Value(native))));
                 },
-                | Some(_) | None => (
+                Some(_) | None => (
                     Frame::PathProductFirst { at, second },
                     CoreNode::Term(TermNode::Value(first)),
                 ),
             },
-            | Value::PathEquiv {
+            Value::PathEquiv {
                 path_type,
                 forward,
                 backward,
@@ -3648,58 +3721,56 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 },
                 CoreNode::Type(TypeNode::Value(path_type)),
             ),
-            | Value::Variable {
+            Value::Variable {
                 zone: Zone::Intuitionistic,
                 index,
             } => return Ok(self.erased_value(at, target.value_variable(index))),
-            | Value::Variable {
+            Value::Variable {
                 zone: Zone::Linear, ..
             } => {
                 return Err(Refusal::Session {
                     at: CoreNode::Term(TermNode::Value(at)),
                 });
             },
-            | Value::Constant(constant) => {
+            Value::Constant(constant) => {
                 let position = self.constant_position(at, constant)?;
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
-            | Value::Literal(ref literal) => match literal.base_type() {
-                | BaseType::Integer | BaseType::String => {
+            Value::Literal(ref literal) => match literal.base_type() {
+                BaseType::Integer | BaseType::String => {
                     return Ok(self.erased_value(at, target.value_literal(literal.clone())));
                 },
-                | BaseType::Numeric => return Err(unadmitted(UnadmittedFormer::NumericLiteral)),
+                BaseType::Numeric => return Err(unadmitted(UnadmittedFormer::NumericLiteral)),
             },
-            | Value::Thunk(body) => (
+            Value::Thunk(body) => (
                 Frame::Thunk { at },
                 CoreNode::Term(TermNode::Computation(body)),
             ),
-            | Value::Quote(quoted) => {
-                (Frame::Quote { at }, CoreNode::Type(TypeNode::Value(quoted)))
-            },
-            | Value::QuoteComputation(quoted) => (
+            Value::Quote(quoted) => (Frame::Quote { at }, CoreNode::Type(TypeNode::Value(quoted))),
+            Value::QuoteComputation(quoted) => (
                 Frame::QuoteComputation { at },
                 CoreNode::Type(TypeNode::Computation(quoted)),
             ),
-            | Value::Tuple(_) => return self.prepare_native(target, node),
-            | Value::Injection(summand, body) => (
+            Value::Tuple(_) => return self.prepare_native(target, node),
+            Value::Injection(summand, body) => (
                 Frame::Injection { at, summand },
                 CoreNode::Term(TermNode::Value(body)),
             ),
-            | Value::Lift { .. } => return Err(unadmitted(UnadmittedFormer::ValueLift)),
-            | Value::StaticLambda(_) => {
+            Value::Lift { .. } => return Err(unadmitted(UnadmittedFormer::ValueLift)),
+            Value::StaticLambda(_) => {
                 let position = self.abstraction(at)?;
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
-            | Value::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
-            | Value::Here(point) => (
+            Value::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
+            Value::Here(point) => (
                 Frame::Here {
                     at,
                     family: Family::Path,
                 },
                 CoreNode::Term(TermNode::Value(point)),
             ),
-            | Value::Funext(..) => return self.prepare_funext(target, at),
-            | Value::Equiv(forward, backward) => {
+            Value::Funext(..) => return self.prepare_funext(target, at),
+            Value::Equiv(forward, backward) => {
                 let Some(decided) = self.source.equivalences.get(&at)
                 else {
                     return Err(Refusal::MachineInvariant);
@@ -3714,7 +3785,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     CoreNode::Type(TypeNode::Value(decided.classifier())),
                 )
             },
-            | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..)
+            Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..)
                 if self.source.flows.contains_key(&at) =>
             {
                 let Some(decided) = self.source.flows.get(&at)
@@ -3730,23 +3801,23 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     CoreNode::Type(TypeNode::Value(decided.classifier())),
                 )
             },
-            | Value::Stay(point) => (
+            Value::Stay(point) => (
                 Frame::Here {
                     at,
                     family: Family::Flow,
                 },
                 CoreNode::Term(TermNode::Value(point)),
             ),
-            | Value::Then(first, second) => (
+            Value::Then(first, second) => (
                 Frame::ThenFirst { at, second },
                 CoreNode::Term(TermNode::Value(first)),
             ),
-            | Value::FlowProduct(first, second) => (
+            Value::FlowProduct(first, second) => (
                 Frame::FlowProductFirst { at, second },
                 CoreNode::Term(TermNode::Value(first)),
             ),
-            | Value::Forward(translator) => match self.source.directed.get(&at) {
-                | Some(&crate::forward::Directed::Forward(ref decided)) => (
+            Value::Forward(translator) => match self.source.directed.get(&at) {
+                Some(&crate::forward::Directed::Forward(ref decided)) => (
                     Frame::ForwardType {
                         at,
                         translator,
@@ -3755,12 +3826,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     },
                     CoreNode::Type(TypeNode::Value(decided.classifier())),
                 ),
-                | Some(&crate::forward::Directed::Function(_)) | None => {
+                Some(&crate::forward::Directed::Function(_)) | None => {
                     return Err(Refusal::MachineInvariant);
                 },
             },
-            | Value::FunctionFlow(domain, codomain) => match self.source.directed.get(&at) {
-                | Some(&crate::forward::Directed::Function(classifier)) => (
+            Value::FunctionFlow(domain, codomain) => match self.source.directed.get(&at) {
+                Some(&crate::forward::Directed::Function(classifier)) => (
                     Frame::FunctionFlowType {
                         at,
                         domain,
@@ -3768,12 +3839,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     },
                     CoreNode::Type(TypeNode::Value(classifier)),
                 ),
-                | Some(&crate::forward::Directed::Forward(_)) | None => {
+                Some(&crate::forward::Directed::Forward(_)) | None => {
                     return Err(Refusal::MachineInvariant);
                 },
             },
-            | Value::Recorded(_) => return Err(unadmitted(UnadmittedFormer::Run)),
-            | Value::Ua { .. } => {
+            Value::Recorded(_) => return Err(unadmitted(UnadmittedFormer::Run)),
+            Value::Ua { .. } => {
                 let Some(&path) = self.source.natives.get(&at)
                 else {
                     return Err(Refusal::MachineInvariant);
@@ -3785,18 +3856,18 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             // Elaboration replaces every nested computation and written run
             // before a verdict's body is answered, so none reaches the kernel;
             // a session statement is always recorded.
-            | Value::Nested(_) | Value::Run(_) | Value::SessionRelated { .. } => {
+            Value::Nested(_) | Value::Run(_) | Value::SessionRelated { .. } => {
                 return Err(Refusal::MachineInvariant);
             },
-            | Value::Returned(computation) => (
+            Value::Returned(computation) => (
                 Frame::Returned { at },
                 CoreNode::Term(TermNode::Computation(computation)),
             ),
-            | Value::Mark { body, .. } => (
+            Value::Mark { body, .. } => (
                 Frame::UnmarkedValue { at },
                 CoreNode::Term(TermNode::Value(body)),
             ),
-            | Value::StaticApplication(head, argument) => {
+            Value::StaticApplication(head, argument) => {
                 if self.mode == Mode::Normalizing
                     && let Maybe::Present(reduct) = self.step(at)?
                 {
@@ -3865,9 +3936,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             }
         }
         match self.frames.pop() {
-            | Some(Frame::NativeNext(child)) => Ok(Step::Descend(child)),
-            | Some(Frame::FunextBuild(node)) => self.funext(target, node),
-            | _ => Err(Refusal::MachineInvariant),
+            Some(Frame::NativeNext(child)) => Ok(Step::Descend(child)),
+            Some(Frame::FunextBuild(node)) => self.funext(target, node),
+            _ => Err(Refusal::MachineInvariant),
         }
     }
 
@@ -3945,7 +4016,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             let mut children = Vec::new();
             for step in record.steps() {
                 match *step {
-                    | FunextStep::Return {
+                    FunextStep::Return {
                         ref left,
                         ref right,
                     } => {
@@ -3957,7 +4028,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         }));
                         children.extend([left_image, right_image, evidence]);
                     },
-                    | FunextStep::Apply {
+                    FunextStep::Apply {
                         fibre,
                         ref left,
                         ref right,
@@ -3965,8 +4036,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         let [left_image, right_image] =
                             [left.normal(), right.normal()].map(|normal| {
                                 match self.reached().values.get(&normal) {
-                                    | Some(&Image::Erased(image)) => Ok(image),
-                                    | _ => Err(Refusal::MachineInvariant),
+                                    Some(&Image::Erased(image)) => Ok(image),
+                                    _ => Err(Refusal::MachineInvariant),
                                 }
                             });
                         steps.push(QuantifiedStep::Apply {
@@ -4063,7 +4134,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let mut built: Vec<(gandr_kernel_term::ValueId, gandr_kernel_term::ValueId)> = Vec::new();
         while let Some(task) = tasks.pop() {
             match task {
-                | Task::Visit(node) => {
+                Task::Visit(node) => {
                     let Some(former) = self.arena.value(node)
                     else {
                         return Err(Refusal::DanglingNode {
@@ -4071,27 +4142,27 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         });
                     };
                     let image = match *former {
-                        | Value::Tuple(ref parts) => match **parts {
-                            | [] => target.value_unit(),
-                            | [first, second] => {
+                        Value::Tuple(ref parts) => match **parts {
+                            [] => target.value_unit(),
+                            [first, second] => {
                                 tasks.extend([Task::Pair, Task::Visit(second), Task::Visit(first)]);
                                 continue;
                             },
-                            | _ => return Err(Refusal::MachineInvariant),
+                            _ => return Err(Refusal::MachineInvariant),
                         },
-                        | Value::Injection(summand, body) => {
+                        Value::Injection(summand, body) => {
                             tasks.extend([Task::Inject(summand), Task::Visit(body)]);
                             continue;
                         },
-                        | Value::Mark { body, .. } => {
+                        Value::Mark { body, .. } => {
                             tasks.push(Task::Visit(body));
                             continue;
                         },
-                        | Value::Variable {
+                        Value::Variable {
                             zone: Zone::Intuitionistic,
                             index,
                         } => target.value_variable(index),
-                        | Value::Literal(ref literal)
+                        Value::Literal(ref literal)
                             if matches!(
                                 literal.base_type(),
                                 BaseType::Integer | BaseType::String
@@ -4099,22 +4170,52 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         {
                             target.value_literal(literal.clone())
                         },
-                        | Value::Constant(constant) => {
+                        Value::Constant(constant) => {
                             let position = self.constant_position(node, constant)?;
                             target.value_constant(position)
                         },
-                        | Value::Hole(hole) => {
+                        Value::Hole(hole) => {
                             return Err(Refusal::Hole {
                                 at: CoreNode::Term(TermNode::Value(node)),
                                 hole,
                             });
                         },
-                        | _ => return Err(Refusal::MachineInvariant),
+                        Value::Primitive { .. }
+                        | Value::PathRefl(_)
+                        | Value::PathProduct(..)
+                        | Value::PathEquiv { .. }
+                        | Value::Here(_)
+                        | Value::Funext(..)
+                        | Value::Equiv(..)
+                        | Value::Ua { .. }
+                        | Value::SessionRelated { .. }
+                        | Value::Stay(_)
+                        | Value::Then(..)
+                        | Value::FlowProduct(..)
+                        | Value::Forward(_)
+                        | Value::FunctionFlow(..)
+                        | Value::Recorded(_)
+                        | Value::Returned(_)
+                        | Value::Nested(_)
+                        | Value::Run(_)
+                        | Value::Variable { .. }
+                        | Value::Literal(_)
+                        | Value::ListNil
+                        | Value::ListCons(..)
+                        | Value::Thunk(_)
+                        | Value::Lift { .. }
+                        | Value::Quote(_)
+                        | Value::QuoteComputation(_)
+                        | Value::StaticLambda(_)
+                        | Value::StaticApplication(..)
+                        | Value::Constructor { .. }
+                        | Value::Record(_)
+                        | Value::Reify(_) => return Err(Refusal::MachineInvariant),
                     };
                     let unit = target.value_unit();
                     built.push((image, unit));
                 },
-                | Task::Pair => {
+                Task::Pair => {
                     let (Some(second), Some(first)) = (built.pop(), built.pop())
                     else {
                         return Err(Refusal::MachineInvariant);
@@ -4123,7 +4224,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     let evidence = target.value_tuple(&[first.1, second.1]);
                     built.push((image, evidence));
                 },
-                | Task::Inject(summand) => {
+                Task::Inject(summand) => {
                     let Some((payload, evidence)) = built.pop()
                     else {
                         return Err(Refusal::MachineInvariant);
@@ -4133,8 +4234,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             }
         }
         match (built.pop(), built.is_empty()) {
-            | (Some(image), true) => Ok(image),
-            | _ => Err(Refusal::MachineInvariant),
+            (Some(image), true) => Ok(image),
+            _ => Err(Refusal::MachineInvariant),
         }
     }
 
@@ -4187,8 +4288,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     const fn reached(&self) -> &Memo
     {
         match self.mode {
-            | Mode::Normalizing => &self.normalized,
-            | Mode::Verbatim => &self.verbatim,
+            Mode::Normalizing => &self.normalized,
+            Mode::Verbatim => &self.verbatim,
         }
     }
 
@@ -4229,11 +4330,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     {
         let node = CoreNode::Term(TermNode::Computation(at));
         match self.memo().computations.get(&at) {
-            | Some(&Image::Erased(erased)) => {
+            Some(&Image::Erased(erased)) => {
                 return Ok(Step::Ascend(AnyNode::Computation(erased)));
             },
-            | Some(&Image::Open) => return Err(Refusal::Cyclic { node }),
-            | None => {},
+            Some(&Image::Open) => return Err(Refusal::Cyclic { node }),
+            None => {},
         }
         let Some(computation) = self.arena.computation(at)
         else {
@@ -4241,19 +4342,19 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         };
         let unadmitted = |former| Refusal::OutOfFragment { at: node, former };
         let (frame, child) = match *computation {
-            | Computation::DataCase { .. }
+            Computation::DataCase { .. }
             | Computation::RecordProjection(..)
             | Computation::TupleProjection(..) => {
                 return self.prepare_native(target, node);
             },
-            | Computation::Perform { .. } => return Err(unadmitted(UnadmittedFormer::Perform)),
-            | Computation::Handle { .. } => return Err(unadmitted(UnadmittedFormer::Handle)),
-            | Computation::Resume(..) => return Err(unadmitted(UnadmittedFormer::Resume)),
-            | Computation::Reset(_) => return Err(unadmitted(UnadmittedFormer::Reset)),
-            | Computation::Shift(_) => return Err(unadmitted(UnadmittedFormer::Shift)),
-            | Computation::Exercise { .. } => return Err(unadmitted(UnadmittedFormer::Exercise)),
-            | Computation::Scope { .. } => return Err(unadmitted(UnadmittedFormer::Scope)),
-            | Computation::Ride {
+            Computation::Perform { .. } => return Err(unadmitted(UnadmittedFormer::Perform)),
+            Computation::Handle { .. } => return Err(unadmitted(UnadmittedFormer::Handle)),
+            Computation::Resume(..) => return Err(unadmitted(UnadmittedFormer::Resume)),
+            Computation::Reset(_) => return Err(unadmitted(UnadmittedFormer::Reset)),
+            Computation::Shift(_) => return Err(unadmitted(UnadmittedFormer::Shift)),
+            Computation::Exercise { .. } => return Err(unadmitted(UnadmittedFormer::Exercise)),
+            Computation::Scope { .. } => return Err(unadmitted(UnadmittedFormer::Scope)),
+            Computation::Ride {
                 motive,
                 flow,
                 value,
@@ -4267,19 +4368,19 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(motive))));
             },
-            | Computation::With(first, second) => (
+            Computation::With(first, second) => (
                 Frame::WithFirst { at, second },
                 TermNode::Computation(first),
             ),
-            | Computation::Project(side, pair) => {
+            Computation::Project(side, pair) => {
                 (Frame::Project { at, side }, TermNode::Computation(pair))
             },
-            | Computation::ListFold { element, .. } => {
+            Computation::ListFold { element, .. } => {
                 self.memo().computations.insert(at, Image::Open);
                 self.frames.push(Frame::ListElement { at });
                 return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(element))));
             },
-            | Computation::Primitive {
+            Computation::Primitive {
                 primitive,
                 arguments,
             } => {
@@ -4293,20 +4394,20 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 let value = target.value_constant(position);
                 let head = target.computation_force(value);
                 match arguments {
-                    | Arguments::Unary(argument) => (
+                    Arguments::Unary(argument) => (
                         Frame::ApplicationArgument { at, head },
                         TermNode::Value(argument),
                     ),
-                    | Arguments::Binary([first, second]) => (
+                    Arguments::Binary([first, second]) => (
                         Frame::NativeFirst { at, head, second },
                         TermNode::Value(first),
                     ),
                 }
             },
-            | Computation::Transport(path, value) => {
+            Computation::Transport(path, value) => {
                 (Frame::TransportPath { at, value }, TermNode::Value(path))
             },
-            | Computation::PathTransport {
+            Computation::PathTransport {
                 motive,
                 path,
                 value,
@@ -4320,27 +4421,27 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(motive))));
             },
-            | Computation::TelescopeTransport { motive, .. } => {
+            Computation::TelescopeTransport { motive, .. } => {
                 self.memo().computations.insert(at, Image::Open);
                 self.frames.push(Frame::TelescopeMotive { at });
                 return Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(motive))));
             },
-            | Computation::Lambda(body) => (Frame::Lambda { at }, TermNode::Computation(body)),
-            | Computation::Fixpoint { body, evidence } => (
+            Computation::Lambda(body) => (Frame::Lambda { at }, TermNode::Computation(body)),
+            Computation::Fixpoint { body, evidence } => (
                 Frame::Fixpoint { at, evidence },
                 TermNode::Computation(body),
             ),
-            | Computation::Application(head, argument) => (
+            Computation::Application(head, argument) => (
                 Frame::ApplicationHead { at, argument },
                 TermNode::Computation(head),
             ),
-            | Computation::Return(value) => (Frame::Return { at }, TermNode::Value(value)),
-            | Computation::Force(value) => (Frame::Force { at }, TermNode::Value(value)),
-            | Computation::Bind(bound, body) => {
+            Computation::Return(value) => (Frame::Return { at }, TermNode::Value(value)),
+            Computation::Force(value) => (Frame::Force { at }, TermNode::Value(value)),
+            Computation::Bind(bound, body) => {
                 (Frame::BindBound { at, body }, TermNode::Computation(bound))
             },
-            | Computation::Case { .. } => return self.prepare_native(target, node),
-            | Computation::Split {
+            Computation::Case { .. } => return self.prepare_native(target, node),
+            Computation::Split {
                 scrutinee,
                 motive: SplitMotive::Scrutinee(motive),
                 body,
@@ -4349,7 +4450,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::SigmaSplitScrutinee { at, motive, body },
                 TermNode::Value(scrutinee),
             ),
-            | Computation::Split {
+            Computation::Split {
                 scrutinee,
                 arity,
                 motive: SplitMotive::Ambient,
@@ -4358,9 +4459,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::SplitReduct { at },
                 TermNode::Computation(self.split_reduct(scrutinee, arity, body)),
             ),
-            | Computation::Session(_) => return Err(Refusal::Session { at: node }),
-            | Computation::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
-            | Computation::Mark { body, .. } => (
+            Computation::Session(_) => return Err(Refusal::Session { at: node }),
+            Computation::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
+            Computation::Mark { body, .. } => (
                 Frame::UnmarkedComputation { at },
                 TermNode::Computation(body),
             ),
@@ -4409,22 +4510,22 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ) -> Result<Step, Refusal>
     {
         match self.memo().value_types.get(&at) {
-            | Some(&Image::Erased(erased)) => return Ok(Step::Ascend(AnyNode::ValueType(erased))),
-            | Some(&Image::Open) => {
+            Some(&Image::Erased(erased)) => return Ok(Step::Ascend(AnyNode::ValueType(erased))),
+            Some(&Image::Open) => {
                 return Err(Refusal::Cyclic {
                     node: CoreNode::Type(TypeNode::Value(at)),
                 });
             },
-            | None => {},
+            None => {},
         }
         let (frame, child) = match value_type_view(self.arena, at)? {
-            | ValueTypeView::Data { .. }
+            ValueTypeView::Data { .. }
             | ValueTypeView::Record(_)
             | ValueTypeView::Sum(_)
             | ValueTypeView::Product(_) => {
                 return self.prepare_native(target, CoreNode::Type(TypeNode::Value(at)));
             },
-            | ValueTypeView::Session(session) => {
+            ValueTypeView::Session(session) => {
                 if session.state() != session.protocol().root() {
                     return Err(Refusal::Session {
                         at: CoreNode::Type(TypeNode::Value(at)),
@@ -4432,7 +4533,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 }
                 return self.prepare_native(target, CoreNode::Type(TypeNode::Value(at)));
             },
-            | ValueTypeView::Flow {
+            ValueTypeView::Flow {
                 carrier,
                 source,
                 target: target_code,
@@ -4462,33 +4563,33 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     CoreNode::Term(TermNode::Value(source)),
                 )
             },
-            | ValueTypeView::Run(_) => {
+            ValueTypeView::Run(_) => {
                 return Err(Refusal::OutOfFragment {
                     at: CoreNode::Type(TypeNode::Value(at)),
                     former: UnadmittedFormer::Run,
                 });
             },
-            | ValueTypeView::Stack { .. } => {
+            ValueTypeView::Stack { .. } => {
                 return Err(Refusal::OutOfFragment {
                     at: CoreNode::Type(TypeNode::Value(at)),
                     former: UnadmittedFormer::Stack,
                 });
             },
-            | ValueTypeView::Capability { .. } => {
+            ValueTypeView::Capability { .. } => {
                 return Err(Refusal::OutOfFragment {
                     at: CoreNode::Type(TypeNode::Value(at)),
                     former: UnadmittedFormer::Capability,
                 });
             },
-            | ValueTypeView::List(element) => (
+            ValueTypeView::List(element) => (
                 Frame::ListType { at },
                 CoreNode::Type(TypeNode::Value(element)),
             ),
-            | ValueTypeView::PathUniverse(source, target_code) => (
+            ValueTypeView::PathUniverse(source, target_code) => (
                 Frame::PathSource { at, target_code },
                 CoreNode::Term(TermNode::Value(source)),
             ),
-            | ValueTypeView::Path {
+            ValueTypeView::Path {
                 carrier,
                 left,
                 right,
@@ -4501,20 +4602,20 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 },
                 CoreNode::Type(TypeNode::Value(carrier)),
             ),
-            | ValueTypeView::Integer => {
+            ValueTypeView::Integer => {
                 return Ok(self.erased_value_type(at, target.value_type_base(BaseType::Integer)));
             },
-            | ValueTypeView::String => {
+            ValueTypeView::String => {
                 return Ok(self.erased_value_type(at, target.value_type_base(BaseType::String)));
             },
-            | ValueTypeView::Unit => {
+            ValueTypeView::Unit => {
                 return Ok(self.erased_value_type(at, target.value_type_unit()));
             },
-            | ValueTypeView::Universe { sort, level } => {
+            ValueTypeView::Universe { sort, level } => {
                 let erased = target.value_type_universe(sort, level.clone());
                 return Ok(self.erased_value_type(at, erased));
             },
-            | ValueTypeView::Abstract(atom) => {
+            ValueTypeView::Abstract(atom) => {
                 let Some(&position) = self.positions.admitted.get(&atom)
                 else {
                     return Err(Refusal::OutOfFragment {
@@ -4524,15 +4625,15 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 };
                 return Ok(self.erased_value_type(at, target.value_type_abstract(position)));
             },
-            | ValueTypeView::Thunk(body) => (
+            ValueTypeView::Thunk(body) => (
                 Frame::ThunkType { at },
                 CoreNode::Type(TypeNode::Computation(body)),
             ),
-            | ValueTypeView::Lift { inner, .. } => (
+            ValueTypeView::Lift { inner, .. } => (
                 Frame::TypeLift { at },
                 CoreNode::Type(TypeNode::Value(inner)),
             ),
-            | ValueTypeView::Element { .. } | ValueTypeView::Unknown => {
+            ValueTypeView::Element { .. } | ValueTypeView::Unknown => {
                 let Some(&gandr_core_term::ValueType::Element {
                     code,
                     target: ref level,
@@ -4549,11 +4650,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 return self.decode(target, code, level, GroundSort::Value);
             },
-            | ValueTypeView::StaticPi { domain, codomain } => (
+            ValueTypeView::StaticPi { domain, codomain } => (
                 Frame::StaticPiDomain { at, codomain },
                 CoreNode::Type(TypeNode::Value(domain)),
             ),
-            | ValueTypeView::Sigma { first, second } => (
+            ValueTypeView::Sigma { first, second } => (
                 Frame::SigmaFirst { at, second },
                 CoreNode::Type(TypeNode::Value(first)),
             ),
@@ -4597,21 +4698,21 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ) -> Result<Step, Refusal>
     {
         match self.memo().comp_types.get(&at) {
-            | Some(&Image::Erased(erased)) => return Ok(Step::Ascend(AnyNode::CompType(erased))),
-            | Some(&Image::Open) => {
+            Some(&Image::Erased(erased)) => return Ok(Step::Ascend(AnyNode::CompType(erased))),
+            Some(&Image::Open) => {
                 return Err(Refusal::Cyclic {
                     node: CoreNode::Type(TypeNode::Computation(at)),
                 });
             },
-            | None => {},
+            None => {},
         }
         let (frame, child) = match comp_type_view(self.arena, at)? {
-            | CompTypeView::With(first, second) => {
+            CompTypeView::With(first, second) => {
                 self.memo().comp_types.insert(at, Image::Open);
                 self.frames.push(Frame::WithTypeFirst { at, second });
                 return Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(first))));
             },
-            | CompTypeView::Returner { result, effects } => {
+            CompTypeView::Returner { result, effects } => {
                 if effects.purity() != gandr_core_term::effect::Purity::Pure {
                     return Err(Refusal::OutOfFragment {
                         at: CoreNode::Type(TypeNode::Computation(at)),
@@ -4620,11 +4721,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 }
                 (Frame::Returner { at }, result)
             },
-            | CompTypeView::Arrow { domain, codomain } => {
+            CompTypeView::Arrow { domain, codomain } => {
                 (Frame::ArrowDomain { at, codomain }, domain)
             },
-            | CompTypeView::Pi { domain, codomain } => (Frame::PiDomain { at, codomain }, domain),
-            | CompTypeView::Element { .. } | CompTypeView::Unknown => {
+            CompTypeView::Pi { domain, codomain } => (Frame::PiDomain { at, codomain }, domain),
+            CompTypeView::Element { .. } | CompTypeView::Unknown => {
                 let Some(&gandr_core_term::CompType::Element {
                     code,
                     target: ref level,
@@ -4717,26 +4818,26 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 continue;
             }
             let image = match (node, sort) {
-                | (Value::Reify(_), _) => {
+                (Value::Reify(_), _) => {
                     return Err(Refusal::OutOfFragment {
                         at: CoreNode::Term(TermNode::Value(code)),
                         former: UnadmittedFormer::Reify,
                     });
                 },
-                | (Value::Quote(quoted), GroundSort::Value) => {
+                (Value::Quote(quoted), GroundSort::Value) => {
                     return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(quoted))));
                 },
-                | (Value::QuoteComputation(quoted), GroundSort::Computation) => {
+                (Value::QuoteComputation(quoted), GroundSort::Computation) => {
                     return Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(quoted))));
                 },
-                | (
+                (
                     Value::Variable {
                         zone: Zone::Intuitionistic,
                         index,
                     },
                     _,
                 ) => target.value_variable(index),
-                | (
+                (
                     Value::Variable {
                         zone: Zone::Linear, ..
                     },
@@ -4746,25 +4847,25 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         at: CoreNode::Term(TermNode::Value(code)),
                     });
                 },
-                | (Value::Constant(constant), _) => {
+                (Value::Constant(constant), _) => {
                     let position = self.constant_position(code, constant)?;
                     target.value_constant(position)
                 },
-                | (Value::StaticApplication(..) | Value::Returned(_), _) => {
+                (Value::StaticApplication(..) | Value::Returned(_), _) => {
                     self.frames.push(Frame::DecodeOf { level, sort });
                     return Ok(Step::Descend(CoreNode::Term(TermNode::Value(code))));
                 },
-                | (Value::Hole(hole), _) => {
+                (Value::Hole(hole), _) => {
                     return Err(Refusal::Hole {
                         at: CoreNode::Term(TermNode::Value(code)),
                         hole,
                     });
                 },
-                | (Value::Mark { body, .. }, _) => {
+                (Value::Mark { body, .. }, _) => {
                     code = body;
                     continue;
                 },
-                | (Value::Quote(_), GroundSort::Computation)
+                (Value::Quote(_), GroundSort::Computation)
                 | (Value::QuoteComputation(_), GroundSort::Value)
                 | (
                     Value::PathRefl(_)
@@ -4846,16 +4947,16 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let mut reached = argument;
         loop {
             match self.arena.value(reached) {
-                | Some(
+                Some(
                     &(Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticApplication(..)),
                 ) => break,
-                | Some(&Value::Constant(constant)) => {
+                Some(&Value::Constant(constant)) => {
                     match self.positions.definitions.body(constant) {
-                        | Maybe::Present(body) => reached = body,
-                        | Maybe::Absent(_) => return Ok(descend),
+                        Maybe::Present(body) => reached = body,
+                        Maybe::Absent(_) => return Ok(descend),
                     }
                 },
-                | _ => return Ok(descend),
+                _ => return Ok(descend),
             }
         }
         let mut code = argument;
@@ -4947,17 +5048,17 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ) -> Result<Step, Refusal>
     {
         match (frame, image) {
-            | (Frame::NativeNext(child), _) => Ok(Step::Descend(child)),
-            | (Frame::NativeBuild(root), _) => self.finish_native(target, root),
-            | (Frame::FunextBuild(at), _) => self.funext(target, at),
-            | (Frame::ListHead { at, tail }, AnyNode::Value(head)) => {
+            (Frame::NativeNext(child), _) => Ok(Step::Descend(child)),
+            (Frame::NativeBuild(root), _) => self.finish_native(target, root),
+            (Frame::FunextBuild(at), _) => self.funext(target, at),
+            (Frame::ListHead { at, tail }, AnyNode::Value(head)) => {
                 self.frames.push(Frame::ListTail { at, head });
                 self.argument(tail)
             },
-            | (Frame::ListTail { at, head }, AnyNode::Value(tail)) => {
+            (Frame::ListTail { at, head }, AnyNode::Value(tail)) => {
                 Ok(self.erased_value(at, target.value_list_cons(head, tail)))
             },
-            | (Frame::ListElement { at }, AnyNode::ValueType(element)) => {
+            (Frame::ListElement { at }, AnyNode::ValueType(element)) => {
                 let Some(&Computation::ListFold { result, .. }) = self.arena.computation(at)
                 else {
                     return Err(Refusal::MachineInvariant);
@@ -4965,7 +5066,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 self.frames.push(Frame::ListResult { at, element });
                 Ok(Step::Descend(CoreNode::Type(TypeNode::Value(result))))
             },
-            | (Frame::ListResult { at, element }, AnyNode::ValueType(result)) => {
+            (Frame::ListResult { at, element }, AnyNode::ValueType(result)) => {
                 let Some(&Computation::ListFold { list, .. }) = self.arena.computation(at)
                 else {
                     return Err(Refusal::MachineInvariant);
@@ -4977,7 +5078,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 self.argument(list)
             },
-            | (
+            (
                 Frame::ListInput {
                     at,
                     element,
@@ -4997,7 +5098,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 Ok(Step::Descend(CoreNode::Term(TermNode::Computation(on_nil))))
             },
-            | (
+            (
                 Frame::ListNil {
                     at,
                     element,
@@ -5021,7 +5122,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     on_cons,
                 ))))
             },
-            | (
+            (
                 Frame::ListCons {
                     at,
                     element,
@@ -5034,17 +5135,17 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 at,
                 target.computation_list_fold(element, result, list, on_nil, on_cons),
             )),
-            | (Frame::PathRefl { at }, AnyNode::Value(code)) => {
+            (Frame::PathRefl { at }, AnyNode::Value(code)) => {
                 Ok(self.erased_value(at, target.value_path_refl(code)))
             },
-            | (Frame::PathProductFirst { at, second }, AnyNode::Value(first)) => {
+            (Frame::PathProductFirst { at, second }, AnyNode::Value(first)) => {
                 self.frames.push(Frame::PathProductSecond { at, first });
                 self.argument(second)
             },
-            | (Frame::PathProductSecond { at, first }, AnyNode::Value(second)) => {
+            (Frame::PathProductSecond { at, first }, AnyNode::Value(second)) => {
                 Ok(self.erased_value(at, target.value_path_product(first, second)))
             },
-            | (
+            (
                 Frame::PathEquivType {
                     at,
                     forward,
@@ -5061,7 +5162,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 self.argument(forward)
             },
-            | (
+            (
                 Frame::PathEquivForward {
                     at,
                     path_type,
@@ -5078,7 +5179,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 self.argument(backward)
             },
-            | (
+            (
                 Frame::PathEquivBackward {
                     at,
                     path_type,
@@ -5090,21 +5191,21 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 at,
                 target.value_path_equiv(path_type, forward, backward, evidence),
             )),
-            | (Frame::PathSource { at, target_code }, AnyNode::Value(source)) => {
+            (Frame::PathSource { at, target_code }, AnyNode::Value(source)) => {
                 self.frames.push(Frame::PathTarget { at, source });
                 self.argument(target_code)
             },
-            | (Frame::PathTarget { at, source }, AnyNode::Value(target_code)) => Ok(
+            (Frame::PathTarget { at, source }, AnyNode::Value(target_code)) => Ok(
                 self.erased_value_type(at, target.value_type_path_universe(source, target_code))
             ),
-            | (Frame::FlowSource { at, target_code }, AnyNode::Value(source)) => {
+            (Frame::FlowSource { at, target_code }, AnyNode::Value(source)) => {
                 self.frames.push(Frame::FlowTarget { at, source });
                 self.argument(target_code)
             },
-            | (Frame::FlowTarget { at, source }, AnyNode::Value(target_code)) => Ok(
+            (Frame::FlowTarget { at, source }, AnyNode::Value(target_code)) => Ok(
                 self.erased_value_type(at, target.value_type_flow_universe(source, target_code))
             ),
-            | (
+            (
                 Frame::SessionCertificate {
                     at,
                     relation,
@@ -5115,26 +5216,26 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 let evidence = alloc::sync::Arc::clone(evidence);
                 let unit = target.value_tuple(&[]);
                 let image = match relation {
-                    | gandr_core_term::session::SessionRelation::Equivalence => {
+                    gandr_core_term::session::SessionRelation::Equivalence => {
                         target.value_session_path(classifier, evidence, unit)
                     },
-                    | gandr_core_term::session::SessionRelation::Subtyping => {
+                    gandr_core_term::session::SessionRelation::Subtyping => {
                         target.value_session_flow(classifier, evidence, unit)
                     },
                 };
                 Ok(self.erased_value(at, image))
             },
-            | (Frame::Injection { at, summand }, AnyNode::Value(body)) => {
+            (Frame::Injection { at, summand }, AnyNode::Value(body)) => {
                 Ok(self.erased_value(at, target.value_injection(summand, body)))
             },
-            | (Frame::TransportPath { at, value }, AnyNode::Value(path)) => {
+            (Frame::TransportPath { at, value }, AnyNode::Value(path)) => {
                 self.frames.push(Frame::TransportValue { at, path });
                 self.argument(value)
             },
-            | (Frame::TransportValue { at, path }, AnyNode::Value(value)) => {
+            (Frame::TransportValue { at, path }, AnyNode::Value(value)) => {
                 Ok(self.erased_computation(at, target.computation_transport(path, value)))
             },
-            | (
+            (
                 Frame::PathCarrier {
                     at,
                     left,
@@ -5151,7 +5252,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 self.argument(left)
             },
-            | (
+            (
                 Frame::PathLeft {
                     at,
                     carrier,
@@ -5168,7 +5269,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 self.argument(right)
             },
-            | (
+            (
                 Frame::PathRight {
                     at,
                     carrier,
@@ -5178,15 +5279,15 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 AnyNode::Value(right),
             ) => {
                 let image = match family {
-                    | Family::Path => target.value_type_path(carrier, left, right),
-                    | Family::Flow => target.value_type_flow(carrier, left, right),
+                    Family::Path => target.value_type_path(carrier, left, right),
+                    Family::Flow => target.value_type_flow(carrier, left, right),
                 };
                 Ok(self.erased_value_type(at, image))
             },
             // A reflexivity checked against a path type carries the
             // dialogues relating its point to each endpoint; one only
             // synthesised relates it to itself and carries none.
-            | (Frame::Here { at, family }, AnyNode::Value(point)) => {
+            (Frame::Here { at, family }, AnyNode::Value(point)) => {
                 let dialogues = self.source.reflexivities.get(&at).map(|reflexivity| {
                     alloc::sync::Arc::new(EndpointDialogues {
                         left: reflexivity
@@ -5202,18 +5303,14 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     })
                 });
                 let image = match (family, dialogues) {
-                    | (Family::Path, Some(dialogues)) => {
-                        target.value_here_relating(point, dialogues)
-                    },
-                    | (Family::Path, None) => target.value_here(point),
-                    | (Family::Flow, Some(dialogues)) => {
-                        target.value_stay_relating(point, dialogues)
-                    },
-                    | (Family::Flow, None) => target.value_stay(point),
+                    (Family::Path, Some(dialogues)) => target.value_here_relating(point, dialogues),
+                    (Family::Path, None) => target.value_here(point),
+                    (Family::Flow, Some(dialogues)) => target.value_stay_relating(point, dialogues),
+                    (Family::Flow, None) => target.value_stay(point),
                 };
                 Ok(self.erased_value(at, image))
             },
-            | (
+            (
                 Frame::PathTransportMotive {
                     at,
                     path,
@@ -5230,7 +5327,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 Ok(Step::Descend(CoreNode::Term(TermNode::Value(path))))
             },
-            | (
+            (
                 Frame::PathTransportPath {
                     at,
                     motive,
@@ -5247,7 +5344,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 self.argument(value)
             },
-            | (
+            (
                 Frame::PathTransportValue {
                     at,
                     motive,
@@ -5257,26 +5354,26 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 AnyNode::Value(value),
             ) => {
                 let image = match family {
-                    | Family::Path => target.computation_path_transport(motive, path, value),
-                    | Family::Flow => target.computation_ride(motive, path, value),
+                    Family::Path => target.computation_path_transport(motive, path, value),
+                    Family::Flow => target.computation_ride(motive, path, value),
                 };
                 Ok(self.erased_computation(at, image))
             },
-            | (Frame::ThenFirst { at, second }, AnyNode::Value(first)) => {
+            (Frame::ThenFirst { at, second }, AnyNode::Value(first)) => {
                 self.frames.push(Frame::ThenSecond { at, first });
                 self.argument(second)
             },
-            | (Frame::ThenSecond { at, first }, AnyNode::Value(second)) => {
+            (Frame::ThenSecond { at, first }, AnyNode::Value(second)) => {
                 Ok(self.erased_value(at, target.value_then(first, second, Seam::Sequence)))
             },
-            | (Frame::FlowProductFirst { at, second }, AnyNode::Value(first)) => {
+            (Frame::FlowProductFirst { at, second }, AnyNode::Value(first)) => {
                 self.frames.push(Frame::FlowProductSecond { at, first });
                 self.argument(second)
             },
-            | (Frame::FlowProductSecond { at, first }, AnyNode::Value(second)) => {
+            (Frame::FlowProductSecond { at, first }, AnyNode::Value(second)) => {
                 Ok(self.erased_value(at, target.value_flow_product(first, second)))
             },
-            | (
+            (
                 Frame::ForwardType {
                     at,
                     translator,
@@ -5293,7 +5390,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 self.argument(translator)
             },
-            | (
+            (
                 Frame::ForwardTranslator {
                     at,
                     flow_type,
@@ -5309,11 +5406,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 erased: Vec::new(),
                 dialogues,
             }),
-            | (Frame::ForwardImages(mut erasure), AnyNode::Value(image)) => {
+            (Frame::ForwardImages(mut erasure), AnyNode::Value(image)) => {
                 erasure.erased.push(image);
                 self.forward_images(target, erasure)
             },
-            | (
+            (
                 Frame::FunctionFlowType {
                     at,
                     domain,
@@ -5328,7 +5425,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 self.argument(domain)
             },
-            | (
+            (
                 Frame::FunctionFlowDomain {
                     at,
                     flow_type,
@@ -5343,7 +5440,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 self.argument(codomain)
             },
-            | (
+            (
                 Frame::FunctionFlowCodomain {
                     at,
                     flow_type,
@@ -5351,7 +5448,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 },
                 AnyNode::Value(codomain),
             ) => Ok(self.erased_value(at, target.value_function_flow(flow_type, domain, codomain))),
-            | (Frame::TelescopeMotive { at }, AnyNode::CompType(motive)) => {
+            (Frame::TelescopeMotive { at }, AnyNode::CompType(motive)) => {
                 let Some(&Computation::TelescopeTransport { path, .. }) =
                     self.arena.computation(at)
                 else {
@@ -5360,7 +5457,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 self.frames.push(Frame::TelescopePath { at, motive });
                 Ok(Step::Descend(CoreNode::Term(TermNode::Value(path))))
             },
-            | (Frame::TelescopePath { at, motive }, AnyNode::Value(path)) => {
+            (Frame::TelescopePath { at, motive }, AnyNode::Value(path)) => {
                 let Some(&Computation::TelescopeTransport { start, .. }) =
                     self.arena.computation(at)
                 else {
@@ -5369,7 +5466,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 self.frames.push(Frame::TelescopeStart { at, motive, path });
                 Ok(Step::Descend(CoreNode::Term(TermNode::Value(start))))
             },
-            | (Frame::TelescopeStart { at, motive, path }, AnyNode::Value(start)) => {
+            (Frame::TelescopeStart { at, motive, path }, AnyNode::Value(start)) => {
                 let Some(&Computation::TelescopeTransport { over, .. }) =
                     self.arena.computation(at)
                 else {
@@ -5383,7 +5480,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 Ok(Step::Descend(CoreNode::Term(TermNode::Value(over))))
             },
-            | (
+            (
                 Frame::TelescopeOver {
                     at,
                     motive,
@@ -5406,7 +5503,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 self.argument(value)
             },
-            | (
+            (
                 Frame::TelescopeValue {
                     at,
                     motive,
@@ -5419,63 +5516,63 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 at,
                 target.computation_telescope_transport(motive, path, start, over, value),
             )),
-            | (Frame::Thunk { at }, AnyNode::Computation(body)) => {
+            (Frame::Thunk { at }, AnyNode::Computation(body)) => {
                 Ok(self.erased_value(at, target.value_thunk(body)))
             },
-            | (Frame::Returned { at }, AnyNode::Computation(computation)) => {
+            (Frame::Returned { at }, AnyNode::Computation(computation)) => {
                 Ok(self.erased_value(at, target.value_returned(computation)))
             },
-            | (Frame::Quote { at } | Frame::LiftedCode { at }, AnyNode::ValueType(quoted)) => {
+            (Frame::Quote { at } | Frame::LiftedCode { at }, AnyNode::ValueType(quoted)) => {
                 Ok(self.erased_value(at, target.value_quote(quoted)))
             },
-            | (Frame::QuoteComputation { at }, AnyNode::CompType(quoted)) => {
+            (Frame::QuoteComputation { at }, AnyNode::CompType(quoted)) => {
                 Ok(self.erased_value(at, target.value_quote_computation(quoted)))
             },
-            | (Frame::Force { at }, AnyNode::Value(value)) => {
+            (Frame::Force { at }, AnyNode::Value(value)) => {
                 Ok(self.erased_computation(at, target.computation_force(value)))
             },
-            | (Frame::NativeFirst { at, head, second }, AnyNode::Value(first)) => {
+            (Frame::NativeFirst { at, head, second }, AnyNode::Value(first)) => {
                 let head = target.computation_application(head, first);
                 self.frames.push(Frame::ApplicationArgument { at, head });
                 self.argument(second)
             },
-            | (Frame::ApplicationHead { at, argument }, AnyNode::Computation(head)) => {
+            (Frame::ApplicationHead { at, argument }, AnyNode::Computation(head)) => {
                 self.frames.push(Frame::ApplicationArgument { at, head });
                 self.argument(argument)
             },
-            | (Frame::ApplicationArgument { at, head }, AnyNode::Value(argument)) => {
+            (Frame::ApplicationArgument { at, head }, AnyNode::Value(argument)) => {
                 Ok(self.erased_computation(at, target.computation_application(head, argument)))
             },
-            | (Frame::Lambda { at }, AnyNode::Computation(body)) => {
+            (Frame::Lambda { at }, AnyNode::Computation(body)) => {
                 Ok(self.erased_computation(at, target.computation_lambda(body)))
             },
-            | (Frame::Fixpoint { at, evidence }, AnyNode::Computation(body)) => {
+            (Frame::Fixpoint { at, evidence }, AnyNode::Computation(body)) => {
                 Ok(self.erased_computation(at, target.computation_fixpoint(body, evidence)))
             },
-            | (Frame::Return { at }, AnyNode::Value(value)) => {
+            (Frame::Return { at }, AnyNode::Value(value)) => {
                 Ok(self.erased_computation(at, target.computation_return(value)))
             },
-            | (Frame::BindBound { at, body }, AnyNode::Computation(bound)) => {
+            (Frame::BindBound { at, body }, AnyNode::Computation(bound)) => {
                 self.frames.push(Frame::BindBody { at, bound });
                 Ok(Step::Descend(CoreNode::Term(TermNode::Computation(body))))
             },
-            | (Frame::BindBody { at, bound }, AnyNode::Computation(body)) => {
+            (Frame::BindBody { at, bound }, AnyNode::Computation(body)) => {
                 Ok(self.erased_computation(at, target.computation_bind(bound, body)))
             },
-            | (Frame::WithFirst { at, second }, AnyNode::Computation(first)) => {
+            (Frame::WithFirst { at, second }, AnyNode::Computation(first)) => {
                 self.frames.push(Frame::WithSecond { at, first });
                 Ok(Step::Descend(CoreNode::Term(TermNode::Computation(second))))
             },
-            | (Frame::WithSecond { at, first }, AnyNode::Computation(second)) => {
+            (Frame::WithSecond { at, first }, AnyNode::Computation(second)) => {
                 Ok(self.erased_computation(at, target.computation_with(first, second)))
             },
-            | (Frame::Project { at, side }, AnyNode::Computation(pair)) => {
+            (Frame::Project { at, side }, AnyNode::Computation(pair)) => {
                 Ok(self.erased_computation(at, target.computation_project(side, pair)))
             },
-            | (Frame::ThunkType { at }, AnyNode::CompType(body)) => {
+            (Frame::ThunkType { at }, AnyNode::CompType(body)) => {
                 Ok(self.erased_value_type(at, target.value_type_thunk(body)))
             },
-            | (Frame::TypeLift { at }, AnyNode::ValueType(inner)) => {
+            (Frame::TypeLift { at }, AnyNode::ValueType(inner)) => {
                 let ValueTypeView::Lift { target: level, .. } = value_type_view(self.arena, at)?
                 else {
                     return Err(Refusal::MachineInvariant);
@@ -5483,57 +5580,57 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 let erased = target.value_type_lift(inner, level.clone());
                 Ok(self.erased_value_type(at, erased))
             },
-            | (Frame::DecodeLift { target: level }, AnyNode::ValueType(inner)) => Ok(Step::Ascend(
+            (Frame::DecodeLift { target: level }, AnyNode::ValueType(inner)) => Ok(Step::Ascend(
                 AnyNode::ValueType(target.value_type_lift(inner, level)),
             )),
-            | (
+            (
                 Frame::Decoded {
                     at: TypeNode::Value(at),
                 },
                 AnyNode::ValueType(decoded),
             ) => Ok(self.erased_value_type(at, decoded)),
-            | (
+            (
                 Frame::Decoded {
                     at: TypeNode::Computation(at),
                 },
                 AnyNode::CompType(decoded),
             ) => Ok(self.erased_comp_type(at, decoded)),
-            | (Frame::Returner { at }, AnyNode::ValueType(result)) => {
+            (Frame::Returner { at }, AnyNode::ValueType(result)) => {
                 Ok(self.erased_comp_type(at, target.comp_type_returner(result)))
             },
-            | (Frame::ArrowDomain { at, codomain }, AnyNode::ValueType(domain)) => {
+            (Frame::ArrowDomain { at, codomain }, AnyNode::ValueType(domain)) => {
                 self.frames.push(Frame::ArrowCodomain { at, domain });
                 Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(
                     codomain,
                 ))))
             },
-            | (Frame::ArrowCodomain { at, domain }, AnyNode::CompType(codomain)) => {
+            (Frame::ArrowCodomain { at, domain }, AnyNode::CompType(codomain)) => {
                 Ok(self.erased_comp_type(at, target.comp_type_arrow(domain, codomain)))
             },
-            | (Frame::WithTypeFirst { at, second }, AnyNode::CompType(first)) => {
+            (Frame::WithTypeFirst { at, second }, AnyNode::CompType(first)) => {
                 self.frames.push(Frame::WithTypeSecond { at, first });
                 Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(second))))
             },
-            | (Frame::WithTypeSecond { at, first }, AnyNode::CompType(second)) => {
+            (Frame::WithTypeSecond { at, first }, AnyNode::CompType(second)) => {
                 Ok(self.erased_comp_type(at, target.comp_type_with(first, second)))
             },
-            | (Frame::PiDomain { at, codomain }, AnyNode::ValueType(domain)) => {
+            (Frame::PiDomain { at, codomain }, AnyNode::ValueType(domain)) => {
                 self.frames.push(Frame::PiCodomain { at, domain });
                 Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(
                     codomain,
                 ))))
             },
-            | (Frame::PiCodomain { at, domain }, AnyNode::CompType(codomain)) => {
+            (Frame::PiCodomain { at, domain }, AnyNode::CompType(codomain)) => {
                 Ok(self.erased_comp_type(at, target.comp_type_pi(domain, codomain)))
             },
-            | (Frame::Reduced { at } | Frame::UnmarkedValue { at }, AnyNode::Value(reduct)) => {
+            (Frame::Reduced { at } | Frame::UnmarkedValue { at }, AnyNode::Value(reduct)) => {
                 Ok(self.erased_value(at, reduct))
             },
-            | (
+            (
                 Frame::UnmarkedComputation { at } | Frame::SplitReduct { at },
                 AnyNode::Computation(image),
             ) => Ok(self.erased_computation(at, image)),
-            | (Frame::SigmaSplitScrutinee { at, motive, body }, AnyNode::Value(scrutinee)) => {
+            (Frame::SigmaSplitScrutinee { at, motive, body }, AnyNode::Value(scrutinee)) => {
                 self.frames.push(Frame::SigmaSplitMotive {
                     at,
                     scrutinee,
@@ -5541,7 +5638,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(motive))))
             },
-            | (
+            (
                 Frame::SigmaSplitMotive {
                     at,
                     scrutinee,
@@ -5556,7 +5653,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 Ok(Step::Descend(CoreNode::Term(TermNode::Computation(body))))
             },
-            | (
+            (
                 Frame::SigmaSplitBody {
                     at,
                     scrutinee,
@@ -5565,34 +5662,34 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 AnyNode::Computation(body),
             ) => Ok(self
                 .erased_computation(at, target.computation_sigma_split(scrutinee, motive, body))),
-            | (Frame::StaticHead { at, argument }, AnyNode::Value(head)) => {
+            (Frame::StaticHead { at, argument }, AnyNode::Value(head)) => {
                 self.frames.push(Frame::StaticArgument { at, head });
                 Ok(Step::Descend(CoreNode::Term(TermNode::Value(argument))))
             },
-            | (Frame::StaticArgument { at, head }, AnyNode::Value(argument)) => {
+            (Frame::StaticArgument { at, head }, AnyNode::Value(argument)) => {
                 Ok(self.erased_value(at, target.value_static_application(head, argument)))
             },
-            | (Frame::ListType { at }, AnyNode::ValueType(element)) => {
+            (Frame::ListType { at }, AnyNode::ValueType(element)) => {
                 Ok(self.erased_value_type(at, target.value_type_list(element)))
             },
-            | (Frame::StaticPiDomain { at, codomain }, AnyNode::ValueType(domain)) => {
+            (Frame::StaticPiDomain { at, codomain }, AnyNode::ValueType(domain)) => {
                 self.frames.push(Frame::StaticPiCodomain { at, domain });
                 Ok(Step::Descend(CoreNode::Type(TypeNode::Value(codomain))))
             },
-            | (Frame::StaticPiCodomain { at, domain }, AnyNode::ValueType(codomain)) => {
+            (Frame::StaticPiCodomain { at, domain }, AnyNode::ValueType(codomain)) => {
                 Ok(self.erased_value_type(at, target.value_type_static_pi(domain, codomain)))
             },
-            | (Frame::SigmaFirst { at, second }, AnyNode::ValueType(first)) => {
+            (Frame::SigmaFirst { at, second }, AnyNode::ValueType(first)) => {
                 self.frames.push(Frame::SigmaSecond { at, first });
                 Ok(Step::Descend(CoreNode::Type(TypeNode::Value(second))))
             },
-            | (Frame::SigmaSecond { at, first }, AnyNode::ValueType(second)) => {
+            (Frame::SigmaSecond { at, first }, AnyNode::ValueType(second)) => {
                 Ok(self.erased_value_type(at, target.value_type_sigma(first, second)))
             },
-            | (Frame::DecodeOf { level, sort }, AnyNode::Value(code)) => {
+            (Frame::DecodeOf { level, sort }, AnyNode::Value(code)) => {
                 Ok(Step::Ascend(decoded(target, code, level, sort)))
             },
-            | (
+            (
                 Frame::ListNil { .. }
                 | Frame::ListCons { .. }
                 | Frame::Thunk { .. }
@@ -5863,8 +5960,8 @@ fn decoded(
 ) -> AnyNode
 {
     match sort {
-        | GroundSort::Value => AnyNode::ValueType(target.value_type_element(image, level)),
-        | GroundSort::Computation => AnyNode::CompType(target.comp_type_element(image, level)),
+        GroundSort::Value => AnyNode::ValueType(target.value_type_element(image, level)),
+        GroundSort::Computation => AnyNode::CompType(target.comp_type_element(image, level)),
     }
 }
 
@@ -6226,10 +6323,10 @@ mod tests
     ) -> ConstantIndex
     {
         match *readmission.readmitted()[position.0].outcome() {
-            | Outcome::Defined { admitted, .. }
+            Outcome::Defined { admitted, .. }
             | Outcome::Assumed { admitted, .. }
             | Outcome::Data { admitted, .. } => admitted.position(),
-            | Outcome::Marked(_) | Outcome::Static | Outcome::Refused(_) | Outcome::Rejected(_) => {
+            Outcome::Marked(_) | Outcome::Static | Outcome::Refused(_) | Outcome::Rejected(_) => {
                 panic!("the declaration at this position crosses")
             },
         }
@@ -7033,11 +7130,15 @@ mod tests
             .readmitted()
             .iter()
             .map(|entry| match *entry.outcome() {
-                | Outcome::Data { admitted, .. } => Ok(("data", usize::from(admitted.position()))),
-                | Outcome::Defined { admitted, .. } => {
+                Outcome::Data { admitted, .. } => Ok(("data", usize::from(admitted.position()))),
+                Outcome::Defined { admitted, .. } => {
                     Ok(("defined", usize::from(admitted.position())))
                 },
-                | ref other => Err(other.clone()),
+                ref other @ (Outcome::Assumed { .. }
+                | Outcome::Marked(_)
+                | Outcome::Static
+                | Outcome::Refused(_)
+                | Outcome::Rejected(_)) => Err(other.clone()),
             })
             .collect();
         assert_eq!(
@@ -7553,8 +7654,8 @@ mod tests
             .iter()
             .map(|marked| {
                 let body = match *marked.declaration().content() {
-                    | DeclarationContent::Def { body, .. } => artifact.arena().value(body),
-                    | DeclarationContent::Axiom { .. }
+                    DeclarationContent::Def { body, .. } => artifact.arena().value(body),
+                    DeclarationContent::Axiom { .. }
                     | DeclarationContent::Data { .. }
                     | DeclarationContent::AbstractType { .. } => None,
                 };
@@ -8614,10 +8715,10 @@ mod tests
             .readmitted()
             .iter()
             .map(|entry| match *entry.outcome() {
-                | Outcome::Defined { ref audit, .. }
+                Outcome::Defined { ref audit, .. }
                 | Outcome::Assumed { ref audit, .. }
                 | Outcome::Data { ref audit, .. } => audit.axioms().to_vec(),
-                | Outcome::Marked(_)
+                Outcome::Marked(_)
                 | Outcome::Static
                 | Outcome::Refused(_)
                 | Outcome::Rejected(_) => {
@@ -9004,10 +9105,10 @@ mod tests
             .declarations()
             .iter()
             .filter_map(|marked| match *marked.declaration().content() {
-                | DeclarationContent::Def { body, .. } => {
+                DeclarationContent::Def { body, .. } => {
                     Some(content_digest(artifact.arena(), AnyNode::Value(body)))
                 },
-                | DeclarationContent::Data { .. }
+                DeclarationContent::Data { .. }
                 | DeclarationContent::Axiom { .. }
                 | DeclarationContent::AbstractType { .. } => None,
             })
@@ -9139,7 +9240,7 @@ mod tests
             declaration(At(3), Maybe::Present(small), Maybe::Present(control)),
         ]);
         let refused = |position: usize| match report.judged()[position].verdict() {
-            | Verdict::Refused(CheckRefusal::FamilyArgumentClassifier {
+            Verdict::Refused(CheckRefusal::FamilyArgumentClassifier {
                 at,
                 position,
                 synthesised,
@@ -9150,7 +9251,11 @@ mod tests
                 arena.value_type(synthesised).cloned(),
                 expected,
             ),
-            | verdict => panic!("refused at the argument's classifier: {verdict:?}"),
+            verdict @ (Verdict::Data
+            | Verdict::Checked { .. }
+            | Verdict::Synthesised { .. }
+            | Verdict::Owed(_)
+            | Verdict::Refused(_)) => panic!("refused at the argument's classifier: {verdict:?}"),
         };
         assert_eq!(
             refused(1),
@@ -9458,8 +9563,8 @@ mod tests
             .declarations()
             .iter()
             .find_map(|marked| match *marked.declaration().content() {
-                | DeclarationContent::Def { body, .. } => Some(body),
-                | DeclarationContent::Data { .. }
+                DeclarationContent::Def { body, .. } => Some(body),
+                DeclarationContent::Data { .. }
                 | DeclarationContent::Axiom { .. }
                 | DeclarationContent::AbstractType { .. } => None,
             })
@@ -9780,27 +9885,27 @@ mod tests
             let own = level_at(recipe.level);
             let above = recipe.level.saturating_add(1_u8);
             let (code, sort, natural) = match recipe.shape {
-                | 1_u8 => {
+                1_u8 => {
                     let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), own);
                     (arena.value_quote(universe), GroundSort::Value, above)
                 },
-                | 2_u8 => {
+                2_u8 => {
                     let universe =
                         arena.value_type_universe(Sort::Ground(GroundSort::Computation), own);
                     (arena.value_quote(universe), GroundSort::Value, above)
                 },
-                | 3_u8 => {
+                3_u8 => {
                     let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), own);
                     let returner = arena.comp_type_returner(universe);
                     let thunk = arena.value_type_thunk(returner);
                     (arena.value_quote(thunk), GroundSort::Value, above)
                 },
-                | 4_u8 => (
+                4_u8 => (
                     arena.value_quote_computation(returns_integer),
                     GroundSort::Computation,
                     0_u8,
                 ),
-                | 5_u8 => {
+                5_u8 => {
                     let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), own);
                     let returner = arena.comp_type_returner(universe);
                     let arrow = arena.comp_type_arrow(integer, returner);
@@ -9810,7 +9915,7 @@ mod tests
                         above,
                     )
                 },
-                | 6_u8 if !codes.is_empty() => {
+                6_u8 if !codes.is_empty() => {
                     let position = usize::from(recipe.earlier)
                         .checked_rem(codes.len())
                         .expect("an earlier code exists");
@@ -9821,11 +9926,11 @@ mod tests
                         natural,
                     )
                 },
-                | _ => (arena.value_quote(integer), GroundSort::Value, 0_u8),
+                _ => (arena.value_quote(integer), GroundSort::Value, 0_u8),
             };
             let declared_level = match sort {
-                | GroundSort::Value => natural.saturating_add(recipe.bump),
-                | GroundSort::Computation => natural,
+                GroundSort::Value => natural.saturating_add(recipe.bump),
+                GroundSort::Computation => natural,
             };
             let universe = arena.value_type_universe(Sort::Ground(sort), level_at(declared_level));
             module.push(declaration(
@@ -9840,7 +9945,7 @@ mod tests
             let name = arena.value_constant(ConstantIndex::from(position));
             uses.push(At(module.len()));
             match sort {
-                | GroundSort::Value => {
+                GroundSort::Value => {
                     let decoded = arena.value_type_element(name, level_at(declared_level));
                     let returner = arena.comp_type_returner(decoded);
                     let arrow = arena.comp_type_arrow(decoded, returner);
@@ -9856,7 +9961,7 @@ mod tests
                         Maybe::Present(thunk),
                     ));
                 },
-                | GroundSort::Computation => {
+                GroundSort::Computation => {
                     let decoded = arena.comp_type_element(name, level_at(declared_level));
                     let suspended = arena.value_type_thunk(decoded);
                     module.push(declaration(

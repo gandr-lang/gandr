@@ -24,9 +24,7 @@ impl<A: Copy> Letter<A>
     pub fn atom(&self) -> A
     {
         match *self {
-            | Self::Free(atom) | Self::Open(atom) | Self::Close(atom) | Self::OpenClose(atom) => {
-                atom
-            },
+            Self::Free(atom) | Self::Open(atom) | Self::Close(atom) | Self::OpenClose(atom) => atom,
         }
     }
 }

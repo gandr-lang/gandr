@@ -310,8 +310,8 @@ impl serde::de::Visitor<'_> for CodeVisitor
         E: serde::de::Error,
     {
         match v.parse() {
-            | Ok(code) => Ok(code),
-            | Err(UnknownDiagnosticCode) => {
+            Ok(code) => Ok(code),
+            Err(UnknownDiagnosticCode) => {
                 Err(E::invalid_value(serde::de::Unexpected::Str(v), &self))
             },
         }
@@ -486,18 +486,18 @@ impl DiagnosticMessage
     pub const fn code(&self) -> DiagnosticCode
     {
         match *self {
-            | Self::TypeMismatch { .. } => DiagnosticCode::TypeMismatch,
-            | Self::ShapeMismatch { .. } => DiagnosticCode::ShapeMismatch,
-            | Self::StuckExpression { .. } => DiagnosticCode::StuckExpression,
-            | Self::UnboundVariable { .. } => DiagnosticCode::UnboundVariable,
-            | Self::GradeOrder { .. } => DiagnosticCode::GradeOrder,
-            | Self::UnknownAttribute { .. } => DiagnosticCode::UnknownAttribute,
-            | Self::DuplicateAttribute { .. } => DiagnosticCode::DuplicateAttribute,
-            | Self::MissingAttributePayload { .. } => DiagnosticCode::MissingAttributePayload,
-            | Self::NonValueAttributePayload { .. } => DiagnosticCode::NonValueAttributePayload,
-            | Self::ShadowedName { .. } => DiagnosticCode::ShadowedName,
-            | Self::ParseRepair { .. } => DiagnosticCode::ParseRepair,
-            | Self::Other { .. } => DiagnosticCode::Other,
+            Self::TypeMismatch { .. } => DiagnosticCode::TypeMismatch,
+            Self::ShapeMismatch { .. } => DiagnosticCode::ShapeMismatch,
+            Self::StuckExpression { .. } => DiagnosticCode::StuckExpression,
+            Self::UnboundVariable { .. } => DiagnosticCode::UnboundVariable,
+            Self::GradeOrder { .. } => DiagnosticCode::GradeOrder,
+            Self::UnknownAttribute { .. } => DiagnosticCode::UnknownAttribute,
+            Self::DuplicateAttribute { .. } => DiagnosticCode::DuplicateAttribute,
+            Self::MissingAttributePayload { .. } => DiagnosticCode::MissingAttributePayload,
+            Self::NonValueAttributePayload { .. } => DiagnosticCode::NonValueAttributePayload,
+            Self::ShadowedName { .. } => DiagnosticCode::ShadowedName,
+            Self::ParseRepair { .. } => DiagnosticCode::ParseRepair,
+            Self::Other { .. } => DiagnosticCode::Other,
         }
     }
 
@@ -544,56 +544,56 @@ impl fmt::Display for DiagnosticMessage
     ) -> fmt::Result
     {
         match *self {
-            | Self::TypeMismatch {
+            Self::TypeMismatch {
                 ref expected,
                 ref actual,
             } => write!(f, "type mismatch: expected {expected}, actual {actual}"),
-            | Self::ShapeMismatch {
+            Self::ShapeMismatch {
                 ref expected_shape,
                 ref actual,
             } => write!(
                 f,
                 "type shape mismatch: expected {expected_shape}, actual {actual}"
             ),
-            | Self::StuckExpression {
+            Self::StuckExpression {
                 ref expression,
                 ref hint,
             } => write!(f, "no typing rule applies to term {expression}: {hint}"),
-            | Self::UnboundVariable { ref name } => write!(f, "variable is unbound: {name}"),
-            | Self::GradeOrder {
+            Self::UnboundVariable { ref name } => write!(f, "variable is unbound: {name}"),
+            Self::GradeOrder {
                 ref lower,
                 ref upper,
             } => write!(
                 f,
                 "grade order requirement failed: {lower} ⊑ {upper} does not hold"
             ),
-            | Self::UnknownAttribute {
+            Self::UnknownAttribute {
                 ref name,
                 ref suggestion,
             } => match *suggestion {
-                | Some(ref candidate) => {
+                Some(ref candidate) => {
                     write!(f, "unknown attribute `{name}`; did you mean `{candidate}`?")
                 },
-                | None => write!(f, "unknown attribute `{name}`"),
+                None => write!(f, "unknown attribute `{name}`"),
             },
-            | Self::DuplicateAttribute { ref name } => {
+            Self::DuplicateAttribute { ref name } => {
                 write!(f, "duplicate attribute `{name}` (single-valued)")
             },
-            | Self::MissingAttributePayload { ref name } => {
+            Self::MissingAttributePayload { ref name } => {
                 write!(f, "attribute `{name}` requires a payload")
             },
-            | Self::NonValueAttributePayload { ref name } => {
+            Self::NonValueAttributePayload { ref name } => {
                 write!(
                     f,
                     "attribute `{name}` payload must be a value, not a computation"
                 )
             },
-            | Self::ShadowedName { ref path } => write!(
+            Self::ShadowedName { ref path } => write!(
                 f,
                 "`{path}` is a prelude or host name; this declaration takes it, and the policy allows it"
             ),
-            | Self::ParseRepair { ref class } => write!(f, "parse repaired: {class}"),
-            | Self::Other { ref message } => f.write_str(message),
+            Self::ParseRepair { ref class } => write!(f, "parse repaired: {class}"),
+            Self::Other { ref message } => f.write_str(message),
         }
     }
 }

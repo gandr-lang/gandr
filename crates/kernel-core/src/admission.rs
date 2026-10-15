@@ -267,19 +267,19 @@ impl Node
     fn record(self) -> Record
     {
         Record(match self {
-            | Self::Rigid(Term::Variable(index)) => [0, index.0, 0, 0, 0],
-            | Self::Rigid(Term::Natural(Stage::Outer, value)) => [1, value.0, 0, 0, 0],
-            | Self::Rigid(Term::Natural(Stage::Inner(model), value)) => [2, model.0, value.0, 0, 0],
-            | Self::Rigid(Term::Code(ty)) => [3, ty.0, 0, 0, 0],
-            | Self::Rigid(Term::Lambda(ty, body)) => [4, ty.0, body.0, 0, 0],
-            | Self::Rigid(Term::Apply(a, b)) => [5, a.0, b.0, 0, 0],
-            | Self::Rigid(Term::Multiply(a, b)) => [6, a.0, b.0, 0, 0],
-            | Self::Rigid(Term::Quote(body)) => [7, body.0, 0, 0, 0],
-            | Self::Rigid(Term::Splice(body)) => [8, body.0, 0, 0, 0],
-            | Self::Rigid(Term::Iterate(n, z, s)) => [9, n.0, z.0, s.0, 0],
-            | Self::Rigid(Term::Eliminate(body, ty)) => [10, body.0, ty.0, 0, 0],
-            | Self::Point(point) => [11, point.0, 0, 0, 0],
-            | Self::Predecessor(point) => [12, point.0, 0, 0, 0],
+            Self::Rigid(Term::Variable(index)) => [0, index.0, 0, 0, 0],
+            Self::Rigid(Term::Natural(Stage::Outer, value)) => [1, value.0, 0, 0, 0],
+            Self::Rigid(Term::Natural(Stage::Inner(model), value)) => [2, model.0, value.0, 0, 0],
+            Self::Rigid(Term::Code(ty)) => [3, ty.0, 0, 0, 0],
+            Self::Rigid(Term::Lambda(ty, body)) => [4, ty.0, body.0, 0, 0],
+            Self::Rigid(Term::Apply(a, b)) => [5, a.0, b.0, 0, 0],
+            Self::Rigid(Term::Multiply(a, b)) => [6, a.0, b.0, 0, 0],
+            Self::Rigid(Term::Quote(body)) => [7, body.0, 0, 0, 0],
+            Self::Rigid(Term::Splice(body)) => [8, body.0, 0, 0, 0],
+            Self::Rigid(Term::Iterate(n, z, s)) => [9, n.0, z.0, s.0, 0],
+            Self::Rigid(Term::Eliminate(body, ty)) => [10, body.0, ty.0, 0, 0],
+            Self::Point(point) => [11, point.0, 0, 0, 0],
+            Self::Predecessor(point) => [12, point.0, 0, 0, 0],
         })
     }
 }
@@ -348,16 +348,16 @@ impl core::fmt::Display for Refusal
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Syntax(error) => write!(f, "syntax: {error}"),
-            | Self::Malformed => f.write_str("malformed schema"),
-            | Self::SchemaWorkBound => f.write_str("schema work bound"),
-            | Self::Transparency => f.write_str("discrimination transparency"),
-            | Self::CorruptStep => f.write_str("corrupt step"),
-            | Self::MissingPoint(point) => write!(f, "missing point {}", point.0),
-            | Self::UnknownArm(point) => write!(f, "unknown arm at point {}", point.0),
-            | Self::Correlation(point) => write!(f, "correlation at point {}", point.0),
-            | Self::ClassifierMismatch => f.write_str("classifier mismatch"),
-            | Self::SidesMismatch => f.write_str("sides mismatch"),
+            Self::Syntax(error) => write!(f, "syntax: {error}"),
+            Self::Malformed => f.write_str("malformed schema"),
+            Self::SchemaWorkBound => f.write_str("schema work bound"),
+            Self::Transparency => f.write_str("discrimination transparency"),
+            Self::CorruptStep => f.write_str("corrupt step"),
+            Self::MissingPoint(point) => write!(f, "missing point {}", point.0),
+            Self::UnknownArm(point) => write!(f, "unknown arm at point {}", point.0),
+            Self::Correlation(point) => write!(f, "correlation at point {}", point.0),
+            Self::ClassifierMismatch => f.write_str("classifier mismatch"),
+            Self::SidesMismatch => f.write_str("sides mismatch"),
         }
     }
 }
@@ -634,10 +634,10 @@ impl Schema
                 return Err(Refusal::Malformed);
             }
             match *ty {
-                | Type::In(model) | Type::Universe(model) | Type::Nat(Stage::Inner(model)) => {
+                Type::In(model) | Type::Universe(model) | Type::Nat(Stage::Inner(model)) => {
                     occupied.insert(model);
                 },
-                | Type::Nat(Stage::Outer) | Type::Arrow(..) | Type::Lift(_) => {},
+                Type::Nat(Stage::Outer) | Type::Arrow(..) | Type::Lift(_) => {},
             }
         }
         let mut records = BTreeSet::new();
@@ -648,13 +648,13 @@ impl Schema
                 return Err(Refusal::Malformed);
             }
             let varies = match *node {
-                | Node::Point(point) | Node::Predecessor(point) => {
+                Node::Point(point) | Node::Predecessor(point) => {
                     if point.0 >= proposal.arms.len() {
                         return Err(Refusal::Malformed);
                     }
                     true
                 },
-                | Node::Rigid(term) => {
+                Node::Rigid(term) => {
                     if let Term::Natural(Stage::Inner(model), _) = term {
                         occupied.insert(model);
                     }
@@ -666,10 +666,16 @@ impl Schema
                         varies |= *dependent.get(child.0).ok_or(Refusal::Malformed)?;
                     }
                     match term {
-                        | Term::Lambda(ty, _) | Term::Code(ty) | Term::Eliminate(_, ty) => {
+                        Term::Lambda(ty, _) | Term::Code(ty) | Term::Eliminate(_, ty) => {
                             vocabulary.ty(ty)?;
                         },
-                        | _ => {},
+                        Term::Variable(_)
+                        | Term::Natural(..)
+                        | Term::Apply(..)
+                        | Term::Multiply(..)
+                        | Term::Quote(_)
+                        | Term::Splice(_)
+                        | Term::Iterate(..) => {},
                     }
                     varies
                 },
@@ -685,11 +691,11 @@ impl Schema
                 continue;
             }
             match proposal.node(id)? {
-                | Node::Point(point) => {
+                Node::Point(point) => {
                     source_points.insert(point);
                 },
-                | Node::Predecessor(_) => return Err(Refusal::Malformed),
-                | Node::Rigid(term) => pending.extend(term.children().into_iter().flatten()),
+                Node::Predecessor(_) => return Err(Refusal::Malformed),
+                Node::Rigid(term) => pending.extend(term.children().into_iter().flatten()),
             }
         }
         if source_points.len() != proposal.arms.len() {
@@ -934,10 +940,10 @@ impl Schema
                 .get_mut(choice.point.0)
                 .ok_or(Refusal::UnknownArm(choice.point))?;
             match *slot {
-                | Selected::Chosen(old) if old != choice.guard => {
+                Selected::Chosen(old) if old != choice.guard => {
                     return Err(Refusal::Correlation(choice.point));
                 },
-                | Selected::Open | Selected::Chosen(_) => *slot = Selected::Chosen(choice.guard),
+                Selected::Open | Selected::Chosen(_) => *slot = Selected::Chosen(choice.guard),
             }
         }
         if let Some(point) = selected.iter().position(|slot| *slot == Selected::Open) {
@@ -981,29 +987,26 @@ impl Schema
     {
         let source = self.proposal.node(self.proposal.equation.source)?;
         match (self.proposal.equation.rule, source) {
-            | (Rule::SpliceQuote, Node::Rigid(Term::Splice(id))) => {
+            (Rule::SpliceQuote, Node::Rigid(Term::Splice(id))) => {
                 if !matches!(self.proposal.node(id)?, Node::Rigid(Term::Quote(_))) {
                     return Err(Refusal::Transparency);
                 }
             },
-            | (Rule::QuoteSplice, Node::Rigid(Term::Quote(id))) => {
+            (Rule::QuoteSplice, Node::Rigid(Term::Quote(id))) => {
                 if !matches!(self.proposal.node(id)?, Node::Rigid(Term::Splice(_))) {
                     return Err(Refusal::Transparency);
                 }
             },
-            | (
-                Rule::IterateZero | Rule::IterateSuccessor,
-                Node::Rigid(Term::Iterate(count, ..)),
-            ) => {
+            (Rule::IterateZero | Rule::IterateSuccessor, Node::Rigid(Term::Iterate(count, ..))) => {
                 let counts = match self.proposal.node(count)? {
-                    | Node::Point(point) => self
+                    Node::Point(point) => self
                         .proposal
                         .arms
                         .get(point.0)
                         .ok_or(Refusal::Malformed)?
                         .as_slice(),
-                    | Node::Rigid(Term::Natural(..)) => core::slice::from_ref(&count),
-                    | _ => return Err(Refusal::Transparency),
+                    Node::Rigid(Term::Natural(..)) => core::slice::from_ref(&count),
+                    Node::Rigid(_) | Node::Predecessor(_) => return Err(Refusal::Transparency),
                 };
                 for count in counts {
                     budget.spend()?;
@@ -1017,7 +1020,7 @@ impl Schema
                     }
                 }
             },
-            | (Rule::Beta, Node::Rigid(Term::Apply(head, _))) => {
+            (Rule::Beta, Node::Rigid(Term::Apply(head, _))) => {
                 if !matches!(self.proposal.node(head)?, Node::Rigid(Term::Lambda(..))) {
                     return Err(Refusal::Transparency);
                 }
@@ -1047,9 +1050,9 @@ impl Schema
                     }
                 }
             },
-            | (Rule::Eliminate, Node::Rigid(Term::Eliminate(..)))
+            (Rule::Eliminate, Node::Rigid(Term::Eliminate(..)))
             | (Rule::Congruence, Node::Rigid(_)) => {},
-            | _ => return Err(Refusal::Transparency),
+            _ => return Err(Refusal::Transparency),
         }
         Ok(())
     }
@@ -1095,12 +1098,12 @@ impl Schema
         self.replay_work.0 = self.replay_work.0.saturating_add(spent);
         self.largest_replay.0 = self.largest_replay.0.max(spent);
         match result {
-            | Ok(_) => {
+            Ok(_) => {
                 self.checks.0 = self.checks.0.saturating_add(1);
                 Ok(())
             },
-            | Err(StageError::Exhausted) => Err(Refusal::Syntax(StageError::Exhausted)),
-            | Err(_) => Err(Refusal::CorruptStep),
+            Err(StageError::Exhausted) => Err(Refusal::Syntax(StageError::Exhausted)),
+            Err(_) => Err(Refusal::CorruptStep),
         }
     }
 
@@ -1151,12 +1154,12 @@ impl Schema
             budget.spend()?;
             let dependence = self.content.dependence(TermId(index))?;
             let slot = match (dependence, *node) {
-                | (content::Dependence::Dependent, _) => content::Slot::Pending,
-                | (content::Dependence::Fixed, Node::Rigid(term)) => {
+                (content::Dependence::Dependent, _) => content::Slot::Pending,
+                (content::Dependence::Fixed, Node::Rigid(term)) => {
                     let term = content::relink(term, &known)?;
                     content::Slot::Known(arena.alloc(term)?)
                 },
-                | (content::Dependence::Fixed, Node::Point(_) | Node::Predecessor(_)) => {
+                (content::Dependence::Fixed, Node::Point(_) | Node::Predecessor(_)) => {
                     return Err(Refusal::Malformed);
                 },
             };
@@ -1214,15 +1217,15 @@ impl Schema
                 continue;
             }
             let term = match (*node, obligation) {
-                | (Node::Point(point), Obligation::Arm(bound, arm)) if point == bound => {
+                (Node::Point(point), Obligation::Arm(bound, arm)) if point == bound => {
                     let value = known.get(arm.0).ok_or(Refusal::Malformed)?.id()?;
                     *known.get_mut(index).ok_or(Refusal::Malformed)? = content::Slot::Known(value);
                     continue;
                 },
-                | (Node::Point(point), _) => {
+                (Node::Point(point), _) => {
                     Term::Code(*self.skolems.get(point.0).ok_or(Refusal::Malformed)?)
                 },
-                | (Node::Predecessor(point), Obligation::Arm(bound, arm)) if point == bound => {
+                (Node::Predecessor(point), Obligation::Arm(bound, arm)) if point == bound => {
                     let Node::Rigid(Term::Natural(Stage::Outer, Natural(value))) =
                         self.proposal.node(arm)?
                     else {
@@ -1233,13 +1236,13 @@ impl Schema
                         Natural(value.checked_sub(1).ok_or(Refusal::Transparency)?),
                     )
                 },
-                | (Node::Predecessor(point), _) => Term::Code(
+                (Node::Predecessor(point), _) => Term::Code(
                     *self
                         .skolems
                         .get(point.0.saturating_add(self.proposal.arms.len()))
                         .ok_or(Refusal::Malformed)?,
                 ),
-                | (Node::Rigid(term), _) => content::relink(term, &known)?,
+                (Node::Rigid(term), _) => content::relink(term, &known)?,
             };
             *known.get_mut(index).ok_or(Refusal::Malformed)? =
                 content::Slot::Known(arena.alloc(term)?);

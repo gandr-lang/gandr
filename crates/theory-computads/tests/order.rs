@@ -195,10 +195,10 @@ enum FaceShape
 fn shape(cmd: &CmdPat) -> FaceShape
 {
     match cmd.consumer().view() {
-        | ConsView::Frame { ret, .. } if matches!(ret.view(), ConsView::Op { .. }) => {
+        ConsView::Frame { ret, .. } if matches!(ret.view(), ConsView::Op { .. }) => {
             FaceShape::FrameOutsideOperation
         },
-        | ConsView::Op { rets, .. }
+        ConsView::Op { rets, .. }
             if rets.len() == 1
                 && rets
                     .clone()
@@ -206,7 +206,7 @@ fn shape(cmd: &CmdPat) -> FaceShape
         {
             FaceShape::OperationOutsideFrame
         },
-        | ConsView::Frame { .. } | ConsView::Op { .. } | ConsView::Meta(_) | ConsView::Top => {
+        ConsView::Frame { .. } | ConsView::Op { .. } | ConsView::Meta(_) | ConsView::Top => {
             FaceShape::Other
         },
     }

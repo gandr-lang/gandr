@@ -227,16 +227,16 @@ impl ExpansionCensus
     )
     {
         match (plane, kind) {
-            | (SupportPlane::Term, ExpansionKind::Expanded) => {
+            (SupportPlane::Term, ExpansionKind::Expanded) => {
                 self.term_expanded = self.term_expanded.successor();
             },
-            | (SupportPlane::Term, ExpansionKind::Recalled) => {
+            (SupportPlane::Term, ExpansionKind::Recalled) => {
                 self.term_recalled = self.term_recalled.successor();
             },
-            | (SupportPlane::Type, ExpansionKind::Expanded) => {
+            (SupportPlane::Type, ExpansionKind::Expanded) => {
                 self.type_expanded = self.type_expanded.successor();
             },
-            | (SupportPlane::Type, ExpansionKind::Recalled) => {
+            (SupportPlane::Type, ExpansionKind::Recalled) => {
                 self.type_recalled = self.type_recalled.successor();
             },
         }
@@ -254,8 +254,8 @@ impl ExpansionCensus
     ) -> ExpansionCount
     {
         match plane {
-            | SupportPlane::Term => self.term_expanded,
-            | SupportPlane::Type => self.type_expanded,
+            SupportPlane::Term => self.term_expanded,
+            SupportPlane::Type => self.type_expanded,
         }
     }
 
@@ -271,8 +271,8 @@ impl ExpansionCensus
     ) -> ExpansionCount
     {
         match plane {
-            | SupportPlane::Term => self.term_recalled,
-            | SupportPlane::Type => self.type_recalled,
+            SupportPlane::Term => self.term_recalled,
+            SupportPlane::Type => self.type_recalled,
         }
     }
 

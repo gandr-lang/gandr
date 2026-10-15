@@ -173,22 +173,64 @@ pub fn component(
     };
     let head = context.whnf_value_type(classifier)?;
     let (source, target, reading) = match value_type_view(context.arena(), head)? {
-        | ValueTypeView::PathUniverse(source, target) => (source, target, Reading::Native),
-        | ValueTypeView::Path {
+        ValueTypeView::PathUniverse(source, target) => (source, target, Reading::Native),
+        ValueTypeView::Path {
             carrier,
             left,
             right,
         } => {
             let carrier = context.whnf_value_type(carrier)?;
             match value_type_view(context.arena(), carrier)? {
-                | ValueTypeView::Universe {
+                ValueTypeView::Universe {
                     sort: GroundSort::Value,
                     level,
                 } if *level == Level::zero() => (left, right, Reading::Element),
-                | _ => return Err(refused),
+                ValueTypeView::Data { .. }
+                | ValueTypeView::Record(_)
+                | ValueTypeView::Stack { .. }
+                | ValueTypeView::PathUniverse(..)
+                | ValueTypeView::Path { .. }
+                | ValueTypeView::Flow { .. }
+                | ValueTypeView::Run(_)
+                | ValueTypeView::Sum(_)
+                | ValueTypeView::List(_)
+                | ValueTypeView::Integer
+                | ValueTypeView::String
+                | ValueTypeView::Unit
+                | ValueTypeView::Thunk(_)
+                | ValueTypeView::Universe { .. }
+                | ValueTypeView::Lift { .. }
+                | ValueTypeView::Element { .. }
+                | ValueTypeView::Product(_)
+                | ValueTypeView::StaticPi { .. }
+                | ValueTypeView::Sigma { .. }
+                | ValueTypeView::Abstract(_)
+                | ValueTypeView::Capability { .. }
+                | ValueTypeView::Session(_)
+                | ValueTypeView::Unknown => return Err(refused),
             }
         },
-        | _ => return Err(refused),
+        ValueTypeView::Data { .. }
+        | ValueTypeView::Record(_)
+        | ValueTypeView::Stack { .. }
+        | ValueTypeView::Flow { .. }
+        | ValueTypeView::Run(_)
+        | ValueTypeView::Sum(_)
+        | ValueTypeView::List(_)
+        | ValueTypeView::Integer
+        | ValueTypeView::String
+        | ValueTypeView::Unit
+        | ValueTypeView::Thunk(_)
+        | ValueTypeView::Universe { .. }
+        | ValueTypeView::Lift { .. }
+        | ValueTypeView::Element { .. }
+        | ValueTypeView::Product(_)
+        | ValueTypeView::StaticPi { .. }
+        | ValueTypeView::Sigma { .. }
+        | ValueTypeView::Abstract(_)
+        | ValueTypeView::Capability { .. }
+        | ValueTypeView::Session(_)
+        | ValueTypeView::Unknown => return Err(refused),
     };
     Ok(Component {
         source: crate::formation::path_code(context.arena(), source)?,
@@ -280,11 +322,33 @@ pub fn flow_component(
     };
     let carrier = context.whnf_value_type(carrier)?;
     match value_type_view(context.arena(), carrier)? {
-        | ValueTypeView::Universe {
+        ValueTypeView::Universe {
             sort: GroundSort::Value,
             level,
         } if *level == Level::zero() => {},
-        | _ => return Err(refused),
+        ValueTypeView::Data { .. }
+        | ValueTypeView::Record(_)
+        | ValueTypeView::Stack { .. }
+        | ValueTypeView::PathUniverse(..)
+        | ValueTypeView::Path { .. }
+        | ValueTypeView::Flow { .. }
+        | ValueTypeView::Run(_)
+        | ValueTypeView::Sum(_)
+        | ValueTypeView::List(_)
+        | ValueTypeView::Integer
+        | ValueTypeView::String
+        | ValueTypeView::Unit
+        | ValueTypeView::Thunk(_)
+        | ValueTypeView::Universe { .. }
+        | ValueTypeView::Lift { .. }
+        | ValueTypeView::Element { .. }
+        | ValueTypeView::Product(_)
+        | ValueTypeView::StaticPi { .. }
+        | ValueTypeView::Sigma { .. }
+        | ValueTypeView::Abstract(_)
+        | ValueTypeView::Capability { .. }
+        | ValueTypeView::Session(_)
+        | ValueTypeView::Unknown => return Err(refused),
     }
     Ok((
         crate::formation::path_code(context.arena(), source)?,
@@ -409,10 +473,10 @@ fn certificate(
     loop {
         let recorded = context.natives().get(&read).copied();
         match context.arena().value(read) {
-            | Some(&(Value::PathRefl(_) | Value::PathEquiv { .. })) => return Ok(read),
-            | Some(&Value::PathProduct(..)) => return Ok(recorded.unwrap_or(read)),
-            | Some(&Value::Ua { .. }) => return recorded.ok_or(CheckRefusal::MachineInvariant),
-            | Some(&Value::Equiv(forward, backward)) => {
+            Some(&(Value::PathRefl(_) | Value::PathEquiv { .. })) => return Ok(read),
+            Some(&Value::PathProduct(..)) => return Ok(recorded.unwrap_or(read)),
+            Some(&Value::Ua { .. }) => return recorded.ok_or(CheckRefusal::MachineInvariant),
+            Some(&Value::Equiv(forward, backward)) => {
                 let Some(decided) = context.equivalences().get(&read)
                 else {
                     return Err(CheckRefusal::MachineInvariant);
@@ -422,15 +486,15 @@ fn certificate(
                     .arena_mut()
                     .value_path_equiv(path_type, forward, backward, evidence));
             },
-            | Some(&Value::Here(point)) => {
+            Some(&Value::Here(point)) => {
                 let _code = crate::formation::path_code(context.arena(), point)?;
                 return Ok(context.arena_mut().value_path_refl(point));
             },
-            | Some(&Value::Constant(constant)) => match context.definitions().body(constant) {
-                | Maybe::Present(body) => read = body,
-                | Maybe::Absent(_) => return Err(open),
+            Some(&Value::Constant(constant)) => match context.definitions().body(constant) {
+                Maybe::Present(body) => read = body,
+                Maybe::Absent(_) => return Err(open),
             },
-            | _ => return Err(open),
+            _ => return Err(open),
         }
     }
 }

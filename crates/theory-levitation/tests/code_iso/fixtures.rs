@@ -187,8 +187,8 @@ pub fn identity_bool() -> CodeIso
 pub fn negation_bool() -> CodeIso
 {
     let flip: Translate = Arc::new(|value: &DescValue| match usize::from(value.ctor) {
-        | 0 => nullary_value(ConstructorTag::from(1_usize)),
-        | _ => nullary_value(ConstructorTag::from(0_usize)),
+        0 => nullary_value(ConstructorTag::from(1_usize)),
+        _ => nullary_value(ConstructorTag::from(0_usize)),
     });
     CodeIso::new(
         "negation",
@@ -208,8 +208,8 @@ pub fn negation_bool() -> CodeIso
 pub fn bool_bridge() -> CodeIso
 {
     let forward: Translate = Arc::new(|value: &DescValue| match usize::from(value.ctor) {
-        | 0 => DescValue::new(ConstructorTag::from(0_usize), inl(Payload::unit())),
-        | _ => DescValue::new(ConstructorTag::from(0_usize), inr(Payload::unit())),
+        0 => DescValue::new(ConstructorTag::from(0_usize), inl(Payload::unit())),
+        _ => DescValue::new(ConstructorTag::from(0_usize), inr(Payload::unit())),
     });
     let backward: Translate = Arc::new(|value: &DescValue| {
         if matches!(value.payload.view(), PayloadView::Inj {
@@ -240,17 +240,17 @@ pub fn rgb_rotate() -> CodeIso
 {
     let forward: Translate = Arc::new(|value: &DescValue| {
         let next = match usize::from(value.ctor) {
-            | 0 => 1_usize,
-            | 1 => 2_usize,
-            | _ => 0_usize,
+            0 => 1_usize,
+            1 => 2_usize,
+            _ => 0_usize,
         };
         nullary_value(ConstructorTag::from(next))
     });
     let backward: Translate = Arc::new(|value: &DescValue| {
         let previous = match usize::from(value.ctor) {
-            | 0 => 2_usize,
-            | 1 => 0_usize,
-            | _ => 1_usize,
+            0 => 2_usize,
+            1 => 0_usize,
+            _ => 1_usize,
         };
         nullary_value(ConstructorTag::from(previous))
     });

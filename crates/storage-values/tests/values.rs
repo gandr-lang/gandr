@@ -143,8 +143,8 @@ fn an_interior_pointer_derefs_to_its_own_subtree()
     let children: Vec<ContentPtr> = scan(root_body)
         .into_iter()
         .filter_map(|record| match record {
-            | Scanned::Child(pointer) => Some(pointer),
-            | Scanned::Open | Scanned::Other => None,
+            Scanned::Child(pointer) => Some(pointer),
+            Scanned::Open | Scanned::Other => None,
         })
         .collect();
     let first = *children

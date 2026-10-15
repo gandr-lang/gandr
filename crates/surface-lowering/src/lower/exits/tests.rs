@@ -128,18 +128,18 @@ pub(in crate::lower) fn reachable(
     while let Some(next) = pending.pop() {
         seen.push(next);
         match arena.computation(next) {
-            | Some(&Computation::Bind(first, second)) => pending.extend([first, second]),
-            | Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
+            Some(&Computation::Bind(first, second)) => pending.extend([first, second]),
+            Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
                 pending.push(under);
             },
-            | Some(&Computation::Fixpoint { body: under, .. }) => pending.push(under),
-            | Some(&Computation::DataCase { ref branches, .. }) => {
+            Some(&Computation::Fixpoint { body: under, .. }) => pending.push(under),
+            Some(&Computation::DataCase { ref branches, .. }) => {
                 pending.extend(branches.iter().copied());
             },
-            | Some(&Computation::Case { ref branches, .. }) => {
+            Some(&Computation::Case { ref branches, .. }) => {
                 pending.extend(branches.iter().copied());
             },
-            | _ => {},
+            _ => {},
         }
     }
 

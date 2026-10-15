@@ -60,14 +60,14 @@ use ratatui::style::Style;
 pub const fn style_of(role: HlRole) -> Style
 {
     let colour = match role {
-        | HlRole::Keyword | HlRole::Boolean | HlRole::Hole | HlRole::Directive => Color::Magenta,
-        | HlRole::Operator | HlRole::Label => Color::Cyan,
-        | HlRole::FunctionDef | HlRole::FunctionCall | HlRole::Constructor => Color::Blue,
-        | HlRole::VariableDef | HlRole::Variable | HlRole::Other => Color::Reset,
-        | HlRole::VariableParam | HlRole::Member | HlRole::Number => Color::Yellow,
-        | HlRole::Type | HlRole::TypeBuiltin | HlRole::TypeVariable => Color::Green,
-        | HlRole::StringLit | HlRole::Character | HlRole::Escape | HlRole::Path => Color::Red,
-        | HlRole::Comment => Color::DarkGray,
+        HlRole::Keyword | HlRole::Boolean | HlRole::Hole | HlRole::Directive => Color::Magenta,
+        HlRole::Operator | HlRole::Label => Color::Cyan,
+        HlRole::FunctionDef | HlRole::FunctionCall | HlRole::Constructor => Color::Blue,
+        HlRole::VariableDef | HlRole::Variable | HlRole::Other => Color::Reset,
+        HlRole::VariableParam | HlRole::Member | HlRole::Number => Color::Yellow,
+        HlRole::Type | HlRole::TypeBuiltin | HlRole::TypeVariable => Color::Green,
+        HlRole::StringLit | HlRole::Character | HlRole::Escape | HlRole::Path => Color::Red,
+        HlRole::Comment => Color::DarkGray,
     };
     Style::new().fg(colour)
 }
@@ -109,14 +109,14 @@ pub const fn style_of(role: HlRole) -> Style
 pub const fn style_of_kind(kind: OutKind) -> Style
 {
     match kind {
-        | OutKind::Source => Style::new().fg(Color::Reset).add_modifier(Modifier::BOLD),
-        | OutKind::Type => Style::new().fg(Color::Green),
-        | OutKind::Value => Style::new().fg(Color::Reset),
-        | OutKind::Goal => Style::new().fg(Color::Magenta),
-        | OutKind::Diag => Style::new().fg(Color::Red),
-        | OutKind::Blame => Style::new().fg(Color::Red).add_modifier(Modifier::BOLD),
-        | OutKind::Stuck => Style::new().fg(Color::Yellow),
-        | OutKind::Info => Style::new().fg(Color::DarkGray),
+        OutKind::Source => Style::new().fg(Color::Reset).add_modifier(Modifier::BOLD),
+        OutKind::Type => Style::new().fg(Color::Green),
+        OutKind::Value => Style::new().fg(Color::Reset),
+        OutKind::Goal => Style::new().fg(Color::Magenta),
+        OutKind::Diag => Style::new().fg(Color::Red),
+        OutKind::Blame => Style::new().fg(Color::Red).add_modifier(Modifier::BOLD),
+        OutKind::Stuck => Style::new().fg(Color::Yellow),
+        OutKind::Info => Style::new().fg(Color::DarkGray),
     }
 }
 
@@ -178,7 +178,7 @@ mod tests
     {
         for role in ROLES {
             match role {
-                | HlRole::Keyword
+                HlRole::Keyword
                 | HlRole::Operator
                 | HlRole::FunctionDef
                 | HlRole::FunctionCall
@@ -206,7 +206,7 @@ mod tests
         }
         for kind in KINDS {
             match kind {
-                | OutKind::Source
+                OutKind::Source
                 | OutKind::Type
                 | OutKind::Value
                 | OutKind::Blame

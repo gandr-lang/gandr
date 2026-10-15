@@ -162,7 +162,7 @@ pub fn flatten<'source>(
             continue;
         };
         let material = match node.label() {
-            | NodeLabel::Meld(mold) => {
+            NodeLabel::Meld(mold) => {
                 let verbatim = grammar.rule_of(mold).is_ok_and(|rule| {
                     let name = rule.name().0;
                     let base = name.split_once('.').map_or(name, |(base, _)| base);
@@ -176,19 +176,19 @@ pub fn flatten<'source>(
                     continue;
                 }
             },
-            | NodeLabel::Wald => {
+            NodeLabel::Wald => {
                 pending.extend(tree.children(at).map(|child| (child, owner, documentation)));
                 continue;
             },
-            | NodeLabel::Doc => {
+            NodeLabel::Doc => {
                 pending.extend(
                     tree.children(at)
                         .map(|child| (child, owner, Documentation::Inside(at))),
                 );
                 continue;
             },
-            | NodeLabel::Tile(_) => Material::Token,
-            | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
+            NodeLabel::Tile(_) => Material::Token,
+            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
                 if let Owner::Form(form) = owner {
                     repaired.push(form);
                 }
@@ -197,17 +197,17 @@ pub fn flatten<'source>(
                 }
                 Material::Token
             },
-            | NodeLabel::Space => layout_of(text),
+            NodeLabel::Space => layout_of(text),
         };
         let owner = match (owner, material) {
-            | (
+            (
                 Owner::Form(form),
                 Material::Whitespace
                 | Material::LineComment
                 | Material::BlockComment
                 | Material::Shebang,
             ) if form == at => Owner::Root,
-            | (owner, _) => owner,
+            (owner, _) => owner,
         };
         leaves.push(Leaf {
             span: node.span(),
@@ -221,8 +221,8 @@ pub fn flatten<'source>(
     let mut kept: Vec<Leaf<'source>> = Vec::with_capacity(leaves.len());
     for leaf in leaves {
         match kept.last() {
-            | Some(last) if leaf.span.start() < last.span.end() => {},
-            | Some(_) | None => kept.push(leaf),
+            Some(last) if leaf.span.start() < last.span.end() => {},
+            Some(_) | None => kept.push(leaf),
         }
     }
     for obligation in obligations {

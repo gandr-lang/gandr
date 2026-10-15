@@ -520,9 +520,9 @@ impl Neutral
     ) -> Result<(), ForceRefusal>
     {
         match self.unfolding {
-            | Unfolding::Rigid => Err(ForceRefusal::Rigid),
-            | Unfolding::Forced(_) => Err(ForceRefusal::AlreadyForced),
-            | Unfolding::Unforced(_) => {
+            Unfolding::Rigid => Err(ForceRefusal::Rigid),
+            Unfolding::Forced(_) => Err(ForceRefusal::AlreadyForced),
+            Unfolding::Unforced(_) => {
                 self.unfolding = Unfolding::Forced(glued);
                 Ok(())
             },
@@ -754,7 +754,7 @@ impl DomainValue
     pub fn face(&self) -> TermFace
     {
         match *self {
-            | Self::PathCertificate { face, .. }
+            Self::PathCertificate { face, .. }
             | Self::Constructor { face, .. }
             | Self::Record { face, .. }
             | Self::PathProduct { face, .. }
@@ -904,7 +904,7 @@ impl DomainComp
     pub fn face(&self) -> CompTermFace
     {
         match *self {
-            | Self::Lambda { face, .. }
+            Self::Lambda { face, .. }
             | Self::Return { face, .. }
             | Self::Neutral { face, .. }
             | Self::Fixpoint { face, .. } => face,

@@ -59,9 +59,9 @@ impl Gap
             .filter(|&byte| byte == b'\n')
             .count()
         {
-            | 0 => Self::Space,
-            | 1 => Self::Break,
-            | _ => Self::Blank,
+            0 => Self::Space,
+            1 => Self::Break,
+            _ => Self::Blank,
         }
     }
 
@@ -75,10 +75,10 @@ impl Gap
     ) -> Self
     {
         match (self, other) {
-            | (Self::Blank, _) | (_, Self::Blank) | (Self::Break, Self::Break) => Self::Blank,
-            | (Self::Break, _) | (_, Self::Break) => Self::Break,
-            | (Self::Space, _) | (_, Self::Space) => Self::Space,
-            | (Self::Adjacent, Self::Adjacent) => Self::Adjacent,
+            (Self::Blank, _) | (_, Self::Blank) | (Self::Break, Self::Break) => Self::Blank,
+            (Self::Break, _) | (_, Self::Break) => Self::Break,
+            (Self::Space, _) | (_, Self::Space) => Self::Space,
+            (Self::Adjacent, Self::Adjacent) => Self::Adjacent,
         }
     }
 
@@ -89,8 +89,8 @@ impl Gap
     const fn breaks(self) -> Breaks
     {
         match self {
-            | Self::Adjacent | Self::Space => Breaks::No,
-            | Self::Break | Self::Blank => Breaks::Yes,
+            Self::Adjacent | Self::Space => Breaks::No,
+            Self::Break | Self::Blank => Breaks::Yes,
         }
     }
 }
@@ -136,9 +136,9 @@ impl Element<'_>
     const fn kind(self) -> Kind
     {
         match self {
-            | Self::LineComment(_) => Kind::LineComment,
-            | Self::BlockComment(_) => Kind::BlockComment,
-            | Self::Text(_) | Self::Verbatim(_) | Self::Group(_) => Kind::Code,
+            Self::LineComment(_) => Kind::LineComment,
+            Self::BlockComment(_) => Kind::BlockComment,
+            Self::Text(_) | Self::Verbatim(_) | Self::Group(_) => Kind::Code,
         }
     }
 }
@@ -298,8 +298,8 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
         if leaf.material == Material::Whitespace {
             let text = <&str>::from(leaf.text);
             let column = match text.rsplit_once('\n') {
-                | Some((_, after)) => after.chars().count(),
-                | None => indent.0.saturating_add(text.chars().count()),
+                Some((_, after)) => after.chars().count(),
+                None => indent.0.saturating_add(text.chars().count()),
             };
             indent = Indent(column);
             gap = gap.widen(Gap::of(leaf.text));
@@ -313,7 +313,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
         };
         documented = leaf.documentation;
         let element = match leaf.material {
-            | Material::Token => {
+            Material::Token => {
                 let text = <&str>::from(leaf.text);
                 if let Some(&(_, expects)) = BRACKETS.iter().find(|&&(opener, _)| opener == text) {
                     let id = GroupId(groups.len());
@@ -343,7 +343,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                         return Err(FormatError::Unbalanced);
                     };
                     match groups.get_mut(top).map(|group| &mut group.frame) {
-                        | Some(&mut Frame::Bracketed {
+                        Some(&mut Frame::Bracketed {
                             expects,
                             ref mut close,
                             ref mut closing,
@@ -352,7 +352,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                             *close = leaf.text;
                             *closing = gap;
                         },
-                        | Some(&mut (Frame::Form | Frame::Bracketed { .. })) | None => {
+                        Some(&mut (Frame::Form | Frame::Bracketed { .. })) | None => {
                             return Err(FormatError::Unbalanced);
                         },
                     }
@@ -363,9 +363,9 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                 }
                 Element::Text(leaf.text)
             },
-            | Material::Verbatim | Material::Shebang | Material::Whitespace => material(leaf.text),
-            | Material::LineComment => Element::LineComment(leaf.text),
-            | Material::BlockComment => Element::BlockComment(leaf.text),
+            Material::Verbatim | Material::Shebang | Material::Whitespace => material(leaf.text),
+            Material::LineComment => Element::LineComment(leaf.text),
+            Material::BlockComment => Element::BlockComment(leaf.text),
         };
         place(&mut groups, &open, Placed {
             gap,
@@ -508,8 +508,8 @@ fn group_doc(
         let content = run(builder, item.placed, docs, Mode::Best)?;
         let both = builder.concat(line, content)?;
         lines.push(match item.continuation {
-            | Continuation::Statement => both,
-            | Continuation::Continued => builder.nest(NestAmount::from(INDENT), both)?,
+            Continuation::Statement => both,
+            Continuation::Continued => builder.nest(NestAmount::from(INDENT), both)?,
         });
     }
     let body = builder.concat_all(lines)?;
@@ -526,10 +526,10 @@ fn group_doc(
     let content = run(builder, &group.placed, docs, Mode::Flat)?;
     let inline = builder.concat_all([open, pad, content, pad, close])?;
     let hugs = group.placed.iter().any(|placed| match placed.element {
-        | Element::Group(GroupId(inner)) => docs
+        Element::Group(GroupId(inner)) => docs
             .get(inner)
             .is_some_and(|built| matches!(built.flat, Flat::Breaks)),
-        | Element::Text(_)
+        Element::Text(_)
         | Element::Verbatim(_)
         | Element::LineComment(_)
         | Element::BlockComment(_) => false,
@@ -562,8 +562,8 @@ fn spacing(
 ) -> Result<DocId, FormatError>
 {
     Ok(match gap {
-        | Gap::Adjacent => builder.empty(),
-        | Gap::Space | Gap::Break | Gap::Blank => builder.text(TextSource::from(" "))?,
+        Gap::Adjacent => builder.empty(),
+        Gap::Space | Gap::Break | Gap::Blank => builder.text(TextSource::from(" "))?,
     })
 }
 
@@ -621,17 +621,17 @@ fn items<'group, 'source>(placed: &'group [Placed<'source>]) -> Vec<Item<'group,
             continuation = Continuation::Statement;
             if current.element.kind() == Kind::Code {
                 match base {
-                    | Some(statement) if !ended && breaks && current.indent > statement => {
+                    Some(statement) if !ended && breaks && current.indent > statement => {
                         continuation = Continuation::Continued;
                     },
-                    | Some(_) | None => base = Some(current.indent),
+                    Some(_) | None => base = Some(current.indent),
                 }
             }
         }
         ended = match current.element {
-            | Element::Text(text) => SEPARATORS.contains(&<&str>::from(text)),
-            | Element::LineComment(_) | Element::BlockComment(_) => ended,
-            | Element::Verbatim(_) | Element::Group(_) => false,
+            Element::Text(text) => SEPARATORS.contains(&<&str>::from(text)),
+            Element::LineComment(_) | Element::BlockComment(_) => ended,
+            Element::Verbatim(_) | Element::Group(_) => false,
         };
     }
     if let Some(item) = placed.get(start ..)
@@ -664,16 +664,16 @@ fn run(
     for current in placed {
         let kind = current.element.kind();
         match previous {
-            | None => {},
-            | Some(Kind::LineComment) => parts.push(builder.hard_line()),
-            | Some(before) => {
+            None => {},
+            Some(Kind::LineComment) => parts.push(builder.hard_line()),
+            Some(before) => {
                 let comment = kind != Kind::Code
                     || before != Kind::Code
                     || current.edge == Edge::Documentation;
                 match current.gap {
-                    | Gap::Adjacent => {},
-                    | Gap::Break | Gap::Blank if comment => parts.push(builder.hard_line()),
-                    | Gap::Space | Gap::Break | Gap::Blank => {
+                    Gap::Adjacent => {},
+                    Gap::Break | Gap::Blank if comment => parts.push(builder.hard_line()),
+                    Gap::Space | Gap::Break | Gap::Blank => {
                         parts.push(builder.text(TextSource::from(" "))?);
                     },
                 }
@@ -697,23 +697,23 @@ fn element_doc(
 ) -> Result<DocId, FormatError>
 {
     Ok(match element {
-        | Element::Text(text)
+        Element::Text(text)
         | Element::Verbatim(text)
         | Element::LineComment(text)
         | Element::BlockComment(text) => match material(text) {
-            | Element::Verbatim(text) => {
+            Element::Verbatim(text) => {
                 builder.verbatim(VerbatimSource::from(<&str>::from(text)))?
             },
-            | Element::Text(text) | Element::LineComment(text) | Element::BlockComment(text) => {
+            Element::Text(text) | Element::LineComment(text) | Element::BlockComment(text) => {
                 builder.text(TextSource::from(<&str>::from(text)))?
             },
-            | Element::Group(_) => return Err(FormatError::Unbalanced),
+            Element::Group(_) => return Err(FormatError::Unbalanced),
         },
-        | Element::Group(GroupId(group)) => {
+        Element::Group(GroupId(group)) => {
             let built = docs.get(group).ok_or(FormatError::Unbalanced)?;
             match (mode, built.flat) {
-                | (Mode::Flat, Flat::Fits(flat)) => flat,
-                | (Mode::Flat, Flat::Breaks) | (Mode::Best, _) => built.best,
+                (Mode::Flat, Flat::Fits(flat)) => flat,
+                (Mode::Flat, Flat::Breaks) | (Mode::Best, _) => built.best,
             }
         },
     })

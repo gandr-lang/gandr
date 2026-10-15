@@ -67,7 +67,7 @@ pub fn graph(reader: &mut ByteReader<'_>) -> Result<Graph, DecodeError>
     for _ in 0 .. u64::from(count) {
         let tag = reader.read_uvarint()?;
         let node = match crate::session::Word(u64::from(tag)) {
-            | crate::session::SEND | crate::session::RECEIVE => {
+            crate::session::SEND | crate::session::RECEIVE => {
                 let slot = state(reader)?;
                 let next = state(reader)?;
                 if crate::session::Word(u64::from(tag)) == crate::session::SEND {
@@ -77,7 +77,7 @@ pub fn graph(reader: &mut ByteReader<'_>) -> Result<Graph, DecodeError>
                     Node::Receive(PayloadSlot(slot.0), next)
                 }
             },
-            | crate::session::SELECT | crate::session::OFFER => {
+            crate::session::SELECT | crate::session::OFFER => {
                 let count = reader.read_uvarint()?;
                 let mut branches = BTreeMap::new();
                 for _ in 0 .. u64::from(count) {
@@ -101,16 +101,16 @@ pub fn graph(reader: &mut ByteReader<'_>) -> Result<Graph, DecodeError>
                     Node::Offer(branches)
                 }
             },
-            | crate::session::END => Node::End,
-            | crate::session::MU => {
+            crate::session::END => Node::End,
+            crate::session::MU => {
                 let body = state(reader)?;
                 Node::Mu(body)
             },
-            | crate::session::VAR => {
+            crate::session::VAR => {
                 let binder = state(reader)?;
                 Node::Var(binder)
             },
-            | _ => return Err(malformed()),
+            _ => return Err(malformed()),
         };
         nodes.push(node);
     }

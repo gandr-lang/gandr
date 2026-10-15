@@ -525,7 +525,7 @@ mod deep_readback
         let spinal = TracedDuplication::install(DuplicationStance::Spinal, &mut log)
             .expect("a recording sink carries the spinal stance");
         let read = match root {
-            | OverlayId::Value(id) => {
+            OverlayId::Value(id) => {
                 let (value, _remaining) = spinal
                     .eval_overlay_value(overlay, &mut core, &mut domain, definitions, ample(), id)
                     .expect("the spinal run evaluates the root");
@@ -541,7 +541,7 @@ mod deep_readback
                     .expect("a closed value reads back"),
                 )
             },
-            | OverlayId::Computation(id) => {
+            OverlayId::Computation(id) => {
                 let (head, _remaining) = spinal
                     .eval_overlay_computation(
                         overlay,
@@ -564,7 +564,7 @@ mod deep_readback
                     .expect("a closed weak head reads back"),
                 )
             },
-            | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+            OverlayId::ValueType(_) | OverlayId::CompType(_) => {
                 panic!("the deep cases are evaluation roots")
             },
         };

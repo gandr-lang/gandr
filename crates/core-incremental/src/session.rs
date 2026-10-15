@@ -70,8 +70,8 @@ impl fmt::Display for SessionError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Resume(error) => write!(f, "resume failed: {error}"),
-            | Self::Store(error) => write!(f, "persisting the checkpoints failed: {error}"),
+            Self::Resume(error) => write!(f, "resume failed: {error}"),
+            Self::Store(error) => write!(f, "persisting the checkpoints failed: {error}"),
         }
     }
 }
@@ -222,8 +222,8 @@ impl<Store> IncrementalSession<Store>
     {
         let previous = core::mem::replace(&mut self.last, Maybe::Absent(submitted::Absent::Fresh));
         let next = match previous {
-            | Maybe::Present(base) => resume(base, program),
-            | Maybe::Absent(_) => check_program(program, self.budget),
+            Maybe::Present(base) => resume(base, program),
+            Maybe::Absent(_) => check_program(program, self.budget),
         }
         .map_err(SessionError::Resume)?;
         let census = next.census();
@@ -247,8 +247,8 @@ impl<Store> IncrementalSession<Store>
     pub const fn last(&self) -> Maybe<&Resume, submitted::Absent>
     {
         match self.last {
-            | Maybe::Present(ref resume) => Maybe::Present(resume),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present(ref resume) => Maybe::Present(resume),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
 

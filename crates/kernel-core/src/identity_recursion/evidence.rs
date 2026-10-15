@@ -52,9 +52,9 @@ impl Identity
     pub fn native_evidence(&self) -> Result<ValueId, RelationError>
     {
         match self.proof {
-            | Proof::Native(value) => Ok(value),
-            | Proof::Diagonal => Err(RelationError::NeutralFiber),
-            | Proof::HigherEvaluation(_) => Err(RelationError::HigherEvaluationRequired),
+            Proof::Native(value) => Ok(value),
+            Proof::Diagonal => Err(RelationError::NeutralFiber),
+            Proof::HigherEvaluation(_) => Err(RelationError::HigherEvaluationRequired),
         }
     }
 }
@@ -127,9 +127,9 @@ impl Relation
         self.fibrant()?;
         let fiber = self.fiber(arena, context, value, value)?;
         let proof = match fiber.inhabitant(arena) {
-            | Ok(value) => Proof::Native(value),
-            | Err(RelationError::NeutralFiber) => Proof::Diagonal,
-            | Err(error) => return Err(error),
+            Ok(value) => Proof::Native(value),
+            Err(RelationError::NeutralFiber) => Proof::Diagonal,
+            Err(error) => return Err(error),
         };
         let root = self.node(self.root)?;
         let domain = root.source;
@@ -364,8 +364,8 @@ impl Relation
     pub(super) fn fibrant(&self) -> Result<(), RelationError>
     {
         match self.mode {
-            | Mode::Identity => Ok(()),
-            | Mode::Bridge => Err(RelationError::NonFibrant),
+            Mode::Identity => Ok(()),
+            Mode::Bridge => Err(RelationError::NonFibrant),
         }
     }
 
@@ -404,17 +404,17 @@ impl Relation
         let root = self.node(self.root)?;
         same_type(arena, root.source, identity.domain)?;
         match identity.proof {
-            | Proof::Native(proof) => {
+            Proof::Native(proof) => {
                 self.witness(arena, context, identity.left, identity.right, proof)?;
             },
-            | Proof::Diagonal => {
+            Proof::Diagonal => {
                 if equal_values(arena, identity.left, identity.right) != Convertibility::Convertible
                 {
                     return Err(RelationError::Boundary);
                 }
                 self.reflexivity(arena, context, identity.left)?;
             },
-            | Proof::HigherEvaluation(ref evidence) => {
+            Proof::HigherEvaluation(ref evidence) => {
                 self.check_higher(
                     arena,
                     (identity.left, identity.right),
@@ -529,17 +529,17 @@ impl Fibers
         let mut completed = alloc::collections::BTreeMap::new();
         while let Some(task) = pending.pop() {
             let value = match task {
-                | Task::Remember(id) => {
+                Task::Remember(id) => {
                     let value = *values.last().ok_or(RelationError::Arena)?;
                     completed.insert(id, value);
                     continue;
                 },
-                | Task::Pair => {
+                Task::Pair => {
                     let right = values.pop().ok_or(RelationError::Arena)?;
                     let left = values.pop().ok_or(RelationError::Arena)?;
                     arena.value_tuple(&[left, right])
                 },
-                | Task::Visit(id) => {
+                Task::Visit(id) => {
                     if let Some(&value) = completed.get(&id) {
                         values.push(value);
                         continue;
@@ -547,8 +547,8 @@ impl Fibers
                     pending.push(Task::Remember(id));
                     let fiber = self.get(id)?;
                     match fiber {
-                        | Fiber::Unit => arena.value_unit(),
-                        | Fiber::Universe(left, right) => {
+                        Fiber::Unit => arena.value_unit(),
+                        Fiber::Universe(left, right) => {
                             let (left, right) = self.native_indices(left, right)?;
                             if equal_values(arena, left, right) != Convertibility::Convertible {
                                 return Err(RelationError::CertificateOperationRequired);
@@ -557,22 +557,22 @@ impl Fibers
                             universe.push(proof);
                             proof
                         },
-                        | Fiber::Certificate(..) => return Err(RelationError::HigherFieldRequired),
-                        | Fiber::Product(left, right) => {
+                        Fiber::Certificate(..) => return Err(RelationError::HigherFieldRequired),
+                        Fiber::Product(left, right) => {
                             pending.push(Task::Pair);
                             pending.push(Task::Visit(right));
                             pending.push(Task::Visit(left));
                             continue;
                         },
-                        | Fiber::Empty => return Err(RelationError::Evidence),
-                        | Fiber::Function { left, right, .. } if left == right => {
+                        Fiber::Empty => return Err(RelationError::Evidence),
+                        Fiber::Function { left, right, .. } if left == right => {
                             let (point, _) = self.native_indices(left, right)?;
                             arena.value_here(point)
                         },
-                        | Fiber::Function { .. } => {
+                        Fiber::Function { .. } => {
                             return Err(RelationError::HigherEvaluationRequired);
                         },
-                        | Fiber::Discrete(..) | Fiber::Suspended(..) => {
+                        Fiber::Discrete(..) | Fiber::Suspended(..) => {
                             return Err(RelationError::NeutralFiber);
                         },
                     }
@@ -616,7 +616,7 @@ fn return_type(
 ) -> Result<ValueTypeId, RelationError>
 {
     match arena.comp_type(ty) {
-        | Some(&CompType::Returner(value)) => Ok(value),
-        | _ => Err(RelationError::Arena),
+        Some(&CompType::Returner(value)) => Ok(value),
+        _ => Err(RelationError::Arena),
     }
 }

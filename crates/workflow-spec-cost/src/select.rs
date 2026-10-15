@@ -51,11 +51,11 @@ impl FromStr for Workload
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
         match text.split_once(' ') {
-            | Some((binary, test)) if !binary.is_empty() && !test.is_empty() => Ok(Self {
+            Some((binary, test)) if !binary.is_empty() && !test.is_empty() => Ok(Self {
                 binary: BinaryId::from(binary),
                 test: TestName::from(test),
             }),
-            | Some(_) | None => Err(CostError::Workload {
+            Some(_) | None => Err(CostError::Workload {
                 text: text.to_owned(),
             }),
         }

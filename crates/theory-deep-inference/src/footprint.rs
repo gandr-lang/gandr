@@ -311,11 +311,11 @@ where
             continue;
         }
         match node_survival::<A>(term, &after, &before_positions, &after_positions, position) {
-            | NodeSurvival::Replaced => written.push(position.clone()),
-            | NodeSurvival::Preserved => {
+            NodeSurvival::Replaced => written.push(position.clone()),
+            NodeSurvival::Preserved => {
                 match content_sensitivity::<A>(cell, term, &app.at, position, &probes) {
-                    | ContentSensitivity::Sensitive => read.push(position.clone()),
-                    | ContentSensitivity::Insensitive => framed.push(position.clone()),
+                    ContentSensitivity::Sensitive => read.push(position.clone()),
+                    ContentSensitivity::Insensitive => framed.push(position.clone()),
                 }
             },
         }
@@ -548,8 +548,8 @@ where
         A::subterm_cmd_at(&grafted, position),
         A::subterm_cmd_at(after, position),
     ) {
-        | (Maybe::Present(left), Maybe::Present(right)) if left == right => NodeSurvival::Preserved,
-        | _ => NodeSurvival::Replaced,
+        (Maybe::Present(left), Maybe::Present(right)) if left == right => NodeSurvival::Preserved,
+        _ => NodeSurvival::Replaced,
     }
 }
 

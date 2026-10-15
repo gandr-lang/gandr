@@ -351,14 +351,14 @@ impl fmt::Display for SegalDefect
             Ok(())
         };
         match *self {
-            | Self::Uncovered { vertex } => {
+            Self::Uncovered { vertex } => {
                 write!(f, "no corolla included at vertex {}", usize::from(vertex))
             },
-            | Self::Stray { ref map } => write!(f, "a map restricting to no family: {map}"),
-            | Self::Ambiguous { family: ref maps } => {
+            Self::Stray { ref map } => write!(f, "a map restricting to no family: {map}"),
+            Self::Ambiguous { family: ref maps } => {
                 family(f, "a family two maps restrict to:", maps)
             },
-            | Self::Unmediated { family: ref maps } => {
+            Self::Unmediated { family: ref maps } => {
                 family(f, "a family no map restricts to:", maps)
             },
         }
@@ -479,8 +479,8 @@ pub fn walk(
             continue;
         }
         let cocone = match Cocone::of(catalogue, &corollas, (index, shape)) {
-            | Ok(cocone) => cocone,
-            | Err(defect) => {
+            Ok(cocone) => cocone,
+            Err(defect) => {
                 tally.count();
                 let failure = SegalFailure {
                     shape: shape.clone(),
@@ -538,8 +538,8 @@ fn colimit(
 ) -> Result<(), SegalDefect>
 {
     let hom = |source: ShapeIndex| match catalogue.maps(source, test) {
-        | Maybe::Present(maps) => maps,
-        | Maybe::Absent(_) => &[],
+        Maybe::Present(maps) => maps,
+        Maybe::Absent(_) => &[],
     };
     let candidates: Vec<&[SiteMap]> = cocone
         .inclusions

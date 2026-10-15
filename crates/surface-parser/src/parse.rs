@@ -686,25 +686,25 @@ impl<'source> FormSplit<'source>
         spelling.extend_from_slice(&length.to_le_bytes());
         for token in window {
             spelling.push(match token.lexeme {
-                | Lexeme::LowerWord => 0_u8,
-                | Lexeme::UpperWord => 1,
-                | Lexeme::Number => 2,
-                | Lexeme::TypedNumber => 3,
-                | Lexeme::Character => 4,
-                | Lexeme::Quote => 5,
-                | Lexeme::StringFragment => 6,
-                | Lexeme::EscapeSequence => 7,
-                | Lexeme::Punct => 8,
-                | Lexeme::ShellWord => 9,
-                | Lexeme::EnvAssign => 10,
-                | Lexeme::SingleQuotedContent => 11,
-                | Lexeme::VariableName => 12,
-                | Lexeme::SubshellOpen => 13,
-                | Lexeme::SubshellClose => 14,
-                | Lexeme::FileDescriptor => 15,
-                | Lexeme::Space => 16,
-                | Lexeme::Unknown => 17,
-                | Lexeme::ShellStringFragment => 18,
+                Lexeme::LowerWord => 0_u8,
+                Lexeme::UpperWord => 1,
+                Lexeme::Number => 2,
+                Lexeme::TypedNumber => 3,
+                Lexeme::Character => 4,
+                Lexeme::Quote => 5,
+                Lexeme::StringFragment => 6,
+                Lexeme::EscapeSequence => 7,
+                Lexeme::Punct => 8,
+                Lexeme::ShellWord => 9,
+                Lexeme::EnvAssign => 10,
+                Lexeme::SingleQuotedContent => 11,
+                Lexeme::VariableName => 12,
+                Lexeme::SubshellOpen => 13,
+                Lexeme::SubshellClose => 14,
+                Lexeme::FileDescriptor => 15,
+                Lexeme::Space => 16,
+                Lexeme::Unknown => 17,
+                Lexeme::ShellStringFragment => 18,
             });
             spelling.extend_from_slice(&token.end.saturating_sub(origin).to_le_bytes());
         }
@@ -1355,7 +1355,7 @@ pure greeting
         for &run in after.runs() {
             let fresh = after.mold(molder, run);
             match parked.get(&after.identity(run)) {
-                | Some(unit) => {
+                Some(unit) => {
                     if fresh.park() != *unit {
                         return Err(
                             format!("{run:?} molds otherwise than its identity's unit").into()
@@ -1364,7 +1364,7 @@ pure greeting
                     units.push(FormUnit::resume(pbg, run, unit));
                     reused = reused.saturating_add(1);
                 },
-                | None => units.push(fresh),
+                None => units.push(fresh),
             }
         }
         Ok((after.join(molder, units)?.into_result(), Reused(reused)))

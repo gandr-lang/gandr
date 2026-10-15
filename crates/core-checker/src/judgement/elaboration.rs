@@ -426,24 +426,24 @@ pub fn elaborate_value(
         Goal::Value {
             term: value,
             direction: match direction {
-                | Direction::Synthesise => Direction::Synthesise,
-                | Direction::Check(expected) => Direction::Check(expected.id()),
+                Direction::Synthesise => Direction::Synthesise,
+                Direction::Check(expected) => Direction::Check(expected.id()),
             },
         },
         Marking::Total,
     )
     .map_err(|failure: Failure| failure.refusal())?;
     let produced = match (direction, produced) {
-        | (Direction::Synthesise, Produced::ValueType(found)) => FormedValueType::derived(found),
-        | (Direction::Check(expected), Produced::Checked) => expected,
-        | (Direction::Synthesise, Produced::CompType(_) | Produced::Checked)
+        (Direction::Synthesise, Produced::ValueType(found)) => FormedValueType::derived(found),
+        (Direction::Check(expected), Produced::Checked) => expected,
+        (Direction::Synthesise, Produced::CompType(_) | Produced::Checked)
         | (Direction::Check(_), Produced::ValueType(_) | Produced::CompType(_)) => {
             return Err(CheckRefusal::MachineInvariant);
         },
     };
     let root = match marked(context, TermId::Value(value), &marks)? {
-        | TermId::Value(root) => root,
-        | TermId::Computation(_) => return Err(CheckRefusal::MachineInvariant),
+        TermId::Value(root) => root,
+        TermId::Computation(_) => return Err(CheckRefusal::MachineInvariant),
     };
     Ok(Elaboration {
         root,
@@ -497,24 +497,24 @@ pub fn elaborate_comp(
         Goal::Computation {
             term: computation,
             direction: match direction {
-                | Direction::Synthesise => Direction::Synthesise,
-                | Direction::Check(expected) => Direction::Check(expected.id()),
+                Direction::Synthesise => Direction::Synthesise,
+                Direction::Check(expected) => Direction::Check(expected.id()),
             },
         },
         Marking::Total,
     )
     .map_err(|failure: Failure| failure.refusal())?;
     let produced = match (direction, produced) {
-        | (Direction::Synthesise, Produced::CompType(found)) => FormedCompType::derived(found),
-        | (Direction::Check(expected), Produced::Checked) => expected,
-        | (Direction::Synthesise, Produced::ValueType(_) | Produced::Checked)
+        (Direction::Synthesise, Produced::CompType(found)) => FormedCompType::derived(found),
+        (Direction::Check(expected), Produced::Checked) => expected,
+        (Direction::Synthesise, Produced::ValueType(_) | Produced::Checked)
         | (Direction::Check(_), Produced::ValueType(_) | Produced::CompType(_)) => {
             return Err(CheckRefusal::MachineInvariant);
         },
     };
     let root = match marked(context, TermId::Computation(computation), &marks)? {
-        | TermId::Computation(root) => root,
-        | TermId::Value(_) => return Err(CheckRefusal::MachineInvariant),
+        TermId::Computation(root) => root,
+        TermId::Value(_) => return Err(CheckRefusal::MachineInvariant),
     };
     Ok(Elaboration {
         root,
@@ -567,8 +567,8 @@ pub fn type_value(
     let goal = Goal::Value {
         term: value,
         direction: match direction {
-            | Direction::Synthesise => Direction::Synthesise,
-            | Direction::Check(expected) => Direction::Check(expected.id()),
+            Direction::Synthesise => Direction::Synthesise,
+            Direction::Check(expected) => Direction::Check(expected.id()),
         },
     };
     let outer = context.start_typings();
@@ -677,11 +677,11 @@ impl Machine<'_, '_>
     {
         let recording = self.context.recording() == Recording::On;
         let anchored = match goal {
-            | Goal::Value { .. } | Goal::Computation { .. } => {
+            Goal::Value { .. } | Goal::Computation { .. } => {
                 self.marking == Marking::Total || recording
             },
-            | Goal::Form(ty) => self.context.forming(ty) == Recording::On,
-            | Goal::Stack { .. } => false,
+            Goal::Form(ty) => self.context.forming(ty) == Recording::On,
+            Goal::Stack { .. } => false,
         };
         if anchored {
             let depth = self.context.depth(Zone::Intuitionistic);
@@ -755,7 +755,7 @@ impl Machine<'_, '_>
             return;
         }
         let typing = match (goal, produced) {
-            | (
+            (
                 Goal::Value {
                     term,
                     direction: Direction::Check(expected),
@@ -765,7 +765,7 @@ impl Machine<'_, '_>
                 term: TermNode::Value(term),
                 ty: TypeNode::Value(expected),
             },
-            | (
+            (
                 Goal::Computation {
                     term,
                     direction: Direction::Check(expected),
@@ -775,7 +775,7 @@ impl Machine<'_, '_>
                 term: TermNode::Computation(term),
                 ty: TypeNode::Computation(expected),
             },
-            | (
+            (
                 Goal::Value {
                     term,
                     direction: Direction::Synthesise,
@@ -785,7 +785,7 @@ impl Machine<'_, '_>
                 term: TermNode::Value(term),
                 ty: TypeNode::Value(found),
             },
-            | (
+            (
                 Goal::Computation {
                     term,
                     direction: Direction::Synthesise,
@@ -795,7 +795,7 @@ impl Machine<'_, '_>
                 term: TermNode::Computation(term),
                 ty: TypeNode::Computation(found),
             },
-            | (
+            (
                 Goal::Value {
                     direction: Direction::Synthesise,
                     ..
@@ -810,7 +810,7 @@ impl Machine<'_, '_>
                 Produced::ValueType(_) | Produced::Checked,
             )
             | (Goal::Stack { .. }, _) => return,
-            | (Goal::Form(node), _) => {
+            (Goal::Form(node), _) => {
                 self.context.keep_formed(node);
                 return;
             },
@@ -858,8 +858,8 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         let recoverable = match (self.marking, refusal.classify()) {
-            | (Marking::Strict, _) | (Marking::Total, FailureClass::EngineFault) => false,
-            | (
+            (Marking::Strict, _) | (Marking::Total, FailureClass::EngineFault) => false,
+            (
                 Marking::Total,
                 FailureClass::MalformedSource
                 | FailureClass::Unrepresentable
@@ -884,16 +884,16 @@ impl Machine<'_, '_>
         self.close_sessions(anchor.sessions);
         self.owner = anchor.goal;
         let (at, node) = match anchor.goal {
-            | Goal::Value { term, .. } => (TermId::Value(term), TermNode::Value(term)),
-            | Goal::Computation { term, .. } => {
+            Goal::Value { term, .. } => (TermId::Value(term), TermNode::Value(term)),
+            Goal::Computation { term, .. } => {
                 (TermId::Computation(term), TermNode::Computation(term))
             },
-            | Goal::Form(_) | Goal::Stack { .. } => return Err(CheckRefusal::MachineInvariant),
+            Goal::Form(_) | Goal::Stack { .. } => return Err(CheckRefusal::MachineInvariant),
         };
         self.marks.push(MarkEntry { at, refusal });
         let unsynthesisable = matches!(refusal, CheckRefusal::NotSynthesisable { .. });
         let step = match anchor.goal {
-            | Goal::Value {
+            Goal::Value {
                 direction: Direction::Check(_),
                 ..
             }
@@ -901,7 +901,7 @@ impl Machine<'_, '_>
                 direction: Direction::Check(_),
                 ..
             } => Ok(Step::Ascend(Produced::Checked)),
-            | Goal::Value {
+            Goal::Value {
                 term,
                 direction: Direction::Synthesise,
             } => {
@@ -917,7 +917,7 @@ impl Machine<'_, '_>
                     Ok(Step::Ascend(Produced::ValueType(unknown)))
                 }
             },
-            | Goal::Computation {
+            Goal::Computation {
                 term,
                 direction: Direction::Synthesise,
             } => {
@@ -933,7 +933,7 @@ impl Machine<'_, '_>
                     Ok(Step::Ascend(Produced::CompType(unknown)))
                 }
             },
-            | Goal::Form(_) | Goal::Stack { .. } => Err(CheckRefusal::MachineInvariant),
+            Goal::Form(_) | Goal::Stack { .. } => Err(CheckRefusal::MachineInvariant),
         };
         if let Ok(Step::Ascend(produced)) = step {
             self.keep(anchor.goal, produced);

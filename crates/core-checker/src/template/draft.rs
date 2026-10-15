@@ -450,8 +450,18 @@ impl Drafter
         for index in 0 .. template.graph.end().0 {
             let node = template.graph.node(Id(index))?;
             let mut freedom = match node.head {
-                | Head::Point(_) | Head::Predecessor => Freedom::Pointed,
-                | _ => Freedom::PointFree,
+                Head::Point(_) | Head::Predecessor => Freedom::Pointed,
+                Head::Variable(_)
+                | Head::OuterNatural(_)
+                | Head::InnerNatural(..)
+                | Head::Code(_)
+                | Head::Lambda(_)
+                | Head::Apply
+                | Head::Multiply
+                | Head::Quote
+                | Head::Splice
+                | Head::Iterate
+                | Head::Eliminate(_) => Freedom::PointFree,
             };
             for child in node.children.0.iter().flatten() {
                 let below = self.freedom.get(child.0).ok_or(StageError::Unbalanced)?;
@@ -528,13 +538,12 @@ fn classifiers_agree(
         let pattern = graph.ty(pattern)?;
         let member = arena.ty(member)?;
         match (pattern, member) {
-            | (Type::Arrow(domain, codomain), Type::Arrow(other_domain, other_codomain)) => {
+            (Type::Arrow(domain, codomain), Type::Arrow(other_domain, other_codomain)) => {
                 stack.extend([(codomain, other_codomain), (domain, other_domain)]);
             },
-            | (Type::Lift(inner), Type::Lift(other)) => stack.push((inner, other)),
-            | (leaf @ (Type::In(_) | Type::Universe(_) | Type::Nat(_)), other) if leaf == other => {
-            },
-            | _ => {
+            (Type::Lift(inner), Type::Lift(other)) => stack.push((inner, other)),
+            (leaf @ (Type::In(_) | Type::Universe(_) | Type::Nat(_)), other) if leaf == other => {},
+            _ => {
                 agreement = Agreement::Different;
                 break;
             },
@@ -572,10 +581,10 @@ fn heads_agree(
 ) -> Result<Agreement, StageError>
 {
     let classifiers = match (head, term) {
-        | (Head::Code(left), Term::Code(right))
+        (Head::Code(left), Term::Code(right))
         | (Head::Lambda(left), Term::Lambda(right, _))
         | (Head::Eliminate(left), Term::Eliminate(_, right)) => Some((left, right)),
-        | _ => None,
+        _ => None,
     };
     if let Some((left, right)) = classifiers {
         let agreement = classifiers_agree(
@@ -589,18 +598,17 @@ fn heads_agree(
         return Ok(agreement);
     }
     let equal = match (head, term) {
-        | (Head::Variable(left), Term::Variable(right)) => left == right,
-        | (Head::OuterNatural(left), Term::Natural(Stage::Outer, right)) => left == right,
-        | (
-            Head::InnerNatural(left_model, left),
-            Term::Natural(Stage::Inner(right_model), right),
-        ) => left_model == right_model && left == right,
-        | (Head::Apply, Term::Apply(..))
+        (Head::Variable(left), Term::Variable(right)) => left == right,
+        (Head::OuterNatural(left), Term::Natural(Stage::Outer, right)) => left == right,
+        (Head::InnerNatural(left_model, left), Term::Natural(Stage::Inner(right_model), right)) => {
+            left_model == right_model && left == right
+        },
+        (Head::Apply, Term::Apply(..))
         | (Head::Multiply, Term::Multiply(..))
         | (Head::Quote, Term::Quote(_))
         | (Head::Splice, Term::Splice(_))
         | (Head::Iterate, Term::Iterate(..)) => true,
-        | _ => false,
+        _ => false,
     };
     Ok(if equal {
         Agreement::Equal
@@ -652,9 +660,9 @@ fn content_agrees(
         }
         for (left, right) in node.children.0.iter().zip(other.children()) {
             match (*left, right) {
-                | (Some(left), Child::Present(right)) => compare.push((left, right)),
-                | (None, Child::Vacant) => {},
-                | _ => agreement = Agreement::Different,
+                (Some(left), Child::Present(right)) => compare.push((left, right)),
+                (None, Child::Vacant) => {},
+                _ => agreement = Agreement::Different,
             }
         }
         if agreement == Agreement::Different {
@@ -768,13 +776,13 @@ fn occurrences(
         }
         let node = graph.node(Id(index))?;
         match node.head {
-            | Head::Point(point) => {
+            Head::Point(point) => {
                 let slot = bare
                     .get_mut(usize::from(point))
                     .ok_or(StageError::Unbalanced)?;
                 *slot = slot.saturating_add(count);
             },
-            | Head::Predecessor => {
+            Head::Predecessor => {
                 let child = node.children.0.first().copied().flatten();
                 let child = child.ok_or(StageError::Unbalanced)?;
                 let Head::Point(point) = graph.node(child)?.head
@@ -786,7 +794,17 @@ fn occurrences(
                     .ok_or(StageError::Unbalanced)?;
                 *slot = slot.saturating_add(count);
             },
-            | _ => {
+            Head::Variable(_)
+            | Head::OuterNatural(_)
+            | Head::InnerNatural(..)
+            | Head::Code(_)
+            | Head::Lambda(_)
+            | Head::Apply
+            | Head::Multiply
+            | Head::Quote
+            | Head::Splice
+            | Head::Iterate
+            | Head::Eliminate(_) => {
                 for child in node.children.0.iter().flatten() {
                     if child.0 >= index {
                         return Err(StageError::Unbalanced);
@@ -852,8 +870,8 @@ fn tidiness(
         *reach = Reach::Reached;
         reached = reached.saturating_add(1);
         match graph.node(id) {
-            | Ok(node) => reaching.extend(node.children.0.iter().flatten()),
-            | Err(error) => {
+            Ok(node) => reaching.extend(node.children.0.iter().flatten()),
+            Err(error) => {
                 outcome = Err(error);
                 break;
             },
@@ -925,14 +943,13 @@ impl Template
                 .get(pattern.0)
                 .ok_or(StageError::Unbalanced)?;
             if *freedom == Freedom::PointFree {
-                let agreement = match drafter.rigid.get(&(pattern, actual)) {
-                    | Some(agreement) => *agreement,
-                    | None => {
-                        let agreement =
-                            content_agrees(&self.graph, pattern, arena, actual, drafter)?;
-                        drafter.rigid.insert((pattern, actual), agreement);
-                        agreement
-                    },
+                let agreement = if let Some(agreement) = drafter.rigid.get(&(pattern, actual)) {
+                    *agreement
+                }
+                else {
+                    let agreement = content_agrees(&self.graph, pattern, arena, actual, drafter)?;
+                    drafter.rigid.insert((pattern, actual), agreement);
+                    agreement
                 };
                 if agreement == Agreement::Different {
                     walked = Walked::Disagrees;
@@ -953,9 +970,9 @@ impl Template
                     .get_mut(index)
                     .ok_or(StageError::Unbalanced)?;
                 match *slot {
-                    | Binding::Unbound => *slot = Binding::Bound(arm),
-                    | Binding::Bound(bound) if bound == arm => {},
-                    | Binding::Bound(_) => {
+                    Binding::Unbound => *slot = Binding::Bound(arm),
+                    Binding::Bound(bound) if bound == arm => {},
+                    Binding::Bound(_) => {
                         walked = Walked::Missed(Miss::Correlation);
                         break;
                     },
@@ -970,9 +987,9 @@ impl Template
             }
             for (left, right) in node.children.0.iter().zip(term.children()) {
                 match (*left, right) {
-                    | (Some(left), Child::Present(right)) => pending.push((left, right)),
-                    | (None, Child::Vacant) => {},
-                    | _ => walked = Walked::Disagrees,
+                    (Some(left), Child::Present(right)) => pending.push((left, right)),
+                    (None, Child::Vacant) => {},
+                    _ => walked = Walked::Disagrees,
                 }
             }
             if walked == Walked::Disagrees {
@@ -1121,9 +1138,9 @@ impl Template
                     drafter,
                 )?;
                 match walked {
-                    | Walked::Matched => {},
-                    | Walked::Missed(miss) => return Ok(Walk::Missed(miss)),
-                    | Walked::Disagrees => {
+                    Walked::Matched => {},
+                    Walked::Missed(miss) => return Ok(Walk::Missed(miss)),
+                    Walked::Disagrees => {
                         if rebasing == Rebasing::Never || repairs >= REPAIRS {
                             return Ok(Walk::Missed(Miss::Skeleton));
                         }
@@ -1250,9 +1267,9 @@ impl Template
             let mut agreement = heads;
             for (left, right) in node.children.0.iter().zip(term.children()) {
                 match (*left, right) {
-                    | (Some(left), Child::Present(right)) => pairs.push((left, right)),
-                    | (None, Child::Vacant) => {},
-                    | _ => agreement = Agreement::Different,
+                    (Some(left), Child::Present(right)) => pairs.push((left, right)),
+                    (None, Child::Vacant) => {},
+                    _ => agreement = Agreement::Different,
                 }
             }
             if agreement == Agreement::Different {
@@ -1355,8 +1372,8 @@ impl Template
     {
         let points = self.entries.len();
         let covered: Vec<usize> = match coverage {
-            | Coverage::Whole => (0 .. members.len()).collect(),
-            | Coverage::Partial(matched) => {
+            Coverage::Whole => (0 .. members.len()).collect(),
+            Coverage::Partial(matched) => {
                 matched.iter().map(|member| usize::from(*member)).collect()
             },
         };
@@ -1375,8 +1392,8 @@ impl Template
                     return Err(StageError::Unbalanced);
                 };
                 let guard = match drafter.canonical.entry((EntryIndex::from(index), arm)) {
-                    | btree_map::Entry::Occupied(known) => *known.get(),
-                    | btree_map::Entry::Vacant(slot) => {
+                    btree_map::Entry::Occupied(known) => *known.get(),
+                    btree_map::Entry::Vacant(slot) => {
                         let guard = GuardId::from(column.len());
                         column.push(arm);
                         *slot.insert(guard)
@@ -1392,8 +1409,8 @@ impl Template
             .iter()
             .flatten()
             .filter_map(|arm| match *arm {
-                | Arm::Fresh(body) => Some(body),
-                | Arm::Template(_) => None,
+                Arm::Fresh(body) => Some(body),
+                Arm::Template(_) => None,
             })
             .collect();
         let mut graph = Cow::Borrowed(&self.graph);
@@ -1410,8 +1427,8 @@ impl Template
             let mut ids = Vec::with_capacity(column.len());
             for arm in column {
                 let id = match *arm {
-                    | Arm::Template(guard) => held.get(usize::from(guard)),
-                    | Arm::Fresh(_) => next.next(),
+                    Arm::Template(guard) => held.get(usize::from(guard)),
+                    Arm::Fresh(_) => next.next(),
                 };
                 let id = id.ok_or(StageError::Unbalanced)?;
                 ids.push(*id);
@@ -1493,8 +1510,8 @@ impl Template
         let plain_size = NodeCount::from(plain_size);
         let triples = TripleCount::from(arms.iter().map(Vec::len).sum::<usize>().max(1));
         let pays = match gate {
-            | PriceGate::Unmemoized => price_family(template_size, plain_size).is_ok(),
-            | PriceGate::Memoized => {
+            PriceGate::Unmemoized => price_family(template_size, plain_size).is_ok(),
+            PriceGate::Memoized => {
                 price_family_memoized(template_size, plain_size, triples, template_size).is_ok()
             },
         };
@@ -1524,15 +1541,15 @@ impl Template
         retained.extend(arms.iter().flatten().copied());
         let tidiness = tidiness(&graph, &retained, drafter)?;
         let revision = match (tidiness, graph) {
-            | (Tidiness::Compact, Cow::Borrowed(_)) => Revision::Kept(self.renumbered(&arms)),
-            | (Tidiness::Compact, Cow::Owned(graph)) => Revision::Replaced(Self {
+            (Tidiness::Compact, Cow::Borrowed(_)) => Revision::Kept(self.renumbered(&arms)),
+            (Tidiness::Compact, Cow::Owned(graph)) => Revision::Replaced(Self {
                 graph,
                 sides: self.sides,
                 rule: self.rule,
                 entries: self.renumbered(&arms),
                 cost,
             }),
-            | (Tidiness::Garbage, graph) => Revision::Replaced(self.rebuilt(&graph, &arms, cost)?),
+            (Tidiness::Garbage, graph) => Revision::Replaced(self.rebuilt(&graph, &arms, cost)?),
         };
         Ok(Finished::Ready(Draft {
             proposal,
@@ -1684,11 +1701,11 @@ impl Revision
     )
     {
         match self {
-            | Self::Kept(entries) => {
+            Self::Kept(entries) => {
                 template.entries = entries;
                 template.cost = cost;
             },
-            | Self::Replaced(replacement) => {
+            Self::Replaced(replacement) => {
                 *template = replacement;
                 template.cost = cost;
             },
@@ -1781,8 +1798,19 @@ fn departure(
                 let upper = graph.node(upper)?;
                 let lower = graph.node(lower)?;
                 let below = match upper.head {
-                    | Head::OuterNatural(Natural(value)) => value.checked_sub(1).map(Natural),
-                    | _ => None,
+                    Head::OuterNatural(Natural(value)) => value.checked_sub(1).map(Natural),
+                    Head::Variable(_)
+                    | Head::InnerNatural(..)
+                    | Head::Code(_)
+                    | Head::Lambda(_)
+                    | Head::Apply
+                    | Head::Multiply
+                    | Head::Quote
+                    | Head::Splice
+                    | Head::Iterate
+                    | Head::Eliminate(_)
+                    | Head::Point(_)
+                    | Head::Predecessor => None,
                 };
                 if below.is_none_or(|below| lower.head != Head::OuterNatural(below)) {
                     shadowed = false;

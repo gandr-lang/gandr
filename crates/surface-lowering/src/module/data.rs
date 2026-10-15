@@ -352,8 +352,8 @@ impl<'source> Collector<'_, 'source>
             return Ok(Former::Unadmitted);
         };
         Ok(match shape_of(self.pbg, node)? {
-            | Shape::Form { former, .. } => former,
-            | Shape::Root | Shape::Repair(_) | Shape::Layout => Former::Unadmitted,
+            Shape::Form { former, .. } => former,
+            Shape::Root | Shape::Repair(_) | Shape::Layout => Former::Unadmitted,
         })
     }
 
@@ -454,36 +454,36 @@ impl<'source> Collector<'_, 'source>
         }
         else {
             match self.data_form(declaration, slot, &mut cursor) {
-                | Ok(formed) => match self
+                Ok(formed) => match self
                     .collected
                     .slots
                     .get(slot.0)
                     .map(|entry| entry.definition)
                 {
-                    | Some(Maybe::Present(first)) => {
+                    Some(Maybe::Present(first)) => {
                         Tail::Refused(LoweringRefusal::DuplicateDefinition {
                             span: declaration.span,
                             name,
                             first: first.declaration.span,
                         })
                     },
-                    | Some(Maybe::Absent(_)) | None => {
+                    Some(Maybe::Absent(_)) | None => {
                         cells = formed.cells;
                         self.enter(formed.form)
                     },
                 },
-                | Err(refusal) => Tail::Refused(refusal),
+                Err(refusal) => Tail::Refused(refusal),
             }
         };
         self.file(slot, declaration, tail, attributes);
         match (tail, cells) {
-            | (Tail::Data(_), Ok(())) => self.mint_words(declaration),
-            | (Tail::Data(_), Err(refusal)) => {
+            (Tail::Data(_), Ok(())) => self.mint_words(declaration),
+            (Tail::Data(_), Err(refusal)) => {
                 if let Some(entry) = self.collected.slots.get_mut(slot.0) {
                     entry.refuse(declaration.node, refusal);
                 }
             },
-            | _ => {},
+            _ => {},
         }
 
         Ok(())
@@ -638,8 +638,8 @@ impl<'source> Collector<'_, 'source>
                 .iter_mut()
                 .find(|&&mut (ref point, _)| *point == cell.point)
             {
-                | Some(&mut (_, ref mut loops)) => loops.push(cell.clone()),
-                | None => points.push((cell.point.clone(), Vec::from([cell.clone()]))),
+                Some(&mut (_, ref mut loops)) => loops.push(cell.clone()),
+                None => points.push((cell.point.clone(), Vec::from([cell.clone()]))),
             }
         }
         let name = self
@@ -744,13 +744,13 @@ impl<'source> Collector<'_, 'source>
         if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
             loop {
                 let named = match cursor.peek() {
-                    | Maybe::Present(Piece::Tile { label, at })
+                    Maybe::Present(Piece::Tile { label, at })
                         if label == TileName::TYPE_VARIABLE || label == TileName::IDENTIFIER =>
                     {
                         let _named = cursor.tile(label);
                         at
                     },
-                    | Maybe::Present(_) | Maybe::Absent(_) => {
+                    Maybe::Present(_) | Maybe::Absent(_) => {
                         return Err(misplaced_in(FormName::PARAMETER, cursor.here()));
                     },
                 };
@@ -771,8 +771,8 @@ impl<'source> Collector<'_, 'source>
             }
         }
         let kind = match cursor.tile(TileName::COLON) {
-            | Maybe::Present(_) => Maybe::Present(one_in(FormName::DATA, cursor.operands())?),
-            | Maybe::Absent(_) => Maybe::Absent(data_kind::Absent::Unwritten),
+            Maybe::Present(_) => Maybe::Present(one_in(FormName::DATA, cursor.operands())?),
+            Maybe::Absent(_) => Maybe::Absent(data_kind::Absent::Unwritten),
         };
         if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_OPEN) {
             return Err(misplaced_in(FormName::DATA, cursor.here()));
@@ -783,29 +783,29 @@ impl<'source> Collector<'_, 'source>
         let mut faulted = Ok(());
         loop {
             match cursor.read() {
-                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::BRACE_CLOSE => {
+                Maybe::Present(Piece::Tile { label, .. }) if label == TileName::BRACE_CLOSE => {
                     break;
                 },
-                | Maybe::Present(Piece::Tile { label, at }) if label == TileName::CONSTRUCTOR => {
+                Maybe::Present(Piece::Tile { label, at }) if label == TileName::CONSTRUCTOR => {
                     generators.push(self.generator(at, cursor, &parameters)?);
                 },
-                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::OPER => {
+                Maybe::Present(Piece::Tile { label, .. }) if label == TileName::OPER => {
                     if let Maybe::Present(named) = cursor.tile(TileName::IDENTIFIER) {
                         operations.push(named);
                     }
                     pass_over_member(cursor);
                     continue;
                 },
-                | Maybe::Present(Piece::Tile { label, .. })
+                Maybe::Present(Piece::Tile { label, .. })
                     if label == TileName::OP || label == TileName::RULE =>
                 {
                     pass_over_member(cursor);
                     continue;
                 },
-                | Maybe::Present(Piece::Tile { label, at }) if label == TileName::IDENTIFIER => {
+                Maybe::Present(Piece::Tile { label, at }) if label == TileName::IDENTIFIER => {
                     match cell(at, cursor) {
-                        | Ok(member) => written.push(member),
-                        | Err(refusal) => {
+                        Ok(member) => written.push(member),
+                        Err(refusal) => {
                             if faulted.is_ok() {
                                 faulted = Err(refusal);
                             }
@@ -814,13 +814,13 @@ impl<'source> Collector<'_, 'source>
                         },
                     }
                 },
-                | Maybe::Present(Piece::Tile { at, .. }) => {
+                Maybe::Present(Piece::Tile { at, .. }) => {
                     return Err(misplaced_in(FormName::DATA, at.span));
                 },
-                | Maybe::Present(Piece::Operand(operand)) => {
+                Maybe::Present(Piece::Operand(operand)) => {
                     return Err(extra_operand(FormName::DATA, operand));
                 },
-                | Maybe::Absent(_) => return Err(misplaced_in(FormName::DATA, cursor.here())),
+                Maybe::Absent(_) => return Err(misplaced_in(FormName::DATA, cursor.here())),
             }
             if let Maybe::Absent(_) = cursor.tile(TileName::SEMICOLON) {
                 let _comma = cursor.tile(TileName::COMMA);
@@ -831,8 +831,8 @@ impl<'source> Collector<'_, 'source>
         }
         let (cells, faulted) =
             match faulted.and_then(|()| self.loops(&written, &generators, &parameters)) {
-                | Ok(cells) => (cells, Ok(())),
-                | Err(refusal) => (Vec::new(), Err(refusal)),
+                Ok(cells) => (cells, Ok(())),
+                Err(refusal) => (Vec::new(), Err(refusal)),
             };
         Ok(Formed {
             form: DataForm {
@@ -913,8 +913,8 @@ impl<'source> Collector<'_, 'source>
             }
             let side = |at: Placed| -> Result<ClosedTerm, LoweringRefusal<'source>> {
                 match closed_term(self.pbg, self.tree, at, &tag_of)? {
-                    | Maybe::Present(term) => Ok(term),
-                    | Maybe::Absent(_) => Err(declined(at, FormName::CELL_MEMBER)),
+                    Maybe::Present(term) => Ok(term),
+                    Maybe::Absent(_) => Err(declined(at, FormName::CELL_MEMBER)),
                 }
             };
             let (source, target) = (side(cell.source)?, side(cell.target)?);
@@ -1065,8 +1065,8 @@ impl<'source> Collector<'_, 'source>
         let mut pieces = Pieces::new();
         read_pieces(self.pbg, self.tree, result.node, &mut pieces)?;
         let mut arguments = pieces.pieces.iter().filter_map(|piece| match *piece {
-            | Piece::Operand(operand) => Some(operand),
-            | Piece::Tile { .. } => None,
+            Piece::Operand(operand) => Some(operand),
+            Piece::Tile { .. } => None,
         });
         for parameter in parameters {
             let Some(argument) = arguments.next()
@@ -1301,15 +1301,15 @@ fn pass_over_member(cursor: &mut Cursor<'_>)
 {
     loop {
         match cursor.peek() {
-            | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::BRACE_CLOSE => return,
-            | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::SEMICOLON => {
+            Maybe::Present(Piece::Tile { label, .. }) if label == TileName::BRACE_CLOSE => return,
+            Maybe::Present(Piece::Tile { label, .. }) if label == TileName::SEMICOLON => {
                 let _end = cursor.tile(label);
                 return;
             },
-            | Maybe::Present(_) => {
+            Maybe::Present(_) => {
                 let _skipped = cursor.read();
             },
-            | Maybe::Absent(_) => return,
+            Maybe::Absent(_) => return,
         }
     }
 }
@@ -1358,21 +1358,21 @@ fn cell<'source>(
     }
     let source = one_in(FormName::CELL_MEMBER, cursor.operands())?;
     let arrow = match cursor.read() {
-        | Maybe::Present(Piece::Tile { label, at }) => (label, at),
-        | Maybe::Present(Piece::Operand(operand)) => {
+        Maybe::Present(Piece::Tile { label, at }) => (label, at),
+        Maybe::Present(Piece::Operand(operand)) => {
             return Err(extra_operand(FormName::CELL_MEMBER, operand));
         },
-        | Maybe::Absent(_) => return Err(misplaced_in(FormName::CELL_MEMBER, cursor.here())),
+        Maybe::Absent(_) => return Err(misplaced_in(FormName::CELL_MEMBER, cursor.here())),
     };
     match arrow {
-        | (label, _) if label == TileName::INVERTIBLE => {},
-        | (label, at) if label == TileName::GENERATOR => {
+        (label, _) if label == TileName::INVERTIBLE => {},
+        (label, at) if label == TileName::GENERATOR => {
             return Err(LoweringRefusal::DirectedCell { span: at.span });
         },
-        | (label, at) if label == TileName::REWRITE || label == TileName::REVERSIBLE => {
+        (label, at) if label == TileName::REWRITE || label == TileName::REVERSIBLE => {
             return Err(declined(at, FormName::CELL_MEMBER));
         },
-        | (_, at) => return Err(misplaced_in(FormName::CELL_MEMBER, at.span)),
+        (_, at) => return Err(misplaced_in(FormName::CELL_MEMBER, at.span)),
     }
     let target = one_in(FormName::CELL_MEMBER, cursor.operands())?;
     let span = ByteSpan::new(named.span.start(), target.span.end()).unwrap_or(named.span);
@@ -1471,11 +1471,11 @@ where
             return foreign;
         };
         let (head, fields) = match shape_of(pbg, node)? {
-            | Shape::Form {
+            Shape::Form {
                 former: Former::Constructor,
                 ..
             } => (written, Vec::new()),
-            | Shape::Form {
+            Shape::Form {
                 former: Former::Call,
                 ..
             } => {
@@ -1484,8 +1484,8 @@ where
                     return foreign;
                 }
                 let mut operands = pieces.pieces.iter().filter_map(|piece| match *piece {
-                    | Piece::Operand(operand) => Some(operand),
-                    | Piece::Tile { .. } => None,
+                    Piece::Operand(operand) => Some(operand),
+                    Piece::Tile { .. } => None,
                 });
                 let Some(head) = operands.next()
                 else {
@@ -1505,7 +1505,7 @@ where
                 };
                 (head, fields)
             },
-            | Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+            Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
                 return foreign;
             },
         };

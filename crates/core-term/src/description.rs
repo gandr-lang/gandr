@@ -207,24 +207,22 @@ impl core::fmt::Display for DecodeError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::AtomAbstraction => f.write_str("atom abstraction has no native former"),
-            | Self::CodataNu => {
-                f.write_str("codata requires the negative greatest-fixpoint former")
-            },
-            | Self::Uninhabited => f.write_str("an empty payload coproduct has no summand"),
-            | Self::ForeignSort(ref name) => write!(f, "recursive sort `{name}` is not bound"),
-            | Self::MultiSorted => f.write_str("this interpretation requires one declared sort"),
-            | Self::UnresolvedType(ref name) => write!(f, "type `{name}` is not bound"),
-            | Self::AppliedType(ref name) => {
+            Self::AtomAbstraction => f.write_str("atom abstraction has no native former"),
+            Self::CodataNu => f.write_str("codata requires the negative greatest-fixpoint former"),
+            Self::Uninhabited => f.write_str("an empty payload coproduct has no summand"),
+            Self::ForeignSort(ref name) => write!(f, "recursive sort `{name}` is not bound"),
+            Self::MultiSorted => f.write_str("this interpretation requires one declared sort"),
+            Self::UnresolvedType(ref name) => write!(f, "type `{name}` is not bound"),
+            Self::AppliedType(ref name) => {
                 write!(f, "type `{name}` has the wrong application arity")
             },
-            | Self::Primitive(primitive) => write!(
+            Self::Primitive(primitive) => write!(
                 f,
                 "primitive `{}` has no native interpretation",
                 primitive.label().as_ref()
             ),
-            | Self::MalformedCode => f.write_str("description violates its fixed-arity invariant"),
-            | Self::ParameterArity => {
+            Self::MalformedCode => f.write_str("description violates its fixed-arity invariant"),
+            Self::ParameterArity => {
                 f.write_str("parameter classifiers disagree with the description")
             },
         }
@@ -399,14 +397,14 @@ pub fn decode_signature<G>(
         let mut pending = vec![constructor.code.to_node()];
         while let Some(node) = pending.pop() {
             match node.view() {
-                | CodeView::Unit => {},
-                | CodeView::Prod(mut children) => {
+                CodeView::Unit => {},
+                CodeView::Prod(mut children) => {
                     let left = children.next().ok_or(DecodeError::MalformedCode)?;
                     let right = children.next().ok_or(DecodeError::MalformedCode)?;
                     pending.push(right);
                     pending.push(left);
                 },
-                | CodeView::Var(_)
+                CodeView::Var(_)
                 | CodeView::Sum(_)
                 | CodeView::Field { .. }
                 | CodeView::Bind { .. } => {
@@ -476,15 +474,15 @@ fn interpret<G>(
     let mut arguments = Vec::new();
     while let Some(frame) = pending.pop() {
         match frame {
-            | Frame::Code(node) => match node.view() {
-                | CodeView::Unit => values.push(arena.value_type_unit()),
-                | CodeView::Var(sort) => {
+            Frame::Code(node) => match node.view() {
+                CodeView::Unit => values.push(arena.value_type_unit()),
+                CodeView::Var(sort) => {
                     if sort.as_ref() != context.self_sort.as_ref() {
                         return Err(DecodeError::ForeignSort(sort.clone()));
                     }
                     values.push(context.self_type);
                 },
-                | CodeView::Prod(mut children) | CodeView::Sum(mut children) => {
+                CodeView::Prod(mut children) | CodeView::Sum(mut children) => {
                     let left = children.next().ok_or(DecodeError::MalformedCode)?;
                     let right = children.next().ok_or(DecodeError::MalformedCode)?;
                     pending.push(if matches!(node.view(), CodeView::Prod(_)) {
@@ -496,27 +494,26 @@ fn interpret<G>(
                     pending.push(Frame::Code(right));
                     pending.push(Frame::Code(left));
                 },
-                | CodeView::Field { ty, .. } => pending.push(Frame::Type(ty.to_node())),
-                | CodeView::Bind { .. } => return Err(DecodeError::AtomAbstraction),
+                CodeView::Field { ty, .. } => pending.push(Frame::Type(ty.to_node())),
+                CodeView::Bind { .. } => return Err(DecodeError::AtomAbstraction),
             },
-            | Frame::Type(node) => match node.view() {
-                | ValueTypeView::Prim(primitive) => {
+            Frame::Type(node) => match node.view() {
+                ValueTypeView::Prim(primitive) => {
                     let ty = decode_primitive(arena, primitive)?;
                     values.push(ty);
                 },
-                | ValueTypeView::Param(name) => {
+                ValueTypeView::Param(name) => {
                     let ty = interpret_binding(arena, name, context)?;
                     values.push(ty);
                 },
-                | ValueTypeView::Ctor { head, args } => {
+                ValueTypeView::Ctor { head, args } => {
                     let binding = context.binding(head)?;
                     match *binding {
-                        | TypeBinding::Type(_) | TypeBinding::Parameter { .. } if args.len() == 0 =>
-                        {
+                        TypeBinding::Type(_) | TypeBinding::Parameter { .. } if args.len() == 0 => {
                             let ty = interpret_binding(arena, head, context)?;
                             values.push(ty);
                         },
-                        | TypeBinding::Nominal { declaration, arity } if args.len() == arity.0 => {
+                        TypeBinding::Nominal { declaration, arity } if args.len() == arity.0 => {
                             pending.push(Frame::Apply(declaration, arity));
                             let start = pending.len();
                             pending.extend(args.map(Frame::Argument));
@@ -525,7 +522,7 @@ fn interpret<G>(
                                 .ok_or(DecodeError::MalformedCode)?;
                             suffix.reverse();
                         },
-                        | TypeBinding::Type(_)
+                        TypeBinding::Type(_)
                         | TypeBinding::Value(_)
                         | TypeBinding::Parameter { .. }
                         | TypeBinding::Nominal { .. } => {
@@ -534,29 +531,29 @@ fn interpret<G>(
                     }
                 },
             },
-            | Frame::Argument(node) => {
+            Frame::Argument(node) => {
                 if let ValueTypeView::Param(name) = node.view() {
                     match *context.binding(name)? {
-                        | TypeBinding::Value(value) => {
+                        TypeBinding::Value(value) => {
                             arguments.push(value);
                             continue;
                         },
-                        | TypeBinding::Parameter { level, .. } => {
+                        TypeBinding::Parameter { level, .. } => {
                             let value = parameter_value(arena, level, context.depth)?;
                             arguments.push(value);
                             continue;
                         },
-                        | TypeBinding::Type(_) | TypeBinding::Nominal { .. } => {},
+                        TypeBinding::Type(_) | TypeBinding::Nominal { .. } => {},
                     }
                 }
                 pending.push(Frame::QuoteArgument);
                 pending.push(Frame::Type(node));
             },
-            | Frame::QuoteArgument => {
+            Frame::QuoteArgument => {
                 let ty = values.pop().ok_or(DecodeError::MalformedCode)?;
                 arguments.push(arena.value_quote(ty));
             },
-            | Frame::Product | Frame::Sum => {
+            Frame::Product | Frame::Sum => {
                 let right = values.pop().ok_or(DecodeError::MalformedCode)?;
                 let left = values.pop().ok_or(DecodeError::MalformedCode)?;
                 values.push(if matches!(frame, Frame::Product) {
@@ -566,7 +563,7 @@ fn interpret<G>(
                     arena.value_type_sum(&[left, right])
                 });
             },
-            | Frame::Apply(declaration, arity) => {
+            Frame::Apply(declaration, arity) => {
                 let start = arguments
                     .len()
                     .checked_sub(arity.0)
@@ -607,8 +604,8 @@ fn interpret_binding(
 ) -> Result<ValueTypeId, DecodeError>
 {
     match *context.binding(name)? {
-        | TypeBinding::Type(ty) => Ok(ty),
-        | TypeBinding::Parameter { level, classifier } => {
+        TypeBinding::Type(ty) => Ok(ty),
+        TypeBinding::Parameter { level, classifier } => {
             let Some(&crate::ValueType::Universe {
                 sort: crate::Sort::Ground(gandr_kernel_term::GroundSort::Value),
                 level: ref target,
@@ -620,11 +617,11 @@ fn interpret_binding(
             let value = parameter_value(arena, level, context.depth)?;
             Ok(arena.value_type_element(value, target))
         },
-        | TypeBinding::Nominal {
+        TypeBinding::Nominal {
             declaration,
             arity: TypeArity(0),
         } => Ok(arena.value_type_data(declaration, Vec::new())),
-        | TypeBinding::Value(_) | TypeBinding::Nominal { .. } => {
+        TypeBinding::Value(_) | TypeBinding::Nominal { .. } => {
             Err(DecodeError::AppliedType(name.clone()))
         },
     }
@@ -686,14 +683,14 @@ fn decode_primitive(
 ) -> Result<ValueTypeId, DecodeError>
 {
     match primitive {
-        | PrimTy::Integer => Ok(arena.value_type_base(BaseType::Integer)),
-        | PrimTy::StringTy => Ok(arena.value_type_base(BaseType::String)),
-        | PrimTy::Unit => Ok(arena.value_type_unit()),
-        | PrimTy::Boolean => {
+        PrimTy::Integer => Ok(arena.value_type_base(BaseType::Integer)),
+        PrimTy::StringTy => Ok(arena.value_type_base(BaseType::String)),
+        PrimTy::Unit => Ok(arena.value_type_unit()),
+        PrimTy::Boolean => {
             let unit = arena.value_type_unit();
             Ok(arena.value_type_sum(&[unit, unit]))
         },
-        | PrimTy::Char
+        PrimTy::Char
         | PrimTy::U32
         | PrimTy::U64
         | PrimTy::I32

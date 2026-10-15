@@ -679,16 +679,16 @@ impl OriginTable
         }
         for pair in carried {
             match *pair {
-                | Carried::Value(held, written) => {
+                Carried::Value(held, written) => {
                     let _first = values.entry(written).or_insert(held);
                 },
-                | Carried::Computation(held, written) => {
+                Carried::Computation(held, written) => {
                     let _first = computations.entry(written).or_insert(Source::Rebuilt(held));
                 },
-                | Carried::ValueType(held, written) => {
+                Carried::ValueType(held, written) => {
                     let _first = value_types.entry(written).or_insert(held);
                 },
-                | Carried::CompType(held, written) => {
+                Carried::CompType(held, written) => {
                     let _first = comp_types.entry(written).or_insert(held);
                 },
             }
@@ -703,8 +703,8 @@ impl OriginTable
         }
         for (written, source) in computations {
             let origin = match source {
-                | Source::Run(run) => self.value(run),
-                | Source::Rebuilt(held) => {
+                Source::Run(run) => self.value(run),
+                Source::Rebuilt(held) => {
                     if let Maybe::Present(name) = self.binder(held) {
                         self.record_binder(written, name);
                     }

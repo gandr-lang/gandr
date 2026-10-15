@@ -51,10 +51,10 @@ fn schema(with_equation: Equation) -> Schema
         .arrow("mark_edge", "M", "E", Indexing::Indexed)
         .arrow("mark_vertex", "M", "V", Indexing::Indexed);
     let presentation = match with_equation {
-        | Equation::Checked => {
+        Equation::Checked => {
             presentation.equation("mark_agrees", "M", ["mark_edge", "src"], ["mark_vertex"])
         },
-        | Equation::Absent => presentation,
+        Equation::Absent => presentation,
     };
     Schema::present(&presentation).expect("the bench schema presents")
 }

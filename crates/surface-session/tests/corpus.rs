@@ -57,8 +57,8 @@ fn every_source_submits_as_the_walk_composes_it()
             panic!("the corpus walks without a fault: {step:?}");
         };
         match root {
-            | SourceRoot::Strict => sources.strict = sources.strict.saturating_add(1_usize),
-            | SourceRoot::Fixture | SourceRoot::Pending => {
+            SourceRoot::Strict => sources.strict = sources.strict.saturating_add(1_usize),
+            SourceRoot::Fixture | SourceRoot::Pending => {
                 sources.fixture = sources.fixture.saturating_add(1_usize);
             },
         }
@@ -70,11 +70,11 @@ fn every_source_submits_as_the_walk_composes_it()
             backend(),
         );
         let submission = match session.submit(text) {
-            | Ok(submission) => submission,
-            | Err(fault) => panic!("{}: the session faulted: {fault}", path.display()),
+            Ok(submission) => submission,
+            Err(fault) => panic!("{}: the session faulted: {fault}", path.display()),
         };
         match (submission.composed(), submission.kernel()) {
-            | (
+            (
                 &Composed::Settled {
                     kernel: Maybe::Present(ref kernel),
                     ..
@@ -86,8 +86,8 @@ fn every_source_submits_as_the_walk_composes_it()
                 "{}: the kernel checkpoint reads back as the export",
                 path.display()
             ),
-            | (&Composed::Refused(_), Maybe::Absent(admitted::Absent::RefusedWhole)) => {},
-            | (_, checkpoint) => panic!(
+            (&Composed::Refused(_), Maybe::Absent(admitted::Absent::RefusedWhole)) => {},
+            (_, checkpoint) => panic!(
                 "{}: the kernel checkpoint does not match the composition: {checkpoint:?}",
                 path.display()
             ),

@@ -213,19 +213,19 @@ mod static_operators
             .iter()
             .map(|declaration| {
                 let (declared, defined) = match declaration.outcome() {
-                    | DeclarationOutcome::Completed {
+                    DeclarationOutcome::Completed {
                         declared_type,
                         body,
                     } => (Maybe::Present(declared_type), Maybe::Present(body)),
-                    | DeclarationOutcome::Uncompleted { declared_type } => (
+                    DeclarationOutcome::Uncompleted { declared_type } => (
                         Maybe::Present(declared_type),
                         Maybe::Absent(body::Absent::Hole),
                     ),
-                    | DeclarationOutcome::Bodied { body } => (
+                    DeclarationOutcome::Bodied { body } => (
                         Maybe::Absent(signature::Absent::Unsigned),
                         Maybe::Present(body),
                     ),
-                    | DeclarationOutcome::Data(index) => {
+                    DeclarationOutcome::Data(index) => {
                         let Maybe::Present(signature) = module.data(index)
                         else {
                             panic!("a data declaration keeps its signature: {index:?}")
@@ -236,10 +236,10 @@ mod static_operators
                             OriginToken::from(usize::from(declaration.origin())),
                         );
                     },
-                    | DeclarationOutcome::Abstract(sealing) => {
+                    DeclarationOutcome::Abstract(sealing) => {
                         panic!("no fixture seals a module: {sealing:?}")
                     },
-                    | DeclarationOutcome::Refused(refusal) => {
+                    DeclarationOutcome::Refused(refusal) => {
                         panic!("every declaration lowers: {refusal:?}")
                     },
                 };
@@ -299,9 +299,9 @@ mod static_operators
             .judged()
             .iter()
             .map(|judged| match judged.verdict() {
-                | Verdict::Checked { .. } => "checked",
-                | Verdict::Owed(_) => "owed",
-                | _ => "refused",
+                Verdict::Checked { .. } => "checked",
+                Verdict::Owed(_) => "owed",
+                Verdict::Data | Verdict::Synthesised { .. } | Verdict::Refused(_) => "refused",
             })
             .collect();
         let readmission = bridge::readmit(&mut arena, &report);
@@ -319,11 +319,11 @@ mod static_operators
                     .map(|segment| String::from(segment.as_ref()))
                     .collect();
                 let (declared, defined) = match *declaration.content() {
-                    | DeclarationContent::Def { declared, body } => {
+                    DeclarationContent::Def { declared, body } => {
                         (declared, Some(digest(AnyNode::Value(body))))
                     },
-                    | DeclarationContent::Axiom { declared } => (declared, None),
-                    | DeclarationContent::AbstractType { kind, .. }
+                    DeclarationContent::Axiom { declared } => (declared, None),
+                    DeclarationContent::AbstractType { kind, .. }
                     | DeclarationContent::Data { kind, .. } => (kind, None),
                 };
                 (segments, digest(AnyNode::ValueType(declared)), defined)
@@ -373,19 +373,25 @@ mod static_operators
         let mut arena = CoreArena::new();
         let (report, _) = judge(SourceText::from(SORT_ERRORS), &mut arena);
         let universe = |id| match arena.value_type(id) {
-            | Some(&ValueType::Universe { sort, ref level }) => (sort, level.clone()),
-            | other => panic!("a sort mismatch names universes, not {other:?}"),
+            Some(&ValueType::Universe { sort, ref level }) => (sort, level.clone()),
+            other => panic!("a sort mismatch names universes, not {other:?}"),
         };
         let refused: Vec<_> = report
             .judged()
             .iter()
             .map(|judged| match judged.verdict() {
-                | Verdict::Refused(CheckRefusal::SortMismatch {
+                Verdict::Refused(CheckRefusal::SortMismatch {
                     synthesised,
                     expected,
                     ..
                 }) => (universe(synthesised), universe(expected)),
-                | other => panic!("each carrier is refused as a sort mismatch, not {other:?}"),
+                other @ (Verdict::Data
+                | Verdict::Checked { .. }
+                | Verdict::Synthesised { .. }
+                | Verdict::Owed(_)
+                | Verdict::Refused(_)) => {
+                    panic!("each carrier is refused as a sort mismatch, not {other:?}")
+                },
             })
             .collect();
 

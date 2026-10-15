@@ -51,11 +51,11 @@ impl Reader<'_, '_>
         loop {
             let pieces = self.pieces(current)?;
             match *pieces.as_slice() {
-                | [_, Piece::Tile { label, .. }, ref result] if label.as_ref() == "->" => {
+                [_, Piece::Tile { label, .. }, ref result] if label.as_ref() == "->" => {
                     count = count.saturating_add(1);
                     current = result.placed();
                 },
-                | _ => return Ok(IndexArity(count)),
+                _ => return Ok(IndexArity(count)),
             }
         }
     }

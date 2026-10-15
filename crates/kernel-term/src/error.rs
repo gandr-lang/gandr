@@ -82,9 +82,9 @@ impl fmt::Display for ReservedKind
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::ModuleSig => "ModuleSig",
-            | Self::ModuleDef => "ModuleDef",
-            | Self::FunctorDef => "FunctorDef",
+            Self::ModuleSig => "ModuleSig",
+            Self::ModuleDef => "ModuleDef",
+            Self::FunctorDef => "FunctorDef",
         })
     }
 }
@@ -155,10 +155,10 @@ impl fmt::Display for ReservedSlot
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::MintedAtomTable => "the minted-atom table",
-            | Self::ErasureAnnotation => "the erasure annotation slot",
-            | Self::ModeGradeAnnotation => "the modes-and-grades annotation slot",
-            | Self::DirectednessVariance => "the directedness-and-variance annotation slot",
+            Self::MintedAtomTable => "the minted-atom table",
+            Self::ErasureAnnotation => "the erasure annotation slot",
+            Self::ModeGradeAnnotation => "the modes-and-grades annotation slot",
+            Self::DirectednessVariance => "the directedness-and-variance annotation slot",
         })
     }
 }
@@ -241,18 +241,18 @@ impl fmt::Display for TagSite
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Admission => "an admission mark",
-            | Self::DeclarationKind => "a declaration kind",
-            | Self::Node => "a subterm-table node tag",
-            | Self::BaseType => "a base-type atom",
-            | Self::Sign => "a literal sign",
-            | Self::LiteralKind => "a literal kind",
-            | Self::ConstraintRelation => "a constraint relation",
-            | Self::FixpointEvidence => "a fixpoint evidence claim",
-            | Self::HigherLayer => "a higher-field layer kind",
-            | Self::ProjectionSide => "a lazy projection side",
-            | Self::Seam => "a composition seam",
-            | Self::RuleNode => "a presented rule's node",
+            Self::Admission => "an admission mark",
+            Self::DeclarationKind => "a declaration kind",
+            Self::Node => "a subterm-table node tag",
+            Self::BaseType => "a base-type atom",
+            Self::Sign => "a literal sign",
+            Self::LiteralKind => "a literal kind",
+            Self::ConstraintRelation => "a constraint relation",
+            Self::FixpointEvidence => "a fixpoint evidence claim",
+            Self::HigherLayer => "a higher-field layer kind",
+            Self::ProjectionSide => "a lazy projection side",
+            Self::Seam => "a composition seam",
+            Self::RuleNode => "a presented rule's node",
         })
     }
 }
@@ -375,32 +375,32 @@ impl fmt::Display for MalformedSite
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Session => "session inline data was malformed",
-            | Self::PathEvidence => "a path dialogue word was invalid",
-            | Self::PathEndpoint => "a path endpoint was not a value",
-            | Self::TransportMotive => "a transport motive was not a value type",
-            | Self::TelescopeMotive => "a telescope transport motive was not a computation type",
-            | Self::FlowEndpoint => "a flow endpoint was not a value",
-            | Self::RideMotive => "a ride motive was not a value type",
-            | Self::TelescopeRideMotive => "a telescope ride motive was not a computation type",
-            | Self::HigherLayer => "a higher-field layer position was out of range",
-            | Self::Header => "the artifact magic did not match",
-            | Self::Varint => "a varint was overlong or out of range",
-            | Self::IndexRange => "a decoded index did not fit its width",
-            | Self::LevelOffset => "a level atom offset exceeded the decode cap",
-            | Self::ConstraintForm => "a constraint side was not variable-only",
-            | Self::LiteralPayload => "a literal payload was not reconstructible",
-            | Self::NameSegment => "a name segment was not UTF-8 or held the separator",
-            | Self::SealExtent => "a seal extent reached past the artifact's last declaration",
-            | Self::Polarity => "a decoded node had the wrong polarity for its slot",
-            | Self::ChildOrder => "a child index was not strictly earlier than its entry",
-            | Self::TableSize => "the subterm table exceeded the entry cap",
-            | Self::ExpandedWork => "a declaration's expanded size exceeded the work cap",
-            | Self::ArtifactExpandedWork => {
+            Self::Session => "session inline data was malformed",
+            Self::PathEvidence => "a path dialogue word was invalid",
+            Self::PathEndpoint => "a path endpoint was not a value",
+            Self::TransportMotive => "a transport motive was not a value type",
+            Self::TelescopeMotive => "a telescope transport motive was not a computation type",
+            Self::FlowEndpoint => "a flow endpoint was not a value",
+            Self::RideMotive => "a ride motive was not a value type",
+            Self::TelescopeRideMotive => "a telescope ride motive was not a computation type",
+            Self::HigherLayer => "a higher-field layer position was out of range",
+            Self::Header => "the artifact magic did not match",
+            Self::Varint => "a varint was overlong or out of range",
+            Self::IndexRange => "a decoded index did not fit its width",
+            Self::LevelOffset => "a level atom offset exceeded the decode cap",
+            Self::ConstraintForm => "a constraint side was not variable-only",
+            Self::LiteralPayload => "a literal payload was not reconstructible",
+            Self::NameSegment => "a name segment was not UTF-8 or held the separator",
+            Self::SealExtent => "a seal extent reached past the artifact's last declaration",
+            Self::Polarity => "a decoded node had the wrong polarity for its slot",
+            Self::ChildOrder => "a child index was not strictly earlier than its entry",
+            Self::TableSize => "the subterm table exceeded the entry cap",
+            Self::ExpandedWork => "a declaration's expanded size exceeded the work cap",
+            Self::ArtifactExpandedWork => {
                 "the artifact-total expanded size exceeded the artifact work cap"
             },
-            | Self::NonCanonical => "the bytes were not the canonical encoding",
-            | Self::TrailingBytes => "bytes remained after a complete artifact",
+            Self::NonCanonical => "the bytes were not the canonical encoding",
+            Self::TrailingBytes => "bytes remained after a complete artifact",
         })
     }
 }
@@ -495,18 +495,18 @@ impl fmt::Display for DecodeError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Truncated => f.write_str("the artifact ended mid-field"),
-            | Self::UnknownTag { site, tag } => {
+            Self::Truncated => f.write_str("the artifact ended mid-field"),
+            Self::UnknownTag { site, tag } => {
                 write!(f, "unknown tag {tag} where {site} was expected")
             },
-            | Self::Malformed { site } => write!(f, "malformed artifact: {site}"),
-            | Self::ReservedDeclarationKind { kind } => {
+            Self::Malformed { site } => write!(f, "malformed artifact: {site}"),
+            Self::ReservedDeclarationKind { kind } => {
                 write!(f, "the reserved declaration kind {kind} is not admitted")
             },
-            | Self::ReservedSlotOccupied { slot } => {
+            Self::ReservedSlotOccupied { slot } => {
                 write!(f, "{slot} did not hold its required content")
             },
-            | Self::UnsupportedVersion { found } => {
+            Self::UnsupportedVersion { found } => {
                 write!(f, "unsupported artifact format version {found}")
             },
         }

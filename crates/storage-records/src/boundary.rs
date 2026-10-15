@@ -319,7 +319,7 @@ impl BoundaryProfile
     const fn tag(self) -> WireTag
     {
         match self {
-            | Self::RecordDigest => WireTag(0x01_u8),
+            Self::RecordDigest => WireTag(0x01_u8),
         }
     }
 }
@@ -563,7 +563,7 @@ impl BoundaryParams
     ) -> BoundaryResidue
     {
         match self.profile {
-            | BoundaryProfile::RecordDigest => {
+            BoundaryProfile::RecordDigest => {
                 let hash = digest(Domain::Boundary, WireBytes::from(record.as_ref()));
                 let mut leading = [0_u8; 8_usize];
                 let (head, _tail) = hash.as_ref().split_at(leading.len());

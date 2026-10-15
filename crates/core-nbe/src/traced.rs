@@ -170,10 +170,10 @@ where
     ) -> Result<Self, PolicyRefusal>
     {
         match (stance, S::ACTIVITY) {
-            | (DuplicationStance::Spinal, SinkActivity::Inactive) => {
+            (DuplicationStance::Spinal, SinkActivity::Inactive) => {
                 Err(PolicyRefusal::Untraced { stance })
             },
-            | (DuplicationStance::EraseAndClone, _)
+            (DuplicationStance::EraseAndClone, _)
             | (DuplicationStance::Spinal, SinkActivity::Active) => Ok(Self {
                 policy: DuplicationPolicy::bound_to_trace(stance),
                 sink,
@@ -316,10 +316,10 @@ where
     ) -> Result<(DomainValueId, Fuel), OverlayEvalFault>
     {
         match self.policy.stance() {
-            | DuplicationStance::EraseAndClone => {
+            DuplicationStance::EraseAndClone => {
                 eval_overlay_value(overlay, core, domain, definitions, fuel, root)
             },
-            | DuplicationStance::Spinal => {
+            DuplicationStance::Spinal => {
                 let (produced, left) = eval_overlay_shared(
                     overlay,
                     core,
@@ -330,8 +330,8 @@ where
                     OverlayId::Value(root),
                 )?;
                 match produced {
-                    | Glued::Value(value) => Ok((value, left)),
-                    | Glued::Computation(_) => {
+                    Glued::Value(value) => Ok((value, left)),
+                    Glued::Computation(_) => {
                         Err(OverlayEvalFault::Evaluation(EvalFault::MachineInvariant))
                     },
                 }
@@ -386,10 +386,10 @@ where
     ) -> Result<(DomainCompId, Fuel), OverlayEvalFault>
     {
         match self.policy.stance() {
-            | DuplicationStance::EraseAndClone => {
+            DuplicationStance::EraseAndClone => {
                 eval_overlay_computation(overlay, core, domain, definitions, fuel, root)
             },
-            | DuplicationStance::Spinal => {
+            DuplicationStance::Spinal => {
                 let (produced, left) = eval_overlay_shared(
                     overlay,
                     core,
@@ -400,8 +400,8 @@ where
                     OverlayId::Computation(root),
                 )?;
                 match produced {
-                    | Glued::Computation(comp) => Ok((comp, left)),
-                    | Glued::Value(_) => {
+                    Glued::Computation(comp) => Ok((comp, left)),
+                    Glued::Value(_) => {
                         Err(OverlayEvalFault::Evaluation(EvalFault::MachineInvariant))
                     },
                 }

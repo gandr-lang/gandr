@@ -73,8 +73,8 @@ mod flow_readmission
             .iter()
             .map(|entry| {
                 let mark = match entry.admission() {
-                    | Admission::Checked => AdmissionMark::Checked,
-                    | Admission::Unchecked => AdmissionMark::UncheckedBypass,
+                    Admission::Checked => AdmissionMark::Checked,
+                    Admission::Unchecked => AdmissionMark::UncheckedBypass,
                 };
                 MarkedDeclaration::new(mark, entry.declaration().clone())
             })

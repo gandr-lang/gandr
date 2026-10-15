@@ -275,7 +275,7 @@ impl<A: Copy + Ord, F> Term<A, F>
         let mut free = BTreeSet::new();
         while let Some(step) = work.pop() {
             match step {
-                | Walk::Leave(name) => {
+                Walk::Leave(name) => {
                     if let Some(count) = bound.get_mut(&name) {
                         *count = count.saturating_sub(1);
                         if *count == 0 {
@@ -283,15 +283,15 @@ impl<A: Copy + Ord, F> Term<A, F>
                         }
                     }
                 },
-                | Walk::Enter(id) => {
+                Walk::Enter(id) => {
                     let node = self.node(id)?;
                     match node.name {
-                        | NameKind::Free(name) => {
+                        NameKind::Free(name) => {
                             if !bound.contains_key(&name) {
                                 free.insert(name);
                             }
                         },
-                        | NameKind::Bound(name) => {
+                        NameKind::Bound(name) => {
                             let count = bound.entry(name).or_default();
                             *count = count.saturating_add(1);
                             work.push(Walk::Leave(name));
@@ -488,7 +488,7 @@ impl<A: Copy + Ord, F> Rnta<A, F>
         for rule in &rules {
             let source_arity = arity_at(&arities, rule.source)?;
             let allocation = match rule.kind {
-                | NodeKind::FreeName { register } => {
+                NodeKind::FreeName { register } => {
                     if usize::from(register) >= usize::from(source_arity) {
                         return Err(AutomatonError::UnknownRegister {
                             control: rule.source,
@@ -497,7 +497,7 @@ impl<A: Copy + Ord, F> Rnta<A, F>
                     }
                     Allocation::Forbidden
                 },
-                | NodeKind::Allocate => Allocation::Allowed,
+                NodeKind::Allocate => Allocation::Allowed,
             };
             for child in &rule.children {
                 validate_transfer(

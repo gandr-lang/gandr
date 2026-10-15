@@ -145,8 +145,8 @@ fn point(
         .to_vec();
     let mut open = false;
     let built = build_side(cells.point(), &arities, |node, fields| match node {
-        | RuleNode::Constructor(tag) => arena.value_constructor(datatype, tag, fields),
-        | RuleNode::Variable(_) => {
+        RuleNode::Constructor(tag) => arena.value_constructor(datatype, tag, fields),
+        RuleNode::Variable(_) => {
             open = true;
             arena.value_unit()
         },

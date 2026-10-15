@@ -82,8 +82,8 @@ pub(super) fn code(
         }
         let node = arena.value_type(id).ok_or(PathError::Arena)?;
         match node {
-            | &ValueType::Base(_) => {},
-            | &ValueType::Session {
+            &ValueType::Base(_) => {},
+            &ValueType::Session {
                 ref graph,
                 payloads,
             } => {
@@ -92,14 +92,26 @@ pub(super) fn code(
                 // Ordinary formation checks payload codes in an empty
                 // telescope.
             },
-            | &ValueType::Sum(ref parts) if parts.is_empty() => {
+            &ValueType::Sum(ref parts) if parts.is_empty() => {
                 return Err(PathError::UnsupportedType(id));
             },
-            | &ValueType::Sum(ref parts) | &ValueType::Product(ref parts) => {
+            &ValueType::Sum(ref parts) | &ValueType::Product(ref parts) => {
                 pending.extend(parts.iter().rev().copied());
             },
-            | &ValueType::List(_) => return Err(PathError::UncertifiedStratum(id)),
-            | _ => return Err(PathError::UnsupportedType(id)),
+            &ValueType::List(_) => return Err(PathError::UncertifiedStratum(id)),
+            &ValueType::Data { .. }
+            | &ValueType::Record(_)
+            | &ValueType::PathUniverse(..)
+            | &ValueType::FlowUniverse(..)
+            | &ValueType::Path { .. }
+            | &ValueType::Flow { .. }
+            | &ValueType::Sigma { .. }
+            | &ValueType::Thunk(_)
+            | &ValueType::Universe { .. }
+            | &ValueType::Lift { .. }
+            | &ValueType::Element { .. }
+            | &ValueType::Abstract(_)
+            | &ValueType::StaticPi { .. } => return Err(PathError::UnsupportedType(id)),
         }
     }
     Ok(root)
@@ -175,28 +187,42 @@ fn patterns(
     while let Some(task) = pending.pop() {
         allowance.charge()?;
         match task {
-            | Cover::Visit(id) => {
+            Cover::Visit(id) => {
                 let node = arena.value_type(id).ok_or(PathError::Arena)?;
                 match node {
-                    | &ValueType::Base(_) => results.push(Vec::from([Pattern {
+                    &ValueType::Base(_) => results.push(Vec::from([Pattern {
                         value: arena.value_variable(DeBruijnIndex::from(0_u32)),
                         binders: BinderDepth::from(1_u32),
                     }])),
-                    | &ValueType::Sum(ref parts) if parts.is_empty() => {
+                    &ValueType::Sum(ref parts) if parts.is_empty() => {
                         return Err(PathError::UnsupportedType(id));
                     },
-                    | &ValueType::Sum(ref parts) => {
+                    &ValueType::Sum(ref parts) => {
                         pending.push(Cover::Sum(parts.len()));
                         pending.extend(parts.iter().rev().copied().map(Cover::Visit));
                     },
-                    | &ValueType::Product(ref parts) => {
+                    &ValueType::Product(ref parts) => {
                         pending.push(Cover::Product(parts.len()));
                         pending.extend(parts.iter().rev().copied().map(Cover::Visit));
                     },
-                    | _ => return Err(PathError::UnsupportedType(id)),
+                    &ValueType::Data { .. }
+                    | &ValueType::Record(_)
+                    | &ValueType::Session { .. }
+                    | &ValueType::PathUniverse(..)
+                    | &ValueType::FlowUniverse(..)
+                    | &ValueType::Path { .. }
+                    | &ValueType::Flow { .. }
+                    | &ValueType::Sigma { .. }
+                    | &ValueType::List(_)
+                    | &ValueType::Thunk(_)
+                    | &ValueType::Universe { .. }
+                    | &ValueType::Lift { .. }
+                    | &ValueType::Element { .. }
+                    | &ValueType::Abstract(_)
+                    | &ValueType::StaticPi { .. } => return Err(PathError::UnsupportedType(id)),
                 }
             },
-            | Cover::Sum(arity) => {
+            Cover::Sum(arity) => {
                 let start = results.len().checked_sub(arity).ok_or(PathError::Arena)?;
                 let mut joined = Vec::new();
                 for (summand, branch) in results.drain(start ..).enumerate() {
@@ -213,7 +239,7 @@ fn patterns(
             // Each step crosses the tuples so far with the next component's
             // patterns; the earlier components' base variables shift past the
             // new component's, so every variable stays distinct.
-            | Cover::Product(arity) => {
+            Cover::Product(arity) => {
                 let start = results.len().checked_sub(arity).ok_or(PathError::Arena)?;
                 let mut tuples = Vec::from([(Vec::<ValueId>::new(), 0_u32)]);
                 for component in results.drain(start ..) {
@@ -365,8 +391,8 @@ mod tests
         let indices = components
             .iter()
             .map(|&component| match arena.value(component) {
-                | Some(&Value::Variable(index)) => u32::from(index),
-                | _ => panic!("a base position is a variable"),
+                Some(&Value::Variable(index)) => u32::from(index),
+                _ => panic!("a base position is a variable"),
             })
             .collect::<Vec<_>>();
         assert_eq!(vec![2_u32, 1_u32, 0_u32], indices);
@@ -377,8 +403,8 @@ mod tests
         let summands = covered
             .iter()
             .map(|pattern| match arena.value(pattern.value) {
-                | Some(&Value::Injection(summand, _)) => summand,
-                | _ => panic!("a sum pattern is an injection"),
+                Some(&Value::Injection(summand, _)) => summand,
+                _ => panic!("a sum pattern is an injection"),
             })
             .collect::<Vec<_>>();
         assert_eq!(

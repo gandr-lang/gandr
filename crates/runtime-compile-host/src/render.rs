@@ -74,9 +74,9 @@ impl core::fmt::Display for RenderError
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::OutsideSlice => "value has no positive-core rendering",
-            | Self::DanglingValue(_) => "value address does not resolve",
-            | Self::IntegerOutOfRange => "integer exceeds signed 64-bit image range",
+            Self::OutsideSlice => "value has no positive-core rendering",
+            Self::DanglingValue(_) => "value address does not resolve",
+            Self::IntegerOutOfRange => "integer exceeds signed 64-bit image range",
         })
     }
 }
@@ -121,15 +121,15 @@ pub fn canonical(
     let mut pending = vec![Step::Value(root)];
     while let Some(step) = pending.pop() {
         let id = match step {
-            | Step::Text(delimiter) => {
+            Step::Text(delimiter) => {
                 text.push_str(delimiter);
                 continue;
             },
-            | Step::Value(id) => id,
+            Step::Value(id) => id,
         };
         let value = core.value(id).ok_or(RenderError::DanglingValue(id))?;
         match *value {
-            | Value::Literal(Literal::Integer(ref integer)) => {
+            Value::Literal(Literal::Integer(ref integer)) => {
                 let integer = crate::image::Literal::try_from(integer)
                     .map_err(|_range| RenderError::IntegerOutOfRange)?;
                 text.push_str("(int ");
@@ -138,9 +138,9 @@ pub fn canonical(
                     core::fmt::Write::write_fmt(&mut text, format_args!("{}", i64::from(integer)));
                 text.push(')');
             },
-            | Value::Tuple(ref components) => match **components {
-                | [] => text.push_str("(unit)"),
-                | [first, second] => {
+            Value::Tuple(ref components) => match **components {
+                [] => text.push_str("(unit)"),
+                [first, second] => {
                     text.push_str("(pair ");
                     pending.extend([
                         Step::Text(")"),
@@ -149,17 +149,50 @@ pub fn canonical(
                         Step::Value(first),
                     ]);
                 },
-                | _ => return Err(RenderError::OutsideSlice),
+                _ => return Err(RenderError::OutsideSlice),
             },
-            | Value::Injection(summand, payload) => {
+            Value::Injection(summand, payload) => {
                 text.push_str(match Side::try_from(summand) {
-                    | Ok(Side::Left) => "(inl ",
-                    | Ok(Side::Right) => "(inr ",
-                    | Err(_) => return Err(RenderError::OutsideSlice),
+                    Ok(Side::Left) => "(inl ",
+                    Ok(Side::Right) => "(inr ",
+                    Err(_) => return Err(RenderError::OutsideSlice),
                 });
                 pending.extend([Step::Text(")"), Step::Value(payload)]);
             },
-            | _ => return Err(RenderError::OutsideSlice),
+            Value::Primitive { .. }
+            | Value::PathRefl(_)
+            | Value::PathProduct(..)
+            | Value::PathEquiv { .. }
+            | Value::Here(_)
+            | Value::Funext(..)
+            | Value::Equiv(..)
+            | Value::Ua { .. }
+            | Value::SessionRelated { .. }
+            | Value::Stay(_)
+            | Value::Then(..)
+            | Value::FlowProduct(..)
+            | Value::Forward(_)
+            | Value::FunctionFlow(..)
+            | Value::Recorded(_)
+            | Value::Returned(_)
+            | Value::Nested(_)
+            | Value::Run(_)
+            | Value::Variable { .. }
+            | Value::Constant(_)
+            | Value::Literal(_)
+            | Value::ListNil
+            | Value::ListCons(..)
+            | Value::Thunk(_)
+            | Value::Lift { .. }
+            | Value::Quote(_)
+            | Value::QuoteComputation(_)
+            | Value::StaticLambda(_)
+            | Value::StaticApplication(..)
+            | Value::Constructor { .. }
+            | Value::Record(_)
+            | Value::Hole(_)
+            | Value::Mark { .. }
+            | Value::Reify(_) => return Err(RenderError::OutsideSlice),
         }
     }
     Ok(RenderedValue(text))

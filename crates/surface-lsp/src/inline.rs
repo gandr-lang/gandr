@@ -262,18 +262,18 @@ impl Category
     ) -> Self
     {
         match sort {
-            | Sort::Expression => {
+            Sort::Expression => {
                 let before = grammar.mold(after).map(|def| def.label);
                 match before {
-                    | Ok("{" | ";" | "<-" | "=>" | "become" | "run" | "#!{") => Self::Computation,
-                    | Ok(_) | Err(_) => Self::Value,
+                    Ok("{" | ";" | "<-" | "=>" | "become" | "run" | "#!{") => Self::Computation,
+                    Ok(_) | Err(_) => Self::Value,
                 }
             },
-            | Sort::Pattern => Self::Pattern,
-            | Sort::Type => Self::Type,
-            | Sort::Item => Self::Item,
-            | Sort::ModuleMember => Self::Member,
-            | Sort::Instantiation => Self::Instantiation,
+            Sort::Pattern => Self::Pattern,
+            Sort::Type => Self::Type,
+            Sort::Item => Self::Item,
+            Sort::ModuleMember => Self::Member,
+            Sort::Instantiation => Self::Instantiation,
         }
     }
 
@@ -299,17 +299,17 @@ impl Category
     ) -> Self
     {
         match (sort, opener.0) {
-            | (
+            (
                 Sort::Expression,
                 "return" | "pure" | "become" | "case" | "if" | "fn" | "force" | "while" | "for"
                 | "loop" | "break" | "continue" | "{" | "#!{" | "&",
             ) => Self::Computation,
-            | (Sort::Expression, _) => Self::Value,
-            | (Sort::Pattern, _) => Self::Pattern,
-            | (Sort::Type, _) => Self::Type,
-            | (Sort::Item, _) => Self::Item,
-            | (Sort::ModuleMember, _) => Self::Member,
-            | (Sort::Instantiation, _) => Self::Instantiation,
+            (Sort::Expression, _) => Self::Value,
+            (Sort::Pattern, _) => Self::Pattern,
+            (Sort::Type, _) => Self::Type,
+            (Sort::Item, _) => Self::Item,
+            (Sort::ModuleMember, _) => Self::Member,
+            (Sort::Instantiation, _) => Self::Instantiation,
         }
     }
 
@@ -320,12 +320,12 @@ impl Category
     const fn sort(self) -> Sort
     {
         match self {
-            | Self::Value | Self::Computation => Sort::Expression,
-            | Self::Type => Sort::Type,
-            | Self::Pattern => Sort::Pattern,
-            | Self::Item => Sort::Item,
-            | Self::Member => Sort::ModuleMember,
-            | Self::Instantiation => Sort::Instantiation,
+            Self::Value | Self::Computation => Sort::Expression,
+            Self::Type => Sort::Type,
+            Self::Pattern => Sort::Pattern,
+            Self::Item => Sort::Item,
+            Self::Member => Sort::ModuleMember,
+            Self::Instantiation => Sort::Instantiation,
         }
     }
 
@@ -336,13 +336,13 @@ impl Category
     const fn placeholder(self) -> Piece<'static>
     {
         Piece::Stop(match self {
-            | Self::Value => "value",
-            | Self::Computation => "computation",
-            | Self::Type => "type",
-            | Self::Pattern => "pattern",
-            | Self::Item => "item",
-            | Self::Member => "member",
-            | Self::Instantiation => "instantiation",
+            Self::Value => "value",
+            Self::Computation => "computation",
+            Self::Type => "type",
+            Self::Pattern => "pattern",
+            Self::Item => "item",
+            Self::Member => "member",
+            Self::Instantiation => "instantiation",
         })
     }
 }
@@ -484,13 +484,13 @@ fn place(
 ) -> (Tier, Kind)
 {
     match (origin, slot) {
-        | (Origin::Closing, _) => (Tier::Closing, Kind::Closing),
-        | (Origin::Slot, _) => (Tier::Slot, Kind::Closing),
-        | (Origin::Alternative, _) => (Tier::Menu, Kind::Closing),
-        | (Origin::Opener(yields), Slot::Open(wanted)) if yields == wanted => {
+        (Origin::Closing, _) => (Tier::Closing, Kind::Closing),
+        (Origin::Slot, _) => (Tier::Slot, Kind::Closing),
+        (Origin::Alternative, _) => (Tier::Menu, Kind::Closing),
+        (Origin::Opener(yields), Slot::Open(wanted)) if yields == wanted => {
             (Tier::Menu, Kind::Form)
         },
-        | (Origin::Opener(_), Slot::Open(_) | Slot::Filled) => (Tier::Aside, Kind::Form),
+        (Origin::Opener(_), Slot::Open(_) | Slot::Filled) => (Tier::Aside, Kind::Form),
     }
 }
 
@@ -603,10 +603,10 @@ impl Word<'_>
     ) -> Role
     {
         match self.punctuation {
-            | Punctuation::Opens(family) => Role::Opens(family),
-            | Punctuation::Closes(family) => Role::Closes(family),
-            | Punctuation::Separates => Role::Separates,
-            | Punctuation::Word => *self
+            Punctuation::Opens(family) => Role::Opens(family),
+            Punctuation::Closes(family) => Role::Closes(family),
+            Punctuation::Separates => Role::Separates,
+            Punctuation::Word => *self
                 .role
                 .get_or_init(|| classify(grammar, self.lexeme, TokenText::from(self.text))),
         }
@@ -679,10 +679,10 @@ impl<'grammar, 'text> Written<'grammar, 'text>
                 role: OnceCell::new(),
             });
             match punctuation {
-                | Punctuation::Opens(_) => depth = depth.saturating_add(1),
-                | Punctuation::Closes(_) if depth == 0 => break,
-                | Punctuation::Closes(_) => depth = depth.saturating_sub(1),
-                | Punctuation::Separates | Punctuation::Word => {},
+                Punctuation::Opens(_) => depth = depth.saturating_add(1),
+                Punctuation::Closes(_) if depth == 0 => break,
+                Punctuation::Closes(_) => depth = depth.saturating_sub(1),
+                Punctuation::Separates | Punctuation::Word => {},
             }
         }
         Self { grammar, words }
@@ -757,9 +757,9 @@ fn classify(
                 continue;
             }
             match grammar.mold(mold).map(|def| def.sort) {
-                | Ok(Sort::Item) => return Role::Heads,
-                | Ok(_) => role = Role::Operand,
-                | Err(_) => {},
+                Ok(Sort::Item) => return Role::Heads,
+                Ok(_) => role = Role::Operand,
+                Err(_) => {},
             }
         }
     }
@@ -861,12 +861,12 @@ fn subtract(
         }
         for word in words {
             match role(word) {
-                | Role::Opens(_) => depth = depth.saturating_add(1),
-                | Role::Closes(_) | Role::Separates | Role::Heads | Role::Keyword if depth == 0 => {
+                Role::Opens(_) => depth = depth.saturating_add(1),
+                Role::Closes(_) | Role::Separates | Role::Heads | Role::Keyword if depth == 0 => {
                     break;
                 },
-                | Role::Closes(_) => depth = depth.saturating_sub(1),
-                | Role::Separates | Role::Heads | Role::Keyword | Role::Operand => {},
+                Role::Closes(_) => depth = depth.saturating_sub(1),
+                Role::Separates | Role::Heads | Role::Keyword | Role::Operand => {},
             }
             taken = taken.saturating_add(1);
         }
@@ -878,10 +878,10 @@ fn subtract(
         let mut depth = 0_usize;
         for word in words {
             match word.punctuation {
-                | Punctuation::Opens(_) => depth = depth.saturating_add(1),
-                | Punctuation::Closes(closed) if depth == 0 => return closed == family,
-                | Punctuation::Closes(_) => depth = depth.saturating_sub(1),
-                | Punctuation::Separates | Punctuation::Word => {},
+                Punctuation::Opens(_) => depth = depth.saturating_add(1),
+                Punctuation::Closes(closed) if depth == 0 => return closed == family,
+                Punctuation::Closes(_) => depth = depth.saturating_sub(1),
+                Punctuation::Separates | Punctuation::Word => {},
             }
         }
         false
@@ -890,21 +890,21 @@ fn subtract(
         .iter()
         .enumerate()
         .position(|(index, &part)| match part {
-            | Part::Tile(tile) => {
+            Part::Tile(tile) => {
                 next_spells(tile, 0)
                     || ClosingClass::closing(DelimSpelling::from(tile.0)).is_some_and(&pairs)
             },
-            | Part::Hole(_) => {
+            Part::Hole(_) => {
                 let taken = filled();
                 taken > 0
                     && match parts.get(index.saturating_add(1)) {
-                        | Some(&Part::Tile(tile)) => {
+                        Some(&Part::Tile(tile)) => {
                             next_spells(tile, taken)
                                 || words
                                     .get(taken)
                                     .is_none_or(|word| role(word) != Role::Operand)
                         },
-                        | Some(&Part::Hole(_)) | None => true,
+                        Some(&Part::Hole(_)) | None => true,
                     }
             },
         });
@@ -970,13 +970,11 @@ fn parts(
     steps
         .iter()
         .filter_map(|&step| match step {
-            | Step::Tile(mold) => grammar
+            Step::Tile(mold) => grammar
                 .mold(mold)
                 .ok()
                 .map(|def| Part::Tile(TileLabel(def.label))),
-            | Step::Hole { sort, after } => {
-                Some(Part::Hole(Category::of_hole(grammar, sort, after)))
-            },
+            Step::Hole { sort, after } => Some(Part::Hole(Category::of_hole(grammar, sort, after))),
         })
         .collect()
 }
@@ -1009,9 +1007,24 @@ fn typed(tile: TileLabel) -> Spelled
         && usize::try_from(token.end).is_ok_and(|end| end == text.len());
     let offered = candidate_labels(token.lexeme, TokenText::from(text));
     let offers = match token.lexeme {
-        | Lexeme::LowerWord | Lexeme::UpperWord => offered.len() == 1,
-        | Lexeme::Punct => offered.iter().any(|&label| <&str>::from(label) == text),
-        | _ => false,
+        Lexeme::LowerWord | Lexeme::UpperWord => offered.len() == 1,
+        Lexeme::Punct => offered.iter().any(|&label| <&str>::from(label) == text),
+        Lexeme::Number
+        | Lexeme::TypedNumber
+        | Lexeme::Character
+        | Lexeme::Quote
+        | Lexeme::StringFragment
+        | Lexeme::ShellStringFragment
+        | Lexeme::EscapeSequence
+        | Lexeme::ShellWord
+        | Lexeme::EnvAssign
+        | Lexeme::SingleQuotedContent
+        | Lexeme::VariableName
+        | Lexeme::SubshellOpen
+        | Lexeme::SubshellClose
+        | Lexeme::FileDescriptor
+        | Lexeme::Space
+        | Lexeme::Unknown => false,
     };
     let punctuates =
         matches!(text, ";" | ",") || ClosingClass::closing(DelimSpelling::from(text)).is_some();
@@ -1090,9 +1103,9 @@ impl Forms
                 .map(|closing| parts(grammar, closing.steps()))
                 .find(|closing| trailing(closing) == Trailing::Clean);
             match clean {
-                | Some(closing) => material.extend(closing),
-                | None if shapes.is_empty() => {},
-                | None => continue,
+                Some(closing) => material.extend(closing),
+                None if shapes.is_empty() => {},
+                None => continue,
             }
             found.push(Form {
                 sort: def.sort,
@@ -1216,11 +1229,9 @@ fn candidates(
         .and_then(|at| materials.get(at))
         .map(|entry| entry.1.clone());
     let slot = match slotted.as_ref().and_then(|material| material.first()) {
-        | Some(&Part::Hole(category)) => Slot::Open(category),
-        | None if menu.head() == HeadForm::Closed && pending.is_empty() => {
-            Slot::Open(Category::Item)
-        },
-        | Some(&Part::Tile(_)) | None => Slot::Filled,
+        Some(&Part::Hole(category)) => Slot::Open(category),
+        None if menu.head() == HeadForm::Closed && pending.is_empty() => Slot::Open(Category::Item),
+        Some(&Part::Tile(_)) | None => Slot::Filled,
     };
     let mut found: Vec<Candidate> = Vec::new();
     let push = |found: &mut Vec<Candidate>, origin: Origin, parts: Vec<Part>, fit: Fit| {
@@ -1266,13 +1277,13 @@ fn candidates(
         for form in forms.of(category.sort()) {
             let mut material = form.material.clone();
             let fit = match rest {
-                | Some(Rest::Unwritten(ref after, fit)) => {
+                Some(Rest::Unwritten(ref after, fit)) => {
                     material.extend(after.iter().copied());
                     fit
                 },
                 // The written text fills the slot: a form ending in a hole
                 // takes it as that hole's filling, any other form collides.
-                | Some(Rest::Written) => {
+                Some(Rest::Written) => {
                     if let Some(&Part::Hole(_)) = material.last() {
                         material.pop();
                         Fit::Meets
@@ -1281,7 +1292,7 @@ fn candidates(
                         Fit::Collides
                     }
                 },
-                | None => whole_fit(&material, written),
+                None => whole_fit(&material, written),
             };
             push(&mut found, Origin::Opener(form.yields), material, fit);
         }
@@ -1414,11 +1425,11 @@ pub fn ghost(
     }
     if shown.is_empty() {
         let category = match (slot, menu.head()) {
-            | (Slot::Open(category), _) => category,
-            | (Slot::Filled, HeadForm::Open { mold, .. }) => {
+            (Slot::Open(category), _) => category,
+            (Slot::Filled, HeadForm::Open { mold, .. }) => {
                 Category::of_hole(grammar, state.expected_operand_sort(), mold)
             },
-            | (Slot::Filled, HeadForm::Closed) => Category::Item,
+            (Slot::Filled, HeadForm::Closed) => Category::Item,
         };
         shown.push(spell(&[Part::Hole(category)], lead, source, after));
     }
@@ -1460,20 +1471,20 @@ fn spell(
 ) -> Snippet
 {
     let joins = |last: Option<char>| match last {
-        | Some(character) if !character.is_whitespace() && !matches!(character, '(' | '[') => {
+        Some(character) if !character.is_whitespace() && !matches!(character, '(' | '[') => {
             Spacing::Spaced
         },
-        | Some(_) | None => Spacing::Tight,
+        Some(_) | None => Spacing::Tight,
     };
     let mut snippet = String::new();
     let mut joint = joins(<&str>::from(before).chars().next_back());
     match lead {
-        | Lead::Code => {},
-        | Lead::Line => {
+        Lead::Code => {},
+        Lead::Line => {
             snippet.push('\n');
             joint = Spacing::Tight;
         },
-        | Lead::Block => {
+        Lead::Block => {
             if joint == Spacing::Spaced {
                 snippet.push(' ');
             }
@@ -1485,24 +1496,24 @@ fn spell(
     let mut quoting = Quoting::Outside;
     for &part in parts {
         let piece = match part {
-            | Part::Tile(tile) => match tile_spelling(CandidateLabel::from(tile.0)) {
-                | TileSpelling::Literal(text) => Piece::Text(text),
-                | TileSpelling::Class(class) => Piece::Stop(class),
+            Part::Tile(tile) => match tile_spelling(CandidateLabel::from(tile.0)) {
+                TileSpelling::Literal(text) => Piece::Text(text),
+                TileSpelling::Class(class) => Piece::Stop(class),
             },
-            | Part::Hole(category) => category.placeholder(),
+            Part::Hole(category) => category.placeholder(),
         };
         // A quote opens a string where none is open, and closes it otherwise:
         // the opening quote stands apart, the string's contents against it.
         let quote = matches!(piece, Piece::Text("\"" | "'"));
         let spacing = match (quote, quoting) {
-            | (true, Quoting::Outside) => Spacing::Spaced,
-            | (true, Quoting::Inside) | (false, _) => piece.spacing(),
+            (true, Quoting::Outside) => Spacing::Spaced,
+            (true, Quoting::Inside) | (false, _) => piece.spacing(),
         };
         if joint == Spacing::Spaced && spacing == Spacing::Spaced {
             snippet.push(' ');
         }
         match piece {
-            | Piece::Text(text) => {
+            Piece::Text(text) => {
                 for character in text.chars() {
                     if matches!(character, '$' | '}' | '\\') {
                         snippet.push('\\');
@@ -1511,7 +1522,7 @@ fn spell(
                 }
                 joint = joins(text.chars().next_back());
             },
-            | Piece::Stop(name) => {
+            Piece::Stop(name) => {
                 stop = stop.saturating_add(1);
                 let _written = write!(snippet, "${{{stop}:{name}}}");
                 joint = Spacing::Spaced;
@@ -1519,11 +1530,11 @@ fn spell(
         }
         if quote {
             quoting = match quoting {
-                | Quoting::Outside => {
+                Quoting::Outside => {
                     joint = Spacing::Tight;
                     Quoting::Inside
                 },
-                | Quoting::Inside => Quoting::Outside,
+                Quoting::Inside => Quoting::Outside,
             };
         }
     }
@@ -1577,8 +1588,8 @@ impl Piece<'_>
     fn spacing(self) -> Spacing
     {
         match self {
-            | Self::Text(")" | "]" | "," | ";" | "\"" | "'") => Spacing::Tight,
-            | Self::Text(_) | Self::Stop(_) => Spacing::Spaced,
+            Self::Text(")" | "]" | "," | ";" | "\"" | "'") => Spacing::Tight,
+            Self::Text(_) | Self::Stop(_) => Spacing::Spaced,
         }
     }
 }

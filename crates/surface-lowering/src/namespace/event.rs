@@ -54,9 +54,9 @@ impl fmt::Display for EventKind
     ) -> fmt::Result
     {
         let text = match *self {
-            | Self::NotFound => "not-found",
-            | Self::Shadow => "shadow",
-            | Self::Hook => "hook",
+            Self::NotFound => "not-found",
+            Self::Shadow => "shadow",
+            Self::Hook => "hook",
         };
         f.write_str(text)
     }

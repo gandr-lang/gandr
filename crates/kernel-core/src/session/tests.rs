@@ -740,8 +740,8 @@ fn session_choice_relations_exhaust_two_label_widths()
                         }
                     }
                     nodes[0] = match kind {
-                        | super::Choice::Select => Node::Select(labels),
-                        | super::Choice::Offer => Node::Offer(labels),
+                        super::Choice::Select => Node::Select(labels),
+                        super::Choice::Offer => Node::Offer(labels),
                     };
                     Graph {
                         root: State(0),
@@ -767,21 +767,21 @@ fn session_choice_relations_exhaust_two_label_widths()
                 }
                 for relation in [super::Relation::Bisimulation, super::Relation::Simulation] {
                     let admitted = match relation {
-                        | super::Relation::Bisimulation => source_mask == target_mask,
-                        | super::Relation::Simulation => match kind {
-                            | super::Choice::Select => source_mask & target_mask == source_mask,
-                            | super::Choice::Offer => source_mask & target_mask == target_mask,
+                        super::Relation::Bisimulation => source_mask == target_mask,
+                        super::Relation::Simulation => match kind {
+                            super::Choice::Select => source_mask & target_mask == source_mask,
+                            super::Choice::Offer => source_mask & target_mask == target_mask,
                         },
                     };
                     match super::obligations(&mut arena, source, target, &evidence, relation) {
-                        | Ok(expected) => {
+                        Ok(expected) => {
                             assert!(admitted, "invalid label inclusion admitted");
                             assert_eq!(
                                 arena.value_type(expected),
                                 Some(&gandr_kernel_term::ValueType::unit())
                             );
                         },
-                        | Err(error) => {
+                        Err(error) => {
                             assert!(!admitted, "valid label inclusion refused");
                             assert_eq!(error, SessionError::WrongLabels(pair(State(0), State(0))));
                         },

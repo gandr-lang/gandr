@@ -106,18 +106,18 @@ pub fn command(line: SourceText<'_>) -> Maybe<Command<'_>, commanded::Absent>
         return Maybe::Absent(commanded::Absent::Source);
     };
     let (word, argument) = match rest.split_once(char::is_whitespace) {
-        | Some((word, argument)) => (word, argument.trim()),
-        | None => (rest.trim_end(), ""),
+        Some((word, argument)) => (word, argument.trim()),
+        None => (rest.trim_end(), ""),
     };
     Maybe::Present(match (word, argument.is_empty()) {
-        | ("help", _) => Command::Help,
-        | ("quit" | "q", _) => Command::Quit,
-        | ("reset", _) => Command::Reset,
-        | ("load", false) => Command::Load(Path::new(argument)),
-        | ("load", true) => Command::Usage(Missing::Path),
-        | ("type", false) => Command::TypeOf(SourceText::from(argument)),
-        | ("type", true) => Command::Usage(Missing::Expression),
-        | (..) => Command::Unknown(SourceText::from(rest.trim_end())),
+        ("help", _) => Command::Help,
+        ("quit" | "q", _) => Command::Quit,
+        ("reset", _) => Command::Reset,
+        ("load", false) => Command::Load(Path::new(argument)),
+        ("load", true) => Command::Usage(Missing::Path),
+        ("type", false) => Command::TypeOf(SourceText::from(argument)),
+        ("type", true) => Command::Usage(Missing::Expression),
+        (..) => Command::Unknown(SourceText::from(rest.trim_end())),
     })
 }
 

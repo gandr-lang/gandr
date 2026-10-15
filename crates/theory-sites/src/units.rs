@@ -120,10 +120,10 @@ fn scalar_label(
         .iter()
         .any(|ends| ends.consumer() == End::Vertex(vertex));
     let name = match (produces, consumes) {
-        | (true, _) => "u",
-        | (false, true) => "k",
-        | (false, false) if usize::from(vertex) < usize::from(first_points) => "c",
-        | (false, false) => "d",
+        (true, _) => "u",
+        (false, true) => "k",
+        (false, false) if usize::from(vertex) < usize::from(first_points) => "c",
+        (false, false) => "d",
     };
     GeneratorLabel::new(name, GeneratorSort::Value)
 }
@@ -297,8 +297,8 @@ pub fn unit_property(
         }
     }
     let two_sided = match unit_wiring.first() {
-        | Some(unit) => two_sided(unit, diagrams)?,
-        | None => Tally::default().fails(Shape::default()),
+        Some(unit) => two_sided(unit, diagrams)?,
+        None => Tally::default().fails(Shape::default()),
     };
     Ok(UnitOutcomes {
         scalars: CaseCount::from(universe.len()),

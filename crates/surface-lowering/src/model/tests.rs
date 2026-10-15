@@ -120,17 +120,17 @@ where
         .find(|component| component.name.as_ref() == name)
         .unwrap_or_else(|| panic!("`{name}` is a component"));
     match component.form {
-        | Ok(ModelForm::Sort { ref indices }) => {
+        Ok(ModelForm::Sort { ref indices }) => {
             format!("type {name} : {} => Type", telescope(indices))
         },
-        | Ok(ModelForm::Operation {
+        Ok(ModelForm::Operation {
             telescope: ref binders,
             ref results,
         }) => {
             let results: Vec<String> = results.iter().map(sort).collect();
             format!("{name} : {} => {}", telescope(binders), results.join(" * "))
         },
-        | Ok(ModelForm::Law {
+        Ok(ModelForm::Law {
             telescope: ref binders,
             ref carrier,
             ref left,
@@ -140,7 +140,7 @@ where
             telescope(binders),
             sort(carrier)
         ),
-        | Err(fault) => format!("{name} refused: {fault:?}"),
+        Err(fault) => format!("{name} refused: {fault:?}"),
     }
 }
 

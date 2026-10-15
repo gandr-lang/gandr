@@ -256,14 +256,14 @@ impl MatchCheckpoint
             branches.push(answer.status());
             if selection == Selection::Exhausted {
                 selection = match answer {
-                    | Matched::Satisfied(bindings) => Selection::Taken {
+                    Matched::Satisfied(bindings) => Selection::Taken {
                         arm: ArmIndex::from(index),
                         bindings,
                     },
-                    | Matched::Possibly => Selection::Indeterminate {
+                    Matched::Possibly => Selection::Indeterminate {
                         arm: ArmIndex::from(index),
                     },
-                    | Matched::Refuted => Selection::Exhausted,
+                    Matched::Refuted => Selection::Exhausted,
                 };
             }
         }
@@ -360,9 +360,9 @@ impl MatchCheckpoint
     ) -> Result<(MatchRun, Fuel), MatchRunFault>
     {
         match *analysis.selection() {
-            | Selection::Indeterminate { arm } => Ok((MatchRun::Held(arm), fuel)),
-            | Selection::Exhausted => Ok((MatchRun::Uncovered, fuel)),
-            | Selection::Taken { arm, ref bindings } => {
+            Selection::Indeterminate { arm } => Ok((MatchRun::Held(arm), fuel)),
+            Selection::Exhausted => Ok((MatchRun::Uncovered, fuel)),
+            Selection::Taken { arm, ref bindings } => {
                 let &body = bodies
                     .get(usize::from(arm))
                     .ok_or(MatchRunFault::MissingArm(arm))?;

@@ -415,15 +415,15 @@ impl fmt::Display for SchemaError
     ) -> fmt::Result
     {
         match *self {
-            | Self::EmptyName => f.write_str("a schema element has the empty name"),
-            | Self::DuplicateName { ref name } => {
+            Self::EmptyName => f.write_str("a schema element has the empty name"),
+            Self::DuplicateName { ref name } => {
                 write!(f, "the name `{name}` is used by two schema elements")
             },
-            | Self::Unknown { kind, ref name } => write!(f, "no {kind} is named `{name}`"),
-            | Self::UnknownOrdinal { kind, ordinal } => {
+            Self::Unknown { kind, ref name } => write!(f, "no {kind} is named `{name}`"),
+            Self::UnknownOrdinal { kind, ordinal } => {
                 write!(f, "no {kind} has ordinal {}", ordinal.0)
             },
-            | Self::NotComposable {
+            Self::NotComposable {
                 ref equation,
                 ref arrow,
                 ref at,
@@ -431,7 +431,7 @@ impl fmt::Display for SchemaError
                 f,
                 "equation `{equation}`: arrow `{arrow}` does not leave `{at}`, where its path is"
             ),
-            | Self::EndpointsDiffer {
+            Self::EndpointsDiffer {
                 ref equation,
                 ref left,
                 ref right,
@@ -439,8 +439,8 @@ impl fmt::Display for SchemaError
                 f,
                 "equation `{equation}`: the left side ends at `{left}`, the right at `{right}`"
             ),
-            | Self::TooLarge { kind } => write!(f, "too many {kind} elements for the image"),
-            | Self::Image { fault } => write!(f, "malformed schema image: {fault}"),
+            Self::TooLarge { kind } => write!(f, "too many {kind} elements for the image"),
+            Self::Image { fault } => write!(f, "malformed schema image: {fault}"),
         }
     }
 }
@@ -474,11 +474,11 @@ impl fmt::Display for ElementKind
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Object => "object",
-            | Self::AttributeType => "attribute type",
-            | Self::Arrow => "arrow",
-            | Self::Attribute => "attribute",
-            | Self::Equation => "equation",
+            Self::Object => "object",
+            Self::AttributeType => "attribute type",
+            Self::Arrow => "arrow",
+            Self::Attribute => "attribute",
+            Self::Equation => "equation",
         })
     }
 }
@@ -506,13 +506,13 @@ impl fmt::Display for ImageFault
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Domain => "the domain is not the schema domain",
-            | Self::Truncated => "the image ends inside a field",
-            | Self::NotUtf8 => "a name is not UTF-8",
-            | Self::IndexingTag => "an indexing byte is neither 0x00 nor 0x01",
-            | Self::Ordinal => "an ordinal names no element of its section",
-            | Self::Trailing => "bytes follow the last section",
-            | Self::NotCanonical => "the image is not the canonical image of what it presents",
+            Self::Domain => "the domain is not the schema domain",
+            Self::Truncated => "the image ends inside a field",
+            Self::NotUtf8 => "a name is not UTF-8",
+            Self::IndexingTag => "an indexing byte is neither 0x00 nor 0x01",
+            Self::Ordinal => "an ordinal names no element of its section",
+            Self::Trailing => "bytes follow the last section",
+            Self::NotCanonical => "the image is not the canonical image of what it presents",
         })
     }
 }
@@ -988,8 +988,8 @@ impl Equation
     ) -> &Path
     {
         match side {
-            | Side::Left => &self.left,
-            | Side::Right => &self.right,
+            Side::Left => &self.left,
+            Side::Right => &self.right,
         }
     }
 }
@@ -2025,8 +2025,8 @@ impl ImageWriter
     )
     {
         self.0.push(match indexing {
-            | Indexing::Unindexed => 0x00_u8,
-            | Indexing::Indexed => 0x01_u8,
+            Indexing::Unindexed => 0x00_u8,
+            Indexing::Indexed => 0x01_u8,
         });
     }
 }
@@ -2292,11 +2292,11 @@ impl Cursor<'_>
     fn expect_domain(&mut self) -> Result<(), SchemaError>
     {
         match self.rest.strip_prefix(SCHEMA_DOMAIN) {
-            | Some(rest) => {
+            Some(rest) => {
                 self.rest = rest;
                 Ok(())
             },
-            | None => Err(SchemaError::Image {
+            None => Err(SchemaError::Image {
                 fault: ImageFault::Domain,
             }),
         }
@@ -2428,9 +2428,9 @@ impl Cursor<'_>
             fault: ImageFault::Truncated,
         })?;
         let indexing = match *tag {
-            | 0x00_u8 => Indexing::Unindexed,
-            | 0x01_u8 => Indexing::Indexed,
-            | _ => {
+            0x00_u8 => Indexing::Unindexed,
+            0x01_u8 => Indexing::Indexed,
+            _ => {
                 return Err(SchemaError::Image {
                     fault: ImageFault::IndexingTag,
                 });

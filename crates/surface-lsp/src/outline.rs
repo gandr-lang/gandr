@@ -124,13 +124,11 @@ pub fn declarations(
     let mut pending: Vec<(NodeIndex, Option<usize>, Option<ByteSpan>)> =
         Vec::from([(tree.root(), None, None)]);
     while let Some((at, holder, decorated)) = pending.pop() {
-        let holder = match declared(grammar, roles, tree, index, at, decorated) {
-            | Some(symbol) => {
+        let holder =
+            declared(grammar, roles, tree, index, at, decorated).map_or(holder, |symbol| {
                 found.push((at, DocumentSymbol { holder, ..symbol }));
                 Some(found.len().saturating_sub(1))
-            },
-            | None => holder,
-        };
+            });
         let first = pending.len();
         // The attribute blocks standing before a form decorate it, layout
         // between them included.
@@ -141,7 +139,7 @@ pub fn declarations(
                 continue;
             };
             match node.label() {
-                | NodeLabel::Meld(mold)
+                NodeLabel::Meld(mold)
                     if grammar
                         .rule_of(mold)
                         .is_ok_and(|rule| rule.name().0 == ATTRIBUTE_BLOCK) =>
@@ -150,10 +148,14 @@ pub fn declarations(
                     blocks = Some(blocks.map_or(span, |first| first.join(span)));
                     pending.push((child, holder, None));
                 },
-                | NodeLabel::Meld(_) | NodeLabel::Tile(_) => {
+                NodeLabel::Meld(_) | NodeLabel::Tile(_) => {
                     pending.push((child, holder, blocks.take()));
                 },
-                | _ => pending.push((child, holder, None)),
+                NodeLabel::Wald
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space
+                | NodeLabel::Doc => pending.push((child, holder, None)),
             }
         }
         if let Some(added) = pending.get_mut(first ..) {
@@ -195,8 +197,8 @@ fn declared(
             continue;
         };
         match roles.role_of(tile) {
-            | Ok(HlRole::Keyword) if keyword.is_none() => keyword = tree.fragment(child),
-            | Ok(role @ (HlRole::FunctionDef | HlRole::VariableDef | HlRole::Type)) => {
+            Ok(HlRole::Keyword) if keyword.is_none() => keyword = tree.fragment(child),
+            Ok(role @ (HlRole::FunctionDef | HlRole::VariableDef | HlRole::Type)) => {
                 let name = tree.fragment(child)?;
                 return Some(DocumentSymbol {
                     name: String::from(<&str>::from(name)),
@@ -209,7 +211,7 @@ fn declared(
                     holder: None,
                 });
             },
-            | Ok(_) | Err(_) => {},
+            Ok(_) | Err(_) => {},
         }
     }
     None
@@ -226,12 +228,12 @@ fn kind_of(
 ) -> SymbolKind
 {
     match (role, keyword.map(<&str>::from)) {
-        | (HlRole::FunctionDef, _) => SymbolKind::FUNCTION,
-        | (HlRole::VariableDef, _) => SymbolKind::VARIABLE,
-        | (_, Some("module")) => SymbolKind::MODULE,
-        | (_, Some("sign")) => SymbolKind::INTERFACE,
-        | (_, Some("codata")) => SymbolKind::STRUCT,
-        | (_, Some(_) | None) => SymbolKind::ENUM,
+        (HlRole::FunctionDef, _) => SymbolKind::FUNCTION,
+        (HlRole::VariableDef, _) => SymbolKind::VARIABLE,
+        (_, Some("module")) => SymbolKind::MODULE,
+        (_, Some("sign")) => SymbolKind::INTERFACE,
+        (_, Some("codata")) => SymbolKind::STRUCT,
+        (_, Some(_) | None) => SymbolKind::ENUM,
     }
 }
 
@@ -269,16 +271,16 @@ pub fn folds(
             continue;
         };
         let kind = match node.label() {
-            | NodeLabel::Meld(_) => None,
-            | NodeLabel::Doc => Some(COMMENT),
-            | NodeLabel::Space
+            NodeLabel::Meld(_) => None,
+            NodeLabel::Doc => Some(COMMENT),
+            NodeLabel::Space
                 if tree
                     .fragment(position)
                     .is_some_and(|text| <&str>::from(text).starts_with(BLOCK_COMMENT)) =>
             {
                 Some(COMMENT)
             },
-            | NodeLabel::Wald
+            NodeLabel::Wald
             | NodeLabel::Space
             | NodeLabel::Tile(_)
             | NodeLabel::Grout { .. }

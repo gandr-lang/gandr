@@ -143,9 +143,9 @@ impl Region
     ) -> RegionOrder
     {
         match (self, other) {
-            | (Self::Held, _) => RegionOrder::Outlives,
-            | (Self::Scoped(_), Self::Held) => RegionOrder::EndsFirst,
-            | (Self::Scoped(outer), Self::Scoped(inner)) => {
+            (Self::Held, _) => RegionOrder::Outlives,
+            (Self::Scoped(_), Self::Held) => RegionOrder::EndsFirst,
+            (Self::Scoped(outer), Self::Scoped(inner)) => {
                 if outer <= inner {
                     RegionOrder::Outlives
                 }
@@ -322,8 +322,8 @@ impl EffectRow
             return Maybe::Absent(grant::Absent::Interface);
         };
         match restricted.operation(operation) {
-            | Maybe::Present(held) => Maybe::Present(held),
-            | Maybe::Absent(UnknownOperation) => Maybe::Absent(grant::Absent::Operation),
+            Maybe::Present(held) => Maybe::Present(held),
+            Maybe::Absent(UnknownOperation) => Maybe::Absent(grant::Absent::Operation),
         }
     }
 }

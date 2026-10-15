@@ -217,7 +217,7 @@ impl fmt::Display for ProgramError
     ) -> fmt::Result
     {
         match *self {
-            | Self::PositionOrder {
+            Self::PositionOrder {
                 ordinal,
                 position,
                 previous,
@@ -325,8 +325,8 @@ impl Layout
     ) -> Maybe<ItemOrdinal, naming::Absent>
     {
         match self.named.get(reference) {
-            | Some(&ordinal) => Maybe::Present(ordinal),
-            | None => Maybe::Absent(naming::Absent::Unnamed),
+            Some(&ordinal) => Maybe::Present(ordinal),
+            None => Maybe::Absent(naming::Absent::Unnamed),
         }
     }
 }

@@ -312,32 +312,59 @@ impl<'graph> Cursor<'graph>
                 .get(self.current.0)
                 .ok_or_else(|| meter.refuse(HigherError::UnknownLayer(self.current)))?;
             match *layer {
-                | Layer::Redirect(next) => {
+                Layer::Redirect(next) => {
                     let _fresh = self.unguarded.insert(self.current);
                     self.current = next;
                 },
-                | Layer::Guard { evidence, tail } => {
+                Layer::Guard { evidence, tail } => {
                     let Some((side, payload)) =
                         arena.value(evidence).and_then(|held| match *held {
-                            | Value::Injection(summand, payload) => {
+                            Value::Injection(summand, payload) => {
                                 Side::try_from(summand).ok().map(|side| (side, payload))
                             },
-                            | _ => None,
+                            Value::Constructor { .. }
+                            | Value::Record(_)
+                            | Value::SessionPath { .. }
+                            | Value::SessionFlow { .. }
+                            | Value::Stay { .. }
+                            | Value::ForwardFlow { .. }
+                            | Value::FunctionFlow { .. }
+                            | Value::Then { .. }
+                            | Value::FlowProduct(..)
+                            | Value::PathRefl(_)
+                            | Value::PathProduct(..)
+                            | Value::PathEquiv { .. }
+                            | Value::Here { .. }
+                            | Value::Returned(_)
+                            | Value::Higher { .. }
+                            | Value::HigherEvaluation { .. }
+                            | Value::QuantifiedEvaluation { .. }
+                            | Value::Variable(_)
+                            | Value::Constant(_)
+                            | Value::Literal(_)
+                            | Value::Tuple(_)
+                            | Value::ListNil
+                            | Value::ListCons(..)
+                            | Value::Thunk(_)
+                            | Value::Lift { .. }
+                            | Value::Quote(_)
+                            | Value::QuoteComputation(_)
+                            | Value::StaticApplication(..) => None,
                         })
                     else {
                         return Err(meter.refuse(HigherError::Relation(RelationError::Evidence)));
                     };
                     let ty = match side {
-                        | Side::Left => arena.value_type_unit(),
-                        | Side::Right => element,
+                        Side::Left => arena.value_type_unit(),
+                        Side::Right => element,
                     };
                     check_value(arena, &[], payload, ty)
                         .map_err(|error| meter.refuse(HigherError::Relation(error)))?;
                     self.current = tail;
                     self.unguarded.clear();
                     return Ok(match side {
-                        | Side::Left => Constructor::Nil,
-                        | Side::Right => Constructor::Cons(payload),
+                        Side::Left => Constructor::Nil,
+                        Side::Right => Constructor::Cons(payload),
                     });
                 },
             }
@@ -369,8 +396,17 @@ impl Relation
     fn list_element(&self) -> Result<RelationId, RelationError>
     {
         match self.node(self.root)?.clause {
-            | Clause::List(element) => Ok(element),
-            | _ => Err(RelationError::Classifier),
+            Clause::List(element) => Ok(element),
+            Clause::Unit
+            | Clause::Empty
+            | Clause::Discrete
+            | Clause::Universe
+            | Clause::Certificate
+            | Clause::Product(..)
+            | Clause::Sum(..)
+            | Clause::Function(..)
+            | Clause::CaseLeft(..)
+            | Clause::CaseRight(..) => Err(RelationError::Classifier),
         }
     }
 
@@ -428,18 +464,18 @@ impl Relation
             let second = right.next(arena, node.target, &mut meter)?;
             meter.progress.depth.0 = meter.progress.depth.0.saturating_add(1);
             let fiber = match (first, second) {
-                | (Constructor::Nil, Constructor::Nil) => Inhabitation::Unit,
-                | (Constructor::Cons(a), Constructor::Cons(b)) => {
+                (Constructor::Nil, Constructor::Nil) => Inhabitation::Unit,
+                (Constructor::Cons(a), Constructor::Cons(b)) => {
                     let fiber = self
                         .fiber_at(arena, element, &[], a, b)
                         .map_err(|error| meter.refuse(error.into()))?;
                     match fiber.inhabitant(arena) {
-                        | Ok(_) => continue,
-                        | Err(RelationError::Evidence) => Inhabitation::Empty,
-                        | Err(error) => return Err(meter.refuse(error.into())),
+                        Ok(_) => continue,
+                        Err(RelationError::Evidence) => Inhabitation::Empty,
+                        Err(error) => return Err(meter.refuse(error.into())),
                     }
                 },
-                | _ => Inhabitation::Empty,
+                _ => Inhabitation::Empty,
             };
             return Ok(ListFiber {
                 fiber,

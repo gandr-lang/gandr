@@ -145,8 +145,8 @@ where
     ) -> Membership
     {
         match self.counts.binary_search(&count) {
-            | Ok(_) => Membership::Held,
-            | Err(_) => Membership::Absent,
+            Ok(_) => Membership::Held,
+            Err(_) => Membership::Absent,
         }
     }
 
@@ -221,25 +221,25 @@ where
         let mut merged = Vec::with_capacity(self.counts.len().saturating_add(other.counts.len()));
         loop {
             match (held.peek().copied(), lowered.peek().copied()) {
-                | (None, None) => break,
-                | (Some(mine), None) => {
+                (None, None) => break,
+                (Some(mine), None) => {
                     merged.push(mine);
                     held.next();
                 },
-                | (None, Some(theirs)) => {
+                (None, Some(theirs)) => {
                     merged.push(theirs);
                     lowered.next();
                 },
-                | (Some(mine), Some(theirs)) => match mine.cmp(&theirs) {
-                    | Ordering::Less => {
+                (Some(mine), Some(theirs)) => match mine.cmp(&theirs) {
+                    Ordering::Less => {
                         merged.push(mine);
                         held.next();
                     },
-                    | Ordering::Greater => {
+                    Ordering::Greater => {
                         merged.push(theirs);
                         lowered.next();
                     },
-                    | Ordering::Equal => {
+                    Ordering::Equal => {
                         merged.push(mine);
                         held.next();
                         lowered.next();
@@ -303,11 +303,11 @@ impl Free
     ) -> Self
     {
         match zone {
-            | Zone::Intuitionistic => Self {
+            Zone::Intuitionistic => Self {
                 intuitionistic: Outward::single(index),
                 linear: Outward::default(),
             },
-            | Zone::Linear => Self {
+            Zone::Linear => Self {
                 intuitionistic: Outward::default(),
                 linear: Outward::single(index),
             },
@@ -557,7 +557,7 @@ impl FreeIndices
         let mut visits = Vec::from([Visit::Enter(term)]);
         while let Some(visit) = visits.pop() {
             match visit {
-                | Visit::Enter(node) => {
+                Visit::Enter(node) => {
                     if self.answered.contains_key(&node) {
                         continue;
                     }
@@ -567,7 +567,7 @@ impl FreeIndices
                         visits.push(Visit::Enter(child));
                     }
                 },
-                | Visit::Assemble(node) => {
+                Visit::Assemble(node) => {
                     if self.answered.contains_key(&node) {
                         continue;
                     }
@@ -619,18 +619,18 @@ impl FreeIndices
         // A fork's child and parent each stand under one linear binder.
         let mut forked = Lowering::NONE;
         match node {
-            | Reached::Term(CoreTerm::Value(id)) => {
+            Reached::Term(CoreTerm::Value(id)) => {
                 let held = core.value(id).ok_or(FreeFault::Dangling)?;
                 if let Value::Variable { zone, index } = *held {
                     free = Free::variable(zone, index);
                 }
             },
-            | Reached::Term(CoreTerm::Computation(id)) => {
+            Reached::Term(CoreTerm::Computation(id)) => {
                 let held = core.computation(id).ok_or(FreeFault::Dangling)?;
                 if let Computation::Session(ref action) = *held {
                     match *action {
-                        | SessionAction::Fork { .. } => forked = Lowering::ONE,
-                        | SessionAction::Send { endpoint, .. }
+                        SessionAction::Fork { .. } => forked = Lowering::ONE,
+                        SessionAction::Send { endpoint, .. }
                         | SessionAction::Receive { endpoint }
                         | SessionAction::Select { endpoint, .. }
                         | SessionAction::Offer { endpoint, .. }
@@ -640,14 +640,14 @@ impl FreeIndices
                     }
                 }
             },
-            | Reached::ValueType(_) | Reached::CompType(_) => {},
+            Reached::ValueType(_) | Reached::CompType(_) => {},
         }
         let below = Children::of(core, node)?;
         for (child, binders) in below.iter() {
             let answered = self.read(child)?;
             let linear = match child {
-                | Reached::Term(CoreTerm::Computation(_)) => forked,
-                | Reached::Term(CoreTerm::Value(_))
+                Reached::Term(CoreTerm::Computation(_)) => forked,
+                Reached::Term(CoreTerm::Value(_))
                 | Reached::ValueType(_)
                 | Reached::CompType(_) => Lowering::NONE,
             };
@@ -736,29 +736,29 @@ impl Iterator for ExtraChildren<'_>
     fn next(&mut self) -> Option<Self::Item>
     {
         match *self {
-            | Self::Empty => None,
-            | Self::Values(ref mut values) => values
+            Self::Empty => None,
+            Self::Values(ref mut values) => values
                 .next()
                 .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
-            | Self::Computations(ref mut values) => values
+            Self::Computations(ref mut values) => values
                 .next()
                 .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
-            | Self::Branches(ref mut branches) => branches
+            Self::Branches(ref mut branches) => branches
                 .next()
                 .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::ONE)),
-            | Self::RecordValues(ref mut values) => values
+            Self::RecordValues(ref mut values) => values
                 .next()
                 .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
-            | Self::RecordTypes(ref mut values) => values
+            Self::RecordTypes(ref mut values) => values
                 .next()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
-            | Self::Types(ref mut types) => types
+            Self::Types(ref mut types) => types
                 .next()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
-            | Self::Arms(ref mut arms) => arms
+            Self::Arms(ref mut arms) => arms
                 .next()
                 .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
-            | Self::Moves(ref mut moves) => moves
+            Self::Moves(ref mut moves) => moves
                 .find_map(recorded_payload)
                 .map(|id| (Reached::Term(CoreTerm::Value(id)), Lowering::NONE)),
         }
@@ -774,29 +774,29 @@ impl DoubleEndedIterator for ExtraChildren<'_>
     fn next_back(&mut self) -> Option<Self::Item>
     {
         match *self {
-            | Self::Empty => None,
-            | Self::Values(ref mut values) => values
+            Self::Empty => None,
+            Self::Values(ref mut values) => values
                 .next_back()
                 .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
-            | Self::Computations(ref mut values) => values
+            Self::Computations(ref mut values) => values
                 .next_back()
                 .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
-            | Self::Arms(ref mut arms) => arms
+            Self::Arms(ref mut arms) => arms
                 .next_back()
                 .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
-            | Self::Branches(ref mut branches) => branches
+            Self::Branches(ref mut branches) => branches
                 .next_back()
                 .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::ONE)),
-            | Self::RecordValues(ref mut values) => values
+            Self::RecordValues(ref mut values) => values
                 .next_back()
                 .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
-            | Self::RecordTypes(ref mut values) => values
+            Self::RecordTypes(ref mut values) => values
                 .next_back()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
-            | Self::Types(ref mut types) => types
+            Self::Types(ref mut types) => types
                 .next_back()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
-            | Self::Moves(ref mut moves) => moves
+            Self::Moves(ref mut moves) => moves
                 .rev()
                 .find_map(recorded_payload)
                 .map(|id| (Reached::Term(CoreTerm::Value(id)), Lowering::NONE)),
@@ -811,9 +811,9 @@ impl DoubleEndedIterator for ExtraChildren<'_>
 fn recorded_payload(movement: &gandr_core_term::session::RecordedMove) -> Option<ValueId>
 {
     match *movement {
-        | gandr_core_term::session::RecordedMove::Sent(payload)
+        gandr_core_term::session::RecordedMove::Sent(payload)
         | gandr_core_term::session::RecordedMove::Received(payload) => Some(payload),
-        | gandr_core_term::session::RecordedMove::Selected(_)
+        gandr_core_term::session::RecordedMove::Selected(_)
         | gandr_core_term::session::RecordedMove::Offered(_)
         | gandr_core_term::session::RecordedMove::Closed => None,
     }
@@ -861,13 +861,13 @@ impl<'arena> Children<'arena>
                     .map(|ty| (Reached::ValueType(ty), Lowering::NONE))
             }))
             .chain(self.frames.iter().filter_map(|frame| match *frame {
-                | gandr_core_term::control::StackFrame::Apply(value) => {
+                gandr_core_term::control::StackFrame::Apply(value) => {
                     Some((Reached::Term(CoreTerm::Value(value)), Lowering::NONE))
                 },
-                | gandr_core_term::control::StackFrame::Bind(body) => {
+                gandr_core_term::control::StackFrame::Bind(body) => {
                     Some((Reached::Term(CoreTerm::Computation(body)), Lowering::ONE))
                 },
-                | gandr_core_term::control::StackFrame::Project(_) => None,
+                gandr_core_term::control::StackFrame::Project(_) => None,
             }))
             .chain(self.clauses.iter().map(|clause| {
                 (
@@ -950,10 +950,10 @@ Err(_) => false,
         let mut frames = &[][..];
         let mut clauses = &[][..];
         let listed = match node {
-            | Reached::Term(CoreTerm::Value(id)) => {
+            Reached::Term(CoreTerm::Value(id)) => {
                 let held = core.value(id).ok_or(FreeFault::Dangling)?;
                 match *held {
-                    | Value::Constructor {
+                    Value::Constructor {
                         datatype,
                         ref fields,
                         ..
@@ -961,30 +961,30 @@ Err(_) => false,
                         extra = ExtraChildren::Values(fields.iter());
                         one(Reached::ValueType(datatype), Lowering::NONE)
                     },
-                    | Value::Tuple(ref components) => {
+                    Value::Tuple(ref components) => {
                         extra = ExtraChildren::Values(components.iter());
                         [None, None, None, None, None]
                     },
-                    | Value::Recorded(ref moves) => {
+                    Value::Recorded(ref moves) => {
                         extra = ExtraChildren::Moves(moves.iter());
                         [None, None, None, None, None]
                     },
-                    | Value::Record(ref fields) => {
+                    Value::Record(ref fields) => {
                         extra = ExtraChildren::RecordValues(fields.values());
                         [None, None, None, None, None]
                     },
-                    | Value::Reify(ref held) => {
+                    Value::Reify(ref held) => {
                         frames = held;
                         [None, None, None, None, None]
                     },
-                    | Value::Variable { .. }
+                    Value::Variable { .. }
                     | Value::Primitive { .. }
                     | Value::Constant(_)
                     | Value::ListNil
                     | Value::Literal(_)
                     | Value::Hole(_) => [None, None, None, None, None],
-                    | Value::Mark { body, .. } => one(value(body), Lowering::NONE),
-                    | Value::PathEquiv {
+                    Value::Mark { body, .. } => one(value(body), Lowering::NONE),
+                    Value::PathEquiv {
                         path_type,
                         forward,
                         backward,
@@ -996,11 +996,11 @@ Err(_) => false,
                         None,
                         None,
                     ],
-                    | Value::PathRefl(code)
+                    Value::PathRefl(code)
                     | Value::Here(code)
                     | Value::Stay(code)
                     | Value::Forward(code) => one(value(code), Lowering::NONE),
-                    | Value::PathProduct(first, second)
+                    Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
                     | Value::Then(first, second)
@@ -1020,24 +1020,24 @@ Err(_) => false,
                     | Value::StaticApplication(first, second) => {
                         two(value(first), value(second), Lowering::NONE)
                     },
-                    | Value::StaticLambda(body) => one(value(body), Lowering::ONE),
-                    | Value::Injection(_, body) | Value::Lift { body, .. } => {
+                    Value::StaticLambda(body) => one(value(body), Lowering::ONE),
+                    Value::Injection(_, body) | Value::Lift { body, .. } => {
                         one(value(body), Lowering::NONE)
                     },
-                    | Value::Returned(body)
+                    Value::Returned(body)
                     | Value::Nested(body)
                     | Value::Run(body)
                     | Value::Thunk(body) => one(computation(body), Lowering::NONE),
-                    | Value::Quote(quoted) => one(Reached::ValueType(quoted), Lowering::NONE),
-                    | Value::QuoteComputation(quoted) => {
+                    Value::Quote(quoted) => one(Reached::ValueType(quoted), Lowering::NONE),
+                    Value::QuoteComputation(quoted) => {
                         one(Reached::CompType(quoted), Lowering::NONE)
                     },
                 }
             },
-            | Reached::Term(CoreTerm::Computation(id)) => {
+            Reached::Term(CoreTerm::Computation(id)) => {
                 let held = core.computation(id).ok_or(FreeFault::Dangling)?;
                 match *held {
-                    | Computation::Perform {
+                    Computation::Perform {
                         signature: ref held,
                         payload,
                         ..
@@ -1045,7 +1045,7 @@ Err(_) => false,
                         signature = Some(held);
                         one(value(payload), Lowering::NONE)
                     },
-                    | Computation::Handle {
+                    Computation::Handle {
                         signature: ref held,
                         subject,
                         on_return,
@@ -1055,7 +1055,7 @@ Err(_) => false,
                         clauses = operations;
                         two(computation(subject), computation(on_return), Lowering::ONE)
                     },
-                    | Computation::Exercise {
+                    Computation::Exercise {
                         capability,
                         signature: ref held,
                         payload,
@@ -1064,7 +1064,7 @@ Err(_) => false,
                         signature = Some(held);
                         two(value(capability), value(payload), Lowering::NONE)
                     },
-                    | Computation::Scope {
+                    Computation::Scope {
                         signature: ref held,
                         subject,
                         on_return,
@@ -1080,10 +1080,10 @@ Err(_) => false,
                             None,
                         ]
                     },
-                    | Computation::Resume(stack, body) => {
+                    Computation::Resume(stack, body) => {
                         two(value(stack), computation(body), Lowering::NONE)
                     },
-                    | Computation::Split {
+                    Computation::Split {
                         scrutinee,
                         arity,
                         motive,
@@ -1092,10 +1092,10 @@ Err(_) => false,
                         let components =
                             Lowering(u32::try_from(usize::from(arity)).unwrap_or(u32::MAX));
                         match motive {
-                            | SplitMotive::Ambient => {
+                            SplitMotive::Ambient => {
                                 two(value(scrutinee), computation(body), components)
                             },
-                            | SplitMotive::Scrutinee(motive) => [
+                            SplitMotive::Scrutinee(motive) => [
                                 Some((value(scrutinee), Lowering::NONE)),
                                 Some((Reached::CompType(motive), Lowering::ONE)),
                                 Some((computation(body), components)),
@@ -1104,16 +1104,16 @@ Err(_) => false,
                             ],
                         }
                     },
-                    | Computation::With(first, second) => {
+                    Computation::With(first, second) => {
                         two(computation(first), computation(second), Lowering::NONE)
                     },
-                    | Computation::Reset(body) | Computation::Project(_, body) => {
+                    Computation::Reset(body) | Computation::Project(_, body) => {
                         one(computation(body), Lowering::NONE)
                     },
-                    | Computation::Shift(body) | Computation::Lambda(body) => {
+                    Computation::Shift(body) | Computation::Lambda(body) => {
                         one(computation(body), Lowering::ONE)
                     },
-                    | Computation::ListFold {
+                    Computation::ListFold {
                         element,
                         result,
                         list,
@@ -1126,15 +1126,15 @@ Err(_) => false,
                         Some((computation(on_nil), Lowering::NONE)),
                         Some((computation(on_cons), Lowering(2_u32))),
                     ],
-                    | Computation::Primitive { arguments, .. } => match arguments {
-                        | gandr_core_term::primitive::Arguments::Unary(argument) => {
+                    Computation::Primitive { arguments, .. } => match arguments {
+                        gandr_core_term::primitive::Arguments::Unary(argument) => {
                             one(value(argument), Lowering::NONE)
                         },
-                        | gandr_core_term::primitive::Arguments::Binary([first, second]) => {
+                        gandr_core_term::primitive::Arguments::Binary([first, second]) => {
                             two(value(first), value(second), Lowering::NONE)
                         },
                     },
-                    | Computation::DataCase {
+                    Computation::DataCase {
                         scrutinee,
                         motive,
                         ref branches,
@@ -1142,12 +1142,12 @@ Err(_) => false,
                         extra = ExtraChildren::Computations(branches.iter());
                         two(value(scrutinee), Reached::CompType(motive), Lowering::ONE)
                     },
-                    | Computation::RecordProjection(record, _)
+                    Computation::RecordProjection(record, _)
                     | Computation::TupleProjection(record, _) => one(value(record), Lowering::NONE),
-                    | Computation::Transport(path, operand) => {
+                    Computation::Transport(path, operand) => {
                         two(value(path), value(operand), Lowering::NONE)
                     },
-                    | Computation::PathTransport {
+                    Computation::PathTransport {
                         motive,
                         path,
                         value: operand,
@@ -1158,7 +1158,7 @@ Err(_) => false,
                         None,
                         None,
                     ],
-                    | Computation::Ride {
+                    Computation::Ride {
                         motive,
                         flow,
                         value: operand,
@@ -1169,7 +1169,7 @@ Err(_) => false,
                         None,
                         None,
                     ],
-                    | Computation::TelescopeTransport {
+                    Computation::TelescopeTransport {
                         motive,
                         path,
                         start,
@@ -1182,34 +1182,32 @@ Err(_) => false,
                         Some((value(over), Lowering::NONE)),
                         Some((value(operand), Lowering::NONE)),
                     ],
-                    | Computation::Fixpoint { body, .. } => one(computation(body), Lowering::ONE),
-                    | Computation::Application(head, argument) => {
+                    Computation::Fixpoint { body, .. } => one(computation(body), Lowering::ONE),
+                    Computation::Application(head, argument) => {
                         two(computation(head), value(argument), Lowering::NONE)
                     },
-                    | Computation::Return(value_term) | Computation::Force(value_term) => {
+                    Computation::Return(value_term) | Computation::Force(value_term) => {
                         one(value(value_term), Lowering::NONE)
                     },
-                    | Computation::Bind(bound, body) => {
+                    Computation::Bind(bound, body) => {
                         two(computation(bound), computation(body), Lowering::ONE)
                     },
-                    | Computation::Case {
+                    Computation::Case {
                         scrutinee,
                         ref branches,
                     } => {
                         extra = ExtraChildren::Branches(branches.iter());
                         one(value(scrutinee), Lowering::NONE)
                     },
-                    | Computation::Hole(_) => [None, None, None, None, None],
-                    | Computation::Mark { body, .. } => one(computation(body), Lowering::NONE),
-                    | Computation::Session(ref action) => match *action {
-                        | SessionAction::Send { payload, .. } => {
-                            one(value(payload), Lowering::NONE)
-                        },
-                        | SessionAction::Offer { ref arms, .. } => {
+                    Computation::Hole(_) => [None, None, None, None, None],
+                    Computation::Mark { body, .. } => one(computation(body), Lowering::NONE),
+                    Computation::Session(ref action) => match *action {
+                        SessionAction::Send { payload, .. } => one(value(payload), Lowering::NONE),
+                        SessionAction::Offer { ref arms, .. } => {
                             extra = ExtraChildren::Arms(arms.values());
                             [None, None, None, None, None]
                         },
-                        | SessionAction::Fork {
+                        SessionAction::Fork {
                             protocol,
                             child,
                             parent,
@@ -1220,33 +1218,33 @@ Err(_) => false,
                             None,
                             None,
                         ],
-                        | SessionAction::Receive { .. }
+                        SessionAction::Receive { .. }
                         | SessionAction::Select { .. }
                         | SessionAction::Close { .. } => [None, None, None, None, None],
                     },
                 }
             },
-            | Reached::ValueType(id) => {
+            Reached::ValueType(id) => {
                 let held = core.value_type(id).ok_or(FreeFault::Dangling)?;
                 match *held {
-                    | ValueType::Data { ref arguments, .. } => {
+                    ValueType::Data { ref arguments, .. } => {
                         extra = ExtraChildren::Values(arguments.iter());
                         [None, None, None, None, None]
                     },
-                    | ValueType::Record(ref fields) => {
+                    ValueType::Record(ref fields) => {
                         extra = ExtraChildren::RecordTypes(fields.values());
                         [None, None, None, None, None]
                     },
-                    | ValueType::Stack { input, output } => two(
+                    ValueType::Stack { input, output } => two(
                         Reached::CompType(input),
                         Reached::CompType(output),
                         Lowering::NONE,
                     ),
-                    | ValueType::List(element) => one(Reached::ValueType(element), Lowering::NONE),
-                    | ValueType::PathUniverse(source, target) => {
+                    ValueType::List(element) => one(Reached::ValueType(element), Lowering::NONE),
+                    ValueType::PathUniverse(source, target) => {
                         two(value(source), value(target), Lowering::NONE)
                     },
-                    | ValueType::Path {
+                    ValueType::Path {
                         carrier,
                         left,
                         right,
@@ -1257,7 +1255,7 @@ Err(_) => false,
                         None,
                         None,
                     ],
-                    | ValueType::Flow {
+                    ValueType::Flow {
                         carrier,
                         source,
                         target,
@@ -1268,24 +1266,24 @@ Err(_) => false,
                         None,
                         None,
                     ],
-                    | ValueType::Run(session) => one(value(session), Lowering::NONE),
-                    | ValueType::Product(ref components) | ValueType::Sum(ref components) => {
+                    ValueType::Run(session) => one(value(session), Lowering::NONE),
+                    ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                         extra = ExtraChildren::Types(components.iter());
                         [None, None, None, None, None]
                     },
-                    | ValueType::Session(ref session) => {
+                    ValueType::Session(ref session) => {
                         extra = ExtraChildren::Types(session.payloads().iter());
                         [None, None, None, None, None]
                     },
-                    | ValueType::Base(_)
+                    ValueType::Base(_)
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
                     | ValueType::Unknown => [None, None, None, None, None],
-                    | ValueType::Capability { ref authority, .. } => {
+                    ValueType::Capability { ref authority, .. } => {
                         effects = Some(authority);
                         [None, None, None, None, None]
                     },
-                    | ValueType::StaticPi {
+                    ValueType::StaticPi {
                         domain: first,
                         codomain: second,
                     } => two(
@@ -1293,45 +1291,43 @@ Err(_) => false,
                         Reached::ValueType(second),
                         Lowering::NONE,
                     ),
-                    | ValueType::Sigma { first, second } => two(
+                    ValueType::Sigma { first, second } => two(
                         Reached::ValueType(first),
                         Reached::ValueType(second),
                         Lowering::ONE,
                     ),
-                    | ValueType::Thunk(body) => one(Reached::CompType(body), Lowering::NONE),
-                    | ValueType::Lift { inner, .. } => {
-                        one(Reached::ValueType(inner), Lowering::NONE)
-                    },
-                    | ValueType::Element { code, .. } => one(value(code), Lowering::NONE),
+                    ValueType::Thunk(body) => one(Reached::CompType(body), Lowering::NONE),
+                    ValueType::Lift { inner, .. } => one(Reached::ValueType(inner), Lowering::NONE),
+                    ValueType::Element { code, .. } => one(value(code), Lowering::NONE),
                 }
             },
-            | Reached::CompType(id) => {
+            Reached::CompType(id) => {
                 let held = core.comp_type(id).ok_or(FreeFault::Dangling)?;
                 match *held {
-                    | CompType::With(first, second) => two(
+                    CompType::With(first, second) => two(
                         Reached::CompType(first),
                         Reached::CompType(second),
                         Lowering::NONE,
                     ),
-                    | CompType::Returner {
+                    CompType::Returner {
                         result,
                         effects: ref row,
                     } => {
                         effects = Some(row);
                         one(Reached::ValueType(result), Lowering::NONE)
                     },
-                    | CompType::Arrow { domain, codomain } => two(
+                    CompType::Arrow { domain, codomain } => two(
                         Reached::ValueType(domain),
                         Reached::CompType(codomain),
                         Lowering::NONE,
                     ),
-                    | CompType::Pi { domain, codomain } => two(
+                    CompType::Pi { domain, codomain } => two(
                         Reached::ValueType(domain),
                         Reached::CompType(codomain),
                         Lowering::ONE,
                     ),
-                    | CompType::Element { code, .. } => one(value(code), Lowering::NONE),
-                    | CompType::Unknown => [None, None, None, None, None],
+                    CompType::Element { code, .. } => one(value(code), Lowering::NONE),
+                    CompType::Unknown => [None, None, None, None, None],
                 }
             },
         };

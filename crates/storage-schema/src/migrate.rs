@@ -128,11 +128,11 @@ impl fmt::Display for MapError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Schema(ref error) => write!(f, "schema map: {error}"),
-            | Self::Unmapped { kind, ref name } => {
+            Self::Schema(ref error) => write!(f, "schema map: {error}"),
+            Self::Unmapped { kind, ref name } => {
                 write!(f, "schema map: {kind} `{name}` is not mapped")
             },
-            | Self::NotComposable {
+            Self::NotComposable {
                 ref element,
                 ref arrow,
                 ref at,
@@ -140,7 +140,7 @@ impl fmt::Display for MapError
                 f,
                 "schema map: the image of `{element}` takes `{arrow}` out of `{at}`, where it does not start"
             ),
-            | Self::WrongEnd {
+            Self::WrongEnd {
                 ref element,
                 ref expected,
                 ref found,
@@ -148,7 +148,7 @@ impl fmt::Display for MapError
                 f,
                 "schema map: the image of `{element}` ends at `{found}`, not `{expected}`"
             ),
-            | Self::AttributeType {
+            Self::AttributeType {
                 ref attribute,
                 ref expected,
                 ref found,
@@ -156,7 +156,7 @@ impl fmt::Display for MapError
                 f,
                 "schema map: `{attribute}` has type `{expected}` but its image has type `{found}`"
             ),
-            | Self::EquationNotPreserved { ref equation } => {
+            Self::EquationNotPreserved { ref equation } => {
                 write!(
                     f,
                     "schema map: the images of equation `{equation}` are not shown equal in the target schema"

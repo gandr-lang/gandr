@@ -211,10 +211,10 @@ fn representation(
         .get(usize::from(atom))
         .map(AdmittedDeclaration::content)
     {
-        | Some(&DeclarationContent::AbstractType { representation, .. }) => {
+        Some(&DeclarationContent::AbstractType { representation, .. }) => {
             Maybe::Present(representation)
         },
-        | Some(_) | None => Maybe::Absent(unfolding::Absent::Opaque),
+        Some(_) | None => Maybe::Absent(unfolding::Absent::Opaque),
     }
 }
 
@@ -258,12 +258,12 @@ pub(crate) fn unseal(
     let mut steps = Vec::from([Step::Enter(Node::ValueType(root))]);
     while let Some(step) = steps.pop() {
         match step {
-            | Step::Enter(node) => enter(arena, entries, manifest, &done, node, &mut steps)?,
-            | Step::Exit(Node::ValueType(id)) => {
+            Step::Enter(node) => enter(arena, entries, manifest, &done, node, &mut steps)?,
+            Step::Exit(Node::ValueType(id)) => {
                 let rebuilt = exit_value_type(arena, entries, manifest, &done, id)?;
                 let _first = done.value_types.insert(id, rebuilt);
             },
-            | Step::Exit(Node::CompType(id)) => {
+            Step::Exit(Node::CompType(id)) => {
                 let rebuilt = exit_comp_type(arena, &done, id)?;
                 let _first = done.comp_types.insert(id, rebuilt);
             },
@@ -300,42 +300,42 @@ fn enter(
 ) -> Result<(), KernelError>
 {
     match node {
-        | Node::ValueType(id) => {
+        Node::ValueType(id) => {
             if done.value_types.contains_key(&id) {
                 return Ok(());
             }
             steps.push(Step::Exit(node));
             match *arena.value_type(id).ok_or(KernelError::ArenaFault)? {
-                | ValueType::Abstract(atom) => {
+                ValueType::Abstract(atom) => {
                     if let quenchant_shape::shape::Maybe::Present(unfolded) =
                         representation(entries, manifest, atom)
                     {
                         steps.push(Step::Enter(Node::ValueType(unfolded)));
                     }
                 },
-                | ValueType::Record(ref fields) => steps.extend(
+                ValueType::Record(ref fields) => steps.extend(
                     fields
                         .values()
                         .map(|&field| Step::Enter(Node::ValueType(field))),
                 ),
-                | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                     steps.extend(parts.iter().map(|&part| Step::Enter(Node::ValueType(part))));
                 },
-                | ValueType::Sigma { first, second } => {
+                ValueType::Sigma { first, second } => {
                     steps.push(Step::Enter(Node::ValueType(first)));
                     steps.push(Step::Enter(Node::ValueType(second)));
                 },
-                | ValueType::List(inner)
+                ValueType::List(inner)
                 | ValueType::Lift { inner, .. }
                 | ValueType::Path { domain: inner, .. }
                 | ValueType::Flow { domain: inner, .. }
                 | ValueType::Session {
                     payloads: inner, ..
                 } => steps.push(Step::Enter(Node::ValueType(inner))),
-                | ValueType::Thunk(computation) => {
+                ValueType::Thunk(computation) => {
                     steps.push(Step::Enter(Node::CompType(computation)));
                 },
-                | ValueType::Data { .. }
+                ValueType::Data { .. }
                 | ValueType::PathUniverse(..)
                 | ValueType::FlowUniverse(..)
                 | ValueType::Base(_)
@@ -344,24 +344,24 @@ fn enter(
                 | ValueType::StaticPi { .. } => {},
             }
         },
-        | Node::CompType(id) => {
+        Node::CompType(id) => {
             if done.comp_types.contains_key(&id) {
                 return Ok(());
             }
             steps.push(Step::Exit(node));
             match *arena.comp_type(id).ok_or(KernelError::ArenaFault)? {
-                | CompType::Returner(result) => {
+                CompType::Returner(result) => {
                     steps.push(Step::Enter(Node::ValueType(result)));
                 },
-                | CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
+                CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
                     steps.push(Step::Enter(Node::ValueType(domain)));
                     steps.push(Step::Enter(Node::CompType(codomain)));
                 },
-                | CompType::With(left, right) => {
+                CompType::With(left, right) => {
                     steps.push(Step::Enter(Node::CompType(left)));
                     steps.push(Step::Enter(Node::CompType(right)));
                 },
-                | CompType::Element { .. } => {},
+                CompType::Element { .. } => {},
             }
         },
     }
@@ -397,11 +397,11 @@ fn exit_value_type(
 {
     let node = arena.value_type(id).ok_or(KernelError::ArenaFault)?.clone();
     let rebuilt = match node {
-        | ValueType::Abstract(atom) => match representation(entries, manifest, atom) {
-            | quenchant_shape::shape::Maybe::Present(unfolded) => done.value_type(unfolded)?,
-            | quenchant_shape::shape::Maybe::Absent(_) => id,
+        ValueType::Abstract(atom) => match representation(entries, manifest, atom) {
+            quenchant_shape::shape::Maybe::Present(unfolded) => done.value_type(unfolded)?,
+            quenchant_shape::shape::Maybe::Absent(_) => id,
         },
-        | ValueType::Record(fields) => {
+        ValueType::Record(fields) => {
             let mut rebuilt = BTreeMap::new();
             for (label, &field) in &fields {
                 let _first = rebuilt.insert(label.clone(), done.value_type(field)?);
@@ -413,7 +413,7 @@ fn exit_value_type(
                 arena.value_type_record(rebuilt)
             }
         },
-        | ValueType::Product(parts) => {
+        ValueType::Product(parts) => {
             let rebuilt = rebuilt_parts(done, &parts)?;
             if *rebuilt == *parts {
                 id
@@ -422,7 +422,7 @@ fn exit_value_type(
                 arena.value_type_product(&rebuilt)
             }
         },
-        | ValueType::Sum(parts) => {
+        ValueType::Sum(parts) => {
             let rebuilt = rebuilt_parts(done, &parts)?;
             if *rebuilt == *parts {
                 id
@@ -431,7 +431,7 @@ fn exit_value_type(
                 arena.value_type_sum(&rebuilt)
             }
         },
-        | ValueType::Sigma { first, second } => {
+        ValueType::Sigma { first, second } => {
             let rebuilt_first = done.value_type(first)?;
             let rebuilt_second = done.value_type(second)?;
             if rebuilt_first == first && rebuilt_second == second {
@@ -441,7 +441,7 @@ fn exit_value_type(
                 arena.value_type_sigma(rebuilt_first, rebuilt_second)
             }
         },
-        | ValueType::List(element) => {
+        ValueType::List(element) => {
             let rebuilt = done.value_type(element)?;
             if rebuilt == element {
                 id
@@ -450,7 +450,7 @@ fn exit_value_type(
                 arena.value_type_list(rebuilt)
             }
         },
-        | ValueType::Lift { inner, target } => {
+        ValueType::Lift { inner, target } => {
             let rebuilt = done.value_type(inner)?;
             if rebuilt == inner {
                 id
@@ -459,7 +459,7 @@ fn exit_value_type(
                 arena.value_type_lift(rebuilt, target)
             }
         },
-        | ValueType::Path {
+        ValueType::Path {
             domain,
             left,
             right,
@@ -472,7 +472,7 @@ fn exit_value_type(
                 arena.value_type_path(rebuilt, left, right)
             }
         },
-        | ValueType::Flow {
+        ValueType::Flow {
             domain,
             source,
             target,
@@ -485,7 +485,7 @@ fn exit_value_type(
                 arena.value_type_flow(rebuilt, source, target)
             }
         },
-        | ValueType::Session { graph, payloads } => {
+        ValueType::Session { graph, payloads } => {
             let rebuilt = done.value_type(payloads)?;
             if rebuilt == payloads {
                 id
@@ -494,7 +494,7 @@ fn exit_value_type(
                 arena.value_type_session(graph, rebuilt)
             }
         },
-        | ValueType::Thunk(computation) => {
+        ValueType::Thunk(computation) => {
             let rebuilt = done.comp_type(computation)?;
             if rebuilt == computation {
                 id
@@ -503,7 +503,7 @@ fn exit_value_type(
                 arena.value_type_thunk(rebuilt)
             }
         },
-        | ValueType::Data { .. }
+        ValueType::Data { .. }
         | ValueType::PathUniverse(..)
         | ValueType::FlowUniverse(..)
         | ValueType::Base(_)
@@ -564,7 +564,7 @@ fn exit_comp_type(
 {
     let node = arena.comp_type(id).ok_or(KernelError::ArenaFault)?.clone();
     let rebuilt = match node {
-        | CompType::Returner(result) => {
+        CompType::Returner(result) => {
             let rebuilt = done.value_type(result)?;
             if rebuilt == result {
                 id
@@ -573,7 +573,7 @@ fn exit_comp_type(
                 arena.comp_type_returner(rebuilt)
             }
         },
-        | CompType::Arrow { domain, codomain } => {
+        CompType::Arrow { domain, codomain } => {
             let (domain_rebuilt, codomain_rebuilt) =
                 (done.value_type(domain)?, done.comp_type(codomain)?);
             if domain_rebuilt == domain && codomain_rebuilt == codomain {
@@ -583,7 +583,7 @@ fn exit_comp_type(
                 arena.comp_type_arrow(domain_rebuilt, codomain_rebuilt)
             }
         },
-        | CompType::Pi { domain, codomain } => {
+        CompType::Pi { domain, codomain } => {
             let (domain_rebuilt, codomain_rebuilt) =
                 (done.value_type(domain)?, done.comp_type(codomain)?);
             if domain_rebuilt == domain && codomain_rebuilt == codomain {
@@ -593,7 +593,7 @@ fn exit_comp_type(
                 arena.comp_type_pi(domain_rebuilt, codomain_rebuilt)
             }
         },
-        | CompType::With(left, right) => {
+        CompType::With(left, right) => {
             let (left_rebuilt, right_rebuilt) = (done.comp_type(left)?, done.comp_type(right)?);
             if left_rebuilt == left && right_rebuilt == right {
                 id
@@ -602,7 +602,7 @@ fn exit_comp_type(
                 arena.comp_type_with(left_rebuilt, right_rebuilt)
             }
         },
-        | CompType::Element { .. } => id,
+        CompType::Element { .. } => id,
     };
     Ok(rebuilt)
 }

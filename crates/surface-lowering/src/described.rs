@@ -336,36 +336,36 @@ fn substitute(
     };
     while let Some(step) = pending.pop() {
         match step {
-            | Rebuild::Read(node) => match node.view() {
-                | TermView::Var(name) => built.push(
+            Rebuild::Read(node) => match node.view() {
+                TermView::Var(name) => built.push(
                     by.get(name)
                         .map_or_else(|| FreeTerm::var(name.clone()), |&image| image.clone()),
                 ),
-                | TermView::Op { name, args } => {
+                TermView::Op { name, args } => {
                     let args: Vec<TermNode<'_>> = args.collect();
                     pending.push(Rebuild::Op(name, args.len()));
                     pending.extend(args.into_iter().rev().map(Rebuild::Read));
                 },
-                | TermView::Ctor { name, args } => {
+                TermView::Ctor { name, args } => {
                     let args: Vec<TermNode<'_>> = args.collect();
                     pending.push(Rebuild::Ctor(name, args.len()));
                     pending.extend(args.into_iter().rev().map(Rebuild::Read));
                 },
-                | TermView::Results { args } => {
+                TermView::Results { args } => {
                     let args: Vec<TermNode<'_>> = args.collect();
                     pending.push(Rebuild::Results(args.len()));
                     pending.extend(args.into_iter().rev().map(Rebuild::Read));
                 },
             },
-            | Rebuild::Op(name, count) => {
+            Rebuild::Op(name, count) => {
                 let args = take(&mut built, count);
                 built.push(FreeTerm::op(name.clone(), args));
             },
-            | Rebuild::Ctor(name, count) => {
+            Rebuild::Ctor(name, count) => {
                 let args = take(&mut built, count);
                 built.push(FreeTerm::ctor(name.clone(), args));
             },
-            | Rebuild::Results(count) => {
+            Rebuild::Results(count) => {
                 let args = take(&mut built, count);
                 built.push(FreeTerm::results(args));
             },
@@ -443,19 +443,19 @@ impl Typer<'_>
         let mut built: Vec<ValueId> = Vec::new();
         while let Some(step) = pending.pop() {
             match step {
-                | Step::Read(node) => match node.view() {
-                    | TermView::Var(name) => {
+                Step::Read(node) => match node.view() {
+                    TermView::Var(name) => {
                         let index = scope.variable(name)?;
                         built.push(self.arena.value_variable(Zone::Intuitionistic, index));
                     },
-                    | TermView::Op { name, args } => {
+                    TermView::Op { name, args } => {
                         let args: Vec<TermNode<'_>> = args.collect();
                         pending.push(Step::Apply(name, args.len()));
                         pending.extend(args.into_iter().rev().map(Step::Read));
                     },
-                    | TermView::Ctor { .. } | TermView::Results { .. } => return None,
+                    TermView::Ctor { .. } | TermView::Results { .. } => return None,
                 },
-                | Step::Apply(name, count) => {
+                Step::Apply(name, count) => {
                     let start = built.len().checked_sub(count)?;
                     let arguments: Vec<ValueId> = built.drain(start ..).collect();
                     let applied = self.apply(scope, name, &arguments)?;
@@ -464,8 +464,8 @@ impl Typer<'_>
             }
         }
         match *built.as_slice() {
-            | [value] => Some(value),
-            | _ => None,
+            [value] => Some(value),
+            _ => None,
         }
     }
 
@@ -564,18 +564,18 @@ impl Typer<'_>
             scope.push(&binder.name, binds);
         }
         let result = match codomain {
-            | Codomain::Universe => self.universe(Level::zero()),
-            | Codomain::Results(results) => {
+            Codomain::Universe => self.universe(Level::zero()),
+            Codomain::Results(results) => {
                 let mut sorts = Vec::with_capacity(results.len());
                 for result in results {
                     sorts.push(self.sort(scope, result)?);
                 }
                 match *sorts.as_slice() {
-                    | [one] => one,
-                    | _ => self.arena.value_type_product(&sorts),
+                    [one] => one,
+                    _ => self.arena.value_type_product(&sorts),
                 }
             },
-            | Codomain::Path(carrier, left, right) => {
+            Codomain::Path(carrier, left, right) => {
                 let over = self.sort(scope, carrier)?;
                 let from = self.value(scope, left)?;
                 let to = self.value(scope, right)?;
@@ -636,7 +636,7 @@ impl Typer<'_>
                     break;
                 };
                 match node.view() {
-                    | TermView::Var(name) => {
+                    TermView::Var(name) => {
                         if let Some(binder) =
                             telescope.iter().rev().find(|binder| binder.name == *name)
                             && let Some(ty) = self.sort(scope, &binder.sort)
@@ -644,7 +644,7 @@ impl Typer<'_>
                             self.emit(written.span, DescribedRole::Term, ty, context);
                         }
                     },
-                    | TermView::Op { args, .. }
+                    TermView::Op { args, .. }
                     | TermView::Ctor { args, .. }
                     | TermView::Results { args } => {
                         let first = pending.len();
@@ -806,13 +806,13 @@ impl Typer<'_>
         for (law, member) in members.laws.iter().zip(&written.faces) {
             let form = forms.next();
             let stated = match form {
-                | Some(&Ok(ModelForm::Law {
+                Some(&Ok(ModelForm::Law {
                     ref telescope,
                     ref carrier,
                     ref left,
                     ref right,
                 })) => Some((telescope, carrier, left, right)),
-                | Some(_) | None => None,
+                Some(_) | None => None,
             };
             let base = scope.binders.len();
             let mut binders: &[Binder] = &[];
@@ -898,14 +898,14 @@ impl Typer<'_>
                 break;
             };
             match node.view() {
-                | TermView::Var(name) => {
+                TermView::Var(name) => {
                     if let Some(binder) = telescope.iter().rev().find(|binder| binder.name == *name)
                         && let Some(ty) = self.sort(scope, &binder.sort)
                     {
                         self.emit(written.span, DescribedRole::Term, ty, context);
                     }
                 },
-                | TermView::Op { name, args } => {
+                TermView::Op { name, args } => {
                     if let (Maybe::Present(head), Some(&(ty, stated))) =
                         (written.head, heads.get(name))
                     {
@@ -913,15 +913,15 @@ impl Typer<'_>
                     }
                     let args: Vec<TermNode<'_>> = args.collect();
                     let images: Vec<TermNode<'_>> = match image.map(TermNode::view) {
-                        | Some(TermView::Op { args, .. }) => args.collect(),
-                        | Some(_) | None => Vec::new(),
+                        Some(TermView::Op { args, .. }) => args.collect(),
+                        Some(_) | None => Vec::new(),
                     };
                     let single =
                         operations
                             .get(name)
                             .and_then(|&(binders, results)| match *results {
-                                | [ref result] => Some((binders, result)),
-                                | _ => None,
+                                [ref result] => Some((binders, result)),
+                                _ => None,
                             });
                     if let (Some((binders, result)), false) = (single, images.is_empty()) {
                         let owned: Vec<FreeTerm> =
@@ -949,7 +949,7 @@ impl Typer<'_>
                         pending.push((arg, image));
                     }
                 },
-                | TermView::Ctor { args, .. } | TermView::Results { args } => {
+                TermView::Ctor { args, .. } | TermView::Results { args } => {
                     let first = pending.len();
                     pending.extend(args.map(|arg| (arg, None)));
                     if let Some(added) = pending.get_mut(first ..) {
@@ -1217,8 +1217,8 @@ impl Typer<'_>
                 continue;
             };
             let result = match *outputs.as_slice() {
-                | [one] => one,
-                | _ => self.arena.value_type_product(&outputs),
+                [one] => one,
+                _ => self.arena.value_type_product(&outputs),
             };
             let mut chain = self.arena.comp_type_returner(result);
             for &input in inputs.iter().rev() {
@@ -1233,10 +1233,8 @@ impl Typer<'_>
             let mut variables: BTreeMap<&Name, ValueTypeId> = BTreeMap::new();
             let mut unsorted: Vec<(ByteSpan, Name)> = Vec::new();
             let root = match face.lhs.view() {
-                | TermView::Op { name, .. } => {
-                    operations.get(name).map(|operation| operation.result)
-                },
-                | TermView::Var(_) | TermView::Ctor { .. } | TermView::Results { .. } => None,
+                TermView::Op { name, .. } => operations.get(name).map(|operation| operation.result),
+                TermView::Var(_) | TermView::Ctor { .. } | TermView::Results { .. } => None,
             };
             for (side, nodes, expected) in [
                 (&face.lhs, &member.left, None),
@@ -1253,7 +1251,7 @@ impl Typer<'_>
                         Option<ValueTypeId>,
                         Vec<(TermNode<'_>, Option<ValueTypeId>)>,
                     ) = match node.view() {
-                        | TermView::Var(name) => {
+                        TermView::Var(name) => {
                             let ty = variables.get(name).copied().or(expected);
                             if let Some(ty) = ty {
                                 let _held = variables.entry(name).or_insert(ty);
@@ -1263,7 +1261,7 @@ impl Typer<'_>
                             }
                             (ty, Vec::new())
                         },
-                        | TermView::Op { name, args } => {
+                        TermView::Op { name, args } => {
                             let operation = operations.get(name);
                             if let (Maybe::Present(head), Some(operation)) =
                                 (written.head, operation)
@@ -1283,7 +1281,7 @@ impl Typer<'_>
                                 .collect();
                             (operation.map(|operation| operation.result), below)
                         },
-                        | TermView::Ctor { name, args } => {
+                        TermView::Ctor { name, args } => {
                             let constructor = constructors.get(name);
                             let below = args
                                 .enumerate()
@@ -1293,12 +1291,12 @@ impl Typer<'_>
                                 .collect();
                             (constructor.map(|&(_, family)| family), below)
                         },
-                        | TermView::Results { args } => {
+                        TermView::Results { args } => {
                             let components: Vec<ValueTypeId> = match expected
                                 .and_then(|expected| self.arena.value_type(expected))
                             {
-                                | Some(&ValueType::Product(ref components)) => components.to_vec(),
-                                | Some(_) | None => Vec::new(),
+                                Some(&ValueType::Product(ref components)) => components.to_vec(),
+                                Some(_) | None => Vec::new(),
                             };
                             let below = args
                                 .enumerate()
@@ -1482,10 +1480,10 @@ impl LoweredModule<'_>
         }
         for described in &self.descriptions().declarations {
             match described.presentation {
-                | Maybe::Present(ref presentation) => {
+                Maybe::Present(ref presentation) => {
                     typer.sign(presentation, &described.written);
                 },
-                | Maybe::Absent(_) => {
+                Maybe::Absent(_) => {
                     if described.description.polarity != DeclPolarity::Data {
                         continue;
                     }

@@ -212,8 +212,8 @@ impl Reading
     pub fn spans(&self) -> &[HlSpan]
     {
         match self.0 {
-            | Maybe::Present(ref readout) => &readout.spans,
-            | Maybe::Absent(_) => &[],
+            Maybe::Present(ref readout) => &readout.spans,
+            Maybe::Absent(_) => &[],
         }
     }
 
@@ -224,8 +224,8 @@ impl Reading
     pub fn declarations(&self) -> Maybe<&[Declaration], unread::Absent>
     {
         match self.0 {
-            | Maybe::Present(ref readout) => Maybe::Present(&readout.declarations),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present(ref readout) => Maybe::Present(&readout.declarations),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
 
@@ -238,12 +238,12 @@ impl Reading
     pub fn symbols(&self) -> DocumentSymbols
     {
         DocumentSymbols(match self.0 {
-            | Maybe::Present(ref readout) => readout
+            Maybe::Present(ref readout) => readout
                 .declarations
                 .iter()
                 .map(|declaration| declaration.symbol.clone())
                 .collect(),
-            | Maybe::Absent(_) => Vec::new(),
+            Maybe::Absent(_) => Vec::new(),
         })
     }
 
@@ -255,8 +255,8 @@ impl Reading
     pub fn folds(&self) -> &[FoldingRange]
     {
         match self.0 {
-            | Maybe::Present(ref readout) => &readout.folds,
-            | Maybe::Absent(_) => &[],
+            Maybe::Present(ref readout) => &readout.folds,
+            Maybe::Absent(_) => &[],
         }
     }
 
@@ -293,11 +293,11 @@ impl Reading
         positions
             .iter()
             .map(|&position| match self.0 {
-                | Maybe::Present(ref readout) => readout
+                Maybe::Present(ref readout) => readout
                     .skeleton
                     .around(index, position)
                     .unwrap_or_else(|| unread(position)),
-                | Maybe::Absent(_) => unread(position),
+                Maybe::Absent(_) => unread(position),
             })
             .collect()
     }

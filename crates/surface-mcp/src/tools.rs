@@ -316,29 +316,29 @@ pub fn call(
     let document = json!({ "uri": uri });
     let position = || -> Result<Value, ToolRefusal> {
         match (arguments.get("line"), arguments.get("character")) {
-            | (Some(line), Some(character)) if line.is_u64() && character.is_u64() => {
+            (Some(line), Some(character)) if line.is_u64() && character.is_u64() => {
                 Ok(json!({ "line": line, "character": character }))
             },
-            | _ => Err(ToolRefusal(String::from(
+            _ => Err(ToolRefusal(String::from(
                 "`line` and `character` must be non-negative integers",
             ))),
         }
     };
     let answer = match name {
-        | "diagnostics" => {
+        "diagnostics" => {
             let (_version, diagnostics) = workspace
                 .published(&uri)
                 .ok_or_else(|| ToolRefusal(String::from("the document closed")))?;
             json!({ "diagnostics": diagnostics })
         },
-        | "outline" => {
+        "outline" => {
             let symbols = ask(
                 workspace,
                 &json!({ "method": "textDocument/documentSymbol", "params": { "textDocument": document } }),
             )?;
             json!({ "symbols": symbols })
         },
-        | "expected_syntax" => {
+        "expected_syntax" => {
             let completions = ask(
                 workspace,
                 &json!({
@@ -352,7 +352,7 @@ pub fn call(
             )?;
             json!({ "completions": completions })
         },
-        | "type_of" => {
+        "type_of" => {
             let hover = ask(
                 workspace,
                 &json!({
@@ -362,9 +362,9 @@ pub fn call(
             )?;
             json!({ "hover": hover })
         },
-        | "trial" => json!({ "trials": tried(workspace, &uri, arguments)? }),
-        | "propose" => proposed(workspace, &uri, arguments)?,
-        | _ => return Err(ToolRefusal(alloc::format!("no tool is named `{name}`"))),
+        "trial" => json!({ "trials": tried(workspace, &uri, arguments)? }),
+        "propose" => proposed(workspace, &uri, arguments)?,
+        _ => return Err(ToolRefusal(alloc::format!("no tool is named `{name}`"))),
     };
     let mut answered = json!({ "uri": uri, "version": version });
     if let (Some(into), Value::Object(from)) = (answered.as_object_mut(), answer) {
@@ -449,13 +449,13 @@ fn proposed(
         explanation,
     };
     match workspace.propose(uri, version, proposal) {
-        | Ok(diagnostics) => Ok(json!({ "kept": true, "diagnostics": diagnostics })),
-        | Err(ProposalRefusal::Unchecked { diagnostics }) => Ok(json!({
+        Ok(diagnostics) => Ok(json!({ "kept": true, "diagnostics": diagnostics })),
+        Err(ProposalRefusal::Unchecked { diagnostics }) => Ok(json!({
             "kept": false,
             "reason": ProposalRefusal::Unchecked { diagnostics: Vec::new() }.to_string(),
             "diagnostics": diagnostics,
         })),
-        | Err(refusal) => Err(ToolRefusal(refusal.to_string())),
+        Err(refusal) => Err(ToolRefusal(refusal.to_string())),
     }
 }
 

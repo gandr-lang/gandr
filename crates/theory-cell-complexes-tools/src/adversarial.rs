@@ -378,16 +378,16 @@ impl AlphabetLie for NonLocalSplice
         // The step is a child index, and the sibling of a child of a binary
         // node is the other index; no conversion trait names "the other child".
         let sibling = match usize::from(step) {
-            | 0 => 1_usize,
-            | 1 => 0_usize,
-            | _ => return Ok(spliced),
+            0 => 1_usize,
+            1 => 0_usize,
+            _ => return Ok(spliced),
         };
         let sibling = ToyAlphabet::position_at_path(&[PositionStep::from(sibling)]);
         match ToyAlphabet::subterm_cmd_at(&spliced, &sibling) {
-            | Maybe::Present(_) => {
+            Maybe::Present(_) => {
                 ToyAlphabet::splice_cmd_at(&spliced, &sibling, Toy::add(Toy::zero(), Toy::zero()))
             },
-            | Maybe::Absent(_) => Ok(spliced),
+            Maybe::Absent(_) => Ok(spliced),
         }
     }
 }

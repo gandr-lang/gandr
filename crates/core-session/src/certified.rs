@@ -102,24 +102,22 @@ impl core::fmt::Display for TransportError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::MissingPayload(_) => {
-                f.write_str("recorded payload identity has no native code")
-            },
-            | Self::CodeBinding => f.write_str("monitor protocol and native session code disagree"),
-            | Self::Direction => f.write_str("session Flow direction mismatch"),
-            | Self::ExpectedSessionFlow => {
+            Self::MissingPayload(_) => f.write_str("recorded payload identity has no native code"),
+            Self::CodeBinding => f.write_str("monitor protocol and native session code disagree"),
+            Self::Direction => f.write_str("session Flow direction mismatch"),
+            Self::ExpectedSessionFlow => {
                 f.write_str("recorded run requires a session Flow introduction")
             },
-            | Self::Flow(ref error) => core::fmt::Display::fmt(error, f),
-            | Self::Type(ref error) => core::fmt::Display::fmt(error, f),
-            | Self::Session(ref error) => core::fmt::Display::fmt(error, f),
-            | Self::Replay(ref error) => core::fmt::Display::fmt(error, f),
-            | Self::Move { at, reason } => {
+            Self::Flow(ref error) => core::fmt::Display::fmt(error, f),
+            Self::Type(ref error) => core::fmt::Display::fmt(error, f),
+            Self::Session(ref error) => core::fmt::Display::fmt(error, f),
+            Self::Replay(ref error) => core::fmt::Display::fmt(error, f),
+            Self::Move { at, reason } => {
                 let reason = match reason {
-                    | Refusal::ResumeAfterEnd => "resume after end",
-                    | Refusal::WrongLabel => "wrong label",
-                    | Refusal::WrongDirection => "wrong direction",
-                    | Refusal::WrongPayloadIdentity => "wrong payload identity",
+                    Refusal::ResumeAfterEnd => "resume after end",
+                    Refusal::WrongLabel => "wrong label",
+                    Refusal::WrongDirection => "wrong direction",
+                    Refusal::WrongPayloadIdentity => "wrong payload identity",
                 };
                 write!(f, "unmapped session move {}: {reason}", at.0)
             },
@@ -168,7 +166,7 @@ pub fn encode(
     let mut nodes = Vec::with_capacity(session.nodes().len());
     for node in session.nodes() {
         nodes.push(match *node {
-            | Node::Send(identity, next) | Node::Receive(identity, next) => {
+            Node::Send(identity, next) | Node::Receive(identity, next) => {
                 let slot = *slots
                     .get(&identity)
                     .ok_or(TransportError::MissingPayload(identity))?;
@@ -179,7 +177,7 @@ pub fn encode(
                     CodeNode::Receive(slot, State(next.0))
                 }
             },
-            | Node::Select(ref branches) | Node::Offer(ref branches) => {
+            Node::Select(ref branches) | Node::Offer(ref branches) => {
                 let branches = branches
                     .iter()
                     .map(|(label, next)| (CodeLabel(label.0.clone()), State(next.0)))
@@ -191,9 +189,9 @@ pub fn encode(
                     CodeNode::Offer(branches)
                 }
             },
-            | Node::End => CodeNode::End,
-            | Node::Mu(body) => CodeNode::Mu(State(body.0)),
-            | Node::Var(binder) => CodeNode::Var(State(binder.0)),
+            Node::End => CodeNode::End,
+            Node::Mu(body) => CodeNode::Mu(State(body.0)),
+            Node::Var(binder) => CodeNode::Var(State(binder.0)),
         });
     }
     let telescope = arena.value_type_product(&payloads.0.values().copied().collect::<Vec<_>>());
@@ -246,9 +244,15 @@ fn binding(
     for (native, local) in graph.nodes.iter().zip(protocol.session.nodes()) {
         if let CodeNode::Select(ref branches) | CodeNode::Offer(ref branches) = *native {
             let local = match *local {
-                | Node::Select(ref branches) if matches!(*native, CodeNode::Select(_)) => branches,
-                | Node::Offer(ref branches) if matches!(*native, CodeNode::Offer(_)) => branches,
-                | _ => return Err(TransportError::CodeBinding),
+                Node::Select(ref branches) if matches!(*native, CodeNode::Select(_)) => branches,
+                Node::Offer(ref branches) if matches!(*native, CodeNode::Offer(_)) => branches,
+                Node::Send(..)
+                | Node::Receive(..)
+                | Node::Select(_)
+                | Node::Offer(_)
+                | Node::End
+                | Node::Mu(_)
+                | Node::Var(_) => return Err(TransportError::CodeBinding),
             };
             if branches.len() != local.len()
                 || !branches
@@ -261,7 +265,7 @@ fn binding(
             continue;
         }
         match (native, local) {
-            | (&CodeNode::Send(slot, next), &Node::Send(identity, continuation))
+            (&CodeNode::Send(slot, next), &Node::Send(identity, continuation))
             | (&CodeNode::Receive(slot, next), &Node::Receive(identity, continuation)) => {
                 let expected = *protocol
                     .payloads
@@ -276,10 +280,10 @@ fn binding(
                     return Err(TransportError::CodeBinding);
                 }
             },
-            | (&CodeNode::Mu(a), &Node::Mu(b)) | (&CodeNode::Var(a), &Node::Var(b)) if a.0 == b.0 =>
-                {},
-            | (&CodeNode::End, &Node::End) => {},
-            | _ => return Err(TransportError::CodeBinding),
+            (&CodeNode::Mu(a), &Node::Mu(b)) | (&CodeNode::Var(a), &Node::Var(b)) if a.0 == b.0 => {
+            },
+            (&CodeNode::End, &Node::End) => {},
+            _ => return Err(TransportError::CodeBinding),
         }
     }
     Ok(code)
@@ -431,14 +435,26 @@ pub fn advance(
         }
         if let Move::Select(ref label) | Move::Offer(ref label) = *movement {
             let source = match *a {
-                | Node::Select(ref labels) if matches!(*movement, Move::Select(_)) => labels,
-                | Node::Offer(ref labels) if matches!(*movement, Move::Offer(_)) => labels,
-                | _ => return Err(refusal(Refusal::WrongDirection)),
+                Node::Select(ref labels) if matches!(*movement, Move::Select(_)) => labels,
+                Node::Offer(ref labels) if matches!(*movement, Move::Offer(_)) => labels,
+                Node::Send(..)
+                | Node::Receive(..)
+                | Node::Select(_)
+                | Node::Offer(_)
+                | Node::End
+                | Node::Mu(_)
+                | Node::Var(_) => return Err(refusal(Refusal::WrongDirection)),
             };
             let target = match *b {
-                | Node::Select(ref labels) if matches!(*movement, Move::Select(_)) => labels,
-                | Node::Offer(ref labels) if matches!(*movement, Move::Offer(_)) => labels,
-                | _ => return Err(refusal(Refusal::WrongDirection)),
+                Node::Select(ref labels) if matches!(*movement, Move::Select(_)) => labels,
+                Node::Offer(ref labels) if matches!(*movement, Move::Offer(_)) => labels,
+                Node::Send(..)
+                | Node::Receive(..)
+                | Node::Select(_)
+                | Node::Offer(_)
+                | Node::End
+                | Node::Mu(_)
+                | Node::Var(_) => return Err(refusal(Refusal::WrongDirection)),
             };
             source_state = *source
                 .get(label)
@@ -450,7 +466,7 @@ pub fn advance(
             continue;
         }
         let mapped = match (a, b, movement) {
-            | (&Node::Send(_, next_a), &Node::Send(identity, next_b), &Move::Send(payload)) => {
+            (&Node::Send(_, next_a), &Node::Send(identity, next_b), &Move::Send(payload)) => {
                 source_state = next_a;
                 target_state = next_b;
                 Move::Send(Payload {
@@ -458,7 +474,7 @@ pub fn advance(
                     digest: payload.digest,
                 })
             },
-            | (
+            (
                 &Node::Receive(_, next_a),
                 &Node::Receive(identity, next_b),
                 &Move::Receive(payload),
@@ -470,8 +486,8 @@ pub fn advance(
                     digest: payload.digest,
                 })
             },
-            | (&Node::End, &Node::End, &Move::End) => Move::End,
-            | _ => return Err(refusal(Refusal::WrongDirection)),
+            (&Node::End, &Node::End, &Move::End) => Move::End,
+            _ => return Err(refusal(Refusal::WrongDirection)),
         };
         output.push(mapped);
     }

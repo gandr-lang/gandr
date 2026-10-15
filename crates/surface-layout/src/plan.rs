@@ -385,8 +385,8 @@ impl PlanArena
             return Err(error);
         }
         match self.alloc(PlanNode::Seq { left, right }, meter) {
-            | Ok(plan) => Ok(plan),
-            | Err(error) => {
+            Ok(plan) => Ok(plan),
+            Err(error) => {
                 let _left = self.release_one(left, meter)?;
                 let _right = self.release_one(right, meter)?;
                 Err(error)
@@ -553,10 +553,10 @@ impl PlanArena
         self.free.push(id);
         meter.release_plan_node();
         Ok(match node {
-            | Maybe::Present(PlanNode::Seq { left, right }) => {
+            Maybe::Present(PlanNode::Seq { left, right }) => {
                 Released::FreedSequence { left, right }
             },
-            | Maybe::Present(
+            Maybe::Present(
                 PlanNode::Empty
                 | PlanNode::Text(_)
                 | PlanNode::Verbatim(_)

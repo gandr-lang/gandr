@@ -136,15 +136,15 @@ impl Width
     pub fn threads(self) -> Threads
     {
         match self {
-            | Self::Threads(threads) => threads,
-            | Self::PerformanceCores => {
+            Self::Threads(threads) => threads,
+            Self::PerformanceCores => {
                 let available =
                     Threads(std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN));
                 match physical_performance_cores() {
-                    | Maybe::Present(cores) => cores.min(available),
-                    | Maybe::Absent(
-                        topology::Absent::Unsupported | topology::Absent::Unreadable,
-                    ) => available,
+                    Maybe::Present(cores) => cores.min(available),
+                    Maybe::Absent(topology::Absent::Unsupported | topology::Absent::Unreadable) => {
+                        available
+                    },
                 }
             },
         }

@@ -212,8 +212,8 @@ impl Synthesized<'_>
     fn to_owned(self) -> Protype
     {
         match self {
-            | Self::Type(node) => node.to_owned(),
-            | Self::Refl { sig, term } => Protype::path(sig.clone(), term.clone(), term.clone()),
+            Self::Type(node) => node.to_owned(),
+            Self::Refl { sig, term } => Protype::path(sig.clone(), term.clone(), term.clone()),
         }
     }
 }
@@ -329,13 +329,13 @@ impl<'env> Checker<'env>
         let mut pending = alloc::vec![protype.to_node()];
         while let Some(node) = pending.pop() {
             match node.kind() {
-                | &ProtypeKind::Path {
+                &ProtypeKind::Path {
                     ref lhs, ref rhs, ..
                 } => {
                     term_vars_declared(ctx, lhs)?;
                     term_vars_declared(ctx, rhs)?;
                 },
-                | &ProtypeKind::Rel {
+                &ProtypeKind::Rel {
                     ref rel,
                     ref lhs,
                     ref rhs,
@@ -344,15 +344,15 @@ impl<'env> Checker<'env>
                     term_vars_declared(ctx, rhs)?;
                     self.relation_generators_present(rel)?;
                 },
-                | &ProtypeKind::Tabulate { ref rel } => self.relation_generators_present(rel)?,
-                | &ProtypeKind::Compose { ref mid } => {
+                &ProtypeKind::Tabulate { ref rel } => self.relation_generators_present(rel)?,
+                &ProtypeKind::Compose { ref mid } => {
                     let (left, right) = type_children(node)?;
                     if boundary(left, Side::Target)? != mid || boundary(right, Side::Source)? != mid
                     {
                         return Err(CheckError::ComposeSeamMismatch);
                     }
                 },
-                | &ProtypeKind::ExtendL
+                &ProtypeKind::ExtendL
                 | &ProtypeKind::ExtendR
                 | &ProtypeKind::Product
                 | &ProtypeKind::Unit => {},
@@ -458,10 +458,8 @@ impl<'env> Checker<'env>
     ) -> Result<Protype, CheckError>
     {
         match self.run_judgment(ctx, hyps, Judgment::Synth(Scope::Root, term.to_node()))? {
-            | Maybe::Present(ty) => Ok(ty.to_owned()),
-            | Maybe::Absent(synthesis_result::Absent::Checking) => {
-                Err(CheckError::CannotSynthesize)
-            },
+            Maybe::Present(ty) => Ok(ty.to_owned()),
+            Maybe::Absent(synthesis_result::Absent::Checking) => Err(CheckError::CannotSynthesize),
         }
     }
     /// Execute a judgment with borrowed types and index-linked lexical scopes.
@@ -492,18 +490,18 @@ impl<'env> Checker<'env>
         let mut bindings = Vec::new();
         while let Some(judgment) = pending.pop() {
             match judgment {
-                | Judgment::Check(scope, term, expected) => match term.kind() {
-                    | &ProtermKind::Var { ref var } => expect_equal(
+                Judgment::Check(scope, term, expected) => match term.kind() {
+                    &ProtermKind::Var { ref var } => expect_equal(
                         expected,
                         Synthesized::Type(lookup_hyp(hyps, &bindings, scope, var)?),
                     )?,
-                    | &ProtermKind::Refl { ref sig, ref term } => {
+                    &ProtermKind::Refl { ref sig, ref term } => {
                         if expected != (Synthesized::Refl { sig, term }) {
                             return Err(CheckError::ReflOffDiagonal);
                         }
                     },
-                    | &ProtermKind::Cert { ref id } => self.check_cert(*id, expected)?,
-                    | &ProtermKind::PathInd { ref motive } => {
+                    &ProtermKind::Cert { ref id } => self.check_cert(*id, expected)?,
+                    &ProtermKind::PathInd { ref motive } => {
                         expect_equal(expected, Synthesized::Type(motive.to_node()))?;
                         let (base, scrut) = term_children(term)?;
                         pending.push(Judgment::Check(
@@ -514,7 +512,7 @@ impl<'env> Checker<'env>
                         pending.push(Judgment::Path);
                         pending.push(Judgment::Synth(scope, scrut));
                     },
-                    | &ProtermKind::Pair { .. } | &ProtermKind::ProdIntro => {
+                    &ProtermKind::Pair { .. } | &ProtermKind::ProdIntro => {
                         let Synthesized::Type(ty) = expected
                         else {
                             return Err(if matches!(term.kind(), &ProtermKind::Pair { .. }) {
@@ -525,25 +523,25 @@ impl<'env> Checker<'env>
                             });
                         };
                         match (term.kind(), ty.kind()) {
-                            | (&ProtermKind::Pair { .. }, &ProtypeKind::Compose { .. })
+                            (&ProtermKind::Pair { .. }, &ProtypeKind::Compose { .. })
                             | (&ProtermKind::ProdIntro, &ProtypeKind::Product) => {},
-                            | (&ProtermKind::Pair { .. }, _) => {
+                            (&ProtermKind::Pair { .. }, _) => {
                                 return Err(CheckError::ExpectedCompose);
                             },
-                            | _ => return Err(CheckError::ExpectedProduct),
+                            _ => return Err(CheckError::ExpectedProduct),
                         }
                         let (l, r) = term_children(term)?;
                         let (pl, pr) = type_children(ty)?;
                         pending.push(Judgment::Check(scope, r, Synthesized::Type(pr)));
                         pending.push(Judgment::Check(scope, l, Synthesized::Type(pl)));
                     },
-                    | &ProtermKind::SeamInd => {
+                    &ProtermKind::SeamInd => {
                         let (scrut, arm) = term_children(term)?;
                         pending.push(Judgment::Check(scope, arm, expected));
                         pending.push(Judgment::Seam);
                         pending.push(Judgment::Synth(scope, scrut));
                     },
-                    | &ProtermKind::Lam { ref hyp } => {
+                    &ProtermKind::Lam { ref hyp } => {
                         let ty = extension(expected)?;
                         let (dom, cod) = type_children(ty)?;
                         let child_scope = Scope::Local(BindingIndex(bindings.len()));
@@ -555,25 +553,25 @@ impl<'env> Checker<'env>
                         let body = term.children().next().ok_or(CheckError::MalformedSyntax)?;
                         pending.push(Judgment::Check(child_scope, body, Synthesized::Type(cod)));
                     },
-                    | &ProtermKind::App | &ProtermKind::ProjL | &ProtermKind::ProjR => {
+                    &ProtermKind::App | &ProtermKind::ProjL | &ProtermKind::ProjR => {
                         pending.push(Judgment::Expect(expected));
                         pending.push(Judgment::Synth(scope, term));
                     },
-                    | &ProtermKind::UnitTerm => {
+                    &ProtermKind::UnitTerm => {
                         if !matches!(expected, Synthesized::Type(ty) if matches!(ty.kind(), &ProtypeKind::Unit))
                         {
                             return Err(CheckError::ExpectedUnit);
                         }
                     },
                 },
-                | Judgment::Synth(scope, term) => match term.kind() {
-                    | &ProtermKind::Var { ref var } => {
+                Judgment::Synth(scope, term) => match term.kind() {
+                    &ProtermKind::Var { ref var } => {
                         results.push(Synthesized::Type(lookup_hyp(hyps, &bindings, scope, var)?));
                     },
-                    | &ProtermKind::Refl { ref sig, ref term } => {
+                    &ProtermKind::Refl { ref sig, ref term } => {
                         results.push(Synthesized::Refl { sig, term });
                     },
-                    | &ProtermKind::ProjL | &ProtermKind::ProjR => {
+                    &ProtermKind::ProjL | &ProtermKind::ProjR => {
                         pending.push(if matches!(term.kind(), &ProtermKind::ProjL) {
                             Judgment::Left
                         }
@@ -585,28 +583,34 @@ impl<'env> Checker<'env>
                             term.children().next().ok_or(CheckError::MalformedSyntax)?,
                         ));
                     },
-                    | &ProtermKind::App => {
+                    &ProtermKind::App => {
                         let (f, arg) = term_children(term)?;
                         pending.push(Judgment::Apply(scope, arg));
                         pending.push(Judgment::Synth(scope, f));
                     },
-                    | _ => return Err(CheckError::CannotSynthesize),
+                    &ProtermKind::PathInd { .. }
+                    | &ProtermKind::Pair { .. }
+                    | &ProtermKind::SeamInd
+                    | &ProtermKind::Lam { .. }
+                    | &ProtermKind::ProdIntro
+                    | &ProtermKind::UnitTerm
+                    | &ProtermKind::Cert { .. } => return Err(CheckError::CannotSynthesize),
                 },
-                | Judgment::Expect(expected) => {
+                Judgment::Expect(expected) => {
                     expect_equal(expected, results.pop().ok_or(CheckError::CannotSynthesize)?)?;
                 },
-                | Judgment::Path => match results.pop().ok_or(CheckError::CannotSynthesize)? {
-                    | Synthesized::Refl { .. } => {},
-                    | Synthesized::Type(ty) if matches!(ty.kind(), &ProtypeKind::Path { .. }) => {},
-                    | _ => return Err(CheckError::ExpectedPath),
+                Judgment::Path => match results.pop().ok_or(CheckError::CannotSynthesize)? {
+                    Synthesized::Refl { .. } => {},
+                    Synthesized::Type(ty) if matches!(ty.kind(), &ProtypeKind::Path { .. }) => {},
+                    Synthesized::Type(_) => return Err(CheckError::ExpectedPath),
                 },
-                | Judgment::Seam => {
+                Judgment::Seam => {
                     if !matches!(results.pop(), Some(Synthesized::Type(ty)) if matches!(ty.kind(), &ProtypeKind::Compose { .. }))
                     {
                         return Err(CheckError::NotASeam);
                     }
                 },
-                | Judgment::Left | Judgment::Right => {
+                Judgment::Left | Judgment::Right => {
                     let Some(Synthesized::Type(ty)) = results.pop()
                     else {
                         return Err(CheckError::ExpectedProduct);
@@ -622,19 +626,19 @@ impl<'env> Checker<'env>
                         right
                     }));
                 },
-                | Judgment::Apply(scope, arg) => {
+                Judgment::Apply(scope, arg) => {
                     let ty = extension(results.pop().ok_or(CheckError::CannotSynthesize)?)?;
                     let (dom, cod) = type_children(ty)?;
                     pending.push(Judgment::Finish(cod));
                     pending.push(Judgment::Check(scope, arg, Synthesized::Type(dom)));
                 },
-                | Judgment::Finish(cod) => results.push(Synthesized::Type(cod)),
+                Judgment::Finish(cod) => results.push(Synthesized::Type(cod)),
             }
         }
-        Ok(match results.pop() {
-            | Some(ty) => Maybe::Present(ty),
-            | None => Maybe::Absent(synthesis_result::Absent::Checking),
-        })
+        Ok(results.pop().map_or(
+            Maybe::Absent(synthesis_result::Absent::Checking),
+            Maybe::Present,
+        ))
     }
     /// Validate an embedded derivation for an engine-backed expected type.
     ///
@@ -706,8 +710,8 @@ impl PartialEq for Synthesized<'_>
     ) -> bool
     {
         match (*self, *other) {
-            | (Self::Type(left), Self::Type(right)) => left == right,
-            | (
+            (Self::Type(left), Self::Type(right)) => left == right,
+            (
                 Self::Refl {
                     sig: left_sig,
                     term: left,
@@ -717,7 +721,7 @@ impl PartialEq for Synthesized<'_>
                     term: right,
                 },
             ) => left_sig == right_sig && left == right,
-            | (Self::Type(node), Self::Refl { sig, term })
+            (Self::Type(node), Self::Refl { sig, term })
             | (Self::Refl { sig, term }, Self::Type(node)) => {
                 matches!(*node.kind(), ProtypeKind::Path { sig: ref expected, ref lhs, ref rhs } if sig == expected && term == lhs && term == rhs)
             },
@@ -786,12 +790,12 @@ fn term_children(node: ProtermNode<'_>) -> Result<(ProtermNode<'_>, ProtermNode<
 fn extension(ty: Synthesized<'_>) -> Result<ProtypeNode<'_>, CheckError>
 {
     match ty {
-        | Synthesized::Type(node)
+        Synthesized::Type(node)
             if matches!(node.kind(), &ProtypeKind::ExtendL | &ProtypeKind::ExtendR) =>
         {
             Ok(node)
         },
-        | _ => Err(CheckError::ExpectedExtension),
+        Synthesized::Type(_) | Synthesized::Refl { .. } => Err(CheckError::ExpectedExtension),
     }
 }
 /// Find the innermost hypothesis without copying the environment.
@@ -914,21 +918,25 @@ fn boundary(
 {
     loop {
         match node.kind() {
-            | &ProtypeKind::Path { ref sig, .. } => return Ok(sig),
-            | &ProtypeKind::Rel { ref rel, .. } => {
+            &ProtypeKind::Path { ref sig, .. } => return Ok(sig),
+            &ProtypeKind::Rel { ref rel, .. } => {
                 return Ok(match side {
-                    | Side::Source => &rel.src,
-                    | Side::Target => &rel.tgt,
+                    Side::Source => &rel.src,
+                    Side::Target => &rel.tgt,
                 });
             },
-            | &ProtypeKind::Compose { .. } => {
+            &ProtypeKind::Compose { .. } => {
                 let (left, right) = type_children(node)?;
                 node = match side {
-                    | Side::Source => left,
-                    | Side::Target => right,
+                    Side::Source => left,
+                    Side::Target => right,
                 };
             },
-            | _ => return Err(CheckError::ComposeSeamMismatch),
+            &ProtypeKind::ExtendR
+            | &ProtypeKind::ExtendL
+            | &ProtypeKind::Tabulate { .. }
+            | &ProtypeKind::Product
+            | &ProtypeKind::Unit => return Err(CheckError::ComposeSeamMismatch),
         }
     }
 }
@@ -946,23 +954,23 @@ impl core::fmt::Display for CheckError
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::UnboundVar(_) => "unbound proterm variable",
-            | Self::UnboundDerivation(_) => "unbound derivation",
-            | Self::UndeclaredTermVar(_) => "undeclared object variable",
-            | Self::UnknownRelationGenerator(_) => "unissued relation generator",
-            | Self::ReflOffDiagonal => "reflexivity does not match the path diagonal",
-            | Self::NotEngineBacked => "certificate judgment requires a path or relation",
-            | Self::CertDoesNotReplay(_) => "certificate does not replay",
-            | Self::ComposeSeamMismatch => "composition signatures do not agree at the seam",
-            | Self::Mismatch { .. } => "synthesized and expected protypes disagree",
-            | Self::ExpectedCompose => "expected a seam composite",
-            | Self::ExpectedExtension => "expected an extension",
-            | Self::ExpectedProduct => "expected a product",
-            | Self::ExpectedPath => "expected a path",
-            | Self::ExpectedUnit => "expected the unit protype",
-            | Self::NotASeam => "scrutinee is not a seam",
-            | Self::CannotSynthesize => "this proterm requires an expected protype",
-            | Self::MalformedSyntax => "syntax is missing a constructor child",
+            Self::UnboundVar(_) => "unbound proterm variable",
+            Self::UnboundDerivation(_) => "unbound derivation",
+            Self::UndeclaredTermVar(_) => "undeclared object variable",
+            Self::UnknownRelationGenerator(_) => "unissued relation generator",
+            Self::ReflOffDiagonal => "reflexivity does not match the path diagonal",
+            Self::NotEngineBacked => "certificate judgment requires a path or relation",
+            Self::CertDoesNotReplay(_) => "certificate does not replay",
+            Self::ComposeSeamMismatch => "composition signatures do not agree at the seam",
+            Self::Mismatch { .. } => "synthesized and expected protypes disagree",
+            Self::ExpectedCompose => "expected a seam composite",
+            Self::ExpectedExtension => "expected an extension",
+            Self::ExpectedProduct => "expected a product",
+            Self::ExpectedPath => "expected a path",
+            Self::ExpectedUnit => "expected the unit protype",
+            Self::NotASeam => "scrutinee is not a seam",
+            Self::CannotSynthesize => "this proterm requires an expected protype",
+            Self::MalformedSyntax => "syntax is missing a constructor child",
         })
     }
 }

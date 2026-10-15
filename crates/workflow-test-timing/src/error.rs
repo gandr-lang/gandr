@@ -128,30 +128,30 @@ impl fmt::Display for TimingError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Io {
+            Self::Io {
                 ref path,
                 ref message,
             } => write!(f, "{}: {message}", path.display()),
-            | Self::Xml {
+            Self::Xml {
                 ref path,
                 ref message,
             } => write!(f, "{}: not a JUnit report: {message}", path.display()),
-            | Self::TestCase {
+            Self::TestCase {
                 ref path,
                 ref defect,
             } => write!(f, "{}: {defect}", path.display()),
-            | Self::Config {
+            Self::Config {
                 ref path,
                 ref defect,
             } => write!(f, "{}: {defect}", path.display()),
-            | Self::Gh {
+            Self::Gh {
                 ref command,
                 ref message,
             } => write!(f, "`{command}` failed: {message}"),
-            | Self::NoRuns { ref dir } => {
+            Self::NoRuns { ref dir } => {
                 write!(f, "{}: no stored run to report on", dir.display())
             },
-            | Self::Output { ref message } => write!(f, "standard output: {message}"),
+            Self::Output { ref message } => write!(f, "standard output: {message}"),
         }
     }
 }
@@ -179,10 +179,10 @@ impl fmt::Display for TestCaseDefect
     ) -> fmt::Result
     {
         match *self {
-            | Self::MissingName => f.write_str("a testcase has no `name`"),
-            | Self::MissingBinary => f.write_str("a testcase has no `classname`"),
-            | Self::MissingTime => f.write_str("a testcase has no `time`"),
-            | Self::Time(ref text) => write!(f, "a testcase time `{text}` is not seconds"),
+            Self::MissingName => f.write_str("a testcase has no `name`"),
+            Self::MissingBinary => f.write_str("a testcase has no `classname`"),
+            Self::MissingTime => f.write_str("a testcase has no `time`"),
+            Self::Time(ref text) => write!(f, "a testcase time `{text}` is not seconds"),
         }
     }
 }
@@ -209,18 +209,16 @@ impl fmt::Display for ConfigDefect
     ) -> fmt::Result
     {
         match *self {
-            | Self::Toml(ref message) => write!(f, "not TOML: {message}"),
-            | Self::Overrides => {
-                f.write_str("`profile.default.overrides` is not an array of tables")
-            },
-            | Self::Filter => f.write_str("an override's `filter` is not a string"),
-            | Self::Term(ref term) => {
+            Self::Toml(ref message) => write!(f, "not TOML: {message}"),
+            Self::Overrides => f.write_str("`profile.default.overrides` is not an array of tables"),
+            Self::Filter => f.write_str("an override's `filter` is not a string"),
+            Self::Term(ref term) => {
                 write!(
                     f,
                     "filter term `{term}` is neither `test(=NAME)` nor `test(TEXT)`"
                 )
             },
-            | Self::Priority(ref value) => {
+            Self::Priority(ref value) => {
                 write!(f, "priority {value} is not an integer from -100 to 100")
             },
         }

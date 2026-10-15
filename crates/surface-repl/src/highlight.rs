@@ -99,8 +99,8 @@ pub fn highlight_source(
         return Vec::new();
     };
     match span_order(&spans) {
-        | SpanOrder::SortedAndDisjoint => spans,
-        | SpanOrder::Overlapping => Vec::new(),
+        SpanOrder::SortedAndDisjoint => spans,
+        SpanOrder::Overlapping => Vec::new(),
     }
 }
 

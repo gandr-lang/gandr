@@ -151,7 +151,7 @@ impl Graph
         emit(Word::from(self.nodes.len()));
         for node in &self.nodes {
             match node {
-                | &Node::Send(slot, next) | &Node::Receive(slot, next) => {
+                &Node::Send(slot, next) | &Node::Receive(slot, next) => {
                     emit(if matches!(*node, Node::Send(..)) {
                         SEND
                     }
@@ -161,7 +161,7 @@ impl Graph
                     emit(Word::from(slot.0));
                     emit(Word::from(next.0));
                 },
-                | &Node::Select(ref branches) | &Node::Offer(ref branches) => {
+                &Node::Select(ref branches) | &Node::Offer(ref branches) => {
                     emit(if matches!(*node, Node::Select(_)) {
                         SELECT
                     }
@@ -177,12 +177,12 @@ impl Graph
                         emit(Word::from(next.0));
                     }
                 },
-                | &Node::End => emit(END),
-                | &Node::Mu(body) => {
+                &Node::End => emit(END),
+                &Node::Mu(body) => {
                     emit(MU);
                     emit(Word::from(body.0));
                 },
-                | &Node::Var(binder) => {
+                &Node::Var(binder) => {
                     emit(VAR);
                     emit(Word::from(binder.0));
                 },

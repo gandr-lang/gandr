@@ -105,8 +105,8 @@ impl LevelContext
         }
         let outcome = LandmarkPoset::admit(constraints).map_err(KernelError::LevelOracleFault)?;
         match outcome {
-            | AdmissionOutcome::Admitted(poset) => Ok(Self { params, poset }),
-            | AdmissionOutcome::Loop(witness) => {
+            AdmissionOutcome::Admitted(poset) => Ok(Self { params, poset }),
+            AdmissionOutcome::Loop(witness) => {
                 Err(KernelError::InconsistentLevelConstraints(Box::new(witness)))
             },
         }
@@ -217,8 +217,8 @@ impl LevelContext
     {
         if self.poset.constraints().is_empty() {
             return match lower.lt_with_evidence(upper) {
-                | Ok(_witness) => Ok(()),
-                | Err(refutation) => Err(universe_violation(
+                Ok(_witness) => Ok(()),
+                Err(refutation) => Err(universe_violation(
                     lower,
                     upper,
                     LevelOrderRefutation::Free(refutation),
@@ -230,8 +230,8 @@ impl LevelContext
             .entails_lt_with_evidence(lower, upper)
             .map_err(KernelError::LevelOracleFault)?;
         match entailment {
-            | Entailment::Holds(_witness) => Ok(()),
-            | Entailment::Refuted(countermodel) => Err(universe_violation(
+            Entailment::Holds(_witness) => Ok(()),
+            Entailment::Refuted(countermodel) => Err(universe_violation(
                 lower,
                 upper,
                 LevelOrderRefutation::Landmark(Box::new(countermodel)),

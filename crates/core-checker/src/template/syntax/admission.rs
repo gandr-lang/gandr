@@ -79,11 +79,11 @@ impl Graph
             if !ready {
                 pending.push((id, true));
                 match ty {
-                    | Type::Arrow(domain, codomain) => {
+                    Type::Arrow(domain, codomain) => {
                         pending.extend([(codomain, false), (domain, false)]);
                     },
-                    | Type::Lift(inner) => pending.push((inner, false)),
-                    | Type::In(_) | Type::Universe(_) | Type::Nat(_) => {},
+                    Type::Lift(inner) => pending.push((inner, false)),
+                    Type::In(_) | Type::Universe(_) | Type::Nat(_) => {},
                 }
                 continue;
             }
@@ -95,16 +95,16 @@ impl Graph
                     .ok_or(StageError::Unbalanced)
             };
             let ty = match ty {
-                | Type::Arrow(domain, codomain) => {
+                Type::Arrow(domain, codomain) => {
                     let domain = at(domain)?;
                     let codomain = at(codomain)?;
                     Type::Arrow(domain, codomain)
                 },
-                | Type::Lift(inner) => {
+                Type::Lift(inner) => {
                     let inner = at(inner)?;
                     Type::Lift(inner)
                 },
-                | leaf @ (Type::In(_) | Type::Universe(_) | Type::Nat(_)) => leaf,
+                leaf @ (Type::In(_) | Type::Universe(_) | Type::Nat(_)) => leaf,
             };
             emission
                 .classifiers_at
@@ -183,14 +183,14 @@ impl Graph
                 }
                 let dummy = TermId(0);
                 let term = match node.head {
-                    | Head::Point(point) => {
+                    Head::Point(point) => {
                         emission.nodes_at.insert(id, TermId(emission.nodes.len()));
                         emission
                             .nodes
                             .push(Pattern::Point(Point(usize::from(point))));
                         continue;
                     },
-                    | Head::Predecessor => {
+                    Head::Predecessor => {
                         let child = node
                             .children
                             .0
@@ -208,23 +208,23 @@ impl Graph
                             .push(Pattern::Predecessor(Point(usize::from(point))));
                         continue;
                     },
-                    | Head::Variable(index) => Term::Variable(index),
-                    | Head::OuterNatural(value) => Term::Natural(Stage::Outer, value),
-                    | Head::InnerNatural(model, value) => Term::Natural(Stage::Inner(model), value),
-                    | Head::Code(ty) => {
+                    Head::Variable(index) => Term::Variable(index),
+                    Head::OuterNatural(value) => Term::Natural(Stage::Outer, value),
+                    Head::InnerNatural(model, value) => Term::Natural(Stage::Inner(model), value),
+                    Head::Code(ty) => {
                         let ty = self.emit_classifier(ty, &mut emission)?;
                         Term::Code(ty)
                     },
-                    | Head::Lambda(ty) => {
+                    Head::Lambda(ty) => {
                         let ty = self.emit_classifier(ty, &mut emission)?;
                         Term::Lambda(ty, dummy)
                     },
-                    | Head::Apply => Term::Apply(dummy, dummy),
-                    | Head::Multiply => Term::Multiply(dummy, dummy),
-                    | Head::Quote => Term::Quote(dummy),
-                    | Head::Splice => Term::Splice(dummy),
-                    | Head::Iterate => Term::Iterate(dummy, dummy, dummy),
-                    | Head::Eliminate(ty) => {
+                    Head::Apply => Term::Apply(dummy, dummy),
+                    Head::Multiply => Term::Multiply(dummy, dummy),
+                    Head::Quote => Term::Quote(dummy),
+                    Head::Splice => Term::Splice(dummy),
+                    Head::Iterate => Term::Iterate(dummy, dummy, dummy),
+                    Head::Eliminate(ty) => {
                         let ty = self.emit_classifier(ty, &mut emission)?;
                         Term::Eliminate(dummy, ty)
                     },

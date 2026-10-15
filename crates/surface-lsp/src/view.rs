@@ -85,8 +85,8 @@ pub fn report(
             .as_deref()
             .and_then(|code| code.parse::<DiagnosticCode>().ok());
         let message = match (registered, diagnostic.code.as_deref()) {
-            | (None, Some(identifier)) => alloc::format!("[{identifier}] {}", diagnostic.message),
-            | (Some(_) | None, _) => diagnostic.message.clone(),
+            (None, Some(identifier)) => alloc::format!("[{identifier}] {}", diagnostic.message),
+            (Some(_) | None, _) => diagnostic.message.clone(),
         };
         if diagnostic.severity == Severity::ERROR
             && let Some(range) = span

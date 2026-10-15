@@ -549,9 +549,9 @@ impl<N, T> Walk<N, T>
         let mut stances = Vec::new();
         for step in steps {
             match (swings.len() == stances.len(), step) {
-                | (true, WalkStep::Swing(swing)) => swings.push(swing),
-                | (false, WalkStep::Stance(stance)) => stances.push(stance),
-                | (true, WalkStep::Stance(_)) | (false, WalkStep::Swing(_)) => {
+                (true, WalkStep::Swing(swing)) => swings.push(swing),
+                (false, WalkStep::Stance(stance)) => stances.push(stance),
+                (true, WalkStep::Stance(_)) | (false, WalkStep::Swing(_)) => {
                     return Err(WalkBuildError::InvalidWalkShape);
                 },
             }
@@ -1160,14 +1160,14 @@ impl Display for WalkBuildError
     ) -> FmtResult
     {
         match *self {
-            | Self::EmptySwing => f.write_str("walk swing is empty"),
-            | Self::InvalidWalkShape => f.write_str("walk shape is invalid"),
-            | Self::ZeroMaxChainLen => f.write_str("walk maximum chain length is zero"),
-            | Self::UselessArc => f.write_str("walk swing arc neither emits nor continues"),
-            | Self::ChainLengthExceeded { max, actual } => {
+            Self::EmptySwing => f.write_str("walk swing is empty"),
+            Self::InvalidWalkShape => f.write_str("walk shape is invalid"),
+            Self::ZeroMaxChainLen => f.write_str("walk maximum chain length is zero"),
+            Self::UselessArc => f.write_str("walk swing arc neither emits nor continues"),
+            Self::ChainLengthExceeded { max, actual } => {
                 write!(f, "walk chain length {actual} exceeds maximum {max}")
             },
-            | Self::ArithmeticOverflow => f.write_str("walk arithmetic overflow"),
+            Self::ArithmeticOverflow => f.write_str("walk arithmetic overflow"),
         }
     }
 }
@@ -1990,14 +1990,14 @@ where
     for (&(dir, ref src, ref dst), walks) in direct_rows {
         for walk in walks {
             let keep = match kind {
-                | QueryKind::Eq => dir == Dir::Left && bool::from(walk.is_eq()?),
-                | QueryKind::Lt => dir == Dir::Left && bool::from(walk.is_neq()?),
-                | QueryKind::Gt => dir == Dir::Right && bool::from(walk.is_neq()?),
+                QueryKind::Eq => dir == Dir::Left && bool::from(walk.is_eq()?),
+                QueryKind::Lt => dir == Dir::Left && bool::from(walk.is_neq()?),
+                QueryKind::Gt => dir == Dir::Right && bool::from(walk.is_neq()?),
             };
             if keep {
                 let key = match kind {
-                    | QueryKind::Gt => (dst.clone(), src.clone()),
-                    | QueryKind::Eq | QueryKind::Lt => (src.clone(), dst.clone()),
+                    QueryKind::Gt => (dst.clone(), src.clone()),
+                    QueryKind::Eq | QueryKind::Lt => (src.clone(), dst.clone()),
                 };
                 rows.entry(key).or_default().push(walk.clone());
             }
@@ -2060,8 +2060,8 @@ impl<N: Clone, T: Clone> PartialWalk<N, T>
     {
         let mut next = self.clone();
         match *advance {
-            | SwingAdvance::Stay => {},
-            | SwingAdvance::Extend(ref nonterminal) => {
+            SwingAdvance::Stay => {},
+            SwingAdvance::Extend(ref nonterminal) => {
                 let last = next
                     .swings
                     .last_mut()
@@ -2069,7 +2069,7 @@ impl<N: Clone, T: Clone> PartialWalk<N, T>
                 last.nonterminals.push(nonterminal.clone());
                 next.current = nonterminal.clone();
             },
-            | SwingAdvance::Cross {
+            SwingAdvance::Cross {
                 ref stance,
                 next: ref nonterminal,
             } => {
@@ -2123,11 +2123,11 @@ where
     S: WalkSym,
 {
     match mode {
-        | SwingKeyMode::SortBounds => SeenKey::SortBounds(
+        SwingKeyMode::SortBounds => SeenKey::SortBounds(
             S::nonterminal_sort(nonterminal),
             S::nonterminal_bounds(nonterminal),
         ),
-        | SwingKeyMode::SortOnly => SeenKey::SortOnly(S::nonterminal_sort(nonterminal)),
+        SwingKeyMode::SortOnly => SeenKey::SortOnly(S::nonterminal_sort(nonterminal)),
     }
 }
 
@@ -2326,8 +2326,8 @@ where
     hash.write_u32(u32::try_from(rows.len())?);
     for (&(dir, ref src, ref dst), walks) in rows {
         hash.write_byte(match dir {
-            | Dir::Left => b'L',
-            | Dir::Right => b'R',
+            Dir::Left => b'L',
+            Dir::Right => b'R',
         });
         hash_end::<S>(hash, src);
         hash_end::<S>(hash, dst);
@@ -2365,8 +2365,8 @@ fn hash_end<S>(
     S: WalkSym,
 {
     match *end {
-        | End::Root => hash.write_byte(0_u8),
-        | End::Node(ref stance) => {
+        End::Root => hash.write_byte(0_u8),
+        End::Node(ref stance) => {
             hash.write_byte(1_u8);
             hash.write_u64(S::stance_key(stance));
         },

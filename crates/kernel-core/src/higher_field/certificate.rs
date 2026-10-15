@@ -423,7 +423,9 @@ fn reduce(
         budget,
     );
     match verdict {
-        | KernelVerdict::Convertible => Ok(()),
-        | verdict => Err(HigherError::Replay(verdict)),
+        KernelVerdict::Convertible => Ok(()),
+        verdict @ (KernelVerdict::NotConvertible | KernelVerdict::Declined(_)) => {
+            Err(HigherError::Replay(verdict))
+        },
     }
 }

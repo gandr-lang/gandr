@@ -260,32 +260,32 @@ pub fn lower(statements: &[Stmt]) -> Program
                 .map_or(unbound, |&position| ConstantIndex::from(position))
         };
         let signature = match statement.ascription {
-            | None => Maybe::Absent(signature::Absent::Unsigned),
-            | Some(Ascription::Integer) => Maybe::Present(arena.value_type_base(BaseType::Integer)),
-            | Some(Ascription::Text) => Maybe::Present(arena.value_type_base(BaseType::String)),
-            | Some(Ascription::ReturnsInteger) => {
+            None => Maybe::Absent(signature::Absent::Unsigned),
+            Some(Ascription::Integer) => Maybe::Present(arena.value_type_base(BaseType::Integer)),
+            Some(Ascription::Text) => Maybe::Present(arena.value_type_base(BaseType::String)),
+            Some(Ascription::ReturnsInteger) => {
                 let integer_type = arena.value_type_base(BaseType::Integer);
                 let returner = arena.comp_type_returner(integer_type);
                 Maybe::Present(arena.value_type_thunk(returner))
             },
-            | Some(Ascription::CodeOf(ref name)) => {
+            Some(Ascription::CodeOf(ref name)) => {
                 let code = arena.value_constant(resolve(name));
                 Maybe::Present(arena.value_type_element(code, Level::zero()))
             },
         };
         let body = match statement.body {
-            | Body::Int(value) => Maybe::Present(arena.value_literal(integer(Natural(value)))),
-            | Body::Str(ref content) => Maybe::Present(
+            Body::Int(value) => Maybe::Present(arena.value_literal(integer(Natural(value)))),
+            Body::Str(ref content) => Maybe::Present(
                 arena.value_literal(Literal::Text(StringLiteral::new(content.clone()))),
             ),
-            | Body::Ref(ref name) => Maybe::Present(arena.value_constant(resolve(name))),
-            | Body::Thunk(value) => {
+            Body::Ref(ref name) => Maybe::Present(arena.value_constant(resolve(name))),
+            Body::Thunk(value) => {
                 let literal = arena.value_literal(integer(Natural(value)));
                 let returned = arena.computation_return(literal);
                 Maybe::Present(arena.value_thunk(returned))
             },
-            | Body::Hole => Maybe::Absent(body::Absent::Hole),
-            | Body::TermHole => Maybe::Present(arena.value_hole(HoleId::from(
+            Body::Hole => Maybe::Absent(body::Absent::Hole),
+            Body::TermHole => Maybe::Present(arena.value_hole(HoleId::from(
                 u32::try_from(position).expect("a fixture position fits a hole name"),
             ))),
         };
@@ -568,8 +568,8 @@ pub fn gate(
 ) -> Step
 {
     match step(checked(base), &mut lower(edited)) {
-        | Ok(step) => step,
-        | Err(error) => panic!("the differential step must hold: {error}"),
+        Ok(step) => step,
+        Err(error) => panic!("the differential step must hold: {error}"),
     }
 }
 

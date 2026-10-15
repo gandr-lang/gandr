@@ -239,10 +239,15 @@ pub fn codes(
     };
     let codomain = context.whnf_comp_type(codomain)?;
     match comp_type_view(context.arena(), codomain)? {
-        | CompTypeView::Returner { result, effects } if effects.purity() == Purity::Pure => {
+        CompTypeView::Returner { result, effects } if effects.purity() == Purity::Pure => {
             Ok((domain, result))
         },
-        | _ => Err(unsupported),
+        CompTypeView::With(..)
+        | CompTypeView::Returner { .. }
+        | CompTypeView::Arrow { .. }
+        | CompTypeView::Pi { .. }
+        | CompTypeView::Element { .. }
+        | CompTypeView::Unknown => Err(unsupported),
     }
 }
 
@@ -445,17 +450,17 @@ pub fn coverage(
         };
         allowance = left;
         match task {
-            | Task::Cover(ty) => {
+            Task::Cover(ty) => {
                 let head = context.whnf_value_type(ty)?;
                 match value_type_view(context.arena(), head)? {
-                    | ValueTypeView::Unit => {
+                    ValueTypeView::Unit => {
                         let unit = context.arena_mut().value_tuple(&[]);
                         built.push(Vec::from([Pattern {
                             binders: 0,
                             value: unit,
                         }]));
                     },
-                    | ValueTypeView::Integer | ValueTypeView::String => {
+                    ValueTypeView::Integer | ValueTypeView::String => {
                         let leaf = context
                             .arena_mut()
                             .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -464,21 +469,40 @@ pub fn coverage(
                             value: leaf,
                         }]));
                     },
-                    | ValueTypeView::Sum(parts) if !parts.is_empty() => {
+                    ValueTypeView::Sum(parts) if !parts.is_empty() => {
                         tasks.push(Task::Sum(parts.len()));
                         tasks.extend(parts.iter().rev().copied().map(Task::Cover));
                     },
-                    | ValueTypeView::Product(parts) => {
+                    ValueTypeView::Product(parts) => {
                         tasks.push(Task::Product(parts.len()));
                         tasks.extend(parts.iter().rev().copied().map(Task::Cover));
                     },
-                    | ValueTypeView::List(_) => {
+                    ValueTypeView::List(_) => {
                         return Err(CheckRefusal::UncertifiedStratum { at, code: head });
                     },
-                    | _ => return Ok(Maybe::Absent(uncovered::Absent::Former)),
+                    ValueTypeView::Data { .. }
+                    | ValueTypeView::Record(_)
+                    | ValueTypeView::Stack { .. }
+                    | ValueTypeView::PathUniverse(..)
+                    | ValueTypeView::Path { .. }
+                    | ValueTypeView::Flow { .. }
+                    | ValueTypeView::Run(_)
+                    | ValueTypeView::Sum(_)
+                    | ValueTypeView::Thunk(_)
+                    | ValueTypeView::Universe { .. }
+                    | ValueTypeView::Lift { .. }
+                    | ValueTypeView::Element { .. }
+                    | ValueTypeView::StaticPi { .. }
+                    | ValueTypeView::Sigma { .. }
+                    | ValueTypeView::Abstract(_)
+                    | ValueTypeView::Capability { .. }
+                    | ValueTypeView::Session(_)
+                    | ValueTypeView::Unknown => {
+                        return Ok(Maybe::Absent(uncovered::Absent::Former));
+                    },
                 }
             },
-            | Task::Sum(arity) => {
+            Task::Sum(arity) => {
                 let start = built
                     .len()
                     .checked_sub(arity)
@@ -502,7 +526,7 @@ pub fn coverage(
             // Each step crosses the tuples so far with the next component's
             // patterns; the earlier components' variables shift past the new
             // component's, so every variable stays distinct.
-            | Task::Product(arity) => {
+            Task::Product(arity) => {
                 let start = built
                     .len()
                     .checked_sub(arity)
@@ -549,8 +573,8 @@ pub fn coverage(
         }
     }
     match (built.pop(), built.is_empty()) {
-        | (Some(patterns), true) => Ok(Maybe::Present(patterns)),
-        | _ => Err(CheckRefusal::MachineInvariant),
+        (Some(patterns), true) => Ok(Maybe::Present(patterns)),
+        _ => Err(CheckRefusal::MachineInvariant),
     }
 }
 

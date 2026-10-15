@@ -129,12 +129,12 @@ impl Kind
     pub(super) fn label(self) -> Label
     {
         Label(match self {
-            | Self::Channel => "channel",
-            | Self::Rtrb(Wake::Busy) => "rtrb-busy",
-            | Self::Rtrb(Wake::Park) => "rtrb-park",
-            | Self::Ringbuf(Wake::Busy) => "ringbuf-busy",
-            | Self::Ringbuf(Wake::Park) => "ringbuf-park",
-            | Self::Steal => "steal",
+            Self::Channel => "channel",
+            Self::Rtrb(Wake::Busy) => "rtrb-busy",
+            Self::Rtrb(Wake::Park) => "rtrb-park",
+            Self::Ringbuf(Wake::Busy) => "ringbuf-busy",
+            Self::Ringbuf(Wake::Park) => "ringbuf-park",
+            Self::Steal => "steal",
         })
     }
 }
@@ -159,8 +159,8 @@ impl Publication
     pub(super) fn label(self) -> Label
     {
         Label(match self {
-            | Self::Each => "each",
-            | Self::Batch => "batch",
+            Self::Each => "each",
+            Self::Batch => "batch",
         })
     }
 }
@@ -184,8 +184,8 @@ impl Share
     pub(super) fn label(self) -> Label
     {
         Label(match self {
-            | Self::Spin => "spin",
-            | Self::Work => "work",
+            Self::Spin => "spin",
+            Self::Work => "work",
         })
     }
 }
@@ -245,7 +245,7 @@ where
         let mut remaining = items;
         while !remaining.is_empty() {
             let count = match *self {
-                | Self::Channel(ref sender) => {
+                Self::Channel(ref sender) => {
                     for item in remaining {
                         sender
                             .send(*item)
@@ -253,28 +253,28 @@ where
                     }
                     remaining.len()
                 },
-                | Self::Rtrb(ref mut sender) if publication == Publication::Batch => {
+                Self::Rtrb(ref mut sender) if publication == Publication::Batch => {
                     // This safe chunks API reserves, fills and commits one chunk.
                     match sender.push_entire_slice(remaining) {
-                        | Ok(()) => remaining.len(),
-                        | Err(rtrb::chunks::ChunkError::TooFewSlots(_)) => 0,
+                        Ok(()) => remaining.len(),
+                        Err(rtrb::chunks::ChunkError::TooFewSlots(_)) => 0,
                     }
                 },
-                | Self::Ringbuf(ref mut sender) if publication == Publication::Batch => {
+                Self::Ringbuf(ref mut sender) if publication == Publication::Batch => {
                     sender.push_slice(remaining)
                 },
-                | Self::Rtrb(ref mut sender) => {
+                Self::Rtrb(ref mut sender) => {
                     let item = remaining.first().ok_or(io::ErrorKind::InvalidData)?;
                     match sender.push(*item) {
-                        | Ok(()) => 1,
-                        | Err(rtrb::PushError::Full(_)) => 0,
+                        Ok(()) => 1,
+                        Err(rtrb::PushError::Full(_)) => 0,
                     }
                 },
-                | Self::Ringbuf(ref mut sender) => {
+                Self::Ringbuf(ref mut sender) => {
                     let item = remaining.first().ok_or(io::ErrorKind::InvalidData)?;
                     match sender.try_push(*item) {
-                        | Ok(()) => 1,
-                        | Err(_) => 0,
+                        Ok(()) => 1,
+                        Err(_) => 0,
                     }
                 },
             };
@@ -335,31 +335,28 @@ where
     {
         if publication == Publication::Batch {
             match *self {
-                | Self::Rtrb(ref mut receiver) => {
+                Self::Rtrb(ref mut receiver) => {
                     return Ok(Natural(receiver.pop_partial_slice(output).0.len()));
                 },
-                | Self::Ringbuf(ref mut receiver) => {
+                Self::Ringbuf(ref mut receiver) => {
                     return Ok(Natural(receiver.pop_slice(output)));
                 },
-                | _ => {},
+                Self::Channel(_) | Self::Steal { .. } => {},
             }
         }
         let mut count = 0_usize;
         for slot in output.iter_mut() {
             let item = match *self {
-                | Self::Channel(ref receiver) => match receiver.try_recv() {
-                    | Ok(item) => Some(item),
-                    | Err(crossbeam_channel::TryRecvError::Empty) => None,
-                    | Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                Self::Channel(ref receiver) => match receiver.try_recv() {
+                    Ok(item) => Some(item),
+                    Err(crossbeam_channel::TryRecvError::Empty) => None,
+                    Err(crossbeam_channel::TryRecvError::Disconnected) => {
                         return Err(io::ErrorKind::BrokenPipe.into());
                     },
                 },
-                | Self::Rtrb(ref mut receiver) => match receiver.pop() {
-                    | Ok(item) => Some(item),
-                    | Err(rtrb::PopError::Empty) => None,
-                },
-                | Self::Ringbuf(ref mut receiver) => receiver.try_pop(),
-                | Self::Steal {
+                Self::Rtrb(ref mut receiver) => receiver.pop().ok(),
+                Self::Ringbuf(ref mut receiver) => receiver.try_pop(),
+                Self::Steal {
                     ref local,
                     ref injector,
                     ref peers,
@@ -438,15 +435,15 @@ where
 fn pair<T>(kind: Kind) -> (Send<T>, Receive<T>)
 {
     match kind {
-        | Kind::Rtrb(_) => {
+        Kind::Rtrb(_) => {
             let (sender, receiver) = rtrb::RingBuffer::new(CAPACITY);
             (Send::Rtrb(sender), Receive::Rtrb(receiver))
         },
-        | Kind::Ringbuf(_) => {
+        Kind::Ringbuf(_) => {
             let (sender, receiver) = ringbuf::HeapRb::new(CAPACITY).split();
             (Send::Ringbuf(sender), Receive::Ringbuf(receiver))
         },
-        | Kind::Channel | Kind::Steal => {
+        Kind::Channel | Kind::Steal => {
             let (sender, receiver) = crossbeam_channel::bounded(CAPACITY);
             (Send::Channel(sender), Receive::Channel(receiver))
         },
@@ -554,8 +551,8 @@ impl Pool<'_>
     ) -> io::Result<()>
     {
         let (remote, local) = match (self.wire.share, wave.shards.split_last()) {
-            | (Share::Work, Some((local, remote))) => (remote, local.as_slice()),
-            | (Share::Work | Share::Spin, _) => (wave.shards.as_slice(), [].as_slice()),
+            (Share::Work, Some((local, remote))) => (remote, local.as_slice()),
+            (Share::Work | Share::Spin, _) => (wave.shards.as_slice(), [].as_slice()),
         };
         if self.wire.kind == Kind::Steal {
             for shard in remote {
@@ -676,8 +673,8 @@ where
     let scratch = Scratch::new(workload, mode).map_err(io::Error::other)?;
     thread::scope(|scope| {
         let wake = match wire.kind {
-            | Kind::Rtrb(wake) | Kind::Ringbuf(wake) => wake,
-            | _ => Wake::Park,
+            Kind::Rtrb(wake) | Kind::Ringbuf(wake) => wake,
+            Kind::Channel | Kind::Steal => Wake::Park,
         };
         let injector = Arc::new(crossbeam_deque::Injector::new());
         let locals: Vec<_> = core::iter::repeat_with(crossbeam_deque::Worker::new_fifo)
@@ -710,11 +707,11 @@ where
         let mut handles = Vec::new();
         for local in locals {
             let (input, output) = match wire.kind {
-                | Kind::Channel => (
+                Kind::Channel => (
                     Receive::Channel(shared_input.clone()),
                     Send::Channel(shared_output.clone()),
                 ),
-                | Kind::Steal => (
+                Kind::Steal => (
                     Receive::Steal {
                         local,
                         injector: Arc::clone(&injector),
@@ -722,7 +719,7 @@ where
                     },
                     Send::Channel(shared_output.clone()),
                 ),
-                | Kind::Rtrb(_) | Kind::Ringbuf(_) => {
+                Kind::Rtrb(_) | Kind::Ringbuf(_) => {
                     let (sender, receiver) = pair(wire.kind);
                     pool.jobs.push(sender);
                     let (output, results) = pair(wire.kind);

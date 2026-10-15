@@ -184,7 +184,7 @@ impl fmt::Display for CellInstantiationError
     ) -> fmt::Result
     {
         match *self {
-            | Self::UnknownCell { cell } => write!(
+            Self::UnknownCell { cell } => write!(
                 f,
                 "cell {} is not present in the supplied store",
                 usize::from(cell)
@@ -623,11 +623,11 @@ where
     let first = application(first, bindings)?;
     let second = application(second, bindings)?;
     let (witness, grant) = match derive_shift_equivalence(store, peak, &first, &second) {
-        | Ok(witness) => (witness, ConvexityGrant::Discharged),
+        Ok(witness) => (witness, ConvexityGrant::Discharged),
         // The guard decides its conjuncts in order, so a withheld discharge
         // means the cells resolved, the positions are incomparable and the
         // cells do not overlap: exactly the pair the supply point is owed.
-        | Err(ShiftObstruction::ConvexityNotDischarged) => {
+        Err(ShiftObstruction::ConvexityNotDischarged) => {
             let warrant = convexity
                 .recheck(store, peak, &first, &second)
                 .map_err(CircuitShiftObstruction::NotConvex)?;
@@ -642,7 +642,7 @@ where
             };
             (witness, ConvexityGrant::Rechecked(warrant))
         },
-        | Err(obstruction) => return Err(CircuitShiftObstruction::Refused(Box::new(obstruction))),
+        Err(obstruction) => return Err(CircuitShiftObstruction::Refused(Box::new(obstruction))),
     };
     if !bool::from(witness.replay(store)) {
         return Err(CircuitShiftObstruction::CompositeDoesNotReplay {
@@ -908,8 +908,8 @@ where
         return Err(ShiftObstruction::UnknownCell { cell: step.cell });
     };
     match rewrite_at(cell, term, &step.at) {
-        | Maybe::Present(result) => Ok(result),
-        | Maybe::Absent(_) => Err(ShiftObstruction::StepDoesNotFire {
+        Maybe::Present(result) => Ok(result),
+        Maybe::Absent(_) => Err(ShiftObstruction::StepDoesNotFire {
             step: Box::new(step.clone()),
         }),
     }

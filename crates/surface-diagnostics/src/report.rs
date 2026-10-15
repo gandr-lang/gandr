@@ -257,12 +257,12 @@ impl fmt::Display for Class
     ) -> fmt::Result
     {
         match *self {
-            | Self::Refusal(class) => fmt::Display::fmt(&class, f),
-            | Self::Unsettled(unsettlement) => fmt::Display::fmt(&unsettlement, f),
-            | Self::Goal => f.write_str("goal"),
-            | Self::Warning => f.write_str("warning"),
-            | Self::Lint(lint) => write!(f, "lint {lint}"),
-            | Self::Ledger => f.write_str("ledger"),
+            Self::Refusal(class) => fmt::Display::fmt(&class, f),
+            Self::Unsettled(unsettlement) => fmt::Display::fmt(&unsettlement, f),
+            Self::Goal => f.write_str("goal"),
+            Self::Warning => f.write_str("warning"),
+            Self::Lint(lint) => write!(f, "lint {lint}"),
+            Self::Ledger => f.write_str("ledger"),
         }
     }
 }
@@ -308,11 +308,11 @@ impl fmt::Display for Unsettlement
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Obligations => "surviving obligations",
-            | Self::Unproduced => "unproduced refusal",
-            | Self::RunOutcome => "another run outcome",
-            | Self::NormalForm => "another normal form",
-            | Self::Malformed => "malformed expectation",
+            Self::Obligations => "surviving obligations",
+            Self::Unproduced => "unproduced refusal",
+            Self::RunOutcome => "another run outcome",
+            Self::NormalForm => "another normal form",
+            Self::Malformed => "malformed expectation",
         })
     }
 }
@@ -438,8 +438,8 @@ impl Report<'_>
     {
         let annotations = self.annotations();
         let span = match annotations.primary {
-            | Maybe::Present(primary) => Maybe::Present(primary.span),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present(primary) => Maybe::Present(primary.span),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         };
         let mut marked: Vec<DiagnosticAnnotation> = Vec::new();
         if let Maybe::Present(primary) = annotations.primary
@@ -466,13 +466,13 @@ impl Report<'_>
             }
         }
         let (contexts, hypotheses) = match self.subject {
-            | Subject::Refused {
+            Subject::Refused {
                 origins,
                 spellings,
                 failure: Maybe::Present(failure),
                 ..
             } => contexts(failure, origins, spellings, self.text, span),
-            | Subject::Refused { .. }
+            Subject::Refused { .. }
             | Subject::Unsettled { .. }
             | Subject::Goal(_)
             | Subject::Source(_)
@@ -482,45 +482,45 @@ impl Report<'_>
             | Subject::Ledger { .. } => (Vec::new(), Vec::new()),
         };
         let expression = match span {
-            | Maybe::Present(span) => match self.text.fragment(span) {
-                | Ok(fragment) if !fragment.as_ref().contains('\n') => {
+            Maybe::Present(span) => match self.text.fragment(span) {
+                Ok(fragment) if !fragment.as_ref().contains('\n') => {
                     Maybe::Present(String::from(fragment.as_ref()))
                 },
-                | Ok(_) | Err(_) => Maybe::Absent(expression::Absent::Multiline),
+                Ok(_) | Err(_) => Maybe::Absent(expression::Absent::Multiline),
             },
-            | Maybe::Absent(_) => Maybe::Absent(expression::Absent::Unlocated),
+            Maybe::Absent(_) => Maybe::Absent(expression::Absent::Unlocated),
         };
         let covered = marked.iter().map(|annotation| annotation.locus.span).chain(
             contexts.iter().filter_map(|context| match context.locus {
-                | Maybe::Present(locus) => Some(locus.span),
-                | Maybe::Absent(_) => None,
+                Maybe::Present(locus) => Some(locus.span),
+                Maybe::Absent(_) => None,
             }),
         );
         let excerpt = match excerpt(self.text, covered) {
-            | Maybe::Present(excerpt) => Maybe::Present(excerpt),
-            | Maybe::Absent(()) => Maybe::Absent(match span {
-                | Maybe::Absent(reason) => reason,
-                | Maybe::Present(_) => report_span::Absent::OutsideText,
+            Maybe::Present(excerpt) => Maybe::Present(excerpt),
+            Maybe::Absent(()) => Maybe::Absent(match span {
+                Maybe::Absent(reason) => reason,
+                Maybe::Present(_) => report_span::Absent::OutsideText,
             }),
         };
         let comparison = self.comparison();
         let owned = |side: Maybe<&str, crate::spelled::spelling::Absent>| match side {
-            | Maybe::Present(spelled) => Maybe::Present(String::from(spelled)),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present(spelled) => Maybe::Present(String::from(spelled)),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         };
         Diagnostic {
             path: self.path.to_path_buf(),
             severity: match self.subject {
-                | Subject::Goal(_) => Severity::Goal,
-                | Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) => {
+                Subject::Goal(_) => Severity::Goal,
+                Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) => {
                     Severity::Warning
                 },
-                | Subject::Ledger { .. } => Severity::Ledger,
-                | Subject::Refused {
+                Subject::Ledger { .. } => Severity::Ledger,
+                Subject::Refused {
                     upstream: Maybe::Present(_),
                     ..
                 } => Severity::Note,
-                | Subject::Refused { .. } | Subject::Unsettled { .. } | Subject::Source(_) => {
+                Subject::Refused { .. } | Subject::Unsettled { .. } | Subject::Source(_) => {
                     Severity::Error
                 },
             },
@@ -537,14 +537,14 @@ impl Report<'_>
                     found: owned(comparison.found),
                 },
                 producer: match self.subject {
-                    | Subject::Refused {
+                    Subject::Refused {
                         refusal, failure, ..
                     } => Maybe::Present(match failure {
-                        | Maybe::Present(failure) => alloc::format!("{refusal:?}; {failure:?}"),
-                        | Maybe::Absent(_) => alloc::format!("{refusal:?}"),
+                        Maybe::Present(failure) => alloc::format!("{refusal:?}; {failure:?}"),
+                        Maybe::Absent(_) => alloc::format!("{refusal:?}"),
                     }),
-                    | Subject::Source(refusal) => Maybe::Present(alloc::format!("{refusal:?}")),
-                    | Subject::Unsettled { .. }
+                    Subject::Source(refusal) => Maybe::Present(alloc::format!("{refusal:?}")),
+                    Subject::Unsettled { .. }
                     | Subject::Goal(_)
                     | Subject::Shadowed(_)
                     | Subject::InferredExit(_)
@@ -557,7 +557,7 @@ impl Report<'_>
             contexts,
             hypotheses,
             note: match self.subject {
-                | Subject::Refused {
+                Subject::Refused {
                     declaration,
                     upstream: Maybe::Present(upstream),
                     ..
@@ -565,65 +565,65 @@ impl Report<'_>
                     declaration,
                     upstream,
                 })),
-                | Subject::Refused { declaration, .. } => {
+                Subject::Refused { declaration, .. } => {
                     Maybe::Present(alloc::format!("{}", NoteText(declaration)))
                 },
-                | Subject::Unsettled { .. }
+                Subject::Unsettled { .. }
                 | Subject::Goal(_)
                 | Subject::Source(_)
                 | Subject::Ledger { .. } => Maybe::Absent(report_note::Absent::Statement),
-                | Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) => {
+                Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) => {
                     Maybe::Absent(report_note::Absent::Warning)
                 },
             },
             expression,
             excerpt,
             fix: match self.subject {
-                | Subject::InferredExit(inferred) => {
+                Subject::InferredExit(inferred) => {
                     match ByteSpan::new(inferred.span.start(), inferred.span.start()) {
-                        | Ok(span) if self.text.fragment(span).is_ok() => Maybe::Present(Fix {
+                        Ok(span) if self.text.fragment(span).is_ok() => Maybe::Present(Fix {
                             span,
                             replacement: alloc::format!("{} ", inferred.exit),
                         }),
-                        | Ok(_) | Err(_) => Maybe::Absent(fix::Absent::Unproposed),
+                        Ok(_) | Err(_) => Maybe::Absent(fix::Absent::Unproposed),
                     }
                 },
-                | Subject::InferredRun(inferred) => {
+                Subject::InferredRun(inferred) => {
                     match (inferred.site.spelling, inferred.site.operand) {
-                        | (RunSpelling::Bare, RunOperand::Tight) => {
+                        (RunSpelling::Bare, RunOperand::Tight) => {
                             match ByteSpan::new(inferred.span.start(), inferred.span.start()) {
-                                | Ok(span) if self.text.fragment(span).is_ok() => {
+                                Ok(span) if self.text.fragment(span).is_ok() => {
                                     Maybe::Present(Fix {
                                         span,
                                         replacement: String::from("run "),
                                     })
                                 },
-                                | Ok(_) | Err(_) => Maybe::Absent(fix::Absent::Unproposed),
+                                Ok(_) | Err(_) => Maybe::Absent(fix::Absent::Unproposed),
                             }
                         },
-                        | (spelling, operand) => match self.text.fragment(inferred.span) {
-                            | Ok(written) => {
+                        (spelling, operand) => self.text.fragment(inferred.span).map_or(
+                            Maybe::Absent(fix::Absent::Unproposed),
+                            |written| {
                                 let run = match operand {
-                                    | RunOperand::Tight => {
+                                    RunOperand::Tight => {
                                         alloc::format!("run {}", written.as_ref())
                                     },
-                                    | RunOperand::Grouped => {
+                                    RunOperand::Grouped => {
                                         alloc::format!("run ({})", written.as_ref())
                                     },
                                 };
                                 Maybe::Present(Fix {
                                     span: inferred.span,
                                     replacement: match spelling {
-                                        | RunSpelling::Bare => run,
-                                        | RunSpelling::Parenthesised => alloc::format!("({run})"),
+                                        RunSpelling::Bare => run,
+                                        RunSpelling::Parenthesised => alloc::format!("({run})"),
                                     },
                                 })
                             },
-                            | Err(_) => Maybe::Absent(fix::Absent::Unproposed),
-                        },
+                        ),
                     }
                 },
-                | Subject::Refused { .. }
+                Subject::Refused { .. }
                 | Subject::Unsettled { .. }
                 | Subject::Goal(_)
                 | Subject::Source(_)
@@ -670,14 +670,14 @@ impl Report<'_>
     fn class(&self) -> Class
     {
         match self.subject {
-            | Subject::Refused { refusal, .. } => Class::Refusal(refusal.classify()),
-            | Subject::Unsettled { unsettlement, .. } => Class::Unsettled(unsettlement),
-            | Subject::Goal(_) => Class::Goal,
-            | Subject::Source(refusal) => Class::Refusal(refusal.classify()),
-            | Subject::Shadowed(_) => Class::Warning,
-            | Subject::InferredExit(_) => Class::Lint(Lint::ExplicitExits),
-            | Subject::InferredRun(_) => Class::Lint(Lint::ExplicitRuns),
-            | Subject::Ledger { .. } => Class::Ledger,
+            Subject::Refused { refusal, .. } => Class::Refusal(refusal.classify()),
+            Subject::Unsettled { unsettlement, .. } => Class::Unsettled(unsettlement),
+            Subject::Goal(_) => Class::Goal,
+            Subject::Source(refusal) => Class::Refusal(refusal.classify()),
+            Subject::Shadowed(_) => Class::Warning,
+            Subject::InferredExit(_) => Class::Lint(Lint::ExplicitExits),
+            Subject::InferredRun(_) => Class::Lint(Lint::ExplicitRuns),
+            Subject::Ledger { .. } => Class::Ledger,
         }
     }
 
@@ -688,14 +688,14 @@ impl Report<'_>
     fn key(&self) -> MessageKey
     {
         match self.subject {
-            | Subject::Refused { refusal, .. } => MessageKey::Refusal(refusal.name()),
-            | Subject::Source(refusal) => MessageKey::Refusal(Refusal::Lowering(refusal).name()),
-            | Subject::Shadowed(_) => MessageKey::Refusal(RefusalName::ShadowedBuiltin),
-            | Subject::InferredExit(_) => MessageKey::Lint(Lint::ExplicitExits),
-            | Subject::InferredRun(_) => MessageKey::Lint(Lint::ExplicitRuns),
-            | Subject::Unsettled { unsettlement, .. } => MessageKey::Unsettled(unsettlement),
-            | Subject::Goal(_) => MessageKey::Goal,
-            | Subject::Ledger { .. } => MessageKey::Ledger,
+            Subject::Refused { refusal, .. } => MessageKey::Refusal(refusal.name()),
+            Subject::Source(refusal) => MessageKey::Refusal(Refusal::Lowering(refusal).name()),
+            Subject::Shadowed(_) => MessageKey::Refusal(RefusalName::ShadowedBuiltin),
+            Subject::InferredExit(_) => MessageKey::Lint(Lint::ExplicitExits),
+            Subject::InferredRun(_) => MessageKey::Lint(Lint::ExplicitRuns),
+            Subject::Unsettled { unsettlement, .. } => MessageKey::Unsettled(unsettlement),
+            Subject::Goal(_) => MessageKey::Goal,
+            Subject::Ledger { .. } => MessageKey::Ledger,
         }
     }
 
@@ -731,18 +731,18 @@ impl Report<'_>
     fn identifier(&self) -> Maybe<Identifier, report_identifier::Absent>
     {
         match self.subject {
-            | Subject::Refused { refusal, .. } => {
+            Subject::Refused { refusal, .. } => {
                 Maybe::Present(Identifier::Refusal(refusal.name().spelling()))
             },
-            | Subject::Source(refusal) => Maybe::Present(Identifier::Refusal(
+            Subject::Source(refusal) => Maybe::Present(Identifier::Refusal(
                 Refusal::Lowering(refusal).name().spelling(),
             )),
-            | Subject::Shadowed(_) => {
+            Subject::Shadowed(_) => {
                 Maybe::Present(Identifier::Refusal(RefusalName::ShadowedBuiltin.spelling()))
             },
-            | Subject::InferredExit(_) => Maybe::Present(Identifier::Lint(Lint::ExplicitExits)),
-            | Subject::InferredRun(_) => Maybe::Present(Identifier::Lint(Lint::ExplicitRuns)),
-            | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. } => {
+            Subject::InferredExit(_) => Maybe::Present(Identifier::Lint(Lint::ExplicitExits)),
+            Subject::InferredRun(_) => Maybe::Present(Identifier::Lint(Lint::ExplicitRuns)),
+            Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. } => {
                 Maybe::Absent(report_identifier::Absent::Statement)
             },
         }
@@ -769,10 +769,10 @@ impl Report<'_>
     fn comparison(&self) -> Comparison<'_>
     {
         match self.subject {
-            | Subject::Refused {
+            Subject::Refused {
                 refusal, spellings, ..
             } => Comparison::of(refusal, spellings),
-            | Subject::Unsettled { .. }
+            Subject::Unsettled { .. }
             | Subject::Goal(_)
             | Subject::Source(_)
             | Subject::Shadowed(_)
@@ -823,13 +823,13 @@ impl Report<'_>
     fn annotations(&self) -> Annotations
     {
         let annotations = match self.subject {
-            | Subject::Refused {
+            Subject::Refused {
                 declaration,
                 refusal,
                 origins,
                 ..
             } => Annotations::refusal(refusal, declaration.span(), origins),
-            | Subject::Unsettled {
+            Subject::Unsettled {
                 declaration,
                 unsettlement: Unsettlement::Obligations,
             }
@@ -837,28 +837,28 @@ impl Report<'_>
                 declaration.span(),
                 Label::Surviving(declaration.surviving()),
             ),
-            | Subject::Unsettled {
+            Subject::Unsettled {
                 declaration,
                 unsettlement: Unsettlement::Malformed,
             } => Annotations::malformed(declaration.stated(), declaration.span()),
-            | Subject::Unsettled {
+            Subject::Unsettled {
                 declaration,
                 unsettlement:
                     unsettlement @ (Unsettlement::Unproduced
                     | Unsettlement::RunOutcome
                     | Unsettlement::NormalForm),
             } => Annotations::at(declaration.span(), Label::Unsettled(unsettlement)),
-            | Subject::Source(refusal) => Annotations::lowering(refusal),
-            | Subject::Shadowed(shadowed) => Annotations::at(shadowed.span, Label::Shadows),
-            | Subject::InferredExit(inferred) => {
+            Subject::Source(refusal) => Annotations::lowering(refusal),
+            Subject::Shadowed(shadowed) => Annotations::at(shadowed.span, Label::Shadows),
+            Subject::InferredExit(inferred) => {
                 Annotations::at(inferred.span, Label::Inferred(inferred.exit))
             },
-            | Subject::InferredRun(inferred) => {
+            Subject::InferredRun(inferred) => {
                 Annotations::at(inferred.span, Label::Ran(inferred.purity))
             },
-            | Subject::Ledger { at, .. } => match at {
-                | Maybe::Present(span) => Annotations::at(span, Label::Reported),
-                | Maybe::Absent(reason) => Annotations {
+            Subject::Ledger { at, .. } => match at {
+                Maybe::Present(span) => Annotations::at(span, Label::Reported),
+                Maybe::Absent(reason) => Annotations {
                     primary: Maybe::Absent(reason),
                     context: [
                         Maybe::Absent(report_context::Absent::Unnamed),
@@ -869,14 +869,14 @@ impl Report<'_>
         };
         let inside = |annotation: &Annotation| self.text.fragment(annotation.span).is_ok();
         let primary = match annotations.primary {
-            | Maybe::Present(primary) if inside(&primary) => Maybe::Present(primary),
-            | Maybe::Present(_) => Maybe::Absent(report_span::Absent::OutsideText),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present(primary) if inside(&primary) => Maybe::Present(primary),
+            Maybe::Present(_) => Maybe::Absent(report_span::Absent::OutsideText),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         };
         let [first, second] = annotations.context.map(|annotation| match annotation {
-            | Maybe::Present(annotation) if inside(&annotation) => Maybe::Present(annotation),
-            | Maybe::Present(_) => Maybe::Absent(report_context::Absent::OutsideText),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present(annotation) if inside(&annotation) => Maybe::Present(annotation),
+            Maybe::Present(_) => Maybe::Absent(report_context::Absent::OutsideText),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         });
         Annotations {
             primary,
@@ -913,8 +913,8 @@ fn excerpt(
     for span in covered {
         let (start, end) = (usize::from(span.start()), usize::from(span.end()));
         bounds = Maybe::Present(match bounds {
-            | Maybe::Present((low, high)) => (low.min(start), high.max(end)),
-            | Maybe::Absent(()) => (start, end),
+            Maybe::Present((low, high)) => (low.min(start), high.max(end)),
+            Maybe::Absent(()) => (start, end),
         });
     }
     let Maybe::Present((low, high)) = bounds
@@ -970,51 +970,51 @@ impl fmt::Display for TitleText<'_>
     ) -> fmt::Result
     {
         match self.0 {
-            | Subject::Refused {
+            Subject::Refused {
                 refusal: Refusal::Lowering(refusal),
                 ..
             } => fmt::Display::fmt(&refusal, f),
-            | Subject::Refused {
+            Subject::Refused {
                 refusal: Refusal::Checking(refusal),
                 ..
             } => fmt::Display::fmt(&Checked(refusal), f),
-            | Subject::Refused {
+            Subject::Refused {
                 refusal: Refusal::Corpus(refusal),
                 ..
             } => fmt::Display::fmt(&refusal, f),
-            | Subject::Unsettled { declaration, .. } | Subject::Goal(declaration) => write!(
+            Subject::Unsettled { declaration, .. } | Subject::Goal(declaration) => write!(
                 f,
                 "`{}` states {}; produced {}",
                 declaration.name(),
                 declaration.stated(),
                 declaration.outcome()
             ),
-            | Subject::Source(refusal) => {
+            Subject::Source(refusal) => {
                 write!(f, "the lowering refused the source as a whole: {refusal}")
             },
-            | Subject::Shadowed(shadowed) => write!(
+            Subject::Shadowed(shadowed) => write!(
                 f,
                 "`{}` shadows a builtin name; the source's binding wins",
                 shadowed.path
             ),
-            | Subject::InferredExit(inferred) => write!(
+            Subject::InferredExit(inferred) => write!(
                 f,
                 "this path ends without its exit; the lowering infers `{}`, which the \
                  `{}` lint asks to be written",
                 inferred.exit,
                 Lint::ExplicitExits
             ),
-            | Subject::InferredRun(inferred) => write!(
+            Subject::InferredRun(inferred) => write!(
                 f,
                 "this computation {} where a value is read; the checker infers `run`, which \
                  the `{}` lint asks to be written",
                 match inferred.purity {
-                    | Purity::Pure => "stands",
-                    | Purity::Effectful => "performs an effect",
+                    Purity::Pure => "stands",
+                    Purity::Effectful => "performs an effect",
                 },
                 Lint::ExplicitRuns
             ),
-            | Subject::Ledger { line, .. } => f.write_str(line),
+            Subject::Ledger { line, .. } => f.write_str(line),
         }
     }
 }
@@ -1051,13 +1051,13 @@ impl fmt::Display for MessageText<'_>
     ) -> fmt::Result
     {
         match self.0 {
-            | Subject::Refused { refusal, .. } => fmt::Display::fmt(&Plain(refusal), f),
-            | Subject::Source(refusal) => write!(
+            Subject::Refused { refusal, .. } => fmt::Display::fmt(&Plain(refusal), f),
+            Subject::Source(refusal) => write!(
                 f,
                 "the source is not a list of declarations: {}",
                 Plain(Refusal::Lowering(refusal))
             ),
-            | Subject::Unsettled { .. }
+            Subject::Unsettled { .. }
             | Subject::Goal(_)
             | Subject::Shadowed(_)
             | Subject::InferredExit(_)
@@ -1103,31 +1103,31 @@ impl fmt::Display for NoteText<'_>
     {
         let name = self.0.name();
         match *self.0.stated() {
-            | Stated::Verdict(Outcome::Checks(owing)) if usize::from(owing) == 0_usize => {
+            Stated::Verdict(Outcome::Checks(owing)) if usize::from(owing) == 0_usize => {
                 write!(
                     f,
                     "`{name}` is expected to check, and this refusal leaves it unsettled"
                 )?;
             },
-            | Stated::Verdict(Outcome::Checks(owing)) => write!(
+            Stated::Verdict(Outcome::Checks(owing)) => write!(
                 f,
                 "`{name}` is expected to check owing {owing} obligations, and this refusal leaves \
                  it unsettled"
             )?,
-            | Stated::Verdict(Outcome::Refuses(expected)) => write!(
+            Stated::Verdict(Outcome::Refuses(expected)) => write!(
                 f,
                 "`{name}` is expected to be refused with {expected}, and this refusal is not \
                  that one"
             )?,
-            | Stated::Verdict(Outcome::Runs(ref spelled)) => write!(
+            Stated::Verdict(Outcome::Runs(ref spelled)) => write!(
                 f,
                 "`{name}` is expected to run to {spelled}, and this refusal leaves it unsettled"
             )?,
-            | Stated::Verdict(Outcome::Normalizes(ref spelled)) => write!(
+            Stated::Verdict(Outcome::Normalizes(ref spelled)) => write!(
                 f,
                 "`{name}` is expected to read {spelled}, and this refusal leaves it unsettled"
             )?,
-            | Stated::Malformed(fault) => {
+            Stated::Malformed(fault) => {
                 write!(f, "`{name}` states no verdict to settle against: {fault}")?;
             },
         }
@@ -1179,7 +1179,7 @@ impl fmt::Display for UpstreamNoteText<'_>
         let name = self.declaration.name();
         let upstream = self.upstream.name();
         match *self.declaration.stated() {
-            | Stated::Verdict(Outcome::Checks(owing))
+            Stated::Verdict(Outcome::Checks(owing))
                 if usize::from(owing) == 0_usize
                     && self.declaration.surviving() == Surviving::default() =>
             {
@@ -1189,7 +1189,7 @@ impl fmt::Display for UpstreamNoteText<'_>
                      unsettled"
                 )
             },
-            | _ => write!(
+            Stated::Verdict(_) | Stated::Malformed(_) => write!(
                 f,
                 "{}; it rests on `{upstream}`, which is refused",
                 NoteText(self.declaration)

@@ -290,8 +290,8 @@ impl Sink<'_>
             self.host = Host::Minted(minted);
         }
         match self.host {
-            | Host::Minted(ref table) => Maybe::Present(table),
-            | Host::Unminted => Maybe::Absent(lowered::Absent::Unminted),
+            Host::Minted(ref table) => Maybe::Present(table),
+            Host::Unminted => Maybe::Absent(lowered::Absent::Unminted),
         }
     }
 
@@ -320,8 +320,8 @@ impl Sink<'_>
     {
         self.host(origin)
             .and_then(|table| match table.named(interface) {
-                | Maybe::Present(signature) => Maybe::Present(signature.clone()),
-                | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
+                Maybe::Present(signature) => Maybe::Present(signature.clone()),
+                Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
             })
     }
 }
@@ -565,11 +565,11 @@ impl<'source> Lowerer<'_, 'source>
         };
 
         Ok(match shape_of(self.pbg, node)? {
-            | Shape::Form {
+            Shape::Form {
                 former: Former::CapabilityType,
                 ..
             } => Holder::Capability,
-            | Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => Holder::Other,
+            Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => Holder::Other,
         })
     }
 
@@ -637,16 +637,16 @@ impl<'source> Lowerer<'_, 'source>
         // own node inherits its owner only once the projection is read.
         let resolved = self.resolve_name(site, site.reading.frame(), self.name_at(target));
         let holder = match resolved {
-            | Ok(Maybe::Present(Resolved::Binder(bound)))
+            Ok(Maybe::Present(Resolved::Binder(bound)))
                 if self.capabilities.contains(&bound.binder) =>
             {
                 Holder::Capability
             },
-            | Ok(Maybe::Present(Resolved::Binder(bound))) => self.written_holder(bound.declared)?,
-            | Ok(Maybe::Present(Resolved::Declaration { declared, .. })) => {
+            Ok(Maybe::Present(Resolved::Binder(bound))) => self.written_holder(bound.declared)?,
+            Ok(Maybe::Present(Resolved::Declaration { declared, .. })) => {
                 self.written_holder(declared)?
             },
-            | Ok(Maybe::Absent(_)) | Err(_) => Holder::Other,
+            Ok(Maybe::Absent(_)) | Err(_) => Holder::Other,
         };
         if holder == Holder::Other {
             return Ok(Planned(false));
@@ -839,7 +839,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut clauses = Vec::new();
         loop {
             match cursor.read() {
-                | Maybe::Present(Piece::Tile { label, at }) if label == TileName::PURE => {
+                Maybe::Present(Piece::Tile { label, at }) if label == TileName::PURE => {
                     let (result, body) = Self::clause_parameter(site, &mut cursor)?;
                     if let Maybe::Present((_, first)) = on_return {
                         return Err(LoweringRefusal::DuplicateDefinition {
@@ -852,7 +852,7 @@ impl<'source> Lowerer<'_, 'source>
                     self.clause(site, body, Frame::Inner(bound))?;
                     on_return = Maybe::Present((body, at));
                 },
-                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::OPER => {
+                Maybe::Present(Piece::Tile { label, .. }) if label == TileName::OPER => {
                     let Maybe::Present(at) = cursor.tile(TileName::IDENTIFIER)
                     else {
                         return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
@@ -876,10 +876,10 @@ impl<'source> Lowerer<'_, 'source>
                     self.clause(site, body.node, Frame::Inner(resumed))?;
                     clauses.push((OperationName::from(self.name_at(at).as_ref()), body.node));
                 },
-                | Maybe::Present(piece) => {
+                Maybe::Present(piece) => {
                     return Err(site.fault(piece.placed().span, FormFault::MisplacedTile));
                 },
-                | Maybe::Absent(_) => {
+                Maybe::Absent(_) => {
                     return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
                 },
             }
@@ -1029,8 +1029,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let row = match sink.host(origin) {
-            | Maybe::Present(table) => table.authority(authority),
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(table) => table.authority(authority),
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let Ok(row) = row
         else {
@@ -1069,14 +1069,14 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let result = match self.value_type_at(argument) {
-            | Maybe::Present(result) => result,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(result) => result,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let mut signatures = Vec::with_capacity(row.len());
         for interface in row {
             match sink.signature(interface, origin) {
-                | Maybe::Present(signature) => signatures.push(signature),
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(signature) => signatures.push(signature),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         let Ok(effects) = EffectRow::from_signatures(signatures)
@@ -1117,8 +1117,8 @@ impl<'source> Lowerer<'_, 'source>
         let mut values = Vec::with_capacity(written.end.saturating_sub(written.start));
         for &position in super::stretch(&self.operands, written) {
             match self.value_at(position) {
-                | Maybe::Present(value) => values.push(value),
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(value) => values.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         if let &[only] = values.as_slice() {
@@ -1160,12 +1160,12 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let capability = match self.value_at(exercised.capability) {
-            | Maybe::Present(capability) => capability,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(capability) => capability,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let payload = match self.mint_payload(exercised.payload, sink, origin) {
-            | Maybe::Present(payload) => payload,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(payload) => payload,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         sink.signature(&exercised.interface, origin)
             .map(|signature| {
@@ -1219,8 +1219,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let stack = match self.value_at(continuation) {
-            | Maybe::Present(stack) => stack,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(stack) => stack,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         self.mint_payload(reply, sink, origin).map(|replied| {
             let returned = sink.arena.computation_return(replied);
@@ -1258,18 +1258,18 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let subject = match self.mint_body(scoped.subject, sink, origin) {
-            | Maybe::Present(subject) => subject,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(subject) => subject,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let on_return = match self.mint_body(clause_body(scoped.on_return), sink, origin) {
-            | Maybe::Present(on_return) => on_return,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(on_return) => on_return,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let mut clauses: Vec<EffectClause> = Vec::with_capacity(scoped.clauses.len());
         for (operation, body) in scoped.clauses {
             let body: ComputationId = match self.mint_body(clause_body(body), sink, origin) {
-                | Maybe::Present(body) => body,
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(body) => body,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
             clauses.push(EffectClause { operation, body });
         }

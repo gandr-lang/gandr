@@ -62,8 +62,8 @@ impl core::fmt::Debug for RunError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Shape(ref refusal) => write!(f, "a shape was refused: {refusal}"),
-            | Self::Write(ref failure) => write!(f, "the output failed: {failure}"),
+            Self::Shape(ref refusal) => write!(f, "a shape was refused: {refusal}"),
+            Self::Write(ref failure) => write!(f, "the output failed: {failure}"),
         }
     }
 }
@@ -106,8 +106,8 @@ where
     Witness: Display,
 {
     let witness = match outcome.witness() {
-        | quenchant_shape::shape::Maybe::Present(witness) => format!("`{witness}`"),
-        | quenchant_shape::shape::Maybe::Absent(_) => "—".to_owned(),
+        quenchant_shape::shape::Maybe::Present(witness) => format!("`{witness}`"),
+        quenchant_shape::shape::Maybe::Absent(_) => "—".to_owned(),
     };
     writeln!(
         out,

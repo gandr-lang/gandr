@@ -91,8 +91,8 @@ fn agree(
     );
     let submitted = incremental.submit(source);
     let (submission, walked) = match (submitted, walked) {
-        | (Ok(submission), Ok(walked)) => (submission, walked),
-        | (Err(fault), Err(walked)) => {
+        (Ok(submission), Ok(walked)) => (submission, walked),
+        (Err(fault), Err(walked)) => {
             assert_eq!(
                 fault.to_string(),
                 walked.to_string(),
@@ -100,7 +100,7 @@ fn agree(
             );
             return FormCensus::default();
         },
-        | (submitted, walked) => panic!(
+        (submitted, walked) => panic!(
             "{context}: the session {} where the walk {}",
             if submitted.is_ok() {
                 "submitted"
@@ -240,8 +240,8 @@ fn a_one_form_edit_molds_only_the_forms_that_read_it()
     let text = |renamed: &str, returned: &str| -> String {
         (0 .. 12)
             .map(|i| match i {
-                | 6 => form(i, renamed, returned),
-                | _ => form(i, "p", "x"),
+                6 => form(i, renamed, returned),
+                _ => form(i, "p", "x"),
             })
             .collect()
     };

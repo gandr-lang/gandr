@@ -265,8 +265,8 @@ impl<'source> super::Structure<'source>
     pub fn exported_types(&self) -> &[TypeComponent<'source>]
     {
         match self.ascription {
-            | Maybe::Present(_) => &self.types,
-            | Maybe::Absent(_) => &self.type_members,
+            Maybe::Present(_) => &self.types,
+            Maybe::Absent(_) => &self.type_members,
         }
     }
 }
@@ -405,15 +405,15 @@ impl<'source> Collector<'_, 'source>
         };
 
         Ok(match shape_of(self.pbg, node)? {
-            | Shape::Form {
+            Shape::Form {
                 former: Former::ValueFunctionType,
                 ..
             } => KindForm::Family,
-            | Shape::Form {
+            Shape::Form {
                 former: Former::ArrowType,
                 ..
             } => KindForm::Arrow,
-            | Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+            Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
                 KindForm::Universe
             },
         })
@@ -597,8 +597,8 @@ impl<'source> Collector<'_, 'source>
             return;
         };
         let parameters = match Self::family_parameters(&mut cursor) {
-            | Ok(parameters) => parameters,
-            | Err(refusal) => {
+            Ok(parameters) => parameters,
+            Err(refusal) => {
                 self.fault_at(structure, member, refusal);
                 return;
             },
@@ -612,8 +612,8 @@ impl<'source> Collector<'_, 'source>
             return;
         }
         let defined = match one_in(FormName::MODULE, cursor.operands()) {
-            | Ok(defined) => defined,
-            | Err(refusal) => {
+            Ok(defined) => defined,
+            Err(refusal) => {
                 self.fault_at(structure, member, refusal);
                 return;
             },
@@ -734,16 +734,16 @@ impl<'source> Collector<'_, 'source>
             .find(|member| member.name == component.name)
             .copied();
         let represented = member.and_then(|member| match member.meaning {
-            | super::TypeMeaning::Manifest(defined) => Some(Represented {
+            super::TypeMeaning::Manifest(defined) => Some(Represented {
                 defined,
                 held: member.held,
             }),
-            | super::TypeMeaning::Sealed
+            super::TypeMeaning::Sealed
             | super::TypeMeaning::Family(_)
             | super::TypeMeaning::Instantiated { .. } => None,
         });
         let unmatched = match member {
-            | Some(TypeComponent {
+            Some(TypeComponent {
                 meaning: super::TypeMeaning::Family(family),
                 held,
                 ..
@@ -764,7 +764,7 @@ impl<'source> Collector<'_, 'source>
                     ),
                 },
             },
-            | Some(_) | None => LoweringRefusal::UnknownMember {
+            Some(_) | None => LoweringRefusal::UnknownMember {
                 span: component.named.span,
                 module,
                 member: component.name,
@@ -784,12 +784,12 @@ impl<'source> Collector<'_, 'source>
             };
             let operator = matches!(kind, Maybe::Present(written) if matches!(self.kind_form(written), Ok(KindForm::Arrow)));
             match represented {
-                | Some(represented) if !operator => {
+                Some(represented) if !operator => {
                     if let Some(recorded) = self.collected.abstracts.get_mut(&atom) {
                         recorded.representation = Maybe::Present(represented);
                     }
                 },
-                | Some(_) | None => {
+                Some(_) | None => {
                     let refusal = if operator {
                         LoweringRefusal::UnreadAscription {
                             span: component.named.span,
@@ -931,11 +931,11 @@ impl<'source> Collector<'_, 'source>
         let mut block = false;
         for piece in &pieces.pieces {
             match *piece {
-                | Piece::Tile { label, .. } if block => block = label != TileName::BRACKET_CLOSE,
-                | Piece::Operand(_) if block => {},
-                | Piece::Tile { label, .. } if label == TileName::ATTRIBUTES => block = true,
-                | Piece::Tile { label, .. } => return TypeMemberForm(label == TileName::TYPE),
-                | Piece::Operand(_) => return TypeMemberForm(false),
+                Piece::Tile { label, .. } if block => block = label != TileName::BRACKET_CLOSE,
+                Piece::Operand(_) if block => {},
+                Piece::Tile { label, .. } if label == TileName::ATTRIBUTES => block = true,
+                Piece::Tile { label, .. } => return TypeMemberForm(label == TileName::TYPE),
+                Piece::Operand(_) => return TypeMemberForm(false),
             }
         }
 
@@ -987,14 +987,14 @@ impl<'source> Collector<'_, 'source>
     )
     {
         match self.collected.slots.get_mut(held.0) {
-            | Some(member) => (
+            Some(member) => (
                 Maybe::Present(Half {
                     declaration: member.introduced_by,
                     operand: Operand::Signature,
                 }),
                 core::mem::take(&mut member.attributes),
             ),
-            | None => (
+            None => (
                 Maybe::Absent(declaration_half::Absent::Unwritten),
                 Vec::new(),
             ),

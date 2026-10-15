@@ -663,11 +663,11 @@ pub fn synthesise_value_with_failure(
     };
     let (produced, conversions) = Machine::run(context, goal)?;
     match produced {
-        | Produced::ValueType(produced) => Ok(Synthesised {
+        Produced::ValueType(produced) => Ok(Synthesised {
             produced: FormedValueType::derived(produced),
             conversions,
         }),
-        | Produced::CompType(_) | Produced::Checked => {
+        Produced::CompType(_) | Produced::Checked => {
             Err(Failure::bare(CheckRefusal::MachineInvariant, pursued(goal)))
         },
     }
@@ -815,11 +815,11 @@ pub fn synthesise_comp(
     })
     .map_err(|failure| failure.refusal())?;
     match produced {
-        | Produced::CompType(produced) => Ok(Synthesised {
+        Produced::CompType(produced) => Ok(Synthesised {
             produced: FormedCompType::derived(produced),
             conversions,
         }),
-        | Produced::ValueType(_) | Produced::Checked => Err(CheckRefusal::MachineInvariant),
+        Produced::ValueType(_) | Produced::Checked => Err(CheckRefusal::MachineInvariant),
     }
 }
 
@@ -908,8 +908,8 @@ const fn checked(
 ) -> Result<Checked, CheckRefusal>
 {
     match produced {
-        | Produced::Checked => Ok(Checked { conversions }),
-        | Produced::ValueType(_) | Produced::CompType(_) => Err(CheckRefusal::MachineInvariant),
+        Produced::Checked => Ok(Checked { conversions }),
+        Produced::ValueType(_) | Produced::CompType(_) => Err(CheckRefusal::MachineInvariant),
     }
 }
 
@@ -2022,117 +2022,117 @@ impl Frame
     const fn role(self) -> FrameRole
     {
         match self {
-            | Self::NativeNext(_) => FrameRole::NativeNext,
-            | Self::NativeYield(_) => FrameRole::NativeYield,
-            | Self::NativeCollect => FrameRole::NativeCollect,
-            | Self::NativeDiscard => FrameRole::NativeDiscard,
-            | Self::NativeTuple { .. } => FrameRole::NativeTuple,
-            | Self::NativeRecord { .. } => FrameRole::NativeRecord,
-            | Self::NativeCase(_) => FrameRole::NativeCase,
-            | Self::NativeMotive { .. } => FrameRole::NativeMotive,
-            | Self::NativeRespect { .. } => FrameRole::NativeRespect,
-            | Self::NativeLoops { .. } => FrameRole::NativeLoops,
-            | Self::SigmaSplitScrutinee(_) => FrameRole::SigmaSplitScrutinee,
-            | Self::SigmaSplitMotive { .. } => FrameRole::SigmaSplitMotive,
-            | Self::NativeProjection(_) => FrameRole::NativeProjection,
-            | Self::PerformPayload { .. } => FrameRole::PerformPayload,
-            | Self::Next(_) => FrameRole::Next,
-            | Self::Resume { .. } => FrameRole::Resume,
-            | Self::Project { .. } => FrameRole::Project,
-            | Self::Reset { .. } => FrameRole::Reset,
-            | Self::HandlerForm { .. } => FrameRole::HandlerForm,
-            | Self::HandlerSubject { .. } => FrameRole::HandlerSubject,
-            | Self::HandlerReturn { .. } => FrameRole::HandlerReturn,
-            | Self::HandlerClause { .. } => FrameRole::HandlerClause,
-            | Self::ExerciseCapability { .. } => FrameRole::ExerciseCapability,
-            | Self::ScopeForm { .. } => FrameRole::ScopeForm,
-            | Self::ScopeSubject { .. } => FrameRole::ScopeSubject,
-            | Self::StackNext { .. } => FrameRole::StackNext,
-            | Self::StackBind { .. } => FrameRole::StackBind,
-            | Self::ListFold { phase, .. } => FrameRole::ListFold(match phase {
-                | ListPhase::Element => FoldPremise::Element,
-                | ListPhase::Result => FoldPremise::Result,
-                | ListPhase::Input => FoldPremise::Input,
-                | ListPhase::Nil => FoldPremise::Nil,
-                | ListPhase::Cons => FoldPremise::Cons,
+            Self::NativeNext(_) => FrameRole::NativeNext,
+            Self::NativeYield(_) => FrameRole::NativeYield,
+            Self::NativeCollect => FrameRole::NativeCollect,
+            Self::NativeDiscard => FrameRole::NativeDiscard,
+            Self::NativeTuple { .. } => FrameRole::NativeTuple,
+            Self::NativeRecord { .. } => FrameRole::NativeRecord,
+            Self::NativeCase(_) => FrameRole::NativeCase,
+            Self::NativeMotive { .. } => FrameRole::NativeMotive,
+            Self::NativeRespect { .. } => FrameRole::NativeRespect,
+            Self::NativeLoops { .. } => FrameRole::NativeLoops,
+            Self::SigmaSplitScrutinee(_) => FrameRole::SigmaSplitScrutinee,
+            Self::SigmaSplitMotive { .. } => FrameRole::SigmaSplitMotive,
+            Self::NativeProjection(_) => FrameRole::NativeProjection,
+            Self::PerformPayload { .. } => FrameRole::PerformPayload,
+            Self::Next(_) => FrameRole::Next,
+            Self::Resume { .. } => FrameRole::Resume,
+            Self::Project { .. } => FrameRole::Project,
+            Self::Reset { .. } => FrameRole::Reset,
+            Self::HandlerForm { .. } => FrameRole::HandlerForm,
+            Self::HandlerSubject { .. } => FrameRole::HandlerSubject,
+            Self::HandlerReturn { .. } => FrameRole::HandlerReturn,
+            Self::HandlerClause { .. } => FrameRole::HandlerClause,
+            Self::ExerciseCapability { .. } => FrameRole::ExerciseCapability,
+            Self::ScopeForm { .. } => FrameRole::ScopeForm,
+            Self::ScopeSubject { .. } => FrameRole::ScopeSubject,
+            Self::StackNext { .. } => FrameRole::StackNext,
+            Self::StackBind { .. } => FrameRole::StackBind,
+            Self::ListFold { phase, .. } => FrameRole::ListFold(match phase {
+                ListPhase::Element => FoldPremise::Element,
+                ListPhase::Result => FoldPremise::Result,
+                ListPhase::Input => FoldPremise::Input,
+                ListPhase::Nil => FoldPremise::Nil,
+                ListPhase::Cons => FoldPremise::Cons,
             }),
-            | Self::PathProductFirst { .. } => FrameRole::PathProductFirst,
-            | Self::PathProductSecond { .. } => FrameRole::PathProductSecond,
-            | Self::PathBackward { .. } => FrameRole::PathBackward,
-            | Self::PathChecked { .. } => FrameRole::PathChecked,
-            | Self::PrimitiveSecond { .. } => FrameRole::PrimitiveSecond,
-            | Self::PrimitiveResult { .. } => FrameRole::PrimitiveResult,
-            | Self::TransportPath { .. } => FrameRole::TransportPath,
-            | Self::TransportOperand { .. } => FrameRole::TransportOperand,
-            | Self::HereSynthesised { .. } => FrameRole::HereSynthesised,
-            | Self::HereEndpoints { .. } => FrameRole::HereEndpoints,
-            | Self::FunextLeft { .. } => FrameRole::FunextLeft,
-            | Self::FunextRight { .. } => FrameRole::FunextRight,
-            | Self::EquivForward { .. } => FrameRole::EquivForward,
-            | Self::EquivBackward { .. } => FrameRole::EquivBackward,
-            | Self::UaTranslators { .. } => FrameRole::UaTranslators,
-            | Self::ReturnedEndpoint { .. } => FrameRole::ReturnedEndpoint,
-            | Self::Ran { .. } => FrameRole::Ran,
-            | Self::ElementTransportPath { .. } => FrameRole::ElementTransportPath,
-            | Self::ElementTransportMotive { .. } => FrameRole::ElementTransportMotive,
-            | Self::TelescopePath { .. } => FrameRole::TelescopePath,
-            | Self::TelescopeMotive { .. } => FrameRole::TelescopeMotive,
-            | Self::TelescopeStart { .. } => FrameRole::TelescopeStart,
-            | Self::TelescopeOver { .. } => FrameRole::TelescopeOver,
-            | Self::CaseScrutinee { .. } => FrameRole::CaseScrutinee,
-            | Self::SplitScrutinee { .. } => FrameRole::SplitScrutinee,
-            | Self::SplitBody(_) => FrameRole::SplitBody,
-            | Self::CaseBranch { .. } => FrameRole::CaseBranch,
-            | Self::Force { .. } => FrameRole::Force,
-            | Self::ApplicationHead { .. } => FrameRole::ApplicationHead,
-            | Self::ApplicationArgument { .. } => FrameRole::ApplicationArgument,
-            | Self::LambdaBody => FrameRole::LambdaBody,
-            | Self::BindBound { .. } => FrameRole::BindBound,
-            | Self::BindBody { .. } => FrameRole::BindBody,
-            | Self::ValueBridge { .. } => FrameRole::ValueBridge,
-            | Self::CompBridge { .. } => FrameRole::CompBridge,
-            | Self::Quote(_) => FrameRole::Quote,
-            | Self::FormNext(_) => FrameRole::FormNext,
-            | Self::FormUnder {
+            Self::PathProductFirst { .. } => FrameRole::PathProductFirst,
+            Self::PathProductSecond { .. } => FrameRole::PathProductSecond,
+            Self::PathBackward { .. } => FrameRole::PathBackward,
+            Self::PathChecked { .. } => FrameRole::PathChecked,
+            Self::PrimitiveSecond { .. } => FrameRole::PrimitiveSecond,
+            Self::PrimitiveResult { .. } => FrameRole::PrimitiveResult,
+            Self::TransportPath { .. } => FrameRole::TransportPath,
+            Self::TransportOperand { .. } => FrameRole::TransportOperand,
+            Self::HereSynthesised { .. } => FrameRole::HereSynthesised,
+            Self::HereEndpoints { .. } => FrameRole::HereEndpoints,
+            Self::FunextLeft { .. } => FrameRole::FunextLeft,
+            Self::FunextRight { .. } => FrameRole::FunextRight,
+            Self::EquivForward { .. } => FrameRole::EquivForward,
+            Self::EquivBackward { .. } => FrameRole::EquivBackward,
+            Self::UaTranslators { .. } => FrameRole::UaTranslators,
+            Self::ReturnedEndpoint { .. } => FrameRole::ReturnedEndpoint,
+            Self::Ran { .. } => FrameRole::Ran,
+            Self::ElementTransportPath { .. } => FrameRole::ElementTransportPath,
+            Self::ElementTransportMotive { .. } => FrameRole::ElementTransportMotive,
+            Self::TelescopePath { .. } => FrameRole::TelescopePath,
+            Self::TelescopeMotive { .. } => FrameRole::TelescopeMotive,
+            Self::TelescopeStart { .. } => FrameRole::TelescopeStart,
+            Self::TelescopeOver { .. } => FrameRole::TelescopeOver,
+            Self::CaseScrutinee { .. } => FrameRole::CaseScrutinee,
+            Self::SplitScrutinee { .. } => FrameRole::SplitScrutinee,
+            Self::SplitBody(_) => FrameRole::SplitBody,
+            Self::CaseBranch { .. } => FrameRole::CaseBranch,
+            Self::Force { .. } => FrameRole::Force,
+            Self::ApplicationHead { .. } => FrameRole::ApplicationHead,
+            Self::ApplicationArgument { .. } => FrameRole::ApplicationArgument,
+            Self::LambdaBody => FrameRole::LambdaBody,
+            Self::BindBound { .. } => FrameRole::BindBound,
+            Self::BindBody { .. } => FrameRole::BindBody,
+            Self::ValueBridge { .. } => FrameRole::ValueBridge,
+            Self::CompBridge { .. } => FrameRole::CompBridge,
+            Self::Quote(_) => FrameRole::Quote,
+            Self::FormNext(_) => FrameRole::FormNext,
+            Self::FormUnder {
                 under: TypeNode::Computation(_),
                 ..
             } => FrameRole::FormPi,
-            | Self::FormUnder {
+            Self::FormUnder {
                 under: TypeNode::Value(_),
                 ..
             } => FrameRole::FormSigma,
-            | Self::FormBinder => FrameRole::FormBinder,
-            | Self::FormLift(_) => FrameRole::FormLift,
-            | Self::FormElement(_) => FrameRole::FormElement,
-            | Self::FormStaticPi(_) => FrameRole::FormStaticPi,
-            | Self::PairSecond { .. } => FrameRole::PairSecond,
-            | Self::StaticSpine { .. } => FrameRole::StaticSpine,
-            | Self::StaticArgument { .. } => FrameRole::StaticArgument,
-            | Self::StaticOperand { .. } => FrameRole::StaticOperand,
-            | Self::Unknowing(_) => FrameRole::Unknowing,
-            | Self::ThunkBody => FrameRole::ThunkBody,
-            | Self::ReturnValue => FrameRole::ReturnValue,
-            | Self::InjectionPayload => FrameRole::InjectionPayload,
-            | Self::FormSession(_) => FrameRole::FormSession,
-            | Self::SessionSend { .. } => FrameRole::SessionSend,
-            | Self::OfferArm { .. } => FrameRole::OfferArm,
-            | Self::ForkProtocol { .. } => FrameRole::ForkProtocol,
-            | Self::ForkChild { .. } => FrameRole::ForkChild,
-            | Self::ForkParent { .. } => FrameRole::ForkParent,
-            | Self::SessionStatement { .. } => FrameRole::SessionStatement,
-            | Self::StaySynthesised { .. } => FrameRole::StaySynthesised,
-            | Self::ThenFirst { .. } => FrameRole::ThenFirst,
-            | Self::ThenSecond { .. } => FrameRole::ThenSecond,
-            | Self::FlowProductFirst { .. } => FrameRole::FlowProductFirst,
-            | Self::FlowProductSecond { .. } => FrameRole::FlowProductSecond,
-            | Self::RideFlow { .. } => FrameRole::RideFlow,
-            | Self::RideMotive { .. } => FrameRole::RideMotive,
-            | Self::RideValue { .. } => FrameRole::RideValue,
-            | Self::ForwardTranslator { .. } => FrameRole::ForwardTranslator,
-            | Self::ArrowDomain { .. } => FrameRole::ArrowDomain,
-            | Self::ArrowCodomain { .. } => FrameRole::ArrowCodomain,
-            | Self::ArrowAgainst { .. } => FrameRole::ArrowAgainst,
-            | Self::StayEndpoints { .. } => FrameRole::StayEndpoints,
+            Self::FormBinder => FrameRole::FormBinder,
+            Self::FormLift(_) => FrameRole::FormLift,
+            Self::FormElement(_) => FrameRole::FormElement,
+            Self::FormStaticPi(_) => FrameRole::FormStaticPi,
+            Self::PairSecond { .. } => FrameRole::PairSecond,
+            Self::StaticSpine { .. } => FrameRole::StaticSpine,
+            Self::StaticArgument { .. } => FrameRole::StaticArgument,
+            Self::StaticOperand { .. } => FrameRole::StaticOperand,
+            Self::Unknowing(_) => FrameRole::Unknowing,
+            Self::ThunkBody => FrameRole::ThunkBody,
+            Self::ReturnValue => FrameRole::ReturnValue,
+            Self::InjectionPayload => FrameRole::InjectionPayload,
+            Self::FormSession(_) => FrameRole::FormSession,
+            Self::SessionSend { .. } => FrameRole::SessionSend,
+            Self::OfferArm { .. } => FrameRole::OfferArm,
+            Self::ForkProtocol { .. } => FrameRole::ForkProtocol,
+            Self::ForkChild { .. } => FrameRole::ForkChild,
+            Self::ForkParent { .. } => FrameRole::ForkParent,
+            Self::SessionStatement { .. } => FrameRole::SessionStatement,
+            Self::StaySynthesised { .. } => FrameRole::StaySynthesised,
+            Self::ThenFirst { .. } => FrameRole::ThenFirst,
+            Self::ThenSecond { .. } => FrameRole::ThenSecond,
+            Self::FlowProductFirst { .. } => FrameRole::FlowProductFirst,
+            Self::FlowProductSecond { .. } => FrameRole::FlowProductSecond,
+            Self::RideFlow { .. } => FrameRole::RideFlow,
+            Self::RideMotive { .. } => FrameRole::RideMotive,
+            Self::RideValue { .. } => FrameRole::RideValue,
+            Self::ForwardTranslator { .. } => FrameRole::ForwardTranslator,
+            Self::ArrowDomain { .. } => FrameRole::ArrowDomain,
+            Self::ArrowCodomain { .. } => FrameRole::ArrowCodomain,
+            Self::ArrowAgainst { .. } => FrameRole::ArrowAgainst,
+            Self::StayEndpoints { .. } => FrameRole::StayEndpoints,
         }
     }
 
@@ -2154,7 +2154,7 @@ impl Frame
     fn opens(self) -> BinderDepth
     {
         BinderDepth::from(match self {
-            | Self::LambdaBody
+            Self::LambdaBody
             | Self::BindBody { .. }
             | Self::FormBinder
             | Self::HandlerReturn { .. }
@@ -2162,9 +2162,9 @@ impl Frame
             | Self::NativeMotive { .. }
             | Self::SigmaSplitMotive { .. }
             | Self::ScopeSubject { .. } => 1_usize,
-            | Self::HandlerClause { .. } => 2_usize,
-            | Self::SplitBody(arity) => usize::from(arity),
-            | Self::NativeNext(_)
+            Self::HandlerClause { .. } => 2_usize,
+            Self::SplitBody(arity) => usize::from(arity),
+            Self::NativeNext(_)
             | Self::NativeYield(_)
             | Self::NativeCollect
             | Self::NativeDiscard
@@ -2274,24 +2274,24 @@ impl Frame
 const fn judged(goal: Goal) -> (CoreNode, Maybe<TypeNode, judged::Absent>)
 {
     match goal {
-        | Goal::Stack { judgement, .. } => (
+        Goal::Stack { judgement, .. } => (
             CoreNode::Term(TermNode::Value(judgement.at)),
             Maybe::Present(TypeNode::Value(judgement.expected)),
         ),
-        | Goal::Value { term, direction } => {
+        Goal::Value { term, direction } => {
             (CoreNode::Term(TermNode::Value(term)), match direction {
-                | Direction::Check(expected) => Maybe::Present(TypeNode::Value(expected)),
-                | Direction::Synthesise => Maybe::Absent(judged::Absent::Synthesised),
+                Direction::Check(expected) => Maybe::Present(TypeNode::Value(expected)),
+                Direction::Synthesise => Maybe::Absent(judged::Absent::Synthesised),
             })
         },
-        | Goal::Computation { term, direction } => (
+        Goal::Computation { term, direction } => (
             CoreNode::Term(TermNode::Computation(term)),
             match direction {
-                | Direction::Check(expected) => Maybe::Present(TypeNode::Computation(expected)),
-                | Direction::Synthesise => Maybe::Absent(judged::Absent::Synthesised),
+                Direction::Check(expected) => Maybe::Present(TypeNode::Computation(expected)),
+                Direction::Synthesise => Maybe::Absent(judged::Absent::Synthesised),
             },
         ),
-        | Goal::Form(node) => (CoreNode::Type(node), Maybe::Absent(judged::Absent::Formed)),
+        Goal::Form(node) => (CoreNode::Type(node), Maybe::Absent(judged::Absent::Formed)),
     }
 }
 
@@ -2362,8 +2362,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let head = self.context.whnf_value_type(classifier)?;
         match matched_stack(self.context.arena_mut(), head) {
-            | Maybe::Present(endpoints) => Ok(endpoints),
-            | Maybe::Absent(absent) => Err(unmatched(
+            Maybe::Present(endpoints) => Ok(endpoints),
+            Maybe::Absent(absent) => Err(unmatched(
                 absent,
                 TypeNode::Value(head),
                 CheckRefusal::ShapeMismatch {
@@ -2396,8 +2396,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let head = self.context.whnf_comp_type(classifier)?;
         match matched_with(self.context.arena_mut(), head) {
-            | Maybe::Present(components) => Ok(components),
-            | Maybe::Absent(absent) => Err(unmatched(
+            Maybe::Present(components) => Ok(components),
+            Maybe::Absent(absent) => Err(unmatched(
                 absent,
                 TypeNode::Computation(head),
                 CheckRefusal::ShapeMismatch {
@@ -2429,11 +2429,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let head = self.context.whnf_comp_type(classifier)?;
         match matched_function(self.context.arena_mut(), head) {
-            | Maybe::Present(function) => Ok((function.domain(), match function.scope() {
-                | CodomainScope::Ambient => Codomain::Ambient(function.codomain()),
-                | CodomainScope::UnderBinder => Codomain::Dependent(function.codomain()),
+            Maybe::Present(function) => Ok((function.domain(), match function.scope() {
+                CodomainScope::Ambient => Codomain::Ambient(function.codomain()),
+                CodomainScope::UnderBinder => Codomain::Dependent(function.codomain()),
             })),
-            | Maybe::Absent(absent) => Err(unmatched(
+            Maybe::Absent(absent) => Err(unmatched(
                 absent,
                 TypeNode::Computation(head),
                 CheckRefusal::ShapeMismatch {
@@ -2486,7 +2486,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         };
         let position = position.next()?;
         match frame {
-            | gandr_core_term::control::StackFrame::Apply(argument) => {
+            gandr_core_term::control::StackFrame::Apply(argument) => {
                 let (domain, codomain) =
                     self.application_type(TermNode::Value(judgement.at), input)?;
                 self.wait(Frame::StackNext {
@@ -2503,7 +2503,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(domain),
                 }))
             },
-            | gandr_core_term::control::StackFrame::Bind(body) => {
+            gandr_core_term::control::StackFrame::Bind(body) => {
                 let head = self.context.whnf_comp_type(input)?;
                 let CompTypeView::Returner { result, .. } =
                     comp_type_view(self.context.arena(), head)?
@@ -2529,11 +2529,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | gandr_core_term::control::StackFrame::Project(side) => {
+            gandr_core_term::control::StackFrame::Project(side) => {
                 let (first, second) = self.with_parts(TermNode::Value(judgement.at), input)?;
                 let input = match side {
-                    | gandr_kernel_term::Side::Left => first,
-                    | gandr_kernel_term::Side::Right => second,
+                    gandr_kernel_term::Side::Left => first,
+                    gandr_kernel_term::Side::Right => second,
                 };
                 Ok(Step::Descend(Goal::Stack {
                     judgement,
@@ -2567,8 +2567,104 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 .iter()
                 .rev()
                 .find_map(|waiting| match waiting.frame {
-                    | Frame::Reset { answer, depth } => Some((answer, depth)),
-                    | _ => None,
+                    Frame::Reset { answer, depth } => Some((answer, depth)),
+                    Frame::NativeNext(_)
+                    | Frame::NativeYield(_)
+                    | Frame::NativeCollect
+                    | Frame::NativeDiscard
+                    | Frame::NativeTuple { .. }
+                    | Frame::NativeRecord { .. }
+                    | Frame::NativeCase(_)
+                    | Frame::NativeMotive { .. }
+                    | Frame::NativeRespect { .. }
+                    | Frame::NativeLoops { .. }
+                    | Frame::SigmaSplitScrutinee(_)
+                    | Frame::SigmaSplitMotive { .. }
+                    | Frame::NativeProjection(_)
+                    | Frame::PerformPayload { .. }
+                    | Frame::Next(_)
+                    | Frame::Resume { .. }
+                    | Frame::Project { .. }
+                    | Frame::HandlerForm { .. }
+                    | Frame::HandlerSubject { .. }
+                    | Frame::HandlerReturn { .. }
+                    | Frame::HandlerClause { .. }
+                    | Frame::ExerciseCapability { .. }
+                    | Frame::ScopeForm { .. }
+                    | Frame::ScopeSubject { .. }
+                    | Frame::StackNext { .. }
+                    | Frame::StackBind { .. }
+                    | Frame::ListFold { .. }
+                    | Frame::PathProductFirst { .. }
+                    | Frame::PathProductSecond { .. }
+                    | Frame::PathBackward { .. }
+                    | Frame::PathChecked { .. }
+                    | Frame::PrimitiveSecond { .. }
+                    | Frame::PrimitiveResult { .. }
+                    | Frame::TransportPath { .. }
+                    | Frame::TransportOperand { .. }
+                    | Frame::HereSynthesised { .. }
+                    | Frame::HereEndpoints { .. }
+                    | Frame::FunextLeft { .. }
+                    | Frame::FunextRight { .. }
+                    | Frame::EquivForward { .. }
+                    | Frame::EquivBackward { .. }
+                    | Frame::UaTranslators { .. }
+                    | Frame::ReturnedEndpoint { .. }
+                    | Frame::Ran { .. }
+                    | Frame::ElementTransportPath { .. }
+                    | Frame::ElementTransportMotive { .. }
+                    | Frame::SessionStatement { .. }
+                    | Frame::StaySynthesised { .. }
+                    | Frame::ThenFirst { .. }
+                    | Frame::ThenSecond { .. }
+                    | Frame::FlowProductFirst { .. }
+                    | Frame::FlowProductSecond { .. }
+                    | Frame::RideFlow { .. }
+                    | Frame::RideMotive { .. }
+                    | Frame::RideValue { .. }
+                    | Frame::ForwardTranslator { .. }
+                    | Frame::ArrowDomain { .. }
+                    | Frame::ArrowCodomain { .. }
+                    | Frame::ArrowAgainst { .. }
+                    | Frame::StayEndpoints { .. }
+                    | Frame::TelescopePath { .. }
+                    | Frame::TelescopeMotive { .. }
+                    | Frame::TelescopeStart { .. }
+                    | Frame::TelescopeOver { .. }
+                    | Frame::CaseScrutinee { .. }
+                    | Frame::SplitScrutinee { .. }
+                    | Frame::SplitBody(_)
+                    | Frame::CaseBranch { .. }
+                    | Frame::Force { .. }
+                    | Frame::ApplicationHead { .. }
+                    | Frame::ApplicationArgument { .. }
+                    | Frame::LambdaBody
+                    | Frame::BindBound { .. }
+                    | Frame::BindBody { .. }
+                    | Frame::ValueBridge { .. }
+                    | Frame::CompBridge { .. }
+                    | Frame::Quote(_)
+                    | Frame::FormNext(_)
+                    | Frame::FormUnder { .. }
+                    | Frame::FormBinder
+                    | Frame::FormLift(_)
+                    | Frame::FormElement(_)
+                    | Frame::FormStaticPi(_)
+                    | Frame::PairSecond { .. }
+                    | Frame::StaticSpine { .. }
+                    | Frame::StaticArgument { .. }
+                    | Frame::StaticOperand { .. }
+                    | Frame::Unknowing(_)
+                    | Frame::ThunkBody
+                    | Frame::ReturnValue
+                    | Frame::InjectionPayload
+                    | Frame::FormSession(_)
+                    | Frame::SessionSend { .. }
+                    | Frame::OfferArm { .. }
+                    | Frame::ForkProtocol { .. }
+                    | Frame::ForkChild { .. }
+                    | Frame::ForkParent { .. } => None,
                 })
         else {
             return Err(CheckRefusal::ShiftWithoutReset { at });
@@ -2754,9 +2850,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let (payload, reply, body) = (operation.payload, operation.reply, clause.body);
         let head = self.context.whnf_comp_type(answer)?;
         let effects = match comp_type_view(self.context.arena(), head)? {
-            | CompTypeView::Returner { effects, .. } => effects.clone(),
-            | CompTypeView::Unknown => gandr_core_term::effect::EffectRow::EMPTY,
-            | CompTypeView::Element { .. }
+            CompTypeView::Returner { effects, .. } => effects.clone(),
+            CompTypeView::Unknown => gandr_core_term::effect::EffectRow::EMPTY,
+            CompTypeView::Element { .. }
             | CompTypeView::Arrow { .. }
             | CompTypeView::Pi { .. }
             | CompTypeView::With(..) => return Err(CheckRefusal::MachineInvariant),
@@ -2941,9 +3037,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }
         let head = self.context.whnf_comp_type(answer)?;
         let ambient = match comp_type_view(self.context.arena(), head)? {
-            | CompTypeView::Returner { effects, .. } => effects.clone(),
-            | CompTypeView::Unknown => gandr_core_term::effect::EffectRow::EMPTY,
-            | CompTypeView::Element { .. }
+            CompTypeView::Returner { effects, .. } => effects.clone(),
+            CompTypeView::Unknown => gandr_core_term::effect::EffectRow::EMPTY,
+            CompTypeView::Element { .. }
             | CompTypeView::Arrow { .. }
             | CompTypeView::Pi { .. }
             | CompTypeView::With(..) => return Err(CheckRefusal::MachineInvariant),
@@ -3160,8 +3256,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
         };
         let scope = machine.session_scope();
         match machine.drive(goal) {
-            | Ok(produced) => Ok((produced, machine.conversions, machine.marks)),
-            | Err(halt) => {
+            Ok(produced) => Ok((produced, machine.conversions, machine.marks)),
+            Err(halt) => {
                 let failure = machine.failure(halt, entry);
                 machine.unwind(entry);
                 machine.close_sessions(scope);
@@ -3203,12 +3299,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let mut frames = core::mem::take(&mut self.frames);
         let stage = match halt.control {
-            | Control::Starting(goal) => (goal, Stage::Starting),
-            | Control::Resuming(waiting) => {
+            Control::Starting(goal) => (goal, Stage::Starting),
+            Control::Resuming(waiting) => {
                 frames.push(waiting);
                 (waiting.owner, Stage::Resuming)
             },
-            | Control::Handing => (self.owner, Stage::Handing),
+            Control::Handing => (self.owner, Stage::Handing),
         };
         let (at, expected) = judged(stage.0);
         let pursuit = Pursuit::new(at, expected, stage.1);
@@ -3288,36 +3384,36 @@ impl<'context, 'arena> Machine<'context, 'arena>
         loop {
             if let Err(refusal) = self.charge() {
                 let control = match step {
-                    | Step::Descend(goal) => Control::Starting(goal),
-                    | Step::Ascend(_) => Control::Handing,
+                    Step::Descend(goal) => Control::Starting(goal),
+                    Step::Ascend(_) => Control::Handing,
                 };
                 return Err(Halt { refusal, control });
             }
             let (control, next) = match step {
-                | Step::Descend(goal) => {
+                Step::Descend(goal) => {
                     self.owner = goal;
                     self.anchor(goal);
                     (Control::Starting(goal), self.descend(goal))
                 },
-                | Step::Ascend(produced) => {
+                Step::Ascend(produced) => {
                     self.settle(produced);
                     match self.frames.pop() {
-                        | Some(waiting) => {
+                        Some(waiting) => {
                             self.owner = waiting.owner;
                             (
                                 Control::Resuming(waiting),
                                 self.resume(waiting.frame, produced),
                             )
                         },
-                        | None => return Ok(produced),
+                        None => return Ok(produced),
                     }
                 },
             };
             step = match next {
-                | Ok(next) => next,
-                | Err(refusal) => match self.recover(refusal) {
-                    | Ok(next) => next,
-                    | Err(refusal) => return Err(Halt { refusal, control }),
+                Ok(next) => next,
+                Err(refusal) => match self.recover(refusal) {
+                    Ok(next) => next,
+                    Err(refusal) => return Err(Halt { refusal, control }),
                 },
             };
         }
@@ -3437,8 +3533,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     fn close(&mut self) -> Result<(), CheckRefusal>
     {
         match self.context.binders().close(Zone::Intuitionistic) {
-            | Ok(_) => Ok(()),
-            | Err(_) => Err(CheckRefusal::MachineInvariant),
+            Ok(_) => Ok(()),
+            Err(_) => Err(CheckRefusal::MachineInvariant),
         }
     }
 
@@ -3475,23 +3571,23 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         self.fence(goal)?;
         match goal {
-            | Goal::Stack {
+            Goal::Stack {
                 judgement,
                 position,
                 input,
             } => self.stack_step(judgement, position, input),
-            | Goal::Value { term, direction } => match direction {
-                | Direction::Synthesise => self.synthesise_value(term),
-                | Direction::Check(expected) => self
+            Goal::Value { term, direction } => match direction {
+                Direction::Synthesise => self.synthesise_value(term),
+                Direction::Check(expected) => self
                     .check_value(term, expected)
                     .or_else(|refusal| self.forged(term, expected, refusal)),
             },
-            | Goal::Computation { term, direction } => match direction {
-                | Direction::Synthesise => self.synthesise_comp(term),
-                | Direction::Check(expected) => self.check_comp(term, expected),
+            Goal::Computation { term, direction } => match direction {
+                Direction::Synthesise => self.synthesise_comp(term),
+                Direction::Check(expected) => self.check_comp(term, expected),
             },
-            | Goal::Form(TypeNode::Value(at)) => self.form_value_type(at),
-            | Goal::Form(TypeNode::Computation(at)) => self.form_comp_type(at),
+            Goal::Form(TypeNode::Value(at)) => self.form_value_type(at),
+            Goal::Form(TypeNode::Computation(at)) => self.form_comp_type(at),
         }
     }
 
@@ -3606,20 +3702,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let produced = |found: FormedValueType| Ok(Step::Ascend(Produced::ValueType(found.id())));
         match *self.value(term)? {
-            | Value::Constructor { .. } => self.native_constructor(term),
-            | Value::Record(_) => self.native_record(term),
-            | Value::Reify(_) => Err(CheckRefusal::NotSynthesisable {
+            Value::Constructor { .. } => self.native_constructor(term),
+            Value::Record(_) => self.native_record(term),
+            Value::Reify(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Reify(term),
             }),
-            | Value::ListNil | Value::ListCons(..) => Err(CheckRefusal::NotSynthesisable {
+            Value::ListNil | Value::ListCons(..) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::List(term),
             }),
-            | Value::Primitive { primitive, .. } => {
+            Value::Primitive { primitive, .. } => {
                 let computation = primitive.declared_type(self.context.arena_mut());
                 let classifier = self.context.arena_mut().value_type_thunk(computation);
                 Ok(Step::Ascend(Produced::ValueType(classifier)))
             },
-            | Value::PathRefl(code) => {
+            Value::PathRefl(code) => {
                 let _endpoint = crate::formation::path_code(self.context.arena(), code)?;
                 let classifier = self
                     .context
@@ -3627,7 +3723,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .value_type_path_universe(code, code);
                 Ok(Step::Ascend(Produced::ValueType(classifier)))
             },
-            | Value::PathProduct(first, second) => {
+            Value::PathProduct(first, second) => {
                 self.wait(Frame::PathProductFirst {
                     product: term,
                     at: first,
@@ -3638,7 +3734,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::PathEquiv {
+            Value::PathEquiv {
                 path_type,
                 forward,
                 backward,
@@ -3657,11 +3753,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(expected),
                 }))
             },
-            | Value::Variable {
+            Value::Variable {
                 zone: Zone::Linear,
                 index,
             } => self.endpoint_as_value(term, index),
-            | Value::Variable {
+            Value::Variable {
                 zone: Zone::Intuitionistic,
                 index,
             } => match self
@@ -3669,12 +3765,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 .binders()
                 .occurrence(Zone::Intuitionistic, index)
             {
-                | Ok(declared) => {
+                Ok(declared) => {
                     let read =
                         shift_value_type(self.context.arena_mut(), declared, Binders::past(index));
                     Ok(Step::Ascend(Produced::ValueType(read)))
                 },
-                | Err(ContextError::UnboundIndex { zone, index, depth }) => {
+                Err(ContextError::UnboundIndex { zone, index, depth }) => {
                     Err(CheckRefusal::UnboundIndex {
                         at: term,
                         zone,
@@ -3682,32 +3778,30 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         depth,
                     })
                 },
-                | Err(
+                Err(
                     ContextError::LinearSlotConsumed { .. }
                     | ContextError::LinearSlotUnconsumed { .. }
                     | ContextError::NoBinderToClose { .. },
                 ) => Err(CheckRefusal::MachineInvariant),
             },
-            | Value::Constant(constant) => match self.context.consult(constant) {
-                | Maybe::Present(declared) => produced(declared),
-                | Maybe::Absent(_) => Err(CheckRefusal::UnknownConstant { at: term, constant }),
+            Value::Constant(constant) => match self.context.consult(constant) {
+                Maybe::Present(declared) => produced(declared),
+                Maybe::Absent(_) => Err(CheckRefusal::UnknownConstant { at: term, constant }),
             },
-            | Value::Literal(ref literal) => match literal.base_type() {
-                | BaseType::Integer => produced(self.context.atom(Atom::Integer)),
-                | BaseType::String => produced(self.context.atom(Atom::String)),
-                | BaseType::Numeric => {
-                    Err(unadmitted_value(term, UnadmittedFormer::NumericLiteral))
-                },
+            Value::Literal(ref literal) => match literal.base_type() {
+                BaseType::Integer => produced(self.context.atom(Atom::Integer)),
+                BaseType::String => produced(self.context.atom(Atom::String)),
+                BaseType::Numeric => Err(unadmitted_value(term, UnadmittedFormer::NumericLiteral)),
             },
-            | Value::Quote(quoted) => Ok(self.quote(TypeNode::Value(quoted))),
-            | Value::QuoteComputation(quoted) => Ok(self.quote(TypeNode::Computation(quoted))),
-            | Value::Thunk(_) => Err(CheckRefusal::NotSynthesisable {
+            Value::Quote(quoted) => Ok(self.quote(TypeNode::Value(quoted))),
+            Value::QuoteComputation(quoted) => Ok(self.quote(TypeNode::Computation(quoted))),
+            Value::Thunk(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Thunk(term),
             }),
-            | Value::Tuple(ref components) if components.is_empty() => {
+            Value::Tuple(ref components) if components.is_empty() => {
                 produced(self.context.atom(Atom::Unit))
             },
-            | Value::Tuple(_) => {
+            Value::Tuple(_) => {
                 let Some(components) = self.context.arena().value(term).and_then(Value::components)
                 else {
                     return Err(CheckRefusal::MachineInvariant);
@@ -3735,22 +3829,22 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let first = self.frames.pop().ok_or(CheckRefusal::MachineInvariant)?;
                 self.resume(first.frame, Produced::Checked)
             },
-            | Value::Injection(..) => Err(CheckRefusal::NotSynthesisable {
+            Value::Injection(..) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Injection(term),
             }),
-            | Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
-            | Value::StaticLambda(_) => Err(CheckRefusal::NotSynthesisable {
+            Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
+            Value::StaticLambda(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::StaticLambda(term),
             }),
-            | Value::StaticApplication(..) => self.static_application(term),
-            | Value::Here(point) => {
+            Value::StaticApplication(..) => self.static_application(term),
+            Value::Here(point) => {
                 self.wait(Frame::HereSynthesised { point });
                 Ok(Step::Descend(Goal::Value {
                     term: point,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::Funext(left, right) => {
+            Value::Funext(left, right) => {
                 self.wait(Frame::FunextLeft {
                     at: term,
                     left,
@@ -3761,7 +3855,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::Equiv(forward, backward) => {
+            Value::Equiv(forward, backward) => {
                 self.wait(Frame::EquivForward {
                     at: term,
                     forward,
@@ -3772,7 +3866,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::Ua { .. } => {
+            Value::Ua { .. } => {
                 let premises = crate::ua::premises(self.context, term)?;
                 let owner = self.owner;
                 self.frames.push(Waiting {
@@ -3791,24 +3885,24 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let first = self.frames.pop().ok_or(CheckRefusal::MachineInvariant)?;
                 self.resume(first.frame, Produced::Checked)
             },
-            | Value::Returned(computation) => {
+            Value::Returned(computation) => {
                 self.wait(Frame::ReturnedEndpoint { at: term });
                 Ok(Step::Descend(Goal::Computation {
                     term: computation,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::Nested(_) => Err(CheckRefusal::NotSynthesisable {
+            Value::Nested(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Nested(term),
             }),
-            | Value::Run(computation) => {
+            Value::Run(computation) => {
                 self.wait(Frame::Ran { at: term });
                 Ok(Step::Descend(Goal::Computation {
                     term: computation,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::SessionRelated { source, target, .. } => {
+            Value::SessionRelated { source, target, .. } => {
                 let universe = crate::flow::universe(self.context.arena_mut());
                 let owner = self.owner;
                 self.frames.push(Waiting {
@@ -3827,21 +3921,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let first = self.frames.pop().ok_or(CheckRefusal::MachineInvariant)?;
                 self.resume(first.frame, Produced::Checked)
             },
-            | Value::Stay(point) => {
+            Value::Stay(point) => {
                 self.wait(Frame::StaySynthesised { at: term, point });
                 Ok(Step::Descend(Goal::Value {
                     term: point,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::Then(first, second) => {
+            Value::Then(first, second) => {
                 self.wait(Frame::ThenFirst { at: term, second });
                 Ok(Step::Descend(Goal::Value {
                     term: first,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::FlowProduct(first, second) => {
+            Value::FlowProduct(first, second) => {
                 self.wait(Frame::FlowProductFirst {
                     product: term,
                     at: first,
@@ -3852,7 +3946,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::Forward(translator) => {
+            Value::Forward(translator) => {
                 self.wait(Frame::ForwardTranslator {
                     at: term,
                     translator,
@@ -3862,17 +3956,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::FunctionFlow(domain, codomain) => {
+            Value::FunctionFlow(domain, codomain) => {
                 self.wait(Frame::ArrowDomain { at: term, codomain });
                 Ok(Step::Descend(Goal::Value {
                     term: domain,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::Recorded(_) => Err(CheckRefusal::NotSynthesisable {
+            Value::Recorded(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Run(term),
             }),
-            | Value::Hole(_) | Value::Mark { .. } => {
+            Value::Hole(_) | Value::Mark { .. } => {
                 let unknown = self.context.arena_mut().value_type_unknown();
                 Ok(Step::Ascend(Produced::ValueType(unknown)))
             },
@@ -4000,8 +4094,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match *self.value(term)? {
-            | Value::Record(_) => self.check_native_record(term, expected),
-            | Value::Reify(_) => {
+            Value::Record(_) => self.check_native_record(term, expected),
+            Value::Reify(_) => {
                 let (input, _) = self.stack_expected(term, expected)?;
                 Ok(Step::Descend(Goal::Stack {
                     judgement: StackJudgement {
@@ -4013,11 +4107,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     input,
                 }))
             },
-            | Value::ListNil => {
+            Value::ListNil => {
                 self.list_expected(term, expected)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | Value::ListCons(first, second) => {
+            Value::ListCons(first, second) => {
                 let element = self.list_expected(term, expected)?;
                 self.wait(Frame::PairSecond { second, expected });
                 Ok(Step::Descend(Goal::Value {
@@ -4025,7 +4119,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(element),
                 }))
             },
-            | Value::Thunk(body) => {
+            Value::Thunk(body) => {
                 let body_type = self.thunk_expected(term, expected)?;
                 self.wait(Frame::ThunkBody);
                 Ok(Step::Descend(Goal::Computation {
@@ -4033,10 +4127,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(body_type),
                 }))
             },
-            | Value::Nested(computation) => {
+            Value::Nested(computation) => {
                 let head = self.context.whnf_value_type(expected)?;
                 match matched_thunk(self.context.arena_mut(), head) {
-                    | Maybe::Present(body_type) => {
+                    Maybe::Present(body_type) => {
                         self.context.record_nesting(term, Nesting::Suspended);
                         self.wait(Frame::ThunkBody);
                         Ok(Step::Descend(Goal::Computation {
@@ -4044,7 +4138,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                             direction: Direction::Check(body_type),
                         }))
                     },
-                    | Maybe::Absent(matching::Absent::Mismatched) => {
+                    Maybe::Absent(matching::Absent::Mismatched) => {
                         self.wait(Frame::ValueBridge { at: term, expected });
                         self.wait(Frame::Ran { at: term });
                         Ok(Step::Descend(Goal::Computation {
@@ -4052,14 +4146,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                             direction: Direction::Synthesise,
                         }))
                     },
-                    | Maybe::Absent(matching::Absent::Dangling) => {
-                        Err(CheckRefusal::DanglingNode {
-                            node: CoreNode::Type(TypeNode::Value(head)),
-                        })
-                    },
+                    Maybe::Absent(matching::Absent::Dangling) => Err(CheckRefusal::DanglingNode {
+                        node: CoreNode::Type(TypeNode::Value(head)),
+                    }),
                 }
             },
-            | Value::Tuple(ref components) if !components.is_empty() => {
+            Value::Tuple(ref components) if !components.is_empty() => {
                 let count = components.len();
                 let head = self.context.whnf_value_type(expected)?;
                 let view = value_type_view(self.context.arena(), head)?;
@@ -4096,10 +4188,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let owner = self.owner;
                 for (index, &component) in components.iter().enumerate().rev() {
                     let factor = match factors {
-                        | Components::Known(ref parts) => {
+                        Components::Known(ref parts) => {
                             *parts.get(index).ok_or(CheckRefusal::MachineInvariant)?
                         },
-                        | Components::Unknown(unknown) => unknown,
+                        Components::Unknown(unknown) => unknown,
                     };
                     self.frames.push(Waiting {
                         frame: Frame::NativeNext(Goal::Value {
@@ -4111,7 +4203,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | Value::StaticLambda(body) => {
+            Value::StaticLambda(body) => {
                 let (domain, codomain) = self.static_pi_expected(term, expected)?;
                 self.context.binders().open(Zone::Intuitionistic, domain);
                 self.wait(Frame::LambdaBody);
@@ -4120,8 +4212,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(codomain),
                 }))
             },
-            | Value::Here(point) => match self.path_expected(TermNode::Value(term), expected)? {
-                | PathReading::Known {
+            Value::Here(point) => match self.path_expected(TermNode::Value(term), expected)? {
+                PathReading::Known {
                     carrier,
                     left,
                     right,
@@ -4137,13 +4229,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         direction: Direction::Check(carrier),
                     }))
                 },
-                | PathReading::Unknown(unknown) => Ok(Step::Descend(Goal::Value {
+                PathReading::Unknown(unknown) => Ok(Step::Descend(Goal::Value {
                     term: point,
                     direction: Direction::Check(unknown),
                 })),
             },
-            | Value::Recorded(_) => self.check_recorded(term, expected),
-            | Value::Stay(point) => {
+            Value::Recorded(_) => self.check_recorded(term, expected),
+            Value::Stay(point) => {
                 let head = self.context.whnf_value_type(expected)?;
                 if let ValueTypeView::Flow {
                     carrier,
@@ -4169,14 +4261,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::FunctionFlow(..) => {
+            Value::FunctionFlow(..) => {
                 self.wait(Frame::ArrowAgainst { at: term, expected });
                 Ok(Step::Descend(Goal::Value {
                     term,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::PathRefl(_)
+            Value::PathRefl(_)
             | Value::Returned(_)
             | Value::Run(_)
             | Value::Funext(..)
@@ -4203,9 +4295,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::Injection(summand, value) => {
+            Value::Injection(summand, value) => {
                 let summand = match self.sum_expected(term, expected)? {
-                    | Components::Known(parts) => {
+                    Components::Known(parts) => {
                         *parts
                             .get(usize::from(summand))
                             .ok_or(CheckRefusal::ShapeMismatch {
@@ -4214,7 +4306,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                                 found: TypeNode::Value(expected),
                             })?
                     },
-                    | Components::Unknown(unknown) => unknown,
+                    Components::Unknown(unknown) => unknown,
                 };
                 self.wait(Frame::InjectionPayload);
                 Ok(Step::Descend(Goal::Value {
@@ -4222,8 +4314,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(summand),
                 }))
             },
-            | Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
-            | Value::Hole(_) | Value::Mark { .. } => Ok(Step::Ascend(Produced::Checked)),
+            Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
+            Value::Hole(_) | Value::Mark { .. } => Ok(Step::Ascend(Produced::Checked)),
         }
     }
 
@@ -4377,11 +4469,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             root = function;
         }
         let normalizes_away = match *self.value(root)? {
-            | Value::StaticLambda(_) => true,
-            | Value::Constant(constant) => {
+            Value::StaticLambda(_) => true,
+            Value::Constant(constant) => {
                 matches!(self.context.definitions().body(constant), Maybe::Present(_))
             },
-            | Value::PathRefl(_)
+            Value::PathRefl(_)
             | Value::Here(_)
             | Value::Funext(..)
             | Value::Equiv(..)
@@ -4458,22 +4550,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match *self.computation(term)? {
-            | Computation::DataCase { scrutinee, .. } => {
+            Computation::DataCase { scrutinee, .. } => {
                 self.wait(Frame::NativeCase(term));
                 Ok(Step::Descend(Goal::Value {
                     term: scrutinee,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::RecordProjection(record, _)
-            | Computation::TupleProjection(record, _) => {
+            Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => {
                 self.wait(Frame::NativeProjection(term));
                 Ok(Step::Descend(Goal::Value {
                     term: record,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Perform {
+            Computation::Perform {
                 ref signature,
                 ref operation,
                 payload,
@@ -4496,43 +4587,43 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 });
                 Ok(Step::Descend(Goal::Form(TypeNode::Computation(result))))
             },
-            | Computation::Exercise { capability, .. } => {
+            Computation::Exercise { capability, .. } => {
                 self.wait(Frame::ExerciseCapability { at: term });
                 Ok(Step::Descend(Goal::Value {
                     term: capability,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Scope { .. } => Err(CheckRefusal::NotSynthesisable {
+            Computation::Scope { .. } => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Scope(term),
             }),
-            | Computation::Resume(stack, body) => {
+            Computation::Resume(stack, body) => {
                 self.wait(Frame::Resume { stack, body });
                 Ok(Step::Descend(Goal::Value {
                     term: stack,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Project(side, subject) => {
+            Computation::Project(side, subject) => {
                 self.wait(Frame::Project { at: term, side });
                 Ok(Step::Descend(Goal::Computation {
                     term: subject,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Handle { .. } => Err(CheckRefusal::NotSynthesisable {
+            Computation::Handle { .. } => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Handle(term),
             }),
-            | Computation::Reset(_) => Err(CheckRefusal::NotSynthesisable {
+            Computation::Reset(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Reset(term),
             }),
-            | Computation::Shift(_) => Err(CheckRefusal::NotSynthesisable {
+            Computation::Shift(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Shift(term),
             }),
-            | Computation::With(..) => Err(CheckRefusal::NotSynthesisable {
+            Computation::With(..) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::With(term),
             }),
-            | Computation::ListFold {
+            Computation::ListFold {
                 element, result, ..
             } => {
                 let result = self.context.arena_mut().comp_type_returner(result);
@@ -4543,7 +4634,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 });
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(element))))
             },
-            | Computation::Primitive {
+            Computation::Primitive {
                 primitive,
                 arguments,
             } => {
@@ -4559,11 +4650,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .ok_or(CheckRefusal::MachineInvariant)?
                     .mint(arena);
                 let first = match arguments {
-                    | gandr_core_term::primitive::Arguments::Unary(argument) => {
+                    gandr_core_term::primitive::Arguments::Unary(argument) => {
                         self.wait(Frame::PrimitiveResult { result });
                         argument
                     },
-                    | gandr_core_term::primitive::Arguments::Binary([first, second]) => {
+                    gandr_core_term::primitive::Arguments::Binary([first, second]) => {
                         let expected = domains
                             .get(1)
                             .ok_or(CheckRefusal::MachineInvariant)?
@@ -4581,7 +4672,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(first_domain),
                 }))
             },
-            | Computation::PathTransport {
+            Computation::PathTransport {
                 motive,
                 path,
                 value,
@@ -4605,7 +4696,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Ride {
+            Computation::Ride {
                 motive,
                 flow,
                 value,
@@ -4620,50 +4711,50 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::TelescopeTransport { path, .. } => {
+            Computation::TelescopeTransport { path, .. } => {
                 self.wait(Frame::TelescopePath { at: term });
                 Ok(Step::Descend(Goal::Value {
                     term: path,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Transport(path, value) => {
+            Computation::Transport(path, value) => {
                 self.wait(Frame::TransportPath { path, value });
                 Ok(Step::Descend(Goal::Value {
                     term: path,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Force(value) => {
+            Computation::Force(value) => {
                 self.wait(Frame::Force { value });
                 Ok(Step::Descend(Goal::Value {
                     term: value,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Application(head, argument) => {
+            Computation::Application(head, argument) => {
                 self.wait(Frame::ApplicationHead { head, argument });
                 Ok(Step::Descend(Goal::Computation {
                     term: head,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Lambda(_) => Err(CheckRefusal::NotSynthesisable {
+            Computation::Lambda(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Lambda(term),
             }),
-            | Computation::Return(_) => Err(CheckRefusal::NotSynthesisable {
+            Computation::Return(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Return(term),
             }),
-            | Computation::Fixpoint { .. } => Err(CheckRefusal::NotSynthesisable {
+            Computation::Fixpoint { .. } => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Fixpoint(term),
             }),
-            | Computation::Bind(bound, body) => {
+            Computation::Bind(bound, body) => {
                 Ok(self.bind(term, bound, body, Direction::Synthesise))
             },
-            | Computation::Case { .. } => Err(CheckRefusal::NotSynthesisable {
+            Computation::Case { .. } => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Case(term),
             }),
-            | Computation::Split {
+            Computation::Split {
                 scrutinee,
                 motive: SplitMotive::Scrutinee(_),
                 ..
@@ -4674,14 +4765,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Split {
+            Computation::Split {
                 motive: SplitMotive::Ambient,
                 ..
             } => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Split(term),
             }),
-            | Computation::Session(_) => self.session(term, Direction::Synthesise),
-            | Computation::Hole(_) | Computation::Mark { .. } => {
+            Computation::Session(_) => self.session(term, Direction::Synthesise),
+            Computation::Hole(_) | Computation::Mark { .. } => {
                 let unknown = self.context.arena_mut().comp_type_unknown();
                 Ok(Step::Ascend(Produced::CompType(unknown)))
             },
@@ -4734,9 +4825,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match *self.computation(term)? {
-            | Computation::Handle { .. } => self.handle(term, expected),
-            | Computation::Scope { .. } => self.scope(term, expected),
-            | Computation::Reset(body) => {
+            Computation::Handle { .. } => self.handle(term, expected),
+            Computation::Scope { .. } => self.scope(term, expected),
+            Computation::Reset(body) => {
                 self.wait(Frame::Reset {
                     answer: expected,
                     depth: self.context.depth(Zone::Intuitionistic),
@@ -4746,8 +4837,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(expected),
                 }))
             },
-            | Computation::Shift(body) => self.shift(term, body, expected),
-            | Computation::With(first, second) => {
+            Computation::Shift(body) => self.shift(term, body, expected),
+            Computation::With(first, second) => {
                 let (first_type, second_type) =
                     self.with_parts(TermNode::Computation(term), expected)?;
                 self.wait(Frame::Next(Goal::Computation {
@@ -4759,7 +4850,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(first_type),
                 }))
             },
-            | Computation::Lambda(body) => {
+            Computation::Lambda(body) => {
                 let (domain, codomain) = self.arrow_expected(term, expected)?;
                 self.context.binders().open(Zone::Intuitionistic, domain);
                 self.wait(Frame::LambdaBody);
@@ -4768,7 +4859,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(codomain),
                 }))
             },
-            | Computation::Return(value) => {
+            Computation::Return(value) => {
                 let result = self.returner_expected(term, expected)?;
                 self.wait(Frame::ReturnValue);
                 Ok(Step::Descend(Goal::Value {
@@ -4776,13 +4867,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(result),
                 }))
             },
-            | Computation::Fixpoint { body, evidence } => {
+            Computation::Fixpoint { body, evidence } => {
                 match evidence {
-                    | FixpointEvidence::StructuralDescent => {
+                    FixpointEvidence::StructuralDescent => {
                         crate::descent::replay(self.context, term, expected, body)?;
                         self.root = self.fold_root(term, expected, body)?;
                     },
-                    | FixpointEvidence::Partial => {},
+                    FixpointEvidence::Partial => {},
                 }
                 let arena = self.context.arena_mut();
                 let recursive = arena.value_type_thunk(expected);
@@ -4794,7 +4885,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(scoped),
                 }))
             },
-            | Computation::Primitive { .. }
+            Computation::Primitive { .. }
             | Computation::DataCase { .. }
             | Computation::RecordProjection(..)
             | Computation::TupleProjection(..)
@@ -4825,10 +4916,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Bind(bound, body) => {
+            Computation::Bind(bound, body) => {
                 Ok(self.bind(term, bound, body, Direction::Check(expected)))
             },
-            | Computation::Split { scrutinee, .. } => {
+            Computation::Split { scrutinee, .. } => {
                 self.wait(Frame::SplitScrutinee {
                     at: term,
                     scrutinee,
@@ -4839,7 +4930,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Case { scrutinee, .. } => {
+            Computation::Case { scrutinee, .. } => {
                 self.wait(Frame::CaseScrutinee {
                     at: term,
                     scrutinee,
@@ -4850,12 +4941,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Session(SessionAction::Offer { .. } | SessionAction::Fork { .. }) => {
+            Computation::Session(SessionAction::Offer { .. } | SessionAction::Fork { .. }) => {
                 self.session(term, Direction::Check(expected))
             },
-            | Computation::Hole(_) | Computation::Mark { .. } => {
-                Ok(Step::Ascend(Produced::Checked))
-            },
+            Computation::Hole(_) | Computation::Mark { .. } => Ok(Step::Ascend(Produced::Checked)),
         }
     }
 
@@ -4948,8 +5037,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let head = self.context.whnf_value_type(expected)?;
         match matched_thunk(self.context.arena_mut(), head) {
-            | Maybe::Present(body) => Ok(body),
-            | Maybe::Absent(absent) => Err(unmatched(
+            Maybe::Present(body) => Ok(body),
+            Maybe::Absent(absent) => Err(unmatched(
                 absent,
                 TypeNode::Value(head),
                 CheckRefusal::ShapeMismatch {
@@ -5004,8 +5093,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let head = self.context.whnf_value_type(expected)?;
         match matched_product(self.context.arena_mut(), head) {
-            | Maybe::Present(factors) => Ok(factors),
-            | Maybe::Absent(absent) => Err(unmatched(
+            Maybe::Present(factors) => Ok(factors),
+            Maybe::Absent(absent) => Err(unmatched(
                 absent,
                 TypeNode::Value(head),
                 CheckRefusal::ShapeMismatch {
@@ -5170,12 +5259,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let head = self.context.whnf_value_type(expected)?;
         match matched_static_pi(self.context.arena_mut(), head) {
-            | Maybe::Present((domain, codomain)) => {
+            Maybe::Present((domain, codomain)) => {
                 let scoped =
                     shift_value_type(self.context.arena_mut(), codomain, Binders::from(1_u32));
                 Ok((domain, scoped))
             },
-            | Maybe::Absent(absent) => Err(unmatched(
+            Maybe::Absent(absent) => Err(unmatched(
                 absent,
                 TypeNode::Value(head),
                 CheckRefusal::ShapeMismatch {
@@ -5231,8 +5320,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let head = self.context.whnf_comp_type(expected)?;
         match matched_function(self.context.arena_mut(), head) {
-            | Maybe::Present(function) => match function.scope() {
-                | CodomainScope::Ambient => {
+            Maybe::Present(function) => match function.scope() {
+                CodomainScope::Ambient => {
                     let scoped = shift_comp_type(
                         self.context.arena_mut(),
                         function.codomain(),
@@ -5240,9 +5329,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     );
                     Ok((function.domain(), scoped))
                 },
-                | CodomainScope::UnderBinder => Ok((function.domain(), function.codomain())),
+                CodomainScope::UnderBinder => Ok((function.domain(), function.codomain())),
             },
-            | Maybe::Absent(absent) => Err(unmatched(
+            Maybe::Absent(absent) => Err(unmatched(
                 absent,
                 TypeNode::Computation(head),
                 CheckRefusal::ShapeMismatch {
@@ -5295,8 +5384,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let head = self.context.whnf_comp_type(expected)?;
         match matched_returner(self.context.arena_mut(), head) {
-            | Maybe::Present(result) => Ok(result),
-            | Maybe::Absent(absent) => Err(unmatched(
+            Maybe::Present(result) => Ok(result),
+            Maybe::Absent(absent) => Err(unmatched(
                 absent,
                 TypeNode::Computation(head),
                 CheckRefusal::ShapeMismatch {
@@ -5355,8 +5444,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match value_type_view(self.context.arena(), at)? {
-            | ValueTypeView::Data { .. } => self.native_data(at),
-            | ValueTypeView::Record(fields) => {
+            ValueTypeView::Data { .. } => self.native_data(at),
+            ValueTypeView::Record(fields) => {
                 let owner = self.owner;
                 self.frames
                     .extend(fields.values().rev().map(|&field| Waiting {
@@ -5365,11 +5454,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     }));
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | ValueTypeView::Stack { input, output } => {
+            ValueTypeView::Stack { input, output } => {
                 self.wait(Frame::FormNext(TypeNode::Computation(output)));
                 Ok(Step::Descend(Goal::Form(TypeNode::Computation(input))))
             },
-            | ValueTypeView::Path {
+            ValueTypeView::Path {
                 carrier,
                 left,
                 right,
@@ -5384,7 +5473,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(carrier))))
             },
-            | ValueTypeView::Flow {
+            ValueTypeView::Flow {
                 carrier,
                 source,
                 target,
@@ -5399,33 +5488,31 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(carrier))))
             },
-            | ValueTypeView::Run(protocol) => {
+            ValueTypeView::Run(protocol) => {
                 let universe = crate::flow::universe(self.context.arena_mut());
                 Ok(Step::Descend(Goal::Value {
                     term: protocol,
                     direction: Direction::Check(universe),
                 }))
             },
-            | ValueTypeView::PathUniverse(source, target) => {
+            ValueTypeView::PathUniverse(source, target) => {
                 let _source = crate::formation::path_code(self.context.arena(), source)?;
                 let _target = crate::formation::path_code(self.context.arena(), target)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | ValueTypeView::Integer
+            ValueTypeView::Integer
             | ValueTypeView::String
             | ValueTypeView::Unit
             | ValueTypeView::Unknown => Ok(Step::Ascend(Produced::Checked)),
-            | ValueTypeView::Abstract(atom) => {
+            ValueTypeView::Abstract(atom) => {
                 let _level = self.context.abstract_level(atom)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | ValueTypeView::List(element) => {
-                Ok(Step::Descend(Goal::Form(TypeNode::Value(element))))
-            },
-            | ValueTypeView::Thunk(body) => {
+            ValueTypeView::List(element) => Ok(Step::Descend(Goal::Form(TypeNode::Value(element)))),
+            ValueTypeView::Thunk(body) => {
                 Ok(Step::Descend(Goal::Form(TypeNode::Computation(body))))
             },
-            | ValueTypeView::Universe { level, .. } => {
+            ValueTypeView::Universe { level, .. } => {
                 if level.succ().is_err() {
                     return Err(CheckRefusal::OutOfFragment {
                         at: CoreNode::Type(TypeNode::Value(at)),
@@ -5434,18 +5521,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | ValueTypeView::Lift { inner, .. } => {
+            ValueTypeView::Lift { inner, .. } => {
                 self.wait(Frame::FormLift(at));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(inner))))
             },
-            | ValueTypeView::Element { code, .. } => {
+            ValueTypeView::Element { code, .. } => {
                 self.wait(Frame::FormElement(TypeNode::Value(at)));
                 Ok(Step::Descend(Goal::Value {
                     term: code,
                     direction: Direction::Synthesise,
                 }))
             },
-            | ValueTypeView::Sum(components) | ValueTypeView::Product(components) => {
+            ValueTypeView::Sum(components) | ValueTypeView::Product(components) => {
                 let owner = self.owner;
                 self.frames
                     .extend(components.iter().rev().map(|&component| Waiting {
@@ -5454,7 +5541,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     }));
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | ValueTypeView::Session(session) => {
+            ValueTypeView::Session(session) => {
                 let owner = self.owner;
                 let payloads = session.payloads();
                 self.frames.push(Waiting {
@@ -5468,19 +5555,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     }));
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | ValueTypeView::StaticPi { domain, codomain } => {
+            ValueTypeView::StaticPi { domain, codomain } => {
                 self.wait(Frame::FormStaticPi(at));
                 self.wait(Frame::FormNext(TypeNode::Value(codomain)));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
             },
-            | ValueTypeView::Sigma { first, second } => {
+            ValueTypeView::Sigma { first, second } => {
                 self.wait(Frame::FormUnder {
                     domain: first,
                     under: TypeNode::Value(second),
                 });
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(first))))
             },
-            | ValueTypeView::Capability {
+            ValueTypeView::Capability {
                 authority, grade, ..
             } => {
                 if grade == gandr_core_term::effect::capability::CapabilityGrade::Consumable {
@@ -5525,11 +5612,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match comp_type_view(self.context.arena(), at)? {
-            | CompTypeView::With(first, second) => {
+            CompTypeView::With(first, second) => {
                 self.wait(Frame::FormNext(TypeNode::Computation(second)));
                 Ok(Step::Descend(Goal::Form(TypeNode::Computation(first))))
             },
-            | CompTypeView::Returner { result, effects } => {
+            CompTypeView::Returner { result, effects } => {
                 let owner = self.owner;
                 self.frames.extend(effects.types().rev().map(|ty| Waiting {
                     frame: Frame::FormNext(TypeNode::Value(ty)),
@@ -5537,25 +5624,25 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(result))))
             },
-            | CompTypeView::Arrow { domain, codomain } => {
+            CompTypeView::Arrow { domain, codomain } => {
                 self.wait(Frame::FormNext(TypeNode::Computation(codomain)));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
             },
-            | CompTypeView::Pi { domain, codomain } => {
+            CompTypeView::Pi { domain, codomain } => {
                 self.wait(Frame::FormUnder {
                     domain,
                     under: TypeNode::Computation(codomain),
                 });
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
             },
-            | CompTypeView::Element { code, .. } => {
+            CompTypeView::Element { code, .. } => {
                 self.wait(Frame::FormElement(TypeNode::Computation(at)));
                 Ok(Step::Descend(Goal::Value {
                     term: code,
                     direction: Direction::Synthesise,
                 }))
             },
-            | CompTypeView::Unknown => Ok(Step::Ascend(Produced::Checked)),
+            CompTypeView::Unknown => Ok(Step::Ascend(Produced::Checked)),
         }
     }
 
@@ -5655,8 +5742,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let level = level_of(self.context, quoted)?;
         let sort = match quoted {
-            | TypeNode::Value(_) => GroundSort::Value,
-            | TypeNode::Computation(_) => GroundSort::Computation,
+            TypeNode::Value(_) => GroundSort::Value,
+            TypeNode::Computation(_) => GroundSort::Computation,
         };
         Ok(self
             .context
@@ -5748,10 +5835,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
         for classifier in [domain, codomain] {
             let head = self.context.whnf_value_type(classifier)?;
             match value_type_view(self.context.arena(), head)? {
-                | ValueTypeView::Universe { .. }
+                ValueTypeView::Universe { .. }
                 | ValueTypeView::StaticPi { .. }
                 | ValueTypeView::Unknown => {},
-                | ValueTypeView::PathUniverse(..)
+                ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
@@ -5814,11 +5901,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let arena = self.context.arena();
         let (code, target, sort) = match node {
-            | TypeNode::Value(at) => match value_type_view(arena, at)? {
-                | ValueTypeView::Element { code, target } => {
+            TypeNode::Value(at) => match value_type_view(arena, at)? {
+                ValueTypeView::Element { code, target } => {
                     (code, target.clone(), GroundSort::Value)
                 },
-                | ValueTypeView::PathUniverse(..)
+                ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
@@ -5841,11 +5928,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Session(_)
                 | ValueTypeView::Unknown => return Err(CheckRefusal::MachineInvariant),
             },
-            | TypeNode::Computation(at) => match comp_type_view(arena, at)? {
-                | CompTypeView::Element { code, target } => {
+            TypeNode::Computation(at) => match comp_type_view(arena, at)? {
+                CompTypeView::Element { code, target } => {
                     (code, target.clone(), GroundSort::Computation)
                 },
-                | CompTypeView::Returner { .. }
+                CompTypeView::Returner { .. }
                 | CompTypeView::With(..)
                 | CompTypeView::Arrow { .. }
                 | CompTypeView::Pi { .. }
@@ -5892,14 +5979,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> CompTypeId
     {
         match codomain {
-            | Codomain::Ambient(codomain) => codomain,
-            | Codomain::Dependent(codomain) => {
+            Codomain::Ambient(codomain) => codomain,
+            Codomain::Dependent(codomain) => {
                 let lift = self.context.lifts().get(&argument).cloned();
                 let arena = self.context.arena_mut();
-                let code = match lift {
-                    | Some(lift) => lift.mint(arena, argument),
-                    | None => argument,
-                };
+                let code = lift.map_or(argument, |lift| lift.mint(arena, argument));
                 instantiate_comp_type(arena, codomain, code)
             },
         }
@@ -5960,15 +6044,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match (frame, produced) {
-            | (Frame::NativeNext(goal) | Frame::Next(goal), Produced::Checked) => {
+            (Frame::NativeNext(goal) | Frame::Next(goal), Produced::Checked) => {
                 Ok(Step::Descend(goal))
             },
-            | (Frame::NativeYield(result), Produced::Checked) => Ok(Step::Ascend(result)),
-            | (Frame::NativeCollect, Produced::ValueType(field)) => {
+            (Frame::NativeYield(result), Produced::Checked) => Ok(Step::Ascend(result)),
+            (Frame::NativeCollect, Produced::ValueType(field)) => {
                 self.native_types.push(field);
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (Frame::NativeDiscard, Produced::ValueType(_))
+            (Frame::NativeDiscard, Produced::ValueType(_))
             | (
                 Frame::Reset { .. }
                 | Frame::ThunkBody
@@ -5976,7 +6060,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::InjectionPayload,
                 Produced::Checked,
             ) => Ok(Step::Ascend(Produced::Checked)),
-            | (Frame::NativeRecord { term, base }, Produced::Checked) => {
+            (Frame::NativeRecord { term, base }, Produced::Checked) => {
                 let Some(matched_native_node) = self.context.arena().value(term)
                 else {
                     return Err(CheckRefusal::MachineInvariant);
@@ -5996,7 +6080,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let record = self.context.arena_mut().value_type_record(fields);
                 Ok(Step::Ascend(Produced::ValueType(record)))
             },
-            | (Frame::NativeTuple { base }, Produced::Checked) => {
+            (Frame::NativeTuple { base }, Produced::Checked) => {
                 let product = self.context.arena_mut().value_type_product(
                     self.native_types
                         .get(base ..)
@@ -6005,10 +6089,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.native_types.truncate(base);
                 Ok(Step::Ascend(Produced::ValueType(product)))
             },
-            | (Frame::NativeCase(term), Produced::ValueType(datatype)) => {
+            (Frame::NativeCase(term), Produced::ValueType(datatype)) => {
                 self.native_case(term, datatype)
             },
-            | (
+            (
                 Frame::NativeMotive {
                     term,
                     datatype,
@@ -6016,7 +6100,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::Checked,
             ) => self.native_branches(term, datatype, respect),
-            | (
+            (
                 Frame::NativeRespect {
                     term,
                     datatype,
@@ -6033,7 +6117,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (Frame::NativeLoops { term, datatype }, Produced::Checked) => {
+            (Frame::NativeLoops { term, datatype }, Produced::Checked) => {
                 // As the rules are, a loop is judged on the elaborated body.
                 if self.context.nesting().is_empty() {
                     let signature = crate::former::signature(self.context, datatype)?;
@@ -6041,16 +6125,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (Frame::SigmaSplitScrutinee(term), Produced::ValueType(classifier)) => {
+            (Frame::SigmaSplitScrutinee(term), Produced::ValueType(classifier)) => {
                 self.sigma_split(term, classifier)
             },
-            | (Frame::SigmaSplitMotive { term, sigma }, Produced::Checked) => {
+            (Frame::SigmaSplitMotive { term, sigma }, Produced::Checked) => {
                 self.sigma_split_body(term, sigma)
             },
-            | (Frame::NativeProjection(term), Produced::ValueType(record)) => {
+            (Frame::NativeProjection(term), Produced::ValueType(record)) => {
                 self.native_projection(term, record)
             },
-            | (
+            (
                 Frame::NativeNext(_)
                 | Frame::NativeYield(_)
                 | Frame::NativeCollect
@@ -6066,7 +6150,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::NativeProjection(_),
                 _,
             ) => Err(CheckRefusal::MachineInvariant),
-            | (Frame::Resume { stack, body }, Produced::ValueType(classifier)) => {
+            (Frame::Resume { stack, body }, Produced::ValueType(classifier)) => {
                 let (input, output) = self.stack_expected(stack, classifier)?;
                 self.wait(Frame::PrimitiveResult { result: output });
                 Ok(Step::Descend(Goal::Computation {
@@ -6074,14 +6158,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(input),
                 }))
             },
-            | (Frame::Project { at, side }, Produced::CompType(classifier)) => {
+            (Frame::Project { at, side }, Produced::CompType(classifier)) => {
                 let (first, second) = self.with_parts(TermNode::Computation(at), classifier)?;
                 Ok(Step::Ascend(Produced::CompType(match side {
-                    | gandr_kernel_term::Side::Left => first,
-                    | gandr_kernel_term::Side::Right => second,
+                    gandr_kernel_term::Side::Left => first,
+                    gandr_kernel_term::Side::Right => second,
                 })))
             },
-            | (
+            (
                 Frame::HandlerForm {
                     at,
                     answer,
@@ -6103,7 +6187,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | (
+            (
                 Frame::HandlerSubject {
                     at,
                     answer,
@@ -6111,10 +6195,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::CompType(subject),
             ) => self.handle_subject(at, answer, interface, subject),
-            | (Frame::ExerciseCapability { at }, Produced::ValueType(classifier)) => {
+            (Frame::ExerciseCapability { at }, Produced::ValueType(classifier)) => {
                 self.exercise(at, classifier)
             },
-            | (
+            (
                 Frame::ScopeForm {
                     at,
                     answer,
@@ -6122,14 +6206,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::Checked,
             ) => self.scope_subject(at, answer, subject),
-            | (Frame::ScopeSubject { at, answer }, Produced::Checked) => {
+            (Frame::ScopeSubject { at, answer }, Produced::Checked) => {
                 self.scope_return(at, answer)
             },
-            | (Frame::HandlerReturn { at, answer }, Produced::Checked) => {
+            (Frame::HandlerReturn { at, answer }, Produced::Checked) => {
                 self.close()?;
                 self.handle_clause(at, answer, Ordinal::FIRST)
             },
-            | (
+            (
                 Frame::HandlerClause {
                     at,
                     answer,
@@ -6141,7 +6225,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.close()?;
                 self.handle_clause(at, answer, position)
             },
-            | (
+            (
                 Frame::StackNext {
                     judgement,
                     position,
@@ -6152,7 +6236,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 position,
                 input,
             })),
-            | (Frame::StackBind { at, body, bound }, Produced::CompType(synthesised)) => {
+            (Frame::StackBind { at, body, bound }, Produced::CompType(synthesised)) => {
                 let Maybe::Present(lowered) =
                     strengthen_comp_type(self.context.arena_mut(), synthesised)
                 else {
@@ -6162,10 +6246,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let result = self.accumulate_effects(body, bound, lowered)?;
                 Ok(Step::Ascend(Produced::CompType(result)))
             },
-            | (Frame::ListFold { at, result, phase }, Produced::Checked) => {
+            (Frame::ListFold { at, result, phase }, Produced::Checked) => {
                 self.list_fold(at, result, phase)
             },
-            | (
+            (
                 Frame::PrimitiveSecond {
                     argument,
                     expected,
@@ -6184,11 +6268,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(expected),
                 }))
             },
-            | (
+            (
                 Frame::PrimitiveResult { result } | Frame::TransportOperand { result },
                 Produced::Checked,
             ) => Ok(Step::Ascend(Produced::CompType(result))),
-            | (
+            (
                 Frame::PathProductFirst {
                     product,
                     at,
@@ -6208,7 +6292,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | (
+            (
                 Frame::PathProductSecond {
                     product,
                     at,
@@ -6232,7 +6316,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     crate::product::classifier(self.context.arena_mut(), first, second);
                 Ok(Step::Ascend(Produced::ValueType(classifier)))
             },
-            | (
+            (
                 Frame::PathBackward {
                     backward,
                     source,
@@ -6248,10 +6332,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(expected),
                 }))
             },
-            | (Frame::PathChecked { path_type }, Produced::Checked) => {
+            (Frame::PathChecked { path_type }, Produced::Checked) => {
                 Ok(Step::Ascend(Produced::ValueType(path_type)))
             },
-            | (Frame::TransportPath { path, value }, Produced::ValueType(classifier)) => {
+            (Frame::TransportPath { path, value }, Produced::ValueType(classifier)) => {
                 let (source, target) = self.path_endpoints(path, classifier)?;
                 let result = self.context.arena_mut().comp_type_returner(target);
                 self.wait(Frame::TransportOperand { result });
@@ -6260,14 +6344,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(source),
                 }))
             },
-            | (Frame::HereSynthesised { point }, Produced::ValueType(carrier)) => {
+            (Frame::HereSynthesised { point }, Produced::ValueType(carrier)) => {
                 let path = self
                     .context
                     .arena_mut()
                     .value_type_path(carrier, point, point);
                 Ok(Step::Ascend(Produced::ValueType(path)))
             },
-            | (
+            (
                 Frame::HereEndpoints {
                     at,
                     point,
@@ -6279,7 +6363,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.reaches(at, point, left, right)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (Frame::FunextLeft { at, left, right }, Produced::ValueType(classifier)) => {
+            (Frame::FunextLeft { at, left, right }, Produced::ValueType(classifier)) => {
                 self.wait(Frame::FunextRight {
                     at,
                     left,
@@ -6291,7 +6375,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(classifier),
                 }))
             },
-            | (
+            (
                 Frame::FunextRight {
                     at,
                     left,
@@ -6308,7 +6392,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .value_type_path(classifier, left, right);
                 Ok(Step::Ascend(Produced::ValueType(path)))
             },
-            | (
+            (
                 Frame::EquivForward {
                     at,
                     forward,
@@ -6329,7 +6413,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(inverse),
                 }))
             },
-            | (
+            (
                 Frame::EquivBackward {
                     at,
                     forward,
@@ -6343,21 +6427,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.context.record_equivalence(at, decided);
                 Ok(Step::Ascend(Produced::ValueType(path)))
             },
-            | (Frame::UaTranslators { at }, Produced::Checked) => {
+            (Frame::UaTranslators { at }, Produced::Checked) => {
                 let universal = crate::ua::decide(self.context, at)?;
                 self.context.record_native(at, universal.path());
                 let identity = universal.identity(self.context.arena_mut());
                 Ok(Step::Ascend(Produced::ValueType(identity)))
             },
-            | (Frame::Ran { at }, Produced::CompType(synthesised)) => {
+            (Frame::Ran { at }, Produced::CompType(synthesised)) => {
                 let head = self.context.whnf_comp_type(synthesised)?;
                 let (result, purity) = match comp_type_view(self.context.arena(), head)? {
-                    | CompTypeView::Returner { result, effects } => (result, effects.purity()),
-                    | CompTypeView::Unknown => (
+                    CompTypeView::Returner { result, effects } => (result, effects.purity()),
+                    CompTypeView::Unknown => (
                         self.context.arena_mut().value_type_unknown(),
                         gandr_core_term::effect::Purity::Pure,
                     ),
-                    | CompTypeView::With(..)
+                    CompTypeView::With(..)
                     | CompTypeView::Arrow { .. }
                     | CompTypeView::Pi { .. }
                     | CompTypeView::Element { .. } => {
@@ -6376,19 +6460,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.context.record_nesting(at, Nesting::Ran(purity));
                 Ok(Step::Ascend(Produced::ValueType(result)))
             },
-            | (Frame::ReturnedEndpoint { at }, Produced::CompType(synthesised)) => {
+            (Frame::ReturnedEndpoint { at }, Produced::CompType(synthesised)) => {
                 let head = self.context.whnf_comp_type(synthesised)?;
                 match comp_type_view(self.context.arena(), head)? {
-                    | CompTypeView::Returner { result, effects }
+                    CompTypeView::Returner { result, effects }
                         if effects.purity() == gandr_core_term::effect::Purity::Pure =>
                     {
                         Ok(Step::Ascend(Produced::ValueType(result)))
                     },
-                    | CompTypeView::Unknown => {
+                    CompTypeView::Unknown => {
                         let unknown = self.context.arena_mut().value_type_unknown();
                         Ok(Step::Ascend(Produced::ValueType(unknown)))
                     },
-                    | CompTypeView::Returner { .. }
+                    CompTypeView::Returner { .. }
                     | CompTypeView::With(..)
                     | CompTypeView::Arrow { .. }
                     | CompTypeView::Pi { .. }
@@ -6397,7 +6481,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     },
                 }
             },
-            | (
+            (
                 Frame::ElementTransportPath { at, motive, value },
                 Produced::ValueType(classifier),
             ) => {
@@ -6423,7 +6507,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.wait(Frame::FormBinder);
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(motive))))
             },
-            | (
+            (
                 Frame::ElementTransportMotive {
                     motive,
                     value,
@@ -6442,7 +6526,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(source),
                 }))
             },
-            | (Frame::SessionStatement { at }, Produced::Checked) => {
+            (Frame::SessionStatement { at }, Produced::Checked) => {
                 let Value::SessionRelated {
                     relation,
                     source,
@@ -6457,7 +6541,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     crate::flow::identity(self.context.arena_mut(), relation, (source, target));
                 Ok(Step::Ascend(Produced::ValueType(identity)))
             },
-            | (Frame::StaySynthesised { at, point }, Produced::ValueType(carrier)) => {
+            (Frame::StaySynthesised { at, point }, Produced::ValueType(carrier)) => {
                 crate::flow::record_simulation(self.context, at, carrier, (point, point))?;
                 let flow = self
                     .context
@@ -6465,14 +6549,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .value_type_flow(carrier, point, point);
                 Ok(Step::Ascend(Produced::ValueType(flow)))
             },
-            | (Frame::ThenFirst { at, second }, Produced::ValueType(first)) => {
+            (Frame::ThenFirst { at, second }, Produced::ValueType(first)) => {
                 self.wait(Frame::ThenSecond { at, first });
                 Ok(Step::Descend(Goal::Value {
                     term: second,
                     direction: Direction::Synthesise,
                 }))
             },
-            | (Frame::ThenSecond { at, first }, Produced::ValueType(synthesised)) => {
+            (Frame::ThenSecond { at, first }, Produced::ValueType(synthesised)) => {
                 let Value::Then(_, second) = *self.value(at)?
                 else {
                     return Err(CheckRefusal::MachineInvariant);
@@ -6499,7 +6583,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .value_type_flow(carrier, source, end);
                 Ok(Step::Ascend(Produced::ValueType(composite)))
             },
-            | (
+            (
                 Frame::FlowProductFirst {
                     product: _,
                     at,
@@ -6514,13 +6598,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | (Frame::FlowProductSecond { at, first }, Produced::ValueType(classifier)) => {
+            (Frame::FlowProductSecond { at, first }, Produced::ValueType(classifier)) => {
                 let second = crate::product::flow_component(self.context, at, classifier)?;
                 let product =
                     crate::product::flow_classifier(self.context.arena_mut(), first, second);
                 Ok(Step::Ascend(Produced::ValueType(product)))
             },
-            | (Frame::RideFlow { at, motive, .. }, Produced::ValueType(flow)) => {
+            (Frame::RideFlow { at, motive, .. }, Produced::ValueType(flow)) => {
                 let (carrier, ..) =
                     crate::flow::endpoints(self.context, TermNode::Computation(at), flow)?;
                 self.context.binders().open(Zone::Intuitionistic, carrier);
@@ -6528,7 +6612,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.wait(Frame::FormBinder);
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(motive))))
             },
-            | (Frame::RideMotive { at, flow }, Produced::Checked) => {
+            (Frame::RideMotive { at, flow }, Produced::Checked) => {
                 let ride = crate::flow::ride(self.context, at, flow)?;
                 self.wait(Frame::RideValue {
                     at,
@@ -6542,7 +6626,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(ride.source),
                 }))
             },
-            | (
+            (
                 Frame::RideValue {
                     at,
                     value,
@@ -6555,7 +6639,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 crate::flow::admit(self.context, at, value, flow, moving)?;
                 Ok(Step::Ascend(Produced::CompType(result)))
             },
-            | (Frame::ForwardTranslator { at, translator }, Produced::ValueType(classifier)) => {
+            (Frame::ForwardTranslator { at, translator }, Produced::ValueType(classifier)) => {
                 let codes = crate::forward::codes(self.context, at, classifier)?;
                 let decided = crate::forward::decide(self.context, at, translator, codes)?;
                 let flow = decided.classifier();
@@ -6563,14 +6647,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .record_directed(at, crate::forward::Directed::Forward(decided));
                 Ok(Step::Ascend(Produced::ValueType(flow)))
             },
-            | (Frame::ArrowDomain { at, codomain }, Produced::ValueType(domain_type)) => {
+            (Frame::ArrowDomain { at, codomain }, Produced::ValueType(domain_type)) => {
                 self.wait(Frame::ArrowCodomain { at, domain_type });
                 Ok(Step::Descend(Goal::Value {
                     term: codomain,
                     direction: Direction::Synthesise,
                 }))
             },
-            | (Frame::ArrowCodomain { at, domain_type }, Produced::ValueType(codomain_type)) => {
+            (Frame::ArrowCodomain { at, domain_type }, Produced::ValueType(codomain_type)) => {
                 let Value::FunctionFlow(domain, codomain) = *self.value(at)?
                 else {
                     return Err(CheckRefusal::MachineInvariant);
@@ -6585,7 +6669,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .record_directed(at, crate::forward::Directed::Function(flow));
                 Ok(Step::Ascend(Produced::ValueType(flow)))
             },
-            | (Frame::ArrowAgainst { at, expected }, Produced::ValueType(synthesised)) => {
+            (Frame::ArrowAgainst { at, expected }, Produced::ValueType(synthesised)) => {
                 let Value::FunctionFlow(domain, codomain) = *self.value(at)?
                 else {
                     return Err(CheckRefusal::MachineInvariant);
@@ -6599,7 +6683,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 )?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (
+            (
                 Frame::StayEndpoints {
                     at,
                     point,
@@ -6613,7 +6697,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 crate::flow::record_simulation(self.context, at, carrier, (left, right))?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (Frame::TelescopePath { at }, Produced::ValueType(classifier)) => {
+            (Frame::TelescopePath { at }, Produced::ValueType(classifier)) => {
                 let PathReading::Known {
                     carrier,
                     left,
@@ -6634,7 +6718,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 });
                 Ok(Step::Descend(Goal::Form(TypeNode::Computation(motive))))
             },
-            | (
+            (
                 Frame::TelescopeMotive {
                     at,
                     carrier,
@@ -6664,7 +6748,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(source),
                 }))
             },
-            | (Frame::TelescopeStart { at, ends }, Produced::Checked) => {
+            (Frame::TelescopeStart { at, ends }, Produced::Checked) => {
                 let Computation::TelescopeTransport { over, .. } = *self.computation(at)?
                 else {
                     return Err(CheckRefusal::MachineInvariant);
@@ -6675,7 +6759,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | (
+            (
                 Frame::TelescopeOver {
                     at,
                     ends: (left, right),
@@ -6714,15 +6798,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     lies_over,
                     &mut self.conversions,
                 ) {
-                    | Ok(()) => {},
-                    | Err(CheckRefusal::TypeMismatch(Mismatch::Value { .. })) => {
+                    Ok(()) => {},
+                    Err(CheckRefusal::TypeMismatch(Mismatch::Value { .. })) => {
                         return Err(CheckRefusal::NotOver {
                             at: over,
                             synthesised: classifier,
                             expected: lies_over,
                         });
                     },
-                    | Err(refusal) => return Err(refusal),
+                    Err(refusal) => return Err(refusal),
                 }
                 let arena = self.context.arena_mut();
                 let source = telescope_instance(arena, parts.body, (left, start));
@@ -6734,7 +6818,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(source),
                 }))
             },
-            | (
+            (
                 Frame::CaseScrutinee {
                     at,
                     scrutinee,
@@ -6764,10 +6848,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let owner = self.owner;
                 for (index, &branch) in branches.iter().enumerate().rev() {
                     let summand = match summands {
-                        | Components::Known(ref parts) => {
+                        Components::Known(ref parts) => {
                             *parts.get(index).ok_or(CheckRefusal::MachineInvariant)?
                         },
-                        | Components::Unknown(unknown) => unknown,
+                        Components::Unknown(unknown) => unknown,
                     };
                     self.frames.push(Waiting {
                         frame: Frame::CaseBranch {
@@ -6780,7 +6864,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (
+            (
                 Frame::SplitScrutinee {
                     at,
                     scrutinee,
@@ -6788,13 +6872,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::ValueType(classifier),
             ) => self.split(at, scrutinee, classifier, expected),
-            | (Frame::SplitBody(arity), Produced::Checked) => {
+            (Frame::SplitBody(arity), Produced::Checked) => {
                 for _ in 0_usize .. usize::from(arity) {
                     self.close()?;
                 }
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (
+            (
                 Frame::CaseBranch {
                     branch,
                     summand,
@@ -6809,11 +6893,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(expected),
                 }))
             },
-            | (Frame::Force { value }, Produced::ValueType(synthesised)) => {
+            (Frame::Force { value }, Produced::ValueType(synthesised)) => {
                 let head = self.context.whnf_value_type(synthesised)?;
                 match matched_thunk(self.context.arena_mut(), head) {
-                    | Maybe::Present(body) => Ok(Step::Ascend(Produced::CompType(body))),
-                    | Maybe::Absent(absent) => Err(unmatched(
+                    Maybe::Present(body) => Ok(Step::Ascend(Produced::CompType(body))),
+                    Maybe::Absent(absent) => Err(unmatched(
                         absent,
                         TypeNode::Value(head),
                         CheckRefusal::ShapeMismatch {
@@ -6824,7 +6908,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     )),
                 }
             },
-            | (Frame::ApplicationHead { head, argument }, Produced::CompType(synthesised)) => {
+            (Frame::ApplicationHead { head, argument }, Produced::CompType(synthesised)) => {
                 let (domain, codomain) =
                     self.application_type(TermNode::Computation(head), synthesised)?;
                 self.wait(Frame::ApplicationArgument {
@@ -6837,7 +6921,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(domain),
                 }))
             },
-            | (
+            (
                 Frame::ApplicationArgument {
                     argument,
                     domain,
@@ -6854,14 +6938,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     self.applied(argument, codomain),
                 )))
             },
-            | (
-                Frame::LambdaBody | Frame::FormBinder | Frame::BindBody { .. },
-                Produced::Checked,
-            ) => {
+            (Frame::LambdaBody | Frame::FormBinder | Frame::BindBody { .. }, Produced::Checked) => {
                 self.close()?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (
+            (
                 Frame::BindBound {
                     at,
                     bound,
@@ -6872,8 +6953,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             ) => {
                 let read = self.context.whnf_comp_type(synthesised)?;
                 let result = match matched_returner(self.context.arena_mut(), read) {
-                    | Maybe::Present(result) => result,
-                    | Maybe::Absent(absent) => {
+                    Maybe::Present(result) => result,
+                    Maybe::Absent(absent) => {
                         return Err(unmatched(
                             absent,
                             TypeNode::Computation(read),
@@ -6886,8 +6967,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     },
                 };
                 let direction = match direction {
-                    | Direction::Synthesise => Direction::Synthesise,
-                    | Direction::Check(expected) => {
+                    Direction::Synthesise => Direction::Synthesise,
+                    Direction::Check(expected) => {
                         let accumulated = self.accumulate_effects(at, read, expected)?;
                         if accumulated != expected {
                             comp_bridge(
@@ -6912,7 +6993,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction,
                 }))
             },
-            | (Frame::BindBody { at, bound }, Produced::CompType(synthesised)) => {
+            (Frame::BindBody { at, bound }, Produced::CompType(synthesised)) => {
                 let Maybe::Present(lowered) =
                     strengthen_comp_type(self.context.arena_mut(), synthesised)
                 else {
@@ -6922,7 +7003,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let lowered = self.accumulate_effects(at, bound, lowered)?;
                 Ok(Step::Ascend(Produced::CompType(lowered)))
             },
-            | (Frame::ValueBridge { at, expected }, Produced::ValueType(synthesised)) => {
+            (Frame::ValueBridge { at, expected }, Produced::ValueType(synthesised)) => {
                 value_bridge(
                     self.context,
                     at,
@@ -6932,7 +7013,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 )?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (Frame::CompBridge { at, expected }, Produced::CompType(synthesised)) => {
+            (Frame::CompBridge { at, expected }, Produced::CompType(synthesised)) => {
                 comp_bridge(
                     self.context,
                     at,
@@ -6942,34 +7023,34 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 )?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (Frame::Quote(quoted), Produced::Checked) => {
+            (Frame::Quote(quoted), Produced::Checked) => {
                 Ok(Step::Ascend(Produced::ValueType(self.quoted(quoted)?)))
             },
-            | (Frame::FormNext(next), Produced::Checked) => Ok(Step::Descend(Goal::Form(next))),
-            | (Frame::FormUnder { domain, under }, Produced::Checked) => {
+            (Frame::FormNext(next), Produced::Checked) => Ok(Step::Descend(Goal::Form(next))),
+            (Frame::FormUnder { domain, under }, Produced::Checked) => {
                 self.context.binders().open(Zone::Intuitionistic, domain);
                 self.wait(Frame::FormBinder);
                 Ok(Step::Descend(Goal::Form(under)))
             },
-            | (Frame::FormLift(at), Produced::Checked) => {
+            (Frame::FormLift(at), Produced::Checked) => {
                 self.raises(at)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (Frame::FormElement(node), Produced::ValueType(synthesised)) => {
+            (Frame::FormElement(node), Produced::ValueType(synthesised)) => {
                 self.decodes(node, synthesised)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (Frame::FormStaticPi(at), Produced::Checked) => {
+            (Frame::FormStaticPi(at), Produced::Checked) => {
                 self.static_classifiers(at)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            | (Frame::PairSecond { second, expected }, Produced::Checked) => {
+            (Frame::PairSecond { second, expected }, Produced::Checked) => {
                 Ok(Step::Descend(Goal::Value {
                     term: second,
                     direction: Direction::Check(expected),
                 }))
             },
-            | (
+            (
                 Frame::StaticSpine {
                     at,
                     position,
@@ -6980,8 +7061,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             ) => {
                 let head = self.context.whnf_value_type(synthesised)?;
                 let (domain, codomain) = match matched_static_pi(self.context.arena_mut(), head) {
-                    | Maybe::Present(classifiers) => classifiers,
-                    | Maybe::Absent(absent) => {
+                    Maybe::Present(classifiers) => classifiers,
+                    Maybe::Absent(absent) => {
                         return Err(unmatched(
                             absent,
                             TypeNode::Value(head),
@@ -7011,7 +7092,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | (
+            (
                 Frame::StaticArgument {
                     argument,
                     position,
@@ -7028,7 +7109,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     &mut self.conversions,
                 )
                 .map_err(|refusal| match refusal {
-                    | CheckRefusal::TypeMismatch(_)
+                    CheckRefusal::TypeMismatch(_)
                     | CheckRefusal::SortMismatch { .. }
                     | CheckRefusal::LevelMismatch { .. } => {
                         CheckRefusal::FamilyArgumentClassifier {
@@ -7038,26 +7119,97 @@ impl<'context, 'arena> Machine<'context, 'arena>
                             expected: domain,
                         }
                     },
-                    | other => other,
+                    other @ (CheckRefusal::NotADataType(_)
+                    | CheckRefusal::DataKindNotUniverse(_)
+                    | CheckRefusal::DataFieldLevel { .. }
+                    | CheckRefusal::RuleNotPresentable { .. }
+                    | CheckRefusal::RuleNotRespected { .. }
+                    | CheckRefusal::NotApart { .. }
+                    | CheckRefusal::LoopNotRespected { .. }
+                    | CheckRefusal::AbstractKindNotUniverse(_)
+                    | CheckRefusal::RepresentationAboveKind { .. }
+                    | CheckRefusal::NotAnAbstractType(_)
+                    | CheckRefusal::SealSiteRepeated(_)
+                    | CheckRefusal::DataArgumentArity(_)
+                    | CheckRefusal::UnknownConstructor { .. }
+                    | CheckRefusal::ConstructorArity(_)
+                    | CheckRefusal::NonExhaustiveDataCase(_)
+                    | CheckRefusal::AbsentRecordField(_)
+                    | CheckRefusal::AbsentTupleComponent(_)
+                    | CheckRefusal::MissingRecordField { .. }
+                    | CheckRefusal::UnknownOperation { .. }
+                    | CheckRefusal::HandlerCoverage { .. }
+                    | CheckRefusal::ShiftWithoutReset { .. }
+                    | CheckRefusal::DependentStack { .. }
+                    | CheckRefusal::PathCode(_)
+                    | CheckRefusal::EndpointMismatch { .. }
+                    | CheckRefusal::CompoundEndpoint { .. }
+                    | CheckRefusal::FunextUnsupported { .. }
+                    | CheckRefusal::PointwiseDistinct { .. }
+                    | CheckRefusal::EquivUnsupported { .. }
+                    | CheckRefusal::UncertifiedStratum { .. }
+                    | CheckRefusal::RoundTripDistinct { .. }
+                    | CheckRefusal::NotOver { .. }
+                    | CheckRefusal::UaUncertified { .. }
+                    | CheckRefusal::UaInequivalent { .. }
+                    | CheckRefusal::EffectSignatureConflict { .. }
+                    | CheckRefusal::ShapeMismatch { .. }
+                    | CheckRefusal::NotSynthesisable { .. }
+                    | CheckRefusal::UnknownConstant { .. }
+                    | CheckRefusal::OutOfFragment { .. }
+                    | CheckRefusal::UnboundIndex { .. }
+                    | CheckRefusal::BudgetExceeded { .. }
+                    | CheckRefusal::DanglingNode { .. }
+                    | CheckRefusal::AdmissionOrder { .. }
+                    | CheckRefusal::MachineInvariant
+                    | CheckRefusal::DependentBind { .. }
+                    | CheckRefusal::Undecided { .. }
+                    | CheckRefusal::FamilyArity { .. }
+                    | CheckRefusal::FamilyArgumentClassifier { .. }
+                    | CheckRefusal::StaticLambdaArgument { .. }
+                    | CheckRefusal::StaticClassifierExpected { .. }
+                    | CheckRefusal::NegativeOccurrence(_)
+                    | CheckRefusal::NestedOccurrence(_)
+                    | CheckRefusal::IndexOccurrence(_)
+                    | CheckRefusal::NonUniformOccurrence(_)
+                    | CheckRefusal::CrossBlockReference { .. }
+                    | CheckRefusal::DescentNotReplayed { .. }
+                    | CheckRefusal::SessionMismatch { .. }
+                    | CheckRefusal::Linearity { .. }
+                    | CheckRefusal::UnenclosedRun { .. }
+                    | CheckRefusal::CapabilityForged { .. }
+                    | CheckRefusal::CapabilityAmplified(_)
+                    | CheckRefusal::CapabilityOutsideAuthority { .. }
+                    | CheckRefusal::CapabilityEscaped { .. }
+                    | CheckRefusal::CapabilityConsumable(_)
+                    | CheckRefusal::CapabilityUngranted { .. }
+                    | CheckRefusal::SessionNotEquivalent { .. }
+                    | CheckRefusal::SessionNotSubtype { .. }
+                    | CheckRefusal::SessionCodeExpected { .. }
+                    | CheckRefusal::NonCovariantMotive { .. }
+                    | CheckRefusal::RideUnsupported { .. }
+                    | CheckRefusal::RunNotAdmitted { .. }
+                    | CheckRefusal::ForwardUnsupported { .. }
+                    | CheckRefusal::Boundary { .. }) => other,
                 })?;
                 Ok(Step::Ascend(Produced::ValueType(codomain)))
             },
-            | (Frame::StaticOperand { codomain }, Produced::Checked) => {
+            (Frame::StaticOperand { codomain }, Produced::Checked) => {
                 Ok(Step::Ascend(Produced::ValueType(codomain)))
             },
-            | (Frame::Unknowing(TermNode::Value(_)), Produced::Checked) => {
+            (Frame::Unknowing(TermNode::Value(_)), Produced::Checked) => {
                 let unknown = self.context.arena_mut().value_type_unknown();
                 Ok(Step::Ascend(Produced::ValueType(unknown)))
             },
-            | (Frame::Unknowing(TermNode::Computation(_)), Produced::Checked) => {
+            (Frame::Unknowing(TermNode::Computation(_)), Produced::Checked) => {
                 let unknown = self.context.arena_mut().comp_type_unknown();
                 Ok(Step::Ascend(Produced::CompType(unknown)))
             },
-            | (Frame::FormSession(at), Produced::Checked) => self.session_formed(at),
-            | (Frame::SessionSend { endpoint, next, .. }, Produced::Checked) => {
+            (Frame::FormSession(at), Produced::Checked) => self.session_formed(at),
+            (Frame::SessionSend { endpoint, next, .. }, Produced::Checked) => {
                 self.sent(endpoint, next)
             },
-            | (
+            (
                 Frame::OfferArm {
                     at,
                     arm,
@@ -7066,10 +7218,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::Checked,
             ) => self.armed(at, arm, expected, zones),
-            | (Frame::ForkProtocol { at, direction }, Produced::Checked) => {
+            (Frame::ForkProtocol { at, direction }, Produced::Checked) => {
                 self.fork_formed(at, direction)
             },
-            | (
+            (
                 Frame::ForkChild {
                     at,
                     direction,
@@ -7077,10 +7229,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::Checked,
             ) => self.forked(at, direction, session),
-            | (Frame::ForkParent { at, direction }, produced) => {
-                self.joined(at, direction, produced)
-            },
-            | (
+            (Frame::ForkParent { at, direction }, produced) => self.joined(at, direction, produced),
+            (
                 Frame::PathProductFirst { .. }
                 | Frame::Resume { .. }
                 | Frame::PathProductSecond { .. }
@@ -7235,10 +7385,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let expected = shift_comp_type(self.context.arena_mut(), expected, Binders::from(binders));
         for (index, shift) in (0_u32 .. binders).enumerate() {
             let component = match components {
-                | Components::Known(ref parts) => {
+                Components::Known(ref parts) => {
                     *parts.get(index).ok_or(CheckRefusal::MachineInvariant)?
                 },
-                | Components::Unknown(unknown) => unknown,
+                Components::Unknown(unknown) => unknown,
             };
             let component =
                 shift_value_type(self.context.arena_mut(), component, Binders::from(shift));
@@ -7323,7 +7473,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let head = self.context.whnf_value_type(classifier)?;
         match value_type_view(self.context.arena(), head)? {
-            | ValueTypeView::Path {
+            ValueTypeView::Path {
                 carrier,
                 left,
                 right,
@@ -7332,8 +7482,28 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 left,
                 right,
             }),
-            | ValueTypeView::Unknown => Ok(PathReading::Unknown(head)),
-            | _ => Err(CheckRefusal::ShapeMismatch {
+            ValueTypeView::Unknown => Ok(PathReading::Unknown(head)),
+            ValueTypeView::Data { .. }
+            | ValueTypeView::Record(_)
+            | ValueTypeView::Stack { .. }
+            | ValueTypeView::PathUniverse(..)
+            | ValueTypeView::Flow { .. }
+            | ValueTypeView::Run(_)
+            | ValueTypeView::Sum(_)
+            | ValueTypeView::List(_)
+            | ValueTypeView::Integer
+            | ValueTypeView::String
+            | ValueTypeView::Unit
+            | ValueTypeView::Thunk(_)
+            | ValueTypeView::Universe { .. }
+            | ValueTypeView::Lift { .. }
+            | ValueTypeView::Element { .. }
+            | ValueTypeView::Product(_)
+            | ValueTypeView::StaticPi { .. }
+            | ValueTypeView::Sigma { .. }
+            | ValueTypeView::Abstract(_)
+            | ValueTypeView::Capability { .. }
+            | ValueTypeView::Session(_) => Err(CheckRefusal::ShapeMismatch {
                 at,
                 wanted: ExpectedShape::Path,
                 found: TypeNode::Value(classifier),
@@ -7542,11 +7712,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 .definitions()
                 .relate_terms(arena, point, endpoint)
             {
-                | Ok(Maybe::Present(decisions)) => *dialogue = decisions,
-                | Ok(Maybe::Absent(_)) | Err(CheckRefusal::Undecided { .. }) => {
+                Ok(Maybe::Present(decisions)) => *dialogue = decisions,
+                Ok(Maybe::Absent(_)) | Err(CheckRefusal::Undecided { .. }) => {
                     return Err(CheckRefusal::EndpointMismatch { at, left, right });
                 },
-                | Err(fault) => return Err(fault),
+                Err(fault) => return Err(fault),
             }
         }
         let [left_dialogue, right_dialogue] = dialogues;
@@ -7604,8 +7774,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let head = self.context.whnf_value_type(classifier)?;
         match matched_sum(self.context.arena_mut(), head) {
-            | Maybe::Present(summands) => Ok(summands),
-            | Maybe::Absent(absent) => Err(unmatched(
+            Maybe::Present(summands) => Ok(summands),
+            Maybe::Absent(absent) => Err(unmatched(
                 absent,
                 TypeNode::Value(head),
                 CheckRefusal::ShapeMismatch {
@@ -7639,8 +7809,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let head = self.context.whnf_value_type(classifier)?;
         match matched_list(self.context.arena_mut(), head) {
-            | Maybe::Present(element) => Ok(element),
-            | Maybe::Absent(absent) => Err(unmatched(
+            Maybe::Present(element) => Ok(element),
+            Maybe::Absent(absent) => Err(unmatched(
                 absent,
                 TypeNode::Value(head),
                 CheckRefusal::ShapeMismatch {
@@ -7688,19 +7858,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
             return Err(CheckRefusal::MachineInvariant);
         };
         let (next, goal) = match phase {
-            | ListPhase::Element => (ListPhase::Result, Goal::Form(TypeNode::Value(result))),
-            | ListPhase::Result => {
+            ListPhase::Element => (ListPhase::Result, Goal::Form(TypeNode::Value(result))),
+            ListPhase::Result => {
                 let expected = self.context.arena_mut().value_type_list(element);
                 (ListPhase::Input, Goal::Value {
                     term: list,
                     direction: Direction::Check(expected),
                 })
             },
-            | ListPhase::Input => (ListPhase::Nil, Goal::Computation {
+            ListPhase::Input => (ListPhase::Nil, Goal::Computation {
                 term: on_nil,
                 direction: Direction::Check(classifier),
             }),
-            | ListPhase::Nil => {
+            ListPhase::Nil => {
                 let result =
                     shift_value_type(self.context.arena_mut(), result, Binders::from(1_u32));
                 let expected =
@@ -7712,7 +7882,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(expected),
                 })
             },
-            | ListPhase::Cons => {
+            ListPhase::Cons => {
                 self.close()?;
                 self.close()?;
                 return Ok(Step::Ascend(Produced::CompType(classifier)));
@@ -7753,8 +7923,8 @@ fn unmatched(
 ) -> CheckRefusal
 {
     match absent {
-        | matching::Absent::Mismatched => mismatch,
-        | matching::Absent::Dangling => CheckRefusal::DanglingNode {
+        matching::Absent::Mismatched => mismatch,
+        matching::Absent::Dangling => CheckRefusal::DanglingNode {
             node: CoreNode::Type(node),
         },
     }
@@ -8200,12 +8370,12 @@ mod tests
             context.binders().open(Zone::Intuitionistic, scrutinised);
             let checked = check_comp(&mut context, split, returns_integer);
             match accepted {
-                | Some(true) => assert!(checked.is_ok(), "{split:?}: {checked:?}"),
-                | Some(false) => assert!(
+                Some(true) => assert!(checked.is_ok(), "{split:?}: {checked:?}"),
+                Some(false) => assert!(
                     checked.is_err() && checked != Err(mismatch(scrutinised)),
                     "{split:?} reads a component of another type: {checked:?}"
                 ),
-                | None => assert_eq!(checked.map(|_| ()), Err(mismatch(scrutinised)), "{split:?}"),
+                None => assert_eq!(checked.map(|_| ()), Err(mismatch(scrutinised)), "{split:?}"),
             }
             context.binders().close(Zone::Intuitionistic).unwrap();
         }
@@ -10120,8 +10290,8 @@ mod tests
     ) -> (Sort, Level)
     {
         match context.arena().value_type(value_type) {
-            | Some(&ValueType::Universe { sort, ref level }) => (sort, level.clone()),
-            | other => panic!("a universe was synthesised, not {other:?}"),
+            Some(&ValueType::Universe { sort, ref level }) => (sort, level.clone()),
+            other => panic!("a universe was synthesised, not {other:?}"),
         }
     }
 
@@ -10462,8 +10632,8 @@ mod tests
     fn integer(numeral: Numeral) -> gandr_kernel_term::Literal
     {
         let digits = match numeral {
-            | Numeral::Five => "5",
-            | Numeral::Six => "6",
+            Numeral::Five => "5",
+            Numeral::Six => "6",
         };
         let magnitude = gandr_kernel_term::Magnitude::from_decimal_text(digits.into())
             .expect("the digits are decimal");

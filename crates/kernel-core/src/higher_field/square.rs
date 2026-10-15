@@ -93,8 +93,8 @@ pub fn symmetry(
     let higher_relation = super::relation(arena, observed.head.code)?;
     let result = higher_relation.transport(arena, context, &identity, target, evidence)?;
     let evidence = match result {
-        | Transport::Return(value) => value,
-        | Transport::Neutral { .. } => return Err(HigherError::NeutralTransport),
+        Transport::Return(value) => value,
+        Transport::Neutral { .. } => return Err(HigherError::NeutralTransport),
     };
     let inverse = Cell {
         left: path.right,

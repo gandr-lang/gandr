@@ -585,8 +585,8 @@ where
         self.since_event = TokenCount::ZERO;
 
         match self.chunker.on_boundary(event) {
-            | CutDecision::Cut(_reason) => self.cut(frame.body_start),
-            | CutDecision::Continue => Ok(()),
+            CutDecision::Cut(_reason) => self.cut(frame.body_start),
+            CutDecision::Continue => Ok(()),
         }
     }
 }

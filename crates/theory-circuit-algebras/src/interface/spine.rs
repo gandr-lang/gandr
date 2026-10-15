@@ -191,10 +191,11 @@ impl SpineReading
         hole: &MetaVar,
     ) -> Maybe<Wire, spine_port::Absent>
     {
-        match self.ports.get(hole) {
-            | Some(wire) => Maybe::Present(*wire),
-            | None => Maybe::Absent(spine_port::Absent::NotInPattern),
-        }
+        self.ports
+            .get(hole)
+            .map_or(Maybe::Absent(spine_port::Absent::NotInPattern), |wire| {
+                Maybe::Present(*wire)
+            })
     }
 }
 
@@ -237,10 +238,8 @@ impl core::fmt::Display for SpineObstruction
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::RepeatedHole { .. } => "a metavariable occurs twice, a copy on a wire",
-            | Self::Malformed { .. } => {
-                "the read diagram is outside the monogamous acyclic fragment"
-            },
+            Self::RepeatedHole { .. } => "a metavariable occurs twice, a copy on a wire",
+            Self::Malformed { .. } => "the read diagram is outside the monogamous acyclic fragment",
         })
     }
 }
@@ -315,12 +314,12 @@ pub fn read_spine(cmd: &CmdPat) -> Result<SpineReading, SpineObstruction>
     read_consumer(cmd.consumer().to_ref(), cut, &mut reader)?;
     let boundary = Interface::new(reader.inputs, reader.outputs);
     match Wiring::assemble(WireCount::from(reader.next), reader.generators, boundary) {
-        | Ok(wiring) => Ok(SpineReading {
+        Ok(wiring) => Ok(SpineReading {
             wiring,
             cut,
             ports: reader.ports,
         }),
-        | Err(obstruction) => Err(SpineObstruction::Malformed { obstruction }),
+        Err(obstruction) => Err(SpineObstruction::Malformed { obstruction }),
     }
 }
 
@@ -418,8 +417,8 @@ impl Reader
         }
         self.ports.insert(hole.clone(), wire);
         match hole.cat() {
-            | Cat::Producer => self.inputs.push(wire),
-            | Cat::Consumer => self.outputs.push(wire),
+            Cat::Producer => self.inputs.push(wire),
+            Cat::Consumer => self.outputs.push(wire),
         }
         Ok(())
     }
@@ -478,10 +477,10 @@ fn read_producer(
     let mut stack: Vec<(ProdRef<'_>, Wire)> = alloc::vec![(root, out)];
     while let Some((node, wire)) = stack.pop() {
         match node.view() {
-            | ProdView::Meta(hole) => {
+            ProdView::Meta(hole) => {
                 reader.declare(hole, wire)?;
             },
-            | ProdView::Ctor { ctor, args } => {
+            ProdView::Ctor { ctor, args } => {
                 let mut sources: Vec<Wire> = Vec::with_capacity(args.len());
                 let pushed = stack.len();
                 for arg in args {
@@ -567,15 +566,15 @@ fn read_consumer(
     let mut stack: Vec<(ConsRef<'_>, Wire)> = alloc::vec![(root, arriving)];
     while let Some((node, wire)) = stack.pop() {
         match node.view() {
-            | ConsView::Meta(hole) => reader.declare(hole, wire)?,
-            | ConsView::Top => {
+            ConsView::Meta(hole) => reader.declare(hole, wire)?,
+            ConsView::Top => {
                 reader.generators.push(Generator::new(
                     GeneratorLabel::new(TERMINAL, GeneratorSort::Terminal),
                     [wire],
                     [],
                 ));
             },
-            | ConsView::Frame { ctor, ret } => {
+            ConsView::Frame { ctor, ret } => {
                 let next = reader.fresh();
                 reader.generators.push(Generator::new(
                     GeneratorLabel::new(name_of(ctor), GeneratorSort::Return),
@@ -584,7 +583,7 @@ fn read_consumer(
                 ));
                 stack.push((ret, next));
             },
-            | ConsView::Op { op, args, rets } => {
+            ConsView::Op { op, args, rets } => {
                 let mut sources: Vec<Wire> = Vec::with_capacity(args.len().saturating_add(1));
                 sources.push(wire);
                 let mut pending: Vec<(ProdRef<'_>, Wire)> = Vec::with_capacity(args.len());

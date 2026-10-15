@@ -318,9 +318,9 @@ impl fmt::Display for HeadArity
     ) -> fmt::Result
     {
         match *self {
-            | Self::Nullary => f.write_str("bare"),
-            | Self::Unary => f.write_str("applied to one argument"),
-            | Self::Polyadic(count) => write!(f, "applied to {count} arguments"),
+            Self::Nullary => f.write_str("bare"),
+            Self::Unary => f.write_str("applied to one argument"),
+            Self::Polyadic(count) => write!(f, "applied to {count} arguments"),
         }
     }
 }
@@ -1073,8 +1073,8 @@ impl<'source> Scope<'source>
                 break;
             };
             let depth = match entry.zone {
-                | Zone::Linear => &mut linear,
-                | Zone::Intuitionistic => &mut intuitionistic,
+                Zone::Linear => &mut linear,
+                Zone::Intuitionistic => &mut intuitionistic,
             };
             if entry.name.as_ref() == spelled {
                 let index = u32::try_from(*depth).unwrap_or(u32::MAX);
@@ -1234,9 +1234,9 @@ impl<'source> Scope<'source>
                 break;
             };
             let binds = match entry.declared {
-                | _ if entry.zone == Zone::Linear => false,
-                | Maybe::Present(_) => entry.mentioned.0,
-                | Maybe::Absent(_) => true,
+                _ if entry.zone == Zone::Linear => false,
+                Maybe::Present(_) => entry.mentioned.0,
+                Maybe::Absent(_) => true,
             };
             if binds {
                 depth = depth.saturating_add(1_u32);
@@ -1281,20 +1281,20 @@ impl<'source> Scope<'source>
     ) -> impl Iterator<Item = bool> + '_
     {
         let first = match from {
-            | Frame::Inner(id) => Some(id),
-            | Frame::Outermost => None,
+            Frame::Inner(id) => Some(id),
+            Frame::Outermost => None,
         };
         core::iter::successors(first, |id| match self.frames.get(id.0)?.parent {
-            | Frame::Inner(parent) => Some(parent),
-            | Frame::Outermost => None,
+            Frame::Inner(parent) => Some(parent),
+            Frame::Outermost => None,
         })
         .filter_map(|id| match self.frames.get(id.0) {
-            | Some(entry) if entry.zone == Zone::Linear => None,
-            | Some(entry) => Some(match entry.declared {
-                | Maybe::Present(_) => entry.mentioned.0,
-                | Maybe::Absent(_) => true,
+            Some(entry) if entry.zone == Zone::Linear => None,
+            Some(entry) => Some(match entry.declared {
+                Maybe::Present(_) => entry.mentioned.0,
+                Maybe::Absent(_) => true,
             }),
-            | None => Some(true),
+            None => Some(true),
         })
     }
 
@@ -1322,19 +1322,19 @@ impl<'source> Scope<'source>
     ) -> Vec<SurfaceName<'source>>
     {
         let first = match from {
-            | Frame::Inner(id) => Some(id),
-            | Frame::Outermost => None,
+            Frame::Inner(id) => Some(id),
+            Frame::Outermost => None,
         };
         let mut names: Vec<SurfaceName<'source>> =
             core::iter::successors(first, |id| match self.frames.get(id.0)?.parent {
-                | Frame::Inner(parent) => Some(parent),
-                | Frame::Outermost => None,
+                Frame::Inner(parent) => Some(parent),
+                Frame::Outermost => None,
             })
             .filter_map(|id| {
                 let entry = self.frames.get(id.0)?;
                 let binds = match entry.declared {
-                    | Maybe::Present(_) => entry.mentioned.0,
-                    | Maybe::Absent(_) => true,
+                    Maybe::Present(_) => entry.mentioned.0,
+                    Maybe::Absent(_) => true,
                 };
                 (entry.zone != Zone::Linear && binds).then_some(entry.name)
             })

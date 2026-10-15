@@ -107,8 +107,8 @@ impl EtaKind
     pub const fn required_polarity(self) -> Polarity
     {
         match self {
-            | Self::Data => Polarity::Positive,
-            | Self::Codata => Polarity::Negative,
+            Self::Data => Polarity::Positive,
+            Self::Codata => Polarity::Negative,
         }
     }
 }
@@ -181,8 +181,8 @@ impl CellVariance
     pub const fn from_cat(cat: Cat) -> Self
     {
         match cat {
-            | Cat::Producer => Self::Producer,
-            | Cat::Consumer => Self::Consumer,
+            Cat::Producer => Self::Producer,
+            Cat::Consumer => Self::Consumer,
         }
     }
 }
@@ -367,18 +367,18 @@ impl CellMeta
                     .any(|other| other.hole() == var.hole() && other.cat() == cat)
             };
             let variance = match (worn_at(Cat::Producer), worn_at(Cat::Consumer)) {
-                | (true, true) => CellVariance::Mixed,
-                | (false, true) => CellVariance::Consumer,
-                | (true | false, false) => CellVariance::Producer,
+                (true, true) => CellVariance::Mixed,
+                (false, true) => CellVariance::Consumer,
+                (true | false, false) => CellVariance::Producer,
             };
             // Per `(name, category)`, never per name: one hole worn at two
             // polarities is the seam, not a copy.
             let left_count = left.iter().filter(|&&other| other == var).count();
             let right_count = right.iter().filter(|&&other| other == var).count();
             let contractum = match right_count {
-                | 0 => CellContractumUse::Erased,
-                | 1 => CellContractumUse::Once,
-                | _ => CellContractumUse::Repeated,
+                0 => CellContractumUse::Erased,
+                1 => CellContractumUse::Once,
+                _ => CellContractumUse::Repeated,
             };
             vars.push(CellVarMeta {
                 var: var.clone(),
@@ -453,9 +453,9 @@ impl CellMeta
         let mut growth = StepGrowth::StrictlyLinear;
         for var in &self.vars {
             match var.contractum {
-                | CellContractumUse::Repeated => return StepGrowth::Duplicating,
-                | CellContractumUse::Erased => growth = StepGrowth::Erasing,
-                | CellContractumUse::Once => {},
+                CellContractumUse::Repeated => return StepGrowth::Duplicating,
+                CellContractumUse::Erased => growth = StepGrowth::Erasing,
+                CellContractumUse::Once => {},
             }
         }
         growth
@@ -508,8 +508,8 @@ impl Cell<SequentAlphabet>
     pub const fn eta_requirement(&self) -> Maybe<Polarity, eta_requirement::Absent>
     {
         match self.provenance() {
-            | CellProvenance::Eta(kind) => Maybe::Present(kind.required_polarity()),
-            | CellProvenance::SurfaceRule
+            CellProvenance::Eta(kind) => Maybe::Present(kind.required_polarity()),
+            CellProvenance::SurfaceRule
             | CellProvenance::MuMuTilde
             | CellProvenance::FrameDefining
             | CellProvenance::DerivedByCompletion => Maybe::Absent(eta_requirement::Absent::NotEta),
@@ -712,12 +712,12 @@ where
             fresh
         });
         match var.cat() {
-            | Cat::Producer => {
+            Cat::Producer => {
                 prods
                     .entry(var.clone())
                     .or_insert_with(|| ProdPat::meta(fresh.clone()));
             },
-            | Cat::Consumer => {
+            Cat::Consumer => {
                 conss
                     .entry(var.clone())
                     .or_insert_with(|| ConsPat::meta(fresh.clone()));
@@ -1011,11 +1011,11 @@ impl CellAlphabet for SequentAlphabet
     ) -> Maybe<Self::Cmd, command_subterm::Absent>
     {
         match subterm_at(NodeRef::Cmd(cmd), pos) {
-            | Maybe::Present(NodeRef::Cmd(found)) => Maybe::Present(found.clone()),
-            | Maybe::Present(NodeRef::Prod(_) | NodeRef::Cons(_)) => {
+            Maybe::Present(NodeRef::Cmd(found)) => Maybe::Present(found.clone()),
+            Maybe::Present(NodeRef::Prod(_) | NodeRef::Cons(_)) => {
                 Maybe::Absent(command_subterm::Absent::NotACommand)
             },
-            | Maybe::Absent(position_read::Absent::OffPattern) => {
+            Maybe::Absent(position_read::Absent::OffPattern) => {
                 Maybe::Absent(command_subterm::Absent::OffTerm)
             },
         }
@@ -1052,8 +1052,8 @@ impl CellAlphabet for SequentAlphabet
     ) -> Result<Self::Cmd, CommandSpliceRefusal>
     {
         splice_cmd(cmd, pos, Node::Cmd(replacement)).map_err(|refusal| match refusal {
-            | SpliceRefusal::OffPattern => CommandSpliceRefusal::OffTerm,
-            | SpliceRefusal::CategoryMismatch => CommandSpliceRefusal::NotACommand,
+            SpliceRefusal::OffPattern => CommandSpliceRefusal::OffTerm,
+            SpliceRefusal::CategoryMismatch => CommandSpliceRefusal::NotACommand,
         })
     }
 
@@ -1144,12 +1144,12 @@ impl CellAlphabet for SequentAlphabet
         let mut conss: BTreeMap<MetaVar, ConsPat> = BTreeMap::new();
         for var in cmd.metavars() {
             match var.cat() {
-                | Cat::Producer => {
+                Cat::Producer => {
                     prods
                         .entry(var.clone())
                         .or_insert_with(|| ProdPat::ctor(skolem_sym(var), []));
                 },
-                | Cat::Consumer => {
+                Cat::Consumer => {
                     conss
                         .entry(var.clone())
                         .or_insert_with(|| ConsPat::op(skolem_sym(var), [], ConsPat::top()));
@@ -1238,9 +1238,9 @@ impl CellAlphabet for SequentAlphabet
             .filter(|var_meta| var_meta.var().hole() == hole)
             .map(|var_meta| {
                 let role = match var_meta.variance() {
-                    | CellVariance::Producer => SeamRole::Forward,
-                    | CellVariance::Consumer => SeamRole::Backward,
-                    | CellVariance::Mixed => SeamRole::Both,
+                    CellVariance::Producer => SeamRole::Forward,
+                    CellVariance::Consumer => SeamRole::Backward,
+                    CellVariance::Mixed => SeamRole::Both,
                 };
                 (var_meta.var().clone(), role)
             })
@@ -1269,8 +1269,8 @@ impl CellAlphabet for SequentAlphabet
     ) -> FiringPermission
     {
         FiringPermission::from(match *provenance {
-            | CellProvenance::Eta(kind) => target.polarity() == kind.required_polarity(),
-            | CellProvenance::SurfaceRule
+            CellProvenance::Eta(kind) => target.polarity() == kind.required_polarity(),
+            CellProvenance::SurfaceRule
             | CellProvenance::MuMuTilde
             | CellProvenance::FrameDefining
             | CellProvenance::DerivedByCompletion => true,

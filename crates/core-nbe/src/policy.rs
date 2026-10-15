@@ -252,8 +252,8 @@ impl SchedulingPolicy
     ) -> Share
     {
         match self.stance {
-            | SchedulingStance::UniformFair => Share(1_u32),
-            | SchedulingStance::HeightWeighted => Share(u32::from(height).saturating_add(1_u32)),
+            SchedulingStance::UniformFair => Share(1_u32),
+            SchedulingStance::HeightWeighted => Share(u32::from(height).saturating_add(1_u32)),
         }
     }
 }
@@ -374,8 +374,8 @@ impl DuplicationPolicy
     pub fn new(stance: DuplicationStance) -> Result<Self, PolicyRefusal>
     {
         match stance {
-            | DuplicationStance::EraseAndClone => Ok(Self { stance }),
-            | DuplicationStance::Spinal => Err(PolicyRefusal::StanceGated { stance }),
+            DuplicationStance::EraseAndClone => Ok(Self { stance }),
+            DuplicationStance::Spinal => Err(PolicyRefusal::StanceGated { stance }),
         }
     }
 
@@ -467,9 +467,9 @@ impl DuplicationPolicy
     ) -> Copied
     {
         match (self.stance, part) {
-            | (DuplicationStance::EraseAndClone, _)
+            (DuplicationStance::EraseAndClone, _)
             | (DuplicationStance::Spinal, SharedPart::Spine) => Copied::Copied,
-            | (DuplicationStance::Spinal, SharedPart::Rib) => Copied::Shared,
+            (DuplicationStance::Spinal, SharedPart::Rib) => Copied::Shared,
         }
     }
 }
@@ -539,8 +539,8 @@ impl GranularityPolicy
     pub fn new(stance: GranularityStance) -> Result<Self, PolicyRefusal>
     {
         match stance {
-            | GranularityStance::Skeleton => Ok(Self { stance }),
-            | GranularityStance::Spinal => Err(PolicyRefusal::GranularityGated { stance }),
+            GranularityStance::Skeleton => Ok(Self { stance }),
+            GranularityStance::Spinal => Err(PolicyRefusal::GranularityGated { stance }),
         }
     }
 

@@ -45,17 +45,15 @@
 //! ) -> &'static str
 //! {
 //!     match derive_shift_equivalence(store, peak, first, second) {
-//!         | Ok(_witness) => "the two applications commute",
-//!         | Err(ShiftObstruction::UnknownCell { .. }) => "an application names no stored cell",
-//!         | Err(ShiftObstruction::ComparablePositions { .. }) => {
-//!             "one position encloses the other"
-//!         },
-//!         | Err(ShiftObstruction::GenuineOverlap { .. }) => "the two cells overlap at a seam",
-//!         | Err(ShiftObstruction::ConvexityNotDischarged) => {
+//!         Ok(_witness) => "the two applications commute",
+//!         Err(ShiftObstruction::UnknownCell { .. }) => "an application names no stored cell",
+//!         Err(ShiftObstruction::ComparablePositions { .. }) => "one position encloses the other",
+//!         Err(ShiftObstruction::GenuineOverlap { .. }) => "the two cells overlap at a seam",
+//!         Err(ShiftObstruction::ConvexityNotDischarged) => {
 //!             "the alphabet withholds the convexity warrant"
 //!         },
-//!         | Err(ShiftObstruction::StepDoesNotFire { .. }) => "a sequentialization does not fire",
-//!         | Err(ShiftObstruction::SequentializationsDiffer { .. }) => {
+//!         Err(ShiftObstruction::StepDoesNotFire { .. }) => "a sequentialization does not fire",
+//!         Err(ShiftObstruction::SequentializationsDiffer { .. }) => {
 //!             "the two orders reach different terms"
 //!         },
 //!     }

@@ -110,9 +110,12 @@ fn declared_of(
         panic!("`{name}` is declared");
     };
     match declaration.outcome() {
-        | DeclarationOutcome::Completed { declared_type, .. }
+        DeclarationOutcome::Completed { declared_type, .. }
         | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
-        | other => panic!("`{name}` lowers a signature: {other:?}"),
+        other @ (DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature: {other:?}"),
     }
 }
 
@@ -149,23 +152,23 @@ fn walked(
         panic!("a session type: {held:?}");
     };
     let named = |payload: ValueTypeId| match arena.value_type(payload) {
-        | Some(&ValueType::Base(base)) => format!("{base:?}"),
-        | other => format!("{other:?}"),
+        Some(&ValueType::Base(base)) => format!("{base:?}"),
+        other => format!("{other:?}"),
     };
     let mut at: SessionType = session.clone();
     let mut tokens = Vec::new();
     for &taken in moves {
         let step = at.step().expect("the protocol steps");
         let next = match step {
-            | Step::Send { payload, next } => {
+            Step::Send { payload, next } => {
                 tokens.push(format!("!{}", named(payload)));
                 next
             },
-            | Step::Receive { payload, next } => {
+            Step::Receive { payload, next } => {
                 tokens.push(format!("?{}", named(payload)));
                 next
             },
-            | Step::Select(ref branches) | Step::Offer(ref branches) => {
+            Step::Select(ref branches) | Step::Offer(ref branches) => {
                 let polarity = if matches!(step, Step::Select(_)) {
                     "+"
                 }
@@ -182,11 +185,11 @@ fn walked(
                     .get(&FieldLabel::from(String::from(label)))
                     .expect("the branch steps")
                 {
-                    | Maybe::Present(branch) => branch,
-                    | Maybe::Absent(_) => panic!("the choice names `{label}`"),
+                    Maybe::Present(branch) => branch,
+                    Maybe::Absent(_) => panic!("the choice names `{label}`"),
                 }
             },
-            | Step::End => {
+            Step::End => {
                 tokens.push(String::from("end"));
                 break;
             },
@@ -222,28 +225,28 @@ fn actions(
     let mut pending = Vec::from([root]);
     while let Some(next) = pending.pop() {
         match arena.computation(next) {
-            | Some(&Computation::Bind(first, second)) => pending.extend([second, first]),
-            | Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
+            Some(&Computation::Bind(first, second)) => pending.extend([second, first]),
+            Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
                 pending.push(under);
             },
-            | Some(&Computation::Session(ref action)) => {
+            Some(&Computation::Session(ref action)) => {
                 let kind = match *action {
-                    | SessionAction::Send { .. } => String::from("send"),
-                    | SessionAction::Receive { .. } => String::from("recv"),
-                    | SessionAction::Select { ref label, .. } => {
+                    SessionAction::Send { .. } => String::from("send"),
+                    SessionAction::Receive { .. } => String::from("recv"),
+                    SessionAction::Select { ref label, .. } => {
                         format!("select {}", AsRef::<str>::as_ref(label))
                     },
-                    | SessionAction::Offer { .. } => String::from("offer"),
-                    | SessionAction::Close { .. } => String::from("close"),
-                    | SessionAction::Fork { .. } => String::from("fork"),
+                    SessionAction::Offer { .. } => String::from("offer"),
+                    SessionAction::Close { .. } => String::from("close"),
+                    SessionAction::Fork { .. } => String::from("fork"),
                 };
                 seen.push(match action.endpoint() {
-                    | Maybe::Present(endpoint) => format!("{kind} @{}", u32::from(endpoint)),
-                    | Maybe::Absent(_) => kind,
+                    Maybe::Present(endpoint) => format!("{kind} @{}", u32::from(endpoint)),
+                    Maybe::Absent(_) => kind,
                 });
                 pending.extend(action.computations().rev());
             },
-            | _ => {},
+            _ => {},
         }
     }
 
@@ -329,8 +332,8 @@ fn each_state_answers_where_it_is_written()
     let module = lowered(SourceText::from(text), &mut arena);
     let written = |start: usize, end: usize| text.get(start .. end).unwrap_or_default();
     let state = |ty: ValueTypeId| match arena.value_type(ty) {
-        | Some(&ValueType::Session(ref session)) => Some(session.state()),
-        | _ => None,
+        Some(&ValueType::Session(ref session)) => Some(session.state()),
+        _ => None,
     };
     let mut forms: Vec<(&str, Option<_>)> = module
         .origins()
@@ -373,14 +376,16 @@ fn each_state_answers_where_it_is_written()
         .labels()
         .iter()
         .filter_map(|label| match label.labelled {
-            | crate::origin::Labelled::ValueType { ty, .. } => Some((
+            crate::origin::Labelled::ValueType { ty, .. } => Some((
                 written(
                     usize::from(label.span.start()),
                     usize::from(label.span.end()),
                 ),
                 state(ty),
             )),
-            | _ => None,
+            crate::origin::Labelled::CompType { .. }
+            | crate::origin::Labelled::Value(_)
+            | crate::origin::Labelled::Endpoint(_) => None,
         })
         .collect();
     let named = |label: &str| {
@@ -533,17 +538,17 @@ fn each_endpoint_answers_at_its_action()
     let mut pending = Vec::from([tail]);
     while let Some(next) = pending.pop() {
         match arena.computation(next) {
-            | Some(&Computation::Bind(first, second)) => pending.extend([second, first]),
-            | Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
+            Some(&Computation::Bind(first, second)) => pending.extend([second, first]),
+            Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
                 pending.push(under);
             },
-            | Some(&Computation::Session(ref action)) => {
+            Some(&Computation::Session(ref action)) => {
                 if let Maybe::Present(_) = action.endpoint() {
                     let _fresh = reached.insert(next);
                 }
                 pending.extend(action.computations());
             },
-            | _ => {},
+            _ => {},
         }
     }
     let labelled: Vec<(&str, ComputationId)> = module
@@ -551,13 +556,13 @@ fn each_endpoint_answers_at_its_action()
         .labels()
         .iter()
         .filter_map(|label| match label.labelled {
-            | Labelled::Endpoint(action) => Some((
+            Labelled::Endpoint(action) => Some((
                 EXCHANGE
                     .get(usize::from(label.span.start()) .. usize::from(label.span.end()))
                     .unwrap_or(""),
                 action,
             )),
-            | Labelled::ValueType { .. } | Labelled::CompType { .. } | Labelled::Value(_) => None,
+            Labelled::ValueType { .. } | Labelled::CompType { .. } | Labelled::Value(_) => None,
         })
         .collect();
     assert!(

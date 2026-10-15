@@ -327,8 +327,8 @@ fn type_change_retypes_the_dependent()
         Some(&&Typing::Synthesised {
             produced: string_type(),
             conversions: match produced.first() {
-                | Some(&&Typing::Synthesised { conversions, .. }) => conversions,
-                | other => panic!("x synthesises: {other:?}"),
+                Some(&&Typing::Synthesised { conversions, .. }) => conversions,
+                other => panic!("x synthesises: {other:?}"),
             },
         }),
         "y now reads a string"
@@ -576,8 +576,11 @@ fn a_stale_cached_typing_is_caught()
     );
     let stale = corrupted(&source, Name("a"), |checkpoint| {
         let conversions = match *checkpoint.typing() {
-            | Typing::Synthesised { conversions, .. } => conversions,
-            | ref other => panic!("a synthesises: {other:?}"),
+            Typing::Synthesised { conversions, .. } => conversions,
+            ref other @ (Typing::Data
+            | Typing::Checked { .. }
+            | Typing::Owed
+            | Typing::Refused(_)) => panic!("a synthesises: {other:?}"),
         };
         checkpoint.with_typing(Typing::Synthesised {
             produced: string_type(),
@@ -919,8 +922,8 @@ fn sealed_counter(represented: Represented) -> Program
     let mut arena = CoreArena::new();
     let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let (representation, seed) = match represented {
-        | Represented::Unit => (arena.value_type_unit(), arena.value_unit()),
-        | Represented::Integer => (
+        Represented::Unit => (arena.value_type_unit(), arena.value_unit()),
+        Represented::Integer => (
             arena.value_type_base(gandr_kernel_term::BaseType::Integer),
             arena.value_literal(integer(Natural(7))),
         ),

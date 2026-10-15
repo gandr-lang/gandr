@@ -146,7 +146,7 @@ pub fn normalize(
     while let Some(task) = tasks.pop() {
         budget.spend()?;
         match task {
-            | Task::Visit(id) => {
+            Task::Visit(id) => {
                 if normals.contains_key(&id) {
                     continue;
                 }
@@ -154,7 +154,7 @@ pub fn normalize(
                 tasks.push(Task::Finish(id));
                 tasks.extend(term.children().into_iter().flatten().rev().map(Task::Visit));
             },
-            | Task::Finish(id) => {
+            Task::Finish(id) => {
                 let term = arena.term(id)?;
                 let mut children = term.children();
                 for child in children.iter_mut().flatten() {
@@ -174,10 +174,10 @@ pub fn normalize(
                     target
                 };
                 match contract(arena, current, budget)? {
-                    | Reduction::Normal => {
+                    Reduction::Normal => {
                         normals.insert(id, current);
                     },
-                    | Reduction::Step(target, rule) => {
+                    Reduction::Step(target, rule) => {
                         steps.push(Step {
                             source: current,
                             target,
@@ -188,7 +188,7 @@ pub fn normalize(
                     },
                 }
             },
-            | Task::Forward(source, target) => {
+            Task::Forward(source, target) => {
                 let normal = *normals.get(&target).ok_or(StageError::Unbalanced)?;
                 normals.insert(source, normal);
             },
@@ -257,8 +257,8 @@ fn contract(
 ) -> Result<Reduction, StageError>
 {
     let proposal = match arena.term(id)? {
-        | Term::Apply(head, argument) => match arena.term(head)? {
-            | Term::Lambda(domain, body) => {
+        Term::Apply(head, argument) => match arena.term(head)? {
+            Term::Lambda(domain, body) => {
                 let stage = classifier_stage(arena, domain, budget)?;
                 if stage != Stage::Outer {
                     return Ok(Reduction::Normal);
@@ -266,37 +266,72 @@ fn contract(
                 let target = instantiate(arena, body, argument, budget)?;
                 Reduction::Step(target, Rule::Beta)
             },
-            | _ => Reduction::Normal,
+            Term::Variable(_)
+            | Term::Natural(..)
+            | Term::Code(_)
+            | Term::Apply(..)
+            | Term::Multiply(..)
+            | Term::Quote(_)
+            | Term::Splice(_)
+            | Term::Iterate(..)
+            | Term::Eliminate(..) => Reduction::Normal,
         },
-        | Term::Splice(quoted) => match arena.term(quoted)? {
-            | Term::Quote(body) => Reduction::Step(body, Rule::SpliceQuote),
-            | _ => Reduction::Normal,
+        Term::Splice(quoted) => match arena.term(quoted)? {
+            Term::Quote(body) => Reduction::Step(body, Rule::SpliceQuote),
+            Term::Variable(_)
+            | Term::Natural(..)
+            | Term::Code(_)
+            | Term::Lambda(..)
+            | Term::Apply(..)
+            | Term::Multiply(..)
+            | Term::Splice(_)
+            | Term::Iterate(..)
+            | Term::Eliminate(..) => Reduction::Normal,
         },
-        | Term::Quote(spliced) => match arena.term(spliced)? {
-            | Term::Splice(body) => Reduction::Step(body, Rule::QuoteSplice),
-            | _ => Reduction::Normal,
+        Term::Quote(spliced) => match arena.term(spliced)? {
+            Term::Splice(body) => Reduction::Step(body, Rule::QuoteSplice),
+            Term::Variable(_)
+            | Term::Natural(..)
+            | Term::Code(_)
+            | Term::Lambda(..)
+            | Term::Apply(..)
+            | Term::Multiply(..)
+            | Term::Quote(_)
+            | Term::Iterate(..)
+            | Term::Eliminate(..) => Reduction::Normal,
         },
-        | Term::Iterate(count, initial, step) => match arena.term(count)? {
-            | Term::Natural(Stage::Outer, Natural(0)) => {
-                Reduction::Step(initial, Rule::IterateZero)
-            },
-            | Term::Natural(Stage::Outer, Natural(count)) => {
+        Term::Iterate(count, initial, step) => match arena.term(count)? {
+            Term::Natural(Stage::Outer, Natural(0)) => Reduction::Step(initial, Rule::IterateZero),
+            Term::Natural(Stage::Outer, Natural(count)) => {
                 let count = count.checked_sub(1).ok_or(StageError::Overflow)?;
                 let predecessor = arena.alloc(Term::Natural(Stage::Outer, Natural(count)))?;
                 let remaining = arena.alloc(Term::Iterate(predecessor, initial, step))?;
                 let target = arena.alloc(Term::Apply(step, remaining))?;
                 Reduction::Step(target, Rule::IterateSuccessor)
             },
-            | _ => Reduction::Normal,
+            Term::Variable(_)
+            | Term::Natural(..)
+            | Term::Code(_)
+            | Term::Lambda(..)
+            | Term::Apply(..)
+            | Term::Multiply(..)
+            | Term::Quote(_)
+            | Term::Splice(_)
+            | Term::Iterate(..)
+            | Term::Eliminate(..) => Reduction::Normal,
         },
-        | Term::Eliminate(body, target) => {
+        Term::Eliminate(body, target) => {
             let stage = classifier_stage(arena, target, budget)?;
             if stage != Stage::Outer {
                 return Ok(Reduction::Normal);
             }
             Reduction::Step(body, Rule::Eliminate)
         },
-        | _ => Reduction::Normal,
+        Term::Variable(_)
+        | Term::Natural(..)
+        | Term::Code(_)
+        | Term::Lambda(..)
+        | Term::Multiply(..) => Reduction::Normal,
     };
     Ok(proposal)
 }
@@ -334,10 +369,10 @@ fn classifier_stage(
     loop {
         budget.spend()?;
         match arena.ty(ty)? {
-            | Type::In(_) | Type::Lift(_) => return Ok(Stage::Outer),
-            | Type::Universe(model) => return Ok(Stage::Inner(model)),
-            | Type::Nat(stage) => return Ok(stage),
-            | Type::Arrow(domain, _) => ty = domain,
+            Type::In(_) | Type::Lift(_) => return Ok(Stage::Outer),
+            Type::Universe(model) => return Ok(Stage::Inner(model)),
+            Type::Nat(stage) => return Ok(stage),
+            Type::Arrow(domain, _) => ty = domain,
         }
     }
 }

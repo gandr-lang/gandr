@@ -162,8 +162,8 @@ fn the_circles_cancellations_join_below_the_root()
             .terms
             .iter()
             .map(|certificate| match certificate.overlap.peak.read() {
-                | Maybe::Present(term) => term.to_string(),
-                | Maybe::Absent(reason) => panic!("a peak spells a term: {reason:?}"),
+                Maybe::Present(term) => term.to_string(),
+                Maybe::Absent(reason) => panic!("a peak spells a term: {reason:?}"),
             })
             .collect();
         assert_eq!(
@@ -296,8 +296,8 @@ fn term_peaks(module: &LoweredModule<'_>) -> Result<Vec<String>, Vec<CellFault>>
         .terms
         .iter()
         .map(|certificate| match certificate.overlap.peak.read() {
-            | Maybe::Present(term) => term.to_string(),
-            | Maybe::Absent(reason) => panic!("a peak spells a term: {reason:?}"),
+            Maybe::Present(term) => term.to_string(),
+            Maybe::Absent(reason) => panic!("a peak spells a term: {reason:?}"),
         })
         .collect())
 }

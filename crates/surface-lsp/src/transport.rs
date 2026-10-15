@@ -131,20 +131,20 @@ impl fmt::Display for TransportFault
     ) -> fmt::Result
     {
         match *self {
-            | Self::Io(ref error) => write!(f, "the stream failed: {error}"),
-            | Self::Truncated => f.write_str("the stream ended inside a frame"),
-            | Self::MalformedHeader => f.write_str("a header line is not `name: value` in UTF-8"),
-            | Self::LongHeader => {
+            Self::Io(ref error) => write!(f, "the stream failed: {error}"),
+            Self::Truncated => f.write_str("the stream ended inside a frame"),
+            Self::MalformedHeader => f.write_str("a header line is not `name: value` in UTF-8"),
+            Self::LongHeader => {
                 write!(f, "a header line runs past {HEADER_CEILING} bytes")
             },
-            | Self::MissingLength => f.write_str("a header block names no Content-Length"),
-            | Self::MalformedLength => {
+            Self::MissingLength => f.write_str("a header block names no Content-Length"),
+            Self::MalformedLength => {
                 f.write_str("a Content-Length value is not a decimal count of bytes")
             },
-            | Self::Oversized => {
+            Self::Oversized => {
                 write!(f, "a Content-Length value is past {BODY_CEILING} bytes")
             },
-            | Self::Encode(ref error) => write!(f, "a message could not be encoded: {error}"),
+            Self::Encode(ref error) => write!(f, "a message could not be encoded: {error}"),
         }
     }
 }
@@ -159,9 +159,9 @@ impl core::error::Error for TransportFault
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)>
     {
         match *self {
-            | Self::Io(ref error) => Some(error),
-            | Self::Encode(ref error) => Some(error),
-            | Self::Truncated
+            Self::Io(ref error) => Some(error),
+            Self::Encode(ref error) => Some(error),
+            Self::Truncated
             | Self::MalformedHeader
             | Self::LongHeader
             | Self::MissingLength

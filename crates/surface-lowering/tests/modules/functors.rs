@@ -169,8 +169,8 @@ fn a_functor_body_never_reaches_the_kernel()
     );
     for declared in lowered.module.declarations() {
         let stratum = match declared.container() {
-            | Container::TopLevel => Stratum::Module,
-            | Container::Module(index) => structures
+            Container::TopLevel => Stratum::Module,
+            Container::Module(index) => structures
                 .get(usize::from(index))
                 .map_or(Stratum::Module, LoweredStructure::stratum),
         };

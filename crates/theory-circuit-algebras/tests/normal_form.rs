@@ -139,17 +139,17 @@ impl Recipe
         let mut open: Vec<Wire> = Vec::new();
         for step in &self.steps {
             match *step {
-                | Step::IsolatedWire => {
+                Step::IsolatedWire => {
                     let wire = built.fresh();
                     built.inputs.push(wire);
                     built.outputs.push(wire);
                 },
-                | Step::Input => {
+                Step::Input => {
                     let wire = built.fresh();
                     built.inputs.push(wire);
                     open.push(wire);
                 },
-                | Step::Generator {
+                Step::Generator {
                     ref label,
                     ref picks,
                     produces,
@@ -173,8 +173,8 @@ impl Recipe
         }
         for (wire, closing) in open.into_iter().zip(self.closings.iter().cycle()) {
             match *closing {
-                | Closing::Output => built.outputs.push(wire),
-                | Closing::Terminal => built.generators.push(Generator::new(
+                Closing::Output => built.outputs.push(wire),
+                Closing::Terminal => built.generators.push(Generator::new(
                     GeneratorLabel::new("t", GeneratorSort::Terminal),
                     [wire],
                     [],

@@ -301,8 +301,8 @@ impl Store
             .arrows()
             .map(|arrow| {
                 let index = match schema.arrow_at(arrow).map(crate::schema::Arrow::indexing) {
-                    | Ok(Indexing::Indexed) => ArrowIndex::Kept(Vec::new()),
-                    | Ok(Indexing::Unindexed) | Err(_) => ArrowIndex::Undeclared,
+                    Ok(Indexing::Indexed) => ArrowIndex::Kept(Vec::new()),
+                    Ok(Indexing::Unindexed) | Err(_) => ArrowIndex::Undeclared,
                 };
                 ArrowColumn {
                     targets: Vec::new(),
@@ -317,8 +317,8 @@ impl Store
                     .attribute_at(attribute)
                     .map(crate::schema::Attribute::indexing)
                 {
-                    | Ok(Indexing::Indexed) => ValueIndex::Kept(BTreeMap::new()),
-                    | Ok(Indexing::Unindexed) | Err(_) => ValueIndex::Undeclared,
+                    Ok(Indexing::Indexed) => ValueIndex::Kept(BTreeMap::new()),
+                    Ok(Indexing::Unindexed) | Err(_) => ValueIndex::Undeclared,
                 };
                 ValueColumn {
                     values: Vec::new(),
@@ -848,8 +848,8 @@ impl Store
     ) -> Result<(), Refusal>
     {
         match self.table(object)?.liveness(part) {
-            | Liveness::Live => Ok(()),
-            | Liveness::Dead => Err(self.not_live(object, part)),
+            Liveness::Live => Ok(()),
+            Liveness::Dead => Err(self.not_live(object, part)),
         }
     }
 
@@ -865,11 +865,11 @@ impl Store
     ) -> Refusal
     {
         match self.schema.object_name(object) {
-            | Ok(name) => Refusal::NotLive {
+            Ok(name) => Refusal::NotLive {
                 object: name.clone(),
                 part,
             },
-            | Err(error) => Refusal::Schema(error),
+            Err(error) => Refusal::Schema(error),
         }
     }
 

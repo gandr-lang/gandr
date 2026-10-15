@@ -41,8 +41,8 @@ impl Serialize for StageImage
         S: serde::Serializer,
     {
         match self.0 {
-            | Stage::Outer => "outer".serialize(serializer),
-            | Stage::Inner(model) => ("inner", model.0).serialize(serializer),
+            Stage::Outer => "outer".serialize(serializer),
+            Stage::Inner(model) => ("inner", model.0).serialize(serializer),
         }
     }
 }
@@ -77,11 +77,11 @@ impl Serialize for TypeImage
         S: serde::Serializer,
     {
         match self.0 {
-            | Type::Nat(stage) => ("nat", StageImage(stage)).serialize(serializer),
-            | Type::In(model) => ("in", model.0).serialize(serializer),
-            | Type::Universe(model) => ("universe", model.0).serialize(serializer),
-            | Type::Arrow(a, b) => ("arrow", a.0, b.0).serialize(serializer),
-            | Type::Lift(body) => ("lift", body.0).serialize(serializer),
+            Type::Nat(stage) => ("nat", StageImage(stage)).serialize(serializer),
+            Type::In(model) => ("in", model.0).serialize(serializer),
+            Type::Universe(model) => ("universe", model.0).serialize(serializer),
+            Type::Arrow(a, b) => ("arrow", a.0, b.0).serialize(serializer),
+            Type::Lift(body) => ("lift", body.0).serialize(serializer),
         }
     }
 }
@@ -153,21 +153,21 @@ impl Serialize for Head
         S: serde::Serializer,
     {
         match *self {
-            | Self::Variable(Index(index)) => ("variable", index).serialize(serializer),
-            | Self::OuterNatural(Natural(value)) => ("outer-natural", value).serialize(serializer),
-            | Self::InnerNatural(model, Natural(value)) => {
+            Self::Variable(Index(index)) => ("variable", index).serialize(serializer),
+            Self::OuterNatural(Natural(value)) => ("outer-natural", value).serialize(serializer),
+            Self::InnerNatural(model, Natural(value)) => {
                 ("inner-natural", model.0, value).serialize(serializer)
             },
-            | Self::Code(ty) => ("code", ty.0).serialize(serializer),
-            | Self::Lambda(ty) => ("lambda", ty.0).serialize(serializer),
-            | Self::Eliminate(ty) => ("eliminate", ty.0).serialize(serializer),
-            | Self::Point(point) => ("point", usize::from(point)).serialize(serializer),
-            | Self::Apply => "apply".serialize(serializer),
-            | Self::Multiply => "multiply".serialize(serializer),
-            | Self::Quote => "quote".serialize(serializer),
-            | Self::Splice => "splice".serialize(serializer),
-            | Self::Iterate => "iterate".serialize(serializer),
-            | Self::Predecessor => "pred".serialize(serializer),
+            Self::Code(ty) => ("code", ty.0).serialize(serializer),
+            Self::Lambda(ty) => ("lambda", ty.0).serialize(serializer),
+            Self::Eliminate(ty) => ("eliminate", ty.0).serialize(serializer),
+            Self::Point(point) => ("point", usize::from(point)).serialize(serializer),
+            Self::Apply => "apply".serialize(serializer),
+            Self::Multiply => "multiply".serialize(serializer),
+            Self::Quote => "quote".serialize(serializer),
+            Self::Splice => "splice".serialize(serializer),
+            Self::Iterate => "iterate".serialize(serializer),
+            Self::Predecessor => "pred".serialize(serializer),
         }
     }
 }

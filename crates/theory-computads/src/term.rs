@@ -149,8 +149,8 @@ impl Head
     const fn arity(&self) -> Count
     {
         match *self {
-            | Self::Var(_) | Self::Konst(_) => Count(0),
-            | Self::Ctor(_, arity) | Self::Op(_, arity) | Self::Results(arity) => arity,
+            Self::Var(_) | Self::Konst(_) => Count(0),
+            Self::Ctor(_, arity) | Self::Op(_, arity) | Self::Results(arity) => arity,
         }
     }
 }
@@ -198,15 +198,15 @@ impl From<&FreeTerm> for Term
         let mut pending = alloc::vec![term.to_node()];
         while let Some(node) = pending.pop() {
             let (head, args) = match node.view() {
-                | TermView::Var(name) => {
+                TermView::Var(name) => {
                     nodes.push(Head::Var(name.clone()));
                     continue;
                 },
-                | TermView::Ctor { name, args } => {
+                TermView::Ctor { name, args } => {
                     (Head::Ctor(name.clone(), Count(args.len())), args)
                 },
-                | TermView::Op { name, args } => (Head::Op(name.clone(), Count(args.len())), args),
-                | TermView::Results { args } => (Head::Results(Count(args.len())), args),
+                TermView::Op { name, args } => (Head::Op(name.clone(), Count(args.len())), args),
+                TermView::Results { args } => (Head::Results(Count(args.len())), args),
             };
             nodes.push(head);
             let mark = pending.len();
@@ -254,18 +254,17 @@ impl Term
                 built.drain(split ..).rev().collect::<Vec<FreeTerm>>()
             };
             let node = match *head {
-                | Head::Var(ref name) => FreeTerm::var(name),
-                | Head::Konst(_) => return Maybe::Absent(term_reading::Absent::Skolem),
-                | Head::Ctor(ref name, arity) => FreeTerm::ctor(name, take(&mut built, arity)),
-                | Head::Op(ref name, arity) => FreeTerm::op(name, take(&mut built, arity)),
-                | Head::Results(arity) => FreeTerm::results(take(&mut built, arity)),
+                Head::Var(ref name) => FreeTerm::var(name),
+                Head::Konst(_) => return Maybe::Absent(term_reading::Absent::Skolem),
+                Head::Ctor(ref name, arity) => FreeTerm::ctor(name, take(&mut built, arity)),
+                Head::Op(ref name, arity) => FreeTerm::op(name, take(&mut built, arity)),
+                Head::Results(arity) => FreeTerm::results(take(&mut built, arity)),
             };
             built.push(node);
         }
-        match built.pop() {
-            | Some(term) => Maybe::Present(term),
-            | None => Maybe::Present(FreeTerm::results([])),
-        }
+        built
+            .pop()
+            .map_or_else(|| Maybe::Present(FreeTerm::results([])), Maybe::Present)
     }
 
     /// The end of the subterm starting at `start`: one past its last node.
@@ -381,8 +380,8 @@ impl Term
     fn vars(&self) -> impl Iterator<Item = &Name>
     {
         self.0.iter().filter_map(|head| match *head {
-            | Head::Var(ref var) => Some(var),
-            | Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) => None,
+            Head::Var(ref var) => Some(var),
+            Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) => None,
         })
     }
 
@@ -413,8 +412,8 @@ impl Term
             self.0
                 .iter()
                 .map(|head| match *head {
-                    | Head::Var(ref var) => relabel(var),
-                    | Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) => {
+                    Head::Var(ref var) => relabel(var),
+                    Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) => {
                         head.clone()
                     },
                 })
@@ -549,8 +548,8 @@ impl TermSubst
         let mut current = term;
         for _ in 0 ..= self.0.len() {
             let image = match current.0.as_slice() {
-                | &[Head::Var(ref var)] => self.0.get(var),
-                | _ => None,
+                &[Head::Var(ref var)] => self.0.get(var),
+                _ => None,
             };
             let Some(image) = image
             else {
@@ -724,8 +723,8 @@ fn anti_unify_terms(
                 .zip(&starts)
                 .map(|(member, start)| member.0.get(start.0));
             let shared = match heads.next() {
-                | Some(Some(head)) if heads.all(|other| other == Some(head)) => Some(head),
-                | Some(_) | None => None,
+                Some(Some(head)) if heads.all(|other| other == Some(head)) => Some(head),
+                Some(_) | None => None,
             };
             if let Some(head) = shared {
                 nodes.push(head.clone());
@@ -887,10 +886,10 @@ impl CellAlphabet for TermAlphabet
             let left = found.walk(left);
             let right = found.walk(right);
             let (var, image) = match (left.0.as_slice(), right.0.as_slice()) {
-                | (&[Head::Var(ref x)], &[Head::Var(ref y)]) if x == y => continue,
-                | (&[Head::Var(ref var)], _) => (var.clone(), right.clone()),
-                | (_, &[Head::Var(ref var)]) => (var.clone(), left.clone()),
-                | (&[ref left_head, ..], &[ref right_head, ..]) if left_head == right_head => {
+                (&[Head::Var(ref x)], &[Head::Var(ref y)]) if x == y => continue,
+                (&[Head::Var(ref var)], _) => (var.clone(), right.clone()),
+                (_, &[Head::Var(ref var)]) => (var.clone(), left.clone()),
+                (&[ref left_head, ..], &[ref right_head, ..]) if left_head == right_head => {
                     let mut left_child = Count(1);
                     let mut right_child = Count(1);
                     for _ in 0 .. left_head.arity().0 {
@@ -905,7 +904,7 @@ impl CellAlphabet for TermAlphabet
                     }
                     continue;
                 },
-                | _ => return SubstitutionDecision::from(false),
+                _ => return SubstitutionDecision::from(false),
             };
             if found
                 .apply_fully(&image)
@@ -1148,11 +1147,11 @@ impl CellAlphabet for TermAlphabet
     ) -> Result<Self::Cmd, CommandSpliceRefusal>
     {
         let (start, end) = match cmd.range_at(&pos.0) {
-            | Maybe::Present(range) => range,
-            | Maybe::Absent(command_subterm::Absent::OffTerm) => {
+            Maybe::Present(range) => range,
+            Maybe::Absent(command_subterm::Absent::OffTerm) => {
                 return Err(CommandSpliceRefusal::OffTerm);
             },
-            | Maybe::Absent(command_subterm::Absent::NotACommand) => {
+            Maybe::Absent(command_subterm::Absent::NotACommand) => {
                 return Err(CommandSpliceRefusal::NotACommand);
             },
         };
@@ -1198,15 +1197,15 @@ impl CellAlphabet for TermAlphabet
     {
         let (left, right) = (occurrences(lhs), occurrences(rhs));
         match lhs.0.len().cmp(&rhs.0.len()) {
-            | core::cmp::Ordering::Greater
+            core::cmp::Ordering::Greater
                 if dominates(&left, &right) == HoleDomination::Dominates =>
             {
                 core::cmp::Ordering::Greater
             },
-            | core::cmp::Ordering::Less if dominates(&right, &left) == HoleDomination::Dominates => {
+            core::cmp::Ordering::Less if dominates(&right, &left) == HoleDomination::Dominates => {
                 core::cmp::Ordering::Less
             },
-            | core::cmp::Ordering::Greater
+            core::cmp::Ordering::Greater
             | core::cmp::Ordering::Less
             | core::cmp::Ordering::Equal => core::cmp::Ordering::Equal,
         }

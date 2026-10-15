@@ -188,17 +188,17 @@ pub fn unfolded(
             .checked_add(1)
             .expect("a walkable unfolding fits the counter");
         let opaque = match node {
-            | CoreNode::Value(id) => before.value(id).is_some(),
-            | CoreNode::Computation(id) => before.computation(id).is_some(),
-            | CoreNode::ValueType(id) => before.value_type(id).is_some(),
-            | CoreNode::CompType(id) => before.comp_type(id).is_some(),
+            CoreNode::Value(id) => before.value(id).is_some(),
+            CoreNode::Computation(id) => before.computation(id).is_some(),
+            CoreNode::ValueType(id) => before.value_type(id).is_some(),
+            CoreNode::CompType(id) => before.comp_type(id).is_some(),
         };
         if opaque {
             continue;
         }
         match node {
-            | CoreNode::Value(id) => match *erased.value(id).expect("an erased value resolves") {
-                | Value::Constructor {
+            CoreNode::Value(id) => match *erased.value(id).expect("an erased value resolves") {
+                Value::Constructor {
                     datatype,
                     ref fields,
                     ..
@@ -206,21 +206,21 @@ pub fn unfolded(
                     pending.push(CoreNode::ValueType(datatype));
                     pending.extend(fields.iter().copied().map(CoreNode::Value));
                 },
-                | Value::Record(ref fields) => {
+                Value::Record(ref fields) => {
                     pending.extend(fields.values().copied().map(CoreNode::Value));
                 },
-                | Value::Reify(ref frames) => {
+                Value::Reify(ref frames) => {
                     pending.extend(frames.iter().filter_map(|frame| match *frame {
-                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                        gandr_core_term::control::StackFrame::Apply(value) => {
                             Some(CoreNode::Value(value))
                         },
-                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                        gandr_core_term::control::StackFrame::Bind(body) => {
                             Some(CoreNode::Computation(body))
                         },
-                        | gandr_core_term::control::StackFrame::Project(_) => None,
+                        gandr_core_term::control::StackFrame::Project(_) => None,
                     }));
                 },
-                | Value::PathEquiv {
+                Value::PathEquiv {
                     path_type,
                     forward,
                     backward,
@@ -230,31 +230,31 @@ pub fn unfolded(
                     CoreNode::Value(forward),
                     CoreNode::Value(backward),
                 ]),
-                | Value::Primitive { .. }
+                Value::Primitive { .. }
                 | Value::Variable { .. }
                 | Value::Constant(_)
                 | Value::ListNil
                 | Value::Literal(_)
                 | Value::Hole(_) => {},
-                | Value::Tuple(ref components) => {
+                Value::Tuple(ref components) => {
                     pending.extend(
                         components
                             .iter()
                             .map(|&component| CoreNode::Value(component)),
                     );
                 },
-                | Value::Recorded(ref moves) => {
+                Value::Recorded(ref moves) => {
                     pending.extend(moves.iter().filter_map(|movement| match *movement {
-                        | gandr_core_term::session::RecordedMove::Sent(payload)
+                        gandr_core_term::session::RecordedMove::Sent(payload)
                         | gandr_core_term::session::RecordedMove::Received(payload) => {
                             Some(CoreNode::Value(payload))
                         },
-                        | gandr_core_term::session::RecordedMove::Selected(_)
+                        gandr_core_term::session::RecordedMove::Selected(_)
                         | gandr_core_term::session::RecordedMove::Offered(_)
                         | gandr_core_term::session::RecordedMove::Closed => None,
                     }));
                 },
-                | Value::PathProduct(first, second)
+                Value::PathProduct(first, second)
                 | Value::Funext(first, second)
                 | Value::Equiv(first, second)
                 | Value::Then(first, second)
@@ -275,8 +275,8 @@ pub fn unfolded(
                     pending.push(CoreNode::Value(first));
                     pending.push(CoreNode::Value(second));
                 },
-                | Value::StaticLambda(body) => pending.push(CoreNode::Value(body)),
-                | Value::PathRefl(body)
+                Value::StaticLambda(body) => pending.push(CoreNode::Value(body)),
+                Value::PathRefl(body)
                 | Value::Here(body)
                 | Value::Stay(body)
                 | Value::Forward(body)
@@ -285,21 +285,21 @@ pub fn unfolded(
                 | Value::Mark { body, .. } => {
                     pending.push(CoreNode::Value(body));
                 },
-                | Value::Thunk(body)
+                Value::Thunk(body)
                 | Value::Returned(body)
                 | Value::Nested(body)
                 | Value::Run(body) => {
                     pending.push(CoreNode::Computation(body));
                 },
-                | Value::Quote(quoted) => pending.push(CoreNode::ValueType(quoted)),
-                | Value::QuoteComputation(quoted) => pending.push(CoreNode::CompType(quoted)),
+                Value::Quote(quoted) => pending.push(CoreNode::ValueType(quoted)),
+                Value::QuoteComputation(quoted) => pending.push(CoreNode::CompType(quoted)),
             },
-            | CoreNode::Computation(id) => {
+            CoreNode::Computation(id) => {
                 match *erased
                     .computation(id)
                     .expect("an erased computation resolves")
                 {
-                    | Computation::DataCase {
+                    Computation::DataCase {
                         scrutinee,
                         motive,
                         ref branches,
@@ -307,11 +307,11 @@ pub fn unfolded(
                         pending.extend([CoreNode::Value(scrutinee), CoreNode::CompType(motive)]);
                         pending.extend(branches.iter().copied().map(CoreNode::Computation));
                     },
-                    | Computation::RecordProjection(record, _)
+                    Computation::RecordProjection(record, _)
                     | Computation::TupleProjection(record, _) => {
                         pending.push(CoreNode::Value(record));
                     },
-                    | Computation::Perform {
+                    Computation::Perform {
                         payload,
                         ref signature,
                         ..
@@ -319,7 +319,7 @@ pub fn unfolded(
                         pending.push(CoreNode::Value(payload));
                         pending.extend(signature.types().map(CoreNode::ValueType));
                     },
-                    | Computation::Exercise {
+                    Computation::Exercise {
                         capability,
                         payload,
                         ref signature,
@@ -328,7 +328,7 @@ pub fn unfolded(
                         pending.extend([CoreNode::Value(capability), CoreNode::Value(payload)]);
                         pending.extend(signature.types().map(CoreNode::ValueType));
                     },
-                    | Computation::Handle {
+                    Computation::Handle {
                         subject,
                         on_return,
                         ref signature,
@@ -351,7 +351,7 @@ pub fn unfolded(
                                 .map(|clause| CoreNode::Computation(clause.body)),
                         );
                     },
-                    | Computation::Split {
+                    Computation::Split {
                         scrutinee,
                         motive: gandr_core_term::SplitMotive::Scrutinee(motive),
                         body,
@@ -361,7 +361,7 @@ pub fn unfolded(
                         CoreNode::CompType(motive),
                         CoreNode::Computation(body),
                     ]),
-                    | Computation::Resume(stack, body)
+                    Computation::Resume(stack, body)
                     | Computation::Split {
                         scrutinee: stack,
                         body,
@@ -369,13 +369,13 @@ pub fn unfolded(
                     } => {
                         pending.extend([CoreNode::Value(stack), CoreNode::Computation(body)]);
                     },
-                    | Computation::With(first, second) => pending
+                    Computation::With(first, second) => pending
                         .extend([CoreNode::Computation(first), CoreNode::Computation(second)]),
-                    | Computation::Reset(body)
+                    Computation::Reset(body)
                     | Computation::Shift(body)
                     | Computation::Project(_, body)
                     | Computation::Lambda(body) => pending.push(CoreNode::Computation(body)),
-                    | Computation::ListFold {
+                    Computation::ListFold {
                         element,
                         result,
                         list,
@@ -388,13 +388,13 @@ pub fn unfolded(
                         CoreNode::Computation(on_nil),
                         CoreNode::Computation(on_cons),
                     ]),
-                    | Computation::Primitive { arguments, .. } => {
+                    Computation::Primitive { arguments, .. } => {
                         pending.extend(arguments.iter().copied().map(CoreNode::Value));
                     },
-                    | Computation::Transport(path, value) => {
+                    Computation::Transport(path, value) => {
                         pending.extend([CoreNode::Value(path), CoreNode::Value(value)]);
                     },
-                    | Computation::PathTransport {
+                    Computation::PathTransport {
                         motive,
                         path,
                         value,
@@ -408,7 +408,7 @@ pub fn unfolded(
                         CoreNode::Value(path),
                         CoreNode::Value(value),
                     ]),
-                    | Computation::TelescopeTransport {
+                    Computation::TelescopeTransport {
                         motive,
                         path,
                         start,
@@ -421,22 +421,22 @@ pub fn unfolded(
                         CoreNode::Value(over),
                         CoreNode::Value(value),
                     ]),
-                    | Computation::Mark { body, .. } | Computation::Fixpoint { body, .. } => {
+                    Computation::Mark { body, .. } | Computation::Fixpoint { body, .. } => {
                         pending.push(CoreNode::Computation(body));
                     },
-                    | Computation::Hole(_) => {},
-                    | Computation::Application(head, argument) => {
+                    Computation::Hole(_) => {},
+                    Computation::Application(head, argument) => {
                         pending.push(CoreNode::Computation(head));
                         pending.push(CoreNode::Value(argument));
                     },
-                    | Computation::Return(value) | Computation::Force(value) => {
+                    Computation::Return(value) | Computation::Force(value) => {
                         pending.push(CoreNode::Value(value));
                     },
-                    | Computation::Bind(bound, body) => {
+                    Computation::Bind(bound, body) => {
                         pending.push(CoreNode::Computation(bound));
                         pending.push(CoreNode::Computation(body));
                     },
-                    | Computation::Case {
+                    Computation::Case {
                         scrutinee,
                         ref branches,
                     } => {
@@ -444,34 +444,34 @@ pub fn unfolded(
                         pending
                             .extend(branches.iter().map(|&branch| CoreNode::Computation(branch)));
                     },
-                    | Computation::Session(ref action) => {
+                    Computation::Session(ref action) => {
                         pending.extend(action.value_types().map(CoreNode::ValueType));
                         pending.extend(action.values().map(CoreNode::Value));
                         pending.extend(action.computations().map(CoreNode::Computation));
                     },
                 }
             },
-            | CoreNode::ValueType(id) => {
+            CoreNode::ValueType(id) => {
                 match *erased
                     .value_type(id)
                     .expect("an erased value type resolves")
                 {
-                    | ValueType::Data { ref arguments, .. } => {
+                    ValueType::Data { ref arguments, .. } => {
                         pending.extend(arguments.iter().copied().map(CoreNode::Value));
                     },
-                    | ValueType::Record(ref fields) => {
+                    ValueType::Record(ref fields) => {
                         pending.extend(fields.values().copied().map(CoreNode::ValueType));
                     },
-                    | ValueType::Session(ref session) => {
+                    ValueType::Session(ref session) => {
                         pending.extend(session.payloads().iter().copied().map(CoreNode::ValueType));
                     },
-                    | ValueType::Stack { input, output } => {
+                    ValueType::Stack { input, output } => {
                         pending.extend([CoreNode::CompType(input), CoreNode::CompType(output)]);
                     },
-                    | ValueType::PathUniverse(source, target) => {
+                    ValueType::PathUniverse(source, target) => {
                         pending.extend([CoreNode::Value(source), CoreNode::Value(target)]);
                     },
-                    | ValueType::Path {
+                    ValueType::Path {
                         carrier,
                         left,
                         right,
@@ -485,18 +485,18 @@ pub fn unfolded(
                         CoreNode::Value(left),
                         CoreNode::Value(right),
                     ]),
-                    | ValueType::Run(session) => pending.push(CoreNode::Value(session)),
-                    | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                    ValueType::Run(session) => pending.push(CoreNode::Value(session)),
+                    ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                         pending.extend(parts.iter().map(|&part| CoreNode::ValueType(part)));
                     },
-                    | ValueType::Base(_)
+                    ValueType::Base(_)
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
                     | ValueType::Unknown => {},
-                    | ValueType::Capability { ref authority, .. } => {
+                    ValueType::Capability { ref authority, .. } => {
                         pending.extend(authority.types().map(CoreNode::ValueType));
                     },
-                    | ValueType::StaticPi {
+                    ValueType::StaticPi {
                         domain: first,
                         codomain: second,
                     }
@@ -504,34 +504,34 @@ pub fn unfolded(
                         pending.push(CoreNode::ValueType(first));
                         pending.push(CoreNode::ValueType(second));
                     },
-                    | ValueType::Thunk(body) => pending.push(CoreNode::CompType(body)),
-                    | ValueType::List(inner) | ValueType::Lift { inner, .. } => {
+                    ValueType::Thunk(body) => pending.push(CoreNode::CompType(body)),
+                    ValueType::List(inner) | ValueType::Lift { inner, .. } => {
                         pending.push(CoreNode::ValueType(inner));
                     },
-                    | ValueType::Element { code, .. } => pending.push(CoreNode::Value(code)),
+                    ValueType::Element { code, .. } => pending.push(CoreNode::Value(code)),
                 }
             },
-            | CoreNode::CompType(id) => {
+            CoreNode::CompType(id) => {
                 match *erased
                     .comp_type(id)
                     .expect("an erased computation type resolves")
                 {
-                    | CompType::With(first, second) => {
+                    CompType::With(first, second) => {
                         pending.extend([CoreNode::CompType(first), CoreNode::CompType(second)]);
                     },
-                    | CompType::Returner {
+                    CompType::Returner {
                         result,
                         ref effects,
                     } => {
                         pending.push(CoreNode::ValueType(result));
                         pending.extend(effects.types().map(CoreNode::ValueType));
                     },
-                    | CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
+                    CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
                         pending.push(CoreNode::ValueType(domain));
                         pending.push(CoreNode::CompType(codomain));
                     },
-                    | CompType::Element { code, .. } => pending.push(CoreNode::Value(code)),
-                    | CompType::Unknown => {},
+                    CompType::Element { code, .. } => pending.push(CoreNode::Value(code)),
+                    CompType::Unknown => {},
                 }
             },
         }

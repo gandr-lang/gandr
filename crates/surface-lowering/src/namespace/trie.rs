@@ -411,8 +411,8 @@ impl<Data, Tag> Trie<Data, Tag>
             return Maybe::Absent(displaced::Absent::Fresh);
         };
         match mem::replace(&mut node.binding, Maybe::Present(binding)) {
-            | Maybe::Present(former) => Maybe::Present(former),
-            | Maybe::Absent(_) => {
+            Maybe::Present(former) => Maybe::Present(former),
+            Maybe::Absent(_) => {
                 self.count.0 = self.count.0.saturating_add(1_usize);
                 Maybe::Absent(displaced::Absent::Fresh)
             },
@@ -472,16 +472,16 @@ impl<Data, Tag> Trie<Data, Tag>
         let mut current = NodeId::ROOT;
         for segment in path.segments() {
             match self.child(current, segment) {
-                | Maybe::Present(child) => current = child,
-                | Maybe::Absent(_) => return Maybe::Absent(binding::Absent::Unbound),
+                Maybe::Present(child) => current = child,
+                Maybe::Absent(_) => return Maybe::Absent(binding::Absent::Unbound),
             }
         }
         match self.nodes.get(current.0) {
-            | Some(&Node {
+            Some(&Node {
                 binding: Maybe::Present(ref binding),
                 ..
             }) => Maybe::Present(binding),
-            | Some(_) | None => Maybe::Absent(binding::Absent::Unbound),
+            Some(_) | None => Maybe::Absent(binding::Absent::Unbound),
         }
     }
 
@@ -589,8 +589,8 @@ impl<Data, Tag> Trie<Data, Tag>
         let mut current = NodeId::ROOT;
         for segment in prefix.segments() {
             match self.child(current, segment) {
-                | Maybe::Present(child) => current = child,
-                | Maybe::Absent(_) => return Maybe::Absent(binding::Absent::Unbound),
+                Maybe::Present(child) => current = child,
+                Maybe::Absent(_) => return Maybe::Absent(binding::Absent::Unbound),
             }
         }
         let mut stack = Vec::new();
@@ -730,8 +730,8 @@ impl<Data, Tag> Trie<Data, Tag>
         let mut current = NodeId::ROOT;
         for segment in prefix.segments() {
             match self.child(current, segment) {
-                | Maybe::Present(child) => current = child,
-                | Maybe::Absent(_) => return Self::empty(),
+                Maybe::Present(child) => current = child,
+                Maybe::Absent(_) => return Self::empty(),
             }
             chain.push(current);
         }
@@ -982,11 +982,11 @@ impl<Data, Tag> Trie<Data, Tag>
             return Ok(());
         };
         let former = match self.nodes.get(target.0) {
-            | Some(&Node {
+            Some(&Node {
                 binding: Maybe::Present(ref former),
                 ..
             }) => Maybe::Present(former.clone()),
-            | Some(_) | None => Maybe::Absent(binding::Absent::Unbound),
+            Some(_) | None => Maybe::Absent(binding::Absent::Unbound),
         };
         let mut survivor = latter;
         if let Maybe::Present(former) = former {
@@ -1106,18 +1106,15 @@ impl<Data, Tag> Trie<Data, Tag>
         else {
             return Maybe::Absent(binding::Absent::Unbound);
         };
-        match node
-            .children
+        node.children
             .binary_search_by(|candidate| candidate.segment.cmp(segment))
-        {
-            | Ok(found) => node
-                .children
-                .get(found)
-                .map_or(Maybe::Absent(binding::Absent::Unbound), |edge| {
-                    Maybe::Present(edge.node)
-                }),
-            | Err(_) => Maybe::Absent(binding::Absent::Unbound),
-        }
+            .map_or(Maybe::Absent(binding::Absent::Unbound), |found| {
+                node.children
+                    .get(found)
+                    .map_or(Maybe::Absent(binding::Absent::Unbound), |edge| {
+                        Maybe::Present(edge.node)
+                    })
+            })
     }
 
     /// The child of `parent` reached by `segment`, created when absent.
@@ -1182,15 +1179,15 @@ impl<Data, Tag> Trie<Data, Tag>
             node.children
                 .binary_search_by(|candidate| candidate.segment.cmp(&segment))
         }) {
-            | Some(Ok(found)) => {
+            Some(Ok(found)) => {
                 return self
                     .nodes
                     .get(parent.0)
                     .and_then(|node| node.children.get(found))
                     .map_or(parent, |edge| edge.node);
             },
-            | Some(Err(position)) => position,
-            | None => return parent,
+            Some(Err(position)) => position,
+            None => return parent,
         };
         let child = self.allocate();
         if let Some(node) = self.nodes.get_mut(parent.0) {
@@ -1639,11 +1636,11 @@ impl<Data, Tag> Trie<Data, Tag>
                 return;
             };
             match self.nodes.get(node.0) {
-                | Some(&Node {
+                Some(&Node {
                     binding: Maybe::Absent(_),
                     ref children,
                 }) if children.is_empty() => {},
-                | Some(_) | None => return,
+                Some(_) | None => return,
             }
             self.unlink(parent, segment);
             self.free(node);

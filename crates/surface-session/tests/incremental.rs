@@ -106,8 +106,8 @@ fn gate<'text>(
         "incremental resume equals from-scratch typing\n base:   {base:?}\n edited: {edited:?}"
     );
     match session.last() {
-        | Maybe::Present(resume) => resume.adoptions().to_vec(),
-        | Maybe::Absent(reason) => panic!("the session holds no resume: {reason:?}"),
+        Maybe::Present(resume) => resume.adoptions().to_vec(),
+        Maybe::Absent(reason) => panic!("the session holds no resume: {reason:?}"),
     }
 }
 

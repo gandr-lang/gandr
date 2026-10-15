@@ -59,12 +59,12 @@ pub fn boundary(
 ) -> Result<(), FlowError>
 {
     let (source_part, target_part) = match boundary {
-        | Boundary::Domain => (source.domain, target.domain),
-        | Boundary::Codomain => (source.codomain, target.codomain),
+        Boundary::Domain => (source.domain, target.domain),
+        Boundary::Codomain => (source.codomain, target.codomain),
     };
     let (from, to) = match boundary.variance() {
-        | Variance::Covariant => (source_part, target_part),
-        | Variance::Contravariant => (target_part, source_part),
+        Variance::Covariant => (source_part, target_part),
+        Variance::Contravariant => (target_part, source_part),
     };
     if convertible_value_types(arena, flow.source, from) == Convertibility::Convertible
         && convertible_value_types(arena, flow.target, to) == Convertibility::Convertible
@@ -128,11 +128,11 @@ pub fn form_certificate(
 {
     let classifier = synth_closed_value(arena, certificate)?;
     let actual = match arena.value_type(classifier) {
-        | Some(&(ValueType::PathUniverse(..) | ValueType::Path { .. })) => Family::Path,
-        | Some(&(ValueType::FlowUniverse(..) | ValueType::Flow { .. })) => Family::Flow,
-        | Some(_) if expected == Family::Path => Family::Path,
-        | Some(_) => return Err(KernelError::Flow(FlowError::ExpectedFlow(classifier))),
-        | None => return Err(KernelError::ArenaFault),
+        Some(&(ValueType::PathUniverse(..) | ValueType::Path { .. })) => Family::Path,
+        Some(&(ValueType::FlowUniverse(..) | ValueType::Flow { .. })) => Family::Flow,
+        Some(_) if expected == Family::Path => Family::Path,
+        Some(_) => return Err(KernelError::Flow(FlowError::ExpectedFlow(classifier))),
+        None => return Err(KernelError::ArenaFault),
     };
     if actual != expected {
         return Err(KernelError::Flow(FlowError::FamilyMismatch {
@@ -141,12 +141,12 @@ pub fn form_certificate(
         }));
     }
     match expected {
-        | Family::Path => {
+        Family::Path => {
             let classifier = crate::path_universe::endpoints(arena, classifier, budget)
                 .map_err(KernelError::Path)?;
             Ok(CertificateType::Path(classifier))
         },
-        | Family::Flow => {
+        Family::Flow => {
             let classifier =
                 super::universe_reading(arena, classifier, budget).map_err(KernelError::Flow)?;
             Ok(CertificateType::Flow(classifier))

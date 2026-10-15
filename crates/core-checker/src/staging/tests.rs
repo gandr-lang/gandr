@@ -206,8 +206,8 @@ fn program(
     let context = Vec::from([arena.alloc_type(Type::In(model)).unwrap()]);
     let inner = arena.alloc_type(Type::Nat(Stage::Inner(model))).unwrap();
     let function = match body {
-        | Body::Power => gandr_core_nbe::stage::power(&mut arena, model).unwrap(),
-        | Body::Double => gandr_core_nbe::stage::double(&mut arena, model).unwrap(),
+        Body::Power => gandr_core_nbe::stage::power(&mut arena, model).unwrap(),
+        Body::Double => gandr_core_nbe::stage::double(&mut arena, model).unwrap(),
     };
     let mut sources = Vec::new();
     for exponent in low.0 ..= high.0 {
@@ -216,7 +216,7 @@ fn program(
             .unwrap();
         let applied = arena.alloc(Term::Apply(function, numeral)).unwrap();
         match body {
-            | Body::Power => {
+            Body::Power => {
                 let input = arena.alloc(Term::Variable(Index(0))).unwrap();
                 let input = arena.alloc(Term::Quote(input)).unwrap();
                 let source = arena.alloc(Term::Apply(applied, input)).unwrap();
@@ -224,7 +224,7 @@ fn program(
                 let source = arena.alloc(Term::Lambda(inner, source)).unwrap();
                 sources.push(arena.alloc(Term::Quote(source)).unwrap());
             },
-            | Body::Double => {
+            Body::Double => {
                 for input in [Natural(2), Natural(3)] {
                     let input = arena
                         .alloc(Term::Natural(Stage::Inner(model), input))

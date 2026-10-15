@@ -484,20 +484,20 @@ pub fn apply(
 {
     let mut edited = statements.to_vec();
     match *edit {
-        | Edit::Replace(at, ref statement) => {
+        Edit::Replace(at, ref statement) => {
             if let Some(slot) = edited.get_mut(at) {
                 slot.clone_from(statement);
             }
         },
-        | Edit::Insert(at, ref statement) => {
+        Edit::Insert(at, ref statement) => {
             edited.insert(at.min(edited.len()), statement.clone());
         },
-        | Edit::Delete(at) => {
+        Edit::Delete(at) => {
             if at < edited.len() {
                 let _removed = edited.remove(at);
             }
         },
-        | Edit::Rename(at, ref to) => {
+        Edit::Rename(at, ref to) => {
             if let Some(old) = edited.get(at).map(|slot| slot.name.clone()) {
                 for slot in &mut edited {
                     if slot.name == old {
@@ -516,17 +516,17 @@ pub fn apply(
                 }
             }
         },
-        | Edit::Swap(first, second) => {
+        Edit::Swap(first, second) => {
             if first < edited.len() && second < edited.len() {
                 edited.swap(first, second);
             }
         },
-        | Edit::Ascribe(at, ref ascription) => {
+        Edit::Ascribe(at, ref ascription) => {
             if let Some(slot) = edited.get_mut(at) {
                 slot.ascription.clone_from(ascription);
             }
         },
-        | Edit::Revalue(rank, value) => {
+        Edit::Revalue(rank, value) => {
             let _revalued = revalue(&mut edited, Rank(rank), Natural(value));
         },
     }
@@ -631,7 +631,7 @@ pub fn revalue(
             .nth(rank)
     });
     match slot {
-        | Some(&mut Stmt {
+        Some(&mut Stmt {
             body: Body::Int(ref mut old),
             ..
         }) => {
@@ -643,7 +643,7 @@ pub fn revalue(
                 Revalued::Changed
             }
         },
-        | Some(_) | None => Revalued::Absent,
+        Some(_) | None => Revalued::Absent,
     }
 }
 

@@ -149,14 +149,14 @@ impl ListEquivalence
             let source = input.next(arena, endpoints.source, &mut meter)?;
             let target = output.next(arena, endpoints.target, &mut meter)?;
             match (source, target) {
-                | (Constructor::Nil, Constructor::Nil) => {
+                (Constructor::Nil, Constructor::Nil) => {
                     if heads.next().is_some() {
                         return Err(meter.refuse(HigherError::Boundary));
                     }
                     meter.progress.depth.0 = meter.progress.depth.0.saturating_add(1);
                     return Ok(meter.progress);
                 },
-                | (Constructor::Cons(value), Constructor::Cons(expected)) => {
+                (Constructor::Cons(value), Constructor::Cons(expected)) => {
                     let dialogue = heads
                         .next()
                         .ok_or_else(|| meter.refuse(HigherError::Boundary))?;
@@ -180,7 +180,7 @@ impl ListEquivalence
                     }
                     meter.progress.depth.0 = meter.progress.depth.0.saturating_add(1);
                 },
-                | _ => return Err(meter.refuse(HigherError::Boundary)),
+                _ => return Err(meter.refuse(HigherError::Boundary)),
             }
         }
     }

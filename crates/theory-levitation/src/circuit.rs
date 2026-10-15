@@ -108,7 +108,7 @@ impl FrameHead
     pub const fn name(&self) -> &Name
     {
         match *self {
-            | Self::Ctor(ref name) | Self::Op(ref name) => name,
+            Self::Ctor(ref name) | Self::Op(ref name) => name,
         }
     }
 
@@ -126,8 +126,8 @@ impl FrameHead
         A: IntoIterator<Item = FreeTerm>,
     {
         match *self {
-            | Self::Ctor(ref name) => FreeTerm::ctor(name.clone(), args),
-            | Self::Op(ref name) => FreeTerm::op(name.clone(), args),
+            Self::Ctor(ref name) => FreeTerm::ctor(name.clone(), args),
+            Self::Op(ref name) => FreeTerm::op(name.clone(), args),
         }
     }
 }
@@ -269,8 +269,8 @@ impl CircuitNode
     pub fn outs(&self) -> &[Name]
     {
         match *self {
-            | Self::Frame(ref frame) => &frame.outs,
-            | Self::Redex(ref redex) => core::slice::from_ref(&redex.out),
+            Self::Frame(ref frame) => &frame.outs,
+            Self::Redex(ref redex) => core::slice::from_ref(&redex.out),
         }
     }
 }
@@ -416,14 +416,14 @@ impl CircuitBody
     ) -> Roots<'body>
     {
         match *self.outs {
-            | [ref port] => Roots::One(port),
-            | [ref first, ..] => match producers.get(first).copied() {
-                | Some(&CircuitNode::Frame(ref frame)) if frame.outs == self.outs => {
+            [ref port] => Roots::One(port),
+            [ref first, ..] => match producers.get(first).copied() {
+                Some(&CircuitNode::Frame(ref frame)) if frame.outs == self.outs => {
                     Roots::Whole(frame, first)
                 },
-                | Some(_) | None => Roots::Tuple(&self.outs),
+                Some(_) | None => Roots::Tuple(&self.outs),
             },
-            | [] => Roots::Tuple(&self.outs),
+            [] => Roots::Tuple(&self.outs),
         }
     }
 }
@@ -522,8 +522,8 @@ impl BoundaryReading
     ) -> &FreeTerm
     {
         match self {
-            | Self::Source => &redex.source,
-            | Self::Target => &redex.target,
+            Self::Source => &redex.source,
+            Self::Target => &redex.target,
         }
     }
 }
@@ -790,9 +790,9 @@ pub fn derive_boundary_within(
     let mut path: BTreeSet<&Name> = BTreeSet::new();
     let mut results: Vec<FreeTerm> = Vec::new();
     let mut stack: Vec<Step<'_>> = match body.roots(&producers) {
-        | Roots::One(port) => vec![Step::Port(port)],
-        | Roots::Whole(frame, port) => vec![Step::Frame(frame, port)],
-        | Roots::Tuple(ports) => {
+        Roots::One(port) => vec![Step::Port(port)],
+        Roots::Whole(frame, port) => vec![Step::Frame(frame, port)],
+        Roots::Tuple(ports) => {
             let mut steps = Vec::with_capacity(ports.len().saturating_add(1));
             steps.push(Step::FinishResults(ports.len()));
             steps.extend(ports.iter().rev().map(Step::Port));
@@ -811,7 +811,7 @@ pub fn derive_boundary_within(
             }
         }
         match step {
-            | Step::Port(port) => {
+            Step::Port(port) => {
                 let Some(node) = producers.get(port).copied()
                 else {
                     // An interface port: no node binds it, so it is a
@@ -820,7 +820,7 @@ pub fn derive_boundary_within(
                     continue;
                 };
                 match *node {
-                    | CircuitNode::Redex(ref redex) => {
+                    CircuitNode::Redex(ref redex) => {
                         let bound = reading.select(redex);
                         if matches!(bound.view(), TermView::Var(name) if name == port) {
                             // The opaque endpoint a rewrite-sorted port
@@ -834,13 +834,13 @@ pub fn derive_boundary_within(
                         stack.push(Step::Leave(port));
                         stack.push(Step::Term(bound.to_node()));
                     },
-                    | CircuitNode::Frame(ref frame) if frame.outs.len() > 1 => {
+                    CircuitNode::Frame(ref frame) if frame.outs.len() > 1 => {
                         return Err(CircuitDerivationError::SplitOutputs(port.clone()));
                     },
-                    | CircuitNode::Frame(ref frame) => stack.push(Step::Frame(frame, port)),
+                    CircuitNode::Frame(ref frame) => stack.push(Step::Frame(frame, port)),
                 }
             },
-            | Step::Frame(frame, port) => {
+            Step::Frame(frame, port) => {
                 if !path.insert(port) {
                     return Err(CircuitDerivationError::CyclicWiring(port.clone()));
                 }
@@ -848,37 +848,37 @@ pub fn derive_boundary_within(
                 stack.push(Step::Finish(&frame.head, frame.args.len()));
                 stack.extend(frame.args.iter().rev().map(|arg| Step::Term(arg.to_node())));
             },
-            | Step::Term(term) => {
+            Step::Term(term) => {
                 let (finish, args) = match term.view() {
-                    | TermView::Var(name) => {
+                    TermView::Var(name) => {
                         stack.push(Step::Port(name));
                         continue;
                     },
-                    | TermView::Ctor { name, args } => (Step::FinishCtor(name, args.len()), args),
-                    | TermView::Op { name, args } => (Step::FinishOp(name, args.len()), args),
-                    | TermView::Results { args } => (Step::FinishResults(args.len()), args),
+                    TermView::Ctor { name, args } => (Step::FinishCtor(name, args.len()), args),
+                    TermView::Op { name, args } => (Step::FinishOp(name, args.len()), args),
+                    TermView::Results { args } => (Step::FinishResults(args.len()), args),
                 };
                 stack.push(finish);
                 let args: Vec<TermNode<'_>> = args.collect();
                 stack.extend(args.iter().rev().copied().map(Step::Term));
             },
-            | Step::Finish(head, arity) => {
+            Step::Finish(head, arity) => {
                 let args = results.split_off(results.len().saturating_sub(arity));
                 results.push(head.apply(args));
             },
-            | Step::FinishCtor(name, arity) => {
+            Step::FinishCtor(name, arity) => {
                 let args = results.split_off(results.len().saturating_sub(arity));
                 results.push(FreeTerm::ctor(name.clone(), args));
             },
-            | Step::FinishOp(name, arity) => {
+            Step::FinishOp(name, arity) => {
                 let args = results.split_off(results.len().saturating_sub(arity));
                 results.push(FreeTerm::op(name.clone(), args));
             },
-            | Step::FinishResults(arity) => {
+            Step::FinishResults(arity) => {
                 let components = results.split_off(results.len().saturating_sub(arity));
                 results.push(FreeTerm::results(components));
             },
-            | Step::Leave(port) => {
+            Step::Leave(port) => {
                 path.remove(port);
             },
         }

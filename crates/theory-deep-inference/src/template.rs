@@ -260,8 +260,8 @@ pub fn price_family(
 ) -> Result<ExpansionFactor, TemplateRefusal>
 {
     match usize::from(plain_size).checked_div(usize::from(template_size)) {
-        | Some(factor) if usize::from(template_size) < factor => Ok(ExpansionFactor::from(factor)),
-        | Some(_) | None => Err(TemplateRefusal::DoesNotPay {
+        Some(factor) if usize::from(template_size) < factor => Ok(ExpansionFactor::from(factor)),
+        Some(_) | None => Err(TemplateRefusal::DoesNotPay {
             template_size,
             plain_size,
         }),
@@ -893,15 +893,15 @@ where
     ]
     .into_iter()
     .find_map(|(leg, path)| match path.outcome {
-        | ReplayPathOutcome::Stuck { reason, .. } => Some(InheritanceVerdict::Stuck {
+        ReplayPathOutcome::Stuck { reason, .. } => Some(InheritanceVerdict::Stuck {
             leg,
             step: LegStepIndex::from(path.steps.len()),
             reason,
         }),
-        | ReplayPathOutcome::Reached(ref reached) if *reached != trace.joins_at => {
+        ReplayPathOutcome::Reached(ref reached) if *reached != trace.joins_at => {
             Some(InheritanceVerdict::MissesTheJoin { leg })
         },
-        | ReplayPathOutcome::Reached(_) => None,
+        ReplayPathOutcome::Reached(_) => None,
     })
     .unwrap_or(InheritanceVerdict::Inherited);
     (verdict, fired)
@@ -1078,9 +1078,9 @@ where
         for arm in point.arms {
             let address = arm_address::<A>(&arm.binding);
             match arms.get(&address) {
-                | Some(guarded) if guarded.binding == arm.binding => {},
-                | Some(_) => return Err(TemplateRefusal::ArmAddressCollision { entry }),
-                | None => {
+                Some(guarded) if guarded.binding == arm.binding => {},
+                Some(_) => return Err(TemplateRefusal::ArmAddressCollision { entry }),
+                None => {
                     size = size.saturating_add(usize::from(arm.size)).saturating_add(1);
                     arms.insert(address, TemplateArm {
                         guard: GuardId::from(minted),
@@ -1117,8 +1117,8 @@ where
                 body,
             };
             let verdict = match cache.lookup(&key) {
-                | Maybe::Present(verdict) => verdict,
-                | Maybe::Absent(inheritance_lookup::Absent::Unchecked) => {
+                Maybe::Present(verdict) => verdict,
+                Maybe::Absent(inheritance_lookup::Absent::Unchecked) => {
                     // Every address of a column was inserted into its entry's
                     // arms above, so the lookup finds the arm; a miss could
                     // only be an address resolving to another body.
@@ -1359,8 +1359,8 @@ impl<A: CellAlphabet> GuardedTemplate<A>
                 });
             }
             let arm = match entry.arms.get(&arm_address::<A>(&bound)) {
-                | Some(arm) if arm.binding == bound => arm,
-                | Some(_) | None => {
+                Some(arm) if arm.binding == bound => arm,
+                Some(_) | None => {
                     return Err(TemplateObstruction::ArmOutsideTemplate {
                         entry: EntryIndex::from(index),
                     });

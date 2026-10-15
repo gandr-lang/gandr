@@ -155,28 +155,26 @@ fn spelled_type(
         )
     };
     match *checkpoint.typing() {
-        | Typing::Data => match *(content.declaration()) {
-            | DeclarationRoots::Data(ref roots) => laid_out(content.nodes(), roots.kind),
-            | DeclarationRoots::Abstract(roots) => laid_out(content.nodes(), roots.kind),
-            | DeclarationRoots::Value { .. } => Maybe::Absent(spelled::Absent::Unpresentable),
+        Typing::Data => match *(content.declaration()) {
+            DeclarationRoots::Data(ref roots) => laid_out(content.nodes(), roots.kind),
+            DeclarationRoots::Abstract(roots) => laid_out(content.nodes(), roots.kind),
+            DeclarationRoots::Value { .. } => Maybe::Absent(spelled::Absent::Unpresentable),
         },
-        | Typing::Checked { .. } | Typing::Owed => match *(content.declaration()) {
-            | DeclarationRoots::Value {
+        Typing::Checked { .. } | Typing::Owed => match *(content.declaration()) {
+            DeclarationRoots::Value {
                 signature: Maybe::Present(ref root),
                 ..
             } => laid_out(content.nodes(), *root),
-            | DeclarationRoots::Value {
+            DeclarationRoots::Value {
                 signature: Maybe::Absent(_),
                 ..
             } => Maybe::Absent(spelled::Absent::Unsigned),
-            | DeclarationRoots::Data(_) | DeclarationRoots::Abstract(_) => {
+            DeclarationRoots::Data(_) | DeclarationRoots::Abstract(_) => {
                 Maybe::Absent(spelled::Absent::Unpresentable)
             },
         },
-        | Typing::Synthesised { ref produced, .. } => {
-            laid_out(produced.nodes(), NodeIndex::from(0))
-        },
-        | Typing::Refused(_) => Maybe::Absent(spelled::Absent::Refused),
+        Typing::Synthesised { ref produced, .. } => laid_out(produced.nodes(), NodeIndex::from(0)),
+        Typing::Refused(_) => Maybe::Absent(spelled::Absent::Refused),
     }
 }
 

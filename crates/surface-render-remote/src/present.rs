@@ -897,9 +897,9 @@ impl<'source> LineIndex<'source>
         for (offset, &byte) in bytes.iter().enumerate() {
             let next = offset.saturating_add(1);
             let ends_row = match byte {
-                | b'\n' => true,
-                | b'\r' => bytes.get(next) != Some(&b'\n'),
-                | _ => false,
+                b'\n' => true,
+                b'\r' => bytes.get(next) != Some(&b'\n'),
+                _ => false,
             };
             if ends_row {
                 starts.push(ByteOffset(next));
@@ -1092,7 +1092,7 @@ impl<'source> LineIndex<'source>
             };
         };
         let end = match self.starts.get(row.0.saturating_add(1)) {
-            | Some(&next) => {
+            Some(&next) => {
                 let bytes = self.text.as_bytes();
                 let last = next.0.saturating_sub(1);
                 let before = last.checked_sub(1);
@@ -1100,7 +1100,7 @@ impl<'source> LineIndex<'source>
                     && before.and_then(|before| bytes.get(before)) == Some(&b'\r');
                 ByteOffset(if crlf { last.saturating_sub(1) } else { last })
             },
-            | None => end_of_text,
+            None => end_of_text,
         };
         ByteRange { start, end }
     }

@@ -59,8 +59,8 @@ impl fmt::Display for ChildIndexBase
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Absolute => "absolute",
-            | Self::ChunkLocal => "chunk-local",
+            Self::Absolute => "absolute",
+            Self::ChunkLocal => "chunk-local",
         })
     }
 }

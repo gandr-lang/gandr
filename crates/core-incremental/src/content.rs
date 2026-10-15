@@ -939,15 +939,13 @@ impl<'node> Children<'node>
                     .map(|clause| (clause.body, Sort::Computation)),
             )
             .chain(self.frames.iter().filter_map(|frame| match *frame {
-                | gandr_core_term::control::StackFrame::Apply(value) => Some((value, Sort::Value)),
-                | gandr_core_term::control::StackFrame::Bind(body) => {
-                    Some((body, Sort::Computation))
-                },
-                | gandr_core_term::control::StackFrame::Project(_) => None,
+                gandr_core_term::control::StackFrame::Apply(value) => Some((value, Sort::Value)),
+                gandr_core_term::control::StackFrame::Bind(body) => Some((body, Sort::Computation)),
+                gandr_core_term::control::StackFrame::Project(_) => None,
             }))
             .chain(self.moves.iter().filter_map(|step| match step.payload() {
-                | Maybe::Present(payload) => Some((payload, Sort::Value)),
-                | Maybe::Absent(_) => None,
+                Maybe::Present(payload) => Some((payload, Sort::Value)),
+                Maybe::Absent(_) => None,
             }))
     }
     /// Append a borrowed variadic child suffix.
@@ -1114,7 +1112,7 @@ impl ContentNode
     pub(crate) const fn sort(&self) -> Sort
     {
         match *self {
-            | Self::Constructor { .. }
+            Self::Constructor { .. }
             | Self::Record(_)
             | Self::Reify(_)
             | Self::PathRefl(_)
@@ -1150,7 +1148,7 @@ impl ContentNode
             | Self::StaticApplication(..)
             | Self::Hole(_)
             | Self::ValueMark { .. } => Sort::Value,
-            | Self::DataCase { .. }
+            Self::DataCase { .. }
             | Self::RecordProjection(..)
             | Self::TupleProjection(..)
             | Self::Perform { .. }
@@ -1180,7 +1178,7 @@ impl ContentNode
             | Self::ComputationMark { .. }
             | Self::Session(_)
             | Self::Fixpoint { .. } => Sort::Computation,
-            | Self::Data { .. }
+            Self::Data { .. }
             | Self::RecordType(_)
             | Self::Stack { .. }
             | Self::Capability { .. }
@@ -1201,13 +1199,13 @@ impl ContentNode
             | Self::StaticPi { .. }
             | Self::Sigma { .. }
             | Self::UnknownType => Sort::ValueType,
-            | Self::WithType(..)
+            Self::WithType(..)
             | Self::Returner { .. }
             | Self::Arrow { .. }
             | Self::Pi { .. }
             | Self::ComputationElement { .. }
             | Self::UnknownComputationType => Sort::CompType,
-            | Self::Unresolved(sort) => sort,
+            Self::Unresolved(sort) => sort,
         }
     }
 
@@ -1333,29 +1331,29 @@ impl ContentNode
         use Sort::Value as V;
         use Sort::ValueType as A;
         match *self {
-            | Self::Data { ref arguments, .. } => Children::default().followed_by(arguments, V),
-            | Self::RecordType(ref fields) => Children::fields(fields, A),
-            | Self::Constructor {
+            Self::Data { ref arguments, .. } => Children::default().followed_by(arguments, V),
+            Self::RecordType(ref fields) => Children::fields(fields, A),
+            Self::Constructor {
                 datatype,
                 ref fields,
                 ..
             } => Children::of(&[(datatype, A)]).followed_by(fields, V),
-            | Self::Record(ref fields) => Children::fields(fields, V),
-            | Self::DataCase {
+            Self::Record(ref fields) => Children::fields(fields, V),
+            Self::DataCase {
                 scrutinee,
                 motive,
                 ref branches,
             } => Children::of(&[(scrutinee, V), (motive, C)]).followed_by(branches, M),
-            | Self::RecordProjection(record, _) | Self::TupleProjection(record, _) => {
+            Self::RecordProjection(record, _) | Self::TupleProjection(record, _) => {
                 Children::of(&[(record, V)])
             },
-            | Self::Reify(ref frames) => Children {
+            Self::Reify(ref frames) => Children {
                 frames,
                 ..Children::default()
             },
-            | Self::Stack { input, output } => Children::of(&[(input, C), (output, C)]),
-            | Self::WithType(first, second) => Children::of(&[(first, C), (second, C)]),
-            | Self::Perform {
+            Self::Stack { input, output } => Children::of(&[(input, C), (output, C)]),
+            Self::WithType(first, second) => Children::of(&[(first, C), (second, C)]),
+            Self::Perform {
                 payload,
                 ref signature,
                 ..
@@ -1363,7 +1361,7 @@ impl ContentNode
                 signature: Some(signature),
                 ..Children::of(&[(payload, V)])
             },
-            | Self::Handle {
+            Self::Handle {
                 subject,
                 on_return,
                 ref signature,
@@ -1379,7 +1377,7 @@ impl ContentNode
                 clauses,
                 ..Children::of(&[(subject, M), (on_return, M)])
             },
-            | Self::Exercise {
+            Self::Exercise {
                 capability,
                 payload,
                 ref signature,
@@ -1388,53 +1386,53 @@ impl ContentNode
                 signature: Some(signature),
                 ..Children::of(&[(capability, V), (payload, V)])
             },
-            | Self::Capability { ref authority, .. } => Children {
+            Self::Capability { ref authority, .. } => Children {
                 effects: Some(authority),
                 ..Children::default()
             },
-            | Self::Resume(stack, body) | Self::Split(stack, _, body) => {
+            Self::Resume(stack, body) | Self::Split(stack, _, body) => {
                 Children::of(&[(stack, V), (body, M)])
             },
-            | Self::DependentSplit {
+            Self::DependentSplit {
                 scrutinee,
                 motive,
                 body,
                 ..
             } => Children::of(&[(scrutinee, V), (motive, C), (body, M)]),
-            | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => {
+            Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => {
                 Children::of(&[(body, M)])
             },
-            | Self::With(first, second) => Children::of(&[(first, M), (second, M)]),
-            | Self::Session(ref action) => match *action {
-                | SessionAction::Send { payload, .. } => Children::of(&[(payload, V)]),
-                | SessionAction::Offer { ref arms, .. } => Children::fields(arms, M),
-                | SessionAction::Fork {
+            Self::With(first, second) => Children::of(&[(first, M), (second, M)]),
+            Self::Session(ref action) => match *action {
+                SessionAction::Send { payload, .. } => Children::of(&[(payload, V)]),
+                SessionAction::Offer { ref arms, .. } => Children::fields(arms, M),
+                SessionAction::Fork {
                     protocol,
                     child,
                     parent,
                 } => Children::of(&[(protocol, A), (child, M), (parent, M)]),
-                | SessionAction::Receive { .. }
+                SessionAction::Receive { .. }
                 | SessionAction::Select { .. }
                 | SessionAction::Close { .. } => Children::default(),
             },
-            | Self::SessionType(ref session) => {
+            Self::SessionType(ref session) => {
                 Children::default().followed_by(session.payloads(), A)
             },
-            | Self::Primitive(_, arguments) => match arguments {
-                | gandr_core_term::primitive::Arguments::Unary(argument) => {
+            Self::Primitive(_, arguments) => match arguments {
+                gandr_core_term::primitive::Arguments::Unary(argument) => {
                     Children::of(&[(argument, V)])
                 },
-                | gandr_core_term::primitive::Arguments::Binary([first, second]) => {
+                gandr_core_term::primitive::Arguments::Binary([first, second]) => {
                     Children::of(&[(first, V), (second, V)])
                 },
             },
-            | Self::PathEquiv {
+            Self::PathEquiv {
                 path_type,
                 forward,
                 backward,
                 ..
             } => Children::of(&[(path_type, A), (forward, V), (backward, V)]),
-            | Self::PathType {
+            Self::PathType {
                 carrier,
                 left,
                 right,
@@ -1444,7 +1442,7 @@ impl ContentNode
                 source: left,
                 target: right,
             } => Children::of(&[(carrier, A), (left, V), (right, V)]),
-            | Self::ElementTransport {
+            Self::ElementTransport {
                 motive,
                 path,
                 value,
@@ -1454,18 +1452,18 @@ impl ContentNode
                 flow: path,
                 value,
             } => Children::of(&[(motive, A), (path, V), (value, V)]),
-            | Self::Recorded(ref moves) => Children {
+            Self::Recorded(ref moves) => Children {
                 moves,
                 ..Children::default()
             },
-            | Self::TelescopeTransport {
+            Self::TelescopeTransport {
                 motive,
                 path,
                 start,
                 over,
                 value,
             } => Children::of(&[(motive, C), (path, V), (start, V), (over, V), (value, V)]),
-            | Self::PrimitiveValue(_)
+            Self::PrimitiveValue(_)
             | Self::Variable { .. }
             | Self::Constant(_)
             | Self::ListNil
@@ -1478,8 +1476,8 @@ impl ContentNode
             | Self::ComputationHole(_)
             | Self::UnknownType
             | Self::UnknownComputationType => Children::default(),
-            | Self::Tuple(ref components) => Children::default().followed_by(components, V),
-            | Self::PathUniverse(first, second)
+            Self::Tuple(ref components) => Children::default().followed_by(components, V),
+            Self::PathUniverse(first, second)
             | Self::PathProduct(first, second)
             | Self::Funext(first, second)
             | Self::Equiv(first, second)
@@ -1499,7 +1497,7 @@ impl ContentNode
             | Self::FunctionFlow(first, second)
             | Self::ListCons(first, second)
             | Self::StaticApplication(first, second) => Children::of(&[(first, V), (second, V)]),
-            | Self::PathRefl(body)
+            Self::PathRefl(body)
             | Self::Here(body)
             | Self::Stay(body)
             | Self::Forward(body)
@@ -1510,16 +1508,16 @@ impl ContentNode
             | Self::Return(body)
             | Self::Force(body)
             | Self::ValueMark { body, .. } => Children::of(&[(body, V)]),
-            | Self::ComputationMark { body, .. }
+            Self::ComputationMark { body, .. }
             | Self::Thunk(body)
             | Self::Returned(body)
             | Self::Nested(body)
             | Self::Run(body)
             | Self::Lambda(body)
             | Self::Fixpoint { body, .. } => Children::of(&[(body, M)]),
-            | Self::Application(head, argument) => Children::of(&[(head, M), (argument, V)]),
-            | Self::Bind(bound, rest) => Children::of(&[(bound, M), (rest, M)]),
-            | Self::ListFold {
+            Self::Application(head, argument) => Children::of(&[(head, M), (argument, V)]),
+            Self::Bind(bound, rest) => Children::of(&[(bound, M), (rest, M)]),
+            Self::ListFold {
                 element,
                 result,
                 list,
@@ -1532,21 +1530,21 @@ impl ContentNode
                 (on_nil, M),
                 (on_cons, M),
             ]),
-            | Self::Case {
+            Self::Case {
                 scrutinee,
                 ref branches,
             } => Children::of(&[(scrutinee, V)]).followed_by(branches, M),
-            | Self::Product(ref parts) | Self::Sum(ref parts) => {
+            Self::Product(ref parts) | Self::Sum(ref parts) => {
                 Children::default().followed_by(parts, A)
             },
-            | Self::StaticPi {
+            Self::StaticPi {
                 domain: first,
                 codomain: second,
             }
             | Self::Sigma { first, second } => Children::of(&[(first, A), (second, A)]),
-            | Self::ThunkType(body) => Children::of(&[(body, C)]),
-            | Self::List(element) => Children::of(&[(element, A)]),
-            | Self::Returner {
+            Self::ThunkType(body) => Children::of(&[(body, C)]),
+            Self::List(element) => Children::of(&[(element, A)]),
+            Self::Returner {
                 result,
                 ref effects,
             } => {
@@ -1554,13 +1552,13 @@ impl ContentNode
                 children.effects = Some(effects);
                 children
             },
-            | Self::TypeLift { inner, .. } => Children::of(&[(inner, A)]),
-            | Self::Element { code, .. } | Self::ComputationElement { code, .. } => {
+            Self::TypeLift { inner, .. } => Children::of(&[(inner, A)]),
+            Self::Element { code, .. } | Self::ComputationElement { code, .. } => {
                 Children::of(&[(code, V)])
             },
-            | Self::Quote(quoted) => Children::of(&[(quoted, A)]),
-            | Self::QuoteComputation(quoted) => Children::of(&[(quoted, C)]),
-            | Self::Arrow { domain, codomain } | Self::Pi { domain, codomain } => {
+            Self::Quote(quoted) => Children::of(&[(quoted, A)]),
+            Self::QuoteComputation(quoted) => Children::of(&[(quoted, C)]),
+            Self::Arrow { domain, codomain } | Self::Pi { domain, codomain } => {
                 Children::of(&[(domain, A), (codomain, C)])
             },
         }
@@ -1587,13 +1585,13 @@ impl ContentNode
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
     {
         match *self {
-            | Self::Constant(ref reference)
+            Self::Constant(ref reference)
             | Self::Abstract(ref reference)
             | Self::Data {
                 declaration: ref reference,
                 ..
             } => Maybe::Present(reference),
-            | Self::PathUniverse(..)
+            Self::PathUniverse(..)
             | Self::RecordType(_)
             | Self::Constructor { .. }
             | Self::Record(_)
@@ -1725,8 +1723,8 @@ impl Sites
     ) -> Maybe<NodeIndex, site::Absent>
     {
         match self.0.get(&node) {
-            | Some(&index) => Maybe::Present(index),
-            | None => Maybe::Absent(site::Absent::Unreached),
+            Some(&index) => Maybe::Present(index),
+            None => Maybe::Absent(site::Absent::Unreached),
         }
     }
 }
@@ -1843,25 +1841,25 @@ impl DeclarationRoots
     pub(crate) fn iter(&self) -> impl Iterator<Item = (NodeIndex, Sort)> + Clone + '_
     {
         let (values, data) = match *(self) {
-            | Self::Value {
+            Self::Value {
                 ref signature,
                 ref body,
                 ..
             } => (
                 [
                     match *signature {
-                        | Maybe::Present(root) => Some((root, Sort::ValueType)),
-                        | Maybe::Absent(_) => None,
+                        Maybe::Present(root) => Some((root, Sort::ValueType)),
+                        Maybe::Absent(_) => None,
                     },
                     match *body {
-                        | Maybe::Present(root) => Some((root, Sort::Value)),
-                        | Maybe::Absent(_) => None,
+                        Maybe::Present(root) => Some((root, Sort::Value)),
+                        Maybe::Absent(_) => None,
                     },
                 ],
                 None,
             ),
-            | Self::Data(ref roots) => ([None, None], Some(roots)),
-            | Self::Abstract(roots) => (
+            Self::Data(ref roots) => ([None, None], Some(roots)),
+            Self::Abstract(roots) => (
                 [
                     Some((roots.kind, Sort::ValueType)),
                     Some((roots.representation, Sort::ValueType)),
@@ -2066,13 +2064,13 @@ if let DeclarationRoots::Value { signature:Maybe::Present(ref root),.. } = *matc
     pub(crate) fn signature_type(&self) -> Option<TypeContent>
     {
         match self.declaration {
-            | DeclarationRoots::Value {
+            DeclarationRoots::Value {
                 signature: Maybe::Present(root),
                 ..
             } => Some(TypeContent {
                 nodes: renumber(&self.nodes, root),
             }),
-            | DeclarationRoots::Value {
+            DeclarationRoots::Value {
                 signature: Maybe::Absent(_),
                 ..
             }
@@ -2231,9 +2229,9 @@ impl TypeContent
     ) -> Maybe<ValueTypeId, seating::Absent>
     {
         match mint_table(&self.nodes, arena, layout) {
-            | Maybe::Present(Minted::ValueType(id)) => Maybe::Present(id),
-            | Maybe::Present(Minted::CompType(_)) => Maybe::Absent(seating::Absent::IllSorted),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present(Minted::ValueType(id)) => Maybe::Present(id),
+            Maybe::Present(Minted::CompType(_)) => Maybe::Absent(seating::Absent::IllSorted),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
 }
@@ -2307,10 +2305,17 @@ pub fn encode_item(
 ) -> Encoded
 {
     let mut encoder = Encoder::new(arena, layout);
-    let (reference, declaration) = match layout.items.get(usize::from(ordinal)) {
-        | Some(item) => {
+    let (reference, declaration) = layout.items.get(usize::from(ordinal)).map_or_else(
+        || {
+            (Reference::Unoccupied, DeclarationRoots::Value {
+                signature: Maybe::Absent(signature::Absent::Unsigned),
+                body: Maybe::Absent(body::Absent::Hole),
+                laws: Vec::new(),
+            })
+        },
+        |item| {
             let declaration = match *(item.declaration().content()) {
-                | gandr_core_checker::DeclarationContent::Value {
+                gandr_core_checker::DeclarationContent::Value {
                     ref signature,
                     ref body,
                 } => DeclarationRoots::Value {
@@ -2323,10 +2328,10 @@ pub fn encode_item(
                         .map(|&law| layout.resolve(law))
                         .collect(),
                 },
-                | gandr_core_checker::DeclarationContent::Data(ref signature) => {
+                gandr_core_checker::DeclarationContent::Data(ref signature) => {
                     DeclarationRoots::Data(encoder.data_roots(signature))
                 },
-                | gandr_core_checker::DeclarationContent::Abstract(sealed) => {
+                gandr_core_checker::DeclarationContent::Abstract(sealed) => {
                     DeclarationRoots::Abstract(AbstractRoots {
                         kind: encoder.discover(ArenaNode::ValueType(sealed.kind())),
                         representation: encoder
@@ -2343,12 +2348,7 @@ pub fn encode_item(
                 .unwrap_or(Reference::Unoccupied);
             (reference, declaration)
         },
-        | None => (Reference::Unoccupied, DeclarationRoots::Value {
-            signature: Maybe::Absent(signature::Absent::Unsigned),
-            body: Maybe::Absent(body::Absent::Hole),
-            laws: Vec::new(),
-        }),
-    };
+    );
     encoder.drain();
     Encoded {
         content: ItemContent {
@@ -2568,22 +2568,26 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     {
         let arena = self.arena;
         match node {
-            | ArenaNode::Value(id) => match arena.value(id) {
-                | Some(value) => self.read_value(value),
-                | None => ContentNode::Unresolved(Sort::Value),
-            },
-            | ArenaNode::Computation(id) => match arena.computation(id) {
-                | Some(computation) => self.read_computation(computation),
-                | None => ContentNode::Unresolved(Sort::Computation),
-            },
-            | ArenaNode::ValueType(id) => match arena.value_type(id) {
-                | Some(value_type) => self.read_value_type(value_type),
-                | None => ContentNode::Unresolved(Sort::ValueType),
-            },
-            | ArenaNode::CompType(id) => match arena.comp_type(id) {
-                | Some(comp_type) => self.read_comp_type(comp_type),
-                | None => ContentNode::Unresolved(Sort::CompType),
-            },
+            ArenaNode::Value(id) => arena
+                .value(id)
+                .map_or(ContentNode::Unresolved(Sort::Value), |value| {
+                    self.read_value(value)
+                }),
+            ArenaNode::Computation(id) => arena
+                .computation(id)
+                .map_or(ContentNode::Unresolved(Sort::Computation), |computation| {
+                    self.read_computation(computation)
+                }),
+            ArenaNode::ValueType(id) => arena
+                .value_type(id)
+                .map_or(ContentNode::Unresolved(Sort::ValueType), |value_type| {
+                    self.read_value_type(value_type)
+                }),
+            ArenaNode::CompType(id) => arena
+                .comp_type(id)
+                .map_or(ContentNode::Unresolved(Sort::CompType), |comp_type| {
+                    self.read_comp_type(comp_type)
+                }),
         }
     }
 
@@ -2609,7 +2613,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *value {
-            | Value::Constructor {
+            Value::Constructor {
                 datatype,
                 tag,
                 ref fields,
@@ -2621,36 +2625,36 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     .map(|&field| self.discover(ArenaNode::Value(field)))
                     .collect(),
             },
-            | Value::Record(ref fields) => ContentNode::Record(
+            Value::Record(ref fields) => ContentNode::Record(
                 fields
                     .iter()
                     .map(|(label, &field)| (label.clone(), self.discover(ArenaNode::Value(field))))
                     .collect(),
             ),
-            | Value::Reify(ref frames) => ContentNode::Reify(
+            Value::Reify(ref frames) => ContentNode::Reify(
                 frames
                     .iter()
                     .map(|frame| match *frame {
-                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                        gandr_core_term::control::StackFrame::Apply(value) => {
                             gandr_core_term::control::StackFrame::Apply(
                                 self.discover(ArenaNode::Value(value)),
                             )
                         },
-                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                        gandr_core_term::control::StackFrame::Bind(body) => {
                             gandr_core_term::control::StackFrame::Bind(
                                 self.discover(ArenaNode::Computation(body)),
                             )
                         },
-                        | gandr_core_term::control::StackFrame::Project(side) => {
+                        gandr_core_term::control::StackFrame::Project(side) => {
                             gandr_core_term::control::StackFrame::Project(side)
                         },
                     })
                     .collect(),
             ),
-            | Value::Primitive { primitive, .. } => ContentNode::PrimitiveValue(primitive),
-            | Value::PathRefl(code) => ContentNode::PathRefl(self.discover(ArenaNode::Value(code))),
-            | Value::Here(point) => ContentNode::Here(self.discover(ArenaNode::Value(point))),
-            | Value::SessionRelated {
+            Value::Primitive { primitive, .. } => ContentNode::PrimitiveValue(primitive),
+            Value::PathRefl(code) => ContentNode::PathRefl(self.discover(ArenaNode::Value(code))),
+            Value::Here(point) => ContentNode::Here(self.discover(ArenaNode::Value(point))),
+            Value::SessionRelated {
                 relation,
                 source,
                 target,
@@ -2662,23 +2666,23 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     target: self.discover(ArenaNode::Value(target)),
                 }
             },
-            | Value::Stay(point) => ContentNode::Stay(self.discover(ArenaNode::Value(point))),
-            | Value::Then(first, second) => {
+            Value::Stay(point) => ContentNode::Stay(self.discover(ArenaNode::Value(point))),
+            Value::Then(first, second) => {
                 let first = self.discover(ArenaNode::Value(first));
                 ContentNode::Then(first, self.discover(ArenaNode::Value(second)))
             },
-            | Value::FlowProduct(first, second) => {
+            Value::FlowProduct(first, second) => {
                 let first = self.discover(ArenaNode::Value(first));
                 ContentNode::FlowProduct(first, self.discover(ArenaNode::Value(second)))
             },
-            | Value::Forward(translator) => {
+            Value::Forward(translator) => {
                 ContentNode::Forward(self.discover(ArenaNode::Value(translator)))
             },
-            | Value::FunctionFlow(domain, codomain) => {
+            Value::FunctionFlow(domain, codomain) => {
                 let domain = self.discover(ArenaNode::Value(domain));
                 ContentNode::FunctionFlow(domain, self.discover(ArenaNode::Value(codomain)))
             },
-            | Value::Recorded(ref moves) => ContentNode::Recorded(
+            Value::Recorded(ref moves) => ContentNode::Recorded(
                 moves
                     .iter()
                     .map(|step| {
@@ -2691,28 +2695,28 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     })
                     .collect(),
             ),
-            | Value::Returned(computation) => {
+            Value::Returned(computation) => {
                 ContentNode::Returned(self.discover(ArenaNode::Computation(computation)))
             },
-            | Value::Nested(computation) => {
+            Value::Nested(computation) => {
                 ContentNode::Nested(self.discover(ArenaNode::Computation(computation)))
             },
-            | Value::Run(computation) => {
+            Value::Run(computation) => {
                 ContentNode::Run(self.discover(ArenaNode::Computation(computation)))
             },
-            | Value::PathProduct(first, second) => {
+            Value::PathProduct(first, second) => {
                 let first = self.discover(ArenaNode::Value(first));
                 ContentNode::PathProduct(first, self.discover(ArenaNode::Value(second)))
             },
-            | Value::Funext(left, right) => {
+            Value::Funext(left, right) => {
                 let left = self.discover(ArenaNode::Value(left));
                 ContentNode::Funext(left, self.discover(ArenaNode::Value(right)))
             },
-            | Value::Equiv(forward, backward) => {
+            Value::Equiv(forward, backward) => {
                 let forward = self.discover(ArenaNode::Value(forward));
                 ContentNode::Equiv(forward, self.discover(ArenaNode::Value(backward)))
             },
-            | Value::Ua {
+            Value::Ua {
                 stratum,
                 ref sides,
                 forward,
@@ -2723,7 +2727,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 forward: self.discover(ArenaNode::Value(forward)),
                 backward: self.discover(ArenaNode::Value(backward)),
             },
-            | Value::PathEquiv {
+            Value::PathEquiv {
                 path_type,
                 forward,
                 backward,
@@ -2734,43 +2738,41 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 backward: self.discover(ArenaNode::Value(backward)),
                 evidence: alloc::sync::Arc::clone(evidence),
             },
-            | Value::Variable { zone, index } => ContentNode::Variable { zone, index },
-            | Value::Constant(position) => ContentNode::Constant(self.layout.resolve(position)),
-            | Value::ListNil => ContentNode::ListNil,
-            | Value::ListCons(head, tail) => {
+            Value::Variable { zone, index } => ContentNode::Variable { zone, index },
+            Value::Constant(position) => ContentNode::Constant(self.layout.resolve(position)),
+            Value::ListNil => ContentNode::ListNil,
+            Value::ListCons(head, tail) => {
                 let head = self.discover(ArenaNode::Value(head));
                 ContentNode::ListCons(head, self.discover(ArenaNode::Value(tail)))
             },
-            | Value::Literal(ref literal) => ContentNode::Literal(literal.clone()),
-            | Value::Tuple(ref components) => ContentNode::Tuple(
+            Value::Literal(ref literal) => ContentNode::Literal(literal.clone()),
+            Value::Tuple(ref components) => ContentNode::Tuple(
                 components
                     .iter()
                     .map(|&component| self.discover(ArenaNode::Value(component)))
                     .collect(),
             ),
-            | Value::Injection(summand, body) => {
+            Value::Injection(summand, body) => {
                 ContentNode::Injection(summand, self.discover(ArenaNode::Value(body)))
             },
-            | Value::Thunk(body) => ContentNode::Thunk(self.discover(ArenaNode::Computation(body))),
-            | Value::Lift { ref target, body } => ContentNode::ValueLift {
+            Value::Thunk(body) => ContentNode::Thunk(self.discover(ArenaNode::Computation(body))),
+            Value::Lift { ref target, body } => ContentNode::ValueLift {
                 target: target.clone(),
                 body: self.discover(ArenaNode::Value(body)),
             },
-            | Value::Quote(quoted) => {
-                ContentNode::Quote(self.discover(ArenaNode::ValueType(quoted)))
-            },
-            | Value::QuoteComputation(quoted) => {
+            Value::Quote(quoted) => ContentNode::Quote(self.discover(ArenaNode::ValueType(quoted))),
+            Value::QuoteComputation(quoted) => {
                 ContentNode::QuoteComputation(self.discover(ArenaNode::CompType(quoted)))
             },
-            | Value::StaticLambda(body) => {
+            Value::StaticLambda(body) => {
                 ContentNode::StaticLambda(self.discover(ArenaNode::Value(body)))
             },
-            | Value::StaticApplication(head, argument) => {
+            Value::StaticApplication(head, argument) => {
                 let head = self.discover(ArenaNode::Value(head));
                 ContentNode::StaticApplication(head, self.discover(ArenaNode::Value(argument)))
             },
-            | Value::Hole(hole) => ContentNode::Hole(hole),
-            | Value::Mark { mark, body } => ContentNode::ValueMark {
+            Value::Hole(hole) => ContentNode::Hole(hole),
+            Value::Mark { mark, body } => ContentNode::ValueMark {
                 mark,
                 body: self.discover(ArenaNode::Value(body)),
             },
@@ -2799,7 +2801,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *computation {
-            | Computation::DataCase {
+            Computation::DataCase {
                 scrutinee,
                 motive,
                 ref branches,
@@ -2811,14 +2813,14 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     .map(|&branch| self.discover(ArenaNode::Computation(branch)))
                     .collect(),
             },
-            | Computation::RecordProjection(record, ref label) => ContentNode::RecordProjection(
+            Computation::RecordProjection(record, ref label) => ContentNode::RecordProjection(
                 self.discover(ArenaNode::Value(record)),
                 label.clone(),
             ),
-            | Computation::TupleProjection(tuple, component) => {
+            Computation::TupleProjection(tuple, component) => {
                 ContentNode::TupleProjection(self.discover(ArenaNode::Value(tuple)), component)
             },
-            | Computation::Ride {
+            Computation::Ride {
                 motive,
                 flow,
                 value,
@@ -2831,7 +2833,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     value: self.discover(ArenaNode::Value(value)),
                 }
             },
-            | Computation::Session(ref action) => ContentNode::Session(
+            Computation::Session(ref action) => ContentNode::Session(
                 action
                     .try_map(
                         gandr_core_term::session::ChildOrder::Forward,
@@ -2846,7 +2848,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     )
                     .unwrap_or_else(|never| match never {}),
             ),
-            | Computation::Perform {
+            Computation::Perform {
                 ref signature,
                 ref operation,
                 payload,
@@ -2863,7 +2865,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     payload,
                 }
             },
-            | Computation::Handle {
+            Computation::Handle {
                 ref signature,
                 subject,
                 on_return,
@@ -2906,7 +2908,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     }
                 }
             },
-            | Computation::Exercise {
+            Computation::Exercise {
                 capability,
                 ref signature,
                 ref operation,
@@ -2926,11 +2928,11 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     payload,
                 }
             },
-            | Computation::Resume(stack, body) => ContentNode::Resume(
+            Computation::Resume(stack, body) => ContentNode::Resume(
                 self.discover(ArenaNode::Value(stack)),
                 self.discover(ArenaNode::Computation(body)),
             ),
-            | Computation::Split {
+            Computation::Split {
                 scrutinee,
                 arity,
                 motive: gandr_core_term::SplitMotive::Ambient,
@@ -2940,7 +2942,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 arity,
                 self.discover(ArenaNode::Computation(body)),
             ),
-            | Computation::Split {
+            Computation::Split {
                 scrutinee,
                 arity,
                 motive: gandr_core_term::SplitMotive::Scrutinee(motive),
@@ -2955,21 +2957,21 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     body: self.discover(ArenaNode::Computation(body)),
                 }
             },
-            | Computation::Reset(body) => {
+            Computation::Reset(body) => {
                 ContentNode::Reset(self.discover(ArenaNode::Computation(body)))
             },
-            | Computation::Shift(body) => {
+            Computation::Shift(body) => {
                 ContentNode::Shift(self.discover(ArenaNode::Computation(body)))
             },
-            | Computation::With(first, second) => ContentNode::With(
+            Computation::With(first, second) => ContentNode::With(
                 self.discover(ArenaNode::Computation(first)),
                 self.discover(ArenaNode::Computation(second)),
             ),
-            | Computation::Project(side, body) => {
+            Computation::Project(side, body) => {
                 ContentNode::Project(side, self.discover(ArenaNode::Computation(body)))
             },
 
-            | Computation::ListFold {
+            Computation::ListFold {
                 element,
                 result,
                 list,
@@ -2982,27 +2984,27 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 on_nil: self.discover(ArenaNode::Computation(on_nil)),
                 on_cons: self.discover(ArenaNode::Computation(on_cons)),
             },
-            | Computation::Primitive {
+            Computation::Primitive {
                 primitive,
                 arguments,
             } => {
                 use gandr_core_term::primitive::Arguments;
                 let arguments = match arguments {
-                    | Arguments::Unary(argument) => {
+                    Arguments::Unary(argument) => {
                         Arguments::Unary(self.discover(ArenaNode::Value(argument)))
                     },
-                    | Arguments::Binary([first, second]) => {
+                    Arguments::Binary([first, second]) => {
                         let first = self.discover(ArenaNode::Value(first));
                         Arguments::Binary([first, self.discover(ArenaNode::Value(second))])
                     },
                 };
                 ContentNode::Primitive(primitive, arguments)
             },
-            | Computation::Transport(path, value) => {
+            Computation::Transport(path, value) => {
                 let path = self.discover(ArenaNode::Value(path));
                 ContentNode::Transport(path, self.discover(ArenaNode::Value(value)))
             },
-            | Computation::PathTransport {
+            Computation::PathTransport {
                 motive,
                 path,
                 value,
@@ -3011,7 +3013,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 path: self.discover(ArenaNode::Value(path)),
                 value: self.discover(ArenaNode::Value(value)),
             },
-            | Computation::TelescopeTransport {
+            Computation::TelescopeTransport {
                 motive,
                 path,
                 start,
@@ -3024,24 +3026,22 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 over: self.discover(ArenaNode::Value(over)),
                 value: self.discover(ArenaNode::Value(value)),
             },
-            | Computation::Lambda(body) => {
+            Computation::Lambda(body) => {
                 ContentNode::Lambda(self.discover(ArenaNode::Computation(body)))
             },
-            | Computation::Application(head, argument) => {
+            Computation::Application(head, argument) => {
                 let head = self.discover(ArenaNode::Computation(head));
                 ContentNode::Application(head, self.discover(ArenaNode::Value(argument)))
             },
-            | Computation::Return(value) => {
+            Computation::Return(value) => {
                 ContentNode::Return(self.discover(ArenaNode::Value(value)))
             },
-            | Computation::Bind(bound, rest) => {
+            Computation::Bind(bound, rest) => {
                 let bound = self.discover(ArenaNode::Computation(bound));
                 ContentNode::Bind(bound, self.discover(ArenaNode::Computation(rest)))
             },
-            | Computation::Force(value) => {
-                ContentNode::Force(self.discover(ArenaNode::Value(value)))
-            },
-            | Computation::Case {
+            Computation::Force(value) => ContentNode::Force(self.discover(ArenaNode::Value(value))),
+            Computation::Case {
                 scrutinee,
                 ref branches,
             } => {
@@ -3054,12 +3054,12 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                         .collect(),
                 }
             },
-            | Computation::Hole(hole) => ContentNode::ComputationHole(hole),
-            | Computation::Mark { mark, body } => ContentNode::ComputationMark {
+            Computation::Hole(hole) => ContentNode::ComputationHole(hole),
+            Computation::Mark { mark, body } => ContentNode::ComputationMark {
                 mark,
                 body: self.discover(ArenaNode::Computation(body)),
             },
-            | Computation::Fixpoint { body, evidence } => ContentNode::Fixpoint {
+            Computation::Fixpoint { body, evidence } => ContentNode::Fixpoint {
                 body: self.discover(ArenaNode::Computation(body)),
                 evidence,
             },
@@ -3088,14 +3088,14 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *value_type {
-            | ValueType::Session(ref session) => ContentNode::SessionType(
+            ValueType::Session(ref session) => ContentNode::SessionType(
                 session
                     .try_relocate(|ty| {
                         Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
                     })
                     .unwrap_or_else(|never| match never {}),
             ),
-            | ValueType::Data {
+            ValueType::Data {
                 declaration,
                 ref arguments,
             } => ContentNode::Data {
@@ -3105,7 +3105,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     .map(|&argument| self.discover(ArenaNode::Value(argument)))
                     .collect(),
             },
-            | ValueType::Record(ref fields) => ContentNode::RecordType(
+            ValueType::Record(ref fields) => ContentNode::RecordType(
                 fields
                     .iter()
                     .map(|(label, &field)| {
@@ -3113,11 +3113,11 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     })
                     .collect(),
             ),
-            | ValueType::Stack { input, output } => ContentNode::Stack {
+            ValueType::Stack { input, output } => ContentNode::Stack {
                 input: self.discover(ArenaNode::CompType(input)),
                 output: self.discover(ArenaNode::CompType(output)),
             },
-            | ValueType::Capability {
+            ValueType::Capability {
                 ref authority,
                 grade,
                 region,
@@ -3130,11 +3130,11 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 grade,
                 region,
             },
-            | ValueType::PathUniverse(source, target) => {
+            ValueType::PathUniverse(source, target) => {
                 let source = self.discover(ArenaNode::Value(source));
                 ContentNode::PathUniverse(source, self.discover(ArenaNode::Value(target)))
             },
-            | ValueType::Path {
+            ValueType::Path {
                 carrier,
                 left,
                 right,
@@ -3143,7 +3143,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 left: self.discover(ArenaNode::Value(left)),
                 right: self.discover(ArenaNode::Value(right)),
             },
-            | ValueType::Flow {
+            ValueType::Flow {
                 carrier,
                 source,
                 target,
@@ -3152,54 +3152,54 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 source: self.discover(ArenaNode::Value(source)),
                 target: self.discover(ArenaNode::Value(target)),
             },
-            | ValueType::Run(code) => ContentNode::RunType(self.discover(ArenaNode::Value(code))),
-            | ValueType::Base(base) => ContentNode::Base(base),
-            | ValueType::List(element) => {
+            ValueType::Run(code) => ContentNode::RunType(self.discover(ArenaNode::Value(code))),
+            ValueType::Base(base) => ContentNode::Base(base),
+            ValueType::List(element) => {
                 ContentNode::List(self.discover(ArenaNode::ValueType(element)))
             },
-            | ValueType::Product(ref parts) => ContentNode::Product(
+            ValueType::Product(ref parts) => ContentNode::Product(
                 parts
                     .iter()
                     .map(|&part| self.discover(ArenaNode::ValueType(part)))
                     .collect(),
             ),
-            | ValueType::Sum(ref parts) => ContentNode::Sum(
+            ValueType::Sum(ref parts) => ContentNode::Sum(
                 parts
                     .iter()
                     .map(|&part| self.discover(ArenaNode::ValueType(part)))
                     .collect(),
             ),
-            | ValueType::Thunk(body) => {
+            ValueType::Thunk(body) => {
                 ContentNode::ThunkType(self.discover(ArenaNode::CompType(body)))
             },
-            | ValueType::Universe { sort, ref level } => ContentNode::Universe {
+            ValueType::Universe { sort, ref level } => ContentNode::Universe {
                 sort,
                 level: level.clone(),
             },
-            | ValueType::Lift { inner, ref target } => ContentNode::TypeLift {
+            ValueType::Lift { inner, ref target } => ContentNode::TypeLift {
                 inner: self.discover(ArenaNode::ValueType(inner)),
                 target: target.clone(),
             },
-            | ValueType::Element { code, ref target } => ContentNode::Element {
+            ValueType::Element { code, ref target } => ContentNode::Element {
                 code: self.discover(ArenaNode::Value(code)),
                 target: target.clone(),
             },
-            | ValueType::Abstract(position) => ContentNode::Abstract(self.layout.resolve(position)),
-            | ValueType::StaticPi { domain, codomain } => {
+            ValueType::Abstract(position) => ContentNode::Abstract(self.layout.resolve(position)),
+            ValueType::StaticPi { domain, codomain } => {
                 let domain = self.discover(ArenaNode::ValueType(domain));
                 ContentNode::StaticPi {
                     domain,
                     codomain: self.discover(ArenaNode::ValueType(codomain)),
                 }
             },
-            | ValueType::Sigma { first, second } => {
+            ValueType::Sigma { first, second } => {
                 let first = self.discover(ArenaNode::ValueType(first));
                 ContentNode::Sigma {
                     first,
                     second: self.discover(ArenaNode::ValueType(second)),
                 }
             },
-            | ValueType::Unknown => ContentNode::UnknownType,
+            ValueType::Unknown => ContentNode::UnknownType,
         }
     }
 
@@ -3225,11 +3225,11 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *comp_type {
-            | CompType::With(first, second) => ContentNode::WithType(
+            CompType::With(first, second) => ContentNode::WithType(
                 self.discover(ArenaNode::CompType(first)),
                 self.discover(ArenaNode::CompType(second)),
             ),
-            | CompType::Returner {
+            CompType::Returner {
                 result,
                 ref effects,
             } => {
@@ -3241,25 +3241,25 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     .unwrap_or_else(|never| match never {});
                 ContentNode::Returner { result, effects }
             },
-            | CompType::Arrow { domain, codomain } => {
+            CompType::Arrow { domain, codomain } => {
                 let domain = self.discover(ArenaNode::ValueType(domain));
                 ContentNode::Arrow {
                     domain,
                     codomain: self.discover(ArenaNode::CompType(codomain)),
                 }
             },
-            | CompType::Pi { domain, codomain } => {
+            CompType::Pi { domain, codomain } => {
                 let domain = self.discover(ArenaNode::ValueType(domain));
                 ContentNode::Pi {
                     domain,
                     codomain: self.discover(ArenaNode::CompType(codomain)),
                 }
             },
-            | CompType::Element { code, ref target } => ContentNode::ComputationElement {
+            CompType::Element { code, ref target } => ContentNode::ComputationElement {
                 code: self.discover(ArenaNode::Value(code)),
                 target: target.clone(),
             },
-            | CompType::Unknown => ContentNode::UnknownComputationType,
+            CompType::Unknown => ContentNode::UnknownComputationType,
         }
     }
 }
@@ -3351,20 +3351,20 @@ where
     Image: FnMut(NodeIndex) -> NodeIndex,
 {
     match *node {
-        | ContentNode::Data {
+        ContentNode::Data {
             ref declaration,
             ref arguments,
         } => ContentNode::Data {
             declaration: declaration.clone(),
             arguments: arguments.iter().map(|&argument| image(argument)).collect(),
         },
-        | ContentNode::RecordType(ref fields) => ContentNode::RecordType(
+        ContentNode::RecordType(ref fields) => ContentNode::RecordType(
             fields
                 .iter()
                 .map(|(label, &field)| (label.clone(), image(field)))
                 .collect(),
         ),
-        | ContentNode::Constructor {
+        ContentNode::Constructor {
             datatype,
             tag,
             ref fields,
@@ -3373,13 +3373,13 @@ where
             tag,
             fields: fields.iter().map(|&field| image(field)).collect(),
         },
-        | ContentNode::Record(ref fields) => ContentNode::Record(
+        ContentNode::Record(ref fields) => ContentNode::Record(
             fields
                 .iter()
                 .map(|(label, &field)| (label.clone(), image(field)))
                 .collect(),
         ),
-        | ContentNode::DataCase {
+        ContentNode::DataCase {
             scrutinee,
             motive,
             ref branches,
@@ -3388,23 +3388,23 @@ where
             motive: image(motive),
             branches: branches.iter().map(|&branch| image(branch)).collect(),
         },
-        | ContentNode::RecordProjection(record, ref label) => {
+        ContentNode::RecordProjection(record, ref label) => {
             ContentNode::RecordProjection(image(record), label.clone())
         },
-        | ContentNode::TupleProjection(tuple, component) => {
+        ContentNode::TupleProjection(tuple, component) => {
             ContentNode::TupleProjection(image(tuple), component)
         },
-        | ContentNode::Reify(ref frames) => {
+        ContentNode::Reify(ref frames) => {
             let mut mapped = alloc::sync::Arc::clone(frames);
             for (index, frame) in frames.iter().enumerate() {
                 let new = match *frame {
-                    | gandr_core_term::control::StackFrame::Apply(value) => {
+                    gandr_core_term::control::StackFrame::Apply(value) => {
                         gandr_core_term::control::StackFrame::Apply(image(value))
                     },
-                    | gandr_core_term::control::StackFrame::Bind(body) => {
+                    gandr_core_term::control::StackFrame::Bind(body) => {
                         gandr_core_term::control::StackFrame::Bind(image(body))
                     },
-                    | gandr_core_term::control::StackFrame::Project(side) => {
+                    gandr_core_term::control::StackFrame::Project(side) => {
                         gandr_core_term::control::StackFrame::Project(side)
                     },
                 };
@@ -3416,14 +3416,12 @@ where
             }
             ContentNode::Reify(mapped)
         },
-        | ContentNode::Stack { input, output } => ContentNode::Stack {
+        ContentNode::Stack { input, output } => ContentNode::Stack {
             input: image(input),
             output: image(output),
         },
-        | ContentNode::WithType(first, second) => {
-            ContentNode::WithType(image(first), image(second))
-        },
-        | ContentNode::Session(ref action) => ContentNode::Session(
+        ContentNode::WithType(first, second) => ContentNode::WithType(image(first), image(second)),
+        ContentNode::Session(ref action) => ContentNode::Session(
             action
                 .try_map(
                     gandr_core_term::session::ChildOrder::Forward,
@@ -3434,12 +3432,12 @@ where
                 )
                 .unwrap_or_else(|never| match never {}),
         ),
-        | ContentNode::SessionType(ref session) => ContentNode::SessionType(
+        ContentNode::SessionType(ref session) => ContentNode::SessionType(
             session
                 .try_relocate(|ty| Ok::<_, core::convert::Infallible>(image(ty)))
                 .unwrap_or_else(|never| match never {}),
         ),
-        | ContentNode::Perform {
+        ContentNode::Perform {
             ref signature,
             ref operation,
             payload,
@@ -3456,7 +3454,7 @@ where
                 payload,
             }
         },
-        | ContentNode::Handle {
+        ContentNode::Handle {
             ref signature,
             subject,
             on_return,
@@ -3501,7 +3499,7 @@ where
                 }
             }
         },
-        | ContentNode::Exercise {
+        ContentNode::Exercise {
             capability,
             ref signature,
             ref operation,
@@ -3521,11 +3519,11 @@ where
                 payload,
             }
         },
-        | ContentNode::Resume(stack, body) => ContentNode::Resume(image(stack), image(body)),
-        | ContentNode::Split(scrutinee, arity, body) => {
+        ContentNode::Resume(stack, body) => ContentNode::Resume(image(stack), image(body)),
+        ContentNode::Split(scrutinee, arity, body) => {
             ContentNode::Split(image(scrutinee), arity, image(body))
         },
-        | ContentNode::DependentSplit {
+        ContentNode::DependentSplit {
             scrutinee,
             arity,
             motive,
@@ -3536,27 +3534,27 @@ where
             motive: image(motive),
             body: image(body),
         },
-        | ContentNode::Reset(body) => ContentNode::Reset(image(body)),
-        | ContentNode::Shift(body) => ContentNode::Shift(image(body)),
-        | ContentNode::With(first, second) => ContentNode::With(image(first), image(second)),
-        | ContentNode::Project(side, body) => ContentNode::Project(side, image(body)),
-        | ContentNode::PrimitiveValue(primitive) => ContentNode::PrimitiveValue(primitive),
-        | ContentNode::Primitive(primitive, mut arguments) => {
+        ContentNode::Reset(body) => ContentNode::Reset(image(body)),
+        ContentNode::Shift(body) => ContentNode::Shift(image(body)),
+        ContentNode::With(first, second) => ContentNode::With(image(first), image(second)),
+        ContentNode::Project(side, body) => ContentNode::Project(side, image(body)),
+        ContentNode::PrimitiveValue(primitive) => ContentNode::PrimitiveValue(primitive),
+        ContentNode::Primitive(primitive, mut arguments) => {
             for argument in arguments.iter_mut() {
                 *argument = image(*argument);
             }
             ContentNode::Primitive(primitive, arguments)
         },
-        | ContentNode::PathUniverse(source, target) => {
+        ContentNode::PathUniverse(source, target) => {
             let source = image(source);
             ContentNode::PathUniverse(source, image(target))
         },
-        | ContentNode::PathRefl(code) => ContentNode::PathRefl(image(code)),
-        | ContentNode::Here(point) => ContentNode::Here(image(point)),
-        | ContentNode::Returned(computation) => ContentNode::Returned(image(computation)),
-        | ContentNode::Nested(computation) => ContentNode::Nested(image(computation)),
-        | ContentNode::Run(computation) => ContentNode::Run(image(computation)),
-        | ContentNode::PathType {
+        ContentNode::PathRefl(code) => ContentNode::PathRefl(image(code)),
+        ContentNode::Here(point) => ContentNode::Here(image(point)),
+        ContentNode::Returned(computation) => ContentNode::Returned(image(computation)),
+        ContentNode::Nested(computation) => ContentNode::Nested(image(computation)),
+        ContentNode::Run(computation) => ContentNode::Run(image(computation)),
+        ContentNode::PathType {
             carrier,
             left,
             right,
@@ -3565,7 +3563,7 @@ where
             left: image(left),
             right: image(right),
         },
-        | ContentNode::FlowType {
+        ContentNode::FlowType {
             carrier,
             source,
             target,
@@ -3574,8 +3572,8 @@ where
             source: image(source),
             target: image(target),
         },
-        | ContentNode::RunType(code) => ContentNode::RunType(image(code)),
-        | ContentNode::SessionRelated {
+        ContentNode::RunType(code) => ContentNode::RunType(image(code)),
+        ContentNode::SessionRelated {
             relation,
             source,
             target,
@@ -3584,21 +3582,21 @@ where
             source: image(source),
             target: image(target),
         },
-        | ContentNode::Stay(point) => ContentNode::Stay(image(point)),
-        | ContentNode::Then(first, second) => {
+        ContentNode::Stay(point) => ContentNode::Stay(image(point)),
+        ContentNode::Then(first, second) => {
             let first = image(first);
             ContentNode::Then(first, image(second))
         },
-        | ContentNode::FlowProduct(first, second) => {
+        ContentNode::FlowProduct(first, second) => {
             let first = image(first);
             ContentNode::FlowProduct(first, image(second))
         },
-        | ContentNode::Forward(translator) => ContentNode::Forward(image(translator)),
-        | ContentNode::FunctionFlow(domain, codomain) => {
+        ContentNode::Forward(translator) => ContentNode::Forward(image(translator)),
+        ContentNode::FunctionFlow(domain, codomain) => {
             let domain = image(domain);
             ContentNode::FunctionFlow(domain, image(codomain))
         },
-        | ContentNode::Recorded(ref moves) => ContentNode::Recorded(
+        ContentNode::Recorded(ref moves) => ContentNode::Recorded(
             moves
                 .iter()
                 .map(|step| {
@@ -3607,7 +3605,7 @@ where
                 })
                 .collect(),
         ),
-        | ContentNode::Ride {
+        ContentNode::Ride {
             motive,
             flow,
             value,
@@ -3616,7 +3614,7 @@ where
             flow: image(flow),
             value: image(value),
         },
-        | ContentNode::ElementTransport {
+        ContentNode::ElementTransport {
             motive,
             path,
             value,
@@ -3625,7 +3623,7 @@ where
             path: image(path),
             value: image(value),
         },
-        | ContentNode::TelescopeTransport {
+        ContentNode::TelescopeTransport {
             motive,
             path,
             start,
@@ -3638,19 +3636,19 @@ where
             over: image(over),
             value: image(value),
         },
-        | ContentNode::PathProduct(first, second) => {
+        ContentNode::PathProduct(first, second) => {
             let first = image(first);
             ContentNode::PathProduct(first, image(second))
         },
-        | ContentNode::Funext(left, right) => {
+        ContentNode::Funext(left, right) => {
             let left = image(left);
             ContentNode::Funext(left, image(right))
         },
-        | ContentNode::Equiv(forward, backward) => {
+        ContentNode::Equiv(forward, backward) => {
             let forward = image(forward);
             ContentNode::Equiv(forward, image(backward))
         },
-        | ContentNode::Ua {
+        ContentNode::Ua {
             stratum,
             ref sides,
             forward,
@@ -3664,7 +3662,7 @@ where
                 backward: image(backward),
             }
         },
-        | ContentNode::PathEquiv {
+        ContentNode::PathEquiv {
             path_type,
             forward,
             backward,
@@ -3675,11 +3673,11 @@ where
             backward: image(backward),
             evidence: alloc::sync::Arc::clone(evidence),
         },
-        | ContentNode::Transport(path, value) => {
+        ContentNode::Transport(path, value) => {
             let path = image(path);
             ContentNode::Transport(path, image(value))
         },
-        | ContentNode::Variable { .. }
+        ContentNode::Variable { .. }
         | ContentNode::Constant(_)
         | ContentNode::ListNil
         | ContentNode::Literal(_)
@@ -3691,8 +3689,8 @@ where
         | ContentNode::ComputationHole(_)
         | ContentNode::UnknownType
         | ContentNode::UnknownComputationType => node.clone(),
-        | ContentNode::ListCons(head, tail) => ContentNode::ListCons(image(head), image(tail)),
-        | ContentNode::ListFold {
+        ContentNode::ListCons(head, tail) => ContentNode::ListCons(image(head), image(tail)),
+        ContentNode::ListFold {
             element,
             result,
             list,
@@ -3705,30 +3703,30 @@ where
             on_nil: image(on_nil),
             on_cons: image(on_cons),
         },
-        | ContentNode::Tuple(ref components) => ContentNode::Tuple(
+        ContentNode::Tuple(ref components) => ContentNode::Tuple(
             components
                 .iter()
                 .map(|&component| image(component))
                 .collect(),
         ),
-        | ContentNode::Injection(summand, body) => ContentNode::Injection(summand, image(body)),
-        | ContentNode::Thunk(body) => ContentNode::Thunk(image(body)),
-        | ContentNode::ValueLift { ref target, body } => ContentNode::ValueLift {
+        ContentNode::Injection(summand, body) => ContentNode::Injection(summand, image(body)),
+        ContentNode::Thunk(body) => ContentNode::Thunk(image(body)),
+        ContentNode::ValueLift { ref target, body } => ContentNode::ValueLift {
             target: target.clone(),
             body: image(body),
         },
-        | ContentNode::Lambda(body) => ContentNode::Lambda(image(body)),
-        | ContentNode::Application(head, argument) => {
+        ContentNode::Lambda(body) => ContentNode::Lambda(image(body)),
+        ContentNode::Application(head, argument) => {
             let head = image(head);
             ContentNode::Application(head, image(argument))
         },
-        | ContentNode::Return(value) => ContentNode::Return(image(value)),
-        | ContentNode::Bind(bound, rest) => {
+        ContentNode::Return(value) => ContentNode::Return(image(value)),
+        ContentNode::Bind(bound, rest) => {
             let bound = image(bound);
             ContentNode::Bind(bound, image(rest))
         },
-        | ContentNode::Force(value) => ContentNode::Force(image(value)),
-        | ContentNode::Case {
+        ContentNode::Force(value) => ContentNode::Force(image(value)),
+        ContentNode::Case {
             scrutinee,
             ref branches,
         } => {
@@ -3738,23 +3736,23 @@ where
                 branches: branches.iter().map(|&branch| image(branch)).collect(),
             }
         },
-        | ContentNode::Product(ref parts) => {
+        ContentNode::Product(ref parts) => {
             ContentNode::Product(parts.iter().map(|&part| image(part)).collect())
         },
-        | ContentNode::Sum(ref parts) => {
+        ContentNode::Sum(ref parts) => {
             ContentNode::Sum(parts.iter().map(|&part| image(part)).collect())
         },
-        | ContentNode::List(element) => ContentNode::List(image(element)),
-        | ContentNode::ThunkType(body) => ContentNode::ThunkType(image(body)),
-        | ContentNode::TypeLift { inner, ref target } => ContentNode::TypeLift {
+        ContentNode::List(element) => ContentNode::List(image(element)),
+        ContentNode::ThunkType(body) => ContentNode::ThunkType(image(body)),
+        ContentNode::TypeLift { inner, ref target } => ContentNode::TypeLift {
             inner: image(inner),
             target: target.clone(),
         },
-        | ContentNode::Element { code, ref target } => ContentNode::Element {
+        ContentNode::Element { code, ref target } => ContentNode::Element {
             code: image(code),
             target: target.clone(),
         },
-        | ContentNode::Returner {
+        ContentNode::Returner {
             result,
             ref effects,
         } => {
@@ -3766,7 +3764,7 @@ where
                 .unwrap_or_else(|never| match never {});
             ContentNode::Returner { result, effects }
         },
-        | ContentNode::Capability {
+        ContentNode::Capability {
             ref authority,
             grade,
             region,
@@ -3779,54 +3777,54 @@ where
             grade,
             region,
         },
-        | ContentNode::Arrow { domain, codomain } => {
+        ContentNode::Arrow { domain, codomain } => {
             let domain = image(domain);
             ContentNode::Arrow {
                 domain,
                 codomain: image(codomain),
             }
         },
-        | ContentNode::Pi { domain, codomain } => {
+        ContentNode::Pi { domain, codomain } => {
             let domain = image(domain);
             ContentNode::Pi {
                 domain,
                 codomain: image(codomain),
             }
         },
-        | ContentNode::Quote(quoted) => ContentNode::Quote(image(quoted)),
-        | ContentNode::QuoteComputation(quoted) => ContentNode::QuoteComputation(image(quoted)),
-        | ContentNode::StaticLambda(body) => ContentNode::StaticLambda(image(body)),
-        | ContentNode::StaticApplication(head, argument) => {
+        ContentNode::Quote(quoted) => ContentNode::Quote(image(quoted)),
+        ContentNode::QuoteComputation(quoted) => ContentNode::QuoteComputation(image(quoted)),
+        ContentNode::StaticLambda(body) => ContentNode::StaticLambda(image(body)),
+        ContentNode::StaticApplication(head, argument) => {
             let head = image(head);
             ContentNode::StaticApplication(head, image(argument))
         },
-        | ContentNode::ValueMark { mark, body } => ContentNode::ValueMark {
+        ContentNode::ValueMark { mark, body } => ContentNode::ValueMark {
             mark,
             body: image(body),
         },
-        | ContentNode::ComputationMark { mark, body } => ContentNode::ComputationMark {
+        ContentNode::ComputationMark { mark, body } => ContentNode::ComputationMark {
             mark,
             body: image(body),
         },
-        | ContentNode::Fixpoint { body, evidence } => ContentNode::Fixpoint {
+        ContentNode::Fixpoint { body, evidence } => ContentNode::Fixpoint {
             body: image(body),
             evidence,
         },
-        | ContentNode::StaticPi { domain, codomain } => {
+        ContentNode::StaticPi { domain, codomain } => {
             let domain = image(domain);
             ContentNode::StaticPi {
                 domain,
                 codomain: image(codomain),
             }
         },
-        | ContentNode::Sigma { first, second } => {
+        ContentNode::Sigma { first, second } => {
             let first = image(first);
             ContentNode::Sigma {
                 first,
                 second: image(second),
             }
         },
-        | ContentNode::ComputationElement { code, ref target } => ContentNode::ComputationElement {
+        ContentNode::ComputationElement { code, ref target } => ContentNode::ComputationElement {
             code: image(code),
             target: target.clone(),
         },
@@ -3929,7 +3927,7 @@ fn mint_table(
     let mut frames = alloc::vec![MintFrame::Enter(NodeIndex::from(0_usize))];
     while let Some(frame) = frames.pop() {
         match frame {
-            | MintFrame::Enter(index) => {
+            MintFrame::Enter(index) => {
                 let (Some(state), Some(node)) = (
                     states.get_mut(usize::from(index)),
                     nodes.get(usize::from(index)),
@@ -3938,9 +3936,9 @@ fn mint_table(
                     return Maybe::Absent(seating::Absent::IllSorted);
                 };
                 match *state {
-                    | MintState::Done(_) => {},
-                    | MintState::Open => return Maybe::Absent(seating::Absent::Cyclic),
-                    | MintState::Fresh => {
+                    MintState::Done(_) => {},
+                    MintState::Open => return Maybe::Absent(seating::Absent::Cyclic),
+                    MintState::Fresh => {
                         *state = MintState::Open;
                         frames.push(MintFrame::Exit(index));
                         let children = node.children();
@@ -3952,14 +3950,14 @@ fn mint_table(
                     },
                 }
             },
-            | MintFrame::Exit(index) => {
+            MintFrame::Exit(index) => {
                 let Some(node) = nodes.get(usize::from(index))
                 else {
                     return Maybe::Absent(seating::Absent::IllSorted);
                 };
                 let minted = match mint_node(node, &states, arena, layout) {
-                    | Maybe::Present(minted) => minted,
-                    | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    Maybe::Present(minted) => minted,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
                 };
                 if let Some(state) = states.get_mut(usize::from(index)) {
                     *state = MintState::Done(minted);
@@ -3968,8 +3966,8 @@ fn mint_table(
         }
     }
     match states.first() {
-        | Some(&MintState::Done(minted)) => Maybe::Present(minted),
-        | Some(&(MintState::Fresh | MintState::Open)) | None => {
+        Some(&MintState::Done(minted)) => Maybe::Present(minted),
+        Some(&(MintState::Fresh | MintState::Open)) | None => {
             Maybe::Absent(seating::Absent::IllSorted)
         },
     }
@@ -3998,8 +3996,8 @@ fn minted_value_type(
 ) -> Maybe<ValueTypeId, seating::Absent>
 {
     match states.get(usize::from(index)) {
-        | Some(&MintState::Done(Minted::ValueType(id))) => Maybe::Present(id),
-        | Some(&(MintState::Done(Minted::CompType(_)) | MintState::Fresh | MintState::Open))
+        Some(&MintState::Done(Minted::ValueType(id))) => Maybe::Present(id),
+        Some(&(MintState::Done(Minted::CompType(_)) | MintState::Fresh | MintState::Open))
         | None => Maybe::Absent(seating::Absent::IllSorted),
     }
 }
@@ -4027,8 +4025,8 @@ fn minted_comp_type(
 ) -> Maybe<CompTypeId, seating::Absent>
 {
     match states.get(usize::from(index)) {
-        | Some(&MintState::Done(Minted::CompType(id))) => Maybe::Present(id),
-        | Some(&(MintState::Done(Minted::ValueType(_)) | MintState::Fresh | MintState::Open))
+        Some(&MintState::Done(Minted::CompType(id))) => Maybe::Present(id),
+        Some(&(MintState::Done(Minted::ValueType(_)) | MintState::Fresh | MintState::Open))
         | None => Maybe::Absent(seating::Absent::IllSorted),
     }
 }
@@ -4077,7 +4075,7 @@ fn mint_node(
 {
     let ill_sorted = Maybe::Absent(seating::Absent::IllSorted);
     match *node {
-        | ContentNode::RecordType(ref fields) => {
+        ContentNode::RecordType(ref fields) => {
             let mut minted = BTreeMap::new();
             for (label, &field) in fields {
                 let Maybe::Present(field) = minted_value_type(states, field)
@@ -4088,7 +4086,7 @@ fn mint_node(
             }
             Maybe::Present(Minted::ValueType(arena.value_type_record(minted)))
         },
-        | ContentNode::Data {
+        ContentNode::Data {
             ref declaration,
             ref arguments,
         } => {
@@ -4096,41 +4094,41 @@ fn mint_node(
                 return Maybe::Absent(seating::Absent::Unseatable);
             }
             match place(layout, declaration) {
-                | Maybe::Present(position) => Maybe::Present(Minted::ValueType(
+                Maybe::Present(position) => Maybe::Present(Minted::ValueType(
                     arena.value_type_data(position, Vec::new()),
                 )),
-                | Maybe::Absent(reason) => Maybe::Absent(reason),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
             }
         },
-        | ContentNode::Stack { input, output } => match (
+        ContentNode::Stack { input, output } => match (
             minted_comp_type(states, input),
             minted_comp_type(states, output),
         ) {
-            | (Maybe::Present(input), Maybe::Present(output)) => {
+            (Maybe::Present(input), Maybe::Present(output)) => {
                 Maybe::Present(Minted::ValueType(arena.value_type_stack(input, output)))
             },
-            | _ => ill_sorted,
+            _ => ill_sorted,
         },
-        | ContentNode::WithType(first, second) => match (
+        ContentNode::WithType(first, second) => match (
             minted_comp_type(states, first),
             minted_comp_type(states, second),
         ) {
-            | (Maybe::Present(first), Maybe::Present(second)) => {
+            (Maybe::Present(first), Maybe::Present(second)) => {
                 Maybe::Present(Minted::CompType(arena.comp_type_with(first, second)))
             },
-            | _ => ill_sorted,
+            _ => ill_sorted,
         },
-        | ContentNode::Base(base) => Maybe::Present(Minted::ValueType(arena.value_type_base(base))),
-        | ContentNode::Universe { sort, ref level } => Maybe::Present(Minted::ValueType(
+        ContentNode::Base(base) => Maybe::Present(Minted::ValueType(arena.value_type_base(base))),
+        ContentNode::Universe { sort, ref level } => Maybe::Present(Minted::ValueType(
             arena.value_type_universe(sort, level.clone()),
         )),
-        | ContentNode::Abstract(ref reference) => match place(layout, reference) {
-            | Maybe::Present(position) => {
+        ContentNode::Abstract(ref reference) => match place(layout, reference) {
+            Maybe::Present(position) => {
                 Maybe::Present(Minted::ValueType(arena.value_type_abstract(position)))
             },
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         },
-        | ContentNode::Product(ref parts) | ContentNode::Sum(ref parts) => {
+        ContentNode::Product(ref parts) | ContentNode::Sum(ref parts) => {
             let mut minted = Vec::with_capacity(parts.len());
             for &part in parts {
                 let Maybe::Present(part) = minted_value_type(states, part)
@@ -4148,47 +4146,45 @@ fn mint_node(
                 },
             ))
         },
-        | ContentNode::List(element) => match minted_value_type(states, element) {
-            | Maybe::Present(element) => {
+        ContentNode::List(element) => match minted_value_type(states, element) {
+            Maybe::Present(element) => {
                 Maybe::Present(Minted::ValueType(arena.value_type_list(element)))
             },
-            | Maybe::Absent(_) => ill_sorted,
+            Maybe::Absent(_) => ill_sorted,
         },
-        | ContentNode::StaticPi { domain, codomain } => {
+        ContentNode::StaticPi { domain, codomain } => {
             match (
                 minted_value_type(states, domain),
                 minted_value_type(states, codomain),
             ) {
-                | (Maybe::Present(domain), Maybe::Present(codomain)) => Maybe::Present(
+                (Maybe::Present(domain), Maybe::Present(codomain)) => Maybe::Present(
                     Minted::ValueType(arena.value_type_static_pi(domain, codomain)),
                 ),
-                | _ => ill_sorted,
+                _ => ill_sorted,
             }
         },
-        | ContentNode::Sigma { first, second } => {
+        ContentNode::Sigma { first, second } => {
             match (
                 minted_value_type(states, first),
                 minted_value_type(states, second),
             ) {
-                | (Maybe::Present(first), Maybe::Present(second)) => {
+                (Maybe::Present(first), Maybe::Present(second)) => {
                     Maybe::Present(Minted::ValueType(arena.value_type_sigma(first, second)))
                 },
-                | _ => ill_sorted,
+                _ => ill_sorted,
             }
         },
-        | ContentNode::ThunkType(body) => match minted_comp_type(states, body) {
-            | Maybe::Present(body) => {
-                Maybe::Present(Minted::ValueType(arena.value_type_thunk(body)))
-            },
-            | Maybe::Absent(_) => ill_sorted,
+        ContentNode::ThunkType(body) => match minted_comp_type(states, body) {
+            Maybe::Present(body) => Maybe::Present(Minted::ValueType(arena.value_type_thunk(body))),
+            Maybe::Absent(_) => ill_sorted,
         },
-        | ContentNode::TypeLift { inner, ref target } => match minted_value_type(states, inner) {
-            | Maybe::Present(inner) => Maybe::Present(Minted::ValueType(
+        ContentNode::TypeLift { inner, ref target } => match minted_value_type(states, inner) {
+            Maybe::Present(inner) => Maybe::Present(Minted::ValueType(
                 arena.value_type_lift(inner, target.clone()),
             )),
-            | Maybe::Absent(_) => ill_sorted,
+            Maybe::Absent(_) => ill_sorted,
         },
-        | ContentNode::Returner {
+        ContentNode::Returner {
             result,
             ref effects,
         } => {
@@ -4197,71 +4193,69 @@ fn mint_node(
                 return ill_sorted;
             };
             let effects = effects.try_relocate(|ty| match minted_value_type(states, ty) {
-                | Maybe::Present(ty) => Ok(ty),
-                | Maybe::Absent(reason) => Err(reason),
+                Maybe::Present(ty) => Ok(ty),
+                Maybe::Absent(reason) => Err(reason),
             });
             match effects {
-                | Ok(effects) => Maybe::Present(Minted::CompType(
+                Ok(effects) => Maybe::Present(Minted::CompType(
                     arena.comp_type_returner_with_effects(result, effects),
                 )),
-                | Err(reason) => Maybe::Absent(reason),
+                Err(reason) => Maybe::Absent(reason),
             }
         },
-        | ContentNode::SessionType(ref session) => {
+        ContentNode::SessionType(ref session) => {
             match session.try_relocate(|ty| match minted_value_type(states, ty) {
-                | Maybe::Present(ty) => Ok(ty),
-                | Maybe::Absent(reason) => Err(reason),
+                Maybe::Present(ty) => Ok(ty),
+                Maybe::Absent(reason) => Err(reason),
             }) {
-                | Ok(session) => {
-                    Maybe::Present(Minted::ValueType(arena.value_type_session(session)))
-                },
-                | Err(reason) => Maybe::Absent(reason),
+                Ok(session) => Maybe::Present(Minted::ValueType(arena.value_type_session(session))),
+                Err(reason) => Maybe::Absent(reason),
             }
         },
-        | ContentNode::Capability {
+        ContentNode::Capability {
             ref authority,
             grade,
             region,
         } => {
             let authority = authority.try_relocate(|ty| match minted_value_type(states, ty) {
-                | Maybe::Present(ty) => Ok(ty),
-                | Maybe::Absent(reason) => Err(reason),
+                Maybe::Present(ty) => Ok(ty),
+                Maybe::Absent(reason) => Err(reason),
             });
             match authority {
-                | Ok(authority) => Maybe::Present(Minted::ValueType(
+                Ok(authority) => Maybe::Present(Minted::ValueType(
                     arena.value_type_capability(authority, grade, region),
                 )),
-                | Err(reason) => Maybe::Absent(reason),
+                Err(reason) => Maybe::Absent(reason),
             }
         },
-        | ContentNode::Arrow { domain, codomain } => {
+        ContentNode::Arrow { domain, codomain } => {
             match (
                 minted_value_type(states, domain),
                 minted_comp_type(states, codomain),
             ) {
-                | (Maybe::Present(domain), Maybe::Present(codomain)) => {
+                (Maybe::Present(domain), Maybe::Present(codomain)) => {
                     Maybe::Present(Minted::CompType(arena.comp_type_arrow(domain, codomain)))
                 },
-                | _ => ill_sorted,
+                _ => ill_sorted,
             }
         },
-        | ContentNode::Pi { domain, codomain } => {
+        ContentNode::Pi { domain, codomain } => {
             match (
                 minted_value_type(states, domain),
                 minted_comp_type(states, codomain),
             ) {
-                | (Maybe::Present(domain), Maybe::Present(codomain)) => {
+                (Maybe::Present(domain), Maybe::Present(codomain)) => {
                     Maybe::Present(Minted::CompType(arena.comp_type_pi(domain, codomain)))
                 },
-                | _ => ill_sorted,
+                _ => ill_sorted,
             }
         },
-        | ContentNode::UnknownType => Maybe::Present(Minted::ValueType(arena.value_type_unknown())),
-        | ContentNode::UnknownComputationType => {
+        ContentNode::UnknownType => Maybe::Present(Minted::ValueType(arena.value_type_unknown())),
+        ContentNode::UnknownComputationType => {
             Maybe::Present(Minted::CompType(arena.comp_type_unknown()))
         },
-        | ContentNode::Unresolved(_) => Maybe::Absent(seating::Absent::Unresolved),
-        | ContentNode::PathUniverse(..)
+        ContentNode::Unresolved(_) => Maybe::Absent(seating::Absent::Unresolved),
+        ContentNode::PathUniverse(..)
         | ContentNode::PathType { .. }
         | ContentNode::FlowType { .. }
         | ContentNode::RunType(_)
@@ -4366,11 +4360,13 @@ fn place(
 ) -> Maybe<gandr_kernel_term::ConstantIndex, seating::Absent>
 {
     match layout.ordinal_of(reference) {
-        | Maybe::Present(ordinal) => match layout.items.get(usize::from(ordinal)) {
-            | Some(item) => Maybe::Present(item.declaration().constant()),
-            | None => Maybe::Absent(seating::Absent::Unplaced),
-        },
-        | Maybe::Absent(_) => Maybe::Absent(seating::Absent::Unplaced),
+        Maybe::Present(ordinal) => layout
+            .items
+            .get(usize::from(ordinal))
+            .map_or(Maybe::Absent(seating::Absent::Unplaced), |item| {
+                Maybe::Present(item.declaration().constant())
+            }),
+        Maybe::Absent(_) => Maybe::Absent(seating::Absent::Unplaced),
     }
 }
 

@@ -238,7 +238,7 @@ impl core::fmt::Display for SuppliedOverlapError
     ) -> core::fmt::Result
     {
         let (batch, overlap) = match *self {
-            | Self::NonConfluence { batch, overlap }
+            Self::NonConfluence { batch, overlap }
             | Self::UnknownLeftCell { batch, overlap, .. }
             | Self::UnknownRightCell { batch, overlap, .. }
             | Self::NonUnifyingSubstitution { batch, overlap } => (batch, overlap),
@@ -250,14 +250,14 @@ impl core::fmt::Display for SuppliedOverlapError
             usize::from(batch)
         )?;
         match *self {
-            | Self::NonConfluence { .. } => f.write_str("a composition, not a confluence"),
-            | Self::UnknownLeftCell { cell, .. } => {
+            Self::NonConfluence { .. } => f.write_str("a composition, not a confluence"),
+            Self::UnknownLeftCell { cell, .. } => {
                 write!(f, "the store holds no left cell {}", usize::from(cell))
             },
-            | Self::UnknownRightCell { cell, .. } => {
+            Self::UnknownRightCell { cell, .. } => {
                 write!(f, "the store holds no right cell {}", usize::from(cell))
             },
-            | Self::NonUnifyingSubstitution { .. } => {
+            Self::NonUnifyingSubstitution { .. } => {
                 f.write_str("the unifier does not make both legs meet the peak")
             },
         }
@@ -310,7 +310,7 @@ impl<A: CellAlphabet> CompletionOutcome<A>
     pub const fn store(&self) -> &CellStore<A>
     {
         match *self {
-            | Self::Completed { ref store, .. } | Self::Declined { ref store, .. } => store,
+            Self::Completed { ref store, .. } | Self::Declined { ref store, .. } => store,
         }
     }
 
@@ -323,7 +323,7 @@ impl<A: CellAlphabet> CompletionOutcome<A>
     pub fn certificates(&self) -> &[Tracelet<A>]
     {
         match *self {
-            | Self::Completed {
+            Self::Completed {
                 ref certificates, ..
             }
             | Self::Declined {
@@ -341,7 +341,7 @@ impl<A: CellAlphabet> CompletionOutcome<A>
     pub fn derived(&self) -> &[CellId]
     {
         match *self {
-            | Self::Completed { ref derived, .. } | Self::Declined { ref derived, .. } => derived,
+            Self::Completed { ref derived, .. } | Self::Declined { ref derived, .. } => derived,
         }
     }
 
@@ -424,12 +424,12 @@ impl<A: CellAlphabet> CompletionOutcome<A>
     ) -> Self
     {
         match self {
-            | Self::Completed { .. }
+            Self::Completed { .. }
             | Self::Declined {
                 reason: DeclineReason::InvalidSuppliedOverlap(_),
                 ..
             } => self,
-            | Self::Declined {
+            Self::Declined {
                 store,
                 derived,
                 certificates,
@@ -675,12 +675,12 @@ where
         return LegAgreement::Miss;
     }
     match A::subterm_cmd_at(&overlap.peak, &overlap.seam) {
-        | Maybe::Present(at_seam)
+        Maybe::Present(at_seam)
             if at_seam == A::apply_subst(&overlap.unifier, overlap.right_renamed().lhs()) =>
         {
             LegAgreement::Meet
         },
-        | Maybe::Present(_) | Maybe::Absent(_) => LegAgreement::Miss,
+        Maybe::Present(_) | Maybe::Absent(_) => LegAgreement::Miss,
     }
 }
 
@@ -1024,9 +1024,9 @@ where
     A: CellAlphabet,
 {
     match A::reduction_cmp(&left, &right) {
-        | core::cmp::Ordering::Greater => Maybe::Present((left, right)),
-        | core::cmp::Ordering::Less => Maybe::Present((right, left)),
-        | core::cmp::Ordering::Equal => Maybe::Absent(orientation::Absent::Unorientable),
+        core::cmp::Ordering::Greater => Maybe::Present((left, right)),
+        core::cmp::Ordering::Less => Maybe::Present((right, left)),
+        core::cmp::Ordering::Equal => Maybe::Absent(orientation::Absent::Unorientable),
     }
 }
 

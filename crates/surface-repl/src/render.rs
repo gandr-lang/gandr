@@ -145,8 +145,10 @@ mod tests
             .offer(SourceText::from(line))
             .expect("the session does not fault")
         {
-            | LoopEvent::Block(block) => block.lines.last().cloned(),
-            | other => panic!("`{line}` answers a block, not {other:?}"),
+            LoopEvent::Block(block) => block.lines.last().cloned(),
+            other @ (LoopEvent::Continue | LoopEvent::Quit) => {
+                panic!("`{line}` answers a block, not {other:?}")
+            },
         };
         assert_eq!(
             last("def answer = 42 ;"),

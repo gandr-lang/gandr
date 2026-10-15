@@ -251,14 +251,21 @@ where
     A: CellAlphabet,
 {
     match normalize(store, peak, joins_at, path) {
-        | Ok(normal) => normal,
-        | Err(NormalFormObstruction::ShiftedScheduleDoesNotFire { .. }) => {
+        Ok(normal) => normal,
+        Err(NormalFormObstruction::ShiftedScheduleDoesNotFire { .. }) => {
             panic!("the kill signal: the canonical schedule does not fire")
         },
-        | Err(NormalFormObstruction::ShiftedScheduleMissesTheJoin { .. }) => {
+        Err(NormalFormObstruction::ShiftedScheduleMissesTheJoin { .. }) => {
             panic!("the kill signal: the canonical schedule misses the join")
         },
-        | Err(_) => panic!("the derivation was refused a normal form"),
+        Err(
+            NormalFormObstruction::InvalidReplayLevel { .. }
+            | NormalFormObstruction::UnknownCell { .. }
+            | NormalFormObstruction::StepDoesNotFire { .. }
+            | NormalFormObstruction::PathMissesTheJoin { .. }
+            | NormalFormObstruction::ContentAddressCollision { .. }
+            | NormalFormObstruction::CanonicalKeyCollision { .. },
+        ) => panic!("the derivation was refused a normal form"),
     }
 }
 
@@ -272,8 +279,8 @@ fn canonical_keys(order: &EventOrder<ToyAlphabet>) -> Vec<EventKey>
         .canonical_order()
         .into_iter()
         .filter_map(|index| match order.key(index) {
-            | Maybe::Present(key) => Some(key),
-            | Maybe::Absent(_) => None,
+            Maybe::Present(key) => Some(key),
+            Maybe::Absent(_) => None,
         })
         .collect()
 }
@@ -1663,8 +1670,8 @@ fn the_order_taken_alone_agrees_with_the_normalizers()
         .canonical_order()
         .into_iter()
         .filter_map(|index| match order.event(index) {
-            | Maybe::Present(event) => Some(event.address()),
-            | Maybe::Absent(_) => None,
+            Maybe::Present(event) => Some(event.address()),
+            Maybe::Absent(_) => None,
         })
         .collect();
     assert_eq!(

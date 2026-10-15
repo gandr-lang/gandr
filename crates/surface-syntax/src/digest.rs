@@ -311,25 +311,25 @@ impl Preimage
         let bytes = &mut self.0;
         bytes.push(u8::from(label.tag()));
         match label {
-            | NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => {},
-            | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
+            NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => {},
+            NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
                 bytes.extend_from_slice(&u32::from(mold).to_le_bytes());
             },
-            | NodeLabel::Grout { sort, shape } => {
+            NodeLabel::Grout { sort, shape } => {
                 bytes.extend_from_slice(&u16::from(sort).to_le_bytes());
                 bytes.push(match shape {
-                    | GroutShape::Convex => 0x01_u8,
-                    | GroutShape::Prefix => 0x02_u8,
-                    | GroutShape::Postfix => 0x03_u8,
-                    | GroutShape::Infix => 0x04_u8,
+                    GroutShape::Convex => 0x01_u8,
+                    GroutShape::Prefix => 0x02_u8,
+                    GroutShape::Postfix => 0x03_u8,
+                    GroutShape::Infix => 0x04_u8,
                 });
             },
-            | NodeLabel::GhostClose { sort, class } => {
+            NodeLabel::GhostClose { sort, class } => {
                 bytes.extend_from_slice(&u16::from(sort).to_le_bytes());
                 bytes.push(match class {
-                    | ClosingClass::Paren => 0x01_u8,
-                    | ClosingClass::Bracket => 0x02_u8,
-                    | ClosingClass::Brace => 0x03_u8,
+                    ClosingClass::Paren => 0x01_u8,
+                    ClosingClass::Bracket => 0x02_u8,
+                    ClosingClass::Brace => 0x03_u8,
                 });
             },
         }

@@ -127,10 +127,10 @@ impl core::fmt::Display for EffectConflict
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::DuplicateOperation(ref name) => {
+            Self::DuplicateOperation(ref name) => {
                 write!(f, "duplicate operation {}", name.as_ref())
             },
-            | Self::Signature(ref name) => write!(f, "conflicting effect {}", name.as_ref()),
+            Self::Signature(ref name) => write!(f, "conflicting effect {}", name.as_ref()),
         }
     }
 }
@@ -220,10 +220,10 @@ impl<Id: Copy + Eq + 'static> EffectSig<Id>
         let mut canonical = BTreeMap::new();
         for operation in operations {
             match canonical.entry(operation.name.clone()) {
-                | alloc::collections::btree_map::Entry::Vacant(entry) => {
+                alloc::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(operation);
                 },
-                | alloc::collections::btree_map::Entry::Occupied(_) => {
+                alloc::collections::btree_map::Entry::Occupied(_) => {
                     return Err(EffectConflict::DuplicateOperation(operation.name));
                 },
             }
@@ -272,10 +272,10 @@ impl<Id: Copy + Eq + 'static> EffectSig<Id>
         name: &OperationName,
     ) -> Maybe<&EffectOp<Id>, UnknownOperation>
     {
-        match self.0.operations.get(name) {
-            | Some(operation) => Maybe::Present(operation),
-            | None => Maybe::Absent(UnknownOperation),
-        }
+        self.0
+            .operations
+            .get(name)
+            .map_or(Maybe::Absent(UnknownOperation), Maybe::Present)
     }
 
     /// Payload and reply edges in canonical operation order.
@@ -315,13 +315,15 @@ impl<Id: Copy + Eq + 'static> EffectSig<Id>
     where
         Map: FnMut(Id) -> Result<Id, E>,
     {
-        Ok(match self.remap_operations(order, &mut map)? {
-            | Some(operations) => Self(Arc::new(Signature {
-                name: self.name().clone(),
-                operations,
-            })),
-            | None => self.clone(),
-        })
+        Ok(self.remap_operations(order, &mut map)?.map_or_else(
+            || self.clone(),
+            |operations| {
+                Self(Arc::new(Signature {
+                    name: self.name().clone(),
+                    operations,
+                }))
+            },
+        ))
     }
 
     /// Build a replacement operation map only when a type edge changes.
@@ -343,12 +345,12 @@ impl<Id: Copy + Eq + 'static> EffectSig<Id>
         let mut rewritten = None;
         let mut entries = self.0.operations.iter();
         while let Some((name, operation)) = match order {
-            | TypeOrder::Forward => entries.next(),
-            | TypeOrder::Reverse => entries.next_back(),
+            TypeOrder::Forward => entries.next(),
+            TypeOrder::Reverse => entries.next_back(),
         } {
             let (payload, reply) = match order {
-                | TypeOrder::Forward => (map(operation.payload)?, map(operation.reply)?),
-                | TypeOrder::Reverse => {
+                TypeOrder::Forward => (map(operation.payload)?, map(operation.reply)?),
+                TypeOrder::Reverse => {
                     let reply = map(operation.reply)?;
                     (map(operation.payload)?, reply)
                 },
@@ -568,22 +570,19 @@ impl EffectRow
         let mut expanded = None;
         for (name, signature) in other.entries() {
             match self.entries().get(name) {
-                | Some(existing) => {
+                Some(existing) => {
                     if existing.inclusion(signature, arena) == RowInclusion::Excluded {
                         return Err(EffectConflict::Signature(name.clone()));
                     }
                 },
-                | None => {
+                None => {
                     expanded
                         .get_or_insert_with(|| self.entries().clone())
                         .insert(name.clone(), signature.clone());
                 },
             }
         }
-        Ok(match expanded {
-            | Some(entries) => Self(Some(Arc::new(entries))),
-            | None => self.clone(),
-        })
+        Ok(expanded.map_or_else(|| self.clone(), |entries| Self(Some(Arc::new(entries)))))
     }
 }
 
@@ -750,8 +749,8 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
         let mut rewritten = None;
         let mut signatures = self.entries().iter();
         while let Some((name, signature)) = match order {
-            | TypeOrder::Forward => signatures.next(),
-            | TypeOrder::Reverse => signatures.next_back(),
+            TypeOrder::Forward => signatures.next(),
+            TypeOrder::Reverse => signatures.next_back(),
         } {
             if let Some(operations) = signature.remap_operations(order, &mut map)? {
                 rewritten
@@ -765,10 +764,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
                     );
             }
         }
-        Ok(match rewritten {
-            | Some(entries) => Self(Some(Arc::new(entries))),
-            | None => self.clone(),
-        })
+        Ok(rewritten.map_or_else(|| self.clone(), |entries| Self(Some(Arc::new(entries)))))
     }
 
     /// Relocate type edges to another handle family in canonical forward order.
@@ -829,10 +825,10 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
         let mut entries = BTreeMap::new();
         for signature in signatures {
             match entries.entry(signature.name().clone()) {
-                | alloc::collections::btree_map::Entry::Vacant(entry) => {
+                alloc::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(signature);
                 },
-                | alloc::collections::btree_map::Entry::Occupied(entry) => {
+                alloc::collections::btree_map::Entry::Occupied(entry) => {
                     return Err(EffectConflict::Signature(entry.key().clone()));
                 },
             }

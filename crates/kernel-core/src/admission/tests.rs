@@ -111,7 +111,7 @@ fn probe(
             continue;
         }
         let term = match schema.proposal.node(id)? {
-            | Node::Point(point) => {
+            Node::Point(point) => {
                 if let Some(arm) = bindings.get(&point) {
                     if let Some(value) = known.get(arm) {
                         known.insert(id, *value);
@@ -123,7 +123,7 @@ fn probe(
                 }
                 Term::Code(*schema.skolems.get(point.0).ok_or(Refusal::Malformed)?)
             },
-            | Node::Predecessor(point) => {
+            Node::Predecessor(point) => {
                 if let Some(arm) = bindings.get(&point) {
                     let Node::Rigid(Term::Natural(Stage::Outer, Natural(value))) =
                         schema.proposal.node(*arm)?
@@ -138,7 +138,7 @@ fn probe(
                     Term::Code(*schema.skolems.get(skolem).ok_or(Refusal::Malformed)?)
                 }
             },
-            | Node::Rigid(term) => {
+            Node::Rigid(term) => {
                 if !ready {
                     pending.push((id, true));
                     pending.extend(

@@ -510,8 +510,8 @@ fn multi_point_edit_localizes_to_the_common_ancestor()
         .actions()
         .iter()
         .filter_map(|action| match action.path() {
-            | Maybe::Present(changed) => Some(changed),
-            | Maybe::Absent(_) => None,
+            Maybe::Present(changed) => Some(changed),
+            Maybe::Absent(_) => None,
         })
         .collect();
     assert_eq!(changed.len(), 2_usize, "two nodes change: {script:?}");

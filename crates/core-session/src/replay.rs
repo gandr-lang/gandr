@@ -114,23 +114,23 @@ impl core::fmt::Display for ReplayError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Refused {
+            Self::Refused {
                 at: MoveIndex(at),
                 reason,
                 ..
             } => {
                 let reason = match reason {
-                    | Refusal::ResumeAfterEnd => "resume after end",
-                    | Refusal::WrongLabel => "wrong label",
-                    | Refusal::WrongDirection => "wrong direction",
-                    | Refusal::WrongPayloadIdentity => "wrong payload identity",
+                    Refusal::ResumeAfterEnd => "resume after end",
+                    Refusal::WrongLabel => "wrong label",
+                    Refusal::WrongDirection => "wrong direction",
+                    Refusal::WrongPayloadIdentity => "wrong payload identity",
                 };
                 write!(f, "move {at}: {reason}")
             },
-            | Self::IncompleteRun {
+            Self::IncompleteRun {
                 at: MoveIndex(at), ..
             } => write!(f, "incomplete run at move {at}"),
-            | Self::InvalidType(ref error) => core::fmt::Display::fmt(error, f),
+            Self::InvalidType(ref error) => core::fmt::Display::fmt(error, f),
         }
     }
 }
@@ -209,14 +209,14 @@ pub fn replay(
             return Err(refused(Refusal::ResumeAfterEnd));
         }
         match (node, movement) {
-            | (&Node::Send(identity, next), &Move::Send(payload))
+            (&Node::Send(identity, next), &Move::Send(payload))
             | (&Node::Receive(identity, next), &Move::Receive(payload)) => {
                 if identity != payload.identity {
                     return Err(refused(Refusal::WrongPayloadIdentity));
                 }
                 current = next;
             },
-            | (&Node::Select(ref branches), &Move::Select(ref label))
+            (&Node::Select(ref branches), &Move::Select(ref label))
             | (&Node::Offer(ref branches), &Move::Offer(ref label)) => {
                 let Some(&next) = branches.get(label)
                 else {
@@ -224,9 +224,9 @@ pub fn replay(
                 };
                 current = next;
             },
-            | (&Node::End, &Move::End) => closed = true,
-            | (&Node::End, _) => return Err(refused(Refusal::ResumeAfterEnd)),
-            | _ => return Err(refused(Refusal::WrongDirection)),
+            (&Node::End, &Move::End) => closed = true,
+            (&Node::End, _) => return Err(refused(Refusal::ResumeAfterEnd)),
+            _ => return Err(refused(Refusal::WrongDirection)),
         }
     }
     if closed {

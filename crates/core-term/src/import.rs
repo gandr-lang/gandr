@@ -70,10 +70,10 @@ impl Edge<'_>
     fn node(&self) -> Node
     {
         match *self {
-            | Self::Value(ref id) => Node::Value(**id),
-            | Self::Computation(ref id) => Node::Computation(**id),
-            | Self::ValueType(ref id) => Node::ValueType(**id),
-            | Self::CompType(ref id) => Node::CompType(**id),
+            Self::Value(ref id) => Node::Value(**id),
+            Self::Computation(ref id) => Node::Computation(**id),
+            Self::ValueType(ref id) => Node::ValueType(**id),
+            Self::CompType(ref id) => Node::CompType(**id),
         }
     }
 
@@ -94,11 +94,11 @@ impl Edge<'_>
     ) -> Result<(), ImportFault>
     {
         match (&mut *self, image) {
-            | (&mut Self::Value(ref mut id), Node::Value(image)) => **id = image,
-            | (&mut Self::Computation(ref mut id), Node::Computation(image)) => **id = image,
-            | (&mut Self::ValueType(ref mut id), Node::ValueType(image)) => **id = image,
-            | (&mut Self::CompType(ref mut id), Node::CompType(image)) => **id = image,
-            | _ => return Err(ImportFault),
+            (&mut Self::Value(ref mut id), Node::Value(image)) => **id = image,
+            (&mut Self::Computation(ref mut id), Node::Computation(image)) => **id = image,
+            (&mut Self::ValueType(ref mut id), Node::ValueType(image)) => **id = image,
+            (&mut Self::CompType(ref mut id), Node::CompType(image)) => **id = image,
+            _ => return Err(ImportFault),
         }
         Ok(())
     }
@@ -117,23 +117,23 @@ impl Image
         use Edge::Value as V;
         use Edge::ValueType as VT;
         match *self {
-            | Self::Value(Value::Constructor {
+            Self::Value(Value::Constructor {
                 ref mut datatype, ..
             }) => [Some(VT(datatype)), None, None, None, None],
-            | Self::Computation(Computation::DataCase {
+            Self::Computation(Computation::DataCase {
                 ref mut scrutinee,
                 ref mut motive,
                 ..
             }) => [Some(V(scrutinee)), Some(CT(motive)), None, None, None],
-            | Self::Computation(
+            Self::Computation(
                 Computation::RecordProjection(ref mut record, _)
                 | Computation::TupleProjection(ref mut record, _),
             ) => [Some(V(record)), None, None, None, None],
-            | Self::Value(Value::Record(_) | Value::Tuple(_) | Value::Recorded(_))
+            Self::Value(Value::Record(_) | Value::Tuple(_) | Value::Recorded(_))
             | Self::ValueType(ValueType::Data { .. } | ValueType::Record(_)) => {
                 [None, None, None, None, None]
             },
-            | Self::Value(
+            Self::Value(
                 Value::Variable { .. }
                 | Value::Constant(_)
                 | Value::Literal(_)
@@ -153,14 +153,14 @@ impl Image
                 | ValueType::Session(_),
             )
             | Self::CompType(CompType::Unknown) => [None, None, None, None, None],
-            | Self::ValueType(ValueType::Stack {
+            Self::ValueType(ValueType::Stack {
                 input: ref mut first,
                 output: ref mut second,
             })
             | Self::CompType(CompType::With(ref mut first, ref mut second)) => {
                 [Some(CT(first)), Some(CT(second)), None, None, None]
             },
-            | Self::Computation(
+            Self::Computation(
                 Computation::Handle {
                     subject: ref mut first,
                     on_return: ref mut second,
@@ -174,7 +174,7 @@ impl Image
                 | Computation::With(ref mut first, ref mut second)
                 | Computation::Bind(ref mut first, ref mut second),
             ) => [Some(C(first)), Some(C(second)), None, None, None],
-            | Self::Computation(Computation::Split {
+            Self::Computation(Computation::Split {
                 ref mut scrutinee,
                 motive: SplitMotive::Scrutinee(ref mut motive),
                 ref mut body,
@@ -186,7 +186,7 @@ impl Image
                 None,
                 None,
             ],
-            | Self::Computation(
+            Self::Computation(
                 Computation::Resume(ref mut stack, ref mut body)
                 | Computation::Split {
                     scrutinee: ref mut stack,
@@ -194,7 +194,7 @@ impl Image
                     ..
                 },
             ) => [Some(V(stack)), Some(C(body)), None, None, None],
-            | Self::Value(
+            Self::Value(
                 Value::Primitive { ref mut body, .. }
                 | Value::Thunk(ref mut body)
                 | Value::Returned(ref mut body)
@@ -209,7 +209,7 @@ impl Image
                 | Computation::Project(_, ref mut body)
                 | Computation::Mark { ref mut body, .. },
             ) => [Some(C(body)), None, None, None, None],
-            | Self::Value(
+            Self::Value(
                 Value::PathRefl(ref mut body)
                 | Value::Here(ref mut body)
                 | Value::Stay(ref mut body)
@@ -236,7 +236,7 @@ impl Image
             | Self::CompType(CompType::Element {
                 code: ref mut body, ..
             }) => [Some(V(body)), None, None, None, None],
-            | Self::Value(
+            Self::Value(
                 Value::PathProduct(ref mut first, ref mut second)
                 | Value::Funext(ref mut first, ref mut second)
                 | Value::Equiv(ref mut first, ref mut second)
@@ -267,7 +267,7 @@ impl Image
             | Self::ValueType(ValueType::PathUniverse(ref mut first, ref mut second)) => {
                 [Some(V(first)), Some(V(second)), None, None, None]
             },
-            | Self::Value(Value::PathEquiv {
+            Self::Value(Value::PathEquiv {
                 ref mut path_type,
                 ref mut forward,
                 ref mut backward,
@@ -279,7 +279,7 @@ impl Image
                 None,
                 None,
             ],
-            | Self::Computation(
+            Self::Computation(
                 Computation::PathTransport {
                     ref mut motive,
                     ref mut path,
@@ -291,7 +291,7 @@ impl Image
                     ref mut value,
                 },
             ) => [Some(VT(motive)), Some(V(path)), Some(V(value)), None, None],
-            | Self::Computation(Computation::TelescopeTransport {
+            Self::Computation(Computation::TelescopeTransport {
                 ref mut motive,
                 ref mut path,
                 ref mut start,
@@ -304,7 +304,7 @@ impl Image
                 Some(V(over)),
                 Some(V(value)),
             ],
-            | Self::ValueType(
+            Self::ValueType(
                 ValueType::Path {
                     ref mut carrier,
                     ref mut left,
@@ -316,7 +316,7 @@ impl Image
                     target: ref mut right,
                 },
             ) => [Some(VT(carrier)), Some(V(left)), Some(V(right)), None, None],
-            | Self::Value(Value::Quote(ref mut ty))
+            Self::Value(Value::Quote(ref mut ty))
             | Self::ValueType(
                 ValueType::List(ref mut ty)
                 | ValueType::Lift {
@@ -326,27 +326,27 @@ impl Image
             | Self::CompType(CompType::Returner {
                 result: ref mut ty, ..
             }) => [Some(VT(ty)), None, None, None, None],
-            | Self::Value(Value::QuoteComputation(ref mut ty))
+            Self::Value(Value::QuoteComputation(ref mut ty))
             | Self::ValueType(ValueType::Thunk(ref mut ty)) => {
                 [Some(CT(ty)), None, None, None, None]
             },
-            | Self::Computation(Computation::Primitive {
+            Self::Computation(Computation::Primitive {
                 ref mut arguments, ..
             }) => match *arguments {
-                | crate::primitive::Arguments::Unary(ref mut value) => {
+                crate::primitive::Arguments::Unary(ref mut value) => {
                     [Some(V(value)), None, None, None, None]
                 },
-                | crate::primitive::Arguments::Binary([ref mut first, ref mut second]) => {
+                crate::primitive::Arguments::Binary([ref mut first, ref mut second]) => {
                     [Some(V(first)), Some(V(second)), None, None, None]
                 },
             },
-            | Self::Computation(Computation::Application(ref mut head, ref mut argument)) => {
+            Self::Computation(Computation::Application(ref mut head, ref mut argument)) => {
                 [Some(C(head)), Some(V(argument)), None, None, None]
             },
-            | Self::Computation(Computation::Case {
+            Self::Computation(Computation::Case {
                 ref mut scrutinee, ..
             }) => [Some(V(scrutinee)), None, None, None, None],
-            | Self::Computation(Computation::ListFold {
+            Self::Computation(Computation::ListFold {
                 ref mut element,
                 ref mut result,
                 ref mut list,
@@ -359,7 +359,7 @@ impl Image
                 Some(C(on_nil)),
                 Some(C(on_cons)),
             ],
-            | Self::ValueType(
+            Self::ValueType(
                 ValueType::StaticPi {
                     domain: ref mut first,
                     codomain: ref mut second,
@@ -369,7 +369,7 @@ impl Image
                     ref mut second,
                 },
             ) => [Some(VT(first)), Some(VT(second)), None, None, None],
-            | Self::CompType(
+            Self::CompType(
                 CompType::Arrow {
                     ref mut domain,
                     ref mut codomain,
@@ -463,19 +463,19 @@ impl<'source, 'target> TypeImporter<'source, 'target>
         self.pending.push(Task::Open(Node::ValueType(root)));
         while let Some(task) = self.pending.pop() {
             match task {
-                | Task::Open(node) => {
+                Task::Open(node) => {
                     if self.images.contains_key(&node) {
                         continue;
                     }
                     let mut image = match node {
-                        | Node::Value(id) => self.source.value(id).cloned().map(Image::Value),
-                        | Node::Computation(id) => {
+                        Node::Value(id) => self.source.value(id).cloned().map(Image::Value),
+                        Node::Computation(id) => {
                             self.source.computation(id).cloned().map(Image::Computation)
                         },
-                        | Node::ValueType(id) => {
+                        Node::ValueType(id) => {
                             self.source.value_type(id).cloned().map(Image::ValueType)
                         },
-                        | Node::CompType(id) => {
+                        Node::CompType(id) => {
                             self.source.comp_type(id).cloned().map(Image::CompType)
                         },
                     }
@@ -494,57 +494,87 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                         );
                     }
                     match node {
-                        | Node::Value(id) => {
+                        Node::Value(id) => {
                             let value = self.source.value(id).ok_or(ImportFault)?;
                             match *value {
-                                | Value::Constructor { ref fields, .. } => self.pending.extend(
+                                Value::Constructor { ref fields, .. } => self.pending.extend(
                                     fields
                                         .iter()
                                         .rev()
                                         .map(|&value| Task::Open(Node::Value(value))),
                                 ),
-                                | Value::Record(ref fields) => self.pending.extend(
+                                Value::Record(ref fields) => self.pending.extend(
                                     fields
                                         .values()
                                         .rev()
                                         .map(|&value| Task::Open(Node::Value(value))),
                                 ),
-                                | Value::Tuple(ref components) => self.pending.extend(
+                                Value::Tuple(ref components) => self.pending.extend(
                                     components
                                         .iter()
                                         .rev()
                                         .map(|&value| Task::Open(Node::Value(value))),
                                 ),
-                                | Value::Recorded(ref moves) => {
+                                Value::Recorded(ref moves) => {
                                     self.pending.extend(moves.iter().rev().filter_map(
                                         |movement| match movement.payload() {
-                                            | quenchant_shape::shape::Maybe::Present(value) => {
+                                            quenchant_shape::shape::Maybe::Present(value) => {
                                                 Some(Task::Open(Node::Value(value)))
                                             },
-                                            | quenchant_shape::shape::Maybe::Absent(_) => None,
+                                            quenchant_shape::shape::Maybe::Absent(_) => None,
                                         },
                                     ));
                                 },
-                                | Value::Reify(ref frames) => {
+                                Value::Reify(ref frames) => {
                                     self.pending.extend(frames.iter().rev().filter_map(|frame| {
                                         match *frame {
-                                            | crate::control::StackFrame::Apply(value) => {
+                                            crate::control::StackFrame::Apply(value) => {
                                                 Some(Task::Open(Node::Value(value)))
                                             },
-                                            | crate::control::StackFrame::Bind(body) => {
+                                            crate::control::StackFrame::Bind(body) => {
                                                 Some(Task::Open(Node::Computation(body)))
                                             },
-                                            | crate::control::StackFrame::Project(_) => None,
+                                            crate::control::StackFrame::Project(_) => None,
                                         }
                                     }));
                                 },
-                                | _ => {},
+                                Value::Primitive { .. }
+                                | Value::PathRefl(_)
+                                | Value::PathProduct(..)
+                                | Value::PathEquiv { .. }
+                                | Value::Here(_)
+                                | Value::Funext(..)
+                                | Value::Equiv(..)
+                                | Value::Ua { .. }
+                                | Value::SessionRelated { .. }
+                                | Value::Stay(_)
+                                | Value::Then(..)
+                                | Value::FlowProduct(..)
+                                | Value::Forward(_)
+                                | Value::FunctionFlow(..)
+                                | Value::Returned(_)
+                                | Value::Nested(_)
+                                | Value::Run(_)
+                                | Value::Variable { .. }
+                                | Value::Constant(_)
+                                | Value::Literal(_)
+                                | Value::Injection(..)
+                                | Value::ListNil
+                                | Value::ListCons(..)
+                                | Value::Thunk(_)
+                                | Value::Lift { .. }
+                                | Value::Quote(_)
+                                | Value::QuoteComputation(_)
+                                | Value::StaticLambda(_)
+                                | Value::StaticApplication(..)
+                                | Value::Hole(_)
+                                | Value::Mark { .. } => {},
                             }
                         },
-                        | Node::Computation(id) => {
+                        Node::Computation(id) => {
                             let computation = self.source.computation(id).ok_or(ImportFault)?;
                             match *computation {
-                                | Computation::Case { ref branches, .. } => {
+                                Computation::Case { ref branches, .. } => {
                                     self.pending.extend(
                                         branches
                                             .iter()
@@ -552,7 +582,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                             .map(|&body| Task::Open(Node::Computation(body))),
                                     );
                                 },
-                                | Computation::DataCase { ref branches, .. } => {
+                                Computation::DataCase { ref branches, .. } => {
                                     self.pending.extend(
                                         branches
                                             .iter()
@@ -560,7 +590,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                             .map(|&body| Task::Open(Node::Computation(body))),
                                     );
                                 },
-                                | Computation::Perform { ref signature, .. }
+                                Computation::Perform { ref signature, .. }
                                 | Computation::Exercise { ref signature, .. } => {
                                     self.pending.extend(
                                         signature
@@ -569,7 +599,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                             .map(|ty| Task::Open(Node::ValueType(ty))),
                                     );
                                 },
-                                | Computation::Handle {
+                                Computation::Handle {
                                     ref signature,
                                     ref clauses,
                                     ..
@@ -591,7 +621,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         }),
                                     );
                                 },
-                                | Computation::Session(ref action) => {
+                                Computation::Session(ref action) => {
                                     self.pending.extend(
                                         action
                                             .value_types()
@@ -608,39 +638,60 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                             ),
                                     );
                                 },
-                                | _ => {},
+                                Computation::Primitive { .. }
+                                | Computation::Transport(..)
+                                | Computation::PathTransport { .. }
+                                | Computation::Ride { .. }
+                                | Computation::TelescopeTransport { .. }
+                                | Computation::Lambda(_)
+                                | Computation::Fixpoint { .. }
+                                | Computation::Application(..)
+                                | Computation::Return(_)
+                                | Computation::Bind(..)
+                                | Computation::Force(_)
+                                | Computation::Split { .. }
+                                | Computation::RecordProjection(..)
+                                | Computation::TupleProjection(..)
+                                | Computation::Hole(_)
+                                | Computation::Mark { .. }
+                                | Computation::ListFold { .. }
+                                | Computation::Resume(..)
+                                | Computation::Reset(_)
+                                | Computation::Shift(_)
+                                | Computation::With(..)
+                                | Computation::Project(..) => {},
                             }
                         },
-                        | Node::ValueType(id) => {
+                        Node::ValueType(id) => {
                             let ty = self.source.value_type(id).ok_or(ImportFault)?;
                             match *ty {
-                                | ValueType::Data { ref arguments, .. } => self.pending.extend(
+                                ValueType::Data { ref arguments, .. } => self.pending.extend(
                                     arguments
                                         .iter()
                                         .rev()
                                         .map(|&value| Task::Open(Node::Value(value))),
                                 ),
-                                | ValueType::Record(ref fields) => self.pending.extend(
+                                ValueType::Record(ref fields) => self.pending.extend(
                                     fields
                                         .values()
                                         .rev()
                                         .map(|&ty| Task::Open(Node::ValueType(ty))),
                                 ),
-                                | ValueType::Product(ref components)
+                                ValueType::Product(ref components)
                                 | ValueType::Sum(ref components) => self.pending.extend(
                                     components
                                         .iter()
                                         .rev()
                                         .map(|&ty| Task::Open(Node::ValueType(ty))),
                                 ),
-                                | ValueType::Session(ref session) => self.pending.extend(
+                                ValueType::Session(ref session) => self.pending.extend(
                                     session
                                         .payloads()
                                         .iter()
                                         .rev()
                                         .map(|&ty| Task::Open(Node::ValueType(ty))),
                                 ),
-                                | ValueType::Capability { ref authority, .. } => {
+                                ValueType::Capability { ref authority, .. } => {
                                     self.pending.extend(
                                         authority
                                             .types()
@@ -648,15 +699,29 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                             .map(|ty| Task::Open(Node::ValueType(ty))),
                                     );
                                 },
-                                | _ => {},
+                                ValueType::PathUniverse(..)
+                                | ValueType::Path { .. }
+                                | ValueType::Flow { .. }
+                                | ValueType::Run(_)
+                                | ValueType::Base(_)
+                                | ValueType::Sigma { .. }
+                                | ValueType::List(_)
+                                | ValueType::Thunk(_)
+                                | ValueType::Universe { .. }
+                                | ValueType::Lift { .. }
+                                | ValueType::Element { .. }
+                                | ValueType::Abstract(_)
+                                | ValueType::StaticPi { .. }
+                                | ValueType::Unknown
+                                | ValueType::Stack { .. } => {},
                             }
                         },
-                        | Node::CompType(_) => {},
+                        Node::CompType(_) => {},
                     }
                     self.pending
                         .extend(children.into_iter().flatten().rev().map(Task::Open));
                 },
-                | Task::Close(node, mut image) => {
+                Task::Close(node, mut image) => {
                     for mut edge in image.edges().into_iter().flatten() {
                         let image = *self.images.get(&edge.node()).ok_or(ImportFault)?;
                         edge.replace(image)?;
@@ -668,25 +733,25 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                         *effects =
                             effects.try_map_types(crate::effect::TypeOrder::Forward, |ty| {
                                 match self.images.get(&Node::ValueType(ty)) {
-                                    | Some(&Node::ValueType(image)) => Ok(image),
-                                    | _ => Err(ImportFault),
+                                    Some(&Node::ValueType(image)) => Ok(image),
+                                    _ => Err(ImportFault),
                                 }
                             })?;
                     }
                     let map_type = |ty| match self.images.get(&Node::ValueType(ty)) {
-                        | Some(&Node::ValueType(mapped)) => Ok(mapped),
-                        | _ => Err(ImportFault),
+                        Some(&Node::ValueType(mapped)) => Ok(mapped),
+                        _ => Err(ImportFault),
                     };
                     let map_value = |value| match self.images.get(&Node::Value(value)) {
-                        | Some(&Node::Value(mapped)) => Ok(mapped),
-                        | _ => Err(ImportFault),
+                        Some(&Node::Value(mapped)) => Ok(mapped),
+                        _ => Err(ImportFault),
                     };
                     let map_computation = |body| match self.images.get(&Node::Computation(body)) {
-                        | Some(&Node::Computation(mapped)) => Ok(mapped),
-                        | _ => Err(ImportFault),
+                        Some(&Node::Computation(mapped)) => Ok(mapped),
+                        _ => Err(ImportFault),
                     };
                     match image {
-                        | Image::Value(Value::Constructor { ref mut fields, .. })
+                        Image::Value(Value::Constructor { ref mut fields, .. })
                         | Image::ValueType(ValueType::Data {
                             arguments: ref mut fields,
                             ..
@@ -695,22 +760,22 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 *value = map_value(*value)?;
                             }
                         },
-                        | Image::Value(Value::Record(ref mut fields)) => {
+                        Image::Value(Value::Record(ref mut fields)) => {
                             for value in fields.values_mut() {
                                 *value = map_value(*value)?;
                             }
                         },
-                        | Image::Value(Value::Tuple(ref mut components)) => {
+                        Image::Value(Value::Tuple(ref mut components)) => {
                             for value in components.iter_mut() {
                                 *value = map_value(*value)?;
                             }
                         },
-                        | Image::ValueType(ValueType::Record(ref mut fields)) => {
+                        Image::ValueType(ValueType::Record(ref mut fields)) => {
                             for ty in fields.values_mut() {
                                 *ty = map_type(*ty)?;
                             }
                         },
-                        | Image::ValueType(
+                        Image::ValueType(
                             ValueType::Product(ref mut components)
                             | ValueType::Sum(ref mut components),
                         ) => {
@@ -718,41 +783,41 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 *ty = map_type(*ty)?;
                             }
                         },
-                        | Image::Computation(Computation::DataCase {
+                        Image::Computation(Computation::DataCase {
                             ref mut branches, ..
                         }) => {
                             for body in branches {
                                 *body = map_computation(*body)?;
                             }
                         },
-                        | Image::Computation(Computation::Case {
+                        Image::Computation(Computation::Case {
                             ref mut branches, ..
                         }) => {
                             for body in branches.iter_mut() {
                                 *body = map_computation(*body)?;
                             }
                         },
-                        | Image::Value(Value::Reify(ref mut frames)) => {
+                        Image::Value(Value::Reify(ref mut frames)) => {
                             for index in 0 .. frames.len() {
                                 let original = *frames.get(index).ok_or(ImportFault)?;
                                 let mapped = match original {
-                                    | crate::control::StackFrame::Apply(value) => {
+                                    crate::control::StackFrame::Apply(value) => {
                                         match self.images.get(&Node::Value(value)) {
-                                            | Some(&Node::Value(mapped)) => {
+                                            Some(&Node::Value(mapped)) => {
                                                 crate::control::StackFrame::Apply(mapped)
                                             },
-                                            | _ => return Err(ImportFault),
+                                            _ => return Err(ImportFault),
                                         }
                                     },
-                                    | crate::control::StackFrame::Bind(body) => {
+                                    crate::control::StackFrame::Bind(body) => {
                                         match self.images.get(&Node::Computation(body)) {
-                                            | Some(&Node::Computation(mapped)) => {
+                                            Some(&Node::Computation(mapped)) => {
                                                 crate::control::StackFrame::Bind(mapped)
                                             },
-                                            | _ => return Err(ImportFault),
+                                            _ => return Err(ImportFault),
                                         }
                                     },
-                                    | crate::control::StackFrame::Project(side) => {
+                                    crate::control::StackFrame::Project(side) => {
                                         crate::control::StackFrame::Project(side)
                                     },
                                 };
@@ -763,7 +828,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 }
                             }
                         },
-                        | Image::Value(Value::Recorded(ref mut moves)) => {
+                        Image::Value(Value::Recorded(ref mut moves)) => {
                             for index in 0 .. moves.len() {
                                 let original = moves.get(index).ok_or(ImportFault)?;
                                 let quenchant_shape::shape::Maybe::Present(payload) =
@@ -780,7 +845,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 }
                             }
                         },
-                        | Image::Computation(
+                        Image::Computation(
                             Computation::Perform {
                                 ref mut signature, ..
                             }
@@ -791,7 +856,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                             *signature = signature
                                 .try_map_types(crate::effect::TypeOrder::Forward, map_type)?;
                         },
-                        | Image::Computation(
+                        Image::Computation(
                             Computation::Handle {
                                 ref mut signature,
                                 ref mut clauses,
@@ -820,7 +885,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 }
                             }
                         },
-                        | Image::Computation(Computation::Session(ref mut action)) => {
+                        Image::Computation(Computation::Session(ref mut action)) => {
                             *action = action.try_map(
                                 crate::session::ChildOrder::Forward,
                                 &mut (),
@@ -829,33 +894,36 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 |&mut (), ty| map_type(ty),
                             )?;
                         },
-                        | Image::ValueType(ValueType::Session(ref mut session)) => {
+                        Image::ValueType(ValueType::Session(ref mut session)) => {
                             *session = session
                                 .try_map_payloads(crate::session::ChildOrder::Forward, map_type)?;
                         },
-                        | Image::ValueType(ValueType::Capability {
+                        Image::ValueType(ValueType::Capability {
                             ref mut authority, ..
                         }) => {
                             *authority = authority
                                 .try_map_types(crate::effect::TypeOrder::Forward, map_type)?;
                         },
-                        | _ => {},
+                        Image::Value(_)
+                        | Image::Computation(_)
+                        | Image::ValueType(_)
+                        | Image::CompType(_) => {},
                     }
                     let copied = match image {
-                        | Image::Value(value) => Node::Value(self.target.alloc_value(value)),
-                        | Image::Computation(comp) => {
+                        Image::Value(value) => Node::Value(self.target.alloc_value(value)),
+                        Image::Computation(comp) => {
                             Node::Computation(self.target.alloc_computation(comp))
                         },
-                        | Image::ValueType(ty) => Node::ValueType(self.target.alloc_value_type(ty)),
-                        | Image::CompType(ty) => Node::CompType(self.target.alloc_comp_type(ty)),
+                        Image::ValueType(ty) => Node::ValueType(self.target.alloc_value_type(ty)),
+                        Image::CompType(ty) => Node::CompType(self.target.alloc_comp_type(ty)),
                     };
                     let _previous = self.images.insert(node, copied);
                 },
             }
         }
         match self.images.get(&Node::ValueType(root)) {
-            | Some(&Node::ValueType(image)) => Ok(image),
-            | _ => Err(ImportFault),
+            Some(&Node::ValueType(image)) => Ok(image),
+            _ => Err(ImportFault),
         }
     }
 }

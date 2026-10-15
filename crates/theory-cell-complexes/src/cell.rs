@@ -288,10 +288,9 @@ impl<A: CellAlphabet> CellStore<A>
         id: CellId,
     ) -> Maybe<&Cell<A>, cell_lookup::Absent>
     {
-        match self.cells.get(id.0) {
-            | Some(cell) => Maybe::Present(cell),
-            | None => Maybe::Absent(cell_lookup::Absent::Unissued),
-        }
+        self.cells
+            .get(id.0)
+            .map_or(Maybe::Absent(cell_lookup::Absent::Unissued), Maybe::Present)
     }
 
     /// The number of cells.

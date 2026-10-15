@@ -284,10 +284,10 @@ impl Corpus for SequentAlphabet
         let mut subst = Subst::new();
         for &(ref var, value) in holes {
             match var.cat() {
-                | Cat::Producer => subst
+                Cat::Producer => subst
                     .bind_prod(var.clone(), numeral(value))
                     .expect("each hole binds once"),
-                | Cat::Consumer => subst
+                Cat::Consumer => subst
                     .bind_cons(var.clone(), frames(value))
                     .expect("each hole binds once"),
             }
@@ -693,15 +693,15 @@ fn value(
 ) -> Value
 {
     Value(match regime {
-        | Regime::TwoArms => member
+        Regime::TwoArms => member
             .0
             .checked_shr(u32::try_from(hole.0).expect("few holes"))
             .unwrap_or_default()
             .checked_rem(2_usize)
             .unwrap_or_default(),
-        | Regime::OneVarying if hole.0 == 0 => member.0,
-        | Regime::OneVarying => 0_usize,
-        | Regime::AllDistinct => member.0,
+        Regime::OneVarying if hole.0 == 0 => member.0,
+        Regime::OneVarying => 0_usize,
+        Regime::AllDistinct => member.0,
     })
 }
 
@@ -750,11 +750,11 @@ where
             member.joins_at = A::apply_subst(&sigma, &base.joins_at);
             if index == last {
                 match adversary {
-                    | Adversary::Honest => {},
-                    | Adversary::Diverged => {
+                    Adversary::Honest => {},
+                    Adversary::Diverged => {
                         member.path_a.pop();
                     },
-                    | Adversary::Discriminated => {
+                    Adversary::Discriminated => {
                         member.overlap.peak = A::discriminated(&member.overlap.peak);
                     },
                 }
@@ -881,10 +881,10 @@ where
     let mut cache = InheritanceCache::new();
     loop {
         match anti_unify_tracelets(family, store, &mut cache) {
-            | Err(TemplateRefusal::NotInherited { key, .. }) => {
+            Err(TemplateRefusal::NotInherited { key, .. }) => {
                 cache.record(key, InheritanceVerdict::Inherited);
             },
-            | produced => return produced,
+            produced => return produced,
         }
     }
 }
@@ -1202,11 +1202,11 @@ fn a_poisoned_inheritance_entry_is_caught_at_admission()
     let mut lies = Vec::new();
     let template = loop {
         match anti_unify_tracelets(&adversarial, &store, &mut poisoned) {
-            | Err(TemplateRefusal::NotInherited { key: lie, .. }) => {
+            Err(TemplateRefusal::NotInherited { key: lie, .. }) => {
                 poisoned.record(lie, InheritanceVerdict::Inherited);
                 lies.push(lie);
             },
-            | produced => break produced.expect("the lies let the template through"),
+            produced => break produced.expect("the lies let the template through"),
         }
     };
     assert_eq!(
@@ -1337,7 +1337,7 @@ where
         usize::from(plain_steps(family)),
     );
     match anti_unify_tracelets(family, store, &mut cache) {
-        | Ok(template) => {
+        Ok(template) => {
             let report = template.cost_report(family, store);
             let flows = template.flow(store).map_or(0_usize, |identity| {
                 family
@@ -1363,20 +1363,20 @@ where
                 usize::from(report.plain_replayed_steps),
             )
         },
-        | Err(TemplateRefusal::DoesNotPay { template_size, .. }) => {
+        Err(TemplateRefusal::DoesNotPay { template_size, .. }) => {
             let s = usize::from(template_size);
             format!(
                 "| {alphabet} | {class} | {members} | does not pay | — | {plain} | {s} | {} | 0 | 0 | 0 | 0 / {steps} | — |",
                 plain.checked_div(s).unwrap_or_default(),
             )
         },
-        | Err(TemplateRefusal::NotInherited { key, verdict }) => format!(
+        Err(TemplateRefusal::NotInherited { key, verdict }) => format!(
             "| {alphabet} | {class} | {members} | not inherited at entry {}: {verdict:?} | — | {plain} | — | — | {} | {} | 0 | — | — |",
             usize::from(key.entry),
             usize::from(cache.checked()),
             usize::from(cache.hits()),
         ),
-        | Err(refusal) => format!(
+        Err(refusal) => format!(
             "| {alphabet} | {class} | {members} | {refusal:?} | — | {plain} | — | — | {} | {} | 0 | — | — |",
             usize::from(cache.checked()),
             usize::from(cache.hits()),

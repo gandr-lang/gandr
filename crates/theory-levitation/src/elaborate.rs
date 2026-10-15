@@ -140,8 +140,8 @@ fn interface_variable(
 ) -> Name
 {
     let role = match role {
-        | InterfaceRole::Source => "source",
-        | InterfaceRole::Target => "target",
+        InterfaceRole::Source => "source",
+        InterfaceRole::Target => "target",
     };
     Name::from(format!("{port}\u{27e8}{role}\u{27e9}"))
 }
@@ -229,12 +229,12 @@ impl RewritePort
     pub fn interface(&self) -> InterfacePair
     {
         match self.face {
-            | PortFace::Sorted(_) => InterfacePair::new(
+            PortFace::Sorted(_) => InterfacePair::new(
                 self.name.clone(),
                 FreeTerm::var(interface_variable(&self.name, InterfaceRole::Source)),
                 FreeTerm::var(interface_variable(&self.name, InterfaceRole::Target)),
             ),
-            | PortFace::Pinned {
+            PortFace::Pinned {
                 ref source,
                 ref target,
             } => InterfacePair::new(self.name.clone(), source.clone(), target.clone()),
@@ -617,8 +617,8 @@ impl WhiskeredCell
     pub fn active_position(&self) -> Maybe<Vec<TermPositionIndex>, active_position::Absent>
     {
         match self.active {
-            | ActiveCell::Here(_) => Maybe::Absent(active_position::Absent::Identity),
-            | ActiveCell::Redex(_) => Maybe::Present(
+            ActiveCell::Here(_) => Maybe::Absent(active_position::Absent::Identity),
+            ActiveCell::Redex(_) => Maybe::Present(
                 self.whiskers
                     .iter()
                     .map(|whisker| TermPositionIndex::from(whisker.before.len()))
@@ -841,16 +841,16 @@ where
     O: FnOnce() -> E,
 {
     match node.view() {
-        | TermView::Ctor { name, args } => Ok((
+        TermView::Ctor { name, args } => Ok((
             WhiskerHead::Frame(FrameHead::Ctor(name.clone())),
             args.collect(),
         )),
-        | TermView::Op { name, args } => Ok((
+        TermView::Op { name, args } => Ok((
             WhiskerHead::Frame(FrameHead::Op(name.clone())),
             args.collect(),
         )),
-        | TermView::Results { args } => Ok((WhiskerHead::Results, args.collect())),
-        | TermView::Var(_) => Err(off_boundary()),
+        TermView::Results { args } => Ok((WhiskerHead::Results, args.collect())),
+        TermView::Var(_) => Err(off_boundary()),
     }
 }
 
@@ -1049,9 +1049,9 @@ pub fn redex_occurrences(body: &CircuitBody)
     let mut position: Vec<TermPositionIndex> = Vec::new();
     let mut occurrences: Vec<RedexOccurrence> = Vec::new();
     let mut stack: Vec<Walk<'_>> = match body.roots(&producers) {
-        | Roots::One(port) => vec![Walk::Port(port)],
-        | Roots::Whole(frame, port) => vec![Walk::Frame(frame, port)],
-        | Roots::Tuple(ports) => {
+        Roots::One(port) => vec![Walk::Port(port)],
+        Roots::Whole(frame, port) => vec![Walk::Frame(frame, port)],
+        Roots::Tuple(ports) => {
             let mut steps = Vec::with_capacity(ports.len().saturating_mul(3));
             for (index, port) in ports.iter().enumerate().rev() {
                 steps.push(Walk::Ascend);
@@ -1075,7 +1075,7 @@ pub fn redex_occurrences(body: &CircuitBody)
             }
         }
         match step {
-            | Walk::Port(port) => {
+            Walk::Port(port) => {
                 let Some(node) = producers.get(port).copied()
                 else {
                     // An interface port: a boundary variable, and no rewrite
@@ -1083,7 +1083,7 @@ pub fn redex_occurrences(body: &CircuitBody)
                     continue;
                 };
                 match *node {
-                    | CircuitNode::Redex(ref redex) => {
+                    CircuitNode::Redex(ref redex) => {
                         occurrences.push(RedexOccurrence::new(
                             redex.rewrite.clone(),
                             position.clone(),
@@ -1097,32 +1097,32 @@ pub fn redex_occurrences(body: &CircuitBody)
                         stack.push(Walk::Leave(port));
                         stack.push(Walk::Term(redex.source.to_node()));
                     },
-                    | CircuitNode::Frame(ref frame) if frame.outs.len() > 1 => {
+                    CircuitNode::Frame(ref frame) if frame.outs.len() > 1 => {
                         return Err(CircuitDerivationError::SplitOutputs(port.clone()));
                     },
-                    | CircuitNode::Frame(ref frame) => stack.push(Walk::Frame(frame, port)),
+                    CircuitNode::Frame(ref frame) => stack.push(Walk::Frame(frame, port)),
                 }
             },
-            | Walk::Frame(frame, port) => {
+            Walk::Frame(frame, port) => {
                 if !path.insert(port) {
                     return Err(CircuitDerivationError::CyclicWiring(port.clone()));
                 }
                 stack.push(Walk::Leave(port));
                 push_args(&mut stack, frame.args.iter().map(FreeTerm::to_node));
             },
-            | Walk::Term(term) => match term.view() {
-                | TermView::Var(name) => stack.push(Walk::Port(name)),
-                | TermView::Ctor { args, .. }
+            Walk::Term(term) => match term.view() {
+                TermView::Var(name) => stack.push(Walk::Port(name)),
+                TermView::Ctor { args, .. }
                 | TermView::Op { args, .. }
                 | TermView::Results { args } => {
                     push_args(&mut stack, args);
                 },
             },
-            | Walk::Descend(index) => position.push(index),
-            | Walk::Ascend => {
+            Walk::Descend(index) => position.push(index),
+            Walk::Ascend => {
                 position.pop();
             },
-            | Walk::Leave(port) => {
+            Walk::Leave(port) => {
                 path.remove(port);
             },
         }
@@ -1184,9 +1184,12 @@ fn substitute(
     bindings: &BTreeMap<Name, FreeTerm>,
 ) -> FreeTerm
 {
-    term.replace_vars(|name| match bindings.get(name) {
-        | Some(bound) => Maybe::Present(bound.to_node()),
-        | None => Maybe::Absent(leaf_image::Absent::Kept),
+    term.replace_vars(|name| {
+        bindings
+            .get(name)
+            .map_or(Maybe::Absent(leaf_image::Absent::Kept), |bound| {
+                Maybe::Present(bound.to_node())
+            })
     })
 }
 

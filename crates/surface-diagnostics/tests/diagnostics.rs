@@ -292,7 +292,7 @@ mod diagnostics
             .contexts
             .iter()
             .map(|context| match context.locus {
-                | Maybe::Present(locus) => (
+                Maybe::Present(locus) => (
                     String::from(
                         text.fragment(locus.span)
                             .expect("a context lies inside the text")
@@ -300,7 +300,7 @@ mod diagnostics
                     ),
                     context.label(),
                 ),
-                | Maybe::Absent(_) => (String::new(), context.note()),
+                Maybe::Absent(_) => (String::new(), context.note()),
             })
             .collect()
     }
@@ -400,8 +400,8 @@ mod diagnostics
             "the checker's refusal is located at the mismatched term through the origin table"
         );
         let primary = match diagnostic.primary() {
-            | Maybe::Present(primary) => primary,
-            | Maybe::Absent(reason) => panic!("the mismatch is located: {reason:?}"),
+            Maybe::Present(primary) => primary,
+            Maybe::Absent(reason) => panic!("the mismatch is located: {reason:?}"),
         };
         assert_eq!(
             (primary.locus.line, primary.locus.column),
@@ -428,8 +428,8 @@ mod diagnostics
     fn a_mismatch_label_spells_both_types()
     {
         let label = |diagnostic: &Diagnostic| match diagnostic.primary() {
-            | Maybe::Present(primary) => primary.label.clone(),
-            | Maybe::Absent(reason) => panic!("a located refusal carries a label: {reason:?}"),
+            Maybe::Present(primary) => primary.label.clone(),
+            Maybe::Absent(reason) => panic!("a located refusal carries a label: {reason:?}"),
         };
         let mismatch = only(Path::new("spelled.gandr"), SourceText::from(MISMATCH));
         assert_eq!(
@@ -584,8 +584,8 @@ mod diagnostics
             panic!("the leak is a value mismatch");
         };
         let spelled = |node| match spellings.get(node) {
-            | Maybe::Present(presentation) => presentation.as_ref().to_owned(),
-            | Maybe::Absent(reason) => format!("{reason:?}"),
+            Maybe::Present(presentation) => presentation.as_ref().to_owned(),
+            Maybe::Absent(reason) => format!("{reason:?}"),
         };
         assert_eq!(
             (
@@ -1112,8 +1112,8 @@ mod diagnostics
             "both refusals are the author's mistake"
         );
         let label = |diagnostic: &Diagnostic| match diagnostic.primary() {
-            | Maybe::Present(primary) => primary.label.clone(),
-            | Maybe::Absent(reason) => panic!("a located refusal carries a label: {reason:?}"),
+            Maybe::Present(primary) => primary.label.clone(),
+            Maybe::Absent(reason) => panic!("a located refusal carries a label: {reason:?}"),
         };
         assert_ne!(
             label(&mismatch),
@@ -1248,12 +1248,12 @@ mod diagnostics
                 panic!("one diagnostic for {source:?}");
             };
             let named = match diagnostic.identifier {
-                | Maybe::Present(ref spelling) => Maybe::Present(spelling.to_string()),
-                | Maybe::Absent(reason) => Maybe::Absent(reason),
+                Maybe::Present(ref spelling) => Maybe::Present(spelling.to_string()),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
             };
             let expected = match identifier {
-                | Maybe::Present(spelling) => Maybe::Present(spelling.to_owned()),
-                | Maybe::Absent(reason) => Maybe::Absent(reason),
+                Maybe::Present(spelling) => Maybe::Present(spelling.to_owned()),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
             };
             assert_eq!(named, expected, "stable refusal identity for {source:?}");
             let title = &diagnostic.detail.title;

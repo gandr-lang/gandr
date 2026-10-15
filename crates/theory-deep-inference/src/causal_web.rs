@@ -315,10 +315,10 @@ impl CausalWeb
         vertex: WebVertex,
     ) -> Maybe<&EventKey, web_lookup::Absent>
     {
-        match self.events.get(usize::from(vertex)) {
-            | Some(key) => Maybe::Present(key),
-            | None => Maybe::Absent(web_lookup::Absent::OutOfRange),
-        }
+        self.events.get(usize::from(vertex)).map_or(
+            Maybe::Absent(web_lookup::Absent::OutOfRange),
+            Maybe::Present,
+        )
     }
 
     /// Read the two-colour relation between two web vertices.
@@ -461,8 +461,8 @@ where
     let events: Vec<EventKey> = canonical
         .iter()
         .filter_map(|index| match order.key(*index) {
-            | Maybe::Present(key) => Some(key),
-            | Maybe::Absent(_) => None,
+            Maybe::Present(key) => Some(key),
+            Maybe::Absent(_) => None,
         })
         .collect();
     CausalWeb {
@@ -675,26 +675,26 @@ pub fn refines(
                 },
             };
             match (required, observed) {
-                | (WebRelation::Precedes, WebRelation::Precedes)
+                (WebRelation::Precedes, WebRelation::Precedes)
                 | (WebRelation::Follows, WebRelation::Follows)
                 | (WebRelation::Independent, WebRelation::Independent) => {},
-                | (WebRelation::Precedes, _) | (WebRelation::Independent, WebRelation::Missing) => {
+                (WebRelation::Precedes, _) | (WebRelation::Independent, WebRelation::Missing) => {
                     return lost(left, right);
                 },
-                | (WebRelation::Follows, _) => return lost(right, left),
-                | (WebRelation::Independent, WebRelation::Precedes) => {
+                (WebRelation::Follows, _) => return lost(right, left),
+                (WebRelation::Independent, WebRelation::Precedes) => {
                     steps.push(SliceStep {
                         earlier: left,
                         later: right,
                     });
                 },
-                | (WebRelation::Independent, WebRelation::Follows) => {
+                (WebRelation::Independent, WebRelation::Follows) => {
                     steps.push(SliceStep {
                         earlier: right,
                         later: left,
                     });
                 },
-                | (WebRelation::Missing, _) => {
+                (WebRelation::Missing, _) => {
                     return RefinementVerdict::Refused {
                         obstruction: HomomorphismFrontier::MalformedWeb,
                     };

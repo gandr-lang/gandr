@@ -683,9 +683,9 @@ impl Recognition
             for (entry, seed) in seeded.entries().iter().enumerate() {
                 let position = SeedPosition { table, entry };
                 let recognized = match seed.kind {
-                    | SeedKind::Namespace => Recognized::BuiltinNamespace(position),
-                    | SeedKind::Member => Recognized::BuiltinMember(position),
-                    | SeedKind::Primitive(primitive) => Recognized::BuiltinPrimitive {
+                    SeedKind::Namespace => Recognized::BuiltinNamespace(position),
+                    SeedKind::Member => Recognized::BuiltinMember(position),
+                    SeedKind::Primitive(primitive) => Recognized::BuiltinPrimitive {
                         position,
                         primitive,
                     },
@@ -802,16 +802,16 @@ impl Recognition
     ) -> PathResolution
     {
         match self.scope.visible().resolved_prefix(path) {
-            | Maybe::Present((depth, found)) if depth == path.depth() => {
+            Maybe::Present((depth, found)) if depth == path.depth() => {
                 PathResolution::Complete(found.data)
             },
-            | Maybe::Present((depth, found)) if found.data.declines_unknown_member().0 => {
+            Maybe::Present((depth, found)) if found.data.declines_unknown_member().0 => {
                 PathResolution::UnknownMember {
                     depth,
                     namespace: found.data,
                 }
             },
-            | Maybe::Present(_) | Maybe::Absent(_) => PathResolution::Ungoverned,
+            Maybe::Present(_) | Maybe::Absent(_) => PathResolution::Ungoverned,
         }
     }
 
@@ -904,8 +904,8 @@ impl Recognition
             .map(Clone::clone);
         if let Maybe::Present(former) = displaced {
             let data = match subtree.get(&NamePath::root()) {
-                | Maybe::Present(root) => root.data,
-                | Maybe::Absent(_) => Recognized::Definition,
+                Maybe::Present(root) => root.data,
+                Maybe::Absent(_) => Recognized::Definition,
             };
             let latter = Binding::new(data, RecognitionSite::Source(site));
             let _survivor = self.handler.shadow(&path, Collision { former, latter })?;

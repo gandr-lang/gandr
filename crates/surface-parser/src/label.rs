@@ -884,8 +884,8 @@ impl Toggle
     const fn flipped(self) -> Self
     {
         match self {
-            | Self::Closed => Self::Open,
-            | Self::Open => Self::Closed,
+            Self::Closed => Self::Open,
+            Self::Open => Self::Closed,
         }
     }
 }
@@ -1403,13 +1403,13 @@ fn scan_string_interior(
 ) -> ScanResult
 {
     match bytes.byte(pos).map(u8::from) {
-        | Some(b'"') => ScanResult::new(Lexeme::Quote, pos.advance(ByteWidth::ONE)),
-        | Some(b'\\') => scan_escape(bytes, pos),
+        Some(b'"') => ScanResult::new(Lexeme::Quote, pos.advance(ByteWidth::ONE)),
+        Some(b'\\') => scan_escape(bytes, pos),
         // `${` opens a string interpolation; the caller leaves string mode.
-        | Some(b'$') if bytes.byte(pos.advance(ByteWidth::ONE)) == Some(SourceByte::from(b'{')) => {
+        Some(b'$') if bytes.byte(pos.advance(ByteWidth::ONE)) == Some(SourceByte::from(b'{')) => {
             ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO))
         },
-        | Some(_) => {
+        Some(_) => {
             let mut cursor = pos;
             while let Some(byte) = bytes.byte(cursor) {
                 if u8::from(byte) == b'"'
@@ -1424,7 +1424,7 @@ fn scan_string_interior(
             }
             ScanResult::new(Lexeme::StringFragment, cursor)
         },
-        | None => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
+        None => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
     }
 }
 /// Scan one lexeme of single-quoted shell interior: the closing `'`, or the
@@ -1575,10 +1575,10 @@ fn scan_shell_double_interior(
 ) -> ScanResult
 {
     match bytes.byte(pos).map(u8::from) {
-        | Some(b'"') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
-        | Some(b'\\') => scan_escape(bytes, pos),
-        | Some(b'$') => scan_dollar(bytes, pos),
-        | Some(_) => {
+        Some(b'"') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
+        Some(b'\\') => scan_escape(bytes, pos),
+        Some(b'$') => scan_dollar(bytes, pos),
+        Some(_) => {
             let mut cursor = pos;
             while let Some(byte) = bytes.byte(cursor) {
                 if matches!(u8::from(byte), b'"' | b'\\' | b'$') {
@@ -1588,7 +1588,7 @@ fn scan_shell_double_interior(
             }
             ScanResult::new(Lexeme::ShellStringFragment, cursor)
         },
-        | None => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
+        None => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
     }
 }
 /// Scan one lexeme of shell-block interior: separators and operators as
@@ -1622,35 +1622,35 @@ fn scan_shell_interior(
         // grammar's `list_operator` newline is approximated as layout; the
         // explicit `;` / `&` separators carry the list structure the corpus
         // uses).
-        | b' ' | b'\t' | 0x0c | 0x0b => {
+        b' ' | b'\t' | 0x0c | 0x0b => {
             ScanResult::new(Lexeme::Space, scan_horizontal_space(bytes, pos))
         },
-        | b'\r' | b'\n' => ScanResult::new(Lexeme::Space, scan_newlines(bytes, pos)),
+        b'\r' | b'\n' => ScanResult::new(Lexeme::Space, scan_newlines(bytes, pos)),
         // `#!{` / `$!{` open a nested shell block; the brace / bracket / paren
         // punctuation is structural.
-        | b'#' => scan_hash(bytes, pos),
-        | b'$' => scan_dollar(bytes, pos),
+        b'#' => scan_hash(bytes, pos),
+        b'$' => scan_dollar(bytes, pos),
         // A shell `[` / `]` is a subshell bracket (tree-sitter `subshell`),
         // classified DISTINCTLY from the host list-literal `[` so a subshell
         // never widens the host `[` mold menu.
-        | b'[' => ScanResult::new(Lexeme::SubshellOpen, pos.advance(ByteWidth::ONE)),
-        | b']' => ScanResult::new(Lexeme::SubshellClose, pos.advance(ByteWidth::ONE)),
+        b'[' => ScanResult::new(Lexeme::SubshellOpen, pos.advance(ByteWidth::ONE)),
+        b']' => ScanResult::new(Lexeme::SubshellClose, pos.advance(ByteWidth::ONE)),
         // Brace / paren / quote punctuation is structural. `=` is NOT: it is a
         // shell-word byte, so `NAME=value` munches into one `environment_assignment`
         // token and a bare `=` stays an ordinary word — no shell rule
         // declares a `=` tile, so a split `=` could only ever be an `UnmoldedTok`.
-        | b'}' | b'{' | b'(' | b')' | b'\'' | b'"' => {
+        b'}' | b'{' | b'(' | b')' | b'\'' | b'"' => {
             ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE))
         },
         // Shell list / pipe / logical operators.
-        | b';' | b'&' | b'|' => scan_shell_operator(bytes, pos),
+        b';' | b'&' | b'|' => scan_shell_operator(bytes, pos),
         // Redirections.
-        | b'<' | b'>' => scan_shell_redirection(bytes, pos),
+        b'<' | b'>' => scan_shell_redirection(bytes, pos),
         // A digit run immediately before a redirection is a file descriptor
         // (`2>`); otherwise it is an ordinary shell word.
-        | b'0' ..= b'9' => scan_shell_fd_or_word(bytes, pos),
+        b'0' ..= b'9' => scan_shell_fd_or_word(bytes, pos),
         // A run of shell-word bytes (`pattern_shell_word`).
-        | _ => scan_shell_word(bytes, pos),
+        _ => scan_shell_word(bytes, pos),
     }
 }
 /// Scan one lexeme starting at `pos`, returning its class and the next cursor.
@@ -1679,28 +1679,28 @@ fn scan_one(
         return ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE));
     };
     match u8::from(byte) {
-        | b' ' | b'\t' | 0x0c | 0x0b => {
+        b' ' | b'\t' | 0x0c | 0x0b => {
             ScanResult::new(Lexeme::Space, scan_horizontal_space(bytes, pos))
         },
-        | b'\r' | b'\n' => ScanResult::new(Lexeme::Space, scan_newlines(bytes, pos)),
-        | b'/' => scan_slash(bytes, pos),
-        | b'#' => scan_hash(bytes, pos),
-        | b'"' => ScanResult::new(Lexeme::Quote, pos.advance(ByteWidth::ONE)),
-        | b'\'' => scan_character(bytes, pos),
+        b'\r' | b'\n' => ScanResult::new(Lexeme::Space, scan_newlines(bytes, pos)),
+        b'/' => scan_slash(bytes, pos),
+        b'#' => scan_hash(bytes, pos),
+        b'"' => ScanResult::new(Lexeme::Quote, pos.advance(ByteWidth::ONE)),
+        b'\'' => scan_character(bytes, pos),
         // In code a backslash is the static abstraction's lead `\A. T`, one
         // tile; escape sequences belong to strings and characters, whose
         // scanners read them.
-        | b'\\' => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
-        | b'0' ..= b'9' => scan_number(bytes, pos),
-        | b'.' => scan_dot(bytes, pos),
-        | b'_' => scan_word_or_underscore(bytes, pos),
-        | _ if bool::from(byte.is_lower_start()) => {
+        b'\\' => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
+        b'0' ..= b'9' => scan_number(bytes, pos),
+        b'.' => scan_dot(bytes, pos),
+        b'_' => scan_word_or_underscore(bytes, pos),
+        _ if bool::from(byte.is_lower_start()) => {
             ScanResult::new(Lexeme::LowerWord, scan_word(bytes, pos))
         },
-        | _ if bool::from(byte.is_upper_start()) => {
+        _ if bool::from(byte.is_upper_start()) => {
             ScanResult::new(Lexeme::UpperWord, scan_word(bytes, pos))
         },
-        | _ => scan_punct_or_unknown(bytes, pos),
+        _ => scan_punct_or_unknown(bytes, pos),
     }
 }
 /// Return whether a punctuation token text opens a shell block (`#!…{` /
@@ -1759,8 +1759,8 @@ fn scan_horizontal_space(
             continue;
         }
         match unicode_blank_len(bytes, cursor) {
-            | Some(width) => cursor = cursor.advance(width),
-            | None => break,
+            Some(width) => cursor = cursor.advance(width),
+            None => break,
         }
     }
     cursor
@@ -1868,13 +1868,13 @@ fn scan_slash(
 ) -> ScanResult
 {
     match bytes.byte(pos.advance(ByteWidth::ONE)).map(u8::from) {
-        | Some(b'/') => ScanResult::new(
+        Some(b'/') => ScanResult::new(
             Lexeme::Space,
             scan_line_comment_from(bytes, pos.advance(ByteWidth::TWO)),
         ),
-        | Some(b'*') => ScanResult::new(Lexeme::Space, scan_block_comment(bytes, pos)),
-        | Some(b'\\') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
-        | _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
+        Some(b'*') => ScanResult::new(Lexeme::Space, scan_block_comment(bytes, pos)),
+        Some(b'\\') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
+        _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
     }
 }
 /// Scan a lexeme led by `#`: shebang, shell/record start, or a stray byte.
@@ -1899,18 +1899,18 @@ fn scan_hash(
 ) -> ScanResult
 {
     match bytes.byte(pos.advance(ByteWidth::ONE)).map(u8::from) {
-        | Some(b'!') => match bytes.byte(pos.advance(ByteWidth::TWO)).map(u8::from) {
+        Some(b'!') => match bytes.byte(pos.advance(ByteWidth::TWO)).map(u8::from) {
             // `#!/…` first-line shebang (trivia).
-            | Some(b'/') => ScanResult::new(
+            Some(b'/') => ScanResult::new(
                 Lexeme::Space,
                 scan_line_comment_from(bytes, pos.advance(ByteWidth::TWO)),
             ),
             // `#!{` or `#!dialect{` shell-block start.
-            | _ => scan_shell_start(bytes, pos, SourceByte::from(b'{')),
+            _ => scan_shell_start(bytes, pos, SourceByte::from(b'{')),
         },
         // `#{` record / record-type / record-pattern open.
-        | Some(b'{') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
-        | _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
+        Some(b'{') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
+        _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
     }
 }
 
@@ -1970,16 +1970,16 @@ fn scan_block_comment(
             bytes.byte(cursor).map(u8::from),
             bytes.byte(cursor.advance(ByteWidth::ONE)).map(u8::from),
         ) {
-            | (Some(b'/'), Some(b'*')) => {
+            (Some(b'/'), Some(b'*')) => {
                 depth = depth.saturating_add(1);
                 cursor = cursor.advance(ByteWidth::TWO);
             },
-            | (Some(b'*'), Some(b'/')) => {
+            (Some(b'*'), Some(b'/')) => {
                 depth = depth.saturating_sub(1);
                 cursor = cursor.advance(ByteWidth::TWO);
             },
-            | (Some(_), _) => cursor = cursor.advance(ByteWidth::ONE),
-            | (None, _) => break,
+            (Some(_), _) => cursor = cursor.advance(ByteWidth::ONE),
+            (None, _) => break,
         }
     }
     cursor
@@ -2009,7 +2009,7 @@ fn scan_character(
 {
     let inner = pos.advance(ByteWidth::ONE);
     match bytes.byte(inner).map(u8::from) {
-        | Some(b'\\') => {
+        Some(b'\\') => {
             // `'\x'`: backslash, one escaped byte, closing quote.
             let escaped = inner.advance(ByteWidth::TWO);
             if bytes.byte(escaped) == Some(SourceByte::from(b'\'')) {
@@ -2019,7 +2019,7 @@ fn scan_character(
                 ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE))
             }
         },
-        | Some(byte) if byte != b'\'' => {
+        Some(byte) if byte != b'\'' => {
             // `'x'`: one non-quote byte (or UTF-8 lead) and a closing quote.
             let width = utf8_width(SourceByte::from(byte));
             let close = inner.advance(width);
@@ -2031,7 +2031,7 @@ fn scan_character(
             }
         },
         // A bare `'` or empty `''`: treat the quote as a stray punctuation tile.
-        | _ => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
+        _ => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
     }
 }
 /// Scan a `\x` escape sequence (backslash and one following byte).
@@ -2055,13 +2055,15 @@ fn scan_escape(
     pos: ByteOffset,
 ) -> ScanResult
 {
-    match bytes.byte(pos.advance(ByteWidth::ONE)) {
-        | Some(byte) => ScanResult::new(
-            Lexeme::EscapeSequence,
-            pos.advance(ByteWidth::ONE).advance(utf8_width(byte)),
-        ),
-        | None => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
-    }
+    bytes.byte(pos.advance(ByteWidth::ONE)).map_or_else(
+        || ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
+        |byte| {
+            ScanResult::new(
+                Lexeme::EscapeSequence,
+                pos.advance(ByteWidth::ONE).advance(utf8_width(byte)),
+            )
+        },
+    )
 }
 /// Scan a `$`-led shell lexeme (`$!{` command substitution, `${` braced
 /// parameter expansion, `$(` host escape, `$name` variable, or a bare `$`).
@@ -2086,13 +2088,13 @@ fn scan_dollar(
 ) -> ScanResult
 {
     match bytes.byte(pos.advance(ByteWidth::ONE)).map(u8::from) {
-        | Some(b'!') => scan_shell_start(bytes, pos, SourceByte::from(b'{')),
+        Some(b'!') => scan_shell_start(bytes, pos, SourceByte::from(b'{')),
         // `${` opens a braced parameter expansion (`${name}`); the two-byte
         // opener is one lexeme, and the caller sets the brace mode so the
         // interior lexes as a `variable_name` and the matching `}` does not
         // close the shell block.
-        | Some(b'{') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
-        | _ => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
+        Some(b'{') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
+        _ => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
     }
 }
 /// Scan a shell list/pipe/logical operator (`;`, `&`, `&&`, `|`, `||`, `|&`).
@@ -2454,9 +2456,9 @@ fn scan_shell_quoted_value(
     let mut cursor = pos.advance(ByteWidth::ONE);
     while let Some(byte) = bytes.byte(cursor) {
         match u8::from(byte) {
-            | b'\\' => cursor = cursor.advance(ByteWidth::TWO),
-            | b'"' => return cursor.advance(ByteWidth::ONE),
-            | _ => cursor = cursor.advance(ByteWidth::ONE),
+            b'\\' => cursor = cursor.advance(ByteWidth::TWO),
+            b'"' => return cursor.advance(ByteWidth::ONE),
+            _ => cursor = cursor.advance(ByteWidth::ONE),
         }
     }
     cursor
@@ -2754,12 +2756,12 @@ fn punct_len(
 fn utf8_width(lead: SourceByte) -> ByteWidth
 {
     match u8::from(lead) {
-        | 0xc0 ..= 0xdf => ByteWidth::TWO,
-        | 0xe0 ..= 0xef => ByteWidth::THREE,
-        | 0xf0 ..= 0xf7 => ByteWidth::FOUR,
+        0xc0 ..= 0xdf => ByteWidth::TWO,
+        0xe0 ..= 0xef => ByteWidth::THREE,
+        0xf0 ..= 0xf7 => ByteWidth::FOUR,
         // ASCII (`0x00..=0x7f`) and any continuation or invalid lead advance one
         // byte, keeping the scan total.
-        | _ => ByteWidth::ONE,
+        _ => ByteWidth::ONE,
     }
 }
 

@@ -236,8 +236,8 @@ impl ItemOrder
         let positions: Vec<Maybe<BasePosition, handle::Absent>> = edited
             .iter()
             .map(|reference| match index.get(reference) {
-                | Some(&position) => Maybe::Present(position),
-                | None => Maybe::Absent(handle::Absent::Stale),
+                Some(&position) => Maybe::Present(position),
+                None => Maybe::Absent(handle::Absent::Stale),
             })
             .collect();
         let keep = longest_preserved_run(&positions);
@@ -245,16 +245,16 @@ impl ItemOrder
         let mut kept: Vec<Maybe<ItemHandle, handle::Absent>> = Vec::with_capacity(edited.len());
         for position in positions {
             kept.push(match position {
-                | Maybe::Present(position) if keep.contains(&position) => {
+                Maybe::Present(position) if keep.contains(&position) => {
                     match (base.get(position.0), kept_base.get_mut(position.0)) {
-                        | (Some(&handle), Some(mark)) => {
+                        (Some(&handle), Some(mark)) => {
                             *mark = true;
                             Maybe::Present(handle)
                         },
-                        | _ => Maybe::Absent(handle::Absent::Stale),
+                        _ => Maybe::Absent(handle::Absent::Stale),
                     }
                 },
-                | Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(handle::Absent::Stale),
+                Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(handle::Absent::Stale),
             });
         }
         let mut census = SpliceCensus::default();
@@ -268,18 +268,18 @@ impl ItemOrder
         let mut cursor: Maybe<Pos, handle::Absent> = Maybe::Absent(handle::Absent::Stale);
         for (reference, keep) in edited.iter().zip(kept) {
             let pos = match keep {
-                | Maybe::Present(handle) => {
+                Maybe::Present(handle) => {
                     census.kept = ItemCount::from(usize::from(census.kept).saturating_add(1));
                     handle.0
                 },
-                | Maybe::Absent(_) => {
+                Maybe::Absent(_) => {
                     census.inserted =
                         ItemCount::from(usize::from(census.inserted).saturating_add(1));
                     match cursor {
-                        | Maybe::Present(previous) => {
+                        Maybe::Present(previous) => {
                             self.order.insert_after(previous, reference.clone())?
                         },
-                        | Maybe::Absent(_) => self.order.push_front(reference.clone())?,
+                        Maybe::Absent(_) => self.order.push_front(reference.clone())?,
                     }
                 },
             };
@@ -317,10 +317,9 @@ impl ItemOrder
         right: ItemHandle,
     ) -> Maybe<Ordering, handle::Absent>
     {
-        match self.order.cmp(left.0, right.0) {
-            | Some(ordering) => Maybe::Present(ordering),
-            | None => Maybe::Absent(handle::Absent::Stale),
-        }
+        self.order
+            .cmp(left.0, right.0)
+            .map_or(Maybe::Absent(handle::Absent::Stale), Maybe::Present)
     }
 
     /// The reference of the item `handle` names.
@@ -348,10 +347,9 @@ impl ItemOrder
         handle: ItemHandle,
     ) -> Maybe<&Reference, handle::Absent>
     {
-        match self.order.get(handle.0) {
-            | Some(reference) => Maybe::Present(reference),
-            | None => Maybe::Absent(handle::Absent::Stale),
-        }
+        self.order
+            .get(handle.0)
+            .map_or(Maybe::Absent(handle::Absent::Stale), Maybe::Present)
     }
 }
 
@@ -414,8 +412,8 @@ fn longest_preserved_run(
                 .copied();
         }
         match tails.get_mut(length) {
-            | Some(tail) => *tail = (position, at),
-            | None => tails.push((position, at)),
+            Some(tail) => *tail = (position, at),
+            None => tails.push((position, at)),
         }
     }
     let mut run = BTreeSet::new();
@@ -726,12 +724,12 @@ mod tests
                         continue;
                     }
                     match position {
-                        | Maybe::Present(position) => {
+                        Maybe::Present(position) => {
                             ascending &= previous.is_none_or(|earlier| earlier < position);
                             previous = Some(position);
                             length = length.saturating_add(1);
                         },
-                        | Maybe::Absent(_) => ascending = false,
+                        Maybe::Absent(_) => ascending = false,
                     }
                 }
                 if ascending {

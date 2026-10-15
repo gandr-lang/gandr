@@ -149,20 +149,20 @@ mod static_normalization
     ) -> Vec<Position>
     {
         match position {
-            | Position::Value(id) => match core.value(id) {
-                | Some(&Value::StaticLambda(body)) => Vec::from([Position::Value(body)]),
-                | Some(&Value::StaticApplication(head, argument)) => {
+            Position::Value(id) => match core.value(id) {
+                Some(&Value::StaticLambda(body)) => Vec::from([Position::Value(body)]),
+                Some(&Value::StaticApplication(head, argument)) => {
                     Vec::from([Position::Value(head), Position::Value(argument)])
                 },
-                | Some(&Value::Quote(quoted)) => Vec::from([Position::ValueType(quoted)]),
-                | _ => Vec::new(),
+                Some(&Value::Quote(quoted)) => Vec::from([Position::ValueType(quoted)]),
+                _ => Vec::new(),
             },
-            | Position::ValueType(id) => match core.value_type(id) {
-                | Some(&ValueType::Product(ref parts)) => {
+            Position::ValueType(id) => match core.value_type(id) {
+                Some(&ValueType::Product(ref parts)) => {
                     parts.iter().copied().map(Position::ValueType).collect()
                 },
-                | Some(&ValueType::Element { code, .. }) => Vec::from([Position::Value(code)]),
-                | _ => Vec::new(),
+                Some(&ValueType::Element { code, .. }) => Vec::from([Position::Value(code)]),
+                _ => Vec::new(),
             },
         }
     }
@@ -280,12 +280,12 @@ mod static_normalization
         while let Some((position, path, visited)) = pending.pop() {
             let found = redex(core, position);
             match order {
-                | Order::Outermost => {
+                Order::Outermost => {
                     if let Some((body, argument)) = found {
                         return Some((path, body, argument));
                     }
                 },
-                | Order::Innermost => {
+                Order::Innermost => {
                     if visited {
                         if let Some((body, argument)) = found {
                             return Some((path, body, argument));
@@ -340,12 +340,10 @@ mod static_normalization
         let mut current = replacement;
         for &(ancestor, slot) in path.iter().rev() {
             current = match (ancestor, current) {
-                | (Position::Value(id), Position::Value(child)) => {
+                (Position::Value(id), Position::Value(child)) => {
                     match *core.value(id).expect("an ancestor resolves") {
-                        | Value::StaticLambda(_) => {
-                            Position::Value(core.value_static_lambda(child))
-                        },
-                        | Value::StaticApplication(head, argument) => {
+                        Value::StaticLambda(_) => Position::Value(core.value_static_lambda(child)),
+                        Value::StaticApplication(head, argument) => {
                             Position::Value(if slot == Slot(0) {
                                 core.value_static_application(child, argument)
                             }
@@ -353,18 +351,85 @@ mod static_normalization
                                 core.value_static_application(head, child)
                             })
                         },
-                        | ref other => panic!("no value child below {other:?}"),
+                        ref other @ (Value::Primitive { .. }
+                        | Value::PathRefl(_)
+                        | Value::PathProduct(..)
+                        | Value::PathEquiv { .. }
+                        | Value::Here(_)
+                        | Value::Funext(..)
+                        | Value::Equiv(..)
+                        | Value::Ua { .. }
+                        | Value::SessionRelated { .. }
+                        | Value::Stay(_)
+                        | Value::Then(..)
+                        | Value::FlowProduct(..)
+                        | Value::Forward(_)
+                        | Value::FunctionFlow(..)
+                        | Value::Recorded(_)
+                        | Value::Returned(_)
+                        | Value::Nested(_)
+                        | Value::Run(_)
+                        | Value::Variable { .. }
+                        | Value::Constant(_)
+                        | Value::Literal(_)
+                        | Value::Tuple(_)
+                        | Value::Injection(..)
+                        | Value::ListNil
+                        | Value::ListCons(..)
+                        | Value::Thunk(_)
+                        | Value::Lift { .. }
+                        | Value::Quote(_)
+                        | Value::QuoteComputation(_)
+                        | Value::Constructor { .. }
+                        | Value::Record(_)
+                        | Value::Hole(_)
+                        | Value::Mark { .. }
+                        | Value::Reify(_)) => panic!("no value child below {other:?}"),
                     }
                 },
-                | (Position::Value(id), Position::ValueType(child)) => {
+                (Position::Value(id), Position::ValueType(child)) => {
                     match *core.value(id).expect("an ancestor resolves") {
-                        | Value::Quote(_) => Position::Value(core.value_quote(child)),
-                        | ref other => panic!("no type child below {other:?}"),
+                        Value::Quote(_) => Position::Value(core.value_quote(child)),
+                        ref other @ (Value::Primitive { .. }
+                        | Value::PathRefl(_)
+                        | Value::PathProduct(..)
+                        | Value::PathEquiv { .. }
+                        | Value::Here(_)
+                        | Value::Funext(..)
+                        | Value::Equiv(..)
+                        | Value::Ua { .. }
+                        | Value::SessionRelated { .. }
+                        | Value::Stay(_)
+                        | Value::Then(..)
+                        | Value::FlowProduct(..)
+                        | Value::Forward(_)
+                        | Value::FunctionFlow(..)
+                        | Value::Recorded(_)
+                        | Value::Returned(_)
+                        | Value::Nested(_)
+                        | Value::Run(_)
+                        | Value::Variable { .. }
+                        | Value::Constant(_)
+                        | Value::Literal(_)
+                        | Value::Tuple(_)
+                        | Value::Injection(..)
+                        | Value::ListNil
+                        | Value::ListCons(..)
+                        | Value::Thunk(_)
+                        | Value::Lift { .. }
+                        | Value::QuoteComputation(_)
+                        | Value::StaticLambda(_)
+                        | Value::StaticApplication(..)
+                        | Value::Constructor { .. }
+                        | Value::Record(_)
+                        | Value::Hole(_)
+                        | Value::Mark { .. }
+                        | Value::Reify(_)) => panic!("no type child below {other:?}"),
                     }
                 },
-                | (Position::ValueType(id), Position::ValueType(child)) => {
+                (Position::ValueType(id), Position::ValueType(child)) => {
                     match *core.value_type(id).expect("an ancestor resolves") {
-                        | ValueType::Product(ref parts) => {
+                        ValueType::Product(ref parts) => {
                             let [first, second] = **parts
                             else {
                                 panic!("the fixture's products are binary");
@@ -376,25 +441,63 @@ mod static_normalization
                                 core.value_type_product(&[first, child])
                             })
                         },
-                        | ref other => panic!("no type child below {other:?}"),
+                        ref other @ (ValueType::Data { .. }
+                        | ValueType::Record(_)
+                        | ValueType::PathUniverse(..)
+                        | ValueType::Path { .. }
+                        | ValueType::Flow { .. }
+                        | ValueType::Run(_)
+                        | ValueType::Base(_)
+                        | ValueType::Sigma { .. }
+                        | ValueType::Sum(_)
+                        | ValueType::List(_)
+                        | ValueType::Thunk(_)
+                        | ValueType::Universe { .. }
+                        | ValueType::Lift { .. }
+                        | ValueType::Element { .. }
+                        | ValueType::Abstract(_)
+                        | ValueType::StaticPi { .. }
+                        | ValueType::Unknown
+                        | ValueType::Stack { .. }
+                        | ValueType::Session(_)
+                        | ValueType::Capability { .. }) => panic!("no type child below {other:?}"),
                     }
                 },
-                | (Position::ValueType(id), Position::Value(child)) => {
+                (Position::ValueType(id), Position::Value(child)) => {
                     match *core.value_type(id).expect("an ancestor resolves") {
                         // A decode whose code became a quote reads as the
                         // quoted type, as the readback's decode does.
-                        | ValueType::Element { ref target, .. } => {
+                        ValueType::Element { ref target, .. } => {
                             let target = target.clone();
                             Position::ValueType(core.value_type_element(child, target))
                         },
-                        | ref other => panic!("no code child below {other:?}"),
+                        ref other @ (ValueType::Data { .. }
+                        | ValueType::Record(_)
+                        | ValueType::PathUniverse(..)
+                        | ValueType::Path { .. }
+                        | ValueType::Flow { .. }
+                        | ValueType::Run(_)
+                        | ValueType::Base(_)
+                        | ValueType::Product(_)
+                        | ValueType::Sigma { .. }
+                        | ValueType::Sum(_)
+                        | ValueType::List(_)
+                        | ValueType::Thunk(_)
+                        | ValueType::Universe { .. }
+                        | ValueType::Lift { .. }
+                        | ValueType::Abstract(_)
+                        | ValueType::StaticPi { .. }
+                        | ValueType::Unknown
+                        | ValueType::Stack { .. }
+                        | ValueType::Session(_)
+                        | ValueType::Capability { .. }) => panic!("no code child below {other:?}"),
                     }
                 },
             };
         }
         match current {
-            | Position::Value(id) => id,
-            | Position::ValueType(_) => panic!("the root is a code"),
+            Position::Value(id) => id,
+            Position::ValueType(_) => panic!("the root is a code"),
         }
     }
 
@@ -486,10 +589,10 @@ mod static_normalization
         fn arrow(self) -> Option<(Self, Self)>
         {
             match self {
-                | Self::Star => None,
-                | Self::Unary => Some((Self::Star, Self::Star)),
-                | Self::Binary => Some((Self::Star, Self::Unary)),
-                | Self::Higher => Some((Self::Unary, Self::Star)),
+                Self::Star => None,
+                Self::Unary => Some((Self::Star, Self::Star)),
+                Self::Binary => Some((Self::Star, Self::Unary)),
+                Self::Higher => Some((Self::Unary, Self::Star)),
             }
         }
 
@@ -517,9 +620,9 @@ mod static_normalization
         fn operators(self) -> &'static [Self]
         {
             match self {
-                | Self::Star => &[Self::Unary, Self::Higher],
-                | Self::Unary => &[Self::Binary],
-                | Self::Binary | Self::Higher => &[],
+                Self::Star => &[Self::Unary, Self::Higher],
+                Self::Unary => &[Self::Binary],
+                Self::Binary | Self::Higher => &[],
             }
         }
     }
@@ -679,15 +782,15 @@ mod static_normalization
             let less = fuel.saturating_sub(1);
             let operators = kind.operators();
             let mut options: Vec<Shape> = Vec::new();
-            match kind.arrow() {
-                | Some(_) => options.push(Shape::Lambda),
-                | None => {
-                    options.push(Shape::Integer);
-                    options.push(Shape::Rigid);
-                    if fuel > 0 {
-                        options.push(Shape::Product);
-                    }
-                },
+            if kind.arrow().is_some() {
+                options.push(Shape::Lambda);
+            }
+            else {
+                options.push(Shape::Integer);
+                options.push(Shape::Rigid);
+                if fuel > 0 {
+                    options.push(Shape::Product);
+                }
             }
             if let Some(&index) = stream.pick(&variables) {
                 options.push(Shape::Variable(index));
@@ -698,21 +801,21 @@ mod static_normalization
             }
             let shape = *stream.pick(&options).unwrap();
             let children: Vec<(Kind, Vec<Kind>)> = match shape {
-                | Shape::Lambda => {
+                Shape::Lambda => {
                     let (domain, codomain) = kind.arrow().unwrap();
                     let mut deeper = context.clone();
                     deeper.push(domain);
                     Vec::from([(codomain, deeper)])
                 },
-                | Shape::Apply => {
+                Shape::Apply => {
                     let operator = *stream.pick(operators).unwrap();
                     let (domain, _) = operator.arrow().unwrap();
                     Vec::from([(operator, context.clone()), (domain, context.clone())])
                 },
-                | Shape::Product => {
+                Shape::Product => {
                     Vec::from([(Kind::Star, context.clone()), (Kind::Star, context.clone())])
                 },
-                | Shape::Variable(_) | Shape::Rigid | Shape::Integer => Vec::new(),
+                Shape::Variable(_) | Shape::Rigid | Shape::Integer => Vec::new(),
             };
             tree.nodes.push((shape, Vec::new()));
             for (child, child_context) in children.into_iter().rev() {
@@ -757,17 +860,17 @@ mod static_normalization
             let (shape, ref children) = tree.nodes[here];
             let child = |position: usize| built[children[position]].unwrap();
             let minted = match shape {
-                | Shape::Lambda => core.value_static_lambda(child(0)),
-                | Shape::Apply => core.value_static_application(child(0), child(1)),
-                | Shape::Variable(index) => {
+                Shape::Lambda => core.value_static_lambda(child(0)),
+                Shape::Apply => core.value_static_application(child(0), child(1)),
+                Shape::Variable(index) => {
                     core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
                 },
-                | Shape::Rigid => core.value_constant(ConstantIndex::from(0_usize)),
-                | Shape::Integer => {
+                Shape::Rigid => core.value_constant(ConstantIndex::from(0_usize)),
+                Shape::Integer => {
                     let integer = core.value_type_base(BaseType::Integer);
                     core.value_quote(integer)
                 },
-                | Shape::Product => {
+                Shape::Product => {
                     let first = core.value_type_element(child(0), Level::zero());
                     let second = core.value_type_element(child(1), Level::zero());
                     let product = core.value_type_product(&[first, second]);
@@ -812,7 +915,7 @@ mod static_normalization
         let mut pending = Vec::from([(Position::Value(normal), Position::Value(expected))]);
         while let Some((read, wanted)) = pending.pop() {
             match (read, wanted) {
-                | (Position::Value(read), Position::Value(wanted)) => {
+                (Position::Value(read), Position::Value(wanted)) => {
                     let (Some(&Value::Quote(read)), Some(&Value::Quote(wanted))) =
                         (core.value(read), ground.value(wanted))
                     else {
@@ -820,9 +923,9 @@ mod static_normalization
                     };
                     pending.push((Position::ValueType(read), Position::ValueType(wanted)));
                 },
-                | (Position::ValueType(read), Position::ValueType(wanted)) => {
+                (Position::ValueType(read), Position::ValueType(wanted)) => {
                     match (core.value_type(read), ground.value_type(wanted)) {
-                        | (
+                        (
                             Some(&ValueType::Product(ref left)),
                             Some(&ValueType::Product(ref right)),
                         ) if left.len() == right.len() => {
@@ -832,13 +935,13 @@ mod static_normalization
                                 }),
                             );
                         },
-                        | (Some(&ValueType::Base(a)), Some(&ValueType::Base(b))) => {
+                        (Some(&ValueType::Base(a)), Some(&ValueType::Base(b))) => {
                             assert_eq!(a, b, "every leaf is the instance's ground type");
                         },
-                        | (read, wanted) => panic!("{read:?} is not the ground {wanted:?}"),
+                        (read, wanted) => panic!("{read:?} is not the ground {wanted:?}"),
                     }
                 },
-                | _ => panic!("the two walks stay in step"),
+                _ => panic!("the two walks stay in step"),
             }
         }
     }

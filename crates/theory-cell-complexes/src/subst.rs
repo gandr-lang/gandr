@@ -86,8 +86,8 @@ impl core::fmt::Display for BindingRefusal
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::CategoryMismatch => "the metavariable ranges over the other category",
-            | Self::ConflictingRebind => "the metavariable is already bound to a different image",
+            Self::CategoryMismatch => "the metavariable ranges over the other category",
+            Self::ConflictingRebind => "the metavariable is already bound to a different image",
         })
     }
 }
@@ -164,10 +164,9 @@ impl Subst
         var: &MetaVar,
     ) -> Maybe<&ProdPat, binding::Absent>
     {
-        match self.prods.get(var) {
-            | Some(image) => Maybe::Present(image),
-            | None => Maybe::Absent(binding::Absent::Unbound),
-        }
+        self.prods
+            .get(var)
+            .map_or(Maybe::Absent(binding::Absent::Unbound), Maybe::Present)
     }
 
     /// The consumer image bound to `var`.
@@ -192,10 +191,9 @@ impl Subst
         var: &MetaVar,
     ) -> Maybe<&ConsPat, binding::Absent>
     {
-        match self.conss.get(var) {
-            | Some(image) => Maybe::Present(image),
-            | None => Maybe::Absent(binding::Absent::Unbound),
-        }
+        self.conss
+            .get(var)
+            .map_or(Maybe::Absent(binding::Absent::Unbound), Maybe::Present)
     }
 
     /// The bindings of `vars` alone.
@@ -286,9 +284,9 @@ impl Subst
             return Err(BindingRefusal::CategoryMismatch);
         }
         match self.prods.get(&var) {
-            | Some(existing) if *existing == image => Ok(()),
-            | Some(_) => Err(BindingRefusal::ConflictingRebind),
-            | None => {
+            Some(existing) if *existing == image => Ok(()),
+            Some(_) => Err(BindingRefusal::ConflictingRebind),
+            None => {
                 drop(self.prods.insert(var, image));
                 Ok(())
             },
@@ -337,9 +335,9 @@ impl Subst
             return Err(BindingRefusal::CategoryMismatch);
         }
         match self.conss.get(&var) {
-            | Some(existing) if *existing == image => Ok(()),
-            | Some(_) => Err(BindingRefusal::ConflictingRebind),
-            | None => {
+            Some(existing) if *existing == image => Ok(()),
+            Some(_) => Err(BindingRefusal::ConflictingRebind),
+            None => {
                 drop(self.conss.insert(var, image));
                 Ok(())
             },
@@ -396,8 +394,8 @@ impl Subst
                 .collect();
             for var in pending {
                 let resolved = match self.prods.get(&var) {
-                    | Some(image) => self.apply_prod_ref(image.to_ref()),
-                    | None => continue,
+                    Some(image) => self.apply_prod_ref(image.to_ref()),
+                    None => continue,
                 };
                 drop(self.prods.insert(var, resolved));
                 changed = true;
@@ -410,8 +408,8 @@ impl Subst
                 .collect();
             for var in pending {
                 let resolved = match self.conss.get(&var) {
-                    | Some(image) => self.apply_cons_ref(image.to_ref()),
-                    | None => continue,
+                    Some(image) => self.apply_cons_ref(image.to_ref()),
+                    None => continue,
                 };
                 drop(self.conss.insert(var, resolved));
                 changed = true;
@@ -444,8 +442,8 @@ impl Subst
         I: IntoIterator<Item = &'var MetaVar>,
     {
         BoundMention(vars.into_iter().any(|var| match var.cat() {
-            | Cat::Producer => self.prods.contains_key(var),
-            | Cat::Consumer => self.conss.contains_key(var),
+            Cat::Producer => self.prods.contains_key(var),
+            Cat::Consumer => self.conss.contains_key(var),
         }))
     }
 
@@ -740,8 +738,8 @@ pub fn match_cmd(
     ];
     while let Some(goal) = goals.pop() {
         let step = match goal {
-            | Goal::Prod(pat, tgt) => match_prod_step(pat, tgt, subst, &mut found, &mut goals),
-            | Goal::Cons(pat, tgt) => match_cons_step(pat, tgt, subst, &mut found, &mut goals),
+            Goal::Prod(pat, tgt) => match_prod_step(pat, tgt, subst, &mut found, &mut goals),
+            Goal::Cons(pat, tgt) => match_cons_step(pat, tgt, subst, &mut found, &mut goals),
         };
         if step.is_err() {
             return SubstitutionDecision::from(false);
@@ -781,11 +779,11 @@ fn match_prod_step<'pattern, 'target>(
 ) -> Step
 {
     match *pat.head() {
-        | ProdHead::Meta(ref var) => {
+        ProdHead::Meta(ref var) => {
             let agrees = match (subst.prods.get(var), found.prods.get(var)) {
-                | (Some(existing), _) => existing.to_ref() == tgt,
-                | (None, Some(&earlier)) => earlier == tgt,
-                | (None, None) => {
+                (Some(existing), _) => existing.to_ref() == tgt,
+                (None, Some(&earlier)) => earlier == tgt,
+                (None, None) => {
                     found.prods.insert(var, tgt);
                     true
                 },
@@ -797,8 +795,8 @@ fn match_prod_step<'pattern, 'target>(
                 Err(Refusal::Conflict)
             }
         },
-        | ProdHead::Ctor(ref ctor, arity) => match *tgt.head() {
-            | ProdHead::Ctor(ref other, other_arity) if ctor == other && arity == other_arity => {
+        ProdHead::Ctor(ref ctor, arity) => match *tgt.head() {
+            ProdHead::Ctor(ref other, other_arity) if ctor == other && arity == other_arity => {
                 goals.extend(
                     pat.children()
                         .zip(tgt.children())
@@ -806,7 +804,7 @@ fn match_prod_step<'pattern, 'target>(
                 );
                 Ok(())
             },
-            | ProdHead::Ctor(..) | ProdHead::Meta(_) => Err(Refusal::Clash),
+            ProdHead::Ctor(..) | ProdHead::Meta(_) => Err(Refusal::Clash),
         },
     }
 }
@@ -842,11 +840,11 @@ fn match_cons_step<'pattern, 'target>(
 ) -> Step
 {
     match (pat.view(), tgt.view()) {
-        | (ConsView::Meta(var), _) => {
+        (ConsView::Meta(var), _) => {
             let agrees = match (subst.conss.get(var), found.conss.get(var)) {
-                | (Some(existing), _) => existing.to_ref() == tgt,
-                | (None, Some(&earlier)) => earlier == tgt,
-                | (None, None) => {
+                (Some(existing), _) => existing.to_ref() == tgt,
+                (None, Some(&earlier)) => earlier == tgt,
+                (None, None) => {
                     found.conss.insert(var, tgt);
                     true
                 },
@@ -858,8 +856,8 @@ fn match_cons_step<'pattern, 'target>(
                 Err(Refusal::Conflict)
             }
         },
-        | (ConsView::Top, ConsView::Top) => Ok(()),
-        | (
+        (ConsView::Top, ConsView::Top) => Ok(()),
+        (
             ConsView::Op { op, args, rets },
             ConsView::Op {
                 op: other,
@@ -871,7 +869,7 @@ fn match_cons_step<'pattern, 'target>(
             goals.extend(rets.zip(other_rets).map(|(p, t)| Goal::Cons(p, t)));
             Ok(())
         },
-        | (
+        (
             ConsView::Frame { ctor, ret },
             ConsView::Frame {
                 ctor: other,
@@ -881,7 +879,7 @@ fn match_cons_step<'pattern, 'target>(
             goals.push(Goal::Cons(ret, other_ret));
             Ok(())
         },
-        | (ConsView::Top | ConsView::Op { .. } | ConsView::Frame { .. }, _) => Err(Refusal::Clash),
+        (ConsView::Top | ConsView::Op { .. } | ConsView::Frame { .. }, _) => Err(Refusal::Clash),
     }
 }
 
@@ -982,8 +980,8 @@ fn unify_halves(
     ];
     while let Some(goal) = goals.pop() {
         let step = match goal {
-            | Goal::Prod(lhs, rhs) => unify_prod_step(lhs, rhs, existing, &mut found, &mut goals),
-            | Goal::Cons(lhs, rhs) => unify_cons_step(lhs, rhs, existing, &mut found, &mut goals),
+            Goal::Prod(lhs, rhs) => unify_prod_step(lhs, rhs, existing, &mut found, &mut goals),
+            Goal::Cons(lhs, rhs) => unify_cons_step(lhs, rhs, existing, &mut found, &mut goals),
         };
         step?;
     }
@@ -1037,10 +1035,10 @@ fn unify_prod_step<'term>(
         return Err(Refusal::Cyclic);
     };
     match (lhs.head(), rhs.head()) {
-        | (&ProdHead::Meta(ref x), &ProdHead::Meta(ref y)) if x == y => Ok(()),
-        | (&ProdHead::Meta(ref var), _) => bind_found_prod(var, rhs, existing, found),
-        | (_, &ProdHead::Meta(ref var)) => bind_found_prod(var, lhs, existing, found),
-        | (&ProdHead::Ctor(ref f, arity), &ProdHead::Ctor(ref g, other_arity))
+        (&ProdHead::Meta(ref x), &ProdHead::Meta(ref y)) if x == y => Ok(()),
+        (&ProdHead::Meta(ref var), _) => bind_found_prod(var, rhs, existing, found),
+        (_, &ProdHead::Meta(ref var)) => bind_found_prod(var, lhs, existing, found),
+        (&ProdHead::Ctor(ref f, arity), &ProdHead::Ctor(ref g, other_arity))
             if f == g && arity == other_arity =>
         {
             goals.extend(
@@ -1050,7 +1048,7 @@ fn unify_prod_step<'term>(
             );
             Ok(())
         },
-        | (&ProdHead::Ctor(..), &ProdHead::Ctor(..)) => Err(Refusal::Clash),
+        (&ProdHead::Ctor(..), &ProdHead::Ctor(..)) => Err(Refusal::Clash),
     }
 }
 
@@ -1097,9 +1095,9 @@ fn bind_found_prod<'term>(
                 continue;
             }
             match (found.prods.get(leaf), existing.prods.get(leaf)) {
-                | (Some(&bound), _) => pending.push(bound),
-                | (None, Some(bound)) => pending.push(bound.to_ref()),
-                | (None, None) => {},
+                (Some(&bound), _) => pending.push(bound),
+                (None, Some(bound)) => pending.push(bound.to_ref()),
+                (None, None) => {},
             }
         }
     }
@@ -1146,14 +1144,14 @@ fn unify_cons_step<'term>(
         return Err(Refusal::Cyclic);
     };
     match (lhs.bare_meta(), rhs.bare_meta()) {
-        | (Maybe::Present(x), Maybe::Present(y)) if x == y => return Ok(()),
-        | (Maybe::Present(var), _) => return bind_found_cons(var, rhs, existing, found),
-        | (_, Maybe::Present(var)) => return bind_found_cons(var, lhs, existing, found),
-        | (Maybe::Absent(_), Maybe::Absent(_)) => {},
+        (Maybe::Present(x), Maybe::Present(y)) if x == y => return Ok(()),
+        (Maybe::Present(var), _) => return bind_found_cons(var, rhs, existing, found),
+        (_, Maybe::Present(var)) => return bind_found_cons(var, lhs, existing, found),
+        (Maybe::Absent(_), Maybe::Absent(_)) => {},
     }
     match (lhs.view(), rhs.view()) {
-        | (ConsView::Top, ConsView::Top) => Ok(()),
-        | (
+        (ConsView::Top, ConsView::Top) => Ok(()),
+        (
             ConsView::Op { op, args, rets },
             ConsView::Op {
                 op: other,
@@ -1165,7 +1163,7 @@ fn unify_cons_step<'term>(
             goals.extend(rets.zip(other_rets).map(|(l, r)| Goal::Cons(l, r)));
             Ok(())
         },
-        | (
+        (
             ConsView::Frame { ctor, ret },
             ConsView::Frame {
                 ctor: other,
@@ -1175,7 +1173,7 @@ fn unify_cons_step<'term>(
             goals.push(Goal::Cons(ret, other_ret));
             Ok(())
         },
-        | (ConsView::Top | ConsView::Op { .. } | ConsView::Frame { .. } | ConsView::Meta(_), _) => {
+        (ConsView::Top | ConsView::Op { .. } | ConsView::Frame { .. } | ConsView::Meta(_), _) => {
             Err(Refusal::Clash)
         },
     }
@@ -1228,9 +1226,9 @@ fn bind_found_cons<'term>(
                 continue;
             }
             match (found.conss.get(end), existing.conss.get(end)) {
-                | (Some(&bound), _) => pending.push(bound),
-                | (None, Some(bound)) => pending.push(bound.to_ref()),
-                | (None, None) => {},
+                (Some(&bound), _) => pending.push(bound),
+                (None, Some(bound)) => pending.push(bound.to_ref()),
+                (None, None) => {},
             }
         }
     }
@@ -1287,9 +1285,9 @@ fn walk_prod<'term>(
             return Maybe::Present(cursor);
         };
         cursor = match (found.prods.get(var), existing.prods.get(var)) {
-            | (Some(&image), _) => image,
-            | (None, Some(image)) => image.to_ref(),
-            | (None, None) => return Maybe::Present(cursor),
+            (Some(&image), _) => image,
+            (None, Some(image)) => image.to_ref(),
+            (None, None) => return Maybe::Present(cursor),
         };
     }
     Maybe::Absent(binding_walk::Absent::Cyclic)
@@ -1331,9 +1329,9 @@ fn walk_cons<'term>(
             return Maybe::Present(cursor);
         };
         cursor = match (found.conss.get(var), existing.conss.get(var)) {
-            | (Some(&image), _) => image,
-            | (None, Some(image)) => image.to_ref(),
-            | (None, None) => return Maybe::Present(cursor),
+            (Some(&image), _) => image,
+            (None, Some(image)) => image.to_ref(),
+            (None, None) => return Maybe::Present(cursor),
         };
     }
     Maybe::Absent(binding_walk::Absent::Cyclic)

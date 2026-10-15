@@ -99,11 +99,11 @@ impl fmt::Display for Filed
     ) -> fmt::Result
     {
         match *self {
-            | Self::Opened(ref url) => write!(f, "Opened {url}."),
-            | Self::Updated(number) => write!(f, "Updated {number}."),
-            | Self::Reopened(number) => write!(f, "Reopened {number}."),
-            | Self::Closed(number) => write!(f, "Closed {number}: every lane is within budget."),
-            | Self::Untouched => f.write_str("Every lane is within budget; no issue is open."),
+            Self::Opened(ref url) => write!(f, "Opened {url}."),
+            Self::Updated(number) => write!(f, "Updated {number}."),
+            Self::Reopened(number) => write!(f, "Reopened {number}."),
+            Self::Closed(number) => write!(f, "Closed {number}: every lane is within budget."),
+            Self::Untouched => f.write_str("Every lane is within budget; no issue is open."),
         }
     }
 }
@@ -341,7 +341,7 @@ pub fn file(
         )
     };
     match (report.standing(), found) {
-        | (Standing::Over, None) => {
+        (Standing::Over, None) => {
             let url = run(
                 Command::new("gh").args([
                     "issue",
@@ -355,7 +355,7 @@ pub fn file(
             )?;
             Ok(Filed::Opened(url.trim().to_owned()))
         },
-        | (Standing::Over, Some(issue)) => {
+        (Standing::Over, Some(issue)) => {
             edit(issue.number)?;
             if issue.state == "OPEN" {
                 Ok(Filed::Updated(IssueNumber(issue.number)))
@@ -365,11 +365,11 @@ pub fn file(
                 Ok(Filed::Reopened(IssueNumber(issue.number)))
             }
         },
-        | (Standing::Within | Standing::Unmeasured, Some(issue)) if issue.state == "OPEN" => {
+        (Standing::Within | Standing::Unmeasured, Some(issue)) if issue.state == "OPEN" => {
             edit(issue.number)?;
             act("close", issue.number)?;
             Ok(Filed::Closed(IssueNumber(issue.number)))
         },
-        | (Standing::Within | Standing::Unmeasured, _) => Ok(Filed::Untouched),
+        (Standing::Within | Standing::Unmeasured, _) => Ok(Filed::Untouched),
     }
 }

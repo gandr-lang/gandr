@@ -284,7 +284,6 @@ use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
-use gandr_kernel_term::Exhausted;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::RewriteFuel;
 use gandr_kernel_term::Side;
@@ -813,9 +812,9 @@ where
     I: IntoIterator<Item = ConversionDecision<ReplayNode>>,
 {
     let expect = match claim {
-        | EngineClaim::Convertible => Expect::Convertible,
-        | EngineClaim::NotConvertible => Expect::NotConvertible,
-        | EngineClaim::Declined => return KernelVerdict::Declined(ReplayDecline::EngineDeclined),
+        EngineClaim::Convertible => Expect::Convertible,
+        EngineClaim::NotConvertible => Expect::NotConvertible,
+        EngineClaim::Declined => return KernelVerdict::Declined(ReplayDecline::EngineDeclined),
     };
     let (left, right) = terms(sides);
     let watermark = arena.watermark();
@@ -989,8 +988,8 @@ pub(crate) fn read_endpoints(
 const fn terms(sides: ReplaySides) -> (Term, Term)
 {
     match sides {
-        | ReplaySides::Values(left, right) => (Term::Value(left), Term::Value(right)),
-        | ReplaySides::Computations(left, right) => {
+        ReplaySides::Values(left, right) => (Term::Value(left), Term::Value(right)),
+        ReplaySides::Computations(left, right) => {
             (Term::Computation(left), Term::Computation(right))
         },
     }
@@ -1006,13 +1005,13 @@ const fn concluded(
 ) -> KernelVerdict
 {
     match outcome {
-        | Ok(()) => match expect {
-            | Expect::Convertible => KernelVerdict::Convertible,
-            | Expect::NotConvertible => KernelVerdict::NotConvertible,
+        Ok(()) => match expect {
+            Expect::Convertible => KernelVerdict::Convertible,
+            Expect::NotConvertible => KernelVerdict::NotConvertible,
         },
-        | Err(Stop::Budget) => KernelVerdict::Declined(ReplayDecline::Budget),
-        | Err(Stop::PartialFixpoint) => KernelVerdict::Declined(ReplayDecline::PartialFixpoint),
-        | Err(Stop::Refused(refusal)) => KernelVerdict::Declined(ReplayDecline::Refused(refusal)),
+        Err(Stop::Budget) => KernelVerdict::Declined(ReplayDecline::Budget),
+        Err(Stop::PartialFixpoint) => KernelVerdict::Declined(ReplayDecline::PartialFixpoint),
+        Err(Stop::Refused(refusal)) => KernelVerdict::Declined(ReplayDecline::Refused(refusal)),
     }
 }
 
@@ -1086,8 +1085,8 @@ impl Frozen
     ) -> &[ConstantIndex]
     {
         match side {
-            | ConversionSide::Left => &self.left,
-            | ConversionSide::Right => &self.right,
+            ConversionSide::Left => &self.left,
+            ConversionSide::Right => &self.right,
         }
     }
 
@@ -1119,8 +1118,8 @@ impl Frozen
     )
     {
         match side {
-            | ConversionSide::Left => self.left.push(constant),
-            | ConversionSide::Right => self.right.push(constant),
+            ConversionSide::Left => self.left.push(constant),
+            ConversionSide::Right => self.right.push(constant),
         }
     }
 }
@@ -1242,8 +1241,8 @@ impl Goal
     ) -> Term
     {
         match side {
-            | ConversionSide::Left => self.left,
-            | ConversionSide::Right => self.right,
+            ConversionSide::Left => self.left,
+            ConversionSide::Right => self.right,
         }
     }
 
@@ -1258,8 +1257,8 @@ impl Goal
     )
     {
         match side {
-            | ConversionSide::Left => self.left = term,
-            | ConversionSide::Right => self.right = term,
+            ConversionSide::Left => self.left = term,
+            ConversionSide::Right => self.right = term,
         }
     }
 }
@@ -1551,8 +1550,8 @@ enum Flow
 const fn opposite(side: ConversionSide) -> ConversionSide
 {
     match side {
-        | ConversionSide::Left => ConversionSide::Right,
-        | ConversionSide::Right => ConversionSide::Left,
+        ConversionSide::Left => ConversionSide::Right,
+        ConversionSide::Right => ConversionSide::Left,
     }
 }
 
@@ -1664,8 +1663,8 @@ where
             self.settle(goal, &mut goals)?;
         }
         match self.peek() {
-            | Next::End => Ok(()),
-            | Next::Decision(_) => Err(Stop::Refused(ReplayRefusal::Leftover { at: self.at() })),
+            Next::End => Ok(()),
+            Next::Decision(_) => Err(Stop::Refused(ReplayRefusal::Leftover { at: self.at() })),
         }
     }
 
@@ -1758,23 +1757,23 @@ where
             ) {
                 let compared = self.compared(&goal)?;
                 match compared {
-                    | Compared::Equal => {
+                    Compared::Equal => {
                         self.take();
                         return self.close(goal.expect, Expect::Convertible);
                     },
-                    | Compared::Separated => {
+                    Compared::Separated => {
                         self.take();
                         return self.close(goal.expect, Expect::NotConvertible);
                     },
-                    | Compared::Open => {},
+                    Compared::Open => {},
                 }
             }
             match bind {
-                | BindRule::Normal => {},
-                | BindRule::Reassociate(side) => {
+                BindRule::Normal => {},
+                BindRule::Reassociate(side) => {
                     let held = match side {
-                        | ConversionSide::Left => &left_shape,
-                        | ConversionSide::Right => &right_shape,
+                        ConversionSide::Left => &left_shape,
+                        ConversionSide::Right => &right_shape,
                     };
                     let Shape::Neutral(_, ref spine) = *held
                     else {
@@ -1783,13 +1782,13 @@ where
                     self.reassociate(&mut goal, side, spine)?;
                     continue;
                 },
-                | BindRule::ReturnEta(side) => {
+                BindRule::ReturnEta(side) => {
                     self.return_eta(&mut goal, side)?;
                     continue;
                 },
             }
             match rule(&left_shape, &right_shape) {
-                | Rule::Constants => {
+                Rule::Constants => {
                     let flow = self.constants(
                         &mut goal,
                         [&left_shape, &right_shape],
@@ -1800,10 +1799,10 @@ where
                         return Ok(());
                     }
                 },
-                | Rule::Force => self.force(&mut goal)?,
-                | Rule::Eta(side) => self.eta(&mut goal, side)?,
-                | Rule::ProductEta(side) => return self.product_eta(&goal, side, goals),
-                | Rule::Structural => {
+                Rule::Force => self.force(&mut goal)?,
+                Rule::Eta(side) => self.eta(&mut goal, side)?,
+                Rule::ProductEta(side) => return self.product_eta(&goal, side, goals),
+                Rule::Structural => {
                     return self.structural(&goal, &left_shape, &right_shape, goals);
                 },
             }
@@ -1854,16 +1853,16 @@ where
             return;
         };
         let returned = |arena: &TermArena, value| match arena.value(value) {
-            | Some(&Value::Returned(computation)) => Some(computation),
-            | _ => None,
+            Some(&Value::Returned(computation)) => Some(computation),
+            _ => None,
         };
         if returned(self.arena, left).is_none() && returned(self.arena, right).is_none() {
             return;
         }
         for (side, value) in [(ConversionSide::Left, left), (ConversionSide::Right, right)] {
             let computation = match returned(self.arena, value) {
-                | Some(computation) => computation,
-                | None => self.arena.computation_return(value),
+                Some(computation) => computation,
+                None => self.arena.computation_return(value),
             };
             goal.set(side, Term::Computation(computation));
         }
@@ -1928,13 +1927,12 @@ where
         self.spent = self
             .spent
             .saturating_add(before.saturating_sub(u64::from(fuel)));
-        match normal {
-            | Ok(normal) => Ok(Term::Value(normal)),
-            | Err(Exhausted) => {
-                self.spent = self.budget;
-                Err(Stop::Budget)
-            },
-        }
+        let Ok(normal) = normal
+        else {
+            self.spent = self.budget;
+            return Err(Stop::Budget);
+        };
+        Ok(Term::Value(normal))
     }
 
     /// A cong chain whose functions compose to the identity, read as the
@@ -2087,8 +2085,8 @@ where
         let read = self.composite(image);
         self.unfoldings = rules;
         match read? {
-            | Composite::Bound => Ok(Term::Computation(self.arena.computation_return(path))),
-            | Composite::Other => Ok(term),
+            Composite::Bound => Ok(Term::Computation(self.arena.computation_return(path))),
+            Composite::Other => Ok(term),
         }
     }
 
@@ -2123,14 +2121,14 @@ where
     ) -> Result<Composite, Stop>
     {
         let read = match self.normalize_returned(image) {
-            | Ok(read) => read,
-            | Err(Stop::Budget) => return Err(Stop::Budget),
-            | Err(Stop::Refused(_) | Stop::PartialFixpoint) => return Ok(Composite::Other),
+            Ok(read) => read,
+            Err(Stop::Budget) => return Err(Stop::Budget),
+            Err(Stop::Refused(_) | Stop::PartialFixpoint) => return Ok(Composite::Other),
         };
         let normal = match self.present(Term::Value(read)) {
-            | Ok(Term::Value(normal)) => normal,
-            | Err(Stop::Budget) => return Err(Stop::Budget),
-            | Ok(Term::Computation(_)) | Err(Stop::Refused(_) | Stop::PartialFixpoint) => {
+            Ok(Term::Value(normal)) => normal,
+            Err(Stop::Budget) => return Err(Stop::Budget),
+            Ok(Term::Computation(_)) | Err(Stop::Refused(_) | Stop::PartialFixpoint) => {
                 return Ok(Composite::Other);
             },
         };
@@ -2280,8 +2278,8 @@ where
         let mut built: Vec<ValueId> = Vec::new();
         while let Some(step) = walk.pop() {
             match step {
-                | Walk::Visit(id) => match self.arena.value(id) {
-                    | Some(&Value::Constructor {
+                Walk::Visit(id) => match self.arena.value(id) {
+                    Some(&Value::Constructor {
                         datatype,
                         ref fields,
                         ..
@@ -2289,7 +2287,7 @@ where
                         walk.push(Walk::Rebuild(id));
                         walk.extend(fields.iter().rev().map(|&field| Walk::Visit(field)));
                     },
-                    | Some(&Value::Returned(_)) => {
+                    Some(&Value::Returned(_)) => {
                         let read = self.normalize_returned(id)?;
                         if matches!(self.arena.value(read), Some(&Value::Returned(_))) {
                             built.push(id);
@@ -2298,10 +2296,10 @@ where
                             walk.push(Walk::Visit(read));
                         }
                     },
-                    | Some(_) => built.push(id),
-                    | None => return Err(unreadable()),
+                    Some(_) => built.push(id),
+                    None => return Err(unreadable()),
                 },
-                | Walk::Rebuild(id) => {
+                Walk::Rebuild(id) => {
                     let Some(&Value::Constructor {
                         datatype,
                         tag,
@@ -2386,8 +2384,8 @@ where
     {
         let [left, right] = shapes;
         let shape_of = |side: ConversionSide| match side {
-            | ConversionSide::Left => left,
-            | ConversionSide::Right => right,
+            ConversionSide::Left => left,
+            ConversionSide::Right => right,
         };
         let next = self.peek();
         let Next::Decision(decision) = next
@@ -2395,40 +2393,40 @@ where
             return Err(self.refuse(next));
         };
         match decision {
-            | ConversionDecision::Unfold { constant } => {
+            ConversionDecision::Unfold { constant } => {
                 self.take();
                 let reduction = self.peek();
                 let side = match reduction {
-                    | Next::Decision(ConversionDecision::ReduceLeft { redex })
+                    Next::Decision(ConversionDecision::ReduceLeft { redex })
                         if redex == constant =>
                     {
                         ConversionSide::Left
                     },
-                    | Next::Decision(ConversionDecision::ReduceRight { redex })
+                    Next::Decision(ConversionDecision::ReduceRight { redex })
                         if redex == constant =>
                     {
                         ConversionSide::Right
                     },
-                    | Next::Decision(_) | Next::End => return Err(self.refuse(reduction)),
+                    Next::Decision(_) | Next::End => return Err(self.refuse(reduction)),
                 };
                 // An anchor-free decision, as persisted evidence carries it,
                 // names no constant: it unfolds the one the side's head holds.
                 let name = match (constant, shape_of(side)) {
-                    | (ReplayNode::Constant(name), _)
+                    (ReplayNode::Constant(name), _)
                     | (
                         ReplayNode::Other,
                         &Shape::Neutral(Head::Constant(name, Status::Defined), _),
                     ) => name,
-                    | (ReplayNode::Other, _) => return Err(self.refuse(reduction)),
+                    (ReplayNode::Other, _) => return Err(self.refuse(reduction)),
                 };
                 let unfolds = matches!(shape_of(side), &Shape::Neutral(Head::Constant(head, Status::Defined), _) if head == name);
                 let waits = match *postponed {
-                    | Postponed::Nothing => true,
-                    | Postponed::Constant(other) => matches!(
+                    Postponed::Nothing => true,
+                    Postponed::Constant(other) => matches!(
                         shape_of(opposite(side)),
                         &Shape::Neutral(Head::Constant(head, Status::Defined), _) if head == other
                     ),
-                    | Postponed::Opposite => matches!(
+                    Postponed::Opposite => matches!(
                         shape_of(opposite(side)),
                         &Shape::Neutral(Head::Constant(_, Status::Defined), _)
                     ),
@@ -2441,15 +2439,15 @@ where
                 *postponed = Postponed::Nothing;
                 Ok(Flow::Continue)
             },
-            | ConversionDecision::Postpone { constant } if *postponed == Postponed::Nothing => {
+            ConversionDecision::Postpone { constant } if *postponed == Postponed::Nothing => {
                 self.take();
                 *postponed = match constant {
-                    | ReplayNode::Constant(name) => Postponed::Constant(name),
-                    | ReplayNode::Other => Postponed::Opposite,
+                    ReplayNode::Constant(name) => Postponed::Constant(name),
+                    ReplayNode::Other => Postponed::Opposite,
                 };
                 Ok(Flow::Continue)
             },
-            | ConversionDecision::Freeze { constant, side } => {
+            ConversionDecision::Freeze { constant, side } => {
                 if goal.expect == Expect::NotConvertible {
                     return Err(Stop::Refused(ReplayRefusal::NonAuthoritative {
                         at: self.at(),
@@ -2466,7 +2464,7 @@ where
                 goal.frozen.freeze(side, head);
                 Ok(Flow::Continue)
             },
-            | ConversionDecision::ConstShortcut { constant } => {
+            ConversionDecision::ConstShortcut { constant } => {
                 if goal.expect == Expect::NotConvertible {
                     return Err(Stop::Refused(ReplayRefusal::NonAuthoritative {
                         at: self.at(),
@@ -2486,18 +2484,18 @@ where
                     return Err(self.refuse(next));
                 };
                 let named = match constant {
-                    | ReplayNode::Constant(name) => name == left_head,
-                    | ReplayNode::Other => true,
+                    ReplayNode::Constant(name) => name == left_head,
+                    ReplayNode::Other => true,
                 };
                 if !named || left_head != right_head {
                     return Err(self.refuse(next));
                 }
                 self.take();
                 let premises = match spines(self.arena, left_spine, right_spine)? {
-                    | Structure::Leaf(verdict) => {
+                    Structure::Leaf(verdict) => {
                         return self.close(goal.expect, verdict).map(|()| Flow::Settled);
                     },
-                    | Structure::Premises(premises) => premises,
+                    Structure::Premises(premises) => premises,
                 };
                 goals.extend(
                     premises
@@ -2507,7 +2505,7 @@ where
                 );
                 Ok(Flow::Settled)
             },
-            | ConversionDecision::ReduceLeft { .. }
+            ConversionDecision::ReduceLeft { .. }
             | ConversionDecision::ReduceRight { .. }
             | ConversionDecision::Postpone { .. }
             | ConversionDecision::EtaExpand { .. }
@@ -2606,11 +2604,11 @@ where
             return Err(unreadable());
         };
         match self.arena.value(value) {
-            | Some(&Value::Thunk(body)) => Ok(Term::Computation(body)),
-            | Some(&(Value::Variable(_) | Value::Constant(_))) => {
+            Some(&Value::Thunk(body)) => Ok(Term::Computation(body)),
+            Some(&(Value::Variable(_) | Value::Constant(_))) => {
                 Ok(Term::Computation(self.arena.computation_force(value)))
             },
-            | Some(
+            Some(
                 &(Value::PathRefl(_)
                 | Value::Constructor { .. }
                 | Value::Record(_)
@@ -2766,11 +2764,11 @@ where
         let first_projection = self.arena.computation_project(Side::Left, neutral);
         let second_projection = self.arena.computation_project(Side::Right, neutral);
         let premises = match side {
-            | ConversionSide::Left => Vec::from([
+            ConversionSide::Left => Vec::from([
                 Premise::computations(first_projection, first),
                 Premise::computations(second_projection, second),
             ]),
-            | ConversionSide::Right => Vec::from([
+            ConversionSide::Right => Vec::from([
                 Premise::computations(first, first_projection),
                 Premise::computations(second, second_projection),
             ]),
@@ -2817,8 +2815,8 @@ where
         }
         let next = self.peek();
         let named = match (wanted, next) {
-            | (Forced::Force, Next::Decision(ConversionDecision::Force { .. })) => true,
-            | (
+            (Forced::Force, Next::Decision(ConversionDecision::Force { .. })) => true,
+            (
                 Forced::Eta(side),
                 Next::Decision(ConversionDecision::EtaExpand { side: named, .. }),
             )
@@ -2830,7 +2828,7 @@ where
                 Forced::Reassociate(side),
                 Next::Decision(ConversionDecision::Reassociate { side: named }),
             ) => named == side,
-            | (
+            (
                 Forced::Force | Forced::Eta(_) | Forced::ReturnEta(_) | Forced::Reassociate(_),
                 Next::Decision(_) | Next::End,
             ) => false,
@@ -2948,19 +2946,19 @@ where
         let mut focus = root;
         for _ in 0 .. above {
             match self.arena.computation(focus) {
-                | Some(&Computation::Application(head, argument)) => {
+                Some(&Computation::Application(head, argument)) => {
                     frames.push(Frame::Apply(argument));
                     focus = head;
                 },
-                | Some(&Computation::Bind(bound, body)) => {
+                Some(&Computation::Bind(bound, body)) => {
                     frames.push(Frame::Bind(body));
                     focus = bound;
                 },
-                | Some(&Computation::Project(projected, pair)) => {
+                Some(&Computation::Project(projected, pair)) => {
                     frames.push(Frame::Project(projected));
                     focus = pair;
                 },
-                | Some(_) | None => return Err(unreadable()),
+                Some(_) | None => return Err(unreadable()),
             }
         }
         let Some(&Computation::Bind(inner, outer)) = self.arena.computation(focus)
@@ -3058,15 +3056,15 @@ where
         // apart here may still be one term.
         let presentations = self.unfoldings.presentations();
         let presented = |term: Term| match term {
-            | Term::Value(value) => match self.arena.value(value) {
-                | Some(&Value::Constructor { datatype, .. }) => matches!(
+            Term::Value(value) => match self.arena.value(value) {
+                Some(&Value::Constructor { datatype, .. }) => matches!(
                     self.arena.value_type(datatype),
                     Some(&ValueType::Data { declaration, .. })
                         if presentations.presented(declaration).is_some()
                 ),
-                | _ => false,
+                _ => false,
             },
-            | Term::Computation(_) => false,
+            Term::Computation(_) => false,
         };
         if goal.expect == Expect::NotConvertible
             && structure == Structure::Leaf(Expect::NotConvertible)
@@ -3077,8 +3075,8 @@ where
             }));
         }
         let premises = match structure {
-            | Structure::Leaf(verdict) => return self.close(goal.expect, verdict),
-            | Structure::Premises(premises) => premises,
+            Structure::Leaf(verdict) => return self.close(goal.expect, verdict),
+            Structure::Premises(premises) => premises,
         };
         self.schedule(goal.expect, premises, goals)
     }
@@ -3128,7 +3126,7 @@ where
     ) -> Result<(), Stop>
     {
         match expect {
-            | Expect::Convertible => {
+            Expect::Convertible => {
                 goals.extend(
                     premises
                         .into_iter()
@@ -3137,7 +3135,7 @@ where
                 );
                 Ok(())
             },
-            | Expect::NotConvertible => {
+            Expect::NotConvertible => {
                 let next = self.peek();
                 let Next::Decision(ConversionDecision::NegativeSubgoal { position }) = next
                 else {
@@ -3204,31 +3202,31 @@ where
     ) -> Result<Structure, Stop>
     {
         let structure = match (left, right) {
-            | (&Shape::Former, &Shape::Former) => {
+            (&Shape::Former, &Shape::Former) => {
                 let (Term::Value(left_value), Term::Value(right_value)) = (goal.left, goal.right)
                 else {
                     return Err(unreadable());
                 };
                 return self.formers(left_value, right_value);
             },
-            | (&Shape::Return(left_value), &Shape::Return(right_value)) => {
+            (&Shape::Return(left_value), &Shape::Return(right_value)) => {
                 Structure::of(Vec::from([Premise::values(left_value, right_value)]))
             },
-            | (&Shape::Lambda(left_body), &Shape::Lambda(right_body))
+            (&Shape::Lambda(left_body), &Shape::Lambda(right_body))
             | (&Shape::Fixpoint(left_body), &Shape::Fixpoint(right_body)) => {
                 Structure::of(Vec::from([Premise::computations(left_body, right_body)]))
             },
-            | (&Shape::With(left_first, left_second), &Shape::With(right_first, right_second)) => {
+            (&Shape::With(left_first, left_second), &Shape::With(right_first, right_second)) => {
                 Structure::of(Vec::from([
                     Premise::computations(left_first, right_first),
                     Premise::computations(left_second, right_second),
                 ]))
             },
-            | (
+            (
                 &Shape::Neutral(left_head, ref left_spine),
                 &Shape::Neutral(right_head, ref right_spine),
             ) if left_head == right_head => spines(self.arena, left_spine, right_spine)?,
-            | (
+            (
                 &(Shape::Former
                 | Shape::Thunk(_)
                 | Shape::Lambda(_)
@@ -3304,8 +3302,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             return Err(unreadable());
         };
         let structure = match (one, other) {
-            | (&Value::Returned(_), _) | (_, &Value::Returned(_)) => return Err(unreadable()),
-            | (
+            (&Value::Returned(_), _) | (_, &Value::Returned(_)) => return Err(unreadable()),
+            (
                 &Value::Constructor {
                     datatype: a,
                     tag: one_tag,
@@ -3352,7 +3350,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 );
                 Structure::of(premises)
             },
-            | (&Value::Record(ref a), &Value::Record(ref b)) => {
+            (&Value::Record(ref a), &Value::Record(ref b)) => {
                 if a.len() != b.len() || !a.keys().eq(b.keys()) {
                     Structure::Leaf(Expect::NotConvertible)
                 }
@@ -3368,7 +3366,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             // Two reflexivities convert exactly when their points do; the
             // dialogues they carry are evidence for their endpoints, never
             // part of the value.
-            | (
+            (
                 &Value::Here {
                     point: left_point, ..
                 },
@@ -3376,7 +3374,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     point: right_point, ..
                 },
             ) => Structure::of(Vec::from([Premise::values(left_point, right_point)])),
-            | (
+            (
                 &(Value::PathRefl(_)
                 | Value::PathProduct(..)
                 | Value::SessionPath { .. }
@@ -3400,10 +3398,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Expect::NotConvertible
                 },
             ),
-            | (&Value::ListNil, &Value::ListNil) => Structure::Leaf(Expect::Convertible),
+            (&Value::ListNil, &Value::ListNil) => Structure::Leaf(Expect::Convertible),
             // Two tuples of one arity compare component by component; a
             // different arity separates them.
-            | (&Value::Tuple(ref left), &Value::Tuple(ref right)) => {
+            (&Value::Tuple(ref left), &Value::Tuple(ref right)) => {
                 if left.len() == right.len() {
                     Structure::of(
                         left.iter()
@@ -3416,23 +3414,23 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Structure::Leaf(Expect::NotConvertible)
                 }
             },
-            | (&Value::Literal(_), &Value::Literal(_)) if one == other => {
+            (&Value::Literal(_), &Value::Literal(_)) if one == other => {
                 Structure::Leaf(Expect::Convertible)
             },
-            | (
+            (
                 &Value::ListCons(left_first, left_second),
                 &Value::ListCons(right_first, right_second),
             ) => Structure::of(Vec::from([
                 Premise::values(left_first, right_first),
                 Premise::values(left_second, right_second),
             ])),
-            | (
+            (
                 &Value::Injection(left_side, left_body),
                 &Value::Injection(right_side, right_body),
             ) if left_side == right_side => {
                 Structure::of(Vec::from([Premise::values(left_body, right_body)]))
             },
-            | (
+            (
                 &Value::Lift {
                     target: ref left_target,
                     body: left_body,
@@ -3448,7 +3446,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             // so a pair of codes closes here as the shared comparison would:
             // α-equal codes convert, rigid α-distinct codes are apart, and a
             // pair neither settles is refused rather than guessed at.
-            | (&Value::Quote(_), &Value::Quote(_))
+            (&Value::Quote(_), &Value::Quote(_))
             | (&Value::QuoteComputation(_), &Value::QuoteComputation(_)) => {
                 if equal_values(self.arena, left, right) == Convertibility::Convertible {
                     Structure::Leaf(Expect::Convertible)
@@ -3466,7 +3464,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     return Err(unreadable());
                 }
             },
-            | (
+            (
                 &(Value::Variable(_)
                 | Value::Constructor { .. }
                 | Value::Record(_)
@@ -3521,11 +3519,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ) -> Result<Compared, Stop>
     {
         let equality = match (goal.left, goal.right) {
-            | (Term::Value(left), Term::Value(right)) => equal_values(self.arena, left, right),
-            | (Term::Computation(left), Term::Computation(right)) => {
+            (Term::Value(left), Term::Value(right)) => equal_values(self.arena, left, right),
+            (Term::Computation(left), Term::Computation(right)) => {
                 equal_computations(self.arena, left, right)
             },
-            | (Term::Value(_), Term::Computation(_)) | (Term::Computation(_), Term::Value(_)) => {
+            (Term::Value(_), Term::Computation(_)) | (Term::Computation(_), Term::Value(_)) => {
                 return Err(unreadable());
             },
         };
@@ -3533,8 +3531,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             return Ok(Compared::Equal);
         }
         match (self.rigidity(goal.left), self.rigidity(goal.right)) {
-            | (Rigidity::Rigid, Rigidity::Rigid) => Ok(Compared::Separated),
-            | (Rigidity::Rigid | Rigidity::Flexible, _) => Ok(Compared::Open),
+            (Rigidity::Rigid, Rigidity::Rigid) => Ok(Compared::Separated),
+            (Rigidity::Rigid | Rigidity::Flexible, _) => Ok(Compared::Open),
         }
     }
 
@@ -3586,13 +3584,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ) -> Rigidity
     {
         let mut work = Vec::from([match term {
-            | Term::Value(value) => AnyNode::Value(value),
-            | Term::Computation(computation) => AnyNode::Computation(computation),
+            Term::Value(value) => AnyNode::Value(value),
+            Term::Computation(computation) => AnyNode::Computation(computation),
         }]);
         while let Some(next) = work.pop() {
             match next {
-                | AnyNode::Value(value) => match self.arena.value(value) {
-                    | Some(&Value::Constructor {
+                AnyNode::Value(value) => match self.arena.value(value) {
+                    Some(&Value::Constructor {
                         datatype,
                         ref fields,
                         ..
@@ -3614,10 +3612,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 .chain(fields.iter().copied().map(AnyNode::Value)),
                         );
                     },
-                    | Some(&Value::Record(ref fields)) => {
+                    Some(&Value::Record(ref fields)) => {
                         work.extend(fields.values().copied().map(AnyNode::Value));
                     },
-                    | Some(
+                    Some(
                         &(Value::Literal(_)
                         | Value::ListNil
                         | Value::Variable(_)
@@ -3636,38 +3634,38 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Value::HigherEvaluation { .. }
                         | Value::QuantifiedEvaluation { .. }),
                     ) => {},
-                    | Some(
+                    Some(
                         &(Value::ListCons(first, second) | Value::StaticApplication(first, second)),
                     ) => {
                         work.extend([AnyNode::Value(first), AnyNode::Value(second)]);
                     },
-                    | Some(&Value::Tuple(ref components)) => {
+                    Some(&Value::Tuple(ref components)) => {
                         work.extend(components.iter().copied().map(AnyNode::Value));
                     },
-                    | Some(&(Value::Injection(_, body) | Value::Lift { body, .. })) => {
+                    Some(&(Value::Injection(_, body) | Value::Lift { body, .. })) => {
                         work.push(AnyNode::Value(body));
                     },
-                    | Some(&Value::Constant(constant)) => {
+                    Some(&Value::Constant(constant)) => {
                         if self.unfoldings.unfolding(constant) != Unfoldable::Opaque {
                             return Rigidity::Flexible;
                         }
                     },
-                    | Some(&Value::Quote(quoted)) => work.push(AnyNode::ValueType(quoted)),
-                    | Some(&Value::QuoteComputation(quoted)) => {
+                    Some(&Value::Quote(quoted)) => work.push(AnyNode::ValueType(quoted)),
+                    Some(&Value::QuoteComputation(quoted)) => {
                         work.push(AnyNode::CompType(quoted));
                     },
-                    | Some(&(Value::Thunk(_) | Value::Returned(_))) | None => {
+                    Some(&(Value::Thunk(_) | Value::Returned(_))) | None => {
                         return Rigidity::Flexible;
                     },
                 },
-                | AnyNode::Computation(computation) => match self.arena.computation(computation) {
-                    | Some(&(Computation::Return(value) | Computation::Force(value))) => {
+                AnyNode::Computation(computation) => match self.arena.computation(computation) {
+                    Some(&(Computation::Return(value) | Computation::Force(value))) => {
                         work.push(AnyNode::Value(value));
                     },
-                    | Some(&Computation::Application(head, argument)) => {
+                    Some(&Computation::Application(head, argument)) => {
                         work.extend([AnyNode::Computation(head), AnyNode::Value(argument)]);
                     },
-                    | Some(
+                    Some(
                         &(Computation::Transport(..)
                         | Computation::PathTransport { .. }
                         | Computation::TelescopeTransport { .. }
@@ -3690,26 +3688,26 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         return Rigidity::Flexible;
                     },
                 },
-                | AnyNode::ValueType(value_type) => match self.arena.value_type(value_type) {
-                    | Some(&ValueType::Data { ref arguments, .. }) => {
+                AnyNode::ValueType(value_type) => match self.arena.value_type(value_type) {
+                    Some(&ValueType::Data { ref arguments, .. }) => {
                         work.extend(arguments.iter().copied().map(AnyNode::Value));
                     },
-                    | Some(&ValueType::Record(ref fields)) => {
+                    Some(&ValueType::Record(ref fields)) => {
                         work.extend(fields.values().copied().map(AnyNode::ValueType));
                     },
-                    | Some(
+                    Some(
                         &(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_)),
                     ) => {},
-                    | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
+                    Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
                         work.extend(parts.iter().copied().map(AnyNode::ValueType));
                     },
-                    | Some(
+                    Some(
                         &ValueType::PathUniverse(source, target)
                         | &ValueType::FlowUniverse(source, target),
                     ) => {
                         work.extend([AnyNode::Value(source), AnyNode::Value(target)]);
                     },
-                    | Some(
+                    Some(
                         &ValueType::Path {
                             domain,
                             left,
@@ -3727,7 +3725,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             AnyNode::Value(right),
                         ]);
                     },
-                    | Some(
+                    Some(
                         &ValueType::StaticPi {
                             domain: first,
                             codomain: second,
@@ -3736,8 +3734,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     ) => {
                         work.extend([AnyNode::ValueType(first), AnyNode::ValueType(second)]);
                     },
-                    | Some(&ValueType::Thunk(body)) => work.push(AnyNode::CompType(body)),
-                    | Some(
+                    Some(&ValueType::Thunk(body)) => work.push(AnyNode::CompType(body)),
+                    Some(
                         &ValueType::Session {
                             payloads: inner, ..
                         }
@@ -3746,21 +3744,21 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     ) => {
                         work.push(AnyNode::ValueType(inner));
                     },
-                    | Some(&ValueType::Element { code, .. }) => work.push(AnyNode::Value(code)),
-                    | None => return Rigidity::Flexible,
+                    Some(&ValueType::Element { code, .. }) => work.push(AnyNode::Value(code)),
+                    None => return Rigidity::Flexible,
                 },
-                | AnyNode::CompType(comp_type) => match self.arena.comp_type(comp_type) {
-                    | Some(&CompType::Returner(result)) => work.push(AnyNode::ValueType(result)),
-                    | Some(
+                AnyNode::CompType(comp_type) => match self.arena.comp_type(comp_type) {
+                    Some(&CompType::Returner(result)) => work.push(AnyNode::ValueType(result)),
+                    Some(
                         &(CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain }),
                     ) => {
                         work.extend([AnyNode::ValueType(domain), AnyNode::CompType(codomain)]);
                     },
-                    | Some(&CompType::Element { code, .. }) => work.push(AnyNode::Value(code)),
-                    | Some(&CompType::With(left, right)) => {
+                    Some(&CompType::Element { code, .. }) => work.push(AnyNode::Value(code)),
+                    Some(&CompType::With(left, right)) => {
                         work.extend([AnyNode::CompType(left), AnyNode::CompType(right)]);
                     },
-                    | None => return Rigidity::Flexible,
+                    None => return Rigidity::Flexible,
                 },
             }
         }
@@ -3856,18 +3854,18 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ) -> Result<Shape, Stop>
     {
         let start = match term {
-            | Term::Value(value) => {
+            Term::Value(value) => {
                 return match self.arena.value(value) {
-                    | Some(&Value::Variable(index)) => {
+                    Some(&Value::Variable(index)) => {
                         Ok(Shape::Neutral(Head::Variable(index), Vec::new()))
                     },
-                    | Some(&Value::Constant(constant)) => Ok(Shape::Neutral(
+                    Some(&Value::Constant(constant)) => Ok(Shape::Neutral(
                         self.head(constant, frozen, side),
                         Vec::new(),
                     )),
-                    | Some(&Value::Thunk(body)) => Ok(Shape::Thunk(body)),
-                    | Some(&Value::Returned(_)) | None => Err(unreadable()),
-                    | Some(&Value::StaticApplication(..)) => {
+                    Some(&Value::Thunk(body)) => Ok(Shape::Thunk(body)),
+                    Some(&Value::Returned(_)) | None => Err(unreadable()),
+                    Some(&Value::StaticApplication(..)) => {
                         let mut spine = Vec::new();
                         let mut focus = value;
                         while let Some(&Value::StaticApplication(head, argument)) =
@@ -3880,7 +3878,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         let head = self.value_head(focus, frozen, side)?;
                         Ok(Shape::Neutral(head, spine))
                     },
-                    | Some(
+                    Some(
                         &(Value::PathRefl(_)
                         | Value::Constructor { .. }
                         | Value::Record(_)
@@ -3908,29 +3906,29 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     ) => Ok(Shape::Former),
                 };
             },
-            | Term::Computation(computation) => computation,
+            Term::Computation(computation) => computation,
         };
         let mut spine = Vec::new();
         let mut focus = start;
         let head = loop {
             match self.arena.computation(focus) {
-                | Some(&Computation::DataCase { scrutinee, .. }) => {
+                Some(&Computation::DataCase { scrutinee, .. }) => {
                     spine.push(Elimination::DataCase(focus));
                     break self.value_head(scrutinee, frozen, side)?;
                 },
-                | Some(&Computation::SigmaSplit { scrutinee, .. }) => {
+                Some(&Computation::SigmaSplit { scrutinee, .. }) => {
                     spine.push(Elimination::SigmaSplit(focus));
                     break self.value_head(scrutinee, frozen, side)?;
                 },
-                | Some(&Computation::RecordProjection(record, _)) => {
+                Some(&Computation::RecordProjection(record, _)) => {
                     spine.push(Elimination::RecordProjection(focus));
                     break self.value_head(record, frozen, side)?;
                 },
-                | Some(&Computation::TupleProjection(tuple, _)) => {
+                Some(&Computation::TupleProjection(tuple, _)) => {
                     spine.push(Elimination::TupleProjection(focus));
                     break self.value_head(tuple, frozen, side)?;
                 },
-                | Some(&Computation::ListFold {
+                Some(&Computation::ListFold {
                     list,
                     on_nil,
                     on_cons,
@@ -3939,7 +3937,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     spine.push(Elimination::ListFold(on_nil, on_cons));
                     break self.value_head(list, frozen, side)?;
                 },
-                | Some(&Computation::Transport(path, value)) => {
+                Some(&Computation::Transport(path, value)) => {
                     if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
                         spine.push(Elimination::ProductTransport(path));
                         break self.value_head(value, frozen, side)?;
@@ -3950,23 +3948,23 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 // A ride stuck at the table stands on its flow: a defined
                 // flow unfolds where the dialogue names it, as a transport's
                 // path does.
-                | Some(&Computation::Ride { flow, .. }) => {
+                Some(&Computation::Ride { flow, .. }) => {
                     spine.push(Elimination::Ride(focus));
                     break self.value_head(flow, frozen, side)?;
                 },
-                | Some(&Computation::Lambda(body)) if spine.is_empty() => {
+                Some(&Computation::Lambda(body)) if spine.is_empty() => {
                     return Ok(Shape::Lambda(body));
                 },
-                | Some(&Computation::With(first, second)) if spine.is_empty() => {
+                Some(&Computation::With(first, second)) if spine.is_empty() => {
                     return Ok(Shape::With(first, second));
                 },
-                | Some(&Computation::Fixpoint { body, .. }) if spine.is_empty() => {
+                Some(&Computation::Fixpoint { body, .. }) if spine.is_empty() => {
                     return Ok(Shape::Fixpoint(body));
                 },
                 // A fixpoint applied to a neutral argument is stuck on that
                 // argument's head: the application directly over it becomes the
                 // fixpoint's elimination, and the argument's head the neutral's.
-                | Some(&Computation::Fixpoint { .. }) => {
+                Some(&Computation::Fixpoint { .. }) => {
                     let Some(Elimination::Apply(argument)) = spine.pop()
                     else {
                         return Err(unreadable());
@@ -3974,27 +3972,27 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     spine.push(Elimination::Fixpoint(focus));
                     break self.value_head(argument, frozen, side)?;
                 },
-                | Some(&Computation::Return(value)) if spine.is_empty() => {
+                Some(&Computation::Return(value)) if spine.is_empty() => {
                     return Ok(Shape::Return(value));
                 },
-                | Some(&Computation::Application(head, argument)) => {
+                Some(&Computation::Application(head, argument)) => {
                     spine.push(Elimination::Apply(argument));
                     focus = head;
                 },
-                | Some(&Computation::Bind(bound, body)) => {
+                Some(&Computation::Bind(bound, body)) => {
                     spine.push(Elimination::Bind(body));
                     focus = bound;
                 },
-                | Some(&Computation::Project(side, pair)) => {
+                Some(&Computation::Project(side, pair)) => {
                     spine.push(Elimination::Project(side));
                     focus = pair;
                 },
-                | Some(&Computation::Force(value)) => {
+                Some(&Computation::Force(value)) => {
                     spine.push(Elimination::Force);
                     let head = self.value_head(value, frozen, side)?;
                     break head;
                 },
-                | Some(&Computation::Case { scrutinee, .. }) => {
+                Some(&Computation::Case { scrutinee, .. }) => {
                     spine.push(Elimination::Case(focus));
                     let head = self.value_head(scrutinee, frozen, side)?;
                     break head;
@@ -4002,7 +4000,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 // A transport in a motive, a telescope ride or a related
                 // application that did not reduce has no trace alphabet of its
                 // own: the replay reads it as unreadable.
-                | Some(
+                Some(
                     &(Computation::Lambda(_)
                     | Computation::With(..)
                     | Computation::Return(_)
@@ -4053,9 +4051,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ) -> Result<Head, Stop>
     {
         match self.arena.value(value) {
-            | Some(&Value::Variable(index)) => Ok(Head::Variable(index)),
-            | Some(&Value::Constant(constant)) => Ok(self.head(constant, frozen, side)),
-            | Some(
+            Some(&Value::Variable(index)) => Ok(Head::Variable(index)),
+            Some(&Value::Constant(constant)) => Ok(self.head(constant, frozen, side)),
+            Some(
                 &(Value::PathRefl(_)
                 | Value::Constructor { .. }
                 | Value::Record(_)
@@ -4116,13 +4114,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ) -> Head
     {
         let status = match self.unfoldings.unfolding(constant) {
-            | Unfoldable::Opaque => Status::Opaque,
-            | Unfoldable::Body(_) | Unfoldable::Operator { .. }
+            Unfoldable::Opaque => Status::Opaque,
+            Unfoldable::Body(_) | Unfoldable::Operator { .. }
                 if frozen.side(side).contains(&constant) =>
             {
                 Status::Frozen
             },
-            | Unfoldable::Body(_) | Unfoldable::Operator { .. } => Status::Defined,
+            Unfoldable::Body(_) | Unfoldable::Operator { .. } => Status::Defined,
         };
         Head::Constant(constant, status)
     }
@@ -4210,8 +4208,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     {
         let unfolding = self.unfoldings.unfolding(constant);
         let start = match term {
-            | Term::Value(value) => return Ok(Term::Value(self.unfold_value(value, unfolding)?)),
-            | Term::Computation(computation) => computation,
+            Term::Value(value) => return Ok(Term::Value(self.unfold_value(value, unfolding)?)),
+            Term::Computation(computation) => computation,
         };
         // An operator classifies codes, so it is never forced or scrutinized:
         // only a body stands at a computation's head.
@@ -4223,7 +4221,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         let mut focus = start;
         let mut rebuilt = loop {
             match self.arena.computation(focus) {
-                | Some(&Computation::DataCase {
+                Some(&Computation::DataCase {
                     motive,
                     ref branches,
                     ..
@@ -4232,22 +4230,22 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         .arena
                         .computation_data_case(body, motive, branches.clone());
                 },
-                | Some(&Computation::SigmaSplit {
+                Some(&Computation::SigmaSplit {
                     motive,
                     body: split,
                     ..
                 }) => {
                     break self.arena.computation_sigma_split(body, motive, split);
                 },
-                | Some(&Computation::RecordProjection(_, ref label)) => {
+                Some(&Computation::RecordProjection(_, ref label)) => {
                     break self
                         .arena
                         .computation_record_projection(body, label.clone());
                 },
-                | Some(&Computation::TupleProjection(_, component)) => {
+                Some(&Computation::TupleProjection(_, component)) => {
                     break self.arena.computation_tuple_projection(body, component);
                 },
-                | Some(&Computation::ListFold {
+                Some(&Computation::ListFold {
                     element,
                     result,
                     on_nil,
@@ -4258,7 +4256,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         .arena
                         .computation_list_fold(element, result, body, on_nil, on_cons);
                 },
-                | Some(&Computation::Transport(path, value)) => {
+                Some(&Computation::Transport(path, value)) => {
                     break if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
                         self.arena.computation_transport(path, body)
                     }
@@ -4266,36 +4264,36 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         self.arena.computation_transport(body, value)
                     };
                 },
-                | Some(&Computation::Ride { motive, value, .. }) => {
+                Some(&Computation::Ride { motive, value, .. }) => {
                     break self.arena.computation_ride(motive, body, value);
                 },
-                | Some(&Computation::Application(head, argument)) => {
+                Some(&Computation::Application(head, argument)) => {
                     frames.push(Frame::Apply(argument));
                     focus = head;
                 },
-                | Some(&Computation::Bind(bound, next)) => {
+                Some(&Computation::Bind(bound, next)) => {
                     frames.push(Frame::Bind(next));
                     focus = bound;
                 },
-                | Some(&Computation::Project(side, pair)) => {
+                Some(&Computation::Project(side, pair)) => {
                     frames.push(Frame::Project(side));
                     focus = pair;
                 },
-                | Some(&Computation::Force(_)) => break self.arena.computation_force(body),
-                | Some(&Computation::Case { ref branches, .. }) => {
+                Some(&Computation::Force(_)) => break self.arena.computation_force(body),
+                Some(&Computation::Case { ref branches, .. }) => {
                     let branches = branches.clone();
                     break self.arena.computation_case(body, &branches);
                 },
                 // A stuck fixpoint's head is its argument: the constant
                 // unfolds in the application directly over the fixpoint.
-                | Some(&Computation::Fixpoint { .. }) => {
+                Some(&Computation::Fixpoint { .. }) => {
                     let Some(Frame::Apply(_)) = frames.pop()
                     else {
                         return Err(unreadable());
                     };
                     break self.arena.computation_application(focus, body);
                 },
-                | Some(
+                Some(
                     &(Computation::Lambda(_)
                     | Computation::With(..)
                     | Computation::Return(_)
@@ -4368,9 +4366,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             return Err(unreadable());
         }
         let (mut reduct, consumed) = match unfolding {
-            | Unfoldable::Opaque => return Err(unreadable()),
-            | Unfoldable::Body(body) => (body, 0_usize),
-            | Unfoldable::Operator { parameters, body } => {
+            Unfoldable::Opaque => return Err(unreadable()),
+            Unfoldable::Body(body) => (body, 0_usize),
+            Unfoldable::Operator { parameters, body } => {
                 let count =
                     usize::try_from(u32::from(parameters)).map_err(|_overflow| unreadable())?;
                 let Some(instantiated) = arguments.get(.. count)
@@ -4517,12 +4515,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     continue;
                 }
                 match self.arena.computation(focus) {
-                    | Some(&Computation::DataCase {
+                    Some(&Computation::DataCase {
                         scrutinee,
                         ref branches,
                         ..
                     }) => match self.arena.value(scrutinee) {
-                        | Some(&Value::Constructor {
+                        Some(&Value::Constructor {
                             tag, ref fields, ..
                         }) => {
                             let branch = *branches.get(usize::from(tag)).ok_or_else(unreadable)?;
@@ -4543,15 +4541,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             }
                             progress = Progress::Reduced;
                         },
-                        | Some(_) => break,
-                        | None => return Err(unreadable()),
+                        Some(_) => break,
+                        None => return Err(unreadable()),
                     },
                     // A dependent split of a pair enters its body with the two
                     // components for its two binders, the outer binder first.
-                    | Some(&Computation::SigmaSplit {
+                    Some(&Computation::SigmaSplit {
                         scrutinee, body, ..
                     }) => match self.arena.value(scrutinee).map(Value::components) {
-                        | Some(Some(&[first, second])) => {
+                        Some(Some(&[first, second])) => {
                             let opened = crate::rewrite::substitute_fold_head(
                                 self.arena,
                                 &mut self.table,
@@ -4562,45 +4560,45 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             focus = self.instantiate(opened, second);
                             progress = Progress::Reduced;
                         },
-                        | Some(None) => break,
-                        | Some(Some(_)) | None => return Err(unreadable()),
+                        Some(None) => break,
+                        Some(Some(_)) | None => return Err(unreadable()),
                     },
-                    | Some(&Computation::RecordProjection(record, ref label)) => {
+                    Some(&Computation::RecordProjection(record, ref label)) => {
                         match self.arena.value(record) {
-                            | Some(&Value::Record(ref fields)) => {
+                            Some(&Value::Record(ref fields)) => {
                                 let value = *fields.get(label).ok_or_else(unreadable)?;
                                 focus = self.arena.computation_return(value);
                                 progress = Progress::Reduced;
                             },
-                            | Some(_) => break,
-                            | None => return Err(unreadable()),
+                            Some(_) => break,
+                            None => return Err(unreadable()),
                         }
                     },
-                    | Some(&Computation::TupleProjection(tuple, component)) => {
+                    Some(&Computation::TupleProjection(tuple, component)) => {
                         match self.arena.value(tuple).map(Value::components) {
-                            | Some(Some(components)) => {
+                            Some(Some(components)) => {
                                 let value = *components
                                     .get(usize::from(component))
                                     .ok_or_else(unreadable)?;
                                 focus = self.arena.computation_return(value);
                                 progress = Progress::Reduced;
                             },
-                            | Some(None) => break,
-                            | None => return Err(unreadable()),
+                            Some(None) => break,
+                            None => return Err(unreadable()),
                         }
                     },
-                    | Some(&Computation::ListFold {
+                    Some(&Computation::ListFold {
                         element,
                         result,
                         list,
                         on_nil,
                         on_cons,
                     }) => match self.arena.value(list) {
-                        | Some(&Value::ListNil) => {
+                        Some(&Value::ListNil) => {
                             focus = on_nil;
                             progress = Progress::Reduced;
                         },
-                        | Some(&Value::ListCons(head, tail)) => {
+                        Some(&Value::ListCons(head, tail)) => {
                             let branch = crate::rewrite::substitute_fold_head(
                                 self.arena,
                                 &mut self.table,
@@ -4614,24 +4612,22 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 .computation_list_fold(element, result, tail, on_nil, on_cons);
                             progress = Progress::Reduced;
                         },
-                        | Some(_) => break,
-                        | None => return Err(unreadable()),
+                        Some(_) => break,
+                        None => return Err(unreadable()),
                     },
-                    | Some(&Computation::Transport(path, value)) => {
-                        match crate::path_universe::beta(
-                            self.arena,
-                            crate::path_universe::Transport { path, value },
-                        )
-                        .map_err(|_unreadable_term| unreadable())?
-                        {
-                            | crate::path_universe::Reduction::Reduced(reduct) => {
-                                focus = reduct;
-                                progress = Progress::Reduced;
-                            },
-                            | crate::path_universe::Reduction::Stuck => break,
-                        }
+                    Some(&Computation::Transport(path, value)) => match crate::path_universe::beta(
+                        self.arena,
+                        crate::path_universe::Transport { path, value },
+                    )
+                    .map_err(|_unreadable_term| unreadable())?
+                    {
+                        crate::path_universe::Reduction::Reduced(reduct) => {
+                            focus = reduct;
+                            progress = Progress::Reduced;
+                        },
+                        crate::path_universe::Reduction::Stuck => break,
                     },
-                    | Some(&Computation::PathTransport {
+                    Some(&Computation::PathTransport {
                         motive,
                         path,
                         value,
@@ -4649,11 +4645,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         )
                         .map_err(|_unreadable_term| unreadable())?
                         {
-                            | crate::path_universe::Reduction::Reduced(reduct) => {
+                            crate::path_universe::Reduction::Reduced(reduct) => {
                                 focus = reduct;
                                 progress = Progress::Reduced;
                             },
-                            | crate::path_universe::Reduction::Stuck => {
+                            crate::path_universe::Reduction::Stuck => {
                                 match crate::words::transport_word(
                                     self.arena,
                                     &mut self.table,
@@ -4661,16 +4657,16 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     self.evaluator,
                                     term,
                                 ) {
-                                    | crate::path_universe::Reduction::Reduced(reduct) => {
+                                    crate::path_universe::Reduction::Reduced(reduct) => {
                                         focus = reduct;
                                         progress = Progress::Reduced;
                                     },
-                                    | crate::path_universe::Reduction::Stuck => break,
+                                    crate::path_universe::Reduction::Stuck => break,
                                 }
                             },
                         }
                     },
-                    | Some(&Computation::TelescopeTransport {
+                    Some(&Computation::TelescopeTransport {
                         motive,
                         path,
                         start,
@@ -4692,14 +4688,14 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         )
                         .map_err(|_unreadable_term| unreadable())?
                         {
-                            | crate::path_universe::Reduction::Reduced(reduct) => {
+                            crate::path_universe::Reduction::Reduced(reduct) => {
                                 focus = reduct;
                                 progress = Progress::Reduced;
                             },
-                            | crate::path_universe::Reduction::Stuck => break,
+                            crate::path_universe::Reduction::Stuck => break,
                         }
                     },
-                    | Some(&Computation::Ride {
+                    Some(&Computation::Ride {
                         motive,
                         flow,
                         value,
@@ -4717,14 +4713,14 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         )
                         .map_err(|_unreadable_term| unreadable())?
                         {
-                            | crate::path_universe::Reduction::Reduced(reduct) => {
+                            crate::path_universe::Reduction::Reduced(reduct) => {
                                 focus = reduct;
                                 progress = Progress::Reduced;
                             },
-                            | crate::path_universe::Reduction::Stuck => break,
+                            crate::path_universe::Reduction::Stuck => break,
                         }
                     },
-                    | Some(&Computation::TelescopeRide {
+                    Some(&Computation::TelescopeRide {
                         motive,
                         flow,
                         over,
@@ -4745,14 +4741,14 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         )
                         .map_err(|_unreadable_term| unreadable())?
                         {
-                            | crate::path_universe::Reduction::Reduced(reduct) => {
+                            crate::path_universe::Reduction::Reduced(reduct) => {
                                 focus = reduct;
                                 progress = Progress::Reduced;
                             },
-                            | crate::path_universe::Reduction::Stuck => break,
+                            crate::path_universe::Reduction::Stuck => break,
                         }
                     },
-                    | Some(&Computation::RelatedApplication {
+                    Some(&Computation::RelatedApplication {
                         path,
                         left,
                         right,
@@ -4773,53 +4769,53 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         )
                         .map_err(|_unreadable_term| unreadable())?
                         {
-                            | crate::path_universe::Reduction::Reduced(reduct) => {
+                            crate::path_universe::Reduction::Reduced(reduct) => {
                                 focus = reduct;
                                 progress = Progress::Reduced;
                             },
-                            | crate::path_universe::Reduction::Stuck => break,
+                            crate::path_universe::Reduction::Stuck => break,
                         }
                     },
-                    | Some(&Computation::Application(head, argument)) => {
+                    Some(&Computation::Application(head, argument)) => {
                         frames.push(Frame::Apply(argument));
                         focus = head;
                     },
-                    | Some(&Computation::Bind(bound, body)) => {
+                    Some(&Computation::Bind(bound, body)) => {
                         frames.push(Frame::Bind(body));
                         focus = bound;
                     },
-                    | Some(&Computation::Project(side, pair)) => {
+                    Some(&Computation::Project(side, pair)) => {
                         frames.push(Frame::Project(side));
                         focus = pair;
                     },
                     // A projection of a lazy pairing runs the side it names; a
                     // pairing under no projection is in weak head form.
-                    | Some(&Computation::With(first, second)) => match frames.last() {
-                        | Some(&Frame::Project(side)) => {
+                    Some(&Computation::With(first, second)) => match frames.last() {
+                        Some(&Frame::Project(side)) => {
                             frames.pop();
                             focus = match side {
-                                | Side::Left => first,
-                                | Side::Right => second,
+                                Side::Left => first,
+                                Side::Right => second,
                             };
                             progress = Progress::Reduced;
                         },
-                        | Some(&(Frame::Apply(_) | Frame::Bind(_))) | None => break,
+                        Some(&(Frame::Apply(_) | Frame::Bind(_))) | None => break,
                     },
-                    | Some(&Computation::Force(value)) => match self.arena.value(value) {
-                        | Some(&Value::Thunk(body)) => {
+                    Some(&Computation::Force(value)) => match self.arena.value(value) {
+                        Some(&Value::Thunk(body)) => {
                             focus = body;
                             progress = Progress::Reduced;
                         },
-                        | Some(_) => break,
-                        | None => return Err(unreadable()),
+                        Some(_) => break,
+                        None => return Err(unreadable()),
                     },
                     // A case over an injection selects the branch its summand
                     // names; the empty sum's elimination has none and stays stuck.
-                    | Some(&Computation::Case {
+                    Some(&Computation::Case {
                         scrutinee,
                         ref branches,
                     }) => match self.arena.value(scrutinee) {
-                        | Some(&Value::Injection(summand, payload)) => {
+                        Some(&Value::Injection(summand, payload)) => {
                             let Some(&branch) = branches.get(usize::from(summand))
                             else {
                                 break;
@@ -4827,16 +4823,16 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             focus = self.instantiate(branch, payload);
                             progress = Progress::Reduced;
                         },
-                        | Some(_) => break,
-                        | None => return Err(unreadable()),
+                        Some(_) => break,
+                        None => return Err(unreadable()),
                     },
-                    | Some(&Computation::Lambda(body)) => match frames.last() {
-                        | Some(&Frame::Apply(argument)) => {
+                    Some(&Computation::Lambda(body)) => match frames.last() {
+                        Some(&Frame::Apply(argument)) => {
                             frames.pop();
                             focus = self.instantiate(body, argument);
                             progress = Progress::Reduced;
                         },
-                        | Some(&(Frame::Bind(_) | Frame::Project(_))) | None => break,
+                        Some(&(Frame::Bind(_) | Frame::Project(_))) | None => break,
                     },
                     // A fixpoint unfolds at its gate: applied to a canonical
                     // argument, the `<` direction, or under a bind or a projection
@@ -4844,7 +4840,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     // only a fixpoint whose structural-descent evidence replayed,
                     // and only at a constructor; at a partial fixpoint's gate it
                     // declines rather than refutes.
-                    | Some(&Computation::Fixpoint { body, evidence }) => {
+                    Some(&Computation::Fixpoint { body, evidence }) => {
                         // A fixpoint's gate inspects its argument, so a returned
                         // endpoint there runs first: `fix f c ⇝ c to x. fix f x`.
                         if let Some(&Frame::Apply(argument)) = frames.last()
@@ -4857,49 +4853,49 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             continue;
                         }
                         let gate = match frames.last() {
-                            | Some(&Frame::Apply(argument)) => match self.arena.value(argument) {
-                                | Some(&Value::Constructor { .. }) => Gate::Constructor,
-                                | Some(
+                            Some(&Frame::Apply(argument)) => match self.arena.value(argument) {
+                                Some(&Value::Constructor { .. }) => Gate::Constructor,
+                                Some(
                                     &(Value::Variable(_)
                                     | Value::Constant(_)
                                     | Value::StaticApplication(..)),
                                 ) => Gate::Shut,
-                                | Some(_) => Gate::Canonical,
-                                | None => return Err(unreadable()),
+                                Some(_) => Gate::Canonical,
+                                None => return Err(unreadable()),
                             },
-                            | Some(&(Frame::Bind(_) | Frame::Project(_))) => Gate::Observed,
-                            | None => Gate::Shut,
+                            Some(&(Frame::Bind(_) | Frame::Project(_))) => Gate::Observed,
+                            None => Gate::Shut,
                         };
                         match (evidence, gate) {
-                            | (FixpointEvidence::StructuralDescent, Gate::Constructor) => {
+                            (FixpointEvidence::StructuralDescent, Gate::Constructor) => {
                                 let recursive = self.arena.value_thunk(focus);
                                 focus = self.instantiate(body, recursive);
                                 progress = Progress::Reduced;
                             },
-                            | (
+                            (
                                 FixpointEvidence::Partial,
                                 Gate::Constructor | Gate::Canonical | Gate::Observed,
                             ) => return Err(Stop::PartialFixpoint),
-                            | (
+                            (
                                 FixpointEvidence::StructuralDescent,
                                 Gate::Canonical | Gate::Observed | Gate::Shut,
                             )
                             | (FixpointEvidence::Partial, Gate::Shut) => break,
                         }
                     },
-                    | Some(&Computation::Return(value)) => match frames.last() {
-                        | Some(&Frame::Bind(body)) => {
+                    Some(&Computation::Return(value)) => match frames.last() {
+                        Some(&Frame::Bind(body)) => {
                             frames.pop();
                             focus = self.instantiate(body, value);
                             progress = Progress::Reduced;
                         },
-                        | Some(&(Frame::Apply(_) | Frame::Project(_))) | None => break,
+                        Some(&(Frame::Apply(_) | Frame::Project(_))) | None => break,
                     },
-                    | None => return Err(unreadable()),
+                    None => return Err(unreadable()),
                 }
             }
             let (call, mut outer, before, first) = match attempt.take() {
-                | Some(tried) => {
+                Some(tried) => {
                     if frames.is_empty()
                         && let Some(&Computation::Return(_)) = self.arena.computation(focus)
                     {
@@ -4914,14 +4910,14 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     let call = self.arena.computation_bind(tried.call, tried.body);
                     (call, tried.outer, tried.progress, false)
                 },
-                | None if reduction == Reduction::Endpoint => {
+                None if reduction == Reduction::Endpoint => {
                     (focus, core::mem::take(&mut frames), progress, true)
                 },
-                | None => break,
+                None => break,
             };
             let (call, bind) = self.next_bind(call, &mut outer);
             let body = match bind {
-                | Some(body)
+                Some(body)
                     if !first
                         || matches!(
                             self.shape(
@@ -4937,7 +4933,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 {
                     body
                 },
-                | unread => {
+                unread => {
                     // No bind is left, or a definition heads the call: the
                     // endpoint stands as it is.
                     if let Some(body) = unread {
@@ -5065,19 +5061,19 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         );
         let bound = self.arena.value_variable(DeBruijnIndex::from(0_u32));
         let continuation = match self.arena.computation(shifted) {
-            | Some(&Computation::Force(_)) => self.arena.computation_force(bound),
-            | Some(&Computation::RecordProjection(_, ref label)) => {
+            Some(&Computation::Force(_)) => self.arena.computation_force(bound),
+            Some(&Computation::RecordProjection(_, ref label)) => {
                 let label = label.clone();
                 self.arena.computation_record_projection(bound, label)
             },
-            | Some(&Computation::TupleProjection(_, component)) => {
+            Some(&Computation::TupleProjection(_, component)) => {
                 self.arena.computation_tuple_projection(bound, component)
             },
-            | Some(&Computation::Case { ref branches, .. }) => {
+            Some(&Computation::Case { ref branches, .. }) => {
                 let branches = branches.clone();
                 self.arena.computation_case(bound, &branches)
             },
-            | Some(&Computation::DataCase {
+            Some(&Computation::DataCase {
                 motive,
                 ref branches,
                 ..
@@ -5085,10 +5081,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 let branches = branches.clone();
                 self.arena.computation_data_case(bound, motive, branches)
             },
-            | Some(&Computation::SigmaSplit { motive, body, .. }) => {
+            Some(&Computation::SigmaSplit { motive, body, .. }) => {
                 self.arena.computation_sigma_split(bound, motive, body)
             },
-            | Some(&Computation::ListFold {
+            Some(&Computation::ListFold {
                 element,
                 result,
                 on_nil,
@@ -5097,10 +5093,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             }) => self
                 .arena
                 .computation_list_fold(element, result, bound, on_nil, on_cons),
-            | Some(&Computation::Application(head, _)) => {
+            Some(&Computation::Application(head, _)) => {
                 self.arena.computation_application(head, bound)
             },
-            | _ => return Err(unreadable()),
+            _ => return Err(unreadable()),
         };
         Ok(self.arena.computation_bind(returned, continuation))
     }
@@ -5211,9 +5207,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ) -> ComputationId
     {
         match frame {
-            | Frame::Apply(argument) => self.arena.computation_application(computation, argument),
-            | Frame::Bind(body) => self.arena.computation_bind(computation, body),
-            | Frame::Project(side) => self.arena.computation_project(side, computation),
+            Frame::Apply(argument) => self.arena.computation_application(computation, argument),
+            Frame::Bind(body) => self.arena.computation_bind(computation, body),
+            Frame::Project(side) => self.arena.computation_project(side, computation),
         }
     }
 
@@ -5310,8 +5306,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     fn peek(&mut self) -> Next
     {
         match self.trace.peek() {
-            | Some(&decision) => Next::Decision(decision),
-            | None => Next::End,
+            Some(&decision) => Next::Decision(decision),
+            None => Next::End,
         }
     }
 
@@ -5374,8 +5370,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ) -> Stop
     {
         match next {
-            | Next::Decision(_) => Stop::Refused(ReplayRefusal::Inapplicable { at: self.at() }),
-            | Next::End => Stop::Refused(ReplayRefusal::Exhausted),
+            Next::Decision(_) => Stop::Refused(ReplayRefusal::Inapplicable { at: self.at() }),
+            Next::End => Stop::Refused(ReplayRefusal::Exhausted),
         }
     }
 }
@@ -5430,13 +5426,13 @@ fn rule(
         return Rule::Constants;
     }
     match (left, right) {
-        | (&Shape::Thunk(_), &(Shape::Thunk(_) | Shape::Neutral(..)))
+        (&Shape::Thunk(_), &(Shape::Thunk(_) | Shape::Neutral(..)))
         | (&Shape::Neutral(..), &Shape::Thunk(_)) => Rule::Force,
-        | (&Shape::Lambda(_), &Shape::Neutral(..)) => Rule::Eta(ConversionSide::Right),
-        | (&Shape::Neutral(..), &Shape::Lambda(_)) => Rule::Eta(ConversionSide::Left),
-        | (&Shape::With(..), &Shape::Neutral(..)) => Rule::ProductEta(ConversionSide::Right),
-        | (&Shape::Neutral(..), &Shape::With(..)) => Rule::ProductEta(ConversionSide::Left),
-        | (
+        (&Shape::Lambda(_), &Shape::Neutral(..)) => Rule::Eta(ConversionSide::Right),
+        (&Shape::Neutral(..), &Shape::Lambda(_)) => Rule::Eta(ConversionSide::Left),
+        (&Shape::With(..), &Shape::Neutral(..)) => Rule::ProductEta(ConversionSide::Right),
+        (&Shape::Neutral(..), &Shape::With(..)) => Rule::ProductEta(ConversionSide::Left),
+        (
             &(Shape::Former
             | Shape::Thunk(_)
             | Shape::Lambda(_)
@@ -5611,7 +5607,7 @@ fn spines(
     let mut premises = Vec::new();
     for (&one, &other) in left.iter().zip(right) {
         match (one, other) {
-            | (Elimination::DataCase(a_case), Elimination::DataCase(b_case)) => {
+            (Elimination::DataCase(a_case), Elimination::DataCase(b_case)) => {
                 let (Some(left_node), Some(right_node)) =
                     (arena.computation(a_case), arena.computation(b_case))
                 else {
@@ -5659,7 +5655,7 @@ fn spines(
                 };
                 premises.extend(a.iter().zip(b).map(|(a, b)| Premise::computations(*a, *b)));
             },
-            | (Elimination::RecordProjection(a), Elimination::RecordProjection(b)) => {
+            (Elimination::RecordProjection(a), Elimination::RecordProjection(b)) => {
                 let (Some(left_node), Some(right_node)) =
                     (arena.computation(a), arena.computation(b))
                 else {
@@ -5677,7 +5673,7 @@ fn spines(
                     return Ok(Structure::Leaf(Expect::NotConvertible));
                 }
             },
-            | (Elimination::TupleProjection(a), Elimination::TupleProjection(b)) => {
+            (Elimination::TupleProjection(a), Elimination::TupleProjection(b)) => {
                 let (Some(left_node), Some(right_node)) =
                     (arena.computation(a), arena.computation(b))
                 else {
@@ -5697,7 +5693,7 @@ fn spines(
             },
             // Two sum cases of one arity compare branch by branch; the empty
             // sum's elimination contributes nothing.
-            | (Elimination::Case(a_case), Elimination::Case(b_case)) => {
+            (Elimination::Case(a_case), Elimination::Case(b_case)) => {
                 let (Some(left_node), Some(right_node)) =
                     (arena.computation(a_case), arena.computation(b_case))
                 else {
@@ -5720,8 +5716,8 @@ fn spines(
                 }
                 premises.extend(a.iter().zip(b).map(|(a, b)| Premise::computations(*a, *b)));
             },
-            | (Elimination::Force, Elimination::Force) => {},
-            | (Elimination::Transport(a), Elimination::Transport(b))
+            (Elimination::Force, Elimination::Force) => {},
+            (Elimination::Transport(a), Elimination::Transport(b))
             | (Elimination::ProductTransport(a), Elimination::ProductTransport(b))
             | (Elimination::Apply(a), Elimination::Apply(b))
             | (Elimination::StaticApply(a), Elimination::StaticApply(b)) => {
@@ -5729,7 +5725,7 @@ fn spines(
             },
             // Two rides along one neutral flow compare their motives as
             // codes, as the engine's spines compare them, then their values.
-            | (Elimination::Ride(a), Elimination::Ride(b)) => {
+            (Elimination::Ride(a), Elimination::Ride(b)) => {
                 let (
                     Some(&Computation::Ride {
                         motive: a_motive,
@@ -5752,17 +5748,17 @@ fn spines(
                     Premise::values(a_value, b_value),
                 ]);
             },
-            | (Elimination::Bind(a), Elimination::Bind(b))
+            (Elimination::Bind(a), Elimination::Bind(b))
             | (Elimination::Fixpoint(a), Elimination::Fixpoint(b)) => {
                 premises.push(Premise::computations(a, b));
             },
-            | (Elimination::ListFold(a, b), Elimination::ListFold(c, d)) => {
+            (Elimination::ListFold(a, b), Elimination::ListFold(c, d)) => {
                 premises.extend([Premise::computations(a, c), Premise::computations(b, d)]);
             },
             // Two dependent splits compare by their bodies under the two
             // component binders; the motives are annotations no reduction
             // reads.
-            | (Elimination::SigmaSplit(a), Elimination::SigmaSplit(b)) => {
+            (Elimination::SigmaSplit(a), Elimination::SigmaSplit(b)) => {
                 let (
                     Some(&Computation::SigmaSplit { body: one, .. }),
                     Some(&Computation::SigmaSplit { body: other, .. }),
@@ -5774,12 +5770,12 @@ fn spines(
             },
             // Two projections of one side add no premise; the two sides of
             // the lazy product are apart.
-            | (Elimination::Project(a), Elimination::Project(b)) => {
+            (Elimination::Project(a), Elimination::Project(b)) => {
                 if a != b {
                     return Ok(Structure::Leaf(Expect::NotConvertible));
                 }
             },
-            | (
+            (
                 Elimination::DataCase(_)
                 | Elimination::SigmaSplit(_)
                 | Elimination::RecordProjection(_)
@@ -7062,13 +7058,13 @@ mod tests
         for (left_kind, left) in shapes.iter().enumerate() {
             for (right_kind, right) in shapes.iter().enumerate() {
                 let expected = match (left_kind, right_kind) {
-                    | (7, _) | (_, 7) => super::Rule::Constants,
-                    | (1, 1 | 4 ..= 6) | (4 ..= 6, 1) => super::Rule::Force,
-                    | (2, 4 ..= 6) => super::Rule::Eta(ConversionSide::Right),
-                    | (4 ..= 6, 2) => super::Rule::Eta(ConversionSide::Left),
-                    | (8, 4 ..= 6) => super::Rule::ProductEta(ConversionSide::Right),
-                    | (4 ..= 6, 8) => super::Rule::ProductEta(ConversionSide::Left),
-                    | _ => super::Rule::Structural,
+                    (7, _) | (_, 7) => super::Rule::Constants,
+                    (1, 1 | 4 ..= 6) | (4 ..= 6, 1) => super::Rule::Force,
+                    (2, 4 ..= 6) => super::Rule::Eta(ConversionSide::Right),
+                    (4 ..= 6, 2) => super::Rule::Eta(ConversionSide::Left),
+                    (8, 4 ..= 6) => super::Rule::ProductEta(ConversionSide::Right),
+                    (4 ..= 6, 8) => super::Rule::ProductEta(ConversionSide::Left),
+                    _ => super::Rule::Structural,
                 };
                 assert_eq!(
                     super::rule(left, right),

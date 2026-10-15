@@ -50,8 +50,8 @@ impl fmt::Display for Verdict
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Holds => "holds",
-            | Self::Fails => "fails",
+            Self::Holds => "holds",
+            Self::Fails => "fails",
         })
     }
 }
@@ -87,8 +87,8 @@ impl<Witness> Outcome<Witness>
     pub const fn verdict(&self) -> Verdict
     {
         match *self {
-            | Self::Holds { .. } => Verdict::Holds,
-            | Self::Fails { .. } => Verdict::Fails,
+            Self::Holds { .. } => Verdict::Holds,
+            Self::Fails { .. } => Verdict::Fails,
         }
     }
 
@@ -101,7 +101,7 @@ impl<Witness> Outcome<Witness>
     pub const fn cases(&self) -> CaseCount
     {
         match *self {
-            | Self::Holds { cases } | Self::Fails { cases, .. } => cases,
+            Self::Holds { cases } | Self::Fails { cases, .. } => cases,
         }
     }
 
@@ -113,8 +113,8 @@ impl<Witness> Outcome<Witness>
     pub const fn witness(&self) -> Maybe<&Witness, outcome_witness::Absent>
     {
         match *self {
-            | Self::Holds { .. } => Maybe::Absent(outcome_witness::Absent::Held),
-            | Self::Fails { ref witness, .. } => Maybe::Present(witness),
+            Self::Holds { .. } => Maybe::Absent(outcome_witness::Absent::Held),
+            Self::Fails { ref witness, .. } => Maybe::Present(witness),
         }
     }
 }
@@ -134,8 +134,8 @@ where
     ) -> fmt::Result
     {
         match *self {
-            | Self::Holds { cases } => write!(f, "holds over {} cases", cases.0),
-            | Self::Fails { cases, ref witness } => {
+            Self::Holds { cases } => write!(f, "holds over {} cases", cases.0),
+            Self::Fails { cases, ref witness } => {
                 write!(f, "fails at case {}: {witness}", cases.0)
             },
         }

@@ -398,59 +398,59 @@ pub fn level_of(
     let mut levels: Vec<Level> = Vec::new();
     while let Some(task) = tasks.pop() {
         match task {
-            | Task::Join => {
+            Task::Join => {
                 let (Some(right), Some(left)) = (levels.pop(), levels.pop())
                 else {
                     return Err(CheckRefusal::MachineInvariant);
                 };
                 levels.push(left.max(&right));
             },
-            | Task::Enter(TypeNode::Value(at)) => match value_type_view(arena, at)? {
-                | ValueTypeView::Data { declaration, .. } => {
+            Task::Enter(TypeNode::Value(at)) => match value_type_view(arena, at)? {
+                ValueTypeView::Data { declaration, .. } => {
                     let Maybe::Present(signature) = context.data_in_scope(declaration)
                     else {
                         return Err(CheckRefusal::NotADataType(declaration));
                     };
                     levels.push(crate::former::kind_level(context, signature.kind())?);
                 },
-                | ValueTypeView::Record(fields) => {
+                ValueTypeView::Record(fields) => {
                     levels.push(Level::zero());
                     for &field in fields.values().rev() {
                         tasks.push(Task::Join);
                         tasks.push(Task::Enter(TypeNode::Value(field)));
                     }
                 },
-                | ValueTypeView::Stack { input, output } => {
+                ValueTypeView::Stack { input, output } => {
                     tasks.extend([
                         Task::Join,
                         Task::Enter(TypeNode::Computation(output)),
                         Task::Enter(TypeNode::Computation(input)),
                     ]);
                 },
-                | ValueTypeView::PathUniverse(source, target) => {
+                ValueTypeView::PathUniverse(source, target) => {
                     let _source = path_code(arena, source)?;
                     let _target = path_code(arena, target)?;
                     levels.push(Level::zero());
                 },
-                | ValueTypeView::Integer
+                ValueTypeView::Integer
                 | ValueTypeView::String
                 | ValueTypeView::Unit
                 | ValueTypeView::Run(_)
                 | ValueTypeView::Unknown => {
                     levels.push(Level::zero());
                 },
-                | ValueTypeView::Abstract(atom) => levels.push(context.abstract_level(atom)?),
-                | ValueTypeView::List(element)
+                ValueTypeView::Abstract(atom) => levels.push(context.abstract_level(atom)?),
+                ValueTypeView::List(element)
                 | ValueTypeView::Path {
                     carrier: element, ..
                 }
                 | ValueTypeView::Flow {
                     carrier: element, ..
                 } => tasks.push(Task::Enter(TypeNode::Value(element))),
-                | ValueTypeView::Thunk(body) => {
+                ValueTypeView::Thunk(body) => {
                     tasks.push(Task::Enter(TypeNode::Computation(body)));
                 },
-                | ValueTypeView::Universe { level, .. } => {
+                ValueTypeView::Universe { level, .. } => {
                     let Ok(above) = level.succ()
                     else {
                         return Err(CheckRefusal::OutOfFragment {
@@ -460,31 +460,31 @@ pub fn level_of(
                     };
                     levels.push(above);
                 },
-                | ValueTypeView::Lift { target, .. } | ValueTypeView::Element { target, .. } => {
+                ValueTypeView::Lift { target, .. } | ValueTypeView::Element { target, .. } => {
                     levels.push(target.clone());
                 },
-                | ValueTypeView::Sum(components) | ValueTypeView::Product(components) => {
+                ValueTypeView::Sum(components) | ValueTypeView::Product(components) => {
                     levels.push(Level::zero());
                     for &component in components.iter().rev() {
                         tasks.push(Task::Join);
                         tasks.push(Task::Enter(TypeNode::Value(component)));
                     }
                 },
-                | ValueTypeView::Session(session) => {
+                ValueTypeView::Session(session) => {
                     levels.push(Level::zero());
                     for &payload in session.payloads().iter().rev() {
                         tasks.push(Task::Join);
                         tasks.push(Task::Enter(TypeNode::Value(payload)));
                     }
                 },
-                | ValueTypeView::Capability { authority, .. } => {
+                ValueTypeView::Capability { authority, .. } => {
                     levels.push(Level::zero());
                     for operation_type in authority.types() {
                         tasks.push(Task::Join);
                         tasks.push(Task::Enter(TypeNode::Value(operation_type)));
                     }
                 },
-                | ValueTypeView::StaticPi {
+                ValueTypeView::StaticPi {
                     domain: first,
                     codomain: second,
                 }
@@ -494,35 +494,35 @@ pub fn level_of(
                     tasks.push(Task::Enter(TypeNode::Value(first)));
                 },
             },
-            | Task::Enter(TypeNode::Computation(at)) => match comp_type_view(arena, at)? {
-                | CompTypeView::With(first, second) => {
+            Task::Enter(TypeNode::Computation(at)) => match comp_type_view(arena, at)? {
+                CompTypeView::With(first, second) => {
                     tasks.extend([
                         Task::Join,
                         Task::Enter(TypeNode::Computation(second)),
                         Task::Enter(TypeNode::Computation(first)),
                     ]);
                 },
-                | CompTypeView::Returner { result, effects } => {
+                CompTypeView::Returner { result, effects } => {
                     for operation_type in effects.types() {
                         tasks.push(Task::Join);
                         tasks.push(Task::Enter(TypeNode::Value(operation_type)));
                     }
                     tasks.push(Task::Enter(TypeNode::Value(result)));
                 },
-                | CompTypeView::Arrow { domain, codomain }
+                CompTypeView::Arrow { domain, codomain }
                 | CompTypeView::Pi { domain, codomain } => {
                     tasks.push(Task::Join);
                     tasks.push(Task::Enter(TypeNode::Computation(codomain)));
                     tasks.push(Task::Enter(TypeNode::Value(domain)));
                 },
-                | CompTypeView::Element { target, .. } => levels.push(target.clone()),
-                | CompTypeView::Unknown => levels.push(Level::zero()),
+                CompTypeView::Element { target, .. } => levels.push(target.clone()),
+                CompTypeView::Unknown => levels.push(Level::zero()),
             },
         }
     }
     match (levels.pop(), levels.is_empty()) {
-        | (Some(level), true) => Ok(level),
-        | (Some(_) | None, _) => Err(CheckRefusal::MachineInvariant),
+        (Some(level), true) => Ok(level),
+        (Some(_) | None, _) => Err(CheckRefusal::MachineInvariant),
     }
 }
 
@@ -563,14 +563,14 @@ pub fn path_code(
             continue;
         }
         match arena.value_type(node) {
-            | Some(&gandr_core_term::ValueType::Base(_)) => {},
-            | Some(&gandr_core_term::ValueType::Product(ref parts)) => {
+            Some(&gandr_core_term::ValueType::Base(_)) => {},
+            Some(&gandr_core_term::ValueType::Product(ref parts)) => {
                 pending.extend(parts.iter().copied());
             },
-            | Some(&gandr_core_term::ValueType::Sum(ref parts)) if !parts.is_empty() => {
+            Some(&gandr_core_term::ValueType::Sum(ref parts)) if !parts.is_empty() => {
                 pending.extend(parts.iter().copied());
             },
-            | _ => return Err(CheckRefusal::PathCode(code)),
+            _ => return Err(CheckRefusal::PathCode(code)),
         }
     }
     Ok(root)
@@ -1186,11 +1186,11 @@ mod tests
         let mut comps: Vec<(CompTypeId, Level)> = Vec::new();
         for &step in steps {
             match step {
-                | Step::Integer => {
+                Step::Integer => {
                     values.push((arena.value_type_base(BaseType::Integer), Level::zero()));
                 },
-                | Step::Unit => values.push((arena.value_type_unit(), Level::zero())),
-                | Step::Universe(positive, at) => {
+                Step::Unit => values.push((arena.value_type_unit(), Level::zero())),
+                Step::Universe(positive, at) => {
                     let sort = if positive {
                         GroundSort::Value
                     }
@@ -1201,7 +1201,7 @@ mod tests
                     let above = own.succ().expect("a small level has a successor");
                     values.push((arena.value_type_universe(Sort::Ground(sort), own), above));
                 },
-                | Step::Decode(pick) => {
+                Step::Decode(pick) => {
                     if let Some(position) = usize::from(pick).checked_rem(levels.len())
                         && let Some(&at) = levels.get(position)
                     {
@@ -1211,17 +1211,17 @@ mod tests
                         values.push((arena.value_type_element(code, own.clone()), own));
                     }
                 },
-                | Step::Returner => {
+                Step::Returner => {
                     if let Some((result, own)) = values.pop() {
                         comps.push((arena.comp_type_returner(result), own));
                     }
                 },
-                | Step::Thunk => {
+                Step::Thunk => {
                     if let Some((body, own)) = comps.pop() {
                         values.push((arena.value_type_thunk(body), own));
                     }
                 },
-                | Step::Arrow => {
+                Step::Arrow => {
                     if let (Some(&(domain, ref from)), Some(&(codomain, ref to))) =
                         (values.last(), comps.last())
                     {
@@ -1232,7 +1232,7 @@ mod tests
                         comps.push((arrow, joined));
                     }
                 },
-                | Step::Lift => {
+                Step::Lift => {
                     if let Some((inner, own)) = values.pop() {
                         let above = own.succ().expect("a generated level has a successor");
                         values.push((arena.value_type_lift(inner, above.clone()), above));

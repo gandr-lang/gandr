@@ -303,13 +303,13 @@ mod tests
             mediators.push((overlap.clone(), mediator));
         }
         match mediators.len() {
-            | 0 => match trivially_joinable(left, right, kind, store) {
-                | Maybe::Present(joined) => Factorization::TriviallyJoinable {
+            0 => match trivially_joinable(left, right, kind, store) {
+                Maybe::Present(joined) => Factorization::TriviallyJoinable {
                     joined: Box::new(joined),
                 },
-                | Maybe::Absent(_) => Factorization::Incomplete,
+                Maybe::Absent(_) => Factorization::Incomplete,
             },
-            | 1 => {
+            1 => {
                 let Some((overlap, mediator)) = mediators.pop()
                 else {
                     return Factorization::Incomplete;
@@ -319,7 +319,7 @@ mod tests
                     mediator,
                 }
             },
-            | _ => Factorization::NonMinimal(
+            _ => Factorization::NonMinimal(
                 mediators.into_iter().map(|(overlap, _)| overlap).collect(),
             ),
         }
@@ -542,7 +542,7 @@ mod tests
         let mut out = Subst::new();
         for mv in vars {
             match mv.cat() {
-                | Cat::Producer => {
+                Cat::Producer => {
                     let image =
                         after.apply_prod(&before.apply_prod(&ProdPat::meta(mv.hole().clone())));
                     if image != ProdPat::meta(mv.hole().clone()) {
@@ -550,7 +550,7 @@ mod tests
                             .expect("the fixture substitution is consistent");
                     }
                 },
-                | Cat::Consumer => {
+                Cat::Consumer => {
                     let image =
                         after.apply_cons(&before.apply_cons(&ConsPat::meta(mv.hole().clone())));
                     if image != ConsPat::meta(mv.hole().clone()) {
@@ -583,8 +583,8 @@ mod tests
     ) -> Agreement
     {
         Agreement::from(vars.iter().all(|mv| match mv.cat() {
-            | Cat::Producer => apply_prod_var(a, mv) == apply_prod_var(b, mv),
-            | Cat::Consumer => apply_cons_var(a, mv) == apply_cons_var(b, mv),
+            Cat::Producer => apply_prod_var(a, mv) == apply_prod_var(b, mv),
+            Cat::Consumer => apply_cons_var(a, mv) == apply_cons_var(b, mv),
         }))
     }
 
@@ -618,13 +618,13 @@ mod tests
         let mut out = Subst::new();
         for (from, to) in from_occurrences.into_iter().zip(to_occurrences) {
             match from.cat() {
-                | Cat::Producer => {
+                Cat::Producer => {
                     if let Maybe::Present(image) = m.get_prod(from) {
                         out.bind_prod(to.clone(), image.clone())
                             .expect("the fixture substitution is consistent");
                     }
                 },
-                | Cat::Consumer => {
+                Cat::Consumer => {
                     if let Maybe::Present(image) = m.get_cons(from) {
                         out.bind_cons(to.clone(), image.clone())
                             .expect("the fixture substitution is consistent");
@@ -653,8 +653,8 @@ mod tests
     ) -> Result<CmdPat, OverlapRefusal>
     {
         match overlap.kind {
-            | OverlapKind::Confluence => Ok(overlap.peak.clone()),
-            | OverlapKind::Composition => overlap.left_reduct(store),
+            OverlapKind::Confluence => Ok(overlap.peak.clone()),
+            OverlapKind::Composition => overlap.left_reduct(store),
         }
     }
 
@@ -681,8 +681,8 @@ mod tests
             .get(overlap.left)
             .into_result(|_| OverlapRefusal::UnissuedCell(overlap.left))?;
         let face = match overlap.kind {
-            | OverlapKind::Confluence => left.lhs(),
-            | OverlapKind::Composition => left.rhs(),
+            OverlapKind::Confluence => left.lhs(),
+            OverlapKind::Composition => left.rhs(),
         };
         Ok((face, overlap.right_renamed().lhs()))
     }
@@ -745,9 +745,9 @@ mod tests
         fn vars(self) -> (Vec<MetaVar>, Vec<MetaVar>)
         {
             let suffix = match self {
-                | Self::Default => "",
-                | Self::Two => "2",
-                | Self::Three => "3",
+                Self::Default => "",
+                Self::Two => "2",
+                Self::Three => "3",
             };
             let prod = ["x", "y"]
                 .into_iter()
@@ -1044,7 +1044,7 @@ mod tests
         let mut strategy = Just(Subst::new()).boxed();
         for mv in vars {
             strategy = match mv.cat() {
-                | Cat::Producer => (strategy, arb_prodpat(ppool, Depth(2)))
+                Cat::Producer => (strategy, arb_prodpat(ppool, Depth(2)))
                     .prop_map(move |(mut subst, image)| {
                         subst
                             .bind_prod(mv.clone(), image)
@@ -1052,7 +1052,7 @@ mod tests
                         subst
                     })
                     .boxed(),
-                | Cat::Consumer => (strategy, arb_conspat(ppool, cpool, Depth(2)))
+                Cat::Consumer => (strategy, arb_conspat(ppool, cpool, Depth(2)))
                     .prop_map(move |(mut subst, image)| {
                         subst
                             .bind_cons(mv.clone(), image)
@@ -1141,10 +1141,10 @@ mod tests
     {
         unifiable_faces()
             .prop_flat_map(move |(fa, fb)| match kind {
-                | OverlapKind::Confluence => (cell_with_lhs(fa), cell_with_lhs(fb))
+                OverlapKind::Confluence => (cell_with_lhs(fa), cell_with_lhs(fb))
                     .prop_map(|(a, b)| (a, b))
                     .boxed(),
-                | OverlapKind::Composition => (cell_with_rhs(fa), cell_with_lhs(fb))
+                OverlapKind::Composition => (cell_with_rhs(fa), cell_with_lhs(fb))
                     .prop_map(|(a, b)| (a, b))
                     .boxed(),
             })
@@ -1255,8 +1255,8 @@ mod tests
                     prod = ProdPat::ctor("Cons", [ProdPat::meta(var.hole().clone()), prod]);
                 }
                 let cons = match cons_tail.as_ref() {
-                    | Some(tail) => ConsPat::op("add", [arg], ConsPat::meta(tail.hole().clone())),
-                    | None => ConsPat::op("add", [arg], ConsPat::top()),
+                    Some(tail) => ConsPat::op("add", [arg], ConsPat::meta(tail.hole().clone())),
+                    None => ConsPat::op("add", [arg], ConsPat::top()),
                 };
                 Cell::new(
                     CmdPat::cut(Polarity::Positive, prod, cons),
@@ -1290,7 +1290,7 @@ mod tests
                 out.push(pos.clone());
             }
             match node {
-                | NodeRef::Cmd(cmd) => {
+                NodeRef::Cmd(cmd) => {
                     work.push((
                         pos.child(PositionStep::from(0_usize)),
                         NodeRef::Prod(cmd.producer().to_ref()),
@@ -1300,15 +1300,15 @@ mod tests
                         NodeRef::Cons(cmd.consumer().to_ref()),
                     ));
                 },
-                | NodeRef::Prod(prod) => {
+                NodeRef::Prod(prod) => {
                     if let ProdView::Ctor { args, .. } = prod.view() {
                         for (index, arg) in args.enumerate() {
                             work.push((pos.child(PositionStep::from(index)), NodeRef::Prod(arg)));
                         }
                     }
                 },
-                | NodeRef::Cons(cons) => match cons.view() {
-                    | ConsView::Op { args, rets, .. } => {
+                NodeRef::Cons(cons) => match cons.view() {
+                    ConsView::Op { args, rets, .. } => {
                         let arity = args.len();
                         for (index, arg) in args.enumerate() {
                             work.push((pos.child(PositionStep::from(index)), NodeRef::Prod(arg)));
@@ -1320,10 +1320,10 @@ mod tests
                             ));
                         }
                     },
-                    | ConsView::Frame { ret, .. } => {
+                    ConsView::Frame { ret, .. } => {
                         work.push((pos.child(PositionStep::from(0_usize)), NodeRef::Cons(ret)));
                     },
-                    | ConsView::Meta(_) | ConsView::Top => {},
+                    ConsView::Meta(_) | ConsView::Top => {},
                 },
             }
         }
@@ -1372,10 +1372,10 @@ mod tests
     ) -> CmdPat
     {
         let stem = match prefix {
-            | GenPrefix::Left => "g2",
-            | GenPrefix::Right => "g3",
-            | GenPrefix::LhsFace => "g2l",
-            | GenPrefix::RhsFace => "g2r",
+            GenPrefix::Left => "g2",
+            GenPrefix::Right => "g3",
+            GenPrefix::LhsFace => "g2l",
+            GenPrefix::RhsFace => "g2r",
         };
         let mut out = cmd.clone();
         let mut replaced: Vec<Pos> = Vec::new();
@@ -1397,9 +1397,9 @@ mod tests
                 continue;
             };
             let replacement = match node {
-                | NodeRef::Prod(_) => Node::Prod(ProdPat::meta(format!("{stem}p{fresh}"))),
-                | NodeRef::Cons(_) => Node::Cons(ConsPat::meta(format!("{stem}c{fresh}"))),
-                | _ => continue,
+                NodeRef::Prod(_) => Node::Prod(ProdPat::meta(format!("{stem}p{fresh}"))),
+                NodeRef::Cons(_) => Node::Cons(ConsPat::meta(format!("{stem}c{fresh}"))),
+                NodeRef::Cmd(_) => continue,
             };
             fresh = fresh.saturating_add(1);
             let Ok(Node::Cmd(rebuilt)) = splice_at(NodeRef::Cmd(&out), &pos, replacement)
@@ -1558,8 +1558,8 @@ mod tests
     fn certified_store(kind: CertifiedStore) -> CellStore
     {
         match kind {
-            | CertifiedStore::Peano => peano_store(),
-            | CertifiedStore::Joinable => completed_joinable_store(),
+            CertifiedStore::Peano => peano_store(),
+            CertifiedStore::Joinable => completed_joinable_store(),
         }
     }
 
@@ -1895,20 +1895,20 @@ mod tests
             &family,
             &store,
         ) {
-            | Factorization::TriviallyJoinable { joined } => {
+            Factorization::TriviallyJoinable { joined } => {
                 assert_ne!(
                     joined.as_ref(),
                     &lhs_for_check,
                     "the exception carries the contraction, not the peak"
                 );
             },
-            | Factorization::Factored { .. } => {
+            Factorization::Factored { .. } => {
                 panic!("the diagonal is excepted, never mediated");
             },
-            | Factorization::Incomplete => {
+            Factorization::Incomplete => {
                 panic!("enumeration incomplete: no overlap mediates a matched cospan");
             },
-            | Factorization::NonMinimal(members) => {
+            Factorization::NonMinimal(members) => {
                 panic!(
                     "family not minimal: {} overlaps mediate one cospan",
                     members.len()

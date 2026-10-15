@@ -260,40 +260,40 @@ impl fmt::Display for RecordTreeError
     ) -> fmt::Result
     {
         match *self {
-            | Self::UnsortedInput { previous, current } => {
+            Self::UnsortedInput { previous, current } => {
                 write!(
                     f,
                     "input records are unsorted between positions {previous} and {current}"
                 )
             },
-            | Self::DuplicateKeys { first, second } => {
+            Self::DuplicateKeys { first, second } => {
                 write!(f, "duplicate key at positions {first} and {second}")
             },
-            | Self::MalformedNode { context } => {
+            Self::MalformedNode { context } => {
                 write!(f, "node bytes are malformed: {context}")
             },
-            | Self::UnknownNode { hash } => {
+            Self::UnknownNode { hash } => {
                 write!(f, "node is unknown to the store: {hash}")
             },
-            | Self::HashMismatch { expected, actual } => {
+            Self::HashMismatch { expected, actual } => {
                 write!(f, "hash mismatch: expected {expected}, recomputed {actual}")
             },
-            | Self::IncompatibleParameters { context } => {
+            Self::IncompatibleParameters { context } => {
                 write!(f, "tree parameters are incompatible: {context}")
             },
-            | Self::UnsupportedVersion { version } => {
+            Self::UnsupportedVersion { version } => {
                 write!(f, "encoding version is unsupported: {version}")
             },
-            | Self::InvalidProofShape { context } => {
+            Self::InvalidProofShape { context } => {
                 write!(f, "proof shape is invalid: {context}")
             },
-            | Self::InvalidRange { context } => {
+            Self::InvalidRange { context } => {
                 write!(f, "key range is invalid: {context}")
             },
-            | Self::BudgetExceeded { context } => {
+            Self::BudgetExceeded { context } => {
                 write!(f, "decode budget is exhausted: {context}")
             },
-            | Self::ArithmeticOverflow { context } => {
+            Self::ArithmeticOverflow { context } => {
                 write!(f, "value does not fit its width: {context}")
             },
         }

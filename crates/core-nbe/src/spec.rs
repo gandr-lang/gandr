@@ -36,10 +36,10 @@ use crate::overlay::OverlayId;
 pub fn listed(children: Children) -> impl DoubleEndedIterator<Item = OverlayId> + Clone
 {
     let padded = match children {
-        | Children::Leaf => [None, None, None],
-        | Children::One(first) => [Some(first), None, None],
-        | Children::Two(first, second) => [Some(first), Some(second), None],
-        | Children::Three(first, second, third) => [Some(first), Some(second), Some(third)],
+        Children::Leaf => [None, None, None],
+        Children::One(first) => [Some(first), None, None],
+        Children::Two(first, second) => [Some(first), Some(second), None],
+        Children::Three(first, second, third) => [Some(first), Some(second), Some(third)],
     };
     padded.into_iter().flatten()
 }

@@ -195,13 +195,12 @@ fn variable_level(
     else {
         return Maybe::Absent(variable_level::Absent::NotVariable);
     };
-    match u32::from(depth)
+    u32::from(depth)
         .checked_sub(u32::from(index))
         .and_then(|outer| outer.checked_sub(1))
-    {
-        | Some(level) => Maybe::Present(Binders::from(level)),
-        | None => Maybe::Absent(variable_level::Absent::Outside),
-    }
+        .map_or(Maybe::Absent(variable_level::Absent::Outside), |level| {
+            Maybe::Present(Binders::from(level))
+        })
 }
 
 /// Whether `bound` is `(force f) ȳ` for a field or function-field result
@@ -244,8 +243,8 @@ fn forced_field(
         return Descent::Unrelated;
     };
     match variable_level(arena, forced, depth) {
-        | Maybe::Present(level) if u32::from(level) != SELF_LEVEL => branch.descent(level, results),
-        | Maybe::Present(_) | Maybe::Absent(_) => Descent::Unrelated,
+        Maybe::Present(level) if u32::from(level) != SELF_LEVEL => branch.descent(level, results),
+        Maybe::Present(_) | Maybe::Absent(_) => Descent::Unrelated,
     }
 }
 
@@ -270,8 +269,8 @@ fn reference(
 ) -> Reference
 {
     match variable_level(arena, id, depth) {
-        | Maybe::Present(level) if u32::from(level) == SELF_LEVEL => Reference::ToSelf,
-        | Maybe::Present(_) | Maybe::Absent(_) => Reference::Other,
+        Maybe::Present(level) if u32::from(level) == SELF_LEVEL => Reference::ToSelf,
+        Maybe::Present(_) | Maybe::Absent(_) => Reference::Other,
     }
 }
 
@@ -312,14 +311,14 @@ fn walk(
     while let Some((node, depth, results)) = pending.pop() {
         let deeper = depth.deeper();
         match node {
-            | AnyNode::Value(id) => {
+            AnyNode::Value(id) => {
                 match arena.value(id) {
-                    | Some(&Value::Variable { .. }) => {
+                    Some(&Value::Variable { .. }) => {
                         if reference(arena, id, depth) == Reference::ToSelf {
                             return Err(DescentRefusal::UnguardedSelfReference);
                         }
                     },
-                    | Some(&Value::Constructor {
+                    Some(&Value::Constructor {
                         datatype,
                         ref fields,
                         ..
@@ -331,14 +330,14 @@ fn walk(
                                 .map(|&field| (AnyNode::Value(field), depth, results)),
                         );
                     },
-                    | Some(&Value::Record(ref fields)) => {
+                    Some(&Value::Record(ref fields)) => {
                         pending.extend(
                             fields
                                 .values()
                                 .map(|&field| (AnyNode::Value(field), depth, results)),
                         );
                     },
-                    | Some(&Value::PathEquiv {
+                    Some(&Value::PathEquiv {
                         path_type,
                         forward,
                         backward,
@@ -348,24 +347,24 @@ fn walk(
                         pending.push((AnyNode::Value(forward), depth, results));
                         pending.push((AnyNode::Value(backward), depth, results));
                     },
-                    | Some(&Value::Tuple(ref components)) => {
+                    Some(&Value::Tuple(ref components)) => {
                         pending.extend(
                             components
                                 .iter()
                                 .map(|&component| (AnyNode::Value(component), depth, results)),
                         );
                     },
-                    | Some(&Value::Recorded(ref moves)) => {
+                    Some(&Value::Recorded(ref moves)) => {
                         pending.extend(moves.iter().filter_map(
                             |movement| match movement.payload() {
-                                | Maybe::Present(payload) => {
+                                Maybe::Present(payload) => {
                                     Some((AnyNode::Value(payload), depth, results))
                                 },
-                                | Maybe::Absent(_) => None,
+                                Maybe::Absent(_) => None,
                             },
                         ));
                     },
-                    | Some(
+                    Some(
                         &(Value::PathProduct(first, second)
                         | Value::Funext(first, second)
                         | Value::Equiv(first, second)
@@ -388,20 +387,20 @@ fn walk(
                         pending.push((AnyNode::Value(first), depth, results));
                         pending.push((AnyNode::Value(second), depth, results));
                     },
-                    | Some(&Value::Reify(ref frames)) => {
+                    Some(&Value::Reify(ref frames)) => {
                         for frame in frames.iter() {
                             match *frame {
-                                | StackFrame::Apply(value) => {
+                                StackFrame::Apply(value) => {
                                     pending.push((AnyNode::Value(value), depth, results));
                                 },
-                                | StackFrame::Bind(body) => {
+                                StackFrame::Bind(body) => {
                                     pending.push((AnyNode::Computation(body), deeper, results));
                                 },
-                                | StackFrame::Project(_) => {},
+                                StackFrame::Project(_) => {},
                             }
                         }
                     },
-                    | Some(
+                    Some(
                         &(Value::PathRefl(body)
                         | Value::Here(body)
                         | Value::Stay(body)
@@ -412,10 +411,10 @@ fn walk(
                     ) => {
                         pending.push((AnyNode::Value(body), depth, results));
                     },
-                    | Some(&Value::StaticLambda(body)) => {
+                    Some(&Value::StaticLambda(body)) => {
                         pending.push((AnyNode::Value(body), deeper, results));
                     },
-                    | Some(
+                    Some(
                         &(Value::Thunk(body)
                         | Value::Returned(body)
                         | Value::Nested(body)
@@ -423,13 +422,13 @@ fn walk(
                     ) => {
                         pending.push((AnyNode::Computation(body), depth, results));
                     },
-                    | Some(&Value::Quote(quoted)) => {
+                    Some(&Value::Quote(quoted)) => {
                         pending.push((AnyNode::ValueType(quoted), depth, results));
                     },
-                    | Some(&Value::QuoteComputation(quoted)) => {
+                    Some(&Value::QuoteComputation(quoted)) => {
                         pending.push((AnyNode::CompType(quoted), depth, results));
                     },
-                    | Some(
+                    Some(
                         &(Value::Primitive { .. }
                         | Value::Constant(_)
                         | Value::ListNil
@@ -439,22 +438,22 @@ fn walk(
                     | None => {},
                 }
             },
-            | AnyNode::Computation(id) => match arena.computation(id) {
-                | Some(&Computation::Application(head, argument)) => {
+            AnyNode::Computation(id) => match arena.computation(id) {
+                Some(&Computation::Application(head, argument)) => {
                     let call = matches!(arena.computation(head), Some(&Computation::Force(forced))
                         if reference(arena, forced, depth) == Reference::ToSelf);
                     if call {
                         let descends = match variable_level(arena, argument, depth) {
-                            | Maybe::Present(level) => branch.descent(level, results),
+                            Maybe::Present(level) => branch.descent(level, results),
                             // A function field's result written in place
                             // descends as the variable its elaborated bind
                             // binds does.
-                            | Maybe::Absent(_) => match arena.value(argument) {
-                                | Some(&(Value::Nested(nested) | Value::Run(nested))) => {
+                            Maybe::Absent(_) => match arena.value(argument) {
+                                Some(&(Value::Nested(nested) | Value::Run(nested))) => {
                                     pending.push((AnyNode::Computation(nested), depth, results));
                                     forced_field(arena, branch, nested, depth, results)
                                 },
-                                | Some(_) | None => Descent::Unrelated,
+                                Some(_) | None => Descent::Unrelated,
                             },
                         };
                         if descends == Descent::Unrelated {
@@ -466,9 +465,9 @@ fn walk(
                         pending.push((AnyNode::Value(argument), depth, results));
                     }
                 },
-                | Some(&Computation::Bind(bound, body)) => {
+                Some(&Computation::Bind(bound, body)) => {
                     let inner = match forced_field(arena, branch, bound, depth, results) {
-                        | Descent::Smaller => {
+                        Descent::Smaller => {
                             let position = ResultLink(branch.links.len());
                             branch.links.push(Link {
                                 level: depth,
@@ -476,12 +475,12 @@ fn walk(
                             });
                             Results::At(position)
                         },
-                        | Descent::Unrelated => results,
+                        Descent::Unrelated => results,
                     };
                     pending.push((AnyNode::Computation(bound), depth, results));
                     pending.push((AnyNode::Computation(body), deeper, inner));
                 },
-                | Some(&Computation::DataCase {
+                Some(&Computation::DataCase {
                     scrutinee,
                     motive,
                     ref branches,
@@ -494,7 +493,7 @@ fn walk(
                             .map(|&case| (AnyNode::Computation(case), depth, results)),
                     );
                 },
-                | Some(&Computation::Case {
+                Some(&Computation::Case {
                     scrutinee,
                     ref branches,
                 }) => {
@@ -505,31 +504,31 @@ fn walk(
                             .map(|&branch| (AnyNode::Computation(branch), deeper, results)),
                     );
                 },
-                | Some(
+                Some(
                     &(Computation::Lambda(body)
                     | Computation::Fixpoint { body, .. }
                     | Computation::Shift(body)),
                 ) => {
                     pending.push((AnyNode::Computation(body), deeper, results));
                 },
-                | Some(
+                Some(
                     &(Computation::Mark { body, .. }
                     | Computation::Reset(body)
                     | Computation::Project(_, body)),
                 ) => {
                     pending.push((AnyNode::Computation(body), depth, results));
                 },
-                | Some(&Computation::With(first, second)) => {
+                Some(&Computation::With(first, second)) => {
                     pending.push((AnyNode::Computation(first), depth, results));
                     pending.push((AnyNode::Computation(second), depth, results));
                 },
-                | Some(&Computation::Resume(stack, body)) => {
+                Some(&Computation::Resume(stack, body)) => {
                     pending.push((AnyNode::Value(stack), depth, results));
                     pending.push((AnyNode::Computation(body), depth, results));
                 },
                 // Components bind unrelated: a call on one is refused, never
                 // accepted on a descent the kernel's projections might not see.
-                | Some(&Computation::Split {
+                Some(&Computation::Split {
                     scrutinee,
                     arity,
                     motive,
@@ -542,7 +541,7 @@ fn walk(
                     }
                     pending.push((AnyNode::Computation(body), inside, results));
                 },
-                | Some(&Computation::Perform {
+                Some(&Computation::Perform {
                     ref signature,
                     payload,
                     ..
@@ -554,7 +553,7 @@ fn walk(
                             .map(|operation| (AnyNode::ValueType(operation), depth, results)),
                     );
                 },
-                | Some(&Computation::Exercise {
+                Some(&Computation::Exercise {
                     capability,
                     ref signature,
                     payload,
@@ -568,7 +567,7 @@ fn walk(
                             .map(|operation| (AnyNode::ValueType(operation), depth, results)),
                     );
                 },
-                | Some(&Computation::Scope {
+                Some(&Computation::Scope {
                     ref signature,
                     subject,
                     on_return,
@@ -585,7 +584,7 @@ fn walk(
                             .map(|operation| (AnyNode::ValueType(operation), depth, results)),
                     );
                 },
-                | Some(&Computation::Handle {
+                Some(&Computation::Handle {
                     ref signature,
                     subject,
                     on_return,
@@ -602,7 +601,7 @@ fn walk(
                             .map(|operation| (AnyNode::ValueType(operation), depth, results)),
                     );
                 },
-                | Some(&Computation::ListFold {
+                Some(&Computation::ListFold {
                     element,
                     result,
                     list,
@@ -615,14 +614,14 @@ fn walk(
                     pending.push((AnyNode::Computation(on_nil), depth, results));
                     pending.push((AnyNode::Computation(on_cons), deeper.deeper(), results));
                 },
-                | Some(&Computation::Primitive { ref arguments, .. }) => {
+                Some(&Computation::Primitive { ref arguments, .. }) => {
                     pending.extend(
                         arguments
                             .iter()
                             .map(|&argument| (AnyNode::Value(argument), depth, results)),
                     );
                 },
-                | Some(
+                Some(
                     &(Computation::RecordProjection(value, _)
                     | Computation::TupleProjection(value, _)
                     | Computation::Return(value)
@@ -630,11 +629,11 @@ fn walk(
                 ) => {
                     pending.push((AnyNode::Value(value), depth, results));
                 },
-                | Some(&Computation::Transport(path, value)) => {
+                Some(&Computation::Transport(path, value)) => {
                     pending.push((AnyNode::Value(path), depth, results));
                     pending.push((AnyNode::Value(value), depth, results));
                 },
-                | Some(
+                Some(
                     &(Computation::PathTransport {
                         motive,
                         path,
@@ -651,7 +650,7 @@ fn walk(
                     pending.push((AnyNode::Value(value), depth, results));
                 },
                 // The motive's arrows bind the telescope themselves.
-                | Some(&Computation::TelescopeTransport {
+                Some(&Computation::TelescopeTransport {
                     motive,
                     path,
                     start,
@@ -665,7 +664,7 @@ fn walk(
                     );
                 },
                 // A fork binds linearly; the intuitionistic depth stays.
-                | Some(&Computation::Session(ref action)) => {
+                Some(&Computation::Session(ref action)) => {
                     pending.extend(
                         action
                             .values()
@@ -682,31 +681,31 @@ fn walk(
                             .map(|child| (AnyNode::Computation(child), depth, results)),
                     );
                 },
-                | Some(&Computation::Hole(_)) | None => {},
+                Some(&Computation::Hole(_)) | None => {},
             },
-            | AnyNode::ValueType(id) => match arena.value_type(id) {
-                | Some(&ValueType::Data { ref arguments, .. }) => {
+            AnyNode::ValueType(id) => match arena.value_type(id) {
+                Some(&ValueType::Data { ref arguments, .. }) => {
                     pending.extend(
                         arguments
                             .iter()
                             .map(|&argument| (AnyNode::Value(argument), depth, results)),
                     );
                 },
-                | Some(&ValueType::Record(ref fields)) => {
+                Some(&ValueType::Record(ref fields)) => {
                     pending.extend(
                         fields
                             .values()
                             .map(|&field| (AnyNode::ValueType(field), depth, results)),
                     );
                 },
-                | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
+                Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
                     pending.extend(
                         parts
                             .iter()
                             .map(|&part| (AnyNode::ValueType(part), depth, results)),
                     );
                 },
-                | Some(&ValueType::Session(ref session)) => {
+                Some(&ValueType::Session(ref session)) => {
                     pending.extend(
                         session
                             .payloads()
@@ -714,22 +713,22 @@ fn walk(
                             .map(|&payload| (AnyNode::ValueType(payload), depth, results)),
                     );
                 },
-                | Some(&ValueType::StaticPi {
+                Some(&ValueType::StaticPi {
                     domain: first,
                     codomain: second,
                 }) => {
                     pending.push((AnyNode::ValueType(first), depth, results));
                     pending.push((AnyNode::ValueType(second), depth, results));
                 },
-                | Some(&ValueType::Sigma { first, second }) => {
+                Some(&ValueType::Sigma { first, second }) => {
                     pending.push((AnyNode::ValueType(first), depth, results));
                     pending.push((AnyNode::ValueType(second), deeper, results));
                 },
-                | Some(&ValueType::PathUniverse(source, target)) => {
+                Some(&ValueType::PathUniverse(source, target)) => {
                     pending.push((AnyNode::Value(source), depth, results));
                     pending.push((AnyNode::Value(target), depth, results));
                 },
-                | Some(&ValueType::Path {
+                Some(&ValueType::Path {
                     carrier,
                     left,
                     right,
@@ -738,7 +737,7 @@ fn walk(
                     pending.push((AnyNode::Value(left), depth, results));
                     pending.push((AnyNode::Value(right), depth, results));
                 },
-                | Some(&ValueType::Flow {
+                Some(&ValueType::Flow {
                     carrier,
                     source,
                     target,
@@ -747,33 +746,33 @@ fn walk(
                     pending.push((AnyNode::Value(source), depth, results));
                     pending.push((AnyNode::Value(target), depth, results));
                 },
-                | Some(&ValueType::Run(session)) => {
+                Some(&ValueType::Run(session)) => {
                     pending.push((AnyNode::Value(session), depth, results));
                 },
-                | Some(&ValueType::Thunk(body)) => {
+                Some(&ValueType::Thunk(body)) => {
                     pending.push((AnyNode::CompType(body), depth, results));
                 },
-                | Some(&ValueType::List(element)) => {
+                Some(&ValueType::List(element)) => {
                     pending.push((AnyNode::ValueType(element), depth, results));
                 },
-                | Some(&ValueType::Stack { input, output }) => {
+                Some(&ValueType::Stack { input, output }) => {
                     pending.push((AnyNode::CompType(input), depth, results));
                     pending.push((AnyNode::CompType(output), depth, results));
                 },
-                | Some(&ValueType::Lift { inner, .. }) => {
+                Some(&ValueType::Lift { inner, .. }) => {
                     pending.push((AnyNode::ValueType(inner), depth, results));
                 },
-                | Some(&ValueType::Element { code, .. }) => {
+                Some(&ValueType::Element { code, .. }) => {
                     pending.push((AnyNode::Value(code), depth, results));
                 },
-                | Some(&ValueType::Capability { ref authority, .. }) => {
+                Some(&ValueType::Capability { ref authority, .. }) => {
                     pending.extend(
                         authority
                             .types()
                             .map(|operation| (AnyNode::ValueType(operation), depth, results)),
                     );
                 },
-                | Some(
+                Some(
                     &(ValueType::Base(_)
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
@@ -781,8 +780,8 @@ fn walk(
                 )
                 | None => {},
             },
-            | AnyNode::CompType(id) => match arena.comp_type(id) {
-                | Some(&CompType::Returner {
+            AnyNode::CompType(id) => match arena.comp_type(id) {
+                Some(&CompType::Returner {
                     result,
                     ref effects,
                 }) => {
@@ -793,22 +792,22 @@ fn walk(
                             .map(|operation| (AnyNode::ValueType(operation), depth, results)),
                     );
                 },
-                | Some(&CompType::With(first, second)) => {
+                Some(&CompType::With(first, second)) => {
                     pending.push((AnyNode::CompType(first), depth, results));
                     pending.push((AnyNode::CompType(second), depth, results));
                 },
-                | Some(&CompType::Arrow { domain, codomain }) => {
+                Some(&CompType::Arrow { domain, codomain }) => {
                     pending.push((AnyNode::ValueType(domain), depth, results));
                     pending.push((AnyNode::CompType(codomain), depth, results));
                 },
-                | Some(&CompType::Pi { domain, codomain }) => {
+                Some(&CompType::Pi { domain, codomain }) => {
                     pending.push((AnyNode::ValueType(domain), depth, results));
                     pending.push((AnyNode::CompType(codomain), deeper, results));
                 },
-                | Some(&CompType::Element { code, .. }) => {
+                Some(&CompType::Element { code, .. }) => {
                     pending.push((AnyNode::Value(code), depth, results));
                 },
-                | Some(&CompType::Unknown) | None => {},
+                Some(&CompType::Unknown) | None => {},
             },
         }
     }
@@ -854,8 +853,8 @@ pub fn replay(
 {
     let refuse = |reason| CheckRefusal::DescentNotReplayed { at, reason };
     let domain = match context.arena().comp_type(expected) {
-        | Some(&(CompType::Arrow { domain, .. } | CompType::Pi { domain, .. })) => domain,
-        | Some(
+        Some(&(CompType::Arrow { domain, .. } | CompType::Pi { domain, .. })) => domain,
+        Some(
             &(CompType::Returner { .. }
             | CompType::With(..)
             | CompType::Element { .. }
@@ -867,8 +866,8 @@ pub fn replay(
     };
     // A path at a point free cells loop at descends over the words they mint.
     let declaration = match value_type_view(context.arena(), domain) {
-        | Ok(ValueTypeView::Data { declaration, .. }) => declaration,
-        | Ok(ValueTypeView::Path {
+        Ok(ValueTypeView::Data { declaration, .. }) => declaration,
+        Ok(ValueTypeView::Path {
             carrier,
             left,
             right,
@@ -877,7 +876,7 @@ pub fn replay(
             .ok()
             .flatten()
             .ok_or_else(|| refuse(DescentRefusal::NotOverData))?,
-        | _ => return Err(refuse(DescentRefusal::NotOverData)),
+        _ => return Err(refuse(DescentRefusal::NotOverData)),
     };
     let signature = context
         .consult_data(declaration)

@@ -509,10 +509,10 @@ fn tabulated(
             return Err(stuck);
         };
         match context.arena().value(evaluation.returned()) {
-            | Some(&Value::Injection(summand, _)) if usize::from(summand) < to.len() => {
+            Some(&Value::Injection(summand, _)) if usize::from(summand) < to.len() => {
                 images.push(ElementIndex::from(usize::from(summand)));
             },
-            | _ => return Err(stuck),
+            _ => return Err(stuck),
         }
     }
     Ok(Table::new(images))
@@ -757,21 +757,22 @@ fn certified(
         .map_err(|_obstruction| StratumDefect::Allowance { bound })?;
     let certify = || {
         SegalStratum::certify(catalogue, degree).map_err(|refused| match refused {
-            | Uncertified::Degree { degree: refused } => StratumDefect::Degree { degree: refused },
-            | Uncertified::Condition {
+            Uncertified::Degree { degree: refused } => StratumDefect::Degree { degree: refused },
+            Uncertified::Condition {
                 degree: failing, ..
             } => StratumDefect::Condition { degree: failing },
         })
     };
-    match STRATA
+    STRATA
         .get(usize::from(bound))
         .and_then(|row| row.get(usize::from(degree)))
-    {
-        | Some(held) => held
-            .get_or_try_init(|| certify().map(Box::new))
-            .map(Cow::Borrowed),
-        | None => certify().map(Cow::Owned),
-    }
+        .map_or_else(
+            || certify().map(Cow::Owned),
+            |held| {
+                held.get_or_try_init(|| certify().map(Box::new))
+                    .map(Cow::Borrowed)
+            },
+        )
 }
 
 /// Why the stratum a `ua` statement names is not certified.
@@ -886,14 +887,14 @@ impl UaDefect
     fn of(defect: &Defect) -> Self
     {
         match *defect {
-            | Defect::PastTheBound { profile } => Self::PastTheBound { profile },
-            | Defect::Cardinality { shape } => Self::Cardinality { corolla: shape },
-            | Defect::Tables { shape } => Self::Tables { corolla: shape },
-            | Defect::NotInverse { shape, element } => Self::NotInverse {
+            Defect::PastTheBound { profile } => Self::PastTheBound { profile },
+            Defect::Cardinality { shape } => Self::Cardinality { corolla: shape },
+            Defect::Tables { shape } => Self::Tables { corolla: shape },
+            Defect::NotInverse { shape, element } => Self::NotInverse {
                 corolla: shape,
                 element,
             },
-            | Defect::NotNatural {
+            Defect::NotNatural {
                 corolla, element, ..
             } => Self::NotNatural { corolla, element },
         }
@@ -936,7 +937,7 @@ fn statement(
 ) -> Result<Statement, CheckRefusal>
 {
     match arena.value(at) {
-        | Some(&Value::Ua {
+        Some(&Value::Ua {
             stratum,
             ref sides,
             forward,
@@ -946,8 +947,8 @@ fn statement(
             sides: Arc::clone(sides),
             records: (forward, backward),
         }),
-        | Some(_) => Err(CheckRefusal::MachineInvariant),
-        | None => Err(CheckRefusal::DanglingNode {
+        Some(_) => Err(CheckRefusal::MachineInvariant),
+        None => Err(CheckRefusal::DanglingNode {
             node: crate::CoreNode::Term(crate::TermNode::Value(at)),
         }),
     }
@@ -1057,31 +1058,32 @@ pub(crate) fn premises(
     ];
     let mut premises = Vec::with_capacity(2);
     for (way, record, description, (from, to)) in ways {
-        let named: Vec<(FieldLabel, Option<Profile>)> = match context.arena().value(record) {
-            | Some(&Value::Record(ref fields)) => fields
-                .keys()
-                .map(|label| {
-                    let profile = match description.generator(label) {
-                        | Maybe::Present(generator) => Some(generator.profile),
-                        | Maybe::Absent(_) => None,
-                    };
-                    (label.clone(), profile)
-                })
-                .collect(),
-            | _ => {
+        let named: Vec<(FieldLabel, Option<Profile>)> =
+            if let Some(&Value::Record(ref fields)) = context.arena().value(record) {
+                fields
+                    .keys()
+                    .map(|label| {
+                        let profile = match description.generator(label) {
+                            Maybe::Present(generator) => Some(generator.profile),
+                            Maybe::Absent(_) => None,
+                        };
+                        (label.clone(), profile)
+                    })
+                    .collect()
+            }
+            else {
                 let _refused = labelled(context.arena(), at, (way, record), description)?;
                 Vec::new()
-            },
-        };
+            };
         let mut fields = BTreeMap::new();
         for (label, profile) in named {
             let expected = match profile {
-                | Some(profile) => {
+                Some(profile) => {
                     let source = code(context.arena_mut(), from, profile);
                     let target = code(context.arena_mut(), to, profile);
                     crate::equiv::translator(context, (source, target))
                 },
-                | None => context.arena_mut().value_type_unknown(),
+                None => context.arena_mut().value_type_unknown(),
             };
             let _prior = fields.insert(label, expected);
         }
@@ -1146,13 +1148,13 @@ pub(crate) fn decide(
     for (way, record, description) in ways {
         for (profile, translator) in labelled(context.arena(), at, (way, record), description)? {
             let corolla = match certified.corolla(profile) {
-                | Maybe::Present(corolla) => corolla.index(),
-                | Maybe::Absent(_) => return Err(inequivalent(UaDefect::PastTheBound { profile })),
+                Maybe::Present(corolla) => corolla.index(),
+                Maybe::Absent(_) => return Err(inequivalent(UaDefect::PastTheBound { profile })),
             };
             let slot = given.entry(corolla).or_default();
             let held = match way {
-                | Way::Forward => &mut slot.0,
-                | Way::Backward => &mut slot.1,
+                Way::Forward => &mut slot.0,
+                Way::Backward => &mut slot.1,
             };
             if held.replace(translator).is_some() {
                 return Err(inequivalent(UaDefect::Tables { corolla }));
@@ -1170,11 +1172,11 @@ pub(crate) fn decide(
     let species = (sides.source.species(), sides.target.species());
     derive(context, &certified, (&species.0, &species.1), &translators).map_err(|refused| {
         match refused {
-            | UaRefusal::Species(ref defect) => inequivalent(UaDefect::of(defect)),
-            | UaRefusal::Stuck { corolla, element } => {
+            UaRefusal::Species(ref defect) => inequivalent(UaDefect::of(defect)),
+            UaRefusal::Stuck { corolla, element } => {
                 inequivalent(UaDefect::Stuck { corolla, element })
             },
-            | UaRefusal::Code { refusal, .. } => refusal,
+            UaRefusal::Code { refusal, .. } => refusal,
         }
     })
 }

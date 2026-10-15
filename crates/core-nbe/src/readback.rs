@@ -316,8 +316,8 @@ impl OpenBinders
     ) -> ZoneDepth
     {
         match zone {
-            | Zone::Intuitionistic => self.intuitionistic,
-            | Zone::Linear => self.linear,
+            Zone::Intuitionistic => self.intuitionistic,
+            Zone::Linear => self.linear,
         }
     }
 
@@ -393,11 +393,11 @@ impl OpenBinders
         let deeper = self.depth(zone).0.checked_add(1_u32)?;
         let deeper = ZoneDepth(deeper);
         Some(match zone {
-            | Zone::Intuitionistic => Self {
+            Zone::Intuitionistic => Self {
                 intuitionistic: deeper,
                 linear: self.linear,
             },
-            | Zone::Linear => Self {
+            Zone::Linear => Self {
                 intuitionistic: self.intuitionistic,
                 linear: deeper,
             },
@@ -1178,8 +1178,8 @@ fn retained_value(
 ) -> Option<ValueId>
 {
     match (mode, node.face()) {
-        | (ReadbackMode::ZeroUnfold, TermFace::Source(source)) => Some(source),
-        | (ReadbackMode::ZeroUnfold, TermFace::Reduced) | (ReadbackMode::Unfolding, _) => None,
+        (ReadbackMode::ZeroUnfold, TermFace::Source(source)) => Some(source),
+        (ReadbackMode::ZeroUnfold, TermFace::Reduced) | (ReadbackMode::Unfolding, _) => None,
     }
 }
 
@@ -1212,8 +1212,8 @@ fn retained_comp(
 ) -> Option<ComputationId>
 {
     match (mode, node.face()) {
-        | (ReadbackMode::ZeroUnfold, CompTermFace::Source(source)) => Some(source),
-        | (ReadbackMode::ZeroUnfold, CompTermFace::Reduced) | (ReadbackMode::Unfolding, _) => None,
+        (ReadbackMode::ZeroUnfold, CompTermFace::Source(source)) => Some(source),
+        (ReadbackMode::ZeroUnfold, CompTermFace::Reduced) | (ReadbackMode::Unfolding, _) => None,
     }
 }
 
@@ -1249,10 +1249,10 @@ fn expect_polarity(
 ) -> Result<(), ReadbackFault>
 {
     match (polarity, expected) {
-        | (Polarity::Value, Polarity::Value) | (Polarity::Computation, Polarity::Computation) => {
+        (Polarity::Value, Polarity::Value) | (Polarity::Computation, Polarity::Computation) => {
             Ok(())
         },
-        | (Polarity::Value, Polarity::Computation) | (Polarity::Computation, Polarity::Value) => {
+        (Polarity::Value, Polarity::Computation) | (Polarity::Computation, Polarity::Value) => {
             Err(ReadbackFault::NeutralPolarity { neutral })
         },
     }
@@ -1311,8 +1311,8 @@ fn enter(
         (held.body(), held.environment().clone())
     };
     match entry {
-        | Entry::Bare => {},
-        | Entry::Under { zone, bound } => environment.extend(zone, bound),
+        Entry::Bare => {},
+        Entry::Under { zone, bound } => environment.extend(zone, bound),
     }
     let evaluated = crate::eval::eval_body_within(
         core,
@@ -1611,17 +1611,17 @@ fn head_term(
 ) -> Result<ValueId, ReadbackFault>
 {
     match head {
-        | NeutralHead::Variable { zone, level } => {
+        NeutralHead::Variable { zone, level } => {
             let Some(index) = binders.index(zone, level)
             else {
                 return Err(ReadbackFault::LevelOutOfScope { zone, level });
             };
             Ok(core.value_variable(zone, index))
         },
-        | NeutralHead::Constant(constant) | NeutralHead::Module(constant) => {
+        NeutralHead::Constant(constant) | NeutralHead::Module(constant) => {
             Ok(core.value_constant(constant))
         },
-        | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => {
+        NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => {
             Err(ReadbackFault::MachineInvariant)
         },
     }
@@ -1918,13 +1918,13 @@ pub fn read_written(
     machine.writing = Writing::Fill { hole, filling };
     let binders = OpenBinders::none();
     machine.tasks.push(match result {
-        | Glued::Value(value) => Task::Value { value, binders },
-        | Glued::Computation(comp) => Task::Comp { comp, binders },
+        Glued::Value(value) => Task::Value { value, binders },
+        Glued::Computation(comp) => Task::Comp { comp, binders },
     });
     run(core, domain, &mut machine)?;
     let read = match result {
-        | Glued::Value(_) => TermId::Value(machine.pop_value()?),
-        | Glued::Computation(_) => TermId::Computation(machine.pop_comp()?),
+        Glued::Value(_) => TermId::Value(machine.pop_value()?),
+        Glued::Computation(_) => TermId::Computation(machine.pop_comp()?),
     };
     Ok((read, machine.fuel))
 }
@@ -2239,7 +2239,7 @@ fn step(
 ) -> Result<(), ReadbackFault>
 {
     match task {
-        | Task::StackType => {
+        Task::StackType => {
             let output = machine.pop_comp_type()?;
             let input = machine.pop_comp_type()?;
             machine
@@ -2247,20 +2247,20 @@ fn step(
                 .push(core.value_type_stack(input, output));
             Ok(())
         },
-        | Task::WithType => {
+        Task::WithType => {
             let second = machine.pop_comp_type()?;
             let first = machine.pop_comp_type()?;
             machine.comp_types.push(core.comp_type_with(first, second));
             Ok(())
         },
-        | Task::ListType => {
+        Task::ListType => {
             let element = machine.pop_value_type()?;
             machine.value_types.push(core.value_type_list(element));
             Ok(())
         },
-        | Task::Value { value, binders } => step_value(core, domain, machine, value, binders),
-        | Task::Comp { comp, binders } => step_comp(core, domain, machine, comp, binders),
-        | Task::Constructor { tag, fields } => {
+        Task::Value { value, binders } => step_value(core, domain, machine, value, binders),
+        Task::Comp { comp, binders } => step_comp(core, domain, machine, comp, binders),
+        Task::Constructor { tag, fields } => {
             let count = domain.fields(fields).map_err(ReadbackFault::Domain)?.len();
             let start = machine
                 .values
@@ -2274,7 +2274,7 @@ fn step(
                 .push(core.value_constructor(datatype, tag, fields));
             Ok(())
         },
-        | Task::Record(source) => {
+        Task::Record(source) => {
             let Some(matched_native_node) = core.value(source)
             else {
                 return Err(ReadbackFault::MachineInvariant);
@@ -2296,7 +2296,7 @@ fn step(
             machine.values.push(core.value_record(fields));
             Ok(())
         },
-        | Task::DataType(source) => {
+        Task::DataType(source) => {
             let Some(matched_native_node) = core.value_type(source)
             else {
                 return Err(ReadbackFault::MachineInvariant);
@@ -2320,7 +2320,7 @@ fn step(
                 .push(core.value_type_data(declaration, arguments));
             Ok(())
         },
-        | Task::RecordType(source) => {
+        Task::RecordType(source) => {
             let Some(matched_native_node) = core.value_type(source)
             else {
                 return Err(ReadbackFault::MachineInvariant);
@@ -2342,7 +2342,7 @@ fn step(
             machine.value_types.push(core.value_type_record(fields));
             Ok(())
         },
-        | Task::SessionType(source) => {
+        Task::SessionType(source) => {
             let Some(matched_native_node) = core.value_type(source)
             else {
                 return Err(ReadbackFault::MachineInvariant);
@@ -2365,7 +2365,7 @@ fn step(
             machine.value_types.push(core.value_type_session(rebuilt));
             Ok(())
         },
-        | Task::DataCase(source) => {
+        Task::DataCase(source) => {
             let Some(matched_native_node) = core.computation(source)
             else {
                 return Err(ReadbackFault::MachineInvariant);
@@ -2387,43 +2387,69 @@ fn step(
                 .push(core.computation_data_case(scrutinee, motive, branches));
             Ok(())
         },
-        | Task::Projection(source) => {
+        Task::Projection(source) => {
             let Some(matched_native_node) = core.computation(source)
             else {
                 return Err(ReadbackFault::MachineInvariant);
             };
             let projection = match *matched_native_node {
-                | Computation::RecordProjection(_, ref label) => Ok(label.clone()),
-                | Computation::TupleProjection(_, component) => Err(component),
-                | _ => return Err(ReadbackFault::MachineInvariant),
+                Computation::RecordProjection(_, ref label) => Ok(label.clone()),
+                Computation::TupleProjection(_, component) => Err(component),
+                Computation::Primitive { .. }
+                | Computation::Transport(..)
+                | Computation::PathTransport { .. }
+                | Computation::Ride { .. }
+                | Computation::TelescopeTransport { .. }
+                | Computation::Lambda(_)
+                | Computation::Fixpoint { .. }
+                | Computation::Application(..)
+                | Computation::Return(_)
+                | Computation::Bind(..)
+                | Computation::Force(_)
+                | Computation::Case { .. }
+                | Computation::Split { .. }
+                | Computation::DataCase { .. }
+                | Computation::Hole(_)
+                | Computation::Mark { .. }
+                | Computation::ListFold { .. }
+                | Computation::Perform { .. }
+                | Computation::Handle { .. }
+                | Computation::Exercise { .. }
+                | Computation::Scope { .. }
+                | Computation::Resume(..)
+                | Computation::Reset(_)
+                | Computation::Shift(_)
+                | Computation::With(..)
+                | Computation::Project(..)
+                | Computation::Session(_) => return Err(ReadbackFault::MachineInvariant),
             };
             let projected = machine.pop_value()?;
             let assembled = match projection {
-                | Ok(label) => core.computation_record_projection(projected, label),
-                | Err(component) => core.computation_tuple_projection(projected, component),
+                Ok(label) => core.computation_record_projection(projected, label),
+                Err(component) => core.computation_tuple_projection(projected, component),
             };
             machine.comps.push(assembled);
             Ok(())
         },
-        | Task::PathProduct => {
+        Task::PathProduct => {
             let second = machine.pop_value()?;
             let first = machine.pop_value()?;
             machine.values.push(core.value_path_product(first, second));
             Ok(())
         },
-        | Task::Transport => {
+        Task::Transport => {
             let value = machine.pop_value()?;
             let path = machine.pop_value()?;
             machine.comps.push(core.computation_transport(path, value));
             Ok(())
         },
-        | Task::ProductTransport => {
+        Task::ProductTransport => {
             let path = machine.pop_value()?;
             let value = machine.pop_value()?;
             machine.comps.push(core.computation_transport(path, value));
             Ok(())
         },
-        | Task::PathTransport => {
+        Task::PathTransport => {
             let value = machine.pop_value()?;
             let path = machine.pop_value()?;
             let motive = machine.pop_value_type()?;
@@ -2432,7 +2458,7 @@ fn step(
                 .push(core.computation_path_transport(motive, path, value));
             Ok(())
         },
-        | Task::Ride => {
+        Task::Ride => {
             let value = machine.pop_value()?;
             let flow = machine.pop_value()?;
             let motive = machine.pop_value_type()?;
@@ -2441,7 +2467,7 @@ fn step(
                 .push(core.computation_ride(motive, flow, value));
             Ok(())
         },
-        | Task::TelescopeTransport => {
+        Task::TelescopeTransport => {
             let value = machine.pop_value()?;
             let over = machine.pop_value()?;
             let start = machine.pop_value()?;
@@ -2452,32 +2478,32 @@ fn step(
                 .push(core.computation_telescope_transport(motive, path, start, over, value));
             Ok(())
         },
-        | Task::Here => {
+        Task::Here => {
             let point = machine.pop_value()?;
             machine.values.push(core.value_here(point));
             Ok(())
         },
-        | Task::Flow(former) => {
+        Task::Flow(former) => {
             let flow = match former {
-                | crate::domain::FlowFormer::Stay => {
+                crate::domain::FlowFormer::Stay => {
                     let point = machine.pop_value()?;
                     core.value_stay(point)
                 },
-                | crate::domain::FlowFormer::Forward => {
+                crate::domain::FlowFormer::Forward => {
                     let translator = machine.pop_value()?;
                     core.value_forward(translator)
                 },
-                | crate::domain::FlowFormer::Then => {
+                crate::domain::FlowFormer::Then => {
                     let second = machine.pop_value()?;
                     let first = machine.pop_value()?;
                     core.value_then(first, second)
                 },
-                | crate::domain::FlowFormer::Function => {
+                crate::domain::FlowFormer::Function => {
                     let codomain = machine.pop_value()?;
                     let domain = machine.pop_value()?;
                     core.value_function_flow(domain, codomain)
                 },
-                | crate::domain::FlowFormer::Product => {
+                crate::domain::FlowFormer::Product => {
                     let second = machine.pop_value()?;
                     let first = machine.pop_value()?;
                     core.value_flow_product(first, second)
@@ -2486,12 +2512,12 @@ fn step(
             machine.values.push(flow);
             Ok(())
         },
-        | Task::Returned => {
+        Task::Returned => {
             let computation = machine.pop_comp()?;
             machine.values.push(core.value_returned(computation));
             Ok(())
         },
-        | Task::PathType => {
+        Task::PathType => {
             let right = machine.pop_value()?;
             let left = machine.pop_value()?;
             let carrier = machine.pop_value_type()?;
@@ -2500,7 +2526,7 @@ fn step(
                 .push(core.value_type_path(carrier, left, right));
             Ok(())
         },
-        | Task::FlowType => {
+        Task::FlowType => {
             let target = machine.pop_value()?;
             let source = machine.pop_value()?;
             let carrier = machine.pop_value_type()?;
@@ -2509,12 +2535,12 @@ fn step(
                 .push(core.value_type_flow(carrier, source, target));
             Ok(())
         },
-        | Task::RunType => {
+        Task::RunType => {
             let session = machine.pop_value()?;
             machine.value_types.push(core.value_type_run(session));
             Ok(())
         },
-        | Task::Tuple(count) => {
+        Task::Tuple(count) => {
             let start = machine
                 .values
                 .len()
@@ -2525,13 +2551,13 @@ fn step(
             machine.values.push(tuple);
             Ok(())
         },
-        | Task::ListCons => {
+        Task::ListCons => {
             let tail = machine.pop_value()?;
             let head = machine.pop_value()?;
             machine.values.push(core.value_list_cons(head, tail));
             Ok(())
         },
-        | Task::ListFold => {
+        Task::ListFold => {
             let on_cons = machine.pop_comp()?;
             let on_nil = machine.pop_comp()?;
             let result = machine.pop_value_type()?;
@@ -2542,12 +2568,12 @@ fn step(
                 .push(core.computation_list_fold(element, result, list, on_nil, on_cons));
             Ok(())
         },
-        | Task::Inject { summand } => {
+        Task::Inject { summand } => {
             let body = machine.pop_value()?;
             machine.values.push(core.value_injection(summand, body));
             Ok(())
         },
-        | Task::Lift { target } => {
+        Task::Lift { target } => {
             let body = machine.pop_value()?;
             let Some(held) = domain.level(target)
             else {
@@ -2557,40 +2583,40 @@ fn step(
             machine.values.push(core.value_lift(level, body));
             Ok(())
         },
-        | Task::Thunk => {
+        Task::Thunk => {
             let body = machine.pop_comp()?;
             machine.values.push(core.value_thunk(body));
             Ok(())
         },
-        | Task::Lambda => {
+        Task::Lambda => {
             let body = machine.pop_comp()?;
             machine.comps.push(core.computation_lambda(body));
             Ok(())
         },
-        | Task::Fixpoint(evidence) => {
+        Task::Fixpoint(evidence) => {
             let body = machine.pop_comp()?;
             machine
                 .comps
                 .push(core.computation_fixpoint(body, evidence));
             Ok(())
         },
-        | Task::StaticLambda => {
+        Task::StaticLambda => {
             let body = machine.pop_value()?;
             machine.values.push(core.value_static_lambda(body));
             Ok(())
         },
-        | Task::Return => {
+        Task::Return => {
             let produced = machine.pop_value()?;
             machine.comps.push(core.computation_return(produced));
             Ok(())
         },
-        | Task::Spine(spine) => step_spine(core, domain, machine, spine),
-        | Task::Force => {
+        Task::Spine(spine) => step_spine(core, domain, machine, spine),
+        Task::Force => {
             let forced = machine.pop_value()?;
             machine.comps.push(core.computation_force(forced));
             Ok(())
         },
-        | Task::Apply => {
+        Task::Apply => {
             let argument = machine.pop_value()?;
             let head = machine.pop_comp()?;
             machine
@@ -2598,7 +2624,7 @@ fn step(
                 .push(core.computation_application(head, argument));
             Ok(())
         },
-        | Task::StaticApply => {
+        Task::StaticApply => {
             let argument = machine.pop_value()?;
             let head = machine.pop_value()?;
             machine
@@ -2606,13 +2632,13 @@ fn step(
                 .push(core.value_static_application(head, argument));
             Ok(())
         },
-        | Task::Bind => {
+        Task::Bind => {
             let body = machine.pop_comp()?;
             let bound = machine.pop_comp()?;
             machine.comps.push(core.computation_bind(bound, body));
             Ok(())
         },
-        | Task::Split(arity) => {
+        Task::Split(arity) => {
             let body = machine.pop_comp()?;
             let scrutinee = machine.pop_value()?;
             machine
@@ -2620,7 +2646,7 @@ fn step(
                 .push(core.computation_split(scrutinee, arity, body));
             Ok(())
         },
-        | Task::DependentSplit(arity) => {
+        Task::DependentSplit(arity) => {
             let body = machine.pop_comp()?;
             let motive = machine.pop_comp_type()?;
             let scrutinee = machine.pop_value()?;
@@ -2629,7 +2655,7 @@ fn step(
                 .push(core.computation_dependent_split(scrutinee, arity, motive, body));
             Ok(())
         },
-        | Task::Case(count) => {
+        Task::Case(count) => {
             let start = machine
                 .comps
                 .len()
@@ -2642,17 +2668,17 @@ fn step(
             machine.comps.push(case);
             Ok(())
         },
-        | Task::QuotedValueType {
+        Task::QuotedValueType {
             quoted,
             frame,
             binders,
         } => step_quoted_value_type(core, domain, machine, quoted, frame, binders),
-        | Task::QuotedCompType {
+        Task::QuotedCompType {
             quoted,
             frame,
             binders,
         } => step_quoted_comp_type(core, domain, machine, quoted, frame, binders),
-        | Task::QuotedCode {
+        Task::QuotedCode {
             code,
             frame,
             binders,
@@ -2671,21 +2697,21 @@ fn step(
             machine.tasks.push(Task::Value { value, binders });
             Ok(())
         },
-        | Task::Quote => {
+        Task::Quote => {
             let quoted = machine.pop_value_type()?;
             machine.values.push(core.value_quote(quoted));
             Ok(())
         },
-        | Task::QuoteComputation => {
+        Task::QuoteComputation => {
             let quoted = machine.pop_comp_type()?;
             machine.values.push(core.value_quote_computation(quoted));
             Ok(())
         },
-        | Task::ProductType(source) | Task::SumType(source) => {
+        Task::ProductType(source) | Task::SumType(source) => {
             let (product, arity) = match core.value_type(source) {
-                | Some(&ValueType::Product(ref parts)) => (true, parts.len()),
-                | Some(&ValueType::Sum(ref parts)) => (false, parts.len()),
-                | _ => return Err(ReadbackFault::MachineInvariant),
+                Some(&ValueType::Product(ref parts)) => (true, parts.len()),
+                Some(&ValueType::Sum(ref parts)) => (false, parts.len()),
+                _ => return Err(ReadbackFault::MachineInvariant),
             };
             let start = machine
                 .value_types
@@ -2706,18 +2732,18 @@ fn step(
             machine.value_types.push(assembled);
             Ok(())
         },
-        | Task::ThunkType => {
+        Task::ThunkType => {
             let body = machine.pop_comp_type()?;
             machine.value_types.push(core.value_type_thunk(body));
             Ok(())
         },
-        | Task::LiftType { target } => {
+        Task::LiftType { target } => {
             let inner = machine.pop_value_type()?;
             let level = held_level(domain, target)?;
             machine.value_types.push(core.value_type_lift(inner, level));
             Ok(())
         },
-        | Task::Element { target } => {
+        Task::Element { target } => {
             let code = machine.pop_value()?;
             let level = held_level(domain, target)?;
             machine
@@ -2725,13 +2751,13 @@ fn step(
                 .push(core.value_type_element(code, level));
             Ok(())
         },
-        | Task::CompElement { target } => {
+        Task::CompElement { target } => {
             let code = machine.pop_value()?;
             let level = held_level(domain, target)?;
             machine.comp_types.push(core.comp_type_element(code, level));
             Ok(())
         },
-        | Task::Returner { source } => {
+        Task::Returner { source } => {
             let source = core
                 .comp_type(source)
                 .ok_or(ReadbackFault::MachineInvariant)?;
@@ -2749,7 +2775,7 @@ fn step(
                 .push(core.comp_type_returner_with_effects(result, effects));
             Ok(())
         },
-        | Task::CapabilityType { source } => {
+        Task::CapabilityType { source } => {
             let source = core
                 .value_type(source)
                 .ok_or(ReadbackFault::MachineInvariant)?;
@@ -2770,7 +2796,7 @@ fn step(
                 .push(core.value_type_capability(authority, grade, region));
             Ok(())
         },
-        | Task::Arrow => {
+        Task::Arrow => {
             let codomain = machine.pop_comp_type()?;
             let domain_type = machine.pop_value_type()?;
             machine
@@ -2778,7 +2804,7 @@ fn step(
                 .push(core.comp_type_arrow(domain_type, codomain));
             Ok(())
         },
-        | Task::Pi => {
+        Task::Pi => {
             let codomain = machine.pop_comp_type()?;
             let domain_type = machine.pop_value_type()?;
             machine
@@ -2786,7 +2812,7 @@ fn step(
                 .push(core.comp_type_pi(domain_type, codomain));
             Ok(())
         },
-        | Task::StaticPi => {
+        Task::StaticPi => {
             let codomain = machine.pop_value_type()?;
             let domain_type = machine.pop_value_type()?;
             machine
@@ -2794,7 +2820,7 @@ fn step(
                 .push(core.value_type_static_pi(domain_type, codomain));
             Ok(())
         },
-        | Task::SigmaType => {
+        Task::SigmaType => {
             let second = machine.pop_value_type()?;
             let first = machine.pop_value_type()?;
             machine
@@ -2802,20 +2828,20 @@ fn step(
                 .push(core.value_type_sigma(first, second));
             Ok(())
         },
-        | Task::Suspended {
+        Task::Suspended {
             closure,
             kind,
             binders,
         } => step_suspended(domain, machine, closure, kind, binders),
-        | Task::Substitute { body, count } => {
+        Task::Substitute { body, count } => {
             let mut environment = Vec::with_capacity(usize::from(count));
             for _ in 0_usize .. usize::from(count) {
                 environment.push(machine.pop_value()?);
             }
             environment.reverse();
             match substitute_environment(core, body, &environment) {
-                | TermId::Value(value) => machine.values.push(value),
-                | TermId::Computation(comp) => machine.comps.push(comp),
+                TermId::Value(value) => machine.values.push(value),
+                TermId::Computation(comp) => machine.comps.push(comp),
             }
             Ok(())
         },
@@ -2870,7 +2896,7 @@ fn step_suspended(
 {
     let dangling = ReadbackFault::Domain(DomainFault::Dangling);
     let (body, environment) = match closure {
-        | Suspended::Value(id) => {
+        Suspended::Value(id) => {
             let held = domain.value_closure(id).ok_or(dangling)?;
             let crate::ValueBody::Source(body) = held.body()
             else {
@@ -2878,7 +2904,7 @@ fn step_suspended(
             };
             (TermId::Value(body), held.environment())
         },
-        | Suspended::Computation(id) => {
+        Suspended::Computation(id) => {
             let held = domain.comp_closure(id).ok_or(dangling)?;
             let crate::CompBody::Source(body) = held.body()
             else {
@@ -2889,7 +2915,7 @@ fn step_suspended(
     };
     let count = environment.depth(Zone::Intuitionistic);
     let body = match (kind, machine.writing, body) {
-        | (
+        (
             SuspendedKind::Hole(named),
             Writing::Fill {
                 hole,
@@ -2905,19 +2931,19 @@ fn step_suspended(
             },
             TermId::Computation(_),
         ) if named == hole => filling,
-        | (SuspendedKind::Hole(_), Writing::Nothing | Writing::Fill { .. }, own) => {
+        (SuspendedKind::Hole(_), Writing::Nothing | Writing::Fill { .. }, own) => {
             match own {
-                | TermId::Value(value) => machine.values.push(value),
-                | TermId::Computation(comp) => machine.comps.push(comp),
+                TermId::Value(value) => machine.values.push(value),
+                TermId::Computation(comp) => machine.comps.push(comp),
             }
             return Ok(());
         },
-        | (SuspendedKind::Mark, Writing::Nothing | Writing::Fill { .. }, own) => own,
+        (SuspendedKind::Mark, Writing::Nothing | Writing::Fill { .. }, own) => own,
     };
     if usize::from(count) == 0_usize {
         match body {
-            | TermId::Value(value) => machine.values.push(value),
-            | TermId::Computation(comp) => machine.comps.push(comp),
+            TermId::Value(value) => machine.values.push(value),
+            TermId::Computation(comp) => machine.comps.push(comp),
         }
         return Ok(());
     }
@@ -3062,7 +3088,7 @@ fn step_quoted_value_type(
         binders,
     };
     match *node {
-        | ValueType::Stack { input, output } => {
+        ValueType::Stack { input, output } => {
             machine.tasks.extend([
                 Task::StackType,
                 Task::QuotedCompType {
@@ -3077,11 +3103,11 @@ fn step_quoted_value_type(
                 },
             ]);
         },
-        | ValueType::List(element) => {
+        ValueType::List(element) => {
             machine.tasks.push(Task::ListType);
             machine.tasks.push(at(element));
         },
-        | ValueType::Path {
+        ValueType::Path {
             carrier,
             left,
             right,
@@ -3099,7 +3125,7 @@ fn step_quoted_value_type(
             });
             machine.tasks.push(at(carrier));
         },
-        | ValueType::Flow {
+        ValueType::Flow {
             carrier,
             source,
             target,
@@ -3117,7 +3143,7 @@ fn step_quoted_value_type(
             });
             machine.tasks.push(at(carrier));
         },
-        | ValueType::Run(session) => {
+        ValueType::Run(session) => {
             machine.tasks.push(Task::RunType);
             machine.tasks.push(Task::QuotedCode {
                 code: session,
@@ -3125,22 +3151,22 @@ fn step_quoted_value_type(
                 binders,
             });
         },
-        | ValueType::PathUniverse(..)
+        ValueType::PathUniverse(..)
         | ValueType::Base(_)
         | ValueType::Universe { .. }
         | ValueType::Abstract(_)
         | ValueType::Unknown => {
             machine.value_types.push(quoted);
         },
-        | ValueType::Capability { ref authority, .. } => {
+        ValueType::Capability { ref authority, .. } => {
             machine.tasks.push(Task::CapabilityType { source: quoted });
             machine.tasks.extend(authority.types().rev().map(at));
         },
         // The empty product and the empty sum are closed leaves.
-        | ValueType::Product(ref parts) | ValueType::Sum(ref parts) if parts.is_empty() => {
+        ValueType::Product(ref parts) | ValueType::Sum(ref parts) if parts.is_empty() => {
             machine.value_types.push(quoted);
         },
-        | ValueType::Data { ref arguments, .. } => {
+        ValueType::Data { ref arguments, .. } => {
             machine.tasks.push(Task::DataType(quoted));
             for &code in arguments.iter().rev() {
                 machine.tasks.push(Task::QuotedCode {
@@ -3150,25 +3176,25 @@ fn step_quoted_value_type(
                 });
             }
         },
-        | ValueType::Record(ref fields) => {
+        ValueType::Record(ref fields) => {
             machine.tasks.push(Task::RecordType(quoted));
             machine
                 .tasks
                 .extend(fields.values().rev().map(|&field| at(field)));
         },
-        | ValueType::Session(ref session) => {
+        ValueType::Session(ref session) => {
             machine.tasks.push(Task::SessionType(quoted));
             machine
                 .tasks
                 .extend(session.payloads().iter().rev().map(|&payload| at(payload)));
         },
-        | ValueType::Product(ref parts) => {
+        ValueType::Product(ref parts) => {
             machine.tasks.push(Task::ProductType(quoted));
             machine
                 .tasks
                 .extend(parts.iter().rev().map(|&part| at(part)));
         },
-        | ValueType::Sum(ref parts) => {
+        ValueType::Sum(ref parts) => {
             machine.tasks.push(Task::SumType(quoted));
             machine
                 .tasks
@@ -3176,7 +3202,7 @@ fn step_quoted_value_type(
         },
         // The static Pi opens no binder: its codomain stands in the ambient
         // context, so both halves read in the same frame.
-        | ValueType::StaticPi {
+        ValueType::StaticPi {
             domain: from,
             codomain,
         } => {
@@ -3186,7 +3212,7 @@ fn step_quoted_value_type(
         },
         // The dependent pair opens a fresh variable for its second factor, as
         // the dependent arrow does for its codomain.
-        | ValueType::Sigma { first, second } => {
+        ValueType::Sigma { first, second } => {
             let zone = Zone::Intuitionistic;
             let Some(deeper) = binders.opened(zone)
             else {
@@ -3213,7 +3239,7 @@ fn step_quoted_value_type(
             });
             machine.tasks.push(at(first));
         },
-        | ValueType::Thunk(body) => {
+        ValueType::Thunk(body) => {
             machine.tasks.push(Task::ThunkType);
             machine.tasks.push(Task::QuotedCompType {
                 quoted: body,
@@ -3221,12 +3247,12 @@ fn step_quoted_value_type(
                 binders,
             });
         },
-        | ValueType::Lift { inner, ref target } => {
+        ValueType::Lift { inner, ref target } => {
             let target = domain.hold_level(target.clone());
             machine.tasks.push(Task::LiftType { target });
             machine.tasks.push(at(inner));
         },
-        | ValueType::Element { code, ref target } => {
+        ValueType::Element { code, ref target } => {
             let target = domain.hold_level(target.clone());
             machine.tasks.push(Task::Element { target });
             machine.tasks.push(Task::QuotedCode {
@@ -3298,8 +3324,8 @@ fn step_quoted_comp_type(
         .cloned()
         .ok_or(ReadbackFault::MachineInvariant)?;
     match node {
-        | CompType::Unknown => machine.comp_types.push(quoted),
-        | CompType::With(first, second) => {
+        CompType::Unknown => machine.comp_types.push(quoted),
+        CompType::With(first, second) => {
             machine.tasks.extend([
                 Task::WithType,
                 Task::QuotedCompType {
@@ -3314,7 +3340,7 @@ fn step_quoted_comp_type(
                 },
             ]);
         },
-        | CompType::Returner { result, effects } => {
+        CompType::Returner { result, effects } => {
             machine.tasks.push(Task::Returner { source: quoted });
             machine
                 .tasks
@@ -3329,7 +3355,7 @@ fn step_quoted_comp_type(
                 binders,
             });
         },
-        | CompType::Arrow {
+        CompType::Arrow {
             domain: from,
             codomain,
         } => {
@@ -3345,7 +3371,7 @@ fn step_quoted_comp_type(
                 binders,
             });
         },
-        | CompType::Pi {
+        CompType::Pi {
             domain: from,
             codomain,
         } => {
@@ -3379,7 +3405,7 @@ fn step_quoted_comp_type(
                 binders,
             });
         },
-        | CompType::Element { code, target } => {
+        CompType::Element { code, target } => {
             let target = domain.hold_level(target);
             machine.tasks.push(Task::CompElement { target });
             machine.tasks.push(Task::QuotedCode {
@@ -3457,7 +3483,7 @@ fn step_value(
         return Ok(());
     }
     match node {
-        | DomainValue::Constructor {
+        DomainValue::Constructor {
             datatype,
             tag,
             fields,
@@ -3487,7 +3513,7 @@ fn step_value(
             });
             Ok(())
         },
-        | DomainValue::Record { source, fields, .. } => {
+        DomainValue::Record { source, fields, .. } => {
             let fields = domain.fields(fields).map_err(ReadbackFault::Domain)?;
             if !matches!(core.value(source), Some(Value::Record(labels)) if labels.len() == fields.len())
             {
@@ -3499,11 +3525,11 @@ fn step_value(
             }
             Ok(())
         },
-        | DomainValue::ListNil { .. } => {
+        DomainValue::ListNil { .. } => {
             machine.values.push(core.value_list_nil());
             Ok(())
         },
-        | DomainValue::ListCons { first, second, .. } => {
+        DomainValue::ListCons { first, second, .. } => {
             machine.tasks.push(Task::ListCons);
             machine.tasks.push(Task::Value {
                 value: second,
@@ -3515,11 +3541,11 @@ fn step_value(
             });
             Ok(())
         },
-        | DomainValue::PathCertificate { certificate, .. } => {
+        DomainValue::PathCertificate { certificate, .. } => {
             machine.values.push(certificate);
             Ok(())
         },
-        | DomainValue::PathProduct { first, second, .. } => {
+        DomainValue::PathProduct { first, second, .. } => {
             machine.tasks.push(Task::PathProduct);
             machine.tasks.push(Task::Value {
                 value: second,
@@ -3531,7 +3557,7 @@ fn step_value(
             });
             Ok(())
         },
-        | DomainValue::Here { point, .. } => {
+        DomainValue::Here { point, .. } => {
             machine.tasks.push(Task::Here);
             machine.tasks.push(Task::Value {
                 value: point,
@@ -3539,7 +3565,7 @@ fn step_value(
             });
             Ok(())
         },
-        | DomainValue::Flow { former, parts, .. } => {
+        DomainValue::Flow { former, parts, .. } => {
             let parts = domain.fields(parts).map_err(ReadbackFault::Domain)?;
             machine.tasks.push(Task::Flow(former));
             for &value in parts.iter().rev() {
@@ -3547,7 +3573,7 @@ fn step_value(
             }
             Ok(())
         },
-        | DomainValue::Literal { literal, .. } => {
+        DomainValue::Literal { literal, .. } => {
             // The payload was never copied into the domain: the node names the
             // core value that holds it, and that id is valid whatever the face
             // says, so the readback splices it rather than rebuilding a literal
@@ -3555,7 +3581,7 @@ fn step_value(
             machine.values.push(literal);
             Ok(())
         },
-        | DomainValue::Tuple { fields, .. } => {
+        DomainValue::Tuple { fields, .. } => {
             let components = domain.fields(fields).map_err(ReadbackFault::Domain)?;
             machine.tasks.push(Task::Tuple(components.len()));
             for &value in components.iter().rev() {
@@ -3563,7 +3589,7 @@ fn step_value(
             }
             Ok(())
         },
-        | DomainValue::Injection { summand, body, .. } => {
+        DomainValue::Injection { summand, body, .. } => {
             machine.tasks.push(Task::Inject { summand });
             machine.tasks.push(Task::Value {
                 value: body,
@@ -3571,7 +3597,7 @@ fn step_value(
             });
             Ok(())
         },
-        | DomainValue::Thunk { body, .. } => {
+        DomainValue::Thunk { body, .. } => {
             let whnf = enter(core, domain, machine, body, Entry::Bare)?;
             machine.tasks.push(Task::Thunk);
             machine.tasks.push(Task::Comp {
@@ -3580,7 +3606,7 @@ fn step_value(
             });
             Ok(())
         },
-        | DomainValue::Lift { target, body, .. } => {
+        DomainValue::Lift { target, body, .. } => {
             machine.tasks.push(Task::Lift { target });
             machine.tasks.push(Task::Value {
                 value: body,
@@ -3588,10 +3614,10 @@ fn step_value(
             });
             Ok(())
         },
-        | DomainValue::Neutral { neutral, .. } => {
+        DomainValue::Neutral { neutral, .. } => {
             step_neutral(core, domain, machine, neutral, Polarity::Value, binders)
         },
-        | DomainValue::Code { code, .. } => {
+        DomainValue::Code { code, .. } => {
             let Some(closure) = domain.value_closure(code)
             else {
                 return Err(ReadbackFault::Domain(DomainFault::Dangling));
@@ -3599,7 +3625,7 @@ fn step_value(
             let body = closure.body();
             let frame = machine.hold_frame(closure.environment().clone());
             match body {
-                | crate::ValueBody::ValueType(quoted) => {
+                crate::ValueBody::ValueType(quoted) => {
                     machine.tasks.push(Task::Quote);
                     machine.tasks.push(Task::QuotedValueType {
                         quoted,
@@ -3607,7 +3633,7 @@ fn step_value(
                         binders,
                     });
                 },
-                | crate::ValueBody::CompType(quoted) => {
+                crate::ValueBody::CompType(quoted) => {
                     machine.tasks.push(Task::QuoteComputation);
                     machine.tasks.push(Task::QuotedCompType {
                         quoted,
@@ -3615,8 +3641,8 @@ fn step_value(
                         binders,
                     });
                 },
-                | crate::ValueBody::Source(body) => match core.value(body) {
-                    | Some(&Value::Quote(quoted)) => {
+                crate::ValueBody::Source(body) => match core.value(body) {
+                    Some(&Value::Quote(quoted)) => {
                         machine.tasks.push(Task::Quote);
                         machine.tasks.push(Task::QuotedValueType {
                             quoted,
@@ -3624,7 +3650,7 @@ fn step_value(
                             binders,
                         });
                     },
-                    | Some(&Value::QuoteComputation(quoted)) => {
+                    Some(&Value::QuoteComputation(quoted)) => {
                         machine.tasks.push(Task::QuoteComputation);
                         machine.tasks.push(Task::QuotedCompType {
                             quoted,
@@ -3632,12 +3658,12 @@ fn step_value(
                             binders,
                         });
                     },
-                    | Some(_) | None => return Err(ReadbackFault::MachineInvariant),
+                    Some(_) | None => return Err(ReadbackFault::MachineInvariant),
                 },
             }
             Ok(())
         },
-        | DomainValue::StaticLambda { lambda, .. } => {
+        DomainValue::StaticLambda { lambda, .. } => {
             let (body, deeper) = open_static(core, domain, machine, lambda, binders)?;
             machine.tasks.push(Task::StaticLambda);
             machine.tasks.push(Task::Value {
@@ -3701,7 +3727,7 @@ fn step_comp(
         return Ok(());
     }
     match node {
-        | DomainComp::Lambda { body, .. } => {
+        DomainComp::Lambda { body, .. } => {
             let opened = open(core, domain, machine, body, binders, Zone::Intuitionistic)?;
             let (whnf, deeper) = opened;
             machine.tasks.push(Task::Lambda);
@@ -3711,12 +3737,12 @@ fn step_comp(
             });
             Ok(())
         },
-        | DomainComp::Return { value, .. } => {
+        DomainComp::Return { value, .. } => {
             machine.tasks.push(Task::Return);
             machine.tasks.push(Task::Value { value, binders });
             Ok(())
         },
-        | DomainComp::Neutral { neutral, .. } => step_neutral(
+        DomainComp::Neutral { neutral, .. } => step_neutral(
             core,
             domain,
             machine,
@@ -3724,7 +3750,7 @@ fn step_comp(
             Polarity::Computation,
             binders,
         ),
-        | DomainComp::Fixpoint { recursive, .. } => {
+        DomainComp::Fixpoint { recursive, .. } => {
             let (source, environment) = {
                 let held = domain
                     .comp_closure(recursive)
@@ -3882,14 +3908,14 @@ fn step_neutral(
         (held.head(), held.unfolding())
     };
     let spent = match machine.mode {
-        | ReadbackMode::ZeroUnfold => None,
-        | ReadbackMode::Unfolding => match unfolding {
-            | Unfolding::Rigid => None,
-            | Unfolding::Unforced(body) => {
+        ReadbackMode::ZeroUnfold => None,
+        ReadbackMode::Unfolding => match unfolding {
+            Unfolding::Rigid => None,
+            Unfolding::Unforced(body) => {
                 let forced = force_body(core, domain, machine, neutral, body)?;
                 Some(forced)
             },
-            | Unfolding::Forced(glued) => Some(glued),
+            Unfolding::Forced(glued) => Some(glued),
         },
     };
     // An unfolded head meets the leading static applications of its spine by
@@ -3897,7 +3923,7 @@ fn step_neutral(
     // re-applied to those arguments here, and the fold resumes past them. This
     // is what makes the spending mode's answer a static normal form.
     let (spent, start) = match spent {
-        | Some(Glued::Value(body)) => {
+        Some(Glued::Value(body)) => {
             let arguments: Vec<DomainValueId> = {
                 let Some(held) = domain.neutral(neutral)
                 else {
@@ -3906,8 +3932,8 @@ fn step_neutral(
                 held.spine()
                     .iter()
                     .map_while(|elimination| match *elimination {
-                        | Elimination::StaticApply(argument) => Some(argument),
-                        | Elimination::Transport(_)
+                        Elimination::StaticApply(argument) => Some(argument),
+                        Elimination::Transport(_)
                         | Elimination::ProductTransport(_)
                         | Elimination::PathTransport { .. }
                         | Elimination::Ride { .. }
@@ -3941,11 +3967,11 @@ fn step_neutral(
                 (Some(Glued::Value(reduced)), SpineOffset(arguments.len()))
             }
         },
-        | None | Some(Glued::Computation(_)) => (spent, SpineOffset::innermost()),
+        None | Some(Glued::Computation(_)) => (spent, SpineOffset::innermost()),
     };
     let polarity = match spent {
-        | None => match head {
-            | NeutralHead::Hole {
+        None => match head {
+            NeutralHead::Hole {
                 closure: Suspended::Computation(_),
                 ..
             }
@@ -3953,7 +3979,7 @@ fn step_neutral(
                 closure: Suspended::Computation(_),
                 ..
             } => Polarity::Computation,
-            | NeutralHead::Hole {
+            NeutralHead::Hole {
                 closure: Suspended::Value(_),
                 ..
             }
@@ -3966,8 +3992,8 @@ fn step_neutral(
             | NeutralHead::Module(_)
             | NeutralHead::Returned(_) => Polarity::Value,
         },
-        | Some(Glued::Value(_)) => Polarity::Value,
-        | Some(Glued::Computation(_)) => Polarity::Computation,
+        Some(Glued::Value(_)) => Polarity::Value,
+        Some(Glued::Computation(_)) => Polarity::Computation,
     };
     machine.tasks.push(Task::Spine(SpineStep {
         neutral,
@@ -3977,31 +4003,31 @@ fn step_neutral(
         binders,
     }));
     match spent {
-        | None => match head {
-            | NeutralHead::Hole { hole, closure } => machine.tasks.push(Task::Suspended {
+        None => match head {
+            NeutralHead::Hole { hole, closure } => machine.tasks.push(Task::Suspended {
                 closure,
                 kind: SuspendedKind::Hole(hole),
                 binders,
             }),
-            | NeutralHead::Mark { closure, .. } => machine.tasks.push(Task::Suspended {
+            NeutralHead::Mark { closure, .. } => machine.tasks.push(Task::Suspended {
                 closure,
                 kind: SuspendedKind::Mark,
                 binders,
             }),
-            | NeutralHead::Returned(computation) => {
+            NeutralHead::Returned(computation) => {
                 machine.tasks.push(Task::Returned);
                 machine.tasks.push(Task::Comp {
                     comp: computation,
                     binders,
                 });
             },
-            | NeutralHead::Variable { .. } | NeutralHead::Constant(_) | NeutralHead::Module(_) => {
+            NeutralHead::Variable { .. } | NeutralHead::Constant(_) | NeutralHead::Module(_) => {
                 let term = head_term(core, head, binders)?;
                 machine.values.push(term);
             },
         },
-        | Some(Glued::Value(value)) => machine.tasks.push(Task::Value { value, binders }),
-        | Some(Glued::Computation(comp)) => machine.tasks.push(Task::Comp { comp, binders }),
+        Some(Glued::Value(value)) => machine.tasks.push(Task::Value { value, binders }),
+        Some(Glued::Computation(comp)) => machine.tasks.push(Task::Comp { comp, binders }),
     }
     Ok(())
 }
@@ -4090,7 +4116,7 @@ fn step_spine(
     };
     let onward = Task::Spine(spine.onward(Polarity::Computation));
     match elimination {
-        | Elimination::Projection(source) => {
+        Elimination::Projection(source) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine.tasks.push(onward);
             machine.tasks.push(Task::Projection(source));
@@ -4098,7 +4124,7 @@ fn step_spine(
         },
         // The fold holds the stuck argument; the fixpoint reads back as
         // itself and is applied to it.
-        | Elimination::Fixpoint(recursive) => {
+        Elimination::Fixpoint(recursive) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             let fixpoint = domain.comp_fixpoint(recursive, CompTermFace::Reduced);
             machine.tasks.push(onward);
@@ -4109,7 +4135,7 @@ fn step_spine(
             });
             Ok(())
         },
-        | Elimination::DataCase(closure) => {
+        Elimination::DataCase(closure) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             let held = domain
                 .comp_closure(closure)
@@ -4177,7 +4203,7 @@ fn step_spine(
             });
             Ok(())
         },
-        | Elimination::Split(closure) => {
+        Elimination::Split(closure) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             let held = domain
                 .comp_closure(closure)
@@ -4204,10 +4230,10 @@ fn step_spine(
                 binders: deeper,
             };
             match motive {
-                | SplitMotive::Ambient => machine.tasks.extend([Task::Split(arity), read_body]),
+                SplitMotive::Ambient => machine.tasks.extend([Task::Split(arity), read_body]),
                 // A dependent split's motive reads back under one fresh
                 // variable standing for the scrutinee, as a data case's does.
-                | SplitMotive::Scrutinee(motive) => {
+                SplitMotive::Scrutinee(motive) => {
                     let zone = Zone::Intuitionistic;
                     let under = binders
                         .opened(zone)
@@ -4241,7 +4267,7 @@ fn step_spine(
             }
             Ok(())
         },
-        | Elimination::ListFold {
+        Elimination::ListFold {
             element,
             result,
             on_nil,
@@ -4283,14 +4309,14 @@ fn step_spine(
             });
             Ok(())
         },
-        | Elimination::Transport(value) => {
+        Elimination::Transport(value) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine.tasks.push(onward);
             machine.tasks.push(Task::Transport);
             machine.tasks.push(Task::Value { value, binders });
             Ok(())
         },
-        | Elimination::ProductTransport(path) => {
+        Elimination::ProductTransport(path) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine.tasks.push(onward);
             machine.tasks.push(Task::ProductTransport);
@@ -4302,7 +4328,7 @@ fn step_spine(
         },
         // The motive reads its own binder past the capture, so it is read
         // back under a fresh variable, as a nominal case's motive is.
-        | Elimination::PathTransport { motive, value } | Elimination::Ride { motive, value } => {
+        Elimination::PathTransport { motive, value } | Elimination::Ride { motive, value } => {
             let assemble = if matches!(elimination, Elimination::Ride { .. }) {
                 Task::Ride
             }
@@ -4349,7 +4375,7 @@ fn step_spine(
         },
         // The motive's arrows bind the telescope, so it is read back at the
         // spine's own depth.
-        | Elimination::TelescopeTransport {
+        Elimination::TelescopeTransport {
             motive,
             start,
             over,
@@ -4379,13 +4405,13 @@ fn step_spine(
             });
             Ok(())
         },
-        | Elimination::Force => {
+        Elimination::Force => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine.tasks.push(onward);
             machine.tasks.push(Task::Force);
             Ok(())
         },
-        | Elimination::Apply(argument) => {
+        Elimination::Apply(argument) => {
             expect_polarity(spine.polarity, Polarity::Computation, neutral)?;
             machine.tasks.push(onward);
             machine.tasks.push(Task::Apply);
@@ -4395,7 +4421,7 @@ fn step_spine(
             });
             Ok(())
         },
-        | Elimination::StaticApply(argument) => {
+        Elimination::StaticApply(argument) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine
                 .tasks
@@ -4407,7 +4433,7 @@ fn step_spine(
             });
             Ok(())
         },
-        | Elimination::Bind(body) => {
+        Elimination::Bind(body) => {
             expect_polarity(spine.polarity, Polarity::Computation, neutral)?;
             let opened = open(core, domain, machine, body, binders, Zone::Intuitionistic)?;
             let (whnf, deeper) = opened;
@@ -4419,7 +4445,7 @@ fn step_spine(
             });
             Ok(())
         },
-        | Elimination::Case(branches) => {
+        Elimination::Case(branches) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             let count = domain
                 .branches(branches)
@@ -5465,11 +5491,11 @@ mod tests
         };
         assert_eq!(arity, ComponentCount::from(2_usize));
         let index = |core: &CoreArena, value| match core.value(value) {
-            | Some(&Value::Variable {
+            Some(&Value::Variable {
                 zone: Zone::Intuitionistic,
                 index,
             }) => u32::from(index),
-            | _ => panic!("a variable reads back"),
+            _ => panic!("a variable reads back"),
         };
         assert_eq!(index(&core, scrutinee), 0);
         let Some(&Computation::Return(produced)) = core.computation(body)
@@ -6015,9 +6041,9 @@ mod tests
         let environment = DefinitionalEnvironment::new();
         let scope = environment.root();
         let chain = LoweredChain::lower(chain, |entry| match entry.constant() {
-            | position if position == inner => Ok(unit),
-            | position if position == outer => Ok(outer_body),
-            | position => Err(position),
+            position if position == inner => Ok(unit),
+            position if position == outer => Ok(outer_body),
+            position => Err(position),
         })
         .expect("both bodies lower");
         let definitions = Definitions::new(&chain, &environment, scope);
@@ -6488,8 +6514,8 @@ mod tests
             panic!("whose codomain is an arrow");
         };
         let code_of_value = |core: &CoreArena, ty| match core.value_type(ty) {
-            | Some(&ValueType::Element { code, .. }) => core.value(code).cloned(),
-            | _ => None,
+            Some(&ValueType::Element { code, .. }) => core.value(code).cloned(),
+            _ => None,
         };
         let variable = |index: u32| {
             Some(Value::Variable {
@@ -6585,8 +6611,8 @@ mod tests
             panic!("of two parts");
         };
         let code_of = |core: &CoreArena, ty| match core.value_type(ty) {
-            | Some(&ValueType::Element { code, .. }) => core.value(code).cloned(),
-            | _ => None,
+            Some(&ValueType::Element { code, .. }) => core.value(code).cloned(),
+            _ => None,
         };
         let variable = |index: u32| {
             Some(Value::Variable {

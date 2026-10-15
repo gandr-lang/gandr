@@ -95,19 +95,19 @@ fn judged(
         .filter_map(|declaration| {
             let origin = OriginToken::from(usize::from(declaration.origin()));
             let (declared, defined) = match declaration.outcome() {
-                | DeclarationOutcome::Completed {
+                DeclarationOutcome::Completed {
                     declared_type,
                     body,
                 } => (Maybe::Present(declared_type), Maybe::Present(body)),
-                | DeclarationOutcome::Uncompleted { declared_type } => (
+                DeclarationOutcome::Uncompleted { declared_type } => (
                     Maybe::Present(declared_type),
                     Maybe::Absent(body::Absent::Hole),
                 ),
-                | DeclarationOutcome::Bodied { body } => (
+                DeclarationOutcome::Bodied { body } => (
                     Maybe::Absent(signature::Absent::Unsigned),
                     Maybe::Present(body),
                 ),
-                | DeclarationOutcome::Data(_)
+                DeclarationOutcome::Data(_)
                 | DeclarationOutcome::Abstract(_)
                 | DeclarationOutcome::Refused(_) => return None,
             };
@@ -210,8 +210,11 @@ fn tail_of(
 ) -> ComputationId
 {
     let body = match outcome_of(module, name) {
-        | DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => body,
-        | other => panic!("`{name:?}` lowers a body: {other:?}"),
+        DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => body,
+        other @ (DeclarationOutcome::Uncompleted { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::Refused(_)) => panic!("`{name:?}` lowers a body: {other:?}"),
     };
     let Some(&Value::Thunk(mut computation)) = arena.value(body)
     else {
@@ -501,7 +504,7 @@ fn an_exercise_s_head_answers_at_its_operation()
         .labels()
         .iter()
         .filter_map(|label| match label.labelled {
-            | Labelled::CompType { ty, ref context } if context.is_empty() => {
+            Labelled::CompType { ty, ref context } if context.is_empty() => {
                 let Some(&CompType::Arrow { domain, codomain }) = arena.comp_type(ty)
                 else {
                     return None;
@@ -516,7 +519,10 @@ fn an_exercise_s_head_answers_at_its_operation()
                     read(reply),
                 ))
             },
-            | _ => None,
+            Labelled::ValueType { .. }
+            | Labelled::CompType { .. }
+            | Labelled::Value(_)
+            | Labelled::Endpoint(_) => None,
         })
         .collect();
     heads.sort_by_key(|&(written, ..)| written);

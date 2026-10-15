@@ -473,12 +473,12 @@ fn check_symbol_mapping(
     } = *mapping;
     if let Maybe::Present(target_code) = ctor_code(target, target_symbol.as_name_ref()) {
         match ctor_code(source, source_symbol.as_name_ref()) {
-            | Maybe::Present(source_code) if source_code == target_code => {},
-            | Maybe::Present(_) => errors.push(MorphismError::new(format!(
+            Maybe::Present(source_code) if source_code == target_code => {},
+            Maybe::Present(_) => errors.push(MorphismError::new(format!(
                 "ctor `{target_symbol}` ↦ `{source_symbol}` in factor {factor}: payload codes \
                  differ"
             ))),
-            | Maybe::Absent(symbol::Absent::Undeclared) => {
+            Maybe::Absent(symbol::Absent::Undeclared) => {
                 errors.push(MorphismError::new(format!(
                     "ctor `{target_symbol}` ↦ `{source_symbol}` in factor {factor}: source symbol \
                      is not a constructor with the same code"
@@ -539,14 +539,12 @@ fn ctor_code<'desc>(
     name: NameRef<'_>,
 ) -> Maybe<&'desc Code<Grade>, symbol::Absent>
 {
-    match desc
-        .ctors
+    desc.ctors
         .iter()
         .find(|ctor| ctor.name.as_name_ref() == name)
-    {
-        | Some(ctor) => Maybe::Present(&ctor.code),
-        | None => Maybe::Absent(symbol::Absent::Undeclared),
-    }
+        .map_or(Maybe::Absent(symbol::Absent::Undeclared), |ctor| {
+            Maybe::Present(&ctor.code)
+        })
 }
 
 /// Whether a name is an operation of a description.
@@ -587,14 +585,12 @@ fn op_arity<'desc>(
     name: NameRef<'_>,
 ) -> Maybe<&'desc BridgeArity, symbol::Absent>
 {
-    match desc
-        .opers
+    desc.opers
         .iter()
         .find(|oper| oper.name.as_name_ref() == name)
-    {
-        | Some(oper) => Maybe::Present(&oper.arity),
-        | None => Maybe::Absent(symbol::Absent::Undeclared),
-    }
+        .map_or(Maybe::Absent(symbol::Absent::Undeclared), |oper| {
+            Maybe::Present(&oper.arity)
+        })
 }
 
 /// Composes two tight arrows: `compose(first, second)` is `second ∘ first`,
@@ -774,8 +770,8 @@ impl BaseLoose
     pub fn src(&self) -> SigObj
     {
         match *self {
-            | Self::Named(ref rel) => rel.src.clone(),
-            | Self::Path { ref sig } => sig.clone(),
+            Self::Named(ref rel) => rel.src.clone(),
+            Self::Path { ref sig } => sig.clone(),
         }
     }
 
@@ -786,8 +782,8 @@ impl BaseLoose
     pub fn tgt(&self) -> SigObj
     {
         match *self {
-            | Self::Named(ref rel) => rel.tgt.clone(),
-            | Self::Path { ref sig } => sig.clone(),
+            Self::Named(ref rel) => rel.tgt.clone(),
+            Self::Path { ref sig } => sig.clone(),
         }
     }
 }
@@ -1065,7 +1061,7 @@ fn base_instance_eq(
 ) -> LooseInstanceEquality
 {
     let equal = match (left, right) {
-        | (
+        (
             &BaseInstance::Gen {
                 generator: left_generator,
                 subst: ref left_subst,
@@ -1075,7 +1071,7 @@ fn base_instance_eq(
                 subst: ref right_subst,
             },
         ) => left_generator == right_generator && left_subst == right_subst,
-        | (
+        (
             &BaseInstance::Path {
                 start: ref left_start,
                 steps: ref left_steps,
@@ -1085,7 +1081,7 @@ fn base_instance_eq(
                 steps: ref right_steps,
             },
         ) => left_start == right_start && left_steps == right_steps,
-        | (&BaseInstance::Gen { .. }, &BaseInstance::Path { .. })
+        (&BaseInstance::Gen { .. }, &BaseInstance::Path { .. })
         | (&BaseInstance::Path { .. }, &BaseInstance::Gen { .. }) => false,
     };
     LooseInstanceEquality::from(equal)
@@ -1196,8 +1192,8 @@ fn generator_side(
         return Maybe::Absent(endpoint::Absent::UnknownGenerator);
     };
     let term = match side {
-        | FaceSide::Lhs => &face.lhs,
-        | FaceSide::Rhs => &face.rhs,
+        FaceSide::Lhs => &face.lhs,
+        FaceSide::Rhs => &face.rhs,
     };
     Maybe::Present(subst_term(term, subst))
 }
@@ -1238,11 +1234,11 @@ pub fn left_endpoint(
 ) -> Maybe<FreeTerm, endpoint::Absent>
 {
     let raw = match *instance {
-        | BaseInstance::Gen {
+        BaseInstance::Gen {
             generator,
             ref subst,
         } => generator_side(&factor.base, generator, subst, FaceSide::Lhs),
-        | BaseInstance::Path { ref start, .. } => Maybe::Present(start.clone()),
+        BaseInstance::Path { ref start, .. } => Maybe::Present(start.clone()),
     };
     raw.map(|raw| apply_term(&factor.left, DescriptorFactorIndex::from(0_usize), &raw))
 }
@@ -1289,11 +1285,11 @@ pub fn right_endpoint(
 ) -> Maybe<FreeTerm, endpoint::Absent>
 {
     let raw = match *instance {
-        | BaseInstance::Gen {
+        BaseInstance::Gen {
             generator,
             ref subst,
         } => generator_side(&factor.base, generator, subst, FaceSide::Rhs),
-        | BaseInstance::Path {
+        BaseInstance::Path {
             ref start,
             ref steps,
         } => {
@@ -1306,8 +1302,8 @@ pub fn right_endpoint(
                 return Maybe::Absent(endpoint::Absent::BaseMismatch);
             };
             match apply_path(start, steps, &first_factor.rules) {
-                | Maybe::Present(end) => Maybe::Present(end),
-                | Maybe::Absent(_) => Maybe::Absent(endpoint::Absent::PathDeclined),
+                Maybe::Present(end) => Maybe::Present(end),
+                Maybe::Absent(_) => Maybe::Absent(endpoint::Absent::PathDeclined),
             }
         },
     };
@@ -1553,12 +1549,12 @@ impl CellKind
     ) -> CellView<'_>
     {
         match self.steps[usize::from(at)].op {
-            | CellOp::Ident => CellView::Ident,
-            | CellOp::Clauses(ref clauses) => CellView::Clauses(clauses),
-            | CellOp::Pair => CellView::Pair,
-            | CellOp::Proj { idx } => CellView::Proj { idx },
-            | CellOp::Bang => CellView::Bang,
-            | CellOp::PathInd => CellView::PathInd,
+            CellOp::Ident => CellView::Ident,
+            CellOp::Clauses(ref clauses) => CellView::Clauses(clauses),
+            CellOp::Pair => CellView::Pair,
+            CellOp::Proj { idx } => CellView::Proj { idx },
+            CellOp::Bang => CellView::Bang,
+            CellOp::PathInd => CellView::PathInd,
         }
     }
 
@@ -1742,31 +1738,33 @@ pub fn replay(
     let mut last: Maybe<LooseInstance, replay_outcome::Absent> = declined.clone();
     while let Some(frame) = stack.pop() {
         match frame {
-            | ReplayFrame::Eval { at, inputs } => match kind.view_at(at) {
-                | CellView::Ident => {
+            ReplayFrame::Eval { at, inputs } => match kind.view_at(at) {
+                CellView::Ident => {
                     last = match *inputs.as_slice() {
-                        | [ref only] => Maybe::Present(only.clone()),
-                        | _ => declined.clone(),
+                        [ref only] => Maybe::Present(only.clone()),
+                        _ => declined.clone(),
                     };
                 },
-                | CellView::Bang => {
+                CellView::Bang => {
                     last = Maybe::Present(LooseInstance {
                         per_factor: Vec::new(),
                     });
                 },
-                | CellView::Proj { idx } => {
-                    last = match inputs
+                CellView::Proj { idx } => {
+                    last = inputs
                         .first()
                         .and_then(|instance| instance.per_factor.get(usize::from(idx)))
-                    {
-                        | Some(factor) => Maybe::Present(LooseInstance {
-                            per_factor: vec![factor.clone()],
-                        }),
-                        | None => declined.clone(),
-                    };
+                        .map_or_else(
+                            || declined.clone(),
+                            |factor| {
+                                Maybe::Present(LooseInstance {
+                                    per_factor: vec![factor.clone()],
+                                })
+                            },
+                        );
                 },
-                | CellView::Clauses(clauses) => last = replay_clauses(clauses, &inputs),
-                | CellView::Pair => {
+                CellView::Clauses(clauses) => last = replay_clauses(clauses, &inputs),
+                CellView::Pair => {
                     let (left, right) = kind.two_parts(at);
                     stack.push(ReplayFrame::PairRight {
                         right,
@@ -1774,10 +1772,10 @@ pub fn replay(
                     });
                     stack.push(ReplayFrame::Eval { at: left, inputs });
                 },
-                | CellView::PathInd => {
+                CellView::PathInd => {
                     let refl_middle = inputs.get(1).and_then(|middle| middle.per_factor.first());
                     match (inputs.first(), refl_middle, inputs.get(2)) {
-                        | (
+                        (
                             Some(left_input),
                             Some(&BaseInstance::Path { ref steps, .. }),
                             Some(right_input),
@@ -1787,11 +1785,11 @@ pub fn replay(
                                 inputs: vec![left_input.clone(), right_input.clone()],
                             });
                         },
-                        | _ => last = declined.clone(),
+                        _ => last = declined.clone(),
                     }
                 },
             },
-            | ReplayFrame::PairRight { right, inputs } => {
+            ReplayFrame::PairRight { right, inputs } => {
                 let Maybe::Present(left_out) = core::mem::replace(&mut last, declined.clone())
                 else {
                     continue;
@@ -1799,7 +1797,7 @@ pub fn replay(
                 stack.push(ReplayFrame::PairCombine { left_out });
                 stack.push(ReplayFrame::Eval { at: right, inputs });
             },
-            | ReplayFrame::PairCombine { left_out } => {
+            ReplayFrame::PairCombine { left_out } => {
                 let Maybe::Present(right_out) = core::mem::replace(&mut last, declined.clone())
                 else {
                     continue;
@@ -1856,7 +1854,7 @@ fn replay_clauses(
         let mut env = Binding::new();
         for (position, (instance, &expected)) in inputs.iter().zip(&clause.matches).enumerate() {
             match instance.per_factor.first() {
-                | Some(&BaseInstance::Gen {
+                Some(&BaseInstance::Gen {
                     generator,
                     ref subst,
                 }) if generator == expected => {
@@ -1864,7 +1862,7 @@ fn replay_clauses(
                         env.insert(Name::from(format!("p{position}.{variable}")), term.clone());
                     }
                 },
-                | _ => continue 'clauses,
+                _ => continue 'clauses,
             }
         }
         let per_factor = clause
@@ -1911,8 +1909,8 @@ pub fn replay_compose(
     let mut middle = Vec::new();
     for (inner, inputs) in inners.iter().zip(inner_inputs) {
         match replay(inner, inputs) {
-            | Maybe::Present(output) => middle.push(output),
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(output) => middle.push(output),
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         }
     }
     replay(outer, &middle)
@@ -1943,13 +1941,11 @@ pub fn cells_equal(
 {
     CellEquivalence::from(corpus.iter().all(|inputs| {
         match (replay(left, inputs), replay(right, inputs)) {
-            | (Maybe::Absent(_), Maybe::Absent(_)) => true,
-            | (Maybe::Present(ref one), Maybe::Present(ref other)) => {
+            (Maybe::Absent(_), Maybe::Absent(_)) => true,
+            (Maybe::Present(ref one), Maybe::Present(ref other)) => {
                 bool::from(loose_instance_eq(one, other))
             },
-            | (Maybe::Present(_), Maybe::Absent(_)) | (Maybe::Absent(_), Maybe::Present(_)) => {
-                false
-            },
+            (Maybe::Present(_), Maybe::Absent(_)) | (Maybe::Absent(_), Maybe::Present(_)) => false,
         }
     }))
 }
@@ -2175,8 +2171,8 @@ pub fn replay_path_ind_saturated(
 ) -> Maybe<LooseInstance, replay_outcome::Absent>
 {
     match apply_path(&saturated.path_start, &saturated.absorbed, cells) {
-        | Maybe::Present(_) => replay(base, &[left_input.clone(), right_input.clone()]),
-        | Maybe::Absent(_) => Maybe::Absent(replay_outcome::Absent::Declined),
+        Maybe::Present(_) => replay(base, &[left_input.clone(), right_input.clone()]),
+        Maybe::Absent(_) => Maybe::Absent(replay_outcome::Absent::Declined),
     }
 }
 

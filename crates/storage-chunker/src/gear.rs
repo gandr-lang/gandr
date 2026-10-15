@@ -155,7 +155,7 @@ impl GearTableVersion
     pub const fn discriminator(self) -> RawDiscriminator
     {
         match self {
-            | Self::V1 => RawDiscriminator(0x0001_u16),
+            Self::V1 => RawDiscriminator(0x0001_u16),
         }
     }
 }
@@ -222,7 +222,7 @@ impl NormalizationPolicy
     pub const fn discriminator(self) -> RawDiscriminator
     {
         match self {
-            | Self::PreserveBytes => RawDiscriminator(0x0000_u16),
+            Self::PreserveBytes => RawDiscriminator(0x0000_u16),
         }
     }
 }
@@ -290,7 +290,7 @@ impl RecordBoundaryRule
     pub const fn discriminator(self) -> RawDiscriminator
     {
         match self {
-            | Self::BetweenRecords => RawDiscriminator(0x0000_u16),
+            Self::BetweenRecords => RawDiscriminator(0x0000_u16),
         }
     }
 }
@@ -394,8 +394,8 @@ impl SeedPolicy
     pub const fn discriminator(&self) -> RawDiscriminator
     {
         match *self {
-            | Self::Unsalted => RawDiscriminator(0x0000_u16),
-            | Self::PublicSalt(_) => RawDiscriminator(0x0001_u16),
+            Self::Unsalted => RawDiscriminator(0x0000_u16),
+            Self::PublicSalt(_) => RawDiscriminator(0x0001_u16),
         }
     }
 
@@ -409,8 +409,8 @@ impl SeedPolicy
     pub const fn salt(&self) -> SeedSalt
     {
         match *self {
-            | Self::Unsalted => SeedSalt([0_u8; SEED_SALT_LEN]),
-            | Self::PublicSalt(salt) => salt,
+            Self::Unsalted => SeedSalt([0_u8; SEED_SALT_LEN]),
+            Self::PublicSalt(salt) => salt,
         }
     }
 }

@@ -253,35 +253,35 @@ impl fmt::Display for PathError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Session(ref error) => error.fmt(f),
-            | Self::Arena => f.write_str("a universe-path root was unreadable"),
-            | Self::UnsupportedCode(_) => f.write_str("a universe-path endpoint was not quoted"),
-            | Self::UnsupportedType(_) => {
+            Self::Session(ref error) => error.fmt(f),
+            Self::Arena => f.write_str("a universe-path root was unreadable"),
+            Self::UnsupportedCode(_) => f.write_str("a universe-path endpoint was not quoted"),
+            Self::UnsupportedType(_) => {
                 f.write_str("a code was outside the native path vocabulary")
             },
-            | Self::UncertifiedStratum(_) => {
+            Self::UncertifiedStratum(_) => {
                 f.write_str("a recursive code is an uncertified stratum of the universe")
             },
-            | Self::ExpectedPath(_) => f.write_str("an equivalence annotation was not Path_U"),
-            | Self::Coverage(Direction::Source) => {
+            Self::ExpectedPath(_) => f.write_str("an equivalence annotation was not Path_U"),
+            Self::Coverage(Direction::Source) => {
                 f.write_str("incomplete source round-trip coverage")
             },
-            | Self::Coverage(Direction::Target) => {
+            Self::Coverage(Direction::Target) => {
                 f.write_str("incomplete target round-trip coverage")
             },
-            | Self::RoundTrip {
+            Self::RoundTrip {
                 direction,
                 pattern,
                 verdict,
             } => {
                 let direction = match direction {
-                    | Direction::Source => "source",
-                    | Direction::Target => "target",
+                    Direction::Source => "source",
+                    Direction::Target => "target",
                 };
                 let verdict = match verdict {
-                    | KernelVerdict::Convertible => "certified equality",
-                    | KernelVerdict::NotConvertible => "refuted equality",
-                    | KernelVerdict::Declined(_) => "replay declined",
+                    KernelVerdict::Convertible => "certified equality",
+                    KernelVerdict::NotConvertible => "refuted equality",
+                    KernelVerdict::Declined(_) => "replay declined",
                 };
                 write!(
                     f,
@@ -289,7 +289,7 @@ impl fmt::Display for PathError
                     pattern.0
                 )
             },
-            | Self::Budget => f.write_str("the universe-path allowance was exhausted"),
+            Self::Budget => f.write_str("the universe-path allowance was exhausted"),
         }
     }
 }
@@ -445,12 +445,12 @@ pub fn beta(
 ) -> Result<Reduction, PathError>
 {
     let reduct = match arena.value(term.path) {
-        | Some(&Value::PathRefl(_)) => arena.computation_return(term.value),
-        | Some(&Value::PathEquiv { forward, .. }) => {
+        Some(&Value::PathRefl(_)) => arena.computation_return(term.value),
+        Some(&Value::PathEquiv { forward, .. }) => {
             let force = arena.computation_force(forward);
             arena.computation_application(force, term.value)
         },
-        | Some(&Value::PathProduct(first, second)) => {
+        Some(&Value::PathProduct(first, second)) => {
             let Some(&[left, right]) = arena.value(term.value).and_then(Value::components)
             else {
                 return if arena.value(term.value).is_some() {
@@ -477,8 +477,8 @@ pub fn beta(
             let result = arena.computation_bind(second, result);
             arena.computation_bind(first, result)
         },
-        | Some(_) => return Ok(Reduction::Stuck),
-        | None => return Err(PathError::Arena),
+        Some(_) => return Ok(Reduction::Stuck),
+        None => return Err(PathError::Arena),
     };
     Ok(Reduction::Reduced(reduct))
 }

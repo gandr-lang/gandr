@@ -100,10 +100,10 @@ mod coincide
         let mut depth = 0_usize;
         for (offset, character) in rest.char_indices() {
             match character {
-                | '{' => depth = depth.saturating_add(1),
-                | '}' if depth == 0 => return rest.get(.. offset).map(String::from),
-                | '}' => depth = depth.saturating_sub(1),
-                | _ => {},
+                '{' => depth = depth.saturating_add(1),
+                '}' if depth == 0 => return rest.get(.. offset).map(String::from),
+                '}' => depth = depth.saturating_sub(1),
+                _ => {},
             }
         }
         None
@@ -155,15 +155,15 @@ mod coincide
         let mut closed = None;
         for (offset, character) in arguments.char_indices() {
             match character {
-                | '(' => depth = depth.saturating_add(1),
-                | ')' => {
+                '(' => depth = depth.saturating_add(1),
+                ')' => {
                     depth = depth.saturating_sub(1);
                     if depth == 0 {
                         closed = Some(offset);
                         break;
                     }
                 },
-                | _ => {},
+                _ => {},
             }
         }
         (identifier && closed == Some(arguments.len().saturating_sub(1)))

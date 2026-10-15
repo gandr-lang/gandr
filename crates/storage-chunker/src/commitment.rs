@@ -88,8 +88,8 @@ impl AlgorithmVersion
     pub const fn discriminator(self) -> RawDiscriminator
     {
         match self {
-            | Self::FastCdc2020 => RawDiscriminator(0x0001_u16),
-            | Self::TypedCdc => RawDiscriminator(0x0002_u16),
+            Self::FastCdc2020 => RawDiscriminator(0x0001_u16),
+            Self::TypedCdc => RawDiscriminator(0x0002_u16),
         }
     }
 }
@@ -277,15 +277,15 @@ impl CommitmentWriter
     )
     {
         match field {
-            | CommitmentField::Byte(byte) => self.0.push(byte),
-            | CommitmentField::Word(word) => {
+            CommitmentField::Byte(byte) => self.0.push(byte),
+            CommitmentField::Word(word) => {
                 self.0.extend_from_slice(word.to_le_bytes().as_slice());
             },
-            | CommitmentField::Int(int) => self.0.extend_from_slice(int.to_le_bytes().as_slice()),
-            | CommitmentField::Long(long) => {
+            CommitmentField::Int(int) => self.0.extend_from_slice(int.to_le_bytes().as_slice()),
+            CommitmentField::Long(long) => {
                 self.0.extend_from_slice(long.to_le_bytes().as_slice());
             },
-            | CommitmentField::Bytes(bytes) => self.0.extend_from_slice(bytes),
+            CommitmentField::Bytes(bytes) => self.0.extend_from_slice(bytes),
         }
     }
 

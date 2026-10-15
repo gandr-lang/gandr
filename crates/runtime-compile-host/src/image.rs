@@ -244,14 +244,14 @@ impl NodeKind
     pub const fn wire_byte(self) -> WireByte
     {
         WireByte(match self {
-            | Self::Lit => 0,
-            | Self::Var => 1,
-            | Self::Ctor => 2,
-            | Self::Dup => 3,
-            | Self::Drop => 4,
-            | Self::Bind => 5,
-            | Self::Case => 6,
-            | Self::Cut => 7,
+            Self::Lit => 0,
+            Self::Var => 1,
+            Self::Ctor => 2,
+            Self::Dup => 3,
+            Self::Drop => 4,
+            Self::Bind => 5,
+            Self::Case => 6,
+            Self::Cut => 7,
         })
     }
 }
@@ -286,10 +286,10 @@ impl CtorTag
     pub const fn wire_byte(self) -> WireByte
     {
         WireByte(match self {
-            | Self::Unit => 0,
-            | Self::Pair => 1,
-            | Self::Inl => 2,
-            | Self::Inr => 3,
+            Self::Unit => 0,
+            Self::Pair => 1,
+            Self::Inl => 2,
+            Self::Inr => 3,
         })
     }
     /// The constructor's field count.
@@ -307,9 +307,9 @@ impl CtorTag
     pub const fn arity(self) -> CtorArity
     {
         CtorArity(match self {
-            | Self::Unit => 0,
-            | Self::Pair => 2,
-            | Self::Inl | Self::Inr => 1,
+            Self::Unit => 0,
+            Self::Pair => 2,
+            Self::Inl | Self::Inr => 1,
         })
     }
 }
@@ -383,9 +383,9 @@ impl core::fmt::Display for ImageError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::TooManyNodes => f.write_str("image exceeds 4096 nodes"),
-            | Self::TooManyOperands => f.write_str("node exceeds 255 operands"),
-            | Self::ForwardOperand(index) => {
+            Self::TooManyNodes => f.write_str("image exceeds 4096 nodes"),
+            Self::TooManyOperands => f.write_str("node exceeds 255 operands"),
+            Self::ForwardOperand(index) => {
                 write!(f, "operand {} does not precede its node", index.0)
             },
         }
@@ -499,9 +499,14 @@ impl Image
         let mut work = AccountedWork::default();
         for node in &self.nodes {
             match node.kind {
-                | NodeKind::Dup => work.duplications.0 = work.duplications.0.saturating_add(1),
-                | NodeKind::Drop => work.discards.0 = work.discards.0.saturating_add(1),
-                | _ => {},
+                NodeKind::Dup => work.duplications.0 = work.duplications.0.saturating_add(1),
+                NodeKind::Drop => work.discards.0 = work.discards.0.saturating_add(1),
+                NodeKind::Lit
+                | NodeKind::Var
+                | NodeKind::Ctor
+                | NodeKind::Bind
+                | NodeKind::Case
+                | NodeKind::Cut => {},
             }
         }
         work

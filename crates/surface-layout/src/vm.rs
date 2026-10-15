@@ -272,8 +272,8 @@ pub(crate) fn execute(
             });
         };
         match node {
-            | PlanNode::Empty => {},
-            | PlanNode::Text(text) => {
+            PlanNode::Empty => {},
+            PlanNode::Text(text) => {
                 let Maybe::Present(identity) = arena.text_identity(text)
                 else {
                     return Err(RenderError::Invariant {
@@ -282,7 +282,7 @@ pub(crate) fn execute(
                 };
                 buffer.append(meter, &Fragment(identity.as_ref()))?;
             },
-            | PlanNode::Verbatim(verbatim) => {
+            PlanNode::Verbatim(verbatim) => {
                 let Maybe::Present(identity) = arena.verbatim_identity(verbatim)
                 else {
                     return Err(RenderError::Invariant {
@@ -291,13 +291,13 @@ pub(crate) fn execute(
                 };
                 buffer.append(meter, &Fragment(identity.as_ref()))?;
             },
-            | PlanNode::Newline {
+            PlanNode::Newline {
                 indentation,
                 ending,
             } => {
                 let ending = match ending {
-                    | PhysicalLineEnding::Lf => "\n",
-                    | PhysicalLineEnding::CrLf => "\r\n",
+                    PhysicalLineEnding::Lf => "\n",
+                    PhysicalLineEnding::CrLf => "\r\n",
                 };
                 buffer.append(meter, &Fragment(ending))?;
                 let mut remaining = usize::try_from(u32::from(indentation)).map_err(|_error| {
@@ -317,7 +317,7 @@ pub(crate) fn execute(
                     remaining = remaining.saturating_sub(run);
                 }
             },
-            | PlanNode::Seq { left, right } => {
+            PlanNode::Seq { left, right } => {
                 let next_depth = u64::try_from(stack.len())
                     .ok()
                     .and_then(|depth| depth.checked_add(2u64))

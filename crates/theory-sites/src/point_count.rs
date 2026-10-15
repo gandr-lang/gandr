@@ -127,8 +127,8 @@ pub fn grounded_stratum(catalogue: &Catalogue) -> Outcome<Shape>
             .iter()
             .flat_map(|ends| [ends.producer(), ends.consumer()])
             .filter_map(|end| match end {
-                | End::Open => None,
-                | End::Vertex(vertex) => Some(vertex),
+                End::Open => None,
+                End::Vertex(vertex) => Some(vertex),
             })
             .collect();
         let grounded = named.len() == usize::from(shape.vertex_count());

@@ -148,9 +148,9 @@ impl ToyHead
     const fn arity(&self) -> ToyCount
     {
         match *self {
-            | Self::Var(_) | Self::Konst(_) | Self::Zero => ToyCount(0),
-            | Self::Succ => ToyCount(1),
-            | Self::Add => ToyCount(2),
+            Self::Var(_) | Self::Konst(_) | Self::Zero => ToyCount(0),
+            Self::Succ => ToyCount(1),
+            Self::Add => ToyCount(2),
         }
     }
 }
@@ -363,8 +363,8 @@ impl Toy
     fn vars(&self) -> impl Iterator<Item = &ToyVar>
     {
         self.0.iter().filter_map(|head| match *head {
-            | ToyHead::Var(ref var) => Some(var),
-            | ToyHead::Konst(_) | ToyHead::Zero | ToyHead::Succ | ToyHead::Add => None,
+            ToyHead::Var(ref var) => Some(var),
+            ToyHead::Konst(_) | ToyHead::Zero | ToyHead::Succ | ToyHead::Add => None,
         })
     }
 
@@ -395,8 +395,8 @@ impl Toy
             self.0
                 .iter()
                 .map(|head| match *head {
-                    | ToyHead::Var(ref var) => relabel(var),
-                    | ToyHead::Konst(_) | ToyHead::Zero | ToyHead::Succ | ToyHead::Add => {
+                    ToyHead::Var(ref var) => relabel(var),
+                    ToyHead::Konst(_) | ToyHead::Zero | ToyHead::Succ | ToyHead::Add => {
                         head.clone()
                     },
                 })
@@ -531,8 +531,8 @@ impl ToySubst
         let mut current = term;
         for _ in 0 ..= self.0.len() {
             let image = match current.0.as_slice() {
-                | &[ToyHead::Var(ref var)] => self.0.get(var),
-                | _ => None,
+                &[ToyHead::Var(ref var)] => self.0.get(var),
+                _ => None,
             };
             let Some(image) = image
             else {
@@ -712,8 +712,8 @@ where
                 .zip(&starts)
                 .map(|(member, start)| member.0.get(start.0));
             let shared = match heads.next() {
-                | Some(Some(head)) if heads.all(|other| other == Some(head)) => Some(head),
-                | Some(_) | None => None,
+                Some(Some(head)) if heads.all(|other| other == Some(head)) => Some(head),
+                Some(_) | None => None,
             };
             if let Some(head) = shared {
                 nodes.push(head.clone());
@@ -874,10 +874,10 @@ impl CellAlphabet for ToyAlphabet
             let left = found.walk(left);
             let right = found.walk(right);
             let (var, image) = match (left.0.as_slice(), right.0.as_slice()) {
-                | (&[ToyHead::Var(ref x)], &[ToyHead::Var(ref y)]) if x == y => continue,
-                | (&[ToyHead::Var(ref var)], _) => (var.clone(), right.clone()),
-                | (_, &[ToyHead::Var(ref var)]) => (var.clone(), left.clone()),
-                | (&[ref left_head, ..], &[ref right_head, ..]) if left_head == right_head => {
+                (&[ToyHead::Var(ref x)], &[ToyHead::Var(ref y)]) if x == y => continue,
+                (&[ToyHead::Var(ref var)], _) => (var.clone(), right.clone()),
+                (_, &[ToyHead::Var(ref var)]) => (var.clone(), left.clone()),
+                (&[ref left_head, ..], &[ref right_head, ..]) if left_head == right_head => {
                     let mut left_child = ToyCount(1);
                     let mut right_child = ToyCount(1);
                     for _ in 0 .. left_head.arity().0 {
@@ -892,7 +892,7 @@ impl CellAlphabet for ToyAlphabet
                     }
                     continue;
                 },
-                | _ => return SubstitutionDecision::from(false),
+                _ => return SubstitutionDecision::from(false),
             };
             if found
                 .apply_fully(&image)
@@ -1135,11 +1135,11 @@ impl CellAlphabet for ToyAlphabet
     ) -> Result<Self::Cmd, CommandSpliceRefusal>
     {
         let (start, end) = match cmd.range_at(&pos.0) {
-            | Maybe::Present(range) => range,
-            | Maybe::Absent(command_subterm::Absent::OffTerm) => {
+            Maybe::Present(range) => range,
+            Maybe::Absent(command_subterm::Absent::OffTerm) => {
                 return Err(CommandSpliceRefusal::OffTerm);
             },
-            | Maybe::Absent(command_subterm::Absent::NotACommand) => {
+            Maybe::Absent(command_subterm::Absent::NotACommand) => {
                 return Err(CommandSpliceRefusal::NotACommand);
             },
         };
@@ -1185,15 +1185,15 @@ impl CellAlphabet for ToyAlphabet
     {
         let (left, right) = (occurrences(lhs), occurrences(rhs));
         match lhs.0.len().cmp(&rhs.0.len()) {
-            | core::cmp::Ordering::Greater
+            core::cmp::Ordering::Greater
                 if dominates(&left, &right) == HoleDomination::Dominates =>
             {
                 core::cmp::Ordering::Greater
             },
-            | core::cmp::Ordering::Less if dominates(&right, &left) == HoleDomination::Dominates => {
+            core::cmp::Ordering::Less if dominates(&right, &left) == HoleDomination::Dominates => {
                 core::cmp::Ordering::Less
             },
-            | core::cmp::Ordering::Greater
+            core::cmp::Ordering::Greater
             | core::cmp::Ordering::Less
             | core::cmp::Ordering::Equal => core::cmp::Ordering::Equal,
         }

@@ -82,8 +82,8 @@ pub fn charge<'regions>(
         inside = frame.symbol.body();
     }
     match (outermost, innermost) {
-        | (Some(charged), Some(innermost)) => Charge::Check { charged, innermost },
-        | (Some(_) | None, _) => Charge::Elsewhere,
+        (Some(charged), Some(innermost)) => Charge::Check { charged, innermost },
+        (Some(_) | None, _) => Charge::Elsewhere,
     }
 }
 
@@ -486,10 +486,8 @@ mod tests
             location: Maybe::Absent(position::Absent::Unknown),
         };
         let item = |found: Charge<'_>| match found {
-            | Charge::Check { charged, innermost } => {
-                (charged.item.clone(), innermost.item.clone())
-            },
-            | Charge::Elsewhere => (ItemName::from("-"), ItemName::from("-")),
+            Charge::Check { charged, innermost } => (charged.item.clone(), innermost.item.clone()),
+            Charge::Elsewhere => (ItemName::from("-"), ItemName::from("-")),
         };
         assert_eq!(
             item(charge(

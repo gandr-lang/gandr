@@ -66,14 +66,13 @@ impl Placement
         id: TermId,
     ) -> Result<TermId, StageError>
     {
-        match id.0.checked_sub(self.floor.terms.0) {
-            | None => Ok(id),
-            | Some(offset) => self
-                .terms
-                .get(offset)
-                .copied()
-                .ok_or(StageError::UnknownTerm(id)),
-        }
+        id.0.checked_sub(self.floor.terms.0)
+            .map_or(Ok(id), |offset| {
+                self.terms
+                    .get(offset)
+                    .copied()
+                    .ok_or(StageError::UnknownTerm(id))
+            })
     }
 
     /// A worker's classifier coordinate in the program's arena: itself below
@@ -97,14 +96,13 @@ impl Placement
         id: TypeId,
     ) -> Result<TypeId, StageError>
     {
-        match id.0.checked_sub(self.floor.types.0) {
-            | None => Ok(id),
-            | Some(offset) => self
-                .types
-                .get(offset)
-                .copied()
-                .ok_or(StageError::UnknownType(id)),
-        }
+        id.0.checked_sub(self.floor.types.0)
+            .map_or(Ok(id), |offset| {
+                self.types
+                    .get(offset)
+                    .copied()
+                    .ok_or(StageError::UnknownType(id))
+            })
     }
 
     /// A worker's term with every child and classifier placed in the
@@ -130,41 +128,41 @@ impl Placement
     ) -> Result<Term, StageError>
     {
         Ok(match term {
-            | Term::Variable(_) | Term::Natural(..) => term,
-            | Term::Code(ty) => {
+            Term::Variable(_) | Term::Natural(..) => term,
+            Term::Code(ty) => {
                 let ty = self.type_at(ty)?;
                 Term::Code(ty)
             },
-            | Term::Lambda(domain, body) => {
+            Term::Lambda(domain, body) => {
                 let domain = self.type_at(domain)?;
                 let body = self.term_at(body)?;
                 Term::Lambda(domain, body)
             },
-            | Term::Apply(function, argument) => {
+            Term::Apply(function, argument) => {
                 let function = self.term_at(function)?;
                 let argument = self.term_at(argument)?;
                 Term::Apply(function, argument)
             },
-            | Term::Multiply(left, right) => {
+            Term::Multiply(left, right) => {
                 let left = self.term_at(left)?;
                 let right = self.term_at(right)?;
                 Term::Multiply(left, right)
             },
-            | Term::Quote(quoted) => {
+            Term::Quote(quoted) => {
                 let quoted = self.term_at(quoted)?;
                 Term::Quote(quoted)
             },
-            | Term::Splice(spliced) => {
+            Term::Splice(spliced) => {
                 let spliced = self.term_at(spliced)?;
                 Term::Splice(spliced)
             },
-            | Term::Iterate(count, initial, step) => {
+            Term::Iterate(count, initial, step) => {
                 let count = self.term_at(count)?;
                 let initial = self.term_at(initial)?;
                 let step = self.term_at(step)?;
                 Term::Iterate(count, initial, step)
             },
-            | Term::Eliminate(scrutinee, result) => {
+            Term::Eliminate(scrutinee, result) => {
                 let scrutinee = self.term_at(scrutinee)?;
                 let result = self.type_at(result)?;
                 Term::Eliminate(scrutinee, result)
@@ -194,13 +192,13 @@ impl Placement
     ) -> Result<Type, StageError>
     {
         Ok(match ty {
-            | Type::In(_) | Type::Universe(_) | Type::Nat(_) => ty,
-            | Type::Arrow(domain, codomain) => {
+            Type::In(_) | Type::Universe(_) | Type::Nat(_) => ty,
+            Type::Arrow(domain, codomain) => {
                 let domain = self.type_at(domain)?;
                 let codomain = self.type_at(codomain)?;
                 Type::Arrow(domain, codomain)
             },
-            | Type::Lift(lifted) => {
+            Type::Lift(lifted) => {
                 let lifted = self.type_at(lifted)?;
                 Type::Lift(lifted)
             },

@@ -362,8 +362,8 @@ impl ObservationArguments
     pub fn as_slice(&self) -> &[HeapValueId]
     {
         match *self {
-            | Self::Nullary => &[],
-            | Self::Unary(ref value) => core::slice::from_ref(value),
+            Self::Nullary => &[],
+            Self::Unary(ref value) => core::slice::from_ref(value),
         }
     }
 }
@@ -462,8 +462,8 @@ impl Frame
     const fn delimiters(self) -> Delimiters
     {
         Delimiters(match self {
-            | Self::Reset | Self::Handler { .. } => 1,
-            | Self::DeclinedUpdate
+            Self::Reset | Self::Handler { .. } => 1,
+            Self::DeclinedUpdate
             | Self::Destructor { .. }
             | Self::Bind { .. }
             | Self::Case { .. }
@@ -535,20 +535,20 @@ impl fmt::Display for StoreFault
     ) -> fmt::Result
     {
         match *self {
-            | Self::RegionFull(family) => {
+            Self::RegionFull(family) => {
                 let name = match family {
-                    | HeapFamily::Values => "value",
-                    | HeapFamily::Cells => "cell",
-                    | HeapFamily::ValueBindings => "producer binding",
-                    | HeapFamily::CovalueBindings => "covalue binding",
+                    HeapFamily::Values => "value",
+                    HeapFamily::Cells => "cell",
+                    HeapFamily::ValueBindings => "producer binding",
+                    HeapFamily::CovalueBindings => "covalue binding",
                 };
                 write!(f, "the {name} family of the heap is full")
             },
-            | Self::SerialsExhausted => f.write_str("the frame serials are exhausted"),
-            | Self::DanglingValue(id) => write!(f, "value {id} is not in the store"),
-            | Self::DanglingCell(id) => write!(f, "cell {id} is not in the store"),
-            | Self::CellNotInProgress { cell, .. } => write!(f, "cell {cell} is not in progress"),
-            | Self::StaleMark(mark) => write!(
+            Self::SerialsExhausted => f.write_str("the frame serials are exhausted"),
+            Self::DanglingValue(id) => write!(f, "value {id} is not in the store"),
+            Self::DanglingCell(id) => write!(f, "cell {id} is not in the store"),
+            Self::CellNotInProgress { cell, .. } => write!(f, "cell {cell} is not in progress"),
+            Self::StaleMark(mark) => write!(
                 f,
                 "the continuation at height {} names a popped frame",
                 mark.height
@@ -776,9 +776,9 @@ impl Store
     {
         let state = self.cell_mut(cell)?;
         match *state {
-            | MemoState::Forced(value) => Ok(ForceEntry::Cached(value)),
-            | MemoState::InProgress => Ok(ForceEntry::Reentrant),
-            | MemoState::Unforced => {
+            MemoState::Forced(value) => Ok(ForceEntry::Cached(value)),
+            MemoState::InProgress => Ok(ForceEntry::Reentrant),
+            MemoState::Unforced => {
                 *state = MemoState::InProgress;
                 Ok(ForceEntry::Opened)
             },
@@ -1349,8 +1349,8 @@ impl Store
     {
         let height = usize::from(mark.height);
         let below = match height.checked_sub(1) {
-            | None => FrameSerial::BASE,
-            | Some(offset) => self
+            None => FrameSerial::BASE,
+            Some(offset) => self
                 .frames
                 .get(offset)
                 .map(|entry| entry.serial)
@@ -1416,13 +1416,14 @@ impl Store
         height: FrameHeight,
     ) -> Option<ContinuationMark>
     {
-        match usize::from(height).checked_sub(1) {
-            | None => Some(ContinuationMark::BASE),
-            | Some(index) => self.frames.get(index).map(|entry| ContinuationMark {
-                height,
-                serial: entry.serial,
-            }),
-        }
+        usize::from(height)
+            .checked_sub(1)
+            .map_or(Some(ContinuationMark::BASE), |index| {
+                self.frames.get(index).map(|entry| ContinuationMark {
+                    height,
+                    serial: entry.serial,
+                })
+            })
     }
 
     /// Cancel memo writes crossed by an operation or a captured continuation.
@@ -1837,11 +1838,11 @@ mod tests
             MemoState::Forced(value),
         ] {
             match state {
-                | MemoState::Unforced => {},
-                | MemoState::InProgress => {
+                MemoState::Unforced => {},
+                MemoState::InProgress => {
                     store.begin_force(cell).expect("live cell");
                 },
-                | MemoState::Forced(cached) => {
+                MemoState::Forced(cached) => {
                     store.begin_force(cell).expect("live cell");
                     store.write_back(cell, cached).expect("in progress");
                 },

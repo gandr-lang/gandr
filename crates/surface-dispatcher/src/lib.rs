@@ -397,8 +397,8 @@ impl core::fmt::Display for StatusReport
 pub fn dispatch(invocation: Invocation) -> Outcome
 {
     match invocation {
-        | Invocation::Status => Outcome::Status(StatusReport),
-        | Invocation::Check {
+        Invocation::Status => Outcome::Status(StatusReport),
+        Invocation::Check {
             goals,
             lints,
             grant,
@@ -410,15 +410,15 @@ pub fn dispatch(invocation: Invocation) -> Outcome
             walk: Walk::new(paths).granting(grant),
             width,
         },
-        | Invocation::Test { paths, width } => Outcome::Run {
+        Invocation::Test { paths, width } => Outcome::Run {
             verb: Verb::Test,
             lints: Lints::default(),
             walk: Walk::new(paths),
             width,
         },
-        | Invocation::Run { path } => Outcome::Script(Script::new(path)),
-        | Invocation::Stage { programs, width } => Outcome::Stage(Staging::new(programs, width)),
-        | Invocation::Format {
+        Invocation::Run { path } => Outcome::Script(Script::new(path)),
+        Invocation::Stage { programs, width } => Outcome::Stage(Staging::new(programs, width)),
+        Invocation::Format {
             paths,
             options,
             rewrite,

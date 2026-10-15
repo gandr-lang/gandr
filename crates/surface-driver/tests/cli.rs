@@ -745,8 +745,8 @@ mod cli
                 let mut command = gandr(&arguments);
                 command.args(jobs);
                 match environment {
-                    | Some(threads) => command.env("GANDR_JOBS", threads),
-                    | None => command.env_remove("GANDR_JOBS"),
+                    Some(threads) => command.env("GANDR_JOBS", threads),
+                    None => command.env_remove("GANDR_JOBS"),
                 };
                 ran(command)
             };
@@ -777,8 +777,8 @@ mod cli
             let mut command = gandr(&["stage", "pow:0..8", "double:0..8", "pow:0..4"]);
             command.args(jobs);
             match environment {
-                | Some(threads) => command.env("GANDR_JOBS", threads),
-                | None => command.env_remove("GANDR_JOBS"),
+                Some(threads) => command.env("GANDR_JOBS", threads),
+                None => command.env_remove("GANDR_JOBS"),
             };
             ran(command)
         };

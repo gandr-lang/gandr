@@ -217,8 +217,8 @@ fn the_class_is_a_category_at_the_bound()
     let maps = |source: usize, target: usize| match catalogue
         .maps(ShapeIndex::from(source), ShapeIndex::from(target))
     {
-        | Maybe::Present(maps) => maps.to_vec(),
-        | Maybe::Absent(_) => panic!("every pair has a hom set"),
+        Maybe::Present(maps) => maps.to_vec(),
+        Maybe::Absent(_) => panic!("every pair has a hom set"),
     };
     for first in 0 .. count {
         for second in 0 .. count {
@@ -425,14 +425,14 @@ fn the_catalogue_serves_pinned_hom_sets()
 {
     let catalogue = Catalogue::build(ShapeSize::from(3)).expect("the catalogue builds");
     let find = |shape: &Shape| match catalogue.find(shape) {
-        | Maybe::Present(index) => index,
-        | Maybe::Absent(reason) => panic!("the class is within the bound: {reason:?}"),
+        Maybe::Present(index) => index,
+        Maybe::Absent(reason) => panic!("the class is within the bound: {reason:?}"),
     };
     let point = find(&shape!(1));
     let closed_chain = find(&shape!(2; 1 > 0));
     match catalogue.maps(point, closed_chain) {
-        | Maybe::Present(maps) => assert_eq!(maps.len(), 2, "• → p→q"),
-        | Maybe::Absent(reason) => panic!("the pair is in range: {reason:?}"),
+        Maybe::Present(maps) => assert_eq!(maps.len(), 2, "• → p→q"),
+        Maybe::Absent(reason) => panic!("the pair is in range: {reason:?}"),
     }
     let past = ShapeIndex::from(catalogue.shapes().len());
     assert_eq!(

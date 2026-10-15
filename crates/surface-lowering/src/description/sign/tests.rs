@@ -803,9 +803,9 @@ fn spelled(
     let mut pending = alloc::vec![Piece::Term(value)];
     while let Some(piece) = pending.pop() {
         match piece {
-            | Piece::Text(text) => out.push_str(text),
-            | Piece::Term(id) => match arena.value(id) {
-                | Some(&gandr_core_term::Value::Constructor {
+            Piece::Text(text) => out.push_str(text),
+            Piece::Term(id) => match arena.value(id) {
+                Some(&gandr_core_term::Value::Constructor {
                     tag, ref fields, ..
                 }) => {
                     out.push_str(
@@ -826,12 +826,12 @@ fn spelled(
                     }
                     pending.push(Piece::Text("("));
                 },
-                | Some(&gandr_core_term::Value::Literal(gandr_kernel_term::Literal::Text(
+                Some(&gandr_core_term::Value::Literal(gandr_kernel_term::Literal::Text(
                     ref text,
                 ))) => {
                     write!(out, "\"{}\"", AsRef::<str>::as_ref(text)).unwrap();
                 },
-                | other => panic!("not a presentation node: {other:?}"),
+                other => panic!("not a presentation node: {other:?}"),
             },
         }
     }

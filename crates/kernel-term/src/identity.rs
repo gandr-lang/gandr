@@ -95,8 +95,8 @@ impl HigherProgram
         .into_iter()
         .chain(self.layers.iter().flat_map(|layer| {
             let (kind, target) = match *layer {
-                | HigherLayer::Guard { tail } => (crate::HIGHER_GUARD, tail),
-                | HigherLayer::Redirect(target) => (crate::HIGHER_REDIRECT, target),
+                HigherLayer::Guard { tail } => (crate::HIGHER_GUARD, tail),
+                HigherLayer::Redirect(target) => (crate::HIGHER_REDIRECT, target),
             };
             [
                 crate::EvidenceWord(u64::from(u8::from(kind))),
@@ -215,7 +215,7 @@ impl QuantifiedStep
     pub const fn dialogues(&self) -> &EvaluationDialogues
     {
         match *self {
-            | Self::Return(ref dialogues) | Self::Apply { ref dialogues, .. } => dialogues,
+            Self::Return(ref dialogues) | Self::Apply { ref dialogues, .. } => dialogues,
         }
     }
 }
@@ -250,8 +250,8 @@ pub fn quantified_words(steps: &[QuantifiedStep])
     };
     core::iter::once(count(steps.len())).chain(steps.iter().flat_map(move |step| {
         let kind = match *step {
-            | QuantifiedStep::Return(_) => crate::EvidenceWord(0),
-            | QuantifiedStep::Apply { fibre, .. } => {
+            QuantifiedStep::Return(_) => crate::EvidenceWord(0),
+            QuantifiedStep::Apply { fibre, .. } => {
                 crate::EvidenceWord(u64::from(u32::from(fibre)).saturating_add(1))
             },
         };

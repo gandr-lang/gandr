@@ -325,17 +325,17 @@ impl fmt::Display for SealError
     ) -> fmt::Result
     {
         match *self {
-            | Self::SiteAlreadyMinted { site } => {
+            Self::SiteAlreadyMinted { site } => {
                 write!(f, "the sealing site at {site} was already minted")
             },
-            | Self::RemintingDiverged { serial } => {
+            Self::RemintingDiverged { serial } => {
                 write!(
                     f,
                     "re-minting diverged from the recorded sealing at serial {}",
                     serial.0
                 )
             },
-            | Self::RemintingCountDiverged { recorded, minted } => {
+            Self::RemintingCountDiverged { recorded, minted } => {
                 write!(
                     f,
                     "re-minting produced {minted} atoms where {recorded} were recorded"
@@ -456,8 +456,8 @@ impl SealTable
     ) -> Maybe<SealId, minted_site::Absent>
     {
         match self.minted.get(&site) {
-            | Some(&serial) => Maybe::Present(SealId { serial, site }),
-            | None => Maybe::Absent(minted_site::Absent::Unminted),
+            Some(&serial) => Maybe::Present(SealId { serial, site }),
+            None => Maybe::Absent(minted_site::Absent::Unminted),
         }
     }
 
@@ -517,16 +517,15 @@ impl SealTable
                 minted: self.order.len(),
             });
         }
-        match recorded
+        recorded
             .iter()
             .zip(&self.order)
             .position(|(left, right)| left != right)
-        {
-            | Some(position) => Err(SealError::RemintingDiverged {
-                serial: SealSerial(position),
-            }),
-            | None => Ok(()),
-        }
+            .map_or(Ok(()), |position| {
+                Err(SealError::RemintingDiverged {
+                    serial: SealSerial(position),
+                })
+            })
     }
 }
 

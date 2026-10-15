@@ -85,12 +85,12 @@ impl fmt::Display for ReadbackRefusal
     ) -> fmt::Result
     {
         match *self {
-            | Self::NonLiteralStack(id) => {
+            Self::NonLiteralStack(id) => {
                 write!(f, "stack {id} contains runtime continuation frames")
             },
-            | Self::Unreadable(id) => write!(f, "value {id} has no core reading"),
-            | Self::Dangling(id) => write!(f, "value {id} is not readable from the store"),
-            | Self::Decode(refusal) => {
+            Self::Unreadable(id) => write!(f, "value {id} has no core reading"),
+            Self::Dangling(id) => write!(f, "value {id} is not readable from the store"),
+            Self::Decode(refusal) => {
                 write!(f, "a suspended command has no core reading: {refusal}")
             },
         }
@@ -252,8 +252,8 @@ fn terminal(
         let mut reading = Reading::new(arena, store, core);
         let closing = reading.closing(environment)?;
         return match decode(arena, Root::Copattern(producer), core, &closing)? {
-            | Decoded::Computation(function) => Ok(function),
-            | Decoded::Value(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
+            Decoded::Computation(function) => Ok(function),
+            Decoded::Value(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
         };
     }
     let mut reading = Reading::new(arena, store, core);
@@ -385,33 +385,41 @@ impl<'run> Reading<'run>
                 continue;
             }
             match *store.value(id).ok_or(ReadbackRefusal::Dangling(id))? {
-                | HeapValue::Stack { ref frames } => {
+                HeapValue::Stack { ref frames } => {
                     for frame in frames {
                         match *frame {
-                            | crate::store::Frame::Destructor {
+                            crate::store::Frame::Destructor {
                                 tag: crate::il::DestructorTag::Apply,
                                 arguments: crate::store::ObservationArguments::Unary(value),
                             } => pending.push(value),
-                            | crate::store::Frame::Destructor {
+                            crate::store::Frame::Destructor {
                                 tag: crate::il::DestructorTag::Project(_),
                                 arguments: crate::store::ObservationArguments::Nullary,
                             } => {},
-                            | crate::store::Frame::Bind { environment, .. } => {
+                            crate::store::Frame::Bind { environment, .. } => {
                                 pending.extend(store.bound_values(environment));
                             },
-                            | _ => return Err(ReadbackRefusal::NonLiteralStack(id)),
+                            crate::store::Frame::Reset
+                            | crate::store::Frame::Handler { .. }
+                            | crate::store::Frame::DeclinedUpdate
+                            | crate::store::Frame::Destructor { .. }
+                            | crate::store::Frame::Case { .. }
+                            | crate::store::Frame::ListFold { .. }
+                            | crate::store::Frame::Select { .. }
+                            | crate::store::Frame::Update { .. } => {
+                                return Err(ReadbackRefusal::NonLiteralStack(id));
+                            },
                         }
                     }
                 },
-                | HeapValue::Literal(_) | HeapValue::Opaque(_) => {},
-                | HeapValue::Constructed { ref fields, .. } => {
+                HeapValue::Literal(_) | HeapValue::Opaque(_) => {},
+                HeapValue::Constructed { ref fields, .. } => {
                     pending.extend(fields.iter().copied());
                 },
-                | HeapValue::Thunk { environment, .. }
-                | HeapValue::Fixpoint { environment, .. } => {
+                HeapValue::Thunk { environment, .. } | HeapValue::Fixpoint { environment, .. } => {
                     pending.extend(store.bound_values(environment));
                 },
-                | HeapValue::Closure { .. } | HeapValue::Capability => {
+                HeapValue::Closure { .. } | HeapValue::Capability => {
                     return Err(ReadbackRefusal::Unreadable(id));
                 },
             }
@@ -497,19 +505,19 @@ impl<'run> Reading<'run>
         let store = self.store;
         let held = store.value(id).ok_or(ReadbackRefusal::Dangling(id))?;
         match *held {
-            | HeapValue::Stack { ref frames } => {
+            HeapValue::Stack { ref frames } => {
                 let mut source = Vec::with_capacity(frames.len());
                 for frame in frames.iter().rev() {
                     source.push(match *frame {
-                        | crate::store::Frame::Destructor {
+                        crate::store::Frame::Destructor {
                             tag: crate::il::DestructorTag::Apply,
                             arguments: crate::store::ObservationArguments::Unary(value),
                         } => gandr_core_term::control::StackFrame::Apply(self.lookup(value)?),
-                        | crate::store::Frame::Destructor {
+                        crate::store::Frame::Destructor {
                             tag: crate::il::DestructorTag::Project(side),
                             arguments: crate::store::ObservationArguments::Nullary,
                         } => gandr_core_term::control::StackFrame::Project(side),
-                        | crate::store::Frame::Bind { body, environment } => {
+                        crate::store::Frame::Bind { body, environment } => {
                             let closing = store
                                 .bound_values(environment)
                                 .map(|bound| self.lookup(bound))
@@ -521,24 +529,33 @@ impl<'run> Reading<'run>
                             };
                             gandr_core_term::control::StackFrame::Bind(body)
                         },
-                        | _ => return Err(ReadbackRefusal::NonLiteralStack(id)),
+                        crate::store::Frame::Reset
+                        | crate::store::Frame::Handler { .. }
+                        | crate::store::Frame::DeclinedUpdate
+                        | crate::store::Frame::Destructor { .. }
+                        | crate::store::Frame::Case { .. }
+                        | crate::store::Frame::ListFold { .. }
+                        | crate::store::Frame::Select { .. }
+                        | crate::store::Frame::Update { .. } => {
+                            return Err(ReadbackRefusal::NonLiteralStack(id));
+                        },
                     });
                 }
                 Ok(self.core.value_reify(source.into()))
             },
-            | HeapValue::Literal(ref literal) => Ok(self.core.value_literal(literal.clone())),
-            | HeapValue::Opaque(constant) => Ok(self.core.value_constant(constant)),
-            | HeapValue::Constructed {
+            HeapValue::Literal(ref literal) => Ok(self.core.value_literal(literal.clone())),
+            HeapValue::Opaque(constant) => Ok(self.core.value_constant(constant)),
+            HeapValue::Constructed {
                 ref tag,
                 ref fields,
             } => match (tag, fields.as_ref()) {
-                | (&ConstructorTag::ListNil, &[]) => Ok(self.core.value_list_nil()),
-                | (&ConstructorTag::ListCons, &[head, tail]) => {
+                (&ConstructorTag::ListNil, &[]) => Ok(self.core.value_list_nil()),
+                (&ConstructorTag::ListCons, &[head, tail]) => {
                     let head = self.lookup(head)?;
                     let tail = self.lookup(tail)?;
                     Ok(self.core.value_list_cons(head, tail))
                 },
-                | (&ConstructorTag::Tuple(arity), components)
+                (&ConstructorTag::Tuple(arity), components)
                     if components.len() == usize::from(arity) =>
                 {
                     let components = components
@@ -547,7 +564,7 @@ impl<'run> Reading<'run>
                         .collect::<Result<Vec<_>, _>>()?;
                     Ok(self.core.value_tuple(&components))
                 },
-                | (&ConstructorTag::Record(ref labels), fields)
+                (&ConstructorTag::Record(ref labels), fields)
                     if fields.len() == labels.len()
                         && labels
                             .iter()
@@ -561,15 +578,15 @@ impl<'run> Reading<'run>
                         .collect::<Result<alloc::collections::BTreeMap<_, _>, _>>()?;
                     Ok(self.core.value_record(record))
                 },
-                | (&ConstructorTag::Injection(summand), &[body]) => {
+                (&ConstructorTag::Injection(summand), &[body]) => {
                     let body = self.lookup(body)?;
                     Ok(self.core.value_injection(summand, body))
                 },
-                | (&ConstructorTag::Lift(ref level), &[body]) => {
+                (&ConstructorTag::Lift(ref level), &[body]) => {
                     let body = self.lookup(body)?;
                     Ok(self.core.value_lift(level.clone(), body))
                 },
-                | (&ConstructorTag::Data { tag, arity, family }, fields)
+                (&ConstructorTag::Data { tag, arity, family }, fields)
                     if fields.len() == usize::from(arity) =>
                 {
                     let fields = fields
@@ -577,12 +594,12 @@ impl<'run> Reading<'run>
                         .map(|&field| self.lookup(field))
                         .collect::<Result<Vec<_>, _>>()?;
                     let datatype = match family {
-                        | Some(declaration) => self.core.value_type_data(declaration, Vec::new()),
-                        | None => self.core.value_type_unknown(),
+                        Some(declaration) => self.core.value_type_data(declaration, Vec::new()),
+                        None => self.core.value_type_unknown(),
                     };
                     Ok(self.core.value_constructor(datatype, tag, fields))
                 },
-                | (&ConstructorTag::Recorded(ref shape), fields)
+                (&ConstructorTag::Recorded(ref shape), fields)
                     if fields.len() == usize::from(tag.producer_arity()) =>
                 {
                     use gandr_core_term::session::RecordedMove;
@@ -590,25 +607,25 @@ impl<'run> Reading<'run>
                     let mut read = Vec::with_capacity(shape.len());
                     for movement in shape.iter() {
                         read.push(match *movement {
-                            | RecordedMove::Sent(()) | RecordedMove::Received(()) => {
+                            RecordedMove::Sent(()) | RecordedMove::Received(()) => {
                                 let &payload =
                                     payloads.next().ok_or(ReadbackRefusal::Unreadable(id))?;
                                 movement.carrying(self.lookup(payload)?)
                             },
-                            | RecordedMove::Selected(ref label) => {
+                            RecordedMove::Selected(ref label) => {
                                 RecordedMove::Selected(label.clone())
                             },
-                            | RecordedMove::Offered(ref label) => {
+                            RecordedMove::Offered(ref label) => {
                                 RecordedMove::Offered(label.clone())
                             },
-                            | RecordedMove::Closed => RecordedMove::Closed,
+                            RecordedMove::Closed => RecordedMove::Closed,
                         });
                     }
                     Ok(self.core.value_recorded(alloc::sync::Arc::from(read)))
                 },
-                | _ => Err(ReadbackRefusal::Unreadable(id)),
+                _ => Err(ReadbackRefusal::Unreadable(id)),
             },
-            | HeapValue::Thunk {
+            HeapValue::Thunk {
                 body, environment, ..
             } => {
                 let closing = store
@@ -616,11 +633,11 @@ impl<'run> Reading<'run>
                     .map(|bound| self.lookup(bound))
                     .collect::<Result<Vec<_>, _>>()?;
                 match decode(self.arena, Root::ThunkBody(body), self.core, &closing)? {
-                    | Decoded::Value(thunk) => Ok(thunk),
-                    | Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
+                    Decoded::Value(thunk) => Ok(thunk),
+                    Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
                 }
             },
-            | HeapValue::Fixpoint {
+            HeapValue::Fixpoint {
                 body,
                 environment,
                 evidence,
@@ -636,11 +653,11 @@ impl<'run> Reading<'run>
                     self.core,
                     &closing,
                 )? {
-                    | Decoded::Value(thunk) => Ok(thunk),
-                    | Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
+                    Decoded::Value(thunk) => Ok(thunk),
+                    Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
                 }
             },
-            | HeapValue::Closure { .. } | HeapValue::Capability => {
+            HeapValue::Closure { .. } | HeapValue::Capability => {
                 Err(ReadbackRefusal::Unreadable(id))
             },
         }

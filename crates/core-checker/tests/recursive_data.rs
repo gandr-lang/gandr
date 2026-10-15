@@ -845,22 +845,22 @@ mod recursive_data
         let own = arena.value_type_data(position, vec![parameter]);
         let mut parameters = vec![universe];
         let field = match fixture {
-            | Fixture::Negative => {
+            Fixture::Negative => {
                 let returner = arena.comp_type_returner(unit);
                 let function = arena.comp_type_arrow(own, returner);
                 arena.value_type_thunk(function)
             },
-            | Fixture::Nested => arena.value_type_product(&[own, unit]),
-            | Fixture::Returner => {
+            Fixture::Nested => arena.value_type_product(&[own, unit]),
+            Fixture::Returner => {
                 let returner = arena.comp_type_returner(own);
                 arena.value_type_thunk(returner)
             },
-            | Fixture::NonUniform => {
+            Fixture::NonUniform => {
                 let code = arena.value_quote(unit);
                 arena.value_type_data(position, vec![code])
             },
-            | Fixture::Later => arena.value_type_data(ConstantIndex::from(1), vec![]),
-            | Fixture::Parameter => {
+            Fixture::Later => arena.value_type_data(ConstantIndex::from(1), vec![]),
+            Fixture::Parameter => {
                 parameters.push(own);
                 unit
             },
@@ -905,22 +905,22 @@ mod recursive_data
         let own = arena.value_type_data(position, vec![parameter]);
         let mut parameters = vec![universe];
         let field = match fixture {
-            | Fixture::Negative => {
+            Fixture::Negative => {
                 let returner = arena.comp_type_returner(unit);
                 let function = arena.comp_type_arrow(own, returner);
                 arena.value_type_thunk(function)
             },
-            | Fixture::Nested => arena.value_type_product(&[own, unit]),
-            | Fixture::Returner => {
+            Fixture::Nested => arena.value_type_product(&[own, unit]),
+            Fixture::Returner => {
                 let returner = arena.comp_type_returner(own);
                 arena.value_type_thunk(returner)
             },
-            | Fixture::NonUniform => {
+            Fixture::NonUniform => {
                 let code = arena.value_quote(unit);
                 arena.value_type_data(position, vec![code])
             },
-            | Fixture::Later => arena.value_type_data(ConstantIndex::from(1), vec![]),
-            | Fixture::Parameter => {
+            Fixture::Later => arena.value_type_data(ConstantIndex::from(1), vec![]),
+            Fixture::Parameter => {
                 parameters.push(own);
                 unit
             },
@@ -1049,31 +1049,31 @@ mod recursive_data
         // Under the body: `rec` 0. Under its λ: `x` 0, `rec` 1. Under the
         // `succ` field: `p` 0, `x` 1, `rec` 2.
         let body = match claim {
-            | Claim::Descends => {
+            Claim::Descends => {
                 let recursive = var(arena, DeBruijnIndex::from(2));
                 let field = var(arena, DeBruijnIndex::from(0));
                 let call = call(arena, recursive, &[field]);
                 let on_successor = arena.computation_lambda(call);
                 case_on_argument(arena, on_successor)
             },
-            | Claim::NotCase => {
+            Claim::NotCase => {
                 let recursive = var(arena, DeBruijnIndex::from(1));
                 let argument = var(arena, DeBruijnIndex::from(0));
                 let call = call(arena, recursive, &[argument]);
                 arena.computation_lambda(call)
             },
-            | Claim::Bare => {
+            Claim::Bare => {
                 let recursive = var(arena, DeBruijnIndex::from(0));
                 arena.computation_force(recursive)
             },
-            | Claim::MissingField => case_on_argument(arena, returned),
-            | Claim::Unguarded => {
+            Claim::MissingField => case_on_argument(arena, returned),
+            Claim::Unguarded => {
                 let recursive = var(arena, DeBruijnIndex::from(2));
                 let forced = arena.computation_force(recursive);
                 let on_successor = arena.computation_lambda(forced);
                 case_on_argument(arena, on_successor)
             },
-            | Claim::AtScrutinee => {
+            Claim::AtScrutinee => {
                 let recursive = var(arena, DeBruijnIndex::from(2));
                 let scrutinee = var(arena, DeBruijnIndex::from(1));
                 let call = call(arena, recursive, &[scrutinee]);
@@ -1343,11 +1343,11 @@ mod recursive_data
     ) -> ConversionDecision<ReplayNode>
     {
         decision.map(|node: TraceNode| match node {
-            | TraceNode::Constant(constant) => match positions.get(&constant) {
-                | Some(&position) => ReplayNode::Constant(position),
-                | None => ReplayNode::Other,
+            TraceNode::Constant(constant) => match positions.get(&constant) {
+                Some(&position) => ReplayNode::Constant(position),
+                None => ReplayNode::Other,
             },
-            | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
+            TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
         })
     }
 
@@ -1361,10 +1361,14 @@ mod recursive_data
             .readmitted()
             .iter()
             .filter_map(|entry| match *entry.outcome() {
-                | Outcome::Defined { admitted, .. } | Outcome::Data { admitted, .. } => {
+                Outcome::Defined { admitted, .. } | Outcome::Data { admitted, .. } => {
                     Some((entry.constant(), admitted.position()))
                 },
-                | _ => None,
+                Outcome::Assumed { .. }
+                | Outcome::Marked(_)
+                | Outcome::Static
+                | Outcome::Refused(_)
+                | Outcome::Rejected(_) => None,
             })
             .collect();
         // The normaliser decides `plus 2 2 ≡ 4` and `plus 2 2 ≢ 3` with a
@@ -1414,10 +1418,14 @@ mod recursive_data
                 .declarations()
                 .iter()
                 .map(|entry| match *entry.declaration().content() {
-                    | gandr_kernel_term::DeclarationContent::Def { body, .. } => {
+                    gandr_kernel_term::DeclarationContent::Def { body, .. } => {
                         Unfoldable::Body(body)
                     },
-                    | _ => Unfoldable::Opaque,
+                    gandr_kernel_term::DeclarationContent::Data { .. }
+                    | gandr_kernel_term::DeclarationContent::Axiom { .. }
+                    | gandr_kernel_term::DeclarationContent::AbstractType { .. } => {
+                        Unfoldable::Opaque
+                    },
                 })
                 .collect(),
         );

@@ -211,7 +211,7 @@ mod corpus
                         panic!("the serial walk ended first at {width:?}");
                     };
                     match (step, expected) {
-                        | (
+                        (
                             Step::Source {
                                 path,
                                 root,
@@ -238,7 +238,7 @@ mod corpus
                                 path.display()
                             );
                         },
-                        | (Step::Fault { path, fault }, _) | (_, Step::Fault { path, fault }) => {
+                        (Step::Fault { path, fault }, _) | (_, Step::Fault { path, fault }) => {
                             panic!("{}: {fault}", path.display());
                         },
                     }
@@ -335,7 +335,7 @@ mod corpus
         let mut walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
         while let Maybe::Present(step) = walk.step() {
             match step {
-                | Step::Source { path, .. } | Step::Fault { path, .. } => {
+                Step::Source { path, .. } | Step::Fault { path, .. } => {
                     reached.insert(path.to_path_buf());
                 },
             }
@@ -462,8 +462,8 @@ mod corpus
                 .components()
                 .any(|component| component.as_os_str() == "pathological");
             let sweeps = match tree {
-                | Tree::Model => !pathological,
-                | Tree::Pathological => pathological,
+                Tree::Model => !pathological,
+                Tree::Pathological => pathological,
             };
             if sweeps
                 && root != SourceRoot::Pending

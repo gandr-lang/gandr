@@ -84,8 +84,8 @@ fn program(schema: Schema) -> Program
         (FieldLabel::from(String::from("y")), unit_type),
     ]));
     let fields = match schema {
-        | Schema::Record => vec![record_type],
-        | Schema::Nullary => vec![],
+        Schema::Record => vec![record_type],
+        Schema::Nullary => vec![],
     };
     let data = Declaration::data(
         ConstantIndex::from(0_usize),

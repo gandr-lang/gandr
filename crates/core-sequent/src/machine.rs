@@ -398,30 +398,30 @@ impl fmt::Display for Stuck
     ) -> fmt::Result
     {
         match *self {
-            | Self::PerformNoHandler(at) => write!(f, "operation at command {at} has no handler"),
-            | Self::ShiftNoReset(at) => write!(f, "shift at command {at} has no reset"),
-            | Self::ResumedNonStack { at, value } => {
+            Self::PerformNoHandler(at) => write!(f, "operation at command {at} has no handler"),
+            Self::ShiftNoReset(at) => write!(f, "shift at command {at} has no reset"),
+            Self::ResumedNonStack { at, value } => {
                 write!(f, "resume at command {at} received non-stack value {value}")
             },
-            | Self::Primitive(error) => write!(f, "native operation: {error}"),
-            | Self::NonScalar(value) => write!(f, "native operand {value} is not a scalar"),
-            | Self::UnboundVariable { index, .. } => {
+            Self::Primitive(error) => write!(f, "native operation: {error}"),
+            Self::NonScalar(value) => write!(f, "native operand {value} is not a scalar"),
+            Self::UnboundVariable { index, .. } => {
                 write!(f, "variable {} is unbound", u32::from(index))
             },
-            | Self::UnboundCovariable(index) => write!(f, "covariable {index} is unbound"),
-            | Self::UndefinedConstant(constant) => {
+            Self::UnboundCovariable(index) => write!(f, "covariable {index} is unbound"),
+            Self::UndefinedConstant(constant) => {
                 write!(f, "constant {} has no definition", usize::from(constant))
             },
-            | Self::CyclicConstant(constant) => {
+            Self::CyclicConstant(constant) => {
                 write!(f, "constant {} needs its own value", usize::from(constant))
             },
-            | Self::Unobservable { value, .. } => write!(f, "value {value} cannot be observed"),
-            | Self::Unmatched { value, arms } => {
+            Self::Unobservable { value, .. } => write!(f, "value {value} cannot be observed"),
+            Self::Unmatched { value, arms } => {
                 write!(f, "match {arms} has no arm for value {value}")
             },
-            | Self::IllFormedCommand(id) => write!(f, "command {id} is not well formed"),
-            | Self::IllFormedProducer(id) => write!(f, "producer {id} is not well formed"),
-            | Self::IllFormedConsumer(id) => write!(f, "consumer {id} is not well formed"),
+            Self::IllFormedCommand(id) => write!(f, "command {id} is not well formed"),
+            Self::IllFormedProducer(id) => write!(f, "producer {id} is not well formed"),
+            Self::IllFormedConsumer(id) => write!(f, "consumer {id} is not well formed"),
         }
     }
 }
@@ -625,8 +625,8 @@ impl fmt::Display for MachineFault
     ) -> fmt::Result
     {
         match *self {
-            | Self::OutOfSteps => f.write_str("the step budget ran out"),
-            | Self::Store(fault) => write!(f, "the store refused: {fault}"),
+            Self::OutOfSteps => f.write_str("the step budget ran out"),
+            Self::Store(fault) => write!(f, "the store refused: {fault}"),
         }
     }
 }
@@ -922,8 +922,8 @@ impl<'program> Machine<'program>
     ) -> Result<Outcome, MachineFault>
     {
         match self.run_with_host(command, budget, &mut NoHost)? {
-            | HostOutcome::Completed(outcome) => Ok(outcome),
-            | HostOutcome::Aborted(never) => match never {},
+            HostOutcome::Completed(outcome) => Ok(outcome),
+            HostOutcome::Aborted(never) => match never {},
         }
     }
 
@@ -973,11 +973,11 @@ impl<'program> Machine<'program>
         loop {
             remaining = remaining.checked_sub(1).ok_or(MachineFault::OutOfSteps)?;
             match self.step(control) {
-                | Ok(Next::Continue(next)) => control = next,
-                | Ok(Next::Halt(value)) => {
+                Ok(Next::Continue(next)) => control = next,
+                Ok(Next::Halt(value)) => {
                     return Ok(HostOutcome::Completed(Outcome::Halted(value)));
                 },
-                | Ok(Next::Host { at, payload }) => {
+                Ok(Next::Host { at, payload }) => {
                     let Some(request) = self.arena.command(at)
                     else {
                         return Ok(HostOutcome::Completed(Outcome::Stuck(
@@ -1006,24 +1006,24 @@ impl<'program> Machine<'program>
                         },
                     );
                     match reply {
-                        | HostReply::Resume(value) => {
+                        HostReply::Resume(value) => {
                             self.store
                                 .value(value)
                                 .ok_or(StoreFault::DanglingValue(value))?;
                             control = Control::Pop(value);
                         },
-                        | HostReply::Abort(abort) => return Ok(HostOutcome::Aborted(abort)),
-                        | HostReply::Decline => {
+                        HostReply::Abort(abort) => return Ok(HostOutcome::Aborted(abort)),
+                        HostReply::Decline => {
                             return Ok(HostOutcome::Completed(Outcome::Stuck(
                                 Stuck::PerformNoHandler(at),
                             )));
                         },
                     }
                 },
-                | Err(Stop::Stuck(stuck)) => {
+                Err(Stop::Stuck(stuck)) => {
                     return Ok(HostOutcome::Completed(Outcome::Stuck(stuck)));
                 },
-                | Err(Stop::Fault(fault)) => return Err(fault),
+                Err(Stop::Fault(fault)) => return Err(fault),
             }
         }
     }
@@ -1060,18 +1060,18 @@ impl<'program> Machine<'program>
     ) -> Result<Next, Stop>
     {
         match control {
-            | Control::Run(command, environment) => self.cut(command, environment),
-            | Control::ListFold(value, consumer, environment) => {
+            Control::Run(command, environment) => self.cut(command, environment),
+            Control::ListFold(value, consumer, environment) => {
                 self.list_fold(value, consumer, environment)
             },
-            | Control::Deliver(value, consumer, environment) => {
+            Control::Deliver(value, consumer, environment) => {
                 self.deliver(value, consumer, environment)
             },
-            | Control::Return(value, mark) => {
+            Control::Return(value, mark) => {
                 self.store.shrink_to(mark)?;
                 Ok(Next::Continue(Control::Pop(value)))
             },
-            | Control::Pop(value) => self.pop(value),
+            Control::Pop(value) => self.pop(value),
         }
     }
 
@@ -1184,8 +1184,8 @@ impl<'program> Machine<'program>
         let arena = self.arena;
         let node = arena.command(id).ok_or(Stuck::IllFormedCommand(id))?;
         match *node {
-            | CommandNode::Cut { .. } => Err(Stuck::IllFormedCommand(id).into()),
-            | CommandNode::Perform {
+            CommandNode::Cut { .. } => Err(Stuck::IllFormedCommand(id).into()),
+            CommandNode::Perform {
                 route,
                 payload,
                 continuation,
@@ -1193,15 +1193,15 @@ impl<'program> Machine<'program>
             } => {
                 self.load(continuation, environment)?;
                 let through = match route {
-                    | Route::Nearest => Introduced::Nothing,
-                    | Route::Capability(capability) => {
+                    Route::Nearest => Introduced::Nothing,
+                    Route::Capability(capability) => {
                         Introduced::Capability(self.evaluate(capability, environment)?)
                     },
                 };
                 let payload = self.evaluate(payload, environment)?;
                 self.perform(id, through, payload)
             },
-            | CommandNode::Handle {
+            CommandNode::Handle {
                 introduces,
                 subject,
                 continuation,
@@ -1209,8 +1209,8 @@ impl<'program> Machine<'program>
             } => {
                 self.load(continuation, environment)?;
                 let (introduced, scope) = match introduces {
-                    | Introduces::Nothing => (Introduced::Nothing, environment),
-                    | Introduces::Capability => {
+                    Introduces::Nothing => (Introduced::Nothing, environment),
+                    Introduces::Capability => {
                         let capability = self.store.allocate(HeapValue::Capability)?;
                         (
                             Introduced::Capability(capability),
@@ -1228,7 +1228,7 @@ impl<'program> Machine<'program>
                     .bind_covalue(scope, crate::store::Covalue::FallThrough)?;
                 Ok(Next::Continue(Control::Run(subject, inner)))
             },
-            | CommandNode::Reset { body, continuation } => {
+            CommandNode::Reset { body, continuation } => {
                 self.load(continuation, environment)?;
                 self.store.push_frame(Frame::Reset)?;
                 let inner = self
@@ -1236,11 +1236,11 @@ impl<'program> Machine<'program>
                     .bind_covalue(environment, crate::store::Covalue::FallThrough)?;
                 Ok(Next::Continue(Control::Run(body, inner)))
             },
-            | CommandNode::Shift { body, continuation } => {
+            CommandNode::Shift { body, continuation } => {
                 self.load(continuation, environment)?;
                 self.shift(id, body, environment)
             },
-            | CommandNode::Resume {
+            CommandNode::Resume {
                 stack,
                 body,
                 continuation,
@@ -1304,22 +1304,22 @@ impl<'program> Machine<'program>
             return Err(Stuck::IllFormedCommand(at).into());
         };
         let introduced = match through {
-            | Introduced::Capability(capability)
+            Introduced::Capability(capability)
                 if matches!(self.store.value(capability), Some(&HeapValue::Capability)) =>
             {
                 Introduced::Capability(capability)
             },
-            | Introduced::Capability(_) => {
+            Introduced::Capability(_) => {
                 self.store.cancel_updates(ContinuationMark::BASE)?;
                 return Ok(Next::Host { at, payload });
             },
-            | Introduced::Nothing => Introduced::Nothing,
+            Introduced::Nothing => Introduced::Nothing,
         };
         let mut selected = None;
         for (index, frame) in self.store.frames().enumerate().rev() {
             match (*frame, introduced) {
-                | (Frame::Reset, Introduced::Nothing) => break,
-                | (
+                (Frame::Reset, Introduced::Nothing) => break,
+                (
                     Frame::Handler {
                         command,
                         environment,
@@ -1347,7 +1347,7 @@ impl<'program> Machine<'program>
                     }
                     break;
                 },
-                | _ => {},
+                _ => {},
             }
         }
         let Some((height, environment, body)) = selected
@@ -1463,8 +1463,8 @@ impl<'program> Machine<'program>
         let count = frames.len();
         for index in 0 .. count {
             let frame = match self.store.value(stack) {
-                | Some(&HeapValue::Stack { ref frames }) => frames.get(index).copied(),
-                | _ => None,
+                Some(&HeapValue::Stack { ref frames }) => frames.get(index).copied(),
+                _ => None,
             }
             .ok_or(Stuck::ResumedNonStack { at, value: stack })?;
             self.store.push_frame(frame)?;
@@ -1497,13 +1497,13 @@ impl<'program> Machine<'program>
     ) -> Result<crate::store::ObservationArguments, Stop>
     {
         match (tag, producers) {
-            | (DestructorTag::Force | DestructorTag::Project(_), &[]) => {
+            (DestructorTag::Force | DestructorTag::Project(_), &[]) => {
                 Ok(crate::store::ObservationArguments::Nullary)
             },
-            | (DestructorTag::Apply, &[argument]) => Ok(crate::store::ObservationArguments::Unary(
+            (DestructorTag::Apply, &[argument]) => Ok(crate::store::ObservationArguments::Unary(
                 self.evaluate(argument, environment)?,
             )),
-            | _ => Err(Stuck::IllFormedConsumer(at).into()),
+            _ => Err(Stuck::IllFormedConsumer(at).into()),
         }
     }
 
@@ -1576,28 +1576,28 @@ impl<'program> Machine<'program>
             return Ok(Next::Continue(Control::Run(body, inner)));
         }
         match *node {
-            | ConsumerNode::Covariable(index) => {
+            ConsumerNode::Covariable(index) => {
                 let mark = self
                     .store
                     .lookup_covalue(environment, index)
                     .ok_or(Stuck::UnboundCovariable(index))?;
                 Ok(Next::Continue(match mark {
-                    | crate::store::Covalue::Pinned(mark) => Control::Return(value, mark),
-                    | crate::store::Covalue::FallThrough => Control::Pop(value),
+                    crate::store::Covalue::Pinned(mark) => Control::Return(value, mark),
+                    crate::store::Covalue::FallThrough => Control::Pop(value),
                 }))
             },
-            | ConsumerNode::Top => Ok(Next::Continue(Control::Return(
+            ConsumerNode::Top => Ok(Next::Continue(Control::Return(
                 value,
                 ContinuationMark::BASE,
             ))),
-            | ConsumerNode::MuTilde { body } => {
+            ConsumerNode::MuTilde { body } => {
                 let inner = self.store.bind_value(environment, value)?;
                 Ok(Next::Continue(Control::Run(body, inner)))
             },
-            | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } => {
+            ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } => {
                 self.select(value, consumer, environment)
             },
-            | ConsumerNode::ListFold { continuation, .. } => {
+            ConsumerNode::ListFold { continuation, .. } => {
                 let _mark = self.load(continuation, environment)?;
                 Ok(Next::Continue(Control::ListFold(
                     value,
@@ -1605,7 +1605,7 @@ impl<'program> Machine<'program>
                     environment,
                 )))
             },
-            | ConsumerNode::Destructor {
+            ConsumerNode::Destructor {
                 tag,
                 ref producers,
                 ref consumers,
@@ -1619,7 +1619,7 @@ impl<'program> Machine<'program>
                 let mark = self.load(then, environment)?;
                 self.observe(value, tag, arguments.as_slice(), mark)
             },
-            | ConsumerNode::Select { then, .. } => {
+            ConsumerNode::Select { then, .. } => {
                 let field = self.selection(value, consumer)?;
                 Ok(Next::Continue(Control::Deliver(field, then, environment)))
             },
@@ -1665,14 +1665,14 @@ impl<'program> Machine<'program>
             return Err(Stuck::Unmatched { value, arms: fold }.into());
         };
         match (tag, fields.as_ref()) {
-            | (&crate::il::ConstructorTag::ListNil, &[]) => {
+            (&crate::il::ConstructorTag::ListNil, &[]) => {
                 let inner = self.store.bind_covalue(
                     environment,
                     self.store.return_continuation(self.store.mark()),
                 )?;
                 Ok(Next::Continue(Control::Run(on_nil, inner)))
             },
-            | (&crate::il::ConstructorTag::ListCons, &[head, tail]) => {
+            (&crate::il::ConstructorTag::ListCons, &[head, tail]) => {
                 let inner = self.store.bind_value(environment, head)?;
                 let inner = self
                     .store
@@ -1683,7 +1683,7 @@ impl<'program> Machine<'program>
                 })?;
                 Ok(Next::Continue(Control::ListFold(tail, fold, environment)))
             },
-            | _ => Err(Stuck::Unmatched { value, arms: fold }.into()),
+            _ => Err(Stuck::Unmatched { value, arms: fold }.into()),
         }
     }
 
@@ -1769,8 +1769,8 @@ impl<'program> Machine<'program>
             return Ok(Next::Halt(value));
         };
         match frame {
-            | Frame::Reset | Frame::DeclinedUpdate => Ok(Next::Continue(Control::Pop(value))),
-            | Frame::Handler {
+            Frame::Reset | Frame::DeclinedUpdate => Ok(Next::Continue(Control::Pop(value))),
+            Frame::Handler {
                 command,
                 environment,
                 ..
@@ -1785,21 +1785,21 @@ impl<'program> Machine<'program>
                     .bind_covalue(inner, crate::store::Covalue::FallThrough)?;
                 Ok(Next::Continue(Control::Run(on_return, inner)))
             },
-            | Frame::Destructor { tag, arguments } => {
+            Frame::Destructor { tag, arguments } => {
                 let mark = self.store.mark();
                 self.observe(value, tag, arguments.as_slice(), mark)
             },
-            | Frame::Bind { body, environment } => {
+            Frame::Bind { body, environment } => {
                 let inner = self.store.bind_value(environment, value)?;
                 Ok(Next::Continue(Control::Run(body, inner)))
             },
-            | Frame::Case { arms, environment } => self.select(value, arms, environment),
-            | Frame::ListFold { fold, environment } => self.list_fold(value, fold, environment),
-            | Frame::Select { select } => {
+            Frame::Case { arms, environment } => self.select(value, arms, environment),
+            Frame::ListFold { fold, environment } => self.list_fold(value, fold, environment),
+            Frame::Select { select } => {
                 let field = self.selection(value, select)?;
                 Ok(Next::Continue(Control::Pop(field)))
             },
-            | Frame::Update { cell } => {
+            Frame::Update { cell } => {
                 self.store.write_back(cell, value)?;
                 Ok(Next::Continue(Control::Pop(value)))
             },
@@ -1896,7 +1896,7 @@ impl<'program> Machine<'program>
     {
         let unobservable = Stuck::Unobservable { value, head };
         match self.store.value(value) {
-            | Some(&HeapValue::Fixpoint {
+            Some(&HeapValue::Fixpoint {
                 body,
                 environment,
                 memo: Memo::Unfolds,
@@ -1908,7 +1908,7 @@ impl<'program> Machine<'program>
                     .bind_covalue(captured, self.store.return_continuation(mark))?;
                 Ok(Next::Continue(Control::Run(body, inner)))
             },
-            | Some(
+            Some(
                 &(HeapValue::Thunk {
                     body,
                     environment,
@@ -1924,10 +1924,8 @@ impl<'program> Machine<'program>
                 let recursive =
                     matches!(self.store.value(value), Some(&HeapValue::Fixpoint { .. }));
                 match self.store.begin_force(cell)? {
-                    | ForceEntry::Cached(cached) => {
-                        Ok(Next::Continue(Control::Return(cached, mark)))
-                    },
-                    | entry @ (ForceEntry::Opened | ForceEntry::Reentrant) => {
+                    ForceEntry::Cached(cached) => Ok(Next::Continue(Control::Return(cached, mark))),
+                    entry @ (ForceEntry::Opened | ForceEntry::Reentrant) => {
                         let captured = if recursive {
                             self.store.bind_value(environment, value)?
                         }
@@ -1946,7 +1944,7 @@ impl<'program> Machine<'program>
                     },
                 }
             },
-            | Some(&HeapValue::Closure {
+            Some(&HeapValue::Closure {
                 producer,
                 environment,
             }) => {
@@ -1972,7 +1970,7 @@ impl<'program> Machine<'program>
                     .bind_covalue(inner, self.store.return_continuation(mark))?;
                 Ok(Next::Continue(Control::Run(arm.body, inner)))
             },
-            | _ => Err(unobservable.into()),
+            _ => Err(unobservable.into()),
         }
     }
 
@@ -2031,11 +2029,11 @@ impl<'program> Machine<'program>
             return Err(Stuck::IllFormedConsumer(arms).into());
         };
         let choices = match *node {
-            | ConsumerNode::Case { arms: ref choices } => choices,
-            | ConsumerNode::DataCase { ref branches, then } => {
+            ConsumerNode::Case { arms: ref choices } => choices,
+            ConsumerNode::DataCase { ref branches, then } => {
                 return self.branch(value, arms, branches, then, environment);
             },
-            | ConsumerNode::Covariable(_)
+            ConsumerNode::Covariable(_)
             | ConsumerNode::MuTilde { .. }
             | ConsumerNode::Destructor { .. }
             | ConsumerNode::ListFold { .. }
@@ -2116,14 +2114,14 @@ impl<'program> Machine<'program>
             return Err(Stuck::IllFormedConsumer(select).into());
         };
         let place = match (selector, self.store.value(value)) {
-            | (
+            (
                 &Selector::Component(component),
                 Some(&HeapValue::Constructed {
                     tag: ConstructorTag::Tuple(_),
                     ref fields,
                 }),
             ) => fields.get(usize::from(component)),
-            | (
+            (
                 &Selector::Label(ref label),
                 Some(&HeapValue::Constructed {
                     tag: ConstructorTag::Record(ref labels),
@@ -2133,7 +2131,7 @@ impl<'program> Machine<'program>
                 .iter()
                 .position(|held| held == label)
                 .and_then(|place| fields.get(place)),
-            | _ => None,
+            _ => None,
         };
         place.copied().ok_or_else(|| {
             Stuck::Unmatched {
@@ -2189,13 +2187,13 @@ impl<'program> Machine<'program>
     ) -> Result<Next, Stop>
     {
         let selected = match self.store.value(value) {
-            | Some(&HeapValue::Constructed {
+            Some(&HeapValue::Constructed {
                 tag: ConstructorTag::Data { tag, .. },
                 ref fields,
             }) => branches
                 .get(usize::from(tag))
                 .map(|&branch| (branch, fields.clone())),
-            | Some(_) | None => None,
+            Some(_) | None => None,
         };
         let Some((branch, fields)) = selected
         else {
@@ -2281,40 +2279,40 @@ impl<'program> Machine<'program>
                 .consumer(cursor)
                 .ok_or(Stuck::IllFormedConsumer(cursor))?;
             match *node {
-                | ConsumerNode::Covariable(index) => {
+                ConsumerNode::Covariable(index) => {
                     let mark = self
                         .store
                         .lookup_covalue(environment, index)
                         .ok_or(Stuck::UnboundCovariable(index))?;
                     break match mark {
-                        | crate::store::Covalue::Pinned(mark) => Some(mark),
-                        | crate::store::Covalue::FallThrough => None,
+                        crate::store::Covalue::Pinned(mark) => Some(mark),
+                        crate::store::Covalue::FallThrough => None,
                     };
                 },
-                | ConsumerNode::Top => break Some(ContinuationMark::BASE),
-                | ConsumerNode::ListFold { continuation, .. } => {
+                ConsumerNode::Top => break Some(ContinuationMark::BASE),
+                ConsumerNode::ListFold { continuation, .. } => {
                     pending.push(Frame::ListFold {
                         fold: cursor,
                         environment,
                     });
                     cursor = continuation;
                 },
-                | ConsumerNode::Select { then, .. } => {
+                ConsumerNode::Select { then, .. } => {
                     pending.push(Frame::Select { select: cursor });
                     cursor = then;
                 },
-                | ConsumerNode::MuTilde { body } => {
+                ConsumerNode::MuTilde { body } => {
                     pending.push(Frame::Bind { body, environment });
                     break None;
                 },
-                | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } => {
+                ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } => {
                     pending.push(Frame::Case {
                         arms: cursor,
                         environment,
                     });
                     break None;
                 },
-                | ConsumerNode::Destructor {
+                ConsumerNode::Destructor {
                     tag,
                     ref producers,
                     ref consumers,
@@ -2418,8 +2416,8 @@ impl<'program> Machine<'program>
             return Err(stop);
         }
         match results.as_slice() {
-            | &[value] => Ok(value),
-            | _ => Err(Stuck::IllFormedProducer(root).into()),
+            &[value] => Ok(value),
+            _ => Err(Stuck::IllFormedProducer(root).into()),
         }
     }
 
@@ -2465,10 +2463,10 @@ impl<'program> Machine<'program>
         let arena = self.arena;
         while let Some(task) = tasks.pop() {
             match task {
-                | Evaluation::Producer(id, environment) => {
+                Evaluation::Producer(id, environment) => {
                     let node = arena.producer(id).ok_or(Stuck::IllFormedProducer(id))?;
                     let value = match *node {
-                        | ProducerNode::Reify(ref frames) => {
+                        ProducerNode::Reify(ref frames) => {
                             tasks.push(Evaluation::Reify(id, environment));
                             for frame in frames.iter().rev() {
                                 if let gandr_core_term::control::StackFrame::Apply(value) = *frame {
@@ -2477,46 +2475,44 @@ impl<'program> Machine<'program>
                             }
                             continue;
                         },
-                        | ProducerNode::Primitive { arguments, .. } => {
+                        ProducerNode::Primitive { arguments, .. } => {
                             tasks.push(Evaluation::Primitive(id));
                             for argument in arguments.iter().rev() {
                                 tasks.push(Evaluation::Producer(*argument, environment));
                             }
                             continue;
                         },
-                        | ProducerNode::Variable { zone, index } => {
+                        ProducerNode::Variable { zone, index } => {
                             let bound = match zone {
-                                | Zone::Intuitionistic => {
-                                    self.store.lookup_value(environment, index)
-                                },
-                                | Zone::Linear => None,
+                                Zone::Intuitionistic => self.store.lookup_value(environment, index),
+                                Zone::Linear => None,
                             };
                             bound.ok_or(Stuck::UnboundVariable { zone, index })?
                         },
-                        | ProducerNode::Constant(constant) => match self.unfolding(constant)? {
-                            | Unfolding::Done(value) => value,
-                            | Unfolding::Running => {
+                        ProducerNode::Constant(constant) => match self.unfolding(constant)? {
+                            Unfolding::Done(value) => value,
+                            Unfolding::Running => {
                                 return Err(Stuck::CyclicConstant(constant).into());
                             },
-                            | Unfolding::Pending => match self.definitions.get(constant) {
-                                | Some(Definition::Transparent(body)) => {
+                            Unfolding::Pending => match self.definitions.get(constant) {
+                                Some(Definition::Transparent(body)) => {
                                     self.record(constant, Unfolding::Running);
                                     tasks.push(Evaluation::Remember(constant, body));
                                     tasks.push(Evaluation::Producer(body, Environment::EMPTY));
                                     continue;
                                 },
-                                | Some(Definition::Opaque) => {
+                                Some(Definition::Opaque) => {
                                     let value = self.store.allocate(HeapValue::Opaque(constant))?;
                                     self.record(constant, Unfolding::Done(value));
                                     value
                                 },
-                                | None => return Err(Stuck::UndefinedConstant(constant).into()),
+                                None => return Err(Stuck::UndefinedConstant(constant).into()),
                             },
                         },
-                        | ProducerNode::Literal(ref literal) => {
+                        ProducerNode::Literal(ref literal) => {
                             self.store.allocate(HeapValue::Literal(literal.clone()))?
                         },
-                        | ProducerNode::Constructor {
+                        ProducerNode::Constructor {
                             ref producers,
                             ref consumers,
                             ..
@@ -2530,7 +2526,7 @@ impl<'program> Machine<'program>
                             }
                             continue;
                         },
-                        | ProducerNode::Thunk { body } => {
+                        ProducerNode::Thunk { body } => {
                             let cell = self.store.allocate_cell()?;
                             self.store.allocate(HeapValue::Thunk {
                                 body,
@@ -2538,7 +2534,7 @@ impl<'program> Machine<'program>
                                 cell,
                             })?
                         },
-                        | ProducerNode::Fixpoint { body, evidence } => {
+                        ProducerNode::Fixpoint { body, evidence } => {
                             let memo = self.memo(body)?;
                             self.store.allocate(HeapValue::Fixpoint {
                                 body,
@@ -2547,7 +2543,7 @@ impl<'program> Machine<'program>
                                 evidence,
                             })?
                         },
-                        | ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => {
+                        ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => {
                             self.store.allocate(HeapValue::Closure {
                                 producer: id,
                                 environment,
@@ -2556,7 +2552,7 @@ impl<'program> Machine<'program>
                     };
                     results.push(value);
                 },
-                | Evaluation::Reify(id, environment) => {
+                Evaluation::Reify(id, environment) => {
                     let node = arena.producer(id).ok_or(Stuck::IllFormedProducer(id))?;
                     let ProducerNode::Reify(ref source) = *node
                     else {
@@ -2566,29 +2562,29 @@ impl<'program> Machine<'program>
                     let mut bind_environment = None;
                     for frame in source.iter().rev() {
                         frames.push(match *frame {
-                            | gandr_core_term::control::StackFrame::Apply(_) => Frame::Destructor {
+                            gandr_core_term::control::StackFrame::Apply(_) => Frame::Destructor {
                                 tag: DestructorTag::Apply,
                                 arguments: crate::store::ObservationArguments::Unary(
                                     results.pop().ok_or(Stuck::IllFormedProducer(id))?,
                                 ),
                             },
-                            | gandr_core_term::control::StackFrame::Project(side) => {
+                            gandr_core_term::control::StackFrame::Project(side) => {
                                 Frame::Destructor {
                                     tag: DestructorTag::Project(side),
                                     arguments: crate::store::ObservationArguments::Nullary,
                                 }
                             },
-                            | gandr_core_term::control::StackFrame::Bind(body) => {
-                                let inner = match bind_environment {
-                                    | Some(inner) => inner,
-                                    | None => {
-                                        let inner = self.store.bind_covalue(
-                                            environment,
-                                            crate::store::Covalue::FallThrough,
-                                        )?;
-                                        bind_environment = Some(inner);
-                                        inner
-                                    },
+                            gandr_core_term::control::StackFrame::Bind(body) => {
+                                let inner = if let Some(inner) = bind_environment {
+                                    inner
+                                }
+                                else {
+                                    let inner = self.store.bind_covalue(
+                                        environment,
+                                        crate::store::Covalue::FallThrough,
+                                    )?;
+                                    bind_environment = Some(inner);
+                                    inner
                                 };
                                 Frame::Bind {
                                     body,
@@ -2602,7 +2598,7 @@ impl<'program> Machine<'program>
                     })?;
                     results.push(value);
                 },
-                | Evaluation::Construct(id) => {
+                Evaluation::Construct(id) => {
                     let Some(node) = arena.producer(id)
                     else {
                         return Err(Stuck::IllFormedProducer(id).into());
@@ -2626,7 +2622,7 @@ impl<'program> Machine<'program>
                     })?;
                     results.push(value);
                 },
-                | Evaluation::Primitive(id) => {
+                Evaluation::Primitive(id) => {
                     use gandr_core_term::primitive::Arguments;
                     use gandr_core_term::primitive::Scalar;
                     let Some(&ProducerNode::Primitive {
@@ -2639,18 +2635,18 @@ impl<'program> Machine<'program>
                     let last = results.pop().ok_or(Stuck::IllFormedProducer(id))?;
                     let last = self.scalar(last)?;
                     let arguments = match arguments {
-                        | Arguments::Unary(_) => Arguments::Unary(last),
-                        | Arguments::Binary(_) => {
+                        Arguments::Unary(_) => Arguments::Unary(last),
+                        Arguments::Binary(_) => {
                             let first = results.pop().ok_or(Stuck::IllFormedProducer(id))?;
                             Arguments::Binary([self.scalar(first)?, last])
                         },
                     };
                     let result = primitive.evaluate(&arguments).map_err(Stuck::Primitive)?;
                     let value = match result {
-                        | Scalar::Integer(integer) => self.store.allocate(HeapValue::Literal(
+                        Scalar::Integer(integer) => self.store.allocate(HeapValue::Literal(
                             gandr_kernel_term::Literal::Integer(integer),
                         ))?,
-                        | Scalar::Boolean(side) => {
+                        Scalar::Boolean(side) => {
                             let unit = self.store.allocate(HeapValue::Constructed {
                                 tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                                 fields: Box::from([]),
@@ -2663,7 +2659,7 @@ impl<'program> Machine<'program>
                     };
                     results.push(value);
                 },
-                | Evaluation::Remember(constant, body) => {
+                Evaluation::Remember(constant, body) => {
                     let &value = results.last().ok_or(Stuck::IllFormedProducer(body))?;
                     self.record(constant, Unfolding::Done(value));
                 },
@@ -2783,10 +2779,10 @@ impl<'program> Machine<'program>
     {
         use gandr_core_term::primitive::Scalar;
         match self.store.value(value) {
-            | Some(&HeapValue::Literal(gandr_kernel_term::Literal::Integer(ref integer))) => {
+            Some(&HeapValue::Literal(gandr_kernel_term::Literal::Integer(ref integer))) => {
                 Ok(Scalar::Integer(integer))
             },
-            | Some(&HeapValue::Constructed {
+            Some(&HeapValue::Constructed {
                 tag: ConstructorTag::Injection(summand),
                 ref fields,
             }) => {
@@ -2800,7 +2796,7 @@ impl<'program> Machine<'program>
                     Err(Stuck::NonScalar(value).into())
                 }
             },
-            | _ => Err(Stuck::NonScalar(value).into()),
+            _ => Err(Stuck::NonScalar(value).into()),
         }
     }
 }
@@ -3161,7 +3157,7 @@ mod tests
         let mut machine = Machine::new(&arena, &definitions);
         let outcome = machine.run(root, budget()).expect("bounded control run");
         match (outcome, expected) {
-            | (Outcome::Halted(value), ControlExpectation::Value(expected)) => {
+            (Outcome::Halted(value), ControlExpectation::Value(expected)) => {
                 let actual = machine
                     .read_back_value(value, core)
                     .expect("literal result reads back");
@@ -3170,7 +3166,7 @@ mod tests
                     gandr_core_term::equal_certificate_syntax(core, actual, expected)
                 );
             },
-            | (
+            (
                 Outcome::Stuck(Stuck::PerformNoHandler(at)),
                 ControlExpectation::Perform(name, operation),
             ) => {
@@ -3187,10 +3183,10 @@ mod tests
                     (signature.name().as_ref(), found.as_ref())
                 );
             },
-            | (Outcome::Stuck(Stuck::ShiftNoReset(at)), ControlExpectation::Shift) => {
+            (Outcome::Stuck(Stuck::ShiftNoReset(at)), ControlExpectation::Shift) => {
                 assert!(matches!(arena.command(at), Some(CommandNode::Shift { .. })));
             },
-            | (outcome, _) => panic!("unexpected control outcome: {outcome:?}"),
+            (outcome, _) => panic!("unexpected control outcome: {outcome:?}"),
         }
     }
 
@@ -3576,7 +3572,7 @@ mod tests
                 gandr_core_term::equal_certificate_syntax(self.core, expected.payload, actual)
             );
             match expected.answer {
-                | Answer::Integer(digits) => HostReply::Resume(
+                Answer::Integer(digits) => HostReply::Resume(
                     values
                         .allocate(HeapValue::Literal(Literal::Integer(IntegerLiteral::new(
                             Sign::NonNegative,
@@ -3585,7 +3581,7 @@ mod tests
                         ))))
                         .expect("reply fits"),
                 ),
-                | Answer::Unit => HostReply::Resume(
+                Answer::Unit => HostReply::Resume(
                     values
                         .allocate(HeapValue::Constructed {
                             tag: ConstructorTag::Tuple(ProducerArity::ZERO),
@@ -3593,8 +3589,8 @@ mod tests
                         })
                         .expect("reply fits"),
                 ),
-                | Answer::Payload => HostReply::Resume(request.payload),
-                | Answer::Decline => HostReply::Decline,
+                Answer::Payload => HostReply::Resume(request.payload),
+                Answer::Decline => HostReply::Decline,
             }
         }
     }
@@ -3636,13 +3632,10 @@ mod tests
                     ),
                     ("Proc", "exit")
                 );
-                match self.reply {
-                    | Some(value) => {
-                        assert!(values.value(value).is_none());
-                        HostReply::Resume(value)
-                    },
-                    | None => HostReply::Abort(ExitCode(7)),
-                }
+                self.reply.map_or(HostReply::Abort(ExitCode(7)), |value| {
+                    assert!(values.value(value).is_none());
+                    HostReply::Resume(value)
+                })
             }
         }
         let mut core = CoreArena::new();
@@ -3737,7 +3730,7 @@ mod tests
             result
         };
         match (outcome, expected) {
-            | (
+            (
                 HostOutcome::Completed(Outcome::Halted(value)),
                 ControlExpectation::Value(expected),
             ) => {
@@ -3749,7 +3742,7 @@ mod tests
                     gandr_core_term::equal_certificate_syntax(core, actual, expected)
                 );
             },
-            | (
+            (
                 HostOutcome::Completed(Outcome::Stuck(Stuck::PerformNoHandler(at))),
                 ControlExpectation::Perform(name, operation),
             ) => {
@@ -3766,7 +3759,7 @@ mod tests
                     (signature.name().as_ref(), found.as_ref())
                 );
             },
-            | (outcome, _) => panic!("unexpected host outcome: {outcome:?}"),
+            (outcome, _) => panic!("unexpected host outcome: {outcome:?}"),
         }
     }
 
@@ -4422,9 +4415,9 @@ mod tests
             let mut core = CoreArena::new();
             let datatype = core.value_type_unknown();
             let fields = match ordinal {
-                | 0 => alloc::vec![],
-                | 1 => alloc::vec![integer(&mut core, Digits("5"))],
-                | _ => alloc::vec![
+                0 => alloc::vec![],
+                1 => alloc::vec![integer(&mut core, Digits("5"))],
+                _ => alloc::vec![
                     integer(&mut core, Digits("3")),
                     integer(&mut core, Digits("4"))
                 ],
@@ -5364,12 +5357,12 @@ mod tests
         let mut halted = None;
         for _ in 0_usize .. 16 {
             match next {
-                | Next::Host { .. } => panic!("pure force offered an operation"),
-                | Next::Halt(value) => {
+                Next::Host { .. } => panic!("pure force offered an operation"),
+                Next::Halt(value) => {
                     halted = Some(value);
                     break;
                 },
-                | Next::Continue(control) => {
+                Next::Continue(control) => {
                     next = machine
                         .step(control)
                         .expect("unit body returns through its update");

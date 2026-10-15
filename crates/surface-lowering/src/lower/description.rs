@@ -242,7 +242,7 @@ impl<'source> Lowerer<'_, 'source>
                 }
             }
             match result {
-                | Ok(signature) => {
+                Ok(signature) => {
                     let index = DataIndex::from(self.data.len());
                     self.constructors.push(
                         entry
@@ -255,7 +255,7 @@ impl<'source> Lowerer<'_, 'source>
                     self.data.push(Arc::new(signature));
                     let _first = self.described.insert(SlotIndex::from(position), index);
                 },
-                | Err(error) => {
+                Err(error) => {
                     self.collected
                         .description_diagnostics
                         .push(DescriptionDiagnostic {
@@ -386,12 +386,12 @@ impl<'source> Lowerer<'_, 'source>
             let body = presentation_term(sink.arena, presentation.value.as_value(), declared);
             self.record_since(sink, before, block.node);
             match body {
-                | Ok(body) => {
+                Ok(body) => {
                     let _first = self
                         .presented
                         .insert(SlotIndex::from(position), (declared, body));
                 },
-                | Err(_fault) => {
+                Err(_fault) => {
                     if let Some(node) = self.tree.node(block.node)
                         && let Shape::Form { name, .. } = shape_of(self.pbg, node)?
                         && let Some(slot) = self.collected.slots.get_mut(position)
@@ -485,8 +485,8 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .map(
                 |parameter| match self.value_type_at(parameter.classifier.node) {
-                    | Maybe::Present(classifier) => Ok(classifier),
-                    | Maybe::Absent(_) => Err(DecodeError::MalformedCode),
+                    Maybe::Present(classifier) => Ok(classifier),
+                    Maybe::Absent(_) => Err(DecodeError::MalformedCode),
                 },
             )
             .collect();
@@ -570,28 +570,28 @@ fn presentation_term(
     let mut built: Vec<ValueId> = Vec::new();
     while let Some(step) = steps.pop() {
         match step {
-            | Step::Visit(tag, payload) => {
+            Step::Visit(tag, payload) => {
                 let mut fields = Vec::new();
                 let mut pending = vec![payload];
                 while let Some(node) = pending.pop() {
                     match node.view() {
-                        | PayloadView::Unit => {},
-                        | PayloadView::Pair(parts) => {
+                        PayloadView::Unit => {},
+                        PayloadView::Pair(parts) => {
                             let first = pending.len();
                             pending.extend(parts);
                             if let Some(pushed) = pending.get_mut(first ..) {
                                 pushed.reverse();
                             }
                         },
-                        | PayloadView::Rec { ctor, mut payload } => {
+                        PayloadView::Rec { ctor, mut payload } => {
                             let Some(inner) = payload.next()
                             else {
                                 return Err(SigFault::Payload);
                             };
                             fields.push(Step::Visit(ctor, inner));
                         },
-                        | PayloadView::Leaf(bytes) => fields.push(Step::Text(bytes)),
-                        | PayloadView::Inj { .. } | PayloadView::Abs { .. } => {
+                        PayloadView::Leaf(bytes) => fields.push(Step::Text(bytes)),
+                        PayloadView::Inj { .. } | PayloadView::Abs { .. } => {
                             return Err(SigFault::Payload);
                         },
                     }
@@ -599,7 +599,7 @@ fn presentation_term(
                 steps.push(Step::Build(tag, fields.len()));
                 steps.extend(fields.into_iter().rev());
             },
-            | Step::Text(bytes) => {
+            Step::Text(bytes) => {
                 let Ok(text) = core::str::from_utf8(bytes.as_ref())
                 else {
                     return Err(SigFault::Text);
@@ -608,7 +608,7 @@ fn presentation_term(
                     arena.value_literal(Literal::Text(StringLiteral::new(String::from(text)))),
                 );
             },
-            | Step::Build(tag, count) => {
+            Step::Build(tag, count) => {
                 let fields = built.split_off(built.len().saturating_sub(count));
                 built.push(arena.value_constructor(
                     datatype,

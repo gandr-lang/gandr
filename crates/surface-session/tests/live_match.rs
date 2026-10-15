@@ -85,26 +85,26 @@ fn spelled(
     let mut pending = Vec::from([Spelling::Part(id)]);
     while let Some(step) = pending.pop() {
         let id = match step {
-            | Spelling::Text(text) => {
+            Spelling::Text(text) => {
                 spelling.push_str(text);
                 continue;
             },
-            | Spelling::Part(id) => id,
+            Spelling::Part(id) => id,
         };
         let Some(pattern) = patterns.pattern(id)
         else {
             panic!("pattern {id:?} resolves");
         };
         match *pattern {
-            | Pattern::Wildcard => spelling.push('_'),
-            | Pattern::Binder => spelling.push('x'),
-            | Pattern::Unit => spelling.push_str("()"),
-            | Pattern::Hole(_) => spelling.push('?'),
-            | Pattern::Literal(Literal::Integer(ref integer)) => {
+            Pattern::Wildcard => spelling.push('_'),
+            Pattern::Binder => spelling.push('x'),
+            Pattern::Unit => spelling.push_str("()"),
+            Pattern::Hole(_) => spelling.push('?'),
+            Pattern::Literal(Literal::Integer(ref integer)) => {
                 spelling.push_str(integer.magnitude().as_ref());
             },
-            | Pattern::Literal(_) => panic!("the fixtures match integer literals only"),
-            | Pattern::Pair(first, second) => {
+            Pattern::Literal(_) => panic!("the fixtures match integer literals only"),
+            Pattern::Pair(first, second) => {
                 spelling.push('(');
                 pending.extend([
                     Spelling::Text(")"),
@@ -113,14 +113,14 @@ fn spelled(
                     Spelling::Part(first),
                 ]);
             },
-            | Pattern::Injection(side, body) => {
+            Pattern::Injection(side, body) => {
                 spelling.push_str(match side {
-                    | Side::Left => "inl(",
-                    | Side::Right => "inr(",
+                    Side::Left => "inl(",
+                    Side::Right => "inr(",
                 });
                 pending.extend([Spelling::Text(")"), Spelling::Part(body)]);
             },
-            | Pattern::Constructor { tag, ref fields } => {
+            Pattern::Constructor { tag, ref fields } => {
                 write!(spelling, "#{}(", usize::from(tag)).expect("a string accepts text");
                 pending.push(Spelling::Text(")"));
                 for (position, &field) in fields.iter().enumerate().rev() {

@@ -1290,8 +1290,8 @@ impl<'source> Lowerer<'_, 'source>
             self.collected.constructors.get(&name),
             self.collected.owner_of(site.at.node),
         ) {
-            | (Some(&found), Maybe::Present(own)) if found.family < own => Maybe::Present(found),
-            | _ => Maybe::Absent(constructed::Absent::Unnamed),
+            (Some(&found), Maybe::Present(own)) if found.family < own => Maybe::Present(found),
+            _ => Maybe::Absent(constructed::Absent::Unnamed),
         }
     }
 
@@ -1373,17 +1373,17 @@ impl<'source> Lowerer<'_, 'source>
         }
         let frame = self.require(site, Produced::Value)?;
         let parameters = match constructor.form {
-            | Generators::Written(form) => self
+            Generators::Written(form) => self
                 .collected
                 .data
                 .get(form)
                 .map_or(0_usize, |written| written.parameters.len()),
-            | Generators::Presentation | Generators::Words(_) => 0_usize,
+            Generators::Presentation | Generators::Words(_) => 0_usize,
         };
         let classifier = match self.classifiers.get(&site.at.node) {
-            | Some(&written) => Maybe::Present(written),
-            | None if parameters == 0 => Maybe::Absent(classified::Absent::Inserted),
-            | None => return Err(site.out(FragmentBoundary::Unannotated)),
+            Some(&written) => Maybe::Present(written),
+            None if parameters == 0 => Maybe::Absent(classified::Absent::Inserted),
+            None => return Err(site.out(FragmentBoundary::Unannotated)),
         };
         let family = self
             .collected
@@ -1491,19 +1491,19 @@ impl<'source> Lowerer<'_, 'source>
             return unnamed;
         };
         let (cell, inverse) = match shape_of(self.pbg, node)? {
-            | Shape::Form {
+            Shape::Form {
                 former: Former::Name,
                 ..
             } => (at, false),
-            | Shape::Form {
+            Shape::Form {
                 former: Former::Call,
                 ..
             } => {
                 let mut pieces = core::mem::take(&mut self.scratch);
                 let read = read_pieces(self.pbg, self.tree, at.node, &mut pieces);
                 let mut operands = pieces.pieces.iter().filter_map(|piece| match *piece {
-                    | Piece::Operand(operand) => Some(operand),
-                    | Piece::Tile { .. } => None,
+                    Piece::Operand(operand) => Some(operand),
+                    Piece::Tile { .. } => None,
                 });
                 let written = (operands.next(), operands.next(), operands.next());
                 self.scratch = pieces;
@@ -1519,7 +1519,7 @@ impl<'source> Lowerer<'_, 'source>
                 }
                 (cell, true)
             },
-            | Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+            Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
                 return unnamed;
             },
         };
@@ -1707,13 +1707,19 @@ impl<'source> Lowerer<'_, 'source>
             return Err(declined);
         };
         let frame = match site.reading {
-            | Reading::Value(frame) => frame,
-            | Reading::Computation(_)
+            Reading::Value(frame) => frame,
+            Reading::Computation(_)
                 if self.exits.contains(&site.at.node) || self.results.contains(&site.at.node) =>
             {
                 self.require(site, Produced::Value)?
             },
-            | _ => return Err(declined),
+            Reading::Unread
+            | Reading::ValueType(_)
+            | Reading::CompType(_)
+            | Reading::Computation(_)
+            | Reading::Head(_)
+            | Reading::Result(_)
+            | Reading::Function => return Err(declined),
         };
         let injected = matches!(self.form_at(inner)?, Some((_, Former::Injection)));
         if !injected && let Maybe::Absent(_) = self.applied_constructor(site, inner)? {
@@ -1774,15 +1780,12 @@ impl<'source> Lowerer<'_, 'source>
         let head =
             read_pieces(self.pbg, self.tree, inner.node, &mut scratch).map(|()| {
                 match scratch.pieces.first() {
-                    | Some(&Piece::Operand(head)) => Some(head),
-                    | Some(&Piece::Tile { .. }) | None => None,
+                    Some(&Piece::Operand(head)) => Some(head),
+                    Some(&Piece::Tile { .. }) | None => None,
                 }
             });
         self.scratch = scratch;
-        match head? {
-            | Some(head) => self.constructor_head(site, head),
-            | None => Ok(bare),
-        }
+        head?.map_or(Ok(bare), |head| self.constructor_head(site, head))
     }
 
     /// The number of parameters of the data family declared at `constant`.
@@ -1811,7 +1814,7 @@ impl<'source> Lowerer<'_, 'source>
             .get(usize::from(constant))
             .map(|slot| slot.definition)
         {
-            | Some(Maybe::Present(Half {
+            Some(Maybe::Present(Half {
                 operand: Operand::Data(form),
                 ..
             })) => self
@@ -1821,11 +1824,11 @@ impl<'source> Lowerer<'_, 'source>
                 .map_or(Maybe::Absent(family::Absent::Undeclared), |written| {
                     Maybe::Present(OperandCount::from(written.parameters.len()))
                 }),
-            | Some(Maybe::Present(Half {
+            Some(Maybe::Present(Half {
                 operand: Operand::Code,
                 ..
             })) => Maybe::Present(OperandCount::from(0_usize)),
-            | _ => Maybe::Absent(family::Absent::Undeclared),
+            _ => Maybe::Absent(family::Absent::Undeclared),
         }
     }
 
@@ -1928,8 +1931,8 @@ impl<'source> Lowerer<'_, 'source>
             });
         }
         let written = match cursor.tile(TileName::ARROW) {
-            | Maybe::Present(_) => Maybe::Present(site.one(cursor.operands())?),
-            | Maybe::Absent(_) => Maybe::Absent(answered::Absent::Unstated),
+            Maybe::Present(_) => Maybe::Present(site.one(cursor.operands())?),
+            Maybe::Absent(_) => Maybe::Absent(answered::Absent::Unstated),
         };
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
         let mut arms: Vec<(Placed, Placed)> = Vec::new();
@@ -1965,7 +1968,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut constructed = Vec::with_capacity(arms.len());
         for &(pattern, body) in &arms {
             match self.loop_named(site, pattern)? {
-                | Maybe::Present(NamedLoop { words, generator }) => {
+                Maybe::Present(NamedLoop { words, generator }) => {
                     self.lettered.push((pattern.span, words));
                     looped.push(LoopArm {
                         words,
@@ -1974,7 +1977,7 @@ impl<'source> Lowerer<'_, 'source>
                         named: pattern,
                     });
                 },
-                | Maybe::Absent(_) => constructed.push((pattern, body)),
+                Maybe::Absent(_) => constructed.push((pattern, body)),
             }
         }
         let arms = constructed;
@@ -2036,12 +2039,12 @@ impl<'source> Lowerer<'_, 'source>
             )
         });
         let answer = match written {
-            | Maybe::Present(node) => Maybe::Present(Answer {
+            Maybe::Present(node) => Maybe::Present(Answer {
                 node: node.node,
                 frame,
                 over: Over::Written,
             }),
-            | Maybe::Absent(reason) => self
+            Maybe::Absent(reason) => self
                 .answers
                 .get(&site.at.node)
                 .copied()
@@ -2155,12 +2158,12 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(());
         };
         let answer = match written {
-            | Maybe::Present(node) => Maybe::Present(Answer {
+            Maybe::Present(node) => Maybe::Present(Answer {
                 node: node.node,
                 frame,
                 over: Over::Written,
             }),
-            | Maybe::Absent(reason) => self
+            Maybe::Absent(reason) => self
                 .answers
                 .get(&site.at.node)
                 .copied()
@@ -2253,9 +2256,9 @@ impl<'source> Lowerer<'_, 'source>
             };
             let placed = Placed::of(at, tree);
             let former = match self.form_at(placed) {
-                | Ok(Some((_name, former))) => former,
-                | Ok(None) => break Ok(None),
-                | Err(refusal) => break Err(refusal),
+                Ok(Some((_name, former))) => former,
+                Ok(None) => break Ok(None),
+                Err(refusal) => break Err(refusal),
             };
             if former == Former::PathType {
                 break Ok(Some(Maybe::Absent(bare::Absent::Parameterised)));
@@ -2271,24 +2274,24 @@ impl<'source> Lowerer<'_, 'source>
             }
             if former == Former::TypeApplication {
                 break Ok(scratch.pieces.first().and_then(|piece| match *piece {
-                    | Piece::Tile { at: head, .. } => Some(Maybe::Present(head)),
-                    | Piece::Operand(_) => None,
+                    Piece::Tile { at: head, .. } => Some(Maybe::Present(head)),
+                    Piece::Operand(_) => None,
                 }));
             }
             let mut operands = scratch.pieces.iter().filter_map(|piece| match *piece {
-                | Piece::Operand(inner) => Some(inner),
-                | Piece::Tile { .. } => None,
+                Piece::Operand(inner) => Some(inner),
+                Piece::Tile { .. } => None,
             });
             match (operands.next(), operands.next()) {
-                | (Some(inner), None) => at = inner.node,
-                | (Some(_) | None, _) => break Ok(None),
+                (Some(inner), None) => at = inner.node,
+                (Some(_) | None, _) => break Ok(None),
             }
         };
         self.scratch = scratch;
         let head = match read? {
-            | Some(Maybe::Present(head)) => head,
-            | Some(Maybe::Absent(path)) => return Ok(Maybe::Present(Maybe::Absent(path))),
-            | None => return otherwise,
+            Some(Maybe::Present(head)) => head,
+            Some(Maybe::Absent(path)) => return Ok(Maybe::Present(Maybe::Absent(path))),
+            None => return otherwise,
         };
         let named = Site {
             at: head,
@@ -2418,18 +2421,16 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Maybe::Absent(constructed::Absent::Unnamed));
         }
         Ok(match self.loop_letter(site, pattern, Inverse(false))? {
-            | Maybe::Present(Constructor {
+            Maybe::Present(Constructor {
                 form: Generators::Words(words),
                 tag,
                 ..
-            }) => match gandr_core_term::FreeCells::generator(
-                gandr_core_term::ConstructorTag::from(tag),
-            ) {
-                | Some(generator) => Maybe::Present(NamedLoop { words, generator }),
-                | None => Maybe::Absent(constructed::Absent::Unnamed),
-            },
-            | Maybe::Present(_) => Maybe::Absent(constructed::Absent::Unnamed),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            }) => gandr_core_term::FreeCells::generator(gandr_core_term::ConstructorTag::from(tag))
+                .map_or(Maybe::Absent(constructed::Absent::Unnamed), |generator| {
+                    Maybe::Present(NamedLoop { words, generator })
+                }),
+            Maybe::Present(_) => Maybe::Absent(constructed::Absent::Unnamed),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         })
     }
 
@@ -2735,15 +2736,15 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Matcher::Wild);
         };
         let name = match shape_of(self.pbg, node)? {
-            | Shape::Form { name, .. } => name,
-            | Shape::Repair(repair) => {
+            Shape::Form { name, .. } => name,
+            Shape::Repair(repair) => {
                 return Err(LoweringRefusal::MalformedForm {
                     span: at.span,
                     form: FormName::CASE,
                     fault: FormFault::Repaired(repair),
                 });
             },
-            | Shape::Root | Shape::Layout => return Ok(Matcher::Wild),
+            Shape::Root | Shape::Layout => return Ok(Matcher::Wild),
         };
         let here = Site {
             at,
@@ -2764,13 +2765,13 @@ impl<'source> Lowerer<'_, 'source>
         if name == FormName::IDENTIFIER {
             if self.text_at(at).as_ref() == super::identity::HERE {
                 return match self.collected.words.len() {
-                    | 0_usize => Err(LoweringRefusal::WithoutK { span: at.span }),
-                    | 1_usize => Ok(Matcher::Constructor {
+                    0_usize => Err(LoweringRefusal::WithoutK { span: at.span }),
+                    1_usize => Ok(Matcher::Constructor {
                         form: Generators::Words(0),
                         tag: 0,
                         fields: allocated(patterns, work, &[]),
                     }),
-                    | _ => Err(here.out(FragmentBoundary::Unannotated)),
+                    _ => Err(here.out(FragmentBoundary::Unannotated)),
                 };
             }
             // A loop's name in a pattern names the loop, never a variable; a
@@ -2798,16 +2799,16 @@ impl<'source> Lowerer<'_, 'source>
         }
         if name == FormName::LITERAL_PATTERN {
             return match pieces.pieces.first() {
-                | Some(&Piece::Tile { label, at: tile }) if label == TileName::NUMBER => {
+                Some(&Piece::Tile { label, at: tile }) if label == TileName::NUMBER => {
                     integer(here, self.text_at(tile))
                 },
-                | Some(&Piece::Tile { label, .. }) if label == TileName::TRUE => {
+                Some(&Piece::Tile { label, .. }) if label == TileName::TRUE => {
                     Ok(Matcher::Boolean(true))
                 },
-                | Some(&Piece::Tile { label, .. }) if label == TileName::FALSE => {
+                Some(&Piece::Tile { label, .. }) if label == TileName::FALSE => {
                     Ok(Matcher::Boolean(false))
                 },
-                | _ => Err(here.out(FragmentBoundary::Unadmitted)),
+                _ => Err(here.out(FragmentBoundary::Unadmitted)),
             };
         }
         if name == FormName::CONSTRUCTOR_PATTERN {
@@ -3040,21 +3041,21 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Matcher, LoweringRefusal<'source>>
     {
         let form = match stated {
-            | Maybe::Present(node) => {
+            Maybe::Present(node) => {
                 self.stated_form(here, node, Former::TelescopeType, arity::Thunked(false))?
             },
-            | Maybe::Absent(_) => Maybe::Absent(arity::stated_labels::Absent::Otherwise),
+            Maybe::Absent(_) => Maybe::Absent(arity::stated_labels::Absent::Otherwise),
         };
         let arranged = arity::arrange(here, entries.to_vec())?;
         let links = match form {
-            | Maybe::Present((_, ref typed)) => self.dependent_links(typed)?,
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present((_, ref typed)) => self.dependent_links(typed)?,
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         };
         if let Maybe::Present((_, ref typed)) = form
             && let Maybe::Present(ref links) = links
             && match arranged {
-                | arity::Arranged::Positional(ref entries) => entries.len() == typed.len(),
-                | arity::Arranged::Labelled(_) => true,
+                arity::Arranged::Positional(ref entries) => entries.len() == typed.len(),
+                arity::Arranged::Labelled(_) => true,
             }
         {
             return Self::dependent_components(here, typed, links, arranged, patterns, work);
@@ -3068,9 +3069,9 @@ impl<'source> Lowerer<'_, 'source>
             punned: Punned(matches!(entry.held, arity::Held::Punned(_))),
         };
         match arranged {
-            | arity::Arranged::Positional(entries) => {
+            arity::Arranged::Positional(entries) => {
                 let queued: Vec<Queued> = match typed {
-                    | Maybe::Present(ref typed)
+                    Maybe::Present(ref typed)
                         if typed.len() == entries.len()
                             && typed
                                 .iter()
@@ -3084,7 +3085,7 @@ impl<'source> Lowerer<'_, 'source>
                             })
                             .collect()
                     },
-                    | Maybe::Present(_) | Maybe::Absent(_) => {
+                    Maybe::Present(_) | Maybe::Absent(_) => {
                         entries.iter().map(|entry| queue(entry, untyped)).collect()
                     },
                 };
@@ -3093,7 +3094,7 @@ impl<'source> Lowerer<'_, 'source>
                     dependent: Dependent(false),
                 })
             },
-            | arity::Arranged::Labelled(entries) => {
+            arity::Arranged::Labelled(entries) => {
                 let mut labels = Vec::with_capacity(entries.len());
                 let mut queued = Vec::with_capacity(entries.len());
                 for entry in &entries {
@@ -3157,12 +3158,12 @@ impl<'source> Lowerer<'_, 'source>
         let mut placed: Vec<Option<(usize, arity::Entry<'source>)>> =
             alloc::vec![None; typed.len()];
         match arranged {
-            | arity::Arranged::Positional(entries) => {
+            arity::Arranged::Positional(entries) => {
                 for (written, (slot, entry)) in placed.iter_mut().zip(entries).enumerate() {
                     *slot = Some((written, entry));
                 }
             },
-            | arity::Arranged::Labelled(entries) => {
+            arity::Arranged::Labelled(entries) => {
                 for (written, entry) in entries.into_iter().enumerate() {
                     let arity::Key::Label(name, key) = entry.key
                     else {
@@ -3219,12 +3220,12 @@ impl<'source> Lowerer<'_, 'source>
                 dependent,
             };
             match pending {
-                | Some(slot) => {
+                Some(slot) => {
                     if let Some(held) = patterns.shapes.get_mut(slot.0) {
                         held.1 = matcher;
                     }
                 },
-                | None => outer = Some(matcher),
+                None => outer = Some(matcher),
             }
             pending = Some(second);
         }
@@ -3272,28 +3273,28 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Matcher, LoweringRefusal<'source>>
     {
         let summands = match stated {
-            | Maybe::Present(node) => {
+            Maybe::Present(node) => {
                 self.stated_entries(here, node, Former::LabelledSumType, arity::Thunked(false))?
             },
-            | Maybe::Absent(_) => Maybe::Absent(arity::stated_labels::Absent::Otherwise),
+            Maybe::Absent(_) => Maybe::Absent(arity::stated_labels::Absent::Otherwise),
         };
         let Maybe::Present(summands) = summands
         else {
             return Err(here.out(FragmentBoundary::Unannotated));
         };
         let (summand, entry, keyed) = match key {
-            | arity::Key::Index(index, _, written) => {
+            arity::Key::Index(index, _, written) => {
                 let Some(&entry) = summands.get(index)
                 else {
                     return Err(here.fault(written.span, FormFault::MisplacedTile));
                 };
                 (index, entry, written.span)
             },
-            | arity::Key::Label(name, written) => {
+            arity::Key::Label(name, written) => {
                 let (arity::Place(index), entry) = Self::labelled_in(&summands, name, written)?;
                 (index, entry, written.span)
             },
-            | arity::Key::Positional => {
+            arity::Key::Positional => {
                 return Err(here.fault(payload.span, FormFault::MisplacedTile));
             },
         };
@@ -3406,16 +3407,16 @@ impl<'source> Lowerer<'_, 'source>
             .find_map(|(column, &pattern)| {
                 let &(written, ref shape) = patterns.shapes.get(pattern.0)?;
                 let head = match *shape {
-                    | Matcher::Wild | Matcher::Binder(_) => return None,
-                    | Matcher::Hole(hole) => Head::Hole(hole),
-                    | Matcher::Constructor { form, .. } => Head::Data(form),
-                    | Matcher::Boolean(_) => Head::Boolean,
-                    | Matcher::Integer(ref literal) => Head::Integer(literal.clone()),
-                    | Matcher::Tuple { fields, dependent } => {
+                    Matcher::Wild | Matcher::Binder(_) => return None,
+                    Matcher::Hole(hole) => Head::Hole(hole),
+                    Matcher::Constructor { form, .. } => Head::Data(form),
+                    Matcher::Boolean(_) => Head::Boolean,
+                    Matcher::Integer(ref literal) => Head::Integer(literal.clone()),
+                    Matcher::Tuple { fields, dependent } => {
                         Head::Tuple(fields.end.saturating_sub(fields.start), dependent)
                     },
-                    | Matcher::Record { .. } => Head::Record,
-                    | Matcher::Injection { arity, .. } => Head::Sum(arity),
+                    Matcher::Record { .. } => Head::Record,
+                    Matcher::Injection { arity, .. } => Head::Sum(arity),
                 };
                 Some((Column(column), written, head))
             });
@@ -3434,15 +3435,15 @@ impl<'source> Lowerer<'_, 'source>
             },
         };
         match head {
-            | Head::Hole(hole) => Ok(Test::Stuck(hole)),
-            | Head::Data(form) => self.switch_data(patterns, item, switch, form, tree),
-            | Head::Boolean => self.switch_boolean(patterns, item, switch, tree),
-            | Head::Integer(literal) => self.switch_integer(patterns, item, switch, literal, tree),
-            | Head::Tuple(arity, dependent) => {
+            Head::Hole(hole) => Ok(Test::Stuck(hole)),
+            Head::Data(form) => self.switch_data(patterns, item, switch, form, tree),
+            Head::Boolean => self.switch_boolean(patterns, item, switch, tree),
+            Head::Integer(literal) => self.switch_integer(patterns, item, switch, literal, tree),
+            Head::Tuple(arity, dependent) => {
                 self.switch_tuple(patterns, item, switch, Width(arity), dependent, tree)
             },
-            | Head::Record => self.switch_record(patterns, item, switch, tree),
-            | Head::Sum(arity) => self.switch_sum(patterns, item, switch, Width(arity), tree),
+            Head::Record => self.switch_record(patterns, item, switch, tree),
+            Head::Sum(arity) => self.switch_sum(patterns, item, switch, Width(arity), tree),
         }
     }
 
@@ -3478,7 +3479,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Test, LoweringRefusal<'source>>
     {
         let arities: Vec<usize> = match form {
-            | Generators::Written(position) => self
+            Generators::Written(position) => self
                 .collected
                 .data
                 .get(position)
@@ -3490,11 +3491,11 @@ impl<'source> Lowerer<'_, 'source>
                         .collect()
                 })
                 .unwrap_or_default(),
-            | Generators::Presentation => match self.collected.sig {
-                | Maybe::Present(ref sig) => sig.arities.clone(),
-                | Maybe::Absent(_) => Vec::new(),
+            Generators::Presentation => match self.collected.sig {
+                Maybe::Present(ref sig) => sig.arities.clone(),
+                Maybe::Absent(_) => Vec::new(),
             },
-            | Generators::Words(words) => {
+            Generators::Words(words) => {
                 let loops = self
                     .collected
                     .words
@@ -3506,18 +3507,18 @@ impl<'source> Lowerer<'_, 'source>
             },
         };
         let family = match form {
-            | Generators::Written(position) => match self.collected.data.get(position) {
-                | Some(written) if written.parameters.is_empty() => self
+            Generators::Written(position) => match self.collected.data.get(position) {
+                Some(written) if written.parameters.is_empty() => self
                     .collected
                     .slots
                     .get(usize::from(written.slot))
                     .map_or(Maybe::Absent(bare::Absent::Parameterised), |slot| {
                         Maybe::Present(slot.constant)
                     }),
-                | _ => Maybe::Absent(bare::Absent::Parameterised),
+                _ => Maybe::Absent(bare::Absent::Parameterised),
             },
-            | Generators::Presentation => Maybe::Absent(bare::Absent::Parameterised),
-            | Generators::Words(words) => self
+            Generators::Presentation => Maybe::Absent(bare::Absent::Parameterised),
+            Generators::Words(words) => self
                 .collected
                 .words
                 .get(words)
@@ -3534,7 +3535,7 @@ impl<'source> Lowerer<'_, 'source>
                 let mut next = row.clone();
                 let held = patterns.entry(row, switch.column);
                 let replacement = match *held {
-                    | Matcher::Constructor {
+                    Matcher::Constructor {
                         form: other,
                         tag: written,
                         fields,
@@ -3551,11 +3552,11 @@ impl<'source> Lowerer<'_, 'source>
                             .map(<[PatternAt]>::to_vec)
                             .unwrap_or_default()
                     },
-                    | Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
+                    Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
                         through(&mut next, held, switch.level);
                         alloc::vec![UNWRITTEN; arity]
                     },
-                    | Matcher::Boolean(_)
+                    Matcher::Boolean(_)
                     | Matcher::Integer(_)
                     | Matcher::Tuple { .. }
                     | Matcher::Record { .. }
@@ -3619,14 +3620,14 @@ impl<'source> Lowerer<'_, 'source>
             let mut next = row.clone();
             next.columns = splice(&row.columns, switch.column, &[]);
             match *held {
-                | Matcher::Boolean(true) => left.push(next),
-                | Matcher::Boolean(false) => right.push(next),
-                | Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
+                Matcher::Boolean(true) => left.push(next),
+                Matcher::Boolean(false) => right.push(next),
+                Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
                     through(&mut next, held, switch.level);
                     left.push(next.clone());
                     right.push(next);
                 },
-                | Matcher::Constructor { .. }
+                Matcher::Constructor { .. }
                 | Matcher::Integer(_)
                 | Matcher::Tuple { .. }
                 | Matcher::Record { .. }
@@ -3684,14 +3685,14 @@ impl<'source> Lowerer<'_, 'source>
             let mut matched = row.clone();
             matched.columns = splice(&row.columns, switch.column, &[]);
             match *held {
-                | Matcher::Integer(ref written) if *written == literal => equal.push(matched),
-                | Matcher::Integer(_) => other.push(row.clone()),
-                | Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
+                Matcher::Integer(ref written) if *written == literal => equal.push(matched),
+                Matcher::Integer(_) => other.push(row.clone()),
+                Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
                     through(&mut matched, held, switch.level);
                     equal.push(matched);
                     other.push(row.clone());
                 },
-                | Matcher::Constructor { .. }
+                Matcher::Constructor { .. }
                 | Matcher::Boolean(_)
                 | Matcher::Tuple { .. }
                 | Matcher::Record { .. }
@@ -3752,7 +3753,7 @@ impl<'source> Lowerer<'_, 'source>
             let mut next = row.clone();
             let held = patterns.entry(row, switch.column);
             let replacement = match *held {
-                | Matcher::Tuple { fields, .. }
+                Matcher::Tuple { fields, .. }
                     if fields.end.saturating_sub(fields.start) == arity =>
                 {
                     patterns
@@ -3761,11 +3762,11 @@ impl<'source> Lowerer<'_, 'source>
                         .map(<[PatternAt]>::to_vec)
                         .unwrap_or_default()
                 },
-                | Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
+                Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
                     through(&mut next, held, switch.level);
                     alloc::vec![UNWRITTEN; arity]
                 },
-                | Matcher::Tuple { .. }
+                Matcher::Tuple { .. }
                 | Matcher::Constructor { .. }
                 | Matcher::Boolean(_)
                 | Matcher::Integer(_)
@@ -3822,9 +3823,9 @@ impl<'source> Lowerer<'_, 'source>
         let mut named = BTreeSet::new();
         for row in &item.rows {
             match *patterns.entry(row, switch.column) {
-                | Matcher::Record { ref labels, .. } => named.extend(labels.iter().cloned()),
-                | Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {},
-                | Matcher::Constructor { .. }
+                Matcher::Record { ref labels, .. } => named.extend(labels.iter().cloned()),
+                Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {},
+                Matcher::Constructor { .. }
                 | Matcher::Boolean(_)
                 | Matcher::Integer(_)
                 | Matcher::Tuple { .. }
@@ -3838,7 +3839,7 @@ impl<'source> Lowerer<'_, 'source>
             let mut next = row.clone();
             let held = patterns.entry(row, switch.column);
             let replacement: Vec<PatternAt> = match *held {
-                | Matcher::Record {
+                Matcher::Record {
                     labels: ref written,
                     fields,
                 } => {
@@ -3857,11 +3858,11 @@ impl<'source> Lowerer<'_, 'source>
                         })
                         .collect()
                 },
-                | Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
+                Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
                     through(&mut next, held, switch.level);
                     alloc::vec![UNWRITTEN; labels.len()]
                 },
-                | Matcher::Constructor { .. }
+                Matcher::Constructor { .. }
                 | Matcher::Boolean(_)
                 | Matcher::Integer(_)
                 | Matcher::Tuple { .. }
@@ -3929,7 +3930,7 @@ impl<'source> Lowerer<'_, 'source>
                 let mut next = row.clone();
                 let held = patterns.entry(row, switch.column);
                 let replacement = match *held {
-                    | Matcher::Injection {
+                    Matcher::Injection {
                         summand: written,
                         arity: of,
                         field,
@@ -3942,11 +3943,11 @@ impl<'source> Lowerer<'_, 'source>
                         }
                         field
                     },
-                    | Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
+                    Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
                         through(&mut next, held, switch.level);
                         UNWRITTEN
                     },
-                    | Matcher::Constructor { .. }
+                    Matcher::Constructor { .. }
                     | Matcher::Boolean(_)
                     | Matcher::Integer(_)
                     | Matcher::Tuple { .. }
@@ -4013,40 +4014,40 @@ impl<'source> Lowerer<'_, 'source>
                     .collect()
             };
             let pattern = match *shape {
-                | Matcher::Wild => Pattern::Wildcard,
-                | Matcher::Binder(_) => Pattern::Binder,
-                | Matcher::Hole(hole) => Pattern::Hole(hole),
-                | Matcher::Integer(ref literal) => Pattern::Literal(literal.clone()),
-                | Matcher::Boolean(value) => {
+                Matcher::Wild => Pattern::Wildcard,
+                Matcher::Binder(_) => Pattern::Binder,
+                Matcher::Hole(hole) => Pattern::Hole(hole),
+                Matcher::Integer(ref literal) => Pattern::Literal(literal.clone()),
+                Matcher::Boolean(value) => {
                     let unit = kept.patterns.mint(Pattern::Unit);
                     Pattern::Injection(if value { Side::Left } else { Side::Right }, unit)
                 },
-                | Matcher::Constructor { tag, fields, .. } => Pattern::Constructor {
+                Matcher::Constructor { tag, fields, .. } => Pattern::Constructor {
                     tag: ConstructorTag::from(tag),
                     fields: parts(fields),
                 },
-                | Matcher::Tuple { fields, .. } => match *parts(fields).as_slice() {
-                    | [] => Pattern::Unit,
-                    | [first, second] => Pattern::Pair(first, second),
-                    | ref several => Pattern::Constructor {
+                Matcher::Tuple { fields, .. } => match *parts(fields).as_slice() {
+                    [] => Pattern::Unit,
+                    [first, second] => Pattern::Pair(first, second),
+                    ref several => Pattern::Constructor {
                         tag: ConstructorTag::from(0_usize),
                         fields: several.to_vec(),
                     },
                 },
-                | Matcher::Record { fields, .. } => Pattern::Constructor {
+                Matcher::Record { fields, .. } => Pattern::Constructor {
                     tag: ConstructorTag::from(0_usize),
                     fields: parts(fields),
                 },
-                | Matcher::Injection {
+                Matcher::Injection {
                     summand,
                     arity,
                     field,
                 } => {
                     let body = minted.get(field.0).copied().flatten();
                     match (arity, summand, body) {
-                        | (2_usize, 0_usize, Some(body)) => Pattern::Injection(Side::Left, body),
-                        | (2_usize, 1_usize, Some(body)) => Pattern::Injection(Side::Right, body),
-                        | _ => Pattern::Constructor {
+                        (2_usize, 0_usize, Some(body)) => Pattern::Injection(Side::Left, body),
+                        (2_usize, 1_usize, Some(body)) => Pattern::Injection(Side::Right, body),
+                        _ => Pattern::Constructor {
                             tag: ConstructorTag::from(summand),
                             fields: body.into_iter().collect(),
                         },
@@ -4136,8 +4137,8 @@ impl<'source> Lowerer<'_, 'source>
                     .fields
                     .iter()
                     .filter_map(|field| match self.value_type_at(field.node) {
-                        | Maybe::Present(id) => Some(id),
-                        | Maybe::Absent(_) => None,
+                        Maybe::Present(id) => Some(id),
+                        Maybe::Absent(_) => None,
                     })
                     .collect();
                 constructors.push(fields);
@@ -4148,9 +4149,9 @@ impl<'source> Lowerer<'_, 'source>
                     .zip(&form.generators)
                     .all(|(fields, generator)| fields.len() == generator.fields.len());
             let kind = match form.kind {
-                | Maybe::Present(written) => self.value_type_at(written.node),
-                | Maybe::Absent(_) => match self.origin_at(form.declaration.node) {
-                    | Maybe::Present(origin) => {
+                Maybe::Present(written) => self.value_type_at(written.node),
+                Maybe::Absent(_) => match self.origin_at(form.declaration.node) {
+                    Maybe::Present(origin) => {
                         let id = sink.arena.value_type_universe(
                             Sort::Ground(GroundSort::Value),
                             Level::constant(super::Universe::FUSS_FREE.level),
@@ -4158,7 +4159,7 @@ impl<'source> Lowerer<'_, 'source>
                         sink.origins.record_value_type(id, origin);
                         Maybe::Present(id)
                     },
-                    | Maybe::Absent(reason) => Maybe::Absent(reason),
+                    Maybe::Absent(reason) => Maybe::Absent(reason),
                 },
             };
             let Maybe::Present(kind) = kind
@@ -4519,8 +4520,8 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
             match self.value_at(argument) {
-                | Maybe::Present(value) => passed.push(value),
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(value) => passed.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         let id = sink.arena.value_type_data(constant, passed);
@@ -4559,12 +4560,12 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
             match self.value_at(field) {
-                | Maybe::Present(value) => fields.push(value),
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(value) => fields.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         let classifier = match constructed.classifier {
-            | Maybe::Present(written) => {
+            Maybe::Present(written) => {
                 let Maybe::Present(id) = self.value_type_at(written)
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);
@@ -4572,7 +4573,7 @@ impl<'source> Lowerer<'_, 'source>
                 let frame = self.reading(written).frame();
                 self.relocate_value_type(id, frame, sink, origin.inserted(Insertion::Classifier))
             },
-            | Maybe::Absent(_) => {
+            Maybe::Absent(_) => {
                 let id = sink.arena.value_type_data(constructed.family, Vec::new());
                 sink.origins
                     .record_value_type(id, origin.inserted(Insertion::Classifier));
@@ -4627,8 +4628,8 @@ impl<'source> Lowerer<'_, 'source>
             Some(&mut copies),
         );
         let result = match sink.arena.comp_type(carried) {
-            | Some(&CompType::Returner { result: inner, .. }) => inner,
-            | _ => ty,
+            Some(&CompType::Returner { result: inner, .. }) => inner,
+            _ => ty,
         };
         record_copied_since(
             sink,
@@ -4673,10 +4674,10 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut shift = |arena: &mut CoreArena, subject, scope, amount| match copies.as_deref_mut()
         {
-            | Some(copies) => {
+            Some(copies) => {
                 gandr_core_term::shift_comp_type_under_traced(arena, subject, scope, amount, copies)
             },
-            | None => gandr_core_term::shift_comp_type_under(arena, subject, scope, amount),
+            None => gandr_core_term::shift_comp_type_under(arena, subject, scope, amount),
         };
         let mut carried = ty;
         for (position, binds) in self.scope.telescope_binders(from).enumerate() {
@@ -4740,8 +4741,8 @@ impl<'source> Lowerer<'_, 'source>
         }
         let mark = sink.arena.watermark();
         let motive = match form.answer {
-            | Maybe::Present(answer) => match self.comp_type_at(answer.node) {
-                | Maybe::Present(written) => {
+            Maybe::Present(answer) => match self.comp_type_at(answer.node) {
+                Maybe::Present(written) => {
                     let gap = Depth(
                         self.scope
                             .telescope_binders(form.frame)
@@ -4752,16 +4753,16 @@ impl<'source> Lowerer<'_, 'source>
                         self.relocate(sink.arena, written, answer.frame, Binders::default(), None);
                     Maybe::Present((base, gap))
                 },
-                | Maybe::Absent(reason) => Maybe::Absent(reason),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
             },
-            | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
+            Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
         let scrutinised = Scrutinised {
             scrutinee,
             outer: Depth(self.scope.telescope_binders(form.frame).count()),
         };
         let tracked = match motive {
-            | Maybe::Present((base, gap))
+            Maybe::Present((base, gap))
                 if form.tests.iter().any(|test| {
                     matches!(
                         *test,
@@ -4775,7 +4776,7 @@ impl<'source> Lowerer<'_, 'source>
             {
                 tracked_motives(&form.tests, base, gap, scrutinised, sink.arena)
             },
-            | Maybe::Present(_) | Maybe::Absent(_) => Vec::new(),
+            Maybe::Present(_) | Maybe::Absent(_) => Vec::new(),
         };
         let refined = refinements(&form.tests, &tracked, scrutinised, sink.arena);
         let mut minted: Vec<Maybe<ComputationId, lowered::Absent>> = Vec::from_iter(
@@ -4808,9 +4809,9 @@ impl<'source> Lowerer<'_, 'source>
         }
         let inserted = origin.inserted(Insertion::Match);
         let minted_root = match minted.first() {
-            | Some(&Maybe::Present(root)) if form.loops.is_empty() => Maybe::Present(root),
-            | Some(&Maybe::Present(root)) => self.with_loops(form, root, sink, &mut copies),
-            | Some(&Maybe::Absent(_)) | None => Maybe::Absent(lowered::Absent::Unminted),
+            Some(&Maybe::Present(root)) if form.loops.is_empty() => Maybe::Present(root),
+            Some(&Maybe::Present(root)) => self.with_loops(form, root, sink, &mut copies),
+            Some(&Maybe::Absent(_)) | None => Maybe::Absent(lowered::Absent::Unminted),
         };
         let Maybe::Present(root) = minted_root
         else {
@@ -5054,8 +5055,8 @@ fn tracked_motives(
             ));
         };
         match *test {
-            | Test::Pending | Test::Stuck(_) | Test::Leaf { .. } => {},
-            | Test::Data {
+            Test::Pending | Test::Stuck(_) | Test::Leaf { .. } => {},
+            Test::Data {
                 level,
                 depth,
                 family,
@@ -5073,7 +5074,7 @@ fn tracked_motives(
                 );
                 for (tag, &(arity, at)) in branches.iter().enumerate() {
                     let answer = match family {
-                        | Maybe::Present(family) if reads => {
+                        Maybe::Present(family) if reads => {
                             let lifted = gandr_core_term::shift_comp_type_under(
                                 arena,
                                 motive,
@@ -5088,28 +5089,28 @@ fn tracked_motives(
                                 constructed(arena, family, ConstructorTag::from(tag), fields);
                             gandr_core_term::instantiate_comp_type(arena, lifted, at_constructor)
                         },
-                        | Maybe::Present(_) | Maybe::Absent(_) => {
+                        Maybe::Present(_) | Maybe::Absent(_) => {
                             gandr_core_term::shift_comp_type(arena, here, binders(arity))
                         },
                     };
                     answers.push((at, answer));
                 }
             },
-            | Test::Boolean { yes, no, .. } => {
+            Test::Boolean { yes, no, .. } => {
                 under(arena, yes, 1_usize);
                 under(arena, no, 1_usize);
             },
-            | Test::Integer { yes, no, .. } => {
+            Test::Integer { yes, no, .. } => {
                 under(arena, yes, 2_usize);
                 under(arena, no, 2_usize);
             },
-            | Test::Split {
+            Test::Split {
                 arity,
                 dependent: Dependent(false),
                 child,
                 ..
             } => under(arena, child, arity),
-            | Test::Split {
+            Test::Split {
                 level,
                 depth,
                 dependent: Dependent(true),
@@ -5136,10 +5137,10 @@ fn tracked_motives(
                     gandr_core_term::instantiate_comp_type(arena, lifted, pair),
                 ));
             },
-            | Test::Record {
+            Test::Record {
                 ref labels, child, ..
             } => under(arena, child, labels.len()),
-            | Test::Sum { ref branches, .. } => {
+            Test::Sum { ref branches, .. } => {
                 for &at in branches {
                     under(arena, at, 1_usize);
                 }
@@ -5196,11 +5197,11 @@ fn refinements(
         return unrefined(refined::Absent::Unswitched);
     }
     let held = match arena.value(scrutinised.scrutinee) {
-        | Some(&Value::Variable {
+        Some(&Value::Variable {
             zone: Zone::Intuitionistic,
             index,
         }) => usize::try_from(u32::from(index)).unwrap_or(usize::MAX),
-        | _ => usize::MAX,
+        _ => usize::MAX,
     };
     if held >= scrutinised.outer.0 {
         return unrefined(refined::Absent::Unbound);
@@ -5237,18 +5238,18 @@ fn refinements(
             }
         };
         match *test {
-            | Test::Pending | Test::Stuck(_) | Test::Leaf { .. } => {},
-            | Test::Data { ref branches, .. } => {
+            Test::Pending | Test::Stuck(_) | Test::Leaf { .. } => {},
+            Test::Data { ref branches, .. } => {
                 for &(_arity, at) in branches {
                     mark(at);
                 }
             },
-            | Test::Boolean { yes, no, .. } | Test::Integer { yes, no, .. } => {
+            Test::Boolean { yes, no, .. } | Test::Integer { yes, no, .. } => {
                 mark(yes);
                 mark(no);
             },
-            | Test::Split { child, .. } | Test::Record { child, .. } => mark(child),
-            | Test::Sum { ref branches, .. } => {
+            Test::Split { child, .. } | Test::Record { child, .. } => mark(child),
+            Test::Sum { ref branches, .. } => {
                 for &at in branches {
                     mark(at);
                 }
@@ -5354,11 +5355,11 @@ fn abstracted(
 ) -> CompTypeId
 {
     let held = match arena.value(scrutinee) {
-        | Some(&Value::Variable {
+        Some(&Value::Variable {
             zone: Zone::Intuitionistic,
             index,
         }) => usize::try_from(u32::from(index)).unwrap_or(usize::MAX),
-        | _ => usize::MAX,
+        _ => usize::MAX,
     };
     if held >= context.0 {
         return gandr_core_term::shift_comp_type(arena, ty, Binders::ONE);
@@ -5375,11 +5376,11 @@ fn abstracted(
         .collect();
     let quoted = arena.value_quote_computation(ty);
     match gandr_core_term::substitute_environment(arena, TermId::Value(quoted), &environment) {
-        | TermId::Value(substituted) => match arena.value(substituted) {
-            | Some(&Value::QuoteComputation(motive)) => motive,
-            | _ => gandr_core_term::shift_comp_type(arena, ty, Binders::ONE),
+        TermId::Value(substituted) => match arena.value(substituted) {
+            Some(&Value::QuoteComputation(motive)) => motive,
+            _ => gandr_core_term::shift_comp_type(arena, ty, Binders::ONE),
         },
-        | TermId::Computation(_) => gandr_core_term::shift_comp_type(arena, ty, Binders::ONE),
+        TermId::Computation(_) => gandr_core_term::shift_comp_type(arena, ty, Binders::ONE),
     }
 }
 
@@ -5425,9 +5426,9 @@ fn mint_test(
             .unwrap_or(Maybe::Absent(lowered::Absent::Unminted))
     };
     match *test {
-        | Test::Pending => Maybe::Absent(lowered::Absent::Unminted),
-        | Test::Stuck(hole) => Maybe::Present(sink.arena.computation_hole(hole)),
-        | Test::Leaf {
+        Test::Pending => Maybe::Absent(lowered::Absent::Unminted),
+        Test::Stuck(hole) => Maybe::Present(sink.arena.computation_hole(hole)),
+        Test::Leaf {
             arm,
             depth,
             ref bindings,
@@ -5449,7 +5450,7 @@ fn mint_test(
             }
             for outer in 0 .. scrutinised.outer.0 {
                 let read = match refined {
-                    | Maybe::Present(refined) if refined.held == outer => {
+                    Maybe::Present(refined) if refined.held == outer => {
                         let fields = (0 .. refined.arity)
                             .map(|field| {
                                 let level = TreeLevel(field.saturating_add(1));
@@ -5458,7 +5459,7 @@ fn mint_test(
                             .collect();
                         constructed(sink.arena, refined.family, refined.tag, fields)
                     },
-                    | Maybe::Present(_) | Maybe::Absent(_) => {
+                    Maybe::Present(_) | Maybe::Absent(_) => {
                         variable(sink.arena, Depth(outer.saturating_add(depth.0)))
                     },
                 };
@@ -5471,15 +5472,15 @@ fn mint_test(
                 &environment,
                 &mut carried,
             ) {
-                | TermId::Computation(substituted) => {
+                TermId::Computation(substituted) => {
                     exits::mark_copies(sink, &carried);
                     copies.extend_from_slice(&carried);
                     Maybe::Present(substituted)
                 },
-                | TermId::Value(_) => Maybe::Absent(lowered::Absent::Unminted),
+                TermId::Value(_) => Maybe::Absent(lowered::Absent::Unminted),
             }
         },
-        | Test::Data {
+        Test::Data {
             level,
             depth,
             ref branches,
@@ -5506,19 +5507,19 @@ fn mint_test(
                     .computation_data_case(scrutinee, motive, lowered_branches),
             )
         },
-        | Test::Boolean {
+        Test::Boolean {
             level,
             depth,
             yes,
             no,
         } => match (child(yes), child(no)) {
-            | (Maybe::Present(left), Maybe::Present(right)) => {
+            (Maybe::Present(left), Maybe::Present(right)) => {
                 let scrutinee = level_value(sink.arena, scrutinised, depth, level);
                 Maybe::Present(sink.arena.computation_case(scrutinee, &[left, right]))
             },
-            | _ => Maybe::Absent(lowered::Absent::Unminted),
+            _ => Maybe::Absent(lowered::Absent::Unminted),
         },
-        | Test::Integer {
+        Test::Integer {
             level,
             depth,
             ref literal,
@@ -5544,7 +5545,7 @@ fn mint_test(
             let branched = sink.arena.computation_case(answer, &[left, right]);
             Maybe::Present(sink.arena.computation_bind(test, branched))
         },
-        | Test::Split {
+        Test::Split {
             level,
             depth,
             arity,
@@ -5574,7 +5575,7 @@ fn mint_test(
                 body,
             ))
         },
-        | Test::Record {
+        Test::Record {
             level,
             depth,
             ref labels,
@@ -5594,7 +5595,7 @@ fn mint_test(
             }
             Maybe::Present(body)
         },
-        | Test::Sum {
+        Test::Sum {
             level,
             depth,
             ref branches,
@@ -5683,8 +5684,8 @@ fn integer<'source>(
 ) -> Result<Matcher, LoweringRefusal<'source>>
 {
     match parse_literal(Former::Number, text) {
-        | Maybe::Present(literal) => Ok(Matcher::Integer(literal)),
-        | Maybe::Absent(_) => Err(LoweringRefusal::MalformedLiteral {
+        Maybe::Present(literal) => Ok(Matcher::Integer(literal)),
+        Maybe::Absent(_) => Err(LoweringRefusal::MalformedLiteral {
             span: here.at.span,
             form: here.name,
         }),
@@ -5771,13 +5772,13 @@ fn through(
 )
 {
     match *held {
-        | Matcher::Binder(variable) => row.bindings.push((variable, level)),
-        | Matcher::Hole(hole) => {
+        Matcher::Binder(variable) => row.bindings.push((variable, level)),
+        Matcher::Hole(hole) => {
             if let Maybe::Absent(_) = row.stuck {
                 row.stuck = Maybe::Present(hole);
             }
         },
-        | Matcher::Wild
+        Matcher::Wild
         | Matcher::Constructor { .. }
         | Matcher::Boolean(_)
         | Matcher::Integer(_)
@@ -5962,12 +5963,11 @@ fn carry_bindings(
     let mut copies: Vec<(ValueId, gandr_surface_syntax::ByteSpan)> = carried
         .iter()
         .filter_map(|pair| match *pair {
-            | Carried::Value(held, written) if first <= written => match sink.origins.binding(held)
-            {
-                | Maybe::Present(binder) => Some((written, binder)),
-                | Maybe::Absent(_) => None,
+            Carried::Value(held, written) if first <= written => match sink.origins.binding(held) {
+                Maybe::Present(binder) => Some((written, binder)),
+                Maybe::Absent(_) => None,
             },
-            | Carried::Value(..)
+            Carried::Value(..)
             | Carried::Computation(..)
             | Carried::ValueType(..)
             | Carried::CompType(..) => None,
@@ -6024,10 +6024,10 @@ fn record_copied_since(
     }
     for id in sink.arena.computations_since(mark) {
         match root {
-            | Maybe::Present((held, written)) if held == id => {
+            Maybe::Present((held, written)) if held == id => {
                 sink.origins.record_computation(id, written);
             },
-            | Maybe::Present(_) | Maybe::Absent(_) => {
+            Maybe::Present(_) | Maybe::Absent(_) => {
                 let recorded = sources.computation(sink, id, origin);
                 sink.origins.record_computation(id, recorded);
                 sources.keep_case(sink, id);
@@ -6151,7 +6151,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             let passed = Placed::of(argument, node);
             let unchanged = match shape_of(self.pbg, node)? {
-                | Shape::Form {
+                Shape::Form {
                     former: Former::Name,
                     ..
                 } => {
@@ -6161,7 +6161,7 @@ impl<'source> Lowerer<'_, 'source>
                         Maybe::Present(found) if found.binder == parameter.frame
                     )
                 },
-                | Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => false,
+                Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => false,
             };
             if !unchanged {
                 let varied = Site {
@@ -6215,11 +6215,11 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<FixpointEvidence, recursion::Absent>
     {
         match function.recursion {
-            | Maybe::Present(frame) => Maybe::Present(match self.recursions.get(&frame) {
-                | Some(held) if held.claimed.0 => FixpointEvidence::StructuralDescent,
-                | Some(_) | None => FixpointEvidence::Partial,
+            Maybe::Present(frame) => Maybe::Present(match self.recursions.get(&frame) {
+                Some(held) if held.claimed.0 => FixpointEvidence::StructuralDescent,
+                Some(_) | None => FixpointEvidence::Partial,
             }),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
 }
@@ -6285,14 +6285,14 @@ fn rule_side(
     let mut pending = Vec::from([side.to_node()]);
     while let Some(node) = pending.pop() {
         match node.view() {
-            | gandr_theory_levitation::TermView::Var(name) => {
+            gandr_theory_levitation::TermView::Var(name) => {
                 let position = match variables.iter().position(|bound| bound == name) {
-                    | Some(position) => position,
-                    | None if binding == Binding::Binds => {
+                    Some(position) => position,
+                    None if binding == Binding::Binds => {
                         variables.push(name.clone());
                         variables.len().saturating_sub(1)
                     },
-                    | None => return Maybe::Absent(rule_side::Absent::Unbound),
+                    None => return Maybe::Absent(rule_side::Absent::Unbound),
                 };
                 let Ok(ordinal) = u32::try_from(position)
                 else {
@@ -6302,7 +6302,7 @@ fn rule_side(
                     gandr_core_term::RuleVariable::from(ordinal),
                 ));
             },
-            | gandr_theory_levitation::TermView::Ctor { name, args } => {
+            gandr_theory_levitation::TermView::Ctor { name, args } => {
                 let Some(tag) = names
                     .iter()
                     .position(|&written| <&str>::from(written) == name.as_ref())
@@ -6318,7 +6318,7 @@ fn rule_side(
                     children.reverse();
                 }
             },
-            | gandr_theory_levitation::TermView::Op { .. }
+            gandr_theory_levitation::TermView::Op { .. }
             | gandr_theory_levitation::TermView::Results { .. } => {
                 return Maybe::Absent(rule_side::Absent::Foreign);
             },

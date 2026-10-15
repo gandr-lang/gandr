@@ -923,12 +923,12 @@ impl<'catalogue> SegalStratum<'catalogue>
                 continue;
             }
             let automorphisms = match catalogue.maps(index, index) {
-                | Maybe::Present(maps) => maps
+                Maybe::Present(maps) => maps
                     .iter()
                     .filter(|map| included(map) == Membership::Inside)
                     .cloned()
                     .collect(),
-                | Maybe::Absent(_) => Vec::new(),
+                Maybe::Absent(_) => Vec::new(),
             };
             corollas.push(Corolla {
                 index,
@@ -999,14 +999,13 @@ impl<'catalogue> SegalStratum<'catalogue>
         profile: Profile,
     ) -> Maybe<&Corolla, stratum_corolla::Absent>
     {
-        match self
-            .corollas
+        self.corollas
             .iter()
             .find(|corolla| corolla.profile() == profile)
-        {
-            | Some(corolla) => Maybe::Present(corolla),
-            | None => Maybe::Absent(stratum_corolla::Absent::PastTheBound),
-        }
+            .map_or(
+                Maybe::Absent(stratum_corolla::Absent::PastTheBound),
+                Maybe::Present,
+            )
     }
 }
 

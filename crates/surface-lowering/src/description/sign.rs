@@ -201,8 +201,8 @@ impl HeadKind
     const fn row(self) -> ArrowRow
     {
         match self {
-            | Self::Constructor | Self::Operation => ArrowRow::Mapping,
-            | Self::Rewrite => ArrowRow::Face,
+            Self::Constructor | Self::Operation => ArrowRow::Mapping,
+            Self::Rewrite => ArrowRow::Face,
         }
     }
 }
@@ -284,12 +284,12 @@ impl Reader<'_, '_>
                 continue;
             }
             match self.signature_sort(&mut reading) {
-                | Ok((sort, tile, member)) => {
+                Ok((sort, tile, member)) => {
                     parts.sorts.push(sort);
                     placement.sorts.push(tile);
                     written.sorts.push(member);
                 },
-                | Err(diagnostic) => diagnostics.push(diagnostic),
+                Err(diagnostic) => diagnostics.push(diagnostic),
             }
         }
         let mut operation_spans = Vec::new();
@@ -317,12 +317,12 @@ impl Reader<'_, '_>
             else if reading.eat(Spelling("rule")).0 {
                 self.signature_rule(&mut reading, &parts.sorts, &scope)
                     .map(|member| match member {
-                        | RuleMember::Circuit(rule, presented, wired) => {
+                        RuleMember::Circuit(rule, presented, wired) => {
                             circuits.push(rule);
                             presented_circuits.push(presented);
                             written.circuits.push(wired);
                         },
-                        | RuleMember::Face(face, tile, whole, sides) => {
+                        RuleMember::Face(face, tile, whole, sides) => {
                             parts.rules.push(face);
                             placement.laws.push(tile);
                             placement.faces.push(whole);
@@ -397,11 +397,11 @@ impl Reader<'_, '_>
         let mut operations = Vec::new();
         let mut operation_spans = Vec::new();
         match self.signature_operation(run, &[]) {
-            | Ok((operation, _tile, _written)) => {
+            Ok((operation, _tile, _written)) => {
                 operations.push(operation_desc(&operation));
                 operation_spans.push(at.span);
             },
-            | Err(diagnostic) => diagnostics.push(diagnostic),
+            Err(diagnostic) => diagnostics.push(diagnostic),
         }
         Ok(DescribedDeclaration {
             at,
@@ -838,8 +838,8 @@ impl Reader<'_, '_>
             let node =
                 if let Some(port) = rewrite {
                     let out = match <[Name; 1]>::try_from(outputs) {
-                        | Ok([out]) => out,
-                        | Err(several) => {
+                        Ok([out]) => out,
+                        Err(several) => {
                             return Err(run.signature_fault(SignatureFault::MultipleOutputs(
                                 OutputCount(several.len()),
                             )));
@@ -851,8 +851,8 @@ impl Reader<'_, '_>
                 }
                 else {
                     let head = match kind {
-                        | Some(HeadKind::Constructor) => FrameHead::Ctor(self.text(head).0.into()),
-                        | Some(HeadKind::Operation | HeadKind::Rewrite) | None => {
+                        Some(HeadKind::Constructor) => FrameHead::Ctor(self.text(head).0.into()),
+                        Some(HeadKind::Operation | HeadKind::Rewrite) | None => {
                             FrameHead::Op(self.text(head).0.into())
                         },
                     };
@@ -1226,10 +1226,10 @@ fn member_span(
 ) -> ByteSpan
 {
     match (member.first(), member.last()) {
-        | (Some(first), Some(last)) => {
+        (Some(first), Some(last)) => {
             ByteSpan::new(first.placed().span.start(), last.placed().span.end()).unwrap_or(fallback)
         },
-        | _ => fallback,
+        _ => fallback,
     }
 }
 

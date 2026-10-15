@@ -92,10 +92,8 @@ impl<'nodes> ContentSource<'nodes>
 fn key(reference: &Reference) -> Option<Name<'_>>
 {
     match *reference {
-        | Reference::Item { ref key, .. } => {
-            core::str::from_utf8(key.as_ref()).ok().map(Name::from)
-        },
-        | Reference::Unoccupied => None,
+        Reference::Item { ref key, .. } => core::str::from_utf8(key.as_ref()).ok().map(Name::from),
+        Reference::Unoccupied => None,
     }
 }
 
@@ -155,20 +153,20 @@ impl Source for ContentSource<'_>
         };
         let unnamed = Former::Unreadable(Unreadable::Unnamed);
         match *content {
-            | ContentNode::Reify(_) => Former::Reify,
-            | ContentNode::Stack { input, output } => Former::Stack(input, output),
-            | ContentNode::WithType(first, second) => Former::With(first, second),
-            | ContentNode::PrimitiveValue(primitive) => {
+            ContentNode::Reify(_) => Former::Reify,
+            ContentNode::Stack { input, output } => Former::Stack(input, output),
+            ContentNode::WithType(first, second) => Former::With(first, second),
+            ContentNode::PrimitiveValue(primitive) => {
                 Former::Constant(Name::from(<&'static str>::from(primitive.name())))
             },
-            | ContentNode::Data {
+            ContentNode::Data {
                 ref declaration,
                 ref arguments,
             } => Former::Data {
                 name: key(declaration),
                 arity: Arity::from(arguments.len()),
             },
-            | ContentNode::Constructor {
+            ContentNode::Constructor {
                 datatype,
                 tag,
                 ref fields,
@@ -177,10 +175,102 @@ impl Source for ContentSource<'_>
                     .nodes
                     .get(usize::from(datatype))
                     .and_then(|family| match *family {
-                        | ContentNode::Data {
+                        ContentNode::Data {
                             ref declaration, ..
                         } => key(declaration),
-                        | _ => None,
+                        ContentNode::RecordType(_)
+                        | ContentNode::Constructor { .. }
+                        | ContentNode::Record(_)
+                        | ContentNode::DataCase { .. }
+                        | ContentNode::RecordProjection(..)
+                        | ContentNode::TupleProjection(..)
+                        | ContentNode::Reify(_)
+                        | ContentNode::Stack { .. }
+                        | ContentNode::WithType(..)
+                        | ContentNode::Perform { .. }
+                        | ContentNode::Handle { .. }
+                        | ContentNode::Exercise { .. }
+                        | ContentNode::Scope { .. }
+                        | ContentNode::Capability { .. }
+                        | ContentNode::Resume(..)
+                        | ContentNode::Split(..)
+                        | ContentNode::DependentSplit { .. }
+                        | ContentNode::Reset(_)
+                        | ContentNode::Shift(_)
+                        | ContentNode::With(..)
+                        | ContentNode::Project(..)
+                        | ContentNode::PrimitiveValue(_)
+                        | ContentNode::Primitive(..)
+                        | ContentNode::PathUniverse(..)
+                        | ContentNode::PathRefl(_)
+                        | ContentNode::PathProduct(..)
+                        | ContentNode::Funext(..)
+                        | ContentNode::Equiv(..)
+                        | ContentNode::Ua { .. }
+                        | ContentNode::PathEquiv { .. }
+                        | ContentNode::Transport(..)
+                        | ContentNode::PathType { .. }
+                        | ContentNode::Here(_)
+                        | ContentNode::Returned(_)
+                        | ContentNode::Nested(_)
+                        | ContentNode::Run(_)
+                        | ContentNode::ElementTransport { .. }
+                        | ContentNode::TelescopeTransport { .. }
+                        | ContentNode::SessionRelated { .. }
+                        | ContentNode::Stay(_)
+                        | ContentNode::Then(..)
+                        | ContentNode::Forward(_)
+                        | ContentNode::FunctionFlow(..)
+                        | ContentNode::FlowProduct(..)
+                        | ContentNode::Recorded(_)
+                        | ContentNode::Ride { .. }
+                        | ContentNode::FlowType { .. }
+                        | ContentNode::RunType(_)
+                        | ContentNode::Variable { .. }
+                        | ContentNode::Constant(_)
+                        | ContentNode::Literal(_)
+                        | ContentNode::Tuple(_)
+                        | ContentNode::ListNil
+                        | ContentNode::ListCons(..)
+                        | ContentNode::Injection(..)
+                        | ContentNode::Thunk(_)
+                        | ContentNode::ValueLift { .. }
+                        | ContentNode::Quote(_)
+                        | ContentNode::QuoteComputation(_)
+                        | ContentNode::StaticLambda(_)
+                        | ContentNode::StaticApplication(..)
+                        | ContentNode::Hole(_)
+                        | ContentNode::ValueMark { .. }
+                        | ContentNode::Lambda(_)
+                        | ContentNode::Application(..)
+                        | ContentNode::Return(_)
+                        | ContentNode::Bind(..)
+                        | ContentNode::Force(_)
+                        | ContentNode::Case { .. }
+                        | ContentNode::ComputationHole(_)
+                        | ContentNode::ComputationMark { .. }
+                        | ContentNode::Fixpoint { .. }
+                        | ContentNode::ListFold { .. }
+                        | ContentNode::Session(_)
+                        | ContentNode::Base(_)
+                        | ContentNode::Product(_)
+                        | ContentNode::Sum(_)
+                        | ContentNode::List(_)
+                        | ContentNode::ThunkType(_)
+                        | ContentNode::Universe { .. }
+                        | ContentNode::TypeLift { .. }
+                        | ContentNode::Element { .. }
+                        | ContentNode::StaticPi { .. }
+                        | ContentNode::Sigma { .. }
+                        | ContentNode::SessionType(_)
+                        | ContentNode::Abstract(_)
+                        | ContentNode::UnknownType
+                        | ContentNode::Returner { .. }
+                        | ContentNode::Arrow { .. }
+                        | ContentNode::Pi { .. }
+                        | ContentNode::ComputationElement { .. }
+                        | ContentNode::UnknownComputationType
+                        | ContentNode::Unresolved(_) => None,
                     })
                     .zip(self.constructors);
                 Former::Constructor {
@@ -198,7 +288,7 @@ impl Source for ContentSource<'_>
                     ),
                 }
             },
-            | ContentNode::DataCase {
+            ContentNode::DataCase {
                 scrutinee,
                 ref branches,
                 ..
@@ -206,17 +296,17 @@ impl Source for ContentSource<'_>
                 scrutinee,
                 arity: Arity::from(branches.len()),
             },
-            | ContentNode::RecordProjection(record, ref label) => {
+            ContentNode::RecordProjection(record, ref label) => {
                 Former::RecordProjection(record, Name::from(label.as_ref()))
             },
-            | ContentNode::TupleProjection(tuple, component) => {
+            ContentNode::TupleProjection(tuple, component) => {
                 Former::TupleProjection(tuple, Component::from(usize::from(component)))
             },
-            | ContentNode::Primitive(primitive, ref arguments) => Former::Primitive {
+            ContentNode::Primitive(primitive, ref arguments) => Former::Primitive {
                 name: Name::from(<&'static str>::from(primitive.name())),
                 arity: Arity::from(arguments.len()),
             },
-            | ContentNode::Perform {
+            ContentNode::Perform {
                 ref operation,
                 payload,
                 ..
@@ -224,7 +314,7 @@ impl Source for ContentSource<'_>
                 operation: Name::from(operation.as_ref()),
                 payload,
             },
-            | ContentNode::Handle {
+            ContentNode::Handle {
                 subject,
                 on_return,
                 ref clauses,
@@ -234,7 +324,7 @@ impl Source for ContentSource<'_>
                 on_return,
                 clauses: Arity::from(clauses.len()),
             },
-            | ContentNode::Exercise {
+            ContentNode::Exercise {
                 capability,
                 ref operation,
                 payload,
@@ -244,7 +334,7 @@ impl Source for ContentSource<'_>
                 operation: Name::from(operation.as_ref()),
                 payload,
             },
-            | ContentNode::Scope {
+            ContentNode::Scope {
                 ref signature,
                 subject,
                 on_return,
@@ -255,8 +345,8 @@ impl Source for ContentSource<'_>
                 on_return,
                 clauses: Arity::from(clauses.len()),
             },
-            | ContentNode::Resume(stack, resumed) => Former::Resume(stack, resumed),
-            | ContentNode::Split(scrutinee, arity, body)
+            ContentNode::Resume(stack, resumed) => Former::Resume(stack, resumed),
+            ContentNode::Split(scrutinee, arity, body)
             | ContentNode::DependentSplit {
                 scrutinee,
                 arity,
@@ -267,18 +357,18 @@ impl Source for ContentSource<'_>
                 arity: Arity::from(usize::from(arity)),
                 body,
             },
-            | ContentNode::Reset(body) => Former::Reset(body),
-            | ContentNode::Shift(body) => Former::Shift(body),
-            | ContentNode::With(first, second) => Former::Lazy(first, second),
-            | ContentNode::Project(side, observed) => Former::Project(
+            ContentNode::Reset(body) => Former::Reset(body),
+            ContentNode::Shift(body) => Former::Shift(body),
+            ContentNode::With(first, second) => Former::Lazy(first, second),
+            ContentNode::Project(side, observed) => Former::Project(
                 Component::from(match side {
-                    | Side::Left => 0_usize,
-                    | Side::Right => 1_usize,
+                    Side::Left => 0_usize,
+                    Side::Right => 1_usize,
                 }),
                 observed,
             ),
-            | ContentNode::Transport(path, transported) => Former::Transport(path, transported),
-            | ContentNode::ElementTransport {
+            ContentNode::Transport(path, transported) => Former::Transport(path, transported),
+            ContentNode::ElementTransport {
                 motive,
                 path,
                 value,
@@ -287,7 +377,7 @@ impl Source for ContentSource<'_>
                 path,
                 value,
             },
-            | ContentNode::TelescopeTransport {
+            ContentNode::TelescopeTransport {
                 motive,
                 path,
                 start,
@@ -300,7 +390,7 @@ impl Source for ContentSource<'_>
                 over,
                 value,
             },
-            | ContentNode::ListFold {
+            ContentNode::ListFold {
                 list,
                 on_nil,
                 on_cons,
@@ -310,29 +400,29 @@ impl Source for ContentSource<'_>
                 nil: on_nil,
                 cons: on_cons,
             },
-            | ContentNode::Case {
+            ContentNode::Case {
                 scrutinee,
                 ref branches,
             } => Former::Case {
                 scrutinee,
                 arity: Arity::from(branches.len()),
             },
-            | ContentNode::Session(ref action) => match *action {
-                | SessionAction::Send { endpoint, payload } => Former::Send { endpoint, payload },
-                | SessionAction::Receive { endpoint } => Former::Receive(endpoint),
-                | SessionAction::Select {
+            ContentNode::Session(ref action) => match *action {
+                SessionAction::Send { endpoint, payload } => Former::Send { endpoint, payload },
+                SessionAction::Receive { endpoint } => Former::Receive(endpoint),
+                SessionAction::Select {
                     endpoint,
                     ref label,
                 } => Former::Select {
                     endpoint,
                     label: Name::from(label.as_ref()),
                 },
-                | SessionAction::Offer { endpoint, ref arms } => Former::Offer {
+                SessionAction::Offer { endpoint, ref arms } => Former::Offer {
                     endpoint,
                     arms: Arity::from(arms.len()),
                 },
-                | SessionAction::Close { endpoint } => Former::Close(endpoint),
-                | SessionAction::Fork {
+                SessionAction::Close { endpoint } => Former::Close(endpoint),
+                SessionAction::Fork {
                     protocol,
                     child,
                     parent,
@@ -342,8 +432,8 @@ impl Source for ContentSource<'_>
                     parent,
                 },
             },
-            | ContentNode::Fixpoint { body, .. } => Former::Fixpoint(body),
-            | ContentNode::Ride {
+            ContentNode::Fixpoint { body, .. } => Former::Fixpoint(body),
+            ContentNode::Ride {
                 motive,
                 flow,
                 value,
@@ -352,28 +442,26 @@ impl Source for ContentSource<'_>
                 flow,
                 value,
             },
-            | ContentNode::Lambda(body) => Former::Lambda(body),
-            | ContentNode::Application(function, argument) => {
-                Former::Application(function, argument)
-            },
-            | ContentNode::Return(value) => Former::Return(value),
-            | ContentNode::Bind(bound, rest) => Former::Bind(bound, rest),
-            | ContentNode::Force(thunk) => Former::Force(thunk),
-            | ContentNode::PathUniverse(source, target) => Former::PathUniverse(source, target),
-            | ContentNode::Funext(left, right) => Former::Funext(left, right),
-            | ContentNode::Equiv(forward, backward) => Former::Equiv(forward, backward),
-            | ContentNode::SessionRelated {
+            ContentNode::Lambda(body) => Former::Lambda(body),
+            ContentNode::Application(function, argument) => Former::Application(function, argument),
+            ContentNode::Return(value) => Former::Return(value),
+            ContentNode::Bind(bound, rest) => Former::Bind(bound, rest),
+            ContentNode::Force(thunk) => Former::Force(thunk),
+            ContentNode::PathUniverse(source, target) => Former::PathUniverse(source, target),
+            ContentNode::Funext(left, right) => Former::Funext(left, right),
+            ContentNode::Equiv(forward, backward) => Former::Equiv(forward, backward),
+            ContentNode::SessionRelated {
                 relation,
                 source,
                 target,
             } => Former::SessionRelated(relation, source, target),
-            | ContentNode::Stay(point) => Former::Stay(point),
-            | ContentNode::Then(first, second) => Former::Then(first, second),
-            | ContentNode::FlowProduct(first, second) => Former::FlowProduct(first, second),
-            | ContentNode::Forward(translator) => Former::Forward(translator),
-            | ContentNode::FunctionFlow(domain, codomain) => Former::FunctionFlow(domain, codomain),
-            | ContentNode::RunType(code) => Former::RunType(code),
-            | ContentNode::Ua {
+            ContentNode::Stay(point) => Former::Stay(point),
+            ContentNode::Then(first, second) => Former::Then(first, second),
+            ContentNode::FlowProduct(first, second) => Former::FlowProduct(first, second),
+            ContentNode::Forward(translator) => Former::Forward(translator),
+            ContentNode::FunctionFlow(domain, codomain) => Former::FunctionFlow(domain, codomain),
+            ContentNode::RunType(code) => Former::RunType(code),
+            ContentNode::Ua {
                 stratum,
                 ref sides,
                 forward,
@@ -385,13 +473,13 @@ impl Source for ContentSource<'_>
                 forward,
                 backward,
             },
-            | ContentNode::PathRefl(code) => Former::PathRefl(code),
-            | ContentNode::Here(point) => Former::Here(point),
-            | ContentNode::PathProduct(first, second) => Former::PathProduct(first, second),
-            | ContentNode::PathEquiv {
+            ContentNode::PathRefl(code) => Former::PathRefl(code),
+            ContentNode::Here(point) => Former::Here(point),
+            ContentNode::PathProduct(first, second) => Former::PathProduct(first, second),
+            ContentNode::PathEquiv {
                 forward, backward, ..
             } => Former::PathEquiv(forward, backward),
-            | ContentNode::PathType {
+            ContentNode::PathType {
                 carrier,
                 left,
                 right,
@@ -400,44 +488,44 @@ impl Source for ContentSource<'_>
                 left,
                 right,
             },
-            | ContentNode::Returned(body) => Former::Returned(body),
-            | ContentNode::Variable { zone, index } => Former::Variable { zone, index },
-            | ContentNode::Constant(ref reference) => {
+            ContentNode::Returned(body) => Former::Returned(body),
+            ContentNode::Variable { zone, index } => Former::Variable { zone, index },
+            ContentNode::Constant(ref reference) => {
                 key(reference).map_or(unnamed, Former::Constant)
             },
-            | ContentNode::ListNil => Former::ListNil,
-            | ContentNode::ListCons(head, tail) => Former::ListCons(head, tail),
-            | ContentNode::Literal(ref literal) => Former::Literal(literal),
-            | ContentNode::Tuple(ref components) if components.is_empty() => Former::Unit,
-            | ContentNode::Tuple(ref components) => Former::Tuple(Arity::from(components.len())),
-            | ContentNode::Injection(summand, body) => {
+            ContentNode::ListNil => Former::ListNil,
+            ContentNode::ListCons(head, tail) => Former::ListCons(head, tail),
+            ContentNode::Literal(ref literal) => Former::Literal(literal),
+            ContentNode::Tuple(ref components) if components.is_empty() => Former::Unit,
+            ContentNode::Tuple(ref components) => Former::Tuple(Arity::from(components.len())),
+            ContentNode::Injection(summand, body) => {
                 Former::Injection(Component::from(usize::from(summand)), body)
             },
-            | ContentNode::Thunk(body) => Former::Thunk(body),
-            | ContentNode::Nested(body) => Former::Nested(body),
-            | ContentNode::Run(body) => Former::Run(body),
-            | ContentNode::ValueLift { .. } | ContentNode::TypeLift { .. } => {
+            ContentNode::Thunk(body) => Former::Thunk(body),
+            ContentNode::Nested(body) => Former::Nested(body),
+            ContentNode::Run(body) => Former::Run(body),
+            ContentNode::ValueLift { .. } | ContentNode::TypeLift { .. } => {
                 Former::Unreadable(Unreadable::Lift)
             },
-            | ContentNode::Quote(quoted) => Former::Quote(quoted),
-            | ContentNode::QuoteComputation(quoted) => Former::QuoteComputation(quoted),
-            | ContentNode::Base(base) => Former::BaseType(base),
-            | ContentNode::RecordType(ref fields) if fields.is_empty() => {
+            ContentNode::Quote(quoted) => Former::Quote(quoted),
+            ContentNode::QuoteComputation(quoted) => Former::QuoteComputation(quoted),
+            ContentNode::Base(base) => Former::BaseType(base),
+            ContentNode::RecordType(ref fields) if fields.is_empty() => {
                 Former::Product(Arity::from(0_usize))
             },
-            | ContentNode::Record(ref fields) if fields.is_empty() => Former::Unit,
-            | ContentNode::RecordType(ref fields) => Former::RecordType(Arity::from(fields.len())),
-            | ContentNode::Record(ref fields) => Former::Record(Arity::from(fields.len())),
-            | ContentNode::Product(ref parts) => Former::Product(Arity::from(parts.len())),
-            | ContentNode::Sum(ref parts) => Former::Sum(Arity::from(parts.len())),
-            | ContentNode::List(element) => Former::List(element),
-            | ContentNode::ThunkType(body) => Former::ThunkType(body),
-            | ContentNode::Universe { sort, ref level } => Former::Universe { sort, level },
-            | ContentNode::Element { code, .. } => Former::Element(code),
-            | ContentNode::Abstract(ref reference) => {
+            ContentNode::Record(ref fields) if fields.is_empty() => Former::Unit,
+            ContentNode::RecordType(ref fields) => Former::RecordType(Arity::from(fields.len())),
+            ContentNode::Record(ref fields) => Former::Record(Arity::from(fields.len())),
+            ContentNode::Product(ref parts) => Former::Product(Arity::from(parts.len())),
+            ContentNode::Sum(ref parts) => Former::Sum(Arity::from(parts.len())),
+            ContentNode::List(element) => Former::List(element),
+            ContentNode::ThunkType(body) => Former::ThunkType(body),
+            ContentNode::Universe { sort, ref level } => Former::Universe { sort, level },
+            ContentNode::Element { code, .. } => Former::Element(code),
+            ContentNode::Abstract(ref reference) => {
                 key(reference).map_or(unnamed, Former::Abstract)
             },
-            | ContentNode::Returner {
+            ContentNode::Returner {
                 result,
                 ref effects,
             } => {
@@ -448,21 +536,21 @@ impl Source for ContentSource<'_>
                     Former::EffectfulReturner { result, effects }
                 }
             },
-            | ContentNode::Arrow { domain, codomain } => Former::Arrow { domain, codomain },
-            | ContentNode::Pi { domain, codomain } => Former::Pi { domain, codomain },
-            | ContentNode::ComputationElement { code, .. } => Former::ComputationElement(code),
-            | ContentNode::StaticLambda(body) => Former::StaticLambda(body),
-            | ContentNode::StaticApplication(operator, argument) => {
+            ContentNode::Arrow { domain, codomain } => Former::Arrow { domain, codomain },
+            ContentNode::Pi { domain, codomain } => Former::Pi { domain, codomain },
+            ContentNode::ComputationElement { code, .. } => Former::ComputationElement(code),
+            ContentNode::StaticLambda(body) => Former::StaticLambda(body),
+            ContentNode::StaticApplication(operator, argument) => {
                 Former::StaticApplication(operator, argument)
             },
-            | ContentNode::StaticPi { domain, codomain } => Former::StaticPi { domain, codomain },
-            | ContentNode::Sigma { first, second } => Former::Sigma { first, second },
-            | ContentNode::SessionType(ref session) => Former::Session {
+            ContentNode::StaticPi { domain, codomain } => Former::StaticPi { domain, codomain },
+            ContentNode::Sigma { first, second } => Former::Sigma { first, second },
+            ContentNode::SessionType(ref session) => Former::Session {
                 protocol: session.protocol(),
                 state: session.state(),
                 payloads: Arity::from(session.payloads().len()),
             },
-            | ContentNode::Capability {
+            ContentNode::Capability {
                 ref authority,
                 grade,
                 region,
@@ -471,7 +559,7 @@ impl Source for ContentSource<'_>
                 grade,
                 region,
             },
-            | ContentNode::FlowType {
+            ContentNode::FlowType {
                 carrier,
                 source,
                 target,
@@ -480,7 +568,7 @@ impl Source for ContentSource<'_>
                 left: source,
                 right: target,
             },
-            | ContentNode::Recorded(ref moves) => Former::Recorded {
+            ContentNode::Recorded(ref moves) => Former::Recorded {
                 moves,
                 payloads: Arity::from(
                     moves
@@ -489,14 +577,14 @@ impl Source for ContentSource<'_>
                         .count(),
                 ),
             },
-            | ContentNode::Unresolved(_) => Former::Unreadable(Unreadable::Dangling),
-            | ContentNode::Hole(_) | ContentNode::ComputationHole(_) => {
+            ContentNode::Unresolved(_) => Former::Unreadable(Unreadable::Dangling),
+            ContentNode::Hole(_) | ContentNode::ComputationHole(_) => {
                 Former::Unreadable(Unreadable::Hole)
             },
-            | ContentNode::ValueMark { .. } | ContentNode::ComputationMark { .. } => {
+            ContentNode::ValueMark { .. } | ContentNode::ComputationMark { .. } => {
                 Former::Unreadable(Unreadable::Mark)
             },
-            | ContentNode::UnknownType | ContentNode::UnknownComputationType => {
+            ContentNode::UnknownType | ContentNode::UnknownComputationType => {
                 Former::Unreadable(Unreadable::UnknownType)
             },
         }
@@ -534,7 +622,7 @@ impl Source for ContentSource<'_>
     {
         let at = usize::from(index);
         match *self.nodes.get(usize::from(node))? {
-            | ContentNode::Product(ref parts)
+            ContentNode::Product(ref parts)
             | ContentNode::Sum(ref parts)
             | ContentNode::Tuple(ref parts)
             | ContentNode::Data {
@@ -552,18 +640,98 @@ impl Source for ContentSource<'_>
                 branches: ref parts,
                 ..
             } => parts.get(at).copied(),
-            | ContentNode::Primitive(_, ref arguments) => arguments.get(at).copied(),
-            | ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => {
+            ContentNode::Primitive(_, ref arguments) => arguments.get(at).copied(),
+            ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => {
                 fields.values().nth(at).copied()
             },
-            | ContentNode::SessionType(ref session) => session.payloads().get(at).copied(),
-            | ContentNode::Handle { ref clauses, .. } | ContentNode::Scope { ref clauses, .. } => {
+            ContentNode::SessionType(ref session) => session.payloads().get(at).copied(),
+            ContentNode::Handle { ref clauses, .. } | ContentNode::Scope { ref clauses, .. } => {
                 clauses.get(at).map(|clause| clause.body)
             },
-            | ContentNode::Session(SessionAction::Offer { ref arms, .. }) => {
+            ContentNode::Session(SessionAction::Offer { ref arms, .. }) => {
                 arms.values().nth(at).copied()
             },
-            | _ => None,
+            ContentNode::RecordProjection(..)
+            | ContentNode::TupleProjection(..)
+            | ContentNode::Reify(_)
+            | ContentNode::Stack { .. }
+            | ContentNode::WithType(..)
+            | ContentNode::Perform { .. }
+            | ContentNode::Exercise { .. }
+            | ContentNode::Capability { .. }
+            | ContentNode::Resume(..)
+            | ContentNode::Split(..)
+            | ContentNode::DependentSplit { .. }
+            | ContentNode::Reset(_)
+            | ContentNode::Shift(_)
+            | ContentNode::With(..)
+            | ContentNode::Project(..)
+            | ContentNode::PrimitiveValue(_)
+            | ContentNode::PathUniverse(..)
+            | ContentNode::PathRefl(_)
+            | ContentNode::PathProduct(..)
+            | ContentNode::Funext(..)
+            | ContentNode::Equiv(..)
+            | ContentNode::Ua { .. }
+            | ContentNode::PathEquiv { .. }
+            | ContentNode::Transport(..)
+            | ContentNode::PathType { .. }
+            | ContentNode::Here(_)
+            | ContentNode::Returned(_)
+            | ContentNode::Nested(_)
+            | ContentNode::Run(_)
+            | ContentNode::ElementTransport { .. }
+            | ContentNode::TelescopeTransport { .. }
+            | ContentNode::SessionRelated { .. }
+            | ContentNode::Stay(_)
+            | ContentNode::Then(..)
+            | ContentNode::Forward(_)
+            | ContentNode::FunctionFlow(..)
+            | ContentNode::FlowProduct(..)
+            | ContentNode::Recorded(_)
+            | ContentNode::Ride { .. }
+            | ContentNode::FlowType { .. }
+            | ContentNode::RunType(_)
+            | ContentNode::Variable { .. }
+            | ContentNode::Constant(_)
+            | ContentNode::Literal(_)
+            | ContentNode::ListNil
+            | ContentNode::ListCons(..)
+            | ContentNode::Injection(..)
+            | ContentNode::Thunk(_)
+            | ContentNode::ValueLift { .. }
+            | ContentNode::Quote(_)
+            | ContentNode::QuoteComputation(_)
+            | ContentNode::StaticLambda(_)
+            | ContentNode::StaticApplication(..)
+            | ContentNode::Hole(_)
+            | ContentNode::ValueMark { .. }
+            | ContentNode::Lambda(_)
+            | ContentNode::Application(..)
+            | ContentNode::Return(_)
+            | ContentNode::Bind(..)
+            | ContentNode::Force(_)
+            | ContentNode::ComputationHole(_)
+            | ContentNode::ComputationMark { .. }
+            | ContentNode::Fixpoint { .. }
+            | ContentNode::ListFold { .. }
+            | ContentNode::Session(_)
+            | ContentNode::Base(_)
+            | ContentNode::List(_)
+            | ContentNode::ThunkType(_)
+            | ContentNode::Universe { .. }
+            | ContentNode::TypeLift { .. }
+            | ContentNode::Element { .. }
+            | ContentNode::StaticPi { .. }
+            | ContentNode::Sigma { .. }
+            | ContentNode::Abstract(_)
+            | ContentNode::UnknownType
+            | ContentNode::Returner { .. }
+            | ContentNode::Arrow { .. }
+            | ContentNode::Pi { .. }
+            | ContentNode::ComputationElement { .. }
+            | ContentNode::UnknownComputationType
+            | ContentNode::Unresolved(_) => None,
         }
     }
 
@@ -595,16 +763,105 @@ impl Source for ContentSource<'_>
     {
         let at = usize::from(index);
         let label: &str = match *self.nodes.get(usize::from(node))? {
-            | ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => {
+            ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => {
                 fields.keys().nth(at).map(AsRef::as_ref)
             },
-            | ContentNode::Handle { ref clauses, .. } | ContentNode::Scope { ref clauses, .. } => {
+            ContentNode::Handle { ref clauses, .. } | ContentNode::Scope { ref clauses, .. } => {
                 clauses.get(at).map(|clause| clause.operation.as_ref())
             },
-            | ContentNode::Session(SessionAction::Offer { ref arms, .. }) => {
+            ContentNode::Session(SessionAction::Offer { ref arms, .. }) => {
                 arms.keys().nth(at).map(AsRef::as_ref)
             },
-            | _ => None,
+            ContentNode::Data { .. }
+            | ContentNode::Constructor { .. }
+            | ContentNode::DataCase { .. }
+            | ContentNode::RecordProjection(..)
+            | ContentNode::TupleProjection(..)
+            | ContentNode::Reify(_)
+            | ContentNode::Stack { .. }
+            | ContentNode::WithType(..)
+            | ContentNode::Perform { .. }
+            | ContentNode::Exercise { .. }
+            | ContentNode::Capability { .. }
+            | ContentNode::Resume(..)
+            | ContentNode::Split(..)
+            | ContentNode::DependentSplit { .. }
+            | ContentNode::Reset(_)
+            | ContentNode::Shift(_)
+            | ContentNode::With(..)
+            | ContentNode::Project(..)
+            | ContentNode::PrimitiveValue(_)
+            | ContentNode::Primitive(..)
+            | ContentNode::PathUniverse(..)
+            | ContentNode::PathRefl(_)
+            | ContentNode::PathProduct(..)
+            | ContentNode::Funext(..)
+            | ContentNode::Equiv(..)
+            | ContentNode::Ua { .. }
+            | ContentNode::PathEquiv { .. }
+            | ContentNode::Transport(..)
+            | ContentNode::PathType { .. }
+            | ContentNode::Here(_)
+            | ContentNode::Returned(_)
+            | ContentNode::Nested(_)
+            | ContentNode::Run(_)
+            | ContentNode::ElementTransport { .. }
+            | ContentNode::TelescopeTransport { .. }
+            | ContentNode::SessionRelated { .. }
+            | ContentNode::Stay(_)
+            | ContentNode::Then(..)
+            | ContentNode::Forward(_)
+            | ContentNode::FunctionFlow(..)
+            | ContentNode::FlowProduct(..)
+            | ContentNode::Recorded(_)
+            | ContentNode::Ride { .. }
+            | ContentNode::FlowType { .. }
+            | ContentNode::RunType(_)
+            | ContentNode::Variable { .. }
+            | ContentNode::Constant(_)
+            | ContentNode::Literal(_)
+            | ContentNode::Tuple(_)
+            | ContentNode::ListNil
+            | ContentNode::ListCons(..)
+            | ContentNode::Injection(..)
+            | ContentNode::Thunk(_)
+            | ContentNode::ValueLift { .. }
+            | ContentNode::Quote(_)
+            | ContentNode::QuoteComputation(_)
+            | ContentNode::StaticLambda(_)
+            | ContentNode::StaticApplication(..)
+            | ContentNode::Hole(_)
+            | ContentNode::ValueMark { .. }
+            | ContentNode::Lambda(_)
+            | ContentNode::Application(..)
+            | ContentNode::Return(_)
+            | ContentNode::Bind(..)
+            | ContentNode::Force(_)
+            | ContentNode::Case { .. }
+            | ContentNode::ComputationHole(_)
+            | ContentNode::ComputationMark { .. }
+            | ContentNode::Fixpoint { .. }
+            | ContentNode::ListFold { .. }
+            | ContentNode::Session(_)
+            | ContentNode::Base(_)
+            | ContentNode::Product(_)
+            | ContentNode::Sum(_)
+            | ContentNode::List(_)
+            | ContentNode::ThunkType(_)
+            | ContentNode::Universe { .. }
+            | ContentNode::TypeLift { .. }
+            | ContentNode::Element { .. }
+            | ContentNode::StaticPi { .. }
+            | ContentNode::Sigma { .. }
+            | ContentNode::SessionType(_)
+            | ContentNode::Abstract(_)
+            | ContentNode::UnknownType
+            | ContentNode::Returner { .. }
+            | ContentNode::Arrow { .. }
+            | ContentNode::Pi { .. }
+            | ContentNode::ComputationElement { .. }
+            | ContentNode::UnknownComputationType
+            | ContentNode::Unresolved(_) => None,
         }?;
         Some(Name::from(label))
     }

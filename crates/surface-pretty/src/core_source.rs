@@ -97,17 +97,17 @@ impl Restoration
         let mut restored = BTreeMap::new();
         for pair in carried {
             let (original, rebuilt) = match *pair {
-                | Carried::Value(original, rebuilt) => {
+                Carried::Value(original, rebuilt) => {
                     (CoreNode::Value(original), CoreNode::Value(rebuilt))
                 },
-                | Carried::Computation(original, rebuilt) => (
+                Carried::Computation(original, rebuilt) => (
                     CoreNode::Computation(original),
                     CoreNode::Computation(rebuilt),
                 ),
-                | Carried::ValueType(original, rebuilt) => {
+                Carried::ValueType(original, rebuilt) => {
                     (CoreNode::ValueType(original), CoreNode::ValueType(rebuilt))
                 },
-                | Carried::CompType(original, rebuilt) => {
+                Carried::CompType(original, rebuilt) => {
                     (CoreNode::CompType(original), CoreNode::CompType(rebuilt))
                 },
             };
@@ -446,8 +446,8 @@ impl<'arena> CoreSource<'arena>
     ) -> Option<Name<'arena>>
     {
         match *self.arena.value_type(datatype)? {
-            | ValueType::Data { declaration, .. } => self.name(declaration),
-            | ValueType::Record(_)
+            ValueType::Data { declaration, .. } => self.name(declaration),
+            ValueType::Record(_)
             | ValueType::PathUniverse(..)
             | ValueType::Path { .. }
             | ValueType::Flow { .. }
@@ -557,7 +557,7 @@ impl<'arena> CoreSource<'arena>
             return Former::Unreadable(Unreadable::Dangling);
         };
         match *value {
-            | Value::Constructor {
+            Value::Constructor {
                 datatype,
                 tag,
                 ref fields,
@@ -577,10 +577,10 @@ impl<'arena> CoreSource<'arena>
                     }),
                 }
             },
-            | Value::Hole(_) => Former::Unreadable(Unreadable::Hole),
-            | Value::Mark { .. } => Former::Unreadable(Unreadable::Mark),
-            | Value::Returned(body) => Former::Returned(CoreNode::Computation(body)),
-            | Value::Recorded(ref moves) => Former::Recorded {
+            Value::Hole(_) => Former::Unreadable(Unreadable::Hole),
+            Value::Mark { .. } => Former::Unreadable(Unreadable::Mark),
+            Value::Returned(body) => Former::Returned(CoreNode::Computation(body)),
+            Value::Recorded(ref moves) => Former::Recorded {
                 moves,
                 payloads: Arity::from(
                     moves
@@ -589,32 +589,32 @@ impl<'arena> CoreSource<'arena>
                         .count(),
                 ),
             },
-            | Value::SessionRelated {
+            Value::SessionRelated {
                 relation,
                 source,
                 target,
             } => Former::SessionRelated(relation, CoreNode::Value(source), CoreNode::Value(target)),
-            | Value::Stay(point) => Former::Stay(CoreNode::Value(point)),
-            | Value::Then(first, second) => {
+            Value::Stay(point) => Former::Stay(CoreNode::Value(point)),
+            Value::Then(first, second) => {
                 Former::Then(CoreNode::Value(first), CoreNode::Value(second))
             },
-            | Value::FlowProduct(first, second) => {
+            Value::FlowProduct(first, second) => {
                 Former::FlowProduct(CoreNode::Value(first), CoreNode::Value(second))
             },
-            | Value::Forward(translator) => Former::Forward(CoreNode::Value(translator)),
-            | Value::FunctionFlow(domain, codomain) => {
+            Value::Forward(translator) => Former::Forward(CoreNode::Value(translator)),
+            Value::FunctionFlow(domain, codomain) => {
                 Former::FunctionFlow(CoreNode::Value(domain), CoreNode::Value(codomain))
             },
-            | Value::Here(point) => Former::Here(CoreNode::Value(point)),
-            | Value::Nested(body) => Former::Nested(CoreNode::Computation(body)),
-            | Value::Run(body) => Former::Run(CoreNode::Computation(body)),
-            | Value::Funext(left, right) => {
+            Value::Here(point) => Former::Here(CoreNode::Value(point)),
+            Value::Nested(body) => Former::Nested(CoreNode::Computation(body)),
+            Value::Run(body) => Former::Run(CoreNode::Computation(body)),
+            Value::Funext(left, right) => {
                 Former::Funext(CoreNode::Value(left), CoreNode::Value(right))
             },
-            | Value::Equiv(forward, backward) => {
+            Value::Equiv(forward, backward) => {
                 Former::Equiv(CoreNode::Value(forward), CoreNode::Value(backward))
             },
-            | Value::Ua {
+            Value::Ua {
                 stratum,
                 ref sides,
                 forward,
@@ -626,41 +626,39 @@ impl<'arena> CoreSource<'arena>
                 forward: CoreNode::Value(forward),
                 backward: CoreNode::Value(backward),
             },
-            | Value::Record(ref fields) if fields.is_empty() => Former::Unit,
-            | Value::Record(ref fields) => Former::Record(Arity::from(fields.len())),
-            | Value::Reify(_) => Former::Reify,
-            | Value::Primitive { primitive, .. } => {
+            Value::Record(ref fields) if fields.is_empty() => Former::Unit,
+            Value::Record(ref fields) => Former::Record(Arity::from(fields.len())),
+            Value::Reify(_) => Former::Reify,
+            Value::Primitive { primitive, .. } => {
                 Former::Constant(Name::from(<&'static str>::from(primitive.name())))
             },
-            | Value::PathRefl(code) => Former::PathRefl(CoreNode::Value(code)),
-            | Value::PathProduct(first, second) => {
+            Value::PathRefl(code) => Former::PathRefl(CoreNode::Value(code)),
+            Value::PathProduct(first, second) => {
                 Former::PathProduct(CoreNode::Value(first), CoreNode::Value(second))
             },
-            | Value::PathEquiv {
+            Value::PathEquiv {
                 forward, backward, ..
             } => Former::PathEquiv(CoreNode::Value(forward), CoreNode::Value(backward)),
-            | Value::Variable { zone, index } => Former::Variable { zone, index },
-            | Value::Constant(constant) => self
+            Value::Variable { zone, index } => Former::Variable { zone, index },
+            Value::Constant(constant) => self
                 .name(constant)
                 .map_or(Former::Unreadable(Unreadable::Unnamed), Former::Constant),
-            | Value::ListNil => Former::ListNil,
-            | Value::ListCons(head, tail) => {
+            Value::ListNil => Former::ListNil,
+            Value::ListCons(head, tail) => {
                 Former::ListCons(CoreNode::Value(head), CoreNode::Value(tail))
             },
-            | Value::Literal(ref literal) => Former::Literal(literal),
-            | Value::Tuple(ref components) if components.is_empty() => Former::Unit,
-            | Value::Tuple(ref components) => Former::Tuple(Arity::from(components.len())),
-            | Value::Injection(summand, body) => {
+            Value::Literal(ref literal) => Former::Literal(literal),
+            Value::Tuple(ref components) if components.is_empty() => Former::Unit,
+            Value::Tuple(ref components) => Former::Tuple(Arity::from(components.len())),
+            Value::Injection(summand, body) => {
                 Former::Injection(Component::from(usize::from(summand)), CoreNode::Value(body))
             },
-            | Value::Thunk(body) => Former::Thunk(CoreNode::Computation(body)),
-            | Value::Lift { .. } => Former::Unreadable(Unreadable::Lift),
-            | Value::Quote(quoted) => Former::Quote(CoreNode::ValueType(quoted)),
-            | Value::QuoteComputation(quoted) => {
-                Former::QuoteComputation(CoreNode::CompType(quoted))
-            },
-            | Value::StaticLambda(body) => Former::StaticLambda(CoreNode::Value(body)),
-            | Value::StaticApplication(operator, argument) => {
+            Value::Thunk(body) => Former::Thunk(CoreNode::Computation(body)),
+            Value::Lift { .. } => Former::Unreadable(Unreadable::Lift),
+            Value::Quote(quoted) => Former::Quote(CoreNode::ValueType(quoted)),
+            Value::QuoteComputation(quoted) => Former::QuoteComputation(CoreNode::CompType(quoted)),
+            Value::StaticLambda(body) => Former::StaticLambda(CoreNode::Value(body)),
+            Value::StaticApplication(operator, argument) => {
                 Former::StaticApplication(CoreNode::Value(operator), CoreNode::Value(argument))
             },
         }
@@ -733,14 +731,14 @@ impl<'arena> CoreSource<'arena>
             return Former::Unreadable(Unreadable::Dangling);
         };
         match *value_type {
-            | ValueType::Data {
+            ValueType::Data {
                 declaration,
                 ref arguments,
             } => Former::Data {
                 name: self.name(declaration),
                 arity: Arity::from(arguments.len()),
             },
-            | ValueType::Path {
+            ValueType::Path {
                 carrier,
                 left,
                 right,
@@ -749,7 +747,7 @@ impl<'arena> CoreSource<'arena>
                 left: CoreNode::Value(left),
                 right: CoreNode::Value(right),
             },
-            | ValueType::Flow {
+            ValueType::Flow {
                 carrier,
                 source,
                 target,
@@ -758,43 +756,43 @@ impl<'arena> CoreSource<'arena>
                 left: CoreNode::Value(source),
                 right: CoreNode::Value(target),
             },
-            | ValueType::Run(code) => Former::RunType(CoreNode::Value(code)),
-            | ValueType::Unknown => Former::Unreadable(Unreadable::UnknownType),
-            | ValueType::Record(ref fields) if fields.is_empty() => {
+            ValueType::Run(code) => Former::RunType(CoreNode::Value(code)),
+            ValueType::Unknown => Former::Unreadable(Unreadable::UnknownType),
+            ValueType::Record(ref fields) if fields.is_empty() => {
                 Former::Product(Arity::from(0_usize))
             },
-            | ValueType::Record(ref fields) => Former::RecordType(Arity::from(fields.len())),
-            | ValueType::Product(ref parts) => Former::Product(Arity::from(parts.len())),
-            | ValueType::Sum(ref parts) => Former::Sum(Arity::from(parts.len())),
-            | ValueType::Stack { input, output } => {
+            ValueType::Record(ref fields) => Former::RecordType(Arity::from(fields.len())),
+            ValueType::Product(ref parts) => Former::Product(Arity::from(parts.len())),
+            ValueType::Sum(ref parts) => Former::Sum(Arity::from(parts.len())),
+            ValueType::Stack { input, output } => {
                 Former::Stack(CoreNode::CompType(input), CoreNode::CompType(output))
             },
-            | ValueType::PathUniverse(source, target) => {
+            ValueType::PathUniverse(source, target) => {
                 Former::PathUniverse(CoreNode::Value(source), CoreNode::Value(target))
             },
-            | ValueType::Base(base) => Former::BaseType(base),
-            | ValueType::List(element) => Former::List(CoreNode::ValueType(element)),
-            | ValueType::Thunk(body) => Former::ThunkType(CoreNode::CompType(body)),
-            | ValueType::Universe { sort, ref level } => Former::Universe { sort, level },
-            | ValueType::Lift { .. } => Former::Unreadable(Unreadable::Lift),
-            | ValueType::Element { code, .. } => Former::Element(CoreNode::Value(code)),
-            | ValueType::Abstract(atom) => self
+            ValueType::Base(base) => Former::BaseType(base),
+            ValueType::List(element) => Former::List(CoreNode::ValueType(element)),
+            ValueType::Thunk(body) => Former::ThunkType(CoreNode::CompType(body)),
+            ValueType::Universe { sort, ref level } => Former::Universe { sort, level },
+            ValueType::Lift { .. } => Former::Unreadable(Unreadable::Lift),
+            ValueType::Element { code, .. } => Former::Element(CoreNode::Value(code)),
+            ValueType::Abstract(atom) => self
                 .name(atom)
                 .map_or(Former::Unreadable(Unreadable::Unnamed), Former::Abstract),
-            | ValueType::StaticPi { domain, codomain } => Former::StaticPi {
+            ValueType::StaticPi { domain, codomain } => Former::StaticPi {
                 domain: CoreNode::ValueType(domain),
                 codomain: CoreNode::ValueType(codomain),
             },
-            | ValueType::Sigma { first, second } => Former::Sigma {
+            ValueType::Sigma { first, second } => Former::Sigma {
                 first: CoreNode::ValueType(first),
                 second: CoreNode::ValueType(second),
             },
-            | ValueType::Session(ref session) => Former::Session {
+            ValueType::Session(ref session) => Former::Session {
                 protocol: session.protocol(),
                 state: session.state(),
                 payloads: Arity::from(session.payloads().len()),
             },
-            | ValueType::Capability {
+            ValueType::Capability {
                 ref authority,
                 grade,
                 region,
@@ -848,11 +846,11 @@ impl<'arena> CoreSource<'arena>
             return Former::Unreadable(Unreadable::Dangling);
         };
         match *comp_type {
-            | CompType::Unknown => Former::Unreadable(Unreadable::UnknownType),
-            | CompType::With(first, second) => {
+            CompType::Unknown => Former::Unreadable(Unreadable::UnknownType),
+            CompType::With(first, second) => {
                 Former::With(CoreNode::CompType(first), CoreNode::CompType(second))
             },
-            | CompType::Returner {
+            CompType::Returner {
                 result,
                 ref effects,
             } => {
@@ -866,15 +864,15 @@ impl<'arena> CoreSource<'arena>
                     }
                 }
             },
-            | CompType::Arrow { domain, codomain } => Former::Arrow {
+            CompType::Arrow { domain, codomain } => Former::Arrow {
                 domain: CoreNode::ValueType(domain),
                 codomain: CoreNode::CompType(codomain),
             },
-            | CompType::Pi { domain, codomain } => Former::Pi {
+            CompType::Pi { domain, codomain } => Former::Pi {
                 domain: CoreNode::ValueType(domain),
                 codomain: CoreNode::CompType(codomain),
             },
-            | CompType::Element { code, .. } => Former::ComputationElement(CoreNode::Value(code)),
+            CompType::Element { code, .. } => Former::ComputationElement(CoreNode::Value(code)),
         }
     }
 
@@ -948,24 +946,24 @@ impl<'arena> CoreSource<'arena>
             return Former::Unreadable(Unreadable::Dangling);
         };
         match *held {
-            | Computation::Return(returned) => Former::Return(value(returned)),
-            | Computation::Bind(bound, rest) => Former::Bind(computation(bound), computation(rest)),
-            | Computation::Force(thunk) => Former::Force(value(thunk)),
-            | Computation::Application(function, argument) => {
+            Computation::Return(returned) => Former::Return(value(returned)),
+            Computation::Bind(bound, rest) => Former::Bind(computation(bound), computation(rest)),
+            Computation::Force(thunk) => Former::Force(value(thunk)),
+            Computation::Application(function, argument) => {
                 Former::Application(computation(function), value(argument))
             },
-            | Computation::Lambda(body) => Former::Lambda(computation(body)),
-            | Computation::Primitive {
+            Computation::Lambda(body) => Former::Lambda(computation(body)),
+            Computation::Primitive {
                 primitive,
                 ref arguments,
             } => Former::Primitive {
                 name: Name::from(<&'static str>::from(primitive.name())),
                 arity: Arity::from(arguments.len()),
             },
-            | Computation::Transport(path, transported) => {
+            Computation::Transport(path, transported) => {
                 Former::Transport(value(path), value(transported))
             },
-            | Computation::PathTransport {
+            Computation::PathTransport {
                 motive,
                 path,
                 value: transported,
@@ -974,7 +972,7 @@ impl<'arena> CoreSource<'arena>
                 path: value(path),
                 value: value(transported),
             },
-            | Computation::Ride {
+            Computation::Ride {
                 motive,
                 flow,
                 value: moved,
@@ -983,7 +981,7 @@ impl<'arena> CoreSource<'arena>
                 flow: value(flow),
                 value: value(moved),
             },
-            | Computation::TelescopeTransport {
+            Computation::TelescopeTransport {
                 motive,
                 path,
                 start,
@@ -996,15 +994,15 @@ impl<'arena> CoreSource<'arena>
                 over: value(over),
                 value: value(transported),
             },
-            | Computation::Fixpoint { body, .. } => Former::Fixpoint(computation(body)),
-            | Computation::Case {
+            Computation::Fixpoint { body, .. } => Former::Fixpoint(computation(body)),
+            Computation::Case {
                 scrutinee,
                 ref branches,
             } => Former::Case {
                 scrutinee: value(scrutinee),
                 arity: Arity::from(branches.len()),
             },
-            | Computation::Split {
+            Computation::Split {
                 scrutinee,
                 arity,
                 body,
@@ -1014,7 +1012,7 @@ impl<'arena> CoreSource<'arena>
                 arity: Arity::from(usize::from(arity)),
                 body: computation(body),
             },
-            | Computation::DataCase {
+            Computation::DataCase {
                 scrutinee,
                 ref branches,
                 ..
@@ -1022,15 +1020,15 @@ impl<'arena> CoreSource<'arena>
                 scrutinee: value(scrutinee),
                 arity: Arity::from(branches.len()),
             },
-            | Computation::RecordProjection(record, ref label) => {
+            Computation::RecordProjection(record, ref label) => {
                 Former::RecordProjection(value(record), Name::from(label.as_ref()))
             },
-            | Computation::TupleProjection(tuple, component) => {
+            Computation::TupleProjection(tuple, component) => {
                 Former::TupleProjection(value(tuple), Component::from(usize::from(component)))
             },
-            | Computation::Hole(_) => Former::Unreadable(Unreadable::Hole),
-            | Computation::Mark { .. } => Former::Unreadable(Unreadable::Mark),
-            | Computation::ListFold {
+            Computation::Hole(_) => Former::Unreadable(Unreadable::Hole),
+            Computation::Mark { .. } => Former::Unreadable(Unreadable::Mark),
+            Computation::ListFold {
                 list,
                 on_nil,
                 on_cons,
@@ -1040,7 +1038,7 @@ impl<'arena> CoreSource<'arena>
                 nil: computation(on_nil),
                 cons: computation(on_cons),
             },
-            | Computation::Perform {
+            Computation::Perform {
                 ref operation,
                 payload,
                 ..
@@ -1048,7 +1046,7 @@ impl<'arena> CoreSource<'arena>
                 operation: Name::from(operation.as_ref()),
                 payload: value(payload),
             },
-            | Computation::Handle {
+            Computation::Handle {
                 subject,
                 on_return,
                 ref clauses,
@@ -1058,7 +1056,7 @@ impl<'arena> CoreSource<'arena>
                 on_return: computation(on_return),
                 clauses: Arity::from(clauses.len()),
             },
-            | Computation::Exercise {
+            Computation::Exercise {
                 capability,
                 ref operation,
                 payload,
@@ -1068,7 +1066,7 @@ impl<'arena> CoreSource<'arena>
                 operation: Name::from(operation.as_ref()),
                 payload: value(payload),
             },
-            | Computation::Scope {
+            Computation::Scope {
                 ref signature,
                 subject,
                 on_return,
@@ -1079,40 +1077,40 @@ impl<'arena> CoreSource<'arena>
                 on_return: computation(on_return),
                 clauses: Arity::from(clauses.len()),
             },
-            | Computation::Resume(stack, resumed) => {
+            Computation::Resume(stack, resumed) => {
                 Former::Resume(value(stack), computation(resumed))
             },
-            | Computation::Reset(body) => Former::Reset(computation(body)),
-            | Computation::Shift(body) => Former::Shift(computation(body)),
-            | Computation::With(first, second) => {
+            Computation::Reset(body) => Former::Reset(computation(body)),
+            Computation::Shift(body) => Former::Shift(computation(body)),
+            Computation::With(first, second) => {
                 Former::Lazy(computation(first), computation(second))
             },
-            | Computation::Project(side, observed) => Former::Project(
+            Computation::Project(side, observed) => Former::Project(
                 Component::from(match side {
-                    | Side::Left => 0_usize,
-                    | Side::Right => 1_usize,
+                    Side::Left => 0_usize,
+                    Side::Right => 1_usize,
                 }),
                 computation(observed),
             ),
-            | Computation::Session(ref action) => match *action {
-                | SessionAction::Send { endpoint, payload } => Former::Send {
+            Computation::Session(ref action) => match *action {
+                SessionAction::Send { endpoint, payload } => Former::Send {
                     endpoint,
                     payload: value(payload),
                 },
-                | SessionAction::Receive { endpoint } => Former::Receive(endpoint),
-                | SessionAction::Select {
+                SessionAction::Receive { endpoint } => Former::Receive(endpoint),
+                SessionAction::Select {
                     endpoint,
                     ref label,
                 } => Former::Select {
                     endpoint,
                     label: Name::from(label.as_ref()),
                 },
-                | SessionAction::Offer { endpoint, ref arms } => Former::Offer {
+                SessionAction::Offer { endpoint, ref arms } => Former::Offer {
                     endpoint,
                     arms: Arity::from(arms.len()),
                 },
-                | SessionAction::Close { endpoint } => Former::Close(endpoint),
-                | SessionAction::Fork {
+                SessionAction::Close { endpoint } => Former::Close(endpoint),
+                SessionAction::Fork {
                     protocol,
                     child,
                     parent,
@@ -1172,10 +1170,10 @@ impl Source for CoreSource<'_>
     ) -> Former<'_, CoreNode>
     {
         match self.restoration.restored(node) {
-            | CoreNode::Value(id) => self.value(id),
-            | CoreNode::Computation(id) => self.computation(id),
-            | CoreNode::ValueType(id) => self.value_type(id),
-            | CoreNode::CompType(id) => self.comp_type(id),
+            CoreNode::Value(id) => self.value(id),
+            CoreNode::Computation(id) => self.computation(id),
+            CoreNode::ValueType(id) => self.value_type(id),
+            CoreNode::CompType(id) => self.comp_type(id),
         }
     }
 
@@ -1238,22 +1236,22 @@ impl Source for CoreSource<'_>
     {
         let at = usize::from(index);
         match self.restoration.restored(node) {
-            | CoreNode::ValueType(id) => match *self.arena.value_type(id)? {
-                | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+            CoreNode::ValueType(id) => match *self.arena.value_type(id)? {
+                ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                     parts.get(at).map(|&part| CoreNode::ValueType(part))
                 },
-                | ValueType::Record(ref fields) => fields
+                ValueType::Record(ref fields) => fields
                     .values()
                     .nth(at)
                     .map(|&field| CoreNode::ValueType(field)),
-                | ValueType::Session(ref session) => session
+                ValueType::Session(ref session) => session
                     .payloads()
                     .get(at)
                     .map(|&payload| CoreNode::ValueType(payload)),
-                | ValueType::Data { ref arguments, .. } => {
+                ValueType::Data { ref arguments, .. } => {
                     arguments.get(at).map(|&argument| CoreNode::Value(argument))
                 },
-                | ValueType::PathUniverse(..)
+                ValueType::PathUniverse(..)
                 | ValueType::Path { .. }
                 | ValueType::Flow { .. }
                 | ValueType::Run(_)
@@ -1270,24 +1268,24 @@ impl Source for CoreSource<'_>
                 | ValueType::Stack { .. }
                 | ValueType::Capability { .. } => None,
             },
-            | CoreNode::Value(id) => match *self.arena.value(id)? {
-                | Value::Tuple(ref components) => components
+            CoreNode::Value(id) => match *self.arena.value(id)? {
+                Value::Tuple(ref components) => components
                     .get(at)
                     .map(|&component| CoreNode::Value(component)),
-                | Value::Record(ref fields) => {
+                Value::Record(ref fields) => {
                     fields.values().nth(at).map(|&field| CoreNode::Value(field))
                 },
-                | Value::Constructor { ref fields, .. } => {
+                Value::Constructor { ref fields, .. } => {
                     fields.get(at).map(|&field| CoreNode::Value(field))
                 },
-                | Value::Recorded(ref moves) => moves
+                Value::Recorded(ref moves) => moves
                     .iter()
                     .filter_map(|step| match step.payload() {
-                        | Maybe::Present(payload) => Some(CoreNode::Value(payload)),
-                        | Maybe::Absent(_) => None,
+                        Maybe::Present(payload) => Some(CoreNode::Value(payload)),
+                        Maybe::Absent(_) => None,
                     })
                     .nth(at),
-                | Value::SessionRelated { .. }
+                Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)
                 | Value::FlowProduct(..)
@@ -1320,24 +1318,24 @@ impl Source for CoreSource<'_>
                 | Value::Mark { .. }
                 | Value::Reify(_) => None,
             },
-            | CoreNode::Computation(id) => match *self.arena.computation(id)? {
-                | Computation::Primitive { ref arguments, .. } => {
+            CoreNode::Computation(id) => match *self.arena.computation(id)? {
+                Computation::Primitive { ref arguments, .. } => {
                     arguments.get(at).map(|&argument| CoreNode::Value(argument))
                 },
-                | Computation::Case { ref branches, .. } => branches
+                Computation::Case { ref branches, .. } => branches
                     .get(at)
                     .map(|&branch| CoreNode::Computation(branch)),
-                | Computation::DataCase { ref branches, .. } => branches
+                Computation::DataCase { ref branches, .. } => branches
                     .get(at)
                     .map(|&branch| CoreNode::Computation(branch)),
-                | Computation::Handle { ref clauses, .. }
+                Computation::Handle { ref clauses, .. }
                 | Computation::Scope { ref clauses, .. } => clauses
                     .get(at)
                     .map(|clause| CoreNode::Computation(clause.body)),
-                | Computation::Session(SessionAction::Offer { ref arms, .. }) => {
+                Computation::Session(SessionAction::Offer { ref arms, .. }) => {
                     arms.values().nth(at).map(|&arm| CoreNode::Computation(arm))
                 },
-                | Computation::Session(
+                Computation::Session(
                     SessionAction::Send { .. }
                     | SessionAction::Receive { .. }
                     | SessionAction::Select { .. }
@@ -1368,7 +1366,7 @@ impl Source for CoreSource<'_>
                 | Computation::With(..)
                 | Computation::Project(..) => None,
             },
-            | CoreNode::CompType(_) => None,
+            CoreNode::CompType(_) => None,
         }
     }
 
@@ -1417,9 +1415,9 @@ impl Source for CoreSource<'_>
     {
         let at = usize::from(index);
         let label: &str = match self.restoration.restored(node) {
-            | CoreNode::ValueType(id) => match *self.arena.value_type(id)? {
-                | ValueType::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
-                | ValueType::Data { .. }
+            CoreNode::ValueType(id) => match *self.arena.value_type(id)? {
+                ValueType::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
+                ValueType::Data { .. }
                 | ValueType::PathUniverse(..)
                 | ValueType::Path { .. }
                 | ValueType::Flow { .. }
@@ -1440,9 +1438,9 @@ impl Source for CoreSource<'_>
                 | ValueType::Session(_)
                 | ValueType::Capability { .. } => None,
             },
-            | CoreNode::Value(id) => match *self.arena.value(id)? {
-                | Value::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
-                | Value::Primitive { .. }
+            CoreNode::Value(id) => match *self.arena.value(id)? {
+                Value::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
+                Value::Primitive { .. }
                 | Value::PathRefl(_)
                 | Value::PathProduct(..)
                 | Value::PathEquiv { .. }
@@ -1478,15 +1476,15 @@ impl Source for CoreSource<'_>
                 | Value::Forward(_)
                 | Value::FunctionFlow(..) => None,
             },
-            | CoreNode::Computation(id) => match *self.arena.computation(id)? {
-                | Computation::Handle { ref clauses, .. }
+            CoreNode::Computation(id) => match *self.arena.computation(id)? {
+                Computation::Handle { ref clauses, .. }
                 | Computation::Scope { ref clauses, .. } => {
                     clauses.get(at).map(|clause| clause.operation.as_ref())
                 },
-                | Computation::Session(SessionAction::Offer { ref arms, .. }) => {
+                Computation::Session(SessionAction::Offer { ref arms, .. }) => {
                     arms.keys().nth(at).map(AsRef::as_ref)
                 },
-                | Computation::Session(
+                Computation::Session(
                     SessionAction::Send { .. }
                     | SessionAction::Receive { .. }
                     | SessionAction::Select { .. }
@@ -1520,7 +1518,7 @@ impl Source for CoreSource<'_>
                 | Computation::With(..)
                 | Computation::Project(..) => None,
             },
-            | CoreNode::CompType(_) => None,
+            CoreNode::CompType(_) => None,
         }?;
         Some(Name::from(label))
     }

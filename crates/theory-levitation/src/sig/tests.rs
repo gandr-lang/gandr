@@ -110,21 +110,21 @@ fn the_code_is_one_data_sort_of_eleven_constructors()
             let mut pending = vec![ctor.code.to_node()];
             while let Some(node) = pending.pop() {
                 match node.view() {
-                    | CodeView::Prod(mut factors) => {
+                    CodeView::Prod(mut factors) => {
                         let (left, right) = (factors.next(), factors.next());
                         pending.extend(right);
                         pending.extend(left);
                     },
-                    | CodeView::Field { ty, grade, .. } => {
+                    CodeView::Field { ty, grade, .. } => {
                         assert_eq!((ty, *grade), (&string, Grade::One));
                         leaves.push("String");
                     },
-                    | CodeView::Var(sort) => {
+                    CodeView::Var(sort) => {
                         assert_eq!(sort.as_ref(), "Sig");
                         leaves.push("Sig");
                     },
-                    | CodeView::Unit => {},
-                    | CodeView::Sum(_) | CodeView::Bind { .. } => {
+                    CodeView::Unit => {},
+                    CodeView::Sum(_) | CodeView::Bind { .. } => {
                         panic!("the code has no sum and no binder");
                     },
                 }

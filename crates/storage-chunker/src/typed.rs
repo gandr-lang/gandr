@@ -538,8 +538,8 @@ impl TypedChunker
         };
 
         self.pending = match decision {
-            | CutDecision::Cut(_) => TokenCount::ZERO,
-            | CutDecision::Continue => pending,
+            CutDecision::Cut(_) => TokenCount::ZERO,
+            CutDecision::Continue => pending,
         };
 
         decision

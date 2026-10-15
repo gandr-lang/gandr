@@ -264,13 +264,13 @@ impl fmt::Display for ProgramError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Normalized { source, error } => {
+            Self::Normalized { source, error } => {
                 write!(f, "source {} failed to normalize: {error}", source.0)
             },
-            | Self::Merged { source, error } => {
+            Self::Merged { source, error } => {
                 write!(f, "source {} failed to merge: {error}", source.0)
             },
-            | Self::Harvested { source, error } => {
+            Self::Harvested { source, error } => {
                 write!(f, "source {} failed to harvest: {error}", source.0)
             },
         }
@@ -455,8 +455,8 @@ where
                 job.certificate,
                 &mut budget,
             ) {
-                | Ok(_) => Readmission::Readmitted,
-                | Err(error) => Readmission::Refused(error),
+                Ok(_) => Readmission::Readmitted,
+                Err(error) => Readmission::Refused(error),
             };
             snapshot.truncate_to(floor);
         },

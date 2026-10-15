@@ -391,8 +391,8 @@ impl From<FormSetting> for Form
     fn from(setting: FormSetting) -> Self
     {
         match setting {
-            | FormSetting::Sugared => Self::Sugared,
-            | FormSetting::Explicit => Self::Explicit,
+            FormSetting::Sugared => Self::Sugared,
+            FormSetting::Explicit => Self::Explicit,
         }
     }
 }
@@ -475,10 +475,10 @@ impl From<VerbositySetting> for Verbosity
     fn from(setting: VerbositySetting) -> Self
     {
         match setting {
-            | VerbositySetting::User => Self::User,
-            | VerbositySetting::Detailed => Self::Detailed,
-            | VerbositySetting::Debug => Self::Debug,
-            | VerbositySetting::Json => Self::Json,
+            VerbositySetting::User => Self::User,
+            VerbositySetting::Detailed => Self::Detailed,
+            VerbositySetting::Debug => Self::Debug,
+            VerbositySetting::Json => Self::Json,
         }
     }
 }
@@ -880,8 +880,8 @@ impl Serialize for DocumentSymbols
                 .filter(|&holder| holder < position)
                 .and_then(|holder| held.get_mut(holder))
             {
-                | Some(siblings) => siblings.push(Value::Object(object)),
-                | None => roots.push(Value::Object(object)),
+                Some(siblings) => siblings.push(Value::Object(object)),
+                None => roots.push(Value::Object(object)),
             }
         }
         roots.reverse();

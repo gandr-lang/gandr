@@ -324,8 +324,8 @@ fn duplicate_and_erase(
         let leg = core_term(leg)?;
         let answered = free.of(core, leg).map_err(|fault| {
             OverlayEvalFault::Evaluation(match fault {
-                | FreeFault::Dangling => EvalFault::DanglingTerm,
-                | FreeFault::MachineInvariant => EvalFault::MachineInvariant,
+                FreeFault::Dangling => EvalFault::DanglingTerm,
+                FreeFault::MachineInvariant => EvalFault::MachineInvariant,
             })
         })?;
         legs.insert(leg, answered.clone());
@@ -362,9 +362,9 @@ fn duplicate_and_erase(
 fn core_term(erased: CoreId) -> Result<CoreTerm, OverlayEvalFault>
 {
     match erased {
-        | CoreId::Value(id) => Ok(CoreTerm::Value(id)),
-        | CoreId::Computation(id) => Ok(CoreTerm::Computation(id)),
-        | CoreId::ValueType(_) | CoreId::CompType(_) => {
+        CoreId::Value(id) => Ok(CoreTerm::Value(id)),
+        CoreId::Computation(id) => Ok(CoreTerm::Computation(id)),
+        CoreId::ValueType(_) | CoreId::CompType(_) => {
             Err(OverlayEvalFault::Evaluation(EvalFault::MachineInvariant))
         },
     }

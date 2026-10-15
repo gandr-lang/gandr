@@ -719,15 +719,15 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ) -> Result<(), RenderError>
     {
         match *set {
-            | MeasureSet::Frontier(ref frontier) => {
+            MeasureSet::Frontier(ref frontier) => {
                 for measure in frontier {
                     self.plans.retain(measure.plan)?;
                 }
             },
-            | MeasureSet::Tainted(TaintPromise::Ready(measure)) => {
+            MeasureSet::Tainted(TaintPromise::Ready(measure)) => {
                 self.plans.retain(measure.plan)?;
             },
-            | MeasureSet::Tainted(TaintPromise::Deferred { .. }) => {},
+            MeasureSet::Tainted(TaintPromise::Deferred { .. }) => {},
         }
         Ok(())
     }
@@ -781,15 +781,15 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ) -> Result<(), RenderError>
     {
         match set {
-            | MeasureSet::Frontier(frontier) => {
+            MeasureSet::Frontier(frontier) => {
                 for measure in frontier {
                     self.release_plan(measure.plan)?;
                 }
             },
-            | MeasureSet::Tainted(TaintPromise::Ready(measure)) => {
+            MeasureSet::Tainted(TaintPromise::Ready(measure)) => {
                 self.release_plan(measure.plan)?;
             },
-            | MeasureSet::Tainted(TaintPromise::Deferred { .. }) => {},
+            MeasureSet::Tainted(TaintPromise::Deferred { .. }) => {},
         }
         Ok(())
     }
@@ -1079,17 +1079,17 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
                 return Err(broken(RenderInvariant::Continuation));
             };
             pending = match item {
-                | WorkItem::ReleasePlan { plan } => {
+                WorkItem::ReleasePlan { plan } => {
                     self.release_plan(plan)?;
                     Step::Scheduled
                 },
-                | WorkItem::Eval {
+                WorkItem::Eval {
                     node,
                     column,
                     indentation,
                     force,
                 } => self.begin_eval(node, column, indentation, force)?,
-                | WorkItem::StoreMemo { .. }
+                WorkItem::StoreMemo { .. }
                 | WorkItem::AfterNest
                 | WorkItem::AfterAlign
                 | WorkItem::AfterFlatten
@@ -1146,8 +1146,8 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ) -> Result<(Measure, WidthTaint, PlanArena), RenderError>
     {
         let taint = match *set {
-            | MeasureSet::Tainted(_) => WidthTaint::Tainted,
-            | MeasureSet::Frontier(_) => WidthTaint::Untainted,
+            MeasureSet::Tainted(_) => WidthTaint::Tainted,
+            MeasureSet::Frontier(_) => WidthTaint::Untainted,
         };
         let Maybe::Present(measure) = first(set)
         else {
@@ -1206,19 +1206,19 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ) -> Result<Step, RenderError>
     {
         match item {
-            | WorkItem::StoreMemo { key } => {
+            WorkItem::StoreMemo { key } => {
                 self.retain_set(&set)?;
                 let _previous = self.memo.insert(key, set.clone());
                 Ok(Step::Result(set))
             },
-            | WorkItem::ReleasePlan { plan } => {
+            WorkItem::ReleasePlan { plan } => {
                 self.release_plan(plan)?;
                 Ok(Step::Result(set))
             },
-            | WorkItem::AfterNest | WorkItem::AfterAlign | WorkItem::AfterFlatten => {
+            WorkItem::AfterNest | WorkItem::AfterAlign | WorkItem::AfterFlatten => {
                 Ok(Step::Result(set))
             },
-            | WorkItem::AfterChoiceLeft {
+            WorkItem::AfterChoiceLeft {
                 right,
                 column,
                 indentation,
@@ -1233,11 +1233,11 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
                 })?;
                 Ok(Step::Scheduled)
             },
-            | WorkItem::AfterChoiceRight { left } => {
+            WorkItem::AfterChoiceRight { left } => {
                 let combined = self.merge_sets(left, set)?;
                 Ok(Step::Result(self.normalize_set(combined)?))
             },
-            | WorkItem::AfterConcatLeft {
+            WorkItem::AfterConcatLeft {
                 right,
                 indentation,
                 force,
@@ -1265,7 +1265,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
                 }
                 Ok(Step::Scheduled)
             },
-            | WorkItem::ForceConcatLeft {
+            WorkItem::ForceConcatLeft {
                 right,
                 indentation,
                 force,
@@ -1273,10 +1273,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
                 self.start_concat(right, indentation, force, set)?;
                 Ok(Step::Scheduled)
             },
-            | WorkItem::ConcatNext(state) | WorkItem::ForceConcatRight(state) => {
+            WorkItem::ConcatNext(state) | WorkItem::ForceConcatRight(state) => {
                 self.resume_concat(state, set)
             },
-            | WorkItem::Eval { .. } => Err(broken(RenderInvariant::Continuation)),
+            WorkItem::Eval { .. } => Err(broken(RenderInvariant::Continuation)),
         }
     }
 
@@ -1432,15 +1432,15 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
             return Err(broken(RenderInvariant::DocumentIdentity));
         };
         let (continuation, child, child_column, child_indentation) = match stored {
-            | DocNode::Empty => return Ok(Step::Result(self.empty(column)?)),
-            | DocNode::Text(text) => return Ok(Step::Result(self.text(text, column)?)),
-            | DocNode::Verbatim(verbatim) => {
+            DocNode::Empty => return Ok(Step::Result(self.empty(column)?)),
+            DocNode::Text(text) => return Ok(Step::Result(self.text(text, column)?)),
+            DocNode::Verbatim(verbatim) => {
                 return Ok(Step::Result(self.verbatim(verbatim, column)?));
             },
-            | DocNode::Line | DocNode::HardLine => {
+            DocNode::Line | DocNode::HardLine => {
                 return Ok(Step::Result(self.line(indentation)?));
             },
-            | DocNode::Nest { amount, doc } => {
+            DocNode::Nest { amount, doc } => {
                 let raised = u32::from(indentation).checked_add(amount).ok_or(
                     RenderError::ArithmeticOverflow {
                         operation: RenderArithmetic::Indentation,
@@ -1448,20 +1448,20 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
                 )?;
                 (WorkItem::AfterNest, doc, column, Indentation::from(raised))
             },
-            | DocNode::Align { doc } => (
+            DocNode::Align { doc } => (
                 WorkItem::AfterAlign,
                 doc,
                 column,
                 Indentation::from(u32::from(column)),
             ),
-            | DocNode::Flatten { .. } => {
+            DocNode::Flatten { .. } => {
                 let Maybe::Present(image) = self.arena.flattened_node(node)
                 else {
                     return Err(broken(RenderInvariant::DocumentIdentity));
                 };
                 (WorkItem::AfterFlatten, image, column, indentation)
             },
-            | DocNode::Choice { left, right } => (
+            DocNode::Choice { left, right } => (
                 WorkItem::AfterChoiceLeft {
                     right,
                     column,
@@ -1472,7 +1472,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
                 column,
                 indentation,
             ),
-            | DocNode::Concat { left, right } => (
+            DocNode::Concat { left, right } => (
                 WorkItem::AfterConcatLeft {
                     right,
                     indentation,
@@ -1816,8 +1816,8 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
             output_bytes: OutputBytes::from(u64::from(bytes)),
         })?;
         match taint {
-            | WidthTaint::Tainted => self.taint_set(set),
-            | WidthTaint::Untainted => Ok(set),
+            WidthTaint::Tainted => self.taint_set(set),
+            WidthTaint::Untainted => Ok(set),
         }
     }
 
@@ -1953,17 +1953,17 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ) -> Result<(), RenderError>
     {
         let (left, remaining, taint) = match left_set {
-            | MeasureSet::Frontier(mut frontier) => {
+            MeasureSet::Frontier(mut frontier) => {
                 if frontier.is_empty() {
                     return Err(broken(RenderInvariant::MissingMeasure));
                 }
                 let first_measure = frontier.remove(0usize);
                 (first_measure, frontier, WidthTaint::Untainted)
             },
-            | MeasureSet::Tainted(TaintPromise::Ready(measure)) => {
+            MeasureSet::Tainted(TaintPromise::Ready(measure)) => {
                 (measure, Vec::new(), WidthTaint::Tainted)
             },
-            | MeasureSet::Tainted(TaintPromise::Deferred { .. }) => {
+            MeasureSet::Tainted(TaintPromise::Deferred { .. }) => {
                 return Err(broken(RenderInvariant::MissingMeasure));
             },
         };
@@ -2098,7 +2098,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ) -> Result<Step, RenderError>
     {
         let right = match right_set {
-            | MeasureSet::Tainted(TaintPromise::Deferred {
+            MeasureSet::Tainted(TaintPromise::Deferred {
                 doc,
                 column,
                 indentation,
@@ -2112,8 +2112,8 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
                 })?;
                 return Ok(Step::Scheduled);
             },
-            | MeasureSet::Frontier(frontier) => frontier,
-            | MeasureSet::Tainted(TaintPromise::Ready(measure)) => {
+            MeasureSet::Frontier(frontier) => frontier,
+            MeasureSet::Tainted(TaintPromise::Ready(measure)) => {
                 state.taint = WidthTaint::Tainted;
                 let mut ready = Vec::new();
                 ready
@@ -2165,8 +2165,8 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
         }
         let result = MeasureSet::Frontier(self.normalize(state.results)?);
         Ok(Step::Result(match state.taint {
-            | WidthTaint::Tainted => self.taint_set(result)?,
-            | WidthTaint::Untainted => result,
+            WidthTaint::Tainted => self.taint_set(result)?,
+            WidthTaint::Untainted => result,
         }))
     }
 
@@ -2209,8 +2209,8 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ) -> Result<MeasureSet, RenderError>
     {
         match set {
-            | MeasureSet::Frontier(frontier) => Ok(MeasureSet::Frontier(self.normalize(frontier)?)),
-            | MeasureSet::Tainted(promise) => Ok(MeasureSet::Tainted(promise)),
+            MeasureSet::Frontier(frontier) => Ok(MeasureSet::Frontier(self.normalize(frontier)?)),
+            MeasureSet::Tainted(promise) => Ok(MeasureSet::Tainted(promise)),
         }
     }
 
@@ -2548,13 +2548,12 @@ mod tests
     fn forced(step: Step) -> Measure
     {
         match step {
-            | Step::Result(MeasureSet::Frontier(frontier)) => {
+            Step::Result(MeasureSet::Frontier(frontier)) => {
                 assert_eq!(frontier.len(), 1usize, "a text leaf has one layout");
                 frontier[0]
             },
-            | Step::Result(MeasureSet::Tainted(TaintPromise::Ready(measure))) => measure,
-            | Step::Result(MeasureSet::Tainted(TaintPromise::Deferred { .. }))
-            | Step::Scheduled => {
+            Step::Result(MeasureSet::Tainted(TaintPromise::Ready(measure))) => measure,
+            Step::Result(MeasureSet::Tainted(TaintPromise::Deferred { .. })) | Step::Scheduled => {
                 panic!("a forced leaf answers a measure")
             },
         }
@@ -2930,8 +2929,8 @@ mod tests
                 assert_eq!(measure.last_column, Column::from(indentation));
                 assert_eq!(measure.cost.line_breaks, LineBreaks::from(1_u64));
                 let ending_bytes = match ending {
-                    | PhysicalLineEnding::Lf => 1_u64,
-                    | PhysicalLineEnding::CrLf => 2_u64,
+                    PhysicalLineEnding::Lf => 1_u64,
+                    PhysicalLineEnding::CrLf => 2_u64,
                 };
                 assert_eq!(
                     measure.output_bytes,
@@ -2961,9 +2960,9 @@ mod tests
                     let rank = digits % 9;
                     digits = digits.div_euclid(9);
                     let (squared, lines) = match rank.div_euclid(3) {
-                        | 0 => (0_u64, 0_u64),
-                        | 1 => (0, 1),
-                        | _ => (1, 0),
+                        0 => (0_u64, 0_u64),
+                        1 => (0, 1),
+                        _ => (1, 0),
                     };
                     let plan = resolver
                         .plans
@@ -2991,15 +2990,15 @@ mod tests
                                 other.cost.cmp(&candidate.cost),
                                 other.last_column.cmp(&candidate.last_column),
                             ) {
-                                | (
+                                (
                                     core::cmp::Ordering::Less,
                                     core::cmp::Ordering::Less | core::cmp::Ordering::Equal,
                                 )
                                 | (core::cmp::Ordering::Equal, core::cmp::Ordering::Less) => true,
-                                | (core::cmp::Ordering::Equal, core::cmp::Ordering::Equal) => {
+                                (core::cmp::Ordering::Equal, core::cmp::Ordering::Equal) => {
                                     other_index < index
                                 },
-                                | _ => false,
+                                _ => false,
                             }
                         })
                     })

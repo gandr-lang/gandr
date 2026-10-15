@@ -382,8 +382,8 @@ fn declared_mold_candidate_inventory_is_exact() -> Result<(), Box<dyn Error>>
 
     assert!(
         counts.windows(2).all(|pair| match *pair {
-            | [(left, _), (right, _)] => left < right,
-            | _ => true,
+            [(left, _), (right, _)] => left < right,
+            _ => true,
         }),
         "the inventory is strictly ascending by label"
     );
@@ -616,15 +616,15 @@ fn form_membership_flags_agree_with_their_lists() -> Result<(), Box<dyn Error>>
     let adjacencies = pbg.adjacencies();
     let ascending = |molds: &[MoldId]| {
         molds.windows(2).all(|pair| match *pair {
-            | [left, right] => left < right,
-            | _ => true,
+            [left, right] => left < right,
+            _ => true,
         })
     };
     assert!(ascending(form_first));
     assert!(ascending(form_last));
     assert!(adjacencies.windows(2).all(|pair| match *pair {
-        | [left, right] => left < right,
-        | _ => true,
+        [left, right] => left < right,
+        _ => true,
     }));
 
     let mut required_tails = 0_usize;
@@ -762,9 +762,9 @@ fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Box<dyn
         Sort::ModuleMember,
     ];
     let shape = |bound: Bound<Prec>| match bound {
-        | Bound::Bottom => 0_u8,
-        | Bound::Value(_) => 1,
-        | Bound::Root => 2,
+        Bound::Bottom => 0_u8,
+        Bound::Value(_) => 1,
+        Bound::Root => 2,
     };
     let mut readings: BTreeMap<_, Observation> = BTreeMap::new();
     let mut classes: BTreeMap<Observation, MoldId> = BTreeMap::new();
@@ -777,16 +777,16 @@ fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Box<dyn
         let left_hole = matches!(left, Bound::Value(_));
         let right_hole = matches!(right, Bound::Value(_));
         let kind = match (has_pred, has_succ) {
-            | (false, true) if left_hole => TileKind::AbsorbingStart,
-            | (false, true) => TileKind::Start,
-            | (true, true) => TileKind::Mid,
-            | (true, false) if tail => TileKind::Mid,
-            | (true, false) => TileKind::End,
-            | (false, false) => match (left_hole, right_hole) {
-                | (false, false) => TileKind::Operand,
-                | (false, true) => TileKind::Prefix,
-                | (true, false) => TileKind::Postfix,
-                | (true, true) => TileKind::Infix,
+            (false, true) if left_hole => TileKind::AbsorbingStart,
+            (false, true) => TileKind::Start,
+            (true, true) => TileKind::Mid,
+            (true, false) if tail => TileKind::Mid,
+            (true, false) => TileKind::End,
+            (false, false) => match (left_hole, right_hole) {
+                (false, false) => TileKind::Operand,
+                (false, true) => TileKind::Prefix,
+                (true, false) => TileKind::Postfix,
+                (true, true) => TileKind::Infix,
             },
         };
         assert_eq!(kind, pbg.tile_kind(mold)?, "mold {mold:?}'s kind");
@@ -795,8 +795,8 @@ fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Box<dyn
             .step(def.rctx, Dir::Right)?
             .iter()
             .find_map(|step| match step.crossed {
-                | StepSym::Sort(sort) => Some(sort),
-                | StepSym::Tile(_) => None,
+                StepSym::Sort(sort) => Some(sort),
+                StepSym::Tile(_) => None,
             });
         let reading = (
             kind,
@@ -809,22 +809,22 @@ fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Box<dyn
         );
         let class = pbg.observation(mold)?;
         let next = classes.len();
-        match readings.get(&reading) {
-            | Some(&held) => assert_eq!(held, class, "mold {mold:?} reads as its class"),
-            | None => {
-                assert_eq!(
-                    usize::try_from(u32::from(class))?,
-                    next,
-                    "a new reading takes the next class number"
-                );
-                readings.insert(reading, class);
-            },
+        if let Some(&held) = readings.get(&reading) {
+            assert_eq!(held, class, "mold {mold:?} reads as its class");
+        }
+        else {
+            assert_eq!(
+                usize::try_from(u32::from(class))?,
+                next,
+                "a new reading takes the next class number"
+            );
+            readings.insert(reading, class);
         }
         match classes.get(&class) {
-            | Some(&least) => {
+            Some(&least) => {
                 merged_rules |= pbg.rule_of(least)?.name() != pbg.rule_of(mold)?.name();
             },
-            | None => {
+            None => {
                 classes.insert(class, mold);
             },
         }
@@ -850,12 +850,12 @@ fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Box<dyn
             }
         }
         let expected = match kind {
-            | TileKind::Operand | TileKind::Start => vec![TileSet::Fills(def.sort)],
-            | TileKind::AbsorbingStart => vec![TileSet::Absorbs(def.sort)],
-            | TileKind::Prefix => vec![TileSet::Prefixes],
-            | TileKind::Infix | TileKind::Postfix => vec![TileSet::LeftOperators],
-            | TileKind::Mid if first => vec![TileSet::FirstMids, TileSet::Continuations],
-            | TileKind::Mid | TileKind::End => vec![TileSet::Continuations],
+            TileKind::Operand | TileKind::Start => vec![TileSet::Fills(def.sort)],
+            TileKind::AbsorbingStart => vec![TileSet::Absorbs(def.sort)],
+            TileKind::Prefix => vec![TileSet::Prefixes],
+            TileKind::Infix | TileKind::Postfix => vec![TileSet::LeftOperators],
+            TileKind::Mid if first => vec![TileSet::FirstMids, TileSet::Continuations],
+            TileKind::Mid | TileKind::End => vec![TileSet::Continuations],
         };
         assert_eq!(expected, held, "mold {mold:?}'s sets");
     }
@@ -933,13 +933,13 @@ fn comparison_table_coheres_with_precedence() -> Result<(), Box<dyn Error>>
         assert_eq!(left.sort, right.sort, "a comparison mediates one sort");
         assert_eq!(row.sort, left.sort);
         match row.cmp {
-            | Comparison::Yields => {
+            Comparison::Yields => {
                 assert!(bool::from(dag.lt(left.prec, right.prec, Assoc::Non)));
             },
-            | Comparison::Takes => {
+            Comparison::Takes => {
                 assert!(bool::from(dag.gt(left.prec, right.prec, Assoc::Non)));
             },
-            | Comparison::Equal => {},
+            Comparison::Equal => {},
         }
     }
 
@@ -1001,8 +1001,8 @@ fn comparison_table_is_conflict_free() -> Result<(), Box<dyn Error>>
         }
     }
     assert!(table.windows(2).all(|pair| match *pair {
-        | [left, right] => left <= right,
-        | _ => true,
+        [left, right] => left <= right,
+        _ => true,
     }));
     Ok(())
 }

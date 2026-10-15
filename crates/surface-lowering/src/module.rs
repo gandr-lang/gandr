@@ -1163,8 +1163,8 @@ impl<'source> DeclarationSlot<'source>
     )
     {
         let replaces = match self.refusal {
-            | Maybe::Present((incumbent, _held)) => at < incumbent,
-            | Maybe::Absent(_) => true,
+            Maybe::Present((incumbent, _held)) => at < incumbent,
+            Maybe::Absent(_) => true,
         };
         if replaces {
             self.refusal = Maybe::Present((at, refusal));
@@ -2035,26 +2035,26 @@ impl<'source> Collector<'_, 'source>
             return Ok(());
         };
         match shape_of(self.pbg, node)? {
-            | Shape::Form {
+            Shape::Form {
                 former: Former::Declaration,
                 ..
             } => self.declaration(child, &[]),
-            | Shape::Form {
+            Shape::Form {
                 former: Former::Module,
                 ..
             } => self.module(child),
-            | Shape::Form {
+            Shape::Form {
                 former: Former::Import,
                 name,
                 ..
             } => self.import(child, name),
-            | Shape::Form { name, .. } => Err(LoweringRefusal::OutOfFragment {
+            Shape::Form { name, .. } => Err(LoweringRefusal::OutOfFragment {
                 span: child.span,
                 form: name,
                 sort: FragmentSort::Declaration,
                 boundary: FragmentBoundary::WrongSort,
             }),
-            | Shape::Root | Shape::Repair(_) | Shape::Layout => Ok(()),
+            Shape::Root | Shape::Repair(_) | Shape::Layout => Ok(()),
         }
     }
 
@@ -2474,8 +2474,8 @@ impl<'source> Collector<'_, 'source>
         let name = self.name_of(named);
         let mut refusals = self.described_refusals(child).into_iter().peekable();
         let minted = match refusals.peek() {
-            | Some(_) => Ok(()),
-            | None => self.mint_sig(named),
+            Some(_) => Ok(()),
+            None => self.mint_sig(named),
         };
         let position = self.admit(Container::TopLevel, name, child, named);
         self.collected.own(child.node, position);
@@ -2791,10 +2791,10 @@ impl<'source> Collector<'_, 'source>
         let mut written = String::new();
         loop {
             let piece = match cursor.tile(TileName::STRING_FRAGMENT) {
-                | Maybe::Present(fragment) => fragment,
-                | Maybe::Absent(_) => match cursor.tile(TileName::ESCAPE_SEQUENCE) {
-                    | Maybe::Present(escape) => escape,
-                    | Maybe::Absent(_) => break,
+                Maybe::Present(fragment) => fragment,
+                Maybe::Absent(_) => match cursor.tile(TileName::ESCAPE_SEQUENCE) {
+                    Maybe::Present(escape) => escape,
+                    Maybe::Absent(_) => break,
                 },
             };
             if let Some(text) = self.tree.fragment(piece.node) {
@@ -2984,8 +2984,8 @@ impl<'source> Collector<'_, 'source>
             };
         }
         let span = match header.peek() {
-            | Maybe::Present(_) => header.here(),
-            | Maybe::Absent(_) => declaration.span,
+            Maybe::Present(_) => header.here(),
+            Maybe::Absent(_) => declaration.span,
         };
 
         misplaced(span)
@@ -3135,9 +3135,9 @@ impl<'source> Collector<'_, 'source>
         };
         if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
             written.payload = match cursor.operands() {
-                | Run::Empty(_) => Payload::Unwritten,
-                | Run::One(payload) => Payload::Written(payload),
-                | Run::Several { extra, .. } => {
+                Run::Empty(_) => Payload::Unwritten,
+                Run::One(payload) => Payload::Written(payload),
+                Run::Several { extra, .. } => {
                     return Err(extra_operand(FormName::ATTRIBUTE, extra));
                 },
             };
@@ -3148,8 +3148,8 @@ impl<'source> Collector<'_, 'source>
             written.span = at.span.join(close.span);
         }
         match cursor.operands() {
-            | Run::Empty(_) => Ok(written),
-            | Run::One(stray) | Run::Several { first: stray, .. } => {
+            Run::Empty(_) => Ok(written),
+            Run::One(stray) | Run::Several { first: stray, .. } => {
                 Err(extra_operand(FormName::ATTRIBUTE, stray))
             },
         }
@@ -3274,19 +3274,19 @@ impl<'source> Collector<'_, 'source>
             return;
         };
         let (operand, kinds): (Operand, &[HalfKind]) = match tail {
-            | Tail::Wrote(HalfKind::Signature, operand) => {
+            Tail::Wrote(HalfKind::Signature, operand) => {
                 (Operand::Written(operand), &[HalfKind::Signature])
             },
-            | Tail::Wrote(HalfKind::Definition, operand) => {
+            Tail::Wrote(HalfKind::Definition, operand) => {
                 (Operand::Written(operand), &[HalfKind::Definition])
             },
-            | Tail::Function(Signing::Signed) => (Operand::Function, &[
+            Tail::Function(Signing::Signed) => (Operand::Function, &[
                 HalfKind::Signature,
                 HalfKind::Definition,
             ]),
-            | Tail::Function(Signing::Unsigned) => (Operand::Function, &[HalfKind::Definition]),
-            | Tail::Data(form) => (Operand::Data(form), &[HalfKind::Definition]),
-            | Tail::Refused(refusal) => {
+            Tail::Function(Signing::Unsigned) => (Operand::Function, &[HalfKind::Definition]),
+            Tail::Data(form) => (Operand::Data(form), &[HalfKind::Definition]),
+            Tail::Refused(refusal) => {
                 entry.refuse(declaration.node, refusal);
                 return;
             },
@@ -3298,8 +3298,8 @@ impl<'source> Collector<'_, 'source>
         let mut derived = Maybe::Absent(declaration_half::Absent::Unwritten);
         for &kind in kinds {
             let held = match kind {
-                | HalfKind::Signature => entry.signature,
-                | HalfKind::Definition => entry.definition,
+                HalfKind::Signature => entry.signature,
+                HalfKind::Definition => entry.definition,
             };
             let Maybe::Present(first) = held
             else {
@@ -3307,35 +3307,33 @@ impl<'source> Collector<'_, 'source>
             };
             if kind == HalfKind::Signature {
                 match (first.operand, operand) {
-                    | (Operand::Written(_), Operand::Function) => {
+                    (Operand::Written(_), Operand::Function) => {
                         derived = Maybe::Present(incoming);
                         continue;
                     },
-                    | (Operand::Function, Operand::Written(_)) => {
+                    (Operand::Function, Operand::Written(_)) => {
                         derived = Maybe::Present(first);
                         continue;
                     },
-                    | _ => {},
+                    _ => {},
                 }
             }
             let (span, name, first) = (declaration.span, entry.name, first.declaration.span);
             let refusal = match kind {
-                | HalfKind::Signature => LoweringRefusal::DuplicateSignature { span, name, first },
-                | HalfKind::Definition => {
-                    LoweringRefusal::DuplicateDefinition { span, name, first }
-                },
+                HalfKind::Signature => LoweringRefusal::DuplicateSignature { span, name, first },
+                HalfKind::Definition => LoweringRefusal::DuplicateDefinition { span, name, first },
             };
             entry.refuse(declaration.node, refusal);
             return;
         }
         for &kind in kinds {
             match kind {
-                | HalfKind::Signature => {
+                HalfKind::Signature => {
                     if derived != Maybe::Present(incoming) {
                         entry.signature = Maybe::Present(incoming);
                     }
                 },
-                | HalfKind::Definition => entry.definition = Maybe::Present(incoming),
+                HalfKind::Definition => entry.definition = Maybe::Present(incoming),
             }
         }
         entry.attributes.extend(attributes);
@@ -3884,19 +3882,19 @@ impl<'source> Collector<'_, 'source>
         let mut stack = Vec::new();
         let opened_at = StructureIndex(self.collected.structures.len());
         match self.header(module, &pieces, Container::TopLevel)? {
-            | Header::Opened(opened) => self.open(Container::TopLevel, module, opened, &mut stack),
-            | Header::Applied(applied) => {
+            Header::Opened(opened) => self.open(Container::TopLevel, module, opened, &mut stack),
+            Header::Applied(applied) => {
                 self.apply(module, &applied);
                 return Ok(());
             },
-            | Header::Refused {
+            Header::Refused {
                 name,
                 named,
                 refusal,
             } => {
                 let _held = self.refuse_held(Container::TopLevel, name, module, named, refusal);
             },
-            | Header::Unnamed(refusal) => return Err(refusal),
+            Header::Unnamed(refusal) => return Err(refusal),
         }
         while let Some(top) = stack.last_mut() {
             let structure = top.structure;
@@ -3990,14 +3988,14 @@ impl<'source> Collector<'_, 'source>
     {
         let mut cursor = Cursor::new(&pieces.pieces, form.span);
         let unnamed = |cursor: &Cursor<'_>| match pieces.repair {
-            | Maybe::Present(repaired) => Header::Unnamed(repaired.refusal(FormName::MODULE)),
-            | Maybe::Absent(_) => Header::Unnamed(misplaced_in(FormName::MODULE, cursor.here())),
+            Maybe::Present(repaired) => Header::Unnamed(repaired.refusal(FormName::MODULE)),
+            Maybe::Absent(_) => Header::Unnamed(misplaced_in(FormName::MODULE, cursor.here())),
         };
         if let Maybe::Absent(_) = cursor.tile(TileName::MODULE) {
             return Ok(unnamed(&cursor));
         }
         let named = match cursor.peek() {
-            | Maybe::Present(Piece::Tile { label, at })
+            Maybe::Present(Piece::Tile { label, at })
                 if label == TileName::TYPE_IDENTIFIER || label == TileName::IDENTIFIER =>
             {
                 let _name = cursor.read();
@@ -4014,7 +4012,7 @@ impl<'source> Collector<'_, 'source>
                 }
                 at
             },
-            | Maybe::Present(_) | Maybe::Absent(_) => return Ok(unnamed(&cursor)),
+            Maybe::Present(_) | Maybe::Absent(_) => return Ok(unnamed(&cursor)),
         };
         let name = self.name_of(named);
         let refused = |refusal| {
@@ -4031,13 +4029,13 @@ impl<'source> Collector<'_, 'source>
         }
         if let Maybe::Present(_) = cursor.tile(TileName::EQUALS) {
             return match Self::application(&mut cursor) {
-                | Maybe::Present((functor, argument)) => Ok(Header::Applied(Applied {
+                Maybe::Present((functor, argument)) => Ok(Header::Applied(Applied {
                     name,
                     named,
                     functor,
                     argument,
                 })),
-                | Maybe::Absent(_) => refused(misplaced_in(FormName::MODULE, cursor.here())),
+                Maybe::Absent(_) => refused(misplaced_in(FormName::MODULE, cursor.here())),
             };
         }
         let parameter = if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
@@ -4049,8 +4047,8 @@ impl<'source> Collector<'_, 'source>
                 return refused(misplaced_in(FormName::MODULE, cursor.here()));
             }
             let components = match self.signature(&mut cursor) {
-                | Ok(components) => components,
-                | Err(refusal) => return refused(refusal),
+                Ok(components) => components,
+                Err(refusal) => return refused(refusal),
             };
             if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
                 return refused(misplaced_in(FormName::MODULE, cursor.here()));
@@ -4078,8 +4076,8 @@ impl<'source> Collector<'_, 'source>
                 self.signature(&mut cursor)
             };
             match read {
-                | Ok(components) => Maybe::Present(components),
-                | Err(refusal) => return refused(refusal),
+                Ok(components) => Maybe::Present(components),
+                Err(refusal) => return refused(refusal),
             }
         }
         else {
@@ -4147,10 +4145,10 @@ impl<'source> Collector<'_, 'source>
         let mut argument = Vec::from([head]);
         while let Maybe::Present(_) = cursor.tile(TileName::DOT) {
             let segment = match cursor.tile(TileName::TYPE_IDENTIFIER) {
-                | Maybe::Present(segment) => segment,
-                | Maybe::Absent(_) => match cursor.tile(TileName::IDENTIFIER) {
-                    | Maybe::Present(segment) => segment,
-                    | Maybe::Absent(_) => return misplaced,
+                Maybe::Present(segment) => segment,
+                Maybe::Absent(_) => match cursor.tile(TileName::IDENTIFIER) {
+                    Maybe::Present(segment) => segment,
+                    Maybe::Absent(_) => return misplaced,
                 },
             };
             argument.push(segment);
@@ -4218,8 +4216,8 @@ impl<'source> Collector<'_, 'source>
         };
 
         Carried(pieces.pieces.iter().any(|piece| match *piece {
-            | Piece::Operand(operand) => repaired(operand),
-            | Piece::Tile { .. } => false,
+            Piece::Operand(operand) => repaired(operand),
+            Piece::Tile { .. } => false,
         }))
     }
 
@@ -4296,16 +4294,16 @@ impl<'source> Collector<'_, 'source>
                     return Err(misplaced_in(FormName::MODULE, cursor.here()));
                 };
                 let form = match type_component(cursor)? {
-                    | WrittenType::Formed(ComponentForm::Abstract(Maybe::Present(kind))) => {
+                    WrittenType::Formed(ComponentForm::Abstract(Maybe::Present(kind))) => {
                         match self.kind_form(kind)? {
-                            | KindForm::Universe | KindForm::Arrow => {
+                            KindForm::Universe | KindForm::Arrow => {
                                 ComponentForm::Abstract(Maybe::Present(kind))
                             },
-                            | KindForm::Family => ComponentForm::Family(FamilyForm::Written(kind)),
+                            KindForm::Family => ComponentForm::Family(FamilyForm::Written(kind)),
                         }
                     },
-                    | WrittenType::Formed(form) => form,
-                    | WrittenType::Family {
+                    WrittenType::Formed(form) => form,
+                    WrittenType::Family {
                         parameters,
                         defined,
                     } => {
@@ -4536,11 +4534,11 @@ impl<'source> Collector<'_, 'source>
             return Ok(());
         };
         let form = match shape_of(self.pbg, node)? {
-            | Shape::Form {
+            Shape::Form {
                 former: Former::Module | Former::Declaration,
                 name,
             } => name,
-            | Shape::Form { name, .. } => {
+            Shape::Form { name, .. } => {
                 self.fault_at(structure, member, LoweringRefusal::OutOfFragment {
                     span: member.span,
                     form: name,
@@ -4549,7 +4547,7 @@ impl<'source> Collector<'_, 'source>
                 });
                 return Ok(());
             },
-            | Shape::Root | Shape::Repair(_) | Shape::Layout => return Ok(()),
+            Shape::Root | Shape::Repair(_) | Shape::Layout => return Ok(()),
         };
         let defines = pieces
             .pieces
@@ -4571,18 +4569,18 @@ impl<'source> Collector<'_, 'source>
             return Ok(());
         }
         match self.header(member, pieces, container)? {
-            | Header::Opened(opened) => self.open(container, member, opened, stack),
-            | Header::Applied(applied) => {
+            Header::Opened(opened) => self.open(container, member, opened, stack),
+            Header::Applied(applied) => {
                 self.fault_at(structure, member, misplaced_in(form, applied.named.span));
             },
-            | Header::Refused {
+            Header::Refused {
                 name,
                 named,
                 refusal,
             } => {
                 let _held = self.refuse_held(container, name, member, named, refusal);
             },
-            | Header::Unnamed(refusal) => self.fault_at(structure, member, refusal),
+            Header::Unnamed(refusal) => self.fault_at(structure, member, refusal),
         }
 
         Ok(())
@@ -4881,8 +4879,8 @@ impl<'source> Collector<'_, 'source>
                     .members
                     .iter()
                     .filter_map(|member| match *member {
-                        | Member::Module(nested) => Some(nested),
-                        | Member::Slot(_) => None,
+                        Member::Module(nested) => Some(nested),
+                        Member::Slot(_) => None,
                     })
                     .collect()
             })
@@ -5052,12 +5050,12 @@ impl<'source> Collector<'_, 'source>
                 .iter()
                 .copied()
                 .filter(|member| match *member {
-                    | Member::Slot(slot) => self
+                    Member::Slot(slot) => self
                         .collected
                         .slots
                         .get(slot.0)
                         .is_some_and(|held| held.role == Role::Declared),
-                    | Member::Module(_) => true,
+                    Member::Module(_) => true,
                 })
                 .collect();
             if let Some(opened) = self.collected.structures.get_mut(structure.0) {
@@ -5074,8 +5072,8 @@ impl<'source> Collector<'_, 'source>
                 before: types.len(),
             };
             let stated = match component.form {
-                | ComponentForm::Value(stated) => stated,
-                | ComponentForm::Manifest(defined) => {
+                ComponentForm::Value(stated) => stated,
+                ComponentForm::Manifest(defined) => {
                     let held =
                         self.held(container, component.name, component.named, component.named);
                     self.collected.own(defined.node, held);
@@ -5087,7 +5085,7 @@ impl<'source> Collector<'_, 'source>
                     });
                     continue;
                 },
-                | ComponentForm::Parameterized {
+                ComponentForm::Parameterized {
                     parameters,
                     defined,
                 } => {
@@ -5096,7 +5094,7 @@ impl<'source> Collector<'_, 'source>
                     );
                     continue;
                 },
-                | ComponentForm::Abstract(Maybe::Present(kind))
+                ComponentForm::Abstract(Maybe::Present(kind))
                     if !sealed.0 && matches!(self.kind_form(kind), Ok(KindForm::Arrow)) =>
                 {
                     self.family_component(
@@ -5109,7 +5107,7 @@ impl<'source> Collector<'_, 'source>
                     );
                     continue;
                 },
-                | ComponentForm::Abstract(kind) => {
+                ComponentForm::Abstract(kind) => {
                     self.abstract_component(
                         structure,
                         ComponentPlace(ordinal),
@@ -5119,7 +5117,7 @@ impl<'source> Collector<'_, 'source>
                     );
                     continue;
                 },
-                | ComponentForm::Family(form) => {
+                ComponentForm::Family(form) => {
                     self.family_component(
                         structure,
                         ComponentPlace(ordinal),
@@ -5130,7 +5128,7 @@ impl<'source> Collector<'_, 'source>
                     );
                     continue;
                 },
-                | ComponentForm::Derived => {
+                ComponentForm::Derived => {
                     if let Maybe::Present(found) =
                         self.derived_component(structure, component, ComponentPlace(ordinal), scope)
                         && !exports.contains(&found)
@@ -5139,7 +5137,7 @@ impl<'source> Collector<'_, 'source>
                     }
                     continue;
                 },
-                | ComponentForm::Unread(form) => {
+                ComponentForm::Unread(form) => {
                     let refusal = LoweringRefusal::UnreadAscription {
                         span: component.named.span,
                         name: component.name,
@@ -5228,7 +5226,7 @@ impl<'source> Collector<'_, 'source>
     {
         let found = self.member_named(container, component.name);
         match found {
-            | Maybe::Present(Member::Slot(slot)) => {
+            Maybe::Present(Member::Slot(slot)) => {
                 self.state(
                     slot,
                     Operand::Written(stated),
@@ -5236,7 +5234,7 @@ impl<'source> Collector<'_, 'source>
                     Maybe::Present(scope),
                 );
             },
-            | Maybe::Present(Member::Module(nested)) => {
+            Maybe::Present(Member::Module(nested)) => {
                 let form = self.form_name(stated)?;
                 if form.as_ref() != TELESCOPE_TYPE {
                     let refusal = LoweringRefusal::OutOfFragment {
@@ -5260,8 +5258,8 @@ impl<'source> Collector<'_, 'source>
                     scope: Maybe::Present(scope),
                 });
             },
-            | Maybe::Absent(_) if self.repaired_member(container, component.name).0 => {},
-            | Maybe::Absent(_) => {
+            Maybe::Absent(_) if self.repaired_member(container, component.name).0 => {},
+            Maybe::Absent(_) => {
                 let refusal = LoweringRefusal::UnknownMember {
                     span: component.named.span,
                     module,
@@ -5362,8 +5360,8 @@ impl<'source> Collector<'_, 'source>
             return Maybe::Present(Member::Slot(slot));
         }
         match self.collected.modules.get(&(container, name)) {
-            | Some(&nested) => Maybe::Present(Member::Module(nested)),
-            | None => Maybe::Absent(declared_member::Absent::Undeclared),
+            Some(&nested) => Maybe::Present(Member::Module(nested)),
+            None => Maybe::Absent(declared_member::Absent::Undeclared),
         }
     }
 
@@ -5480,11 +5478,11 @@ impl<'source> Collector<'_, 'source>
         };
         let home = entry.container;
         let owner = match entry.signature {
-            | Maybe::Absent(_) => {
+            Maybe::Absent(_) => {
                 entry.signature = Maybe::Present(half);
                 member
             },
-            | Maybe::Present(
+            Maybe::Present(
                 derived @ Half {
                     operand: Operand::Function,
                     ..
@@ -5494,7 +5492,7 @@ impl<'source> Collector<'_, 'source>
                 let _witness = self.witness(member, derived);
                 member
             },
-            | Maybe::Present(_) => self.witness(member, half),
+            Maybe::Present(_) => self.witness(member, half),
         };
         if let Operand::Written(stated) = operand {
             self.collected.own(stated.node, owner);
@@ -5581,8 +5579,8 @@ impl<'source> Collector<'_, 'source>
         let mut pieces = Pieces::new();
         read_pieces(self.pbg, self.tree, layer.record.node, &mut pieces)?;
         let fields = match self.fields(layer.record, &pieces) {
-            | Ok(fields) => fields,
-            | Err(refusal) => {
+            Ok(fields) => fields,
+            Err(refusal) => {
                 self.fault_at(layer.structure, layer.record, refusal);
                 return Ok(());
             },
@@ -5603,7 +5601,7 @@ impl<'source> Collector<'_, 'source>
                 .copied()
                 .find(|export| self.member_name(*export) == field.name);
             match found {
-                | Some(Member::Slot(slot)) => {
+                Some(Member::Slot(slot)) => {
                     self.state(
                         slot,
                         Operand::Written(field.stated),
@@ -5611,7 +5609,7 @@ impl<'source> Collector<'_, 'source>
                         layer.scope,
                     );
                 },
-                | Some(Member::Module(nested)) => {
+                Some(Member::Module(nested)) => {
                     let form = self.form_name(field.stated)?;
                     if form.as_ref() != TELESCOPE_TYPE {
                         let refusal = LoweringRefusal::OutOfFragment {
@@ -5635,7 +5633,7 @@ impl<'source> Collector<'_, 'source>
                         scope: layer.scope,
                     });
                 },
-                | None => {
+                None => {
                     let refusal = LoweringRefusal::UnknownMember {
                         span: field.named.span,
                         module,
@@ -5775,12 +5773,12 @@ impl<'source> Collector<'_, 'source>
     ) -> SurfaceName<'source>
     {
         match member {
-            | Member::Slot(slot) => self
+            Member::Slot(slot) => self
                 .collected
                 .slots
                 .get(slot.0)
                 .map_or_else(|| SurfaceName::from(""), |entry| entry.name),
-            | Member::Module(nested) => self
+            Member::Module(nested) => self
                 .collected
                 .structures
                 .get(nested.0)
@@ -5825,8 +5823,8 @@ impl<'source> Collector<'_, 'source>
         };
 
         Ok(match shape_of(self.pbg, node)? {
-            | Shape::Form { name, .. } => name,
-            | Shape::Root | Shape::Repair(_) | Shape::Layout => FormName::ROOT,
+            Shape::Form { name, .. } => name,
+            Shape::Root | Shape::Repair(_) | Shape::Layout => FormName::ROOT,
         })
     }
 }
@@ -5968,13 +5966,13 @@ const fn one_in<'source>(
 ) -> Result<Placed, LoweringRefusal<'source>>
 {
     match run {
-        | Run::One(operand) => Ok(operand),
-        | Run::Empty(gap) => Err(LoweringRefusal::MalformedForm {
+        Run::One(operand) => Ok(operand),
+        Run::Empty(gap) => Err(LoweringRefusal::MalformedForm {
             span: gap,
             form,
             fault: FormFault::MissingOperand,
         }),
-        | Run::Several { extra, .. } => Err(extra_operand(form, extra)),
+        Run::Several { extra, .. } => Err(extra_operand(form, extra)),
     }
 }
 
@@ -6053,15 +6051,15 @@ fn read_tail<'source>(
         return Tail::Refused(unadmitted_tail(header, declaration));
     };
     let operand = match header.operands() {
-        | Run::One(operand) => operand,
-        | Run::Empty(gap) => {
+        Run::One(operand) => operand,
+        Run::Empty(gap) => {
             return Tail::Refused(LoweringRefusal::MalformedForm {
                 span: gap,
                 form: FormName::DECLARATION,
                 fault: FormFault::MissingOperand,
             });
         },
-        | Run::Several { extra, .. } => {
+        Run::Several { extra, .. } => {
             return Tail::Refused(extra_operand(FormName::DECLARATION, extra));
         },
     };
@@ -6102,19 +6100,19 @@ fn signing(mut header: Cursor<'_>) -> Signing
     let _open = header.tile(TileName::PAREN_OPEN);
     loop {
         match header.read() {
-            | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => break,
-            | Maybe::Present(Piece::Tile { label, .. }) if TileName::BINDERS.contains(&label) => {
+            Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => break,
+            Maybe::Present(Piece::Tile { label, .. }) if TileName::BINDERS.contains(&label) => {
                 if let Maybe::Absent(_) = header.at(TileName::COLON) {
                     return Signing::Unsigned;
                 }
             },
-            | Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) => {},
-            | Maybe::Absent(_) => return Signing::Unsigned,
+            Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) => {},
+            Maybe::Absent(_) => return Signing::Unsigned,
         }
     }
     match header.at(TileName::ARROW) {
-        | Maybe::Present(_) => Signing::Signed,
-        | Maybe::Absent(_) => Signing::Unsigned,
+        Maybe::Present(_) => Signing::Signed,
+        Maybe::Absent(_) => Signing::Unsigned,
     }
 }
 
@@ -6978,7 +6976,7 @@ impl<'source> LoweredModule<'source>
         let mut found: Vec<InferredRun> = ran
             .into_iter()
             .filter_map(|(at, purity)| match self.origins.value(at) {
-                | Maybe::Present(origin)
+                Maybe::Present(origin)
                     if origin.provenance() == Provenance::Inserted(Insertion::Nested) =>
                 {
                     Some(InferredRun {
@@ -6987,7 +6985,7 @@ impl<'source> LoweredModule<'source>
                         site: self.nested.get(&origin.node()).copied().unwrap_or_default(),
                     })
                 },
-                | Maybe::Present(_) | Maybe::Absent(_) => None,
+                Maybe::Present(_) | Maybe::Absent(_) => None,
             })
             .collect();
         found.sort_unstable();
@@ -7072,12 +7070,12 @@ impl<'source> LoweredModule<'source>
             .declarations
             .iter()
             .filter_map(|declaration| match declaration.presentation {
-                | Maybe::Present(ref presentation) => Some(crate::model::LoweredSign {
+                Maybe::Present(ref presentation) => Some(crate::model::LoweredSign {
                     named: declaration.named,
                     description: &declaration.description,
                     presentation,
                 }),
-                | Maybe::Absent(_) => None,
+                Maybe::Absent(_) => None,
             })
     }
 
@@ -7144,10 +7142,10 @@ impl<'source> LoweredModule<'source>
             .iter()
             .find(|cells| holds(cells.at.span));
         match (described, cells) {
-            | (Some(described), Some(cells)) => {
+            (Some(described), Some(cells)) => {
                 crate::coincide::normal_form(&described.description, cells, call)
             },
-            | _ => Err(crate::coincide::NormalFormFault::Undescribed),
+            _ => Err(crate::coincide::NormalFormFault::Undescribed),
         }
     }
 
@@ -7202,8 +7200,8 @@ impl<'source> LoweredModule<'source>
     ) -> Vec<SurfaceName<'source>>
     {
         let mut path = match declaration.container() {
-            | Container::TopLevel => Vec::new(),
-            | Container::Module(structure) => self
+            Container::TopLevel => Vec::new(),
+            Container::Module(structure) => self
                 .structures
                 .get(structure.0)
                 .map_or_else(Vec::new, |module| module.path.clone()),
@@ -7391,10 +7389,10 @@ impl<'source> LoweredModule<'source>
         [declaration.definition(), declaration.signature()]
             .into_iter()
             .find_map(|key| match key {
-                | Maybe::Present(key) => {
+                Maybe::Present(key) => {
                     Some(self.attributes.laws(key)).filter(|laws| !laws.is_empty())
                 },
-                | Maybe::Absent(_) => None,
+                Maybe::Absent(_) => None,
             })
             .unwrap_or_default()
     }

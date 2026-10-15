@@ -132,16 +132,16 @@ impl fmt::Display for CheckRefusal
     ) -> fmt::Result
     {
         match *self {
-            | Self::DanglingCommand(id) => write!(f, "command {id} is not in the arena"),
-            | Self::DanglingProducer(id) => write!(f, "producer {id} is not in the arena"),
-            | Self::DanglingConsumer(id) => write!(f, "consumer {id} is not in the arena"),
-            | Self::NonValueArgument(id) => {
+            Self::DanglingCommand(id) => write!(f, "command {id} is not in the arena"),
+            Self::DanglingProducer(id) => write!(f, "producer {id} is not in the arena"),
+            Self::DanglingConsumer(id) => write!(f, "consumer {id} is not in the arena"),
+            Self::NonValueArgument(id) => {
                 write!(f, "producer {id} is a capture where a value must stand")
             },
-            | Self::PolarityMismatch { command, .. } => {
+            Self::PolarityMismatch { command, .. } => {
                 write!(f, "command {command} cuts a side of the other polarity")
             },
-            | Self::ProducerArity {
+            Self::ProducerArity {
                 expected, found, ..
             } => {
                 write!(
@@ -149,7 +149,7 @@ impl fmt::Display for CheckRefusal
                     "a head declaring {expected} producer children has {found}"
                 )
             },
-            | Self::ConsumerArity {
+            Self::ConsumerArity {
                 expected, found, ..
             } => {
                 write!(
@@ -157,7 +157,7 @@ impl fmt::Display for CheckRefusal
                     "a head declaring {expected} consumer children has {found}"
                 )
             },
-            | Self::DuplicateArm(_) => f.write_str("a head is answered by two arms"),
+            Self::DuplicateArm(_) => f.write_str("a head is answered by two arms"),
         }
     }
 }
@@ -261,9 +261,9 @@ pub fn check_command(
     };
     while let Some(visit) = walk.stack.pop() {
         match visit {
-            | Visit::Command(id, depth) => walk.command(id, depth)?,
-            | Visit::Producer(id, depth) => walk.producer(id, depth)?,
-            | Visit::Consumer(id, depth) => walk.consumer(id, depth)?,
+            Visit::Command(id, depth) => walk.command(id, depth)?,
+            Visit::Producer(id, depth) => walk.producer(id, depth)?,
+            Visit::Consumer(id, depth) => walk.consumer(id, depth)?,
         }
     }
     Ok(walk.free)
@@ -439,8 +439,8 @@ impl Walk<'_>
             .command(id)
             .ok_or(CheckRefusal::DanglingCommand(id))?;
         match *node {
-            | CommandNode::Cut { .. } => self.stack.push(Visit::Command(id, depth)),
-            | CommandNode::Perform {
+            CommandNode::Cut { .. } => self.stack.push(Visit::Command(id, depth)),
+            CommandNode::Perform {
                 route,
                 payload,
                 continuation,
@@ -452,7 +452,7 @@ impl Walk<'_>
                     self.stack.push(Visit::Producer(capability, depth));
                 }
             },
-            | CommandNode::Handle {
+            CommandNode::Handle {
                 introduces,
                 subject,
                 on_return,
@@ -472,15 +472,15 @@ impl Walk<'_>
                     depth.under(ProducerArity::ONE, ConsumerArity::ONE),
                 ));
                 let bound = match introduces {
-                    | Introduces::Nothing => ProducerArity::ZERO,
-                    | Introduces::Capability => ProducerArity::ONE,
+                    Introduces::Nothing => ProducerArity::ZERO,
+                    Introduces::Capability => ProducerArity::ONE,
                 };
                 self.stack.push(Visit::Command(
                     subject,
                     depth.under(bound, ConsumerArity::ONE),
                 ));
             },
-            | CommandNode::Resume {
+            CommandNode::Resume {
                 stack,
                 body,
                 continuation,
@@ -492,14 +492,14 @@ impl Walk<'_>
                 ));
                 self.stack.push(Visit::Producer(stack, depth));
             },
-            | CommandNode::Reset { body, continuation } => {
+            CommandNode::Reset { body, continuation } => {
                 self.stack.push(Visit::Consumer(continuation, depth));
                 self.stack.push(Visit::Command(
                     body,
                     depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
                 ));
             },
-            | CommandNode::Shift { body, continuation } => {
+            CommandNode::Shift { body, continuation } => {
                 self.stack.push(Visit::Consumer(continuation, depth));
                 self.stack.push(Visit::Command(
                     body,
@@ -558,31 +558,31 @@ impl Walk<'_>
             .producer(id)
             .ok_or(CheckRefusal::DanglingProducer(id))?;
         match *node {
-            | ProducerNode::Reify(ref frames) => {
+            ProducerNode::Reify(ref frames) => {
                 for frame in frames.iter().rev() {
                     match *frame {
-                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                        gandr_core_term::control::StackFrame::Apply(value) => {
                             self.stack.push(Visit::Producer(value, depth));
                         },
-                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                        gandr_core_term::control::StackFrame::Bind(body) => {
                             self.stack.push(Visit::Command(
                                 body,
                                 depth.under(ProducerArity::ONE, ConsumerArity::ONE),
                             ));
                         },
-                        | gandr_core_term::control::StackFrame::Project(_) => {},
+                        gandr_core_term::control::StackFrame::Project(_) => {},
                     }
                 }
             },
-            | ProducerNode::Primitive { arguments, .. } => {
+            ProducerNode::Primitive { arguments, .. } => {
                 for argument in arguments.iter().rev() {
                     self.stack.push(Visit::Producer(*argument, depth));
                 }
             },
-            | ProducerNode::Variable { zone, index } => {
+            ProducerNode::Variable { zone, index } => {
                 let past = match zone {
-                    | Zone::Intuitionistic => u32::from(index).checked_sub(depth.producers),
-                    | Zone::Linear => Some(u32::from(index)),
+                    Zone::Intuitionistic => u32::from(index).checked_sub(depth.producers),
+                    Zone::Linear => Some(u32::from(index)),
                 };
                 if let Some(past) = past {
                     self.free
@@ -590,8 +590,8 @@ impl Walk<'_>
                         .insert((zone, DeBruijnIndex::from(past)));
                 }
             },
-            | ProducerNode::Constant(_) | ProducerNode::Literal(_) => {},
-            | ProducerNode::Constructor {
+            ProducerNode::Constant(_) | ProducerNode::Literal(_) => {},
+            ProducerNode::Constructor {
                 ref tag,
                 ref producers,
                 ref consumers,
@@ -606,19 +606,19 @@ impl Walk<'_>
                     depth,
                 )?;
             },
-            | ProducerNode::Thunk { body } | ProducerNode::Mu { body } => {
+            ProducerNode::Thunk { body } | ProducerNode::Mu { body } => {
                 self.stack.push(Visit::Command(
                     body,
                     depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
                 ));
             },
-            | ProducerNode::Fixpoint { body, .. } => {
+            ProducerNode::Fixpoint { body, .. } => {
                 self.stack.push(Visit::Command(
                     body,
                     depth.under(ProducerArity::ONE, ConsumerArity::ONE),
                 ));
             },
-            | ProducerNode::Cocase { ref arms } => {
+            ProducerNode::Cocase { ref arms } => {
                 let mut seen = BTreeSet::new();
                 for arm in arms {
                     if !seen.insert(arm.destructor) {
@@ -681,13 +681,13 @@ impl Walk<'_>
             .consumer(id)
             .ok_or(CheckRefusal::DanglingConsumer(id))?;
         match *node {
-            | ConsumerNode::Covariable(index) => {
+            ConsumerNode::Covariable(index) => {
                 if let Some(past) = u32::from(index).checked_sub(depth.covariables) {
                     self.free.covariables.insert(CovariableIndex::from(past));
                 }
             },
-            | ConsumerNode::Top => {},
-            | ConsumerNode::ListFold {
+            ConsumerNode::Top => {},
+            ConsumerNode::ListFold {
                 on_nil,
                 on_cons,
                 continuation,
@@ -703,13 +703,13 @@ impl Walk<'_>
                     depth.under(ProducerArity::TWO, ConsumerArity::ONE),
                 ));
             },
-            | ConsumerNode::MuTilde { body } => {
+            ConsumerNode::MuTilde { body } => {
                 self.stack.push(Visit::Command(
                     body,
                     depth.under(ProducerArity::ONE, ConsumerArity::ZERO),
                 ));
             },
-            | ConsumerNode::Destructor {
+            ConsumerNode::Destructor {
                 tag,
                 ref producers,
                 ref consumers,
@@ -724,7 +724,7 @@ impl Walk<'_>
                     depth,
                 )?;
             },
-            | ConsumerNode::Case { ref arms } => {
+            ConsumerNode::Case { ref arms } => {
                 let mut seen: Vec<&ConstructorTag> = Vec::new();
                 for arm in arms {
                     if seen.contains(&&arm.constructor) {
@@ -740,7 +740,7 @@ impl Walk<'_>
                     self.stack.push(Visit::Command(arm.body, under));
                 }
             },
-            | ConsumerNode::DataCase { ref branches, then } => {
+            ConsumerNode::DataCase { ref branches, then } => {
                 for &branch in branches {
                     let node = self
                         .arena
@@ -755,7 +755,7 @@ impl Walk<'_>
                     self.stack.push(Visit::Producer(branch, depth));
                 }
             },
-            | ConsumerNode::Select { then, .. } => {
+            ConsumerNode::Select { then, .. } => {
                 self.stack.push(Visit::Consumer(then, depth));
             },
         }
@@ -862,16 +862,14 @@ impl Walk<'_>
 fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
 {
     match *node {
-        | ProducerNode::Reify(_)
+        ProducerNode::Reify(_)
         | ProducerNode::Primitive { .. }
         | ProducerNode::Literal(_)
         | ProducerNode::Constructor { .. }
         | ProducerNode::Thunk { .. }
         | ProducerNode::Fixpoint { .. } => Some(Polarity::Positive),
-        | ProducerNode::Cocase { .. } => Some(Polarity::Negative),
-        | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Mu { .. } => {
-            None
-        },
+        ProducerNode::Cocase { .. } => Some(Polarity::Negative),
+        ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Mu { .. } => None,
     }
 }
 
@@ -894,12 +892,12 @@ fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
 fn consumer_polarity(node: &ConsumerNode) -> Option<Polarity>
 {
     match *node {
-        | ConsumerNode::ListFold { .. }
+        ConsumerNode::ListFold { .. }
         | ConsumerNode::Case { .. }
         | ConsumerNode::DataCase { .. }
         | ConsumerNode::Select { .. } => Some(Polarity::Positive),
-        | ConsumerNode::Destructor { tag, .. } => Some(tag.polarity()),
-        | ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::Top => None,
+        ConsumerNode::Destructor { tag, .. } => Some(tag.polarity()),
+        ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::Top => None,
     }
 }
 

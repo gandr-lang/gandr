@@ -271,7 +271,7 @@ impl<A: CellAlphabet> PathwayOutcome<A>
     pub fn pathways(&self) -> &[Pathway<A>]
     {
         match *self {
-            | Self::Complete { ref pathways } | Self::Declined { ref pathways, .. } => pathways,
+            Self::Complete { ref pathways } | Self::Declined { ref pathways, .. } => pathways,
         }
     }
 }
@@ -377,9 +377,9 @@ where
                 }
                 built = built.saturating_add(1);
                 let composite = match compose_directed(transition, &pathway.certificate, store) {
-                    | Ok(composite) => composite,
-                    | Err(CompositionObstruction::Cycle { .. }) => continue,
-                    | Err(error) => return Err(PathwayObstruction::Composition(error)),
+                    Ok(composite) => composite,
+                    Err(CompositionObstruction::Cycle { .. }) => continue,
+                    Err(error) => return Err(PathwayObstruction::Composition(error)),
                 };
                 let certified = certify_candidate(
                     store,
@@ -462,13 +462,13 @@ where
     A: CellAlphabet,
 {
     match *obstruction {
-        | NormalFormObstruction::StepDoesNotFire { .. }
+        NormalFormObstruction::StepDoesNotFire { .. }
         | NormalFormObstruction::PathMissesTheJoin { .. }
         | NormalFormObstruction::ContentAddressCollision { .. }
         | NormalFormObstruction::CanonicalKeyCollision { .. } => {
             ObstructionSeverity::RefusesCandidate
         },
-        | NormalFormObstruction::ShiftedScheduleDoesNotFire { .. }
+        NormalFormObstruction::ShiftedScheduleDoesNotFire { .. }
         | NormalFormObstruction::ShiftedScheduleMissesTheJoin { .. }
         | NormalFormObstruction::UnknownCell { .. }
         | NormalFormObstruction::InvalidReplayLevel { .. } => ObstructionSeverity::StopsTheQuery,
@@ -542,13 +542,13 @@ where
     A: CellAlphabet,
 {
     let witness = match normalize_certified(store, peak, joins_at, path) {
-        | Ok(witness) => witness,
-        | Err(obstruction) => {
+        Ok(witness) => witness,
+        Err(obstruction) => {
             return match obstruction_severity(&obstruction) {
-                | ObstructionSeverity::RefusesCandidate => {
+                ObstructionSeverity::RefusesCandidate => {
                     Ok(Maybe::Absent(CandidateRefusal::Refused { obstruction }))
                 },
-                | ObstructionSeverity::StopsTheQuery => Err(obstruction),
+                ObstructionSeverity::StopsTheQuery => Err(obstruction),
             };
         },
     };
@@ -608,8 +608,8 @@ mod tests
         Reason: core::fmt::Debug,
     {
         match value {
-            | Maybe::Present(value) => value,
-            | Maybe::Absent(reason) => panic!("fixture absent: {reason:?}"),
+            Maybe::Present(value) => value,
+            Maybe::Absent(reason) => panic!("fixture absent: {reason:?}"),
         }
     }
 
@@ -670,8 +670,8 @@ mod tests
                     at: step.1.clone(),
                 };
                 let address = match store.get(step.0) {
-                    | Maybe::Present(resolved) => prim_address(resolved, &step.1),
-                    | Maybe::Absent(_) => prim_address(&add_s(), &step.1),
+                    Maybe::Present(resolved) => prim_address(resolved, &step.1),
+                    Maybe::Absent(_) => prim_address(&add_s(), &step.1),
                 };
                 DerivationEvent::new(application, address)
             })

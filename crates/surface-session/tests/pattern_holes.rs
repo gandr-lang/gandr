@@ -128,9 +128,9 @@ impl Color
     fn tag(self) -> ConstructorTag
     {
         ConstructorTag::from(match self {
-            | Self::Red => 0_usize,
-            | Self::Green => 1_usize,
-            | Self::Blue => 2_usize,
+            Self::Red => 0_usize,
+            Self::Green => 1_usize,
+            Self::Blue => 2_usize,
         })
     }
 }

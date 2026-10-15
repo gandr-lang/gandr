@@ -101,8 +101,8 @@ fn children(
     scan(body)
         .into_iter()
         .filter_map(|record| match record {
-            | Scanned::Child(pointer) => Some(pointer),
-            | Scanned::Open | Scanned::Other => None,
+            Scanned::Child(pointer) => Some(pointer),
+            Scanned::Open | Scanned::Other => None,
         })
         .collect()
 }

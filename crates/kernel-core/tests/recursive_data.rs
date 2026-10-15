@@ -228,25 +228,25 @@ mod recursive_data
         let own = arena.value_type_data(position, vec![parameter]);
         let mut parameters = vec![universe];
         let field = match fixture {
-            | Fixture::Negative => {
+            Fixture::Negative => {
                 let returner = arena.comp_type_returner(unit);
                 let function = arena.comp_type_arrow(own, returner);
                 arena.value_type_thunk(function)
             },
-            | Fixture::Nested => arena.value_type_product(&[own, unit]),
-            | Fixture::Returner => {
+            Fixture::Nested => arena.value_type_product(&[own, unit]),
+            Fixture::Returner => {
                 let returner = arena.comp_type_returner(own);
                 arena.value_type_thunk(returner)
             },
-            | Fixture::NonUniform => {
+            Fixture::NonUniform => {
                 let code = arena.value_quote(unit);
                 arena.value_type_data(position, vec![code])
             },
-            | Fixture::Later => {
+            Fixture::Later => {
                 let later = before.checked_add(1).expect("a later position");
                 arena.value_type_data(ConstantIndex::from(later), vec![])
             },
-            | Fixture::Parameter => {
+            Fixture::Parameter => {
                 parameters.push(own);
                 unit
             },
@@ -316,7 +316,7 @@ mod recursive_data
         // Under the fixpoint's body: `rec` is 0. Under its λ: `x` 0, `rec`
         // 1. Under the `succ` branch's field: `p` 0, `x` 1, `rec` 2.
         let body = match claim {
-            | Claim::Descends => {
+            Claim::Descends => {
                 let recursive = arena.value_variable(DeBruijnIndex::from(2));
                 let field = arena.value_variable(DeBruijnIndex::from(0));
                 let forced = arena.computation_force(recursive);
@@ -324,25 +324,25 @@ mod recursive_data
                 let on_successor = arena.computation_lambda(call);
                 case_on_argument(arena, returner, returned, on_successor)
             },
-            | Claim::NotCase => {
+            Claim::NotCase => {
                 let recursive = arena.value_variable(DeBruijnIndex::from(1));
                 let argument = arena.value_variable(DeBruijnIndex::from(0));
                 let forced = arena.computation_force(recursive);
                 let call = arena.computation_application(forced, argument);
                 arena.computation_lambda(call)
             },
-            | Claim::Bare => {
+            Claim::Bare => {
                 let recursive = arena.value_variable(DeBruijnIndex::from(0));
                 arena.computation_force(recursive)
             },
-            | Claim::MissingField => case_on_argument(arena, returner, returned, returned),
-            | Claim::Unguarded => {
+            Claim::MissingField => case_on_argument(arena, returner, returned, returned),
+            Claim::Unguarded => {
                 let recursive = arena.value_variable(DeBruijnIndex::from(2));
                 let forced = arena.computation_force(recursive);
                 let on_successor = arena.computation_lambda(forced);
                 case_on_argument(arena, returner, returned, on_successor)
             },
-            | Claim::AtScrutinee => {
+            Claim::AtScrutinee => {
                 let recursive = arena.value_variable(DeBruijnIndex::from(2));
                 let scrutinee = arena.value_variable(DeBruijnIndex::from(1));
                 let forced = arena.computation_force(recursive);
@@ -418,8 +418,8 @@ mod recursive_data
         let nat_type = arena.value_type_data(nat, vec![]);
         let returner = arena.comp_type_returner(nat_type);
         let motive = match motive {
-            | Motive::Returner => returner,
-            | Motive::Function => arena.comp_type_arrow(nat_type, returner),
+            Motive::Returner => returner,
+            Motive::Function => arena.comp_type_arrow(nat_type, returner),
         };
         let hypothesis = arena.value_type_thunk(motive);
         let after_field = arena.comp_type_arrow(hypothesis, motive);

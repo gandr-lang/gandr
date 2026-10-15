@@ -210,12 +210,12 @@ impl<H> Tree<H>
     {
         let mut children = children;
         let mut below = match children.pop() {
-            | Some(last) => {
+            Some(last) => {
                 let mut below = last.below;
                 below.push(last.root);
                 below
             },
-            | None => Vec::new(),
+            None => Vec::new(),
         };
         for child in children.into_iter().rev() {
             below.extend(child.below);
@@ -440,12 +440,12 @@ where
             let arity = usize::from(entry.head.arity());
             if arity == 0 {
                 match image(&entry.head) {
-                    | Maybe::Present(replacement) => {
+                    Maybe::Present(replacement) => {
                         below.extend(replacement.below.iter().cloned());
                         below.push(replacement.root.clone());
                         completed.push(replacement.size());
                     },
-                    | Maybe::Absent(_) => {
+                    Maybe::Absent(_) => {
                         below.push(entry.clone());
                         completed.push(Extent::ONE);
                     },
@@ -464,8 +464,8 @@ where
         }
         if usize::from(self.root.head.arity()) == 0 {
             return match image(&self.root.head) {
-                | Maybe::Present(replacement) => replacement.to_tree(),
-                | Maybe::Absent(_) => self.to_tree(),
+                Maybe::Present(replacement) => replacement.to_tree(),
+                Maybe::Absent(_) => self.to_tree(),
             };
         }
         let extent = Extent(below.len()).saturating_add(Extent::ONE);

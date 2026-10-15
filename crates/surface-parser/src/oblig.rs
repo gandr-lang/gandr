@@ -252,14 +252,14 @@ impl Oblig
     pub const fn index(self) -> ObligClassIndex
     {
         ObligClassIndex(match self {
-            | Self::MissingMeld => 0,
-            | Self::MissingTile => 1,
-            | Self::IncompleteTile => 2,
-            | Self::UnmoldedTok => 3,
-            | Self::InconMeld => 4,
-            | Self::ExtraMeld => 5,
-            | Self::ReservedKeyword => 6,
-            | Self::AmbiguousPrec => 7,
+            Self::MissingMeld => 0,
+            Self::MissingTile => 1,
+            Self::IncompleteTile => 2,
+            Self::UnmoldedTok => 3,
+            Self::InconMeld => 4,
+            Self::ExtraMeld => 5,
+            Self::ReservedKeyword => 6,
+            Self::AmbiguousPrec => 7,
         })
     }
 

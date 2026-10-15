@@ -211,10 +211,8 @@ fn commutation(
     let forward = fire(store, peak, left).and_then(|term| fire(store, &term, right));
     let backward = fire(store, peak, right).and_then(|term| fire(store, &term, left));
     match (forward, backward) {
-        | (Maybe::Present(first), Maybe::Present(second)) if first == second => {
-            Commutation::Commutes
-        },
-        | _ => Commutation::Diverges,
+        (Maybe::Present(first), Maybe::Present(second)) if first == second => Commutation::Commutes,
+        _ => Commutation::Diverges,
     }
 }
 
@@ -297,10 +295,10 @@ fn licensed_by(
     let guard = derive_shift_equivalence(store, peak, left, right).is_ok();
     let footprint = polarized(store, peak, left, right) == FootprintIndependence::Independent;
     match (guard, footprint) {
-        | (true, true) => LicensedBy::Both,
-        | (false, true) => LicensedBy::FootprintOnly,
-        | (true, false) => LicensedBy::GuardOnly,
-        | (false, false) => LicensedBy::Neither,
+        (true, true) => LicensedBy::Both,
+        (false, true) => LicensedBy::FootprintOnly,
+        (true, false) => LicensedBy::GuardOnly,
+        (false, false) => LicensedBy::Neither,
     }
 }
 
@@ -988,7 +986,7 @@ fn every_row_of_the_differential_table_rules_as_recorded()
             "each row commutes as recorded"
         );
         match licensed {
-            | LicensedBy::Both => {
+            LicensedBy::Both => {
                 assert_eq!(
                     Commutation::Commutes,
                     commutes,
@@ -996,7 +994,7 @@ fn every_row_of_the_differential_table_rules_as_recorded()
                 );
                 both = both.saturating_add(1);
             },
-            | LicensedBy::FootprintOnly => {
+            LicensedBy::FootprintOnly => {
                 assert_eq!(
                     Commutation::Commutes,
                     commutes,
@@ -1004,8 +1002,8 @@ fn every_row_of_the_differential_table_rules_as_recorded()
                 );
                 footprint_only = footprint_only.saturating_add(1);
             },
-            | LicensedBy::GuardOnly => panic!("the containment claim says this cell is empty"),
-            | LicensedBy::Neither => {
+            LicensedBy::GuardOnly => panic!("the containment claim says this cell is empty"),
+            LicensedBy::Neither => {
                 neither = neither.saturating_add(1);
             },
         }

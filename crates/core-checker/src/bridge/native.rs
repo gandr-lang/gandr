@@ -44,16 +44,16 @@ impl Erasure<'_, '_>
     ) -> Result<Step, Refusal>
     {
         match root {
-            | CoreNode::Term(TermNode::Value(at)) => {
+            CoreNode::Term(TermNode::Value(at)) => {
                 self.memo().values.insert(at, Image::Open);
             },
-            | CoreNode::Term(TermNode::Computation(at)) => {
+            CoreNode::Term(TermNode::Computation(at)) => {
                 self.memo().computations.insert(at, Image::Open);
             },
-            | CoreNode::Type(TypeNode::Value(at)) => {
+            CoreNode::Type(TypeNode::Value(at)) => {
                 self.memo().value_types.insert(at, Image::Open);
             },
-            | CoreNode::Type(TypeNode::Computation(_)) => return Err(Refusal::MachineInvariant),
+            CoreNode::Type(TypeNode::Computation(_)) => return Err(Refusal::MachineInvariant),
         }
         self.frames.push(Frame::NativeBuild(root));
         let value = |at| Frame::NativeNext(CoreNode::Term(TermNode::Value(at)));
@@ -61,9 +61,9 @@ impl Erasure<'_, '_>
         let computation = |at| Frame::NativeNext(CoreNode::Term(TermNode::Computation(at)));
         let dangling = Refusal::DanglingNode { node: root };
         match root {
-            | CoreNode::Term(TermNode::Value(at)) => {
+            CoreNode::Term(TermNode::Value(at)) => {
                 match *(self.arena.value(at).ok_or(dangling)?) {
-                    | Value::Constructor {
+                    Value::Constructor {
                         ref datatype,
                         ref fields,
                         ..
@@ -71,18 +71,50 @@ impl Erasure<'_, '_>
                         self.frames.extend(fields.iter().rev().copied().map(value));
                         self.frames.push(value_type(*datatype));
                     },
-                    | Value::Record(ref fields) => self
+                    Value::Record(ref fields) => self
                         .frames
                         .extend(fields.values().rev().copied().map(value)),
-                    | Value::Tuple(ref components) => self
+                    Value::Tuple(ref components) => self
                         .frames
                         .extend(components.iter().rev().copied().map(value)),
-                    | _ => return Err(Refusal::MachineInvariant),
+                    Value::Primitive { .. }
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
+                    | Value::Here(_)
+                    | Value::Funext(..)
+                    | Value::Equiv(..)
+                    | Value::Ua { .. }
+                    | Value::SessionRelated { .. }
+                    | Value::Stay(_)
+                    | Value::Then(..)
+                    | Value::FlowProduct(..)
+                    | Value::Forward(_)
+                    | Value::FunctionFlow(..)
+                    | Value::Recorded(_)
+                    | Value::Returned(_)
+                    | Value::Nested(_)
+                    | Value::Run(_)
+                    | Value::Variable { .. }
+                    | Value::Constant(_)
+                    | Value::Literal(_)
+                    | Value::Injection(..)
+                    | Value::ListNil
+                    | Value::ListCons(..)
+                    | Value::Thunk(_)
+                    | Value::Lift { .. }
+                    | Value::Quote(_)
+                    | Value::QuoteComputation(_)
+                    | Value::StaticLambda(_)
+                    | Value::StaticApplication(..)
+                    | Value::Hole(_)
+                    | Value::Mark { .. }
+                    | Value::Reify(_) => return Err(Refusal::MachineInvariant),
                 }
             },
-            | CoreNode::Term(TermNode::Computation(at)) => {
+            CoreNode::Term(TermNode::Computation(at)) => {
                 match *(self.arena.computation(at).ok_or(dangling)?) {
-                    | Computation::DataCase {
+                    Computation::DataCase {
                         ref scrutinee,
                         ref motive,
                         ref branches,
@@ -95,11 +127,11 @@ impl Erasure<'_, '_>
                             ))));
                         self.frames.push(value(*scrutinee));
                     },
-                    | Computation::RecordProjection(ref record, _)
+                    Computation::RecordProjection(ref record, _)
                     | Computation::TupleProjection(ref record, _) => {
                         self.frames.push(value(*record));
                     },
-                    | Computation::Case {
+                    Computation::Case {
                         ref scrutinee,
                         ref branches,
                     } => {
@@ -107,32 +139,71 @@ impl Erasure<'_, '_>
                             .extend(branches.iter().rev().copied().map(computation));
                         self.frames.push(value(*scrutinee));
                     },
-                    | _ => return Err(Refusal::MachineInvariant),
+                    Computation::Primitive { .. }
+                    | Computation::Transport(..)
+                    | Computation::PathTransport { .. }
+                    | Computation::Ride { .. }
+                    | Computation::TelescopeTransport { .. }
+                    | Computation::Lambda(_)
+                    | Computation::Fixpoint { .. }
+                    | Computation::Application(..)
+                    | Computation::Return(_)
+                    | Computation::Bind(..)
+                    | Computation::Force(_)
+                    | Computation::Split { .. }
+                    | Computation::Hole(_)
+                    | Computation::Mark { .. }
+                    | Computation::ListFold { .. }
+                    | Computation::Perform { .. }
+                    | Computation::Handle { .. }
+                    | Computation::Exercise { .. }
+                    | Computation::Scope { .. }
+                    | Computation::Resume(..)
+                    | Computation::Reset(_)
+                    | Computation::Shift(_)
+                    | Computation::With(..)
+                    | Computation::Project(..)
+                    | Computation::Session(_) => return Err(Refusal::MachineInvariant),
                 }
             },
-            | CoreNode::Type(TypeNode::Value(at)) => {
+            CoreNode::Type(TypeNode::Value(at)) => {
                 match *(self.arena.value_type(at).ok_or(dangling)?) {
-                    | ValueType::Data { ref arguments, .. } => self
+                    ValueType::Data { ref arguments, .. } => self
                         .frames
                         .extend(arguments.iter().rev().copied().map(value)),
-                    | ValueType::Record(ref fields) => self
+                    ValueType::Record(ref fields) => self
                         .frames
                         .extend(fields.values().rev().copied().map(value_type)),
-                    | ValueType::Product(ref components) | ValueType::Sum(ref components) => self
+                    ValueType::Product(ref components) | ValueType::Sum(ref components) => self
                         .frames
                         .extend(components.iter().rev().copied().map(value_type)),
-                    | ValueType::Session(ref session) => self
+                    ValueType::Session(ref session) => self
                         .frames
                         .extend(session.payloads().iter().rev().copied().map(value_type)),
-                    | _ => return Err(Refusal::MachineInvariant),
+                    ValueType::PathUniverse(..)
+                    | ValueType::Path { .. }
+                    | ValueType::Flow { .. }
+                    | ValueType::Run(_)
+                    | ValueType::Base(_)
+                    | ValueType::Sigma { .. }
+                    | ValueType::List(_)
+                    | ValueType::Thunk(_)
+                    | ValueType::Universe { .. }
+                    | ValueType::Lift { .. }
+                    | ValueType::Element { .. }
+                    | ValueType::Abstract(_)
+                    | ValueType::StaticPi { .. }
+                    | ValueType::Unknown
+                    | ValueType::Stack { .. }
+                    | ValueType::Capability { .. } => return Err(Refusal::MachineInvariant),
                 }
             },
-            | CoreNode::Type(TypeNode::Computation(_)) => return Err(Refusal::MachineInvariant),
+            CoreNode::Type(TypeNode::Computation(_)) => return Err(Refusal::MachineInvariant),
         }
         match self.frames.pop() {
-            | Some(Frame::NativeNext(child)) => Ok(Step::Descend(child)),
-            | Some(Frame::NativeBuild(node)) => self.finish_native(target, node),
-            | _ => Err(Refusal::MachineInvariant),
+            Some(Frame::NativeNext(child)) => Ok(Step::Descend(child)),
+            Some(Frame::NativeBuild(node)) => self.finish_native(target, node),
+            _ => Err(Refusal::MachineInvariant),
         }
     }
 
@@ -166,26 +237,26 @@ impl Erasure<'_, '_>
     {
         let memo = self.reached();
         let value = |at| match memo.values.get(&at) {
-            | Some(&Image::Erased(image)) => Ok(image),
-            | _ => Err(Refusal::MachineInvariant),
+            Some(&Image::Erased(image)) => Ok(image),
+            _ => Err(Refusal::MachineInvariant),
         };
         let value_type = |at| match memo.value_types.get(&at) {
-            | Some(&Image::Erased(image)) => Ok(image),
-            | _ => Err(Refusal::MachineInvariant),
+            Some(&Image::Erased(image)) => Ok(image),
+            _ => Err(Refusal::MachineInvariant),
         };
         let computation = |at| match memo.computations.get(&at) {
-            | Some(&Image::Erased(image)) => Ok(image),
-            | _ => Err(Refusal::MachineInvariant),
+            Some(&Image::Erased(image)) => Ok(image),
+            _ => Err(Refusal::MachineInvariant),
         };
         let comp_type = |at| match memo.comp_types.get(&at) {
-            | Some(&Image::Erased(image)) => Ok(image),
-            | _ => Err(Refusal::MachineInvariant),
+            Some(&Image::Erased(image)) => Ok(image),
+            _ => Err(Refusal::MachineInvariant),
         };
         let dangling = Refusal::DanglingNode { node: root };
         match root {
-            | CoreNode::Term(TermNode::Value(at)) => {
+            CoreNode::Term(TermNode::Value(at)) => {
                 let image = match *(self.arena.value(at).ok_or(dangling)?) {
-                    | Value::Constructor {
+                    Value::Constructor {
                         ref datatype,
                         ref tag,
                         ref fields,
@@ -198,14 +269,14 @@ impl Erasure<'_, '_>
                             .collect::<Result<_, _>>()?;
                         target.value_constructor(datatype, *tag, fields)
                     },
-                    | Value::Record(ref fields) => {
+                    Value::Record(ref fields) => {
                         let fields = fields
                             .iter()
                             .map(|(label, &field)| value(field).map(|image| (label.clone(), image)))
                             .collect::<Result<_, _>>()?;
                         target.value_record(fields)
                     },
-                    | Value::Tuple(ref components) => {
+                    Value::Tuple(ref components) => {
                         let components = components.iter().copied().map(value).collect::<Result<
                             alloc::vec::Vec<_>,
                             _,
@@ -213,13 +284,45 @@ impl Erasure<'_, '_>
                         )?;
                         target.value_tuple(&components)
                     },
-                    | _ => return Err(Refusal::MachineInvariant),
+                    Value::Primitive { .. }
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
+                    | Value::Here(_)
+                    | Value::Funext(..)
+                    | Value::Equiv(..)
+                    | Value::Ua { .. }
+                    | Value::SessionRelated { .. }
+                    | Value::Stay(_)
+                    | Value::Then(..)
+                    | Value::FlowProduct(..)
+                    | Value::Forward(_)
+                    | Value::FunctionFlow(..)
+                    | Value::Recorded(_)
+                    | Value::Returned(_)
+                    | Value::Nested(_)
+                    | Value::Run(_)
+                    | Value::Variable { .. }
+                    | Value::Constant(_)
+                    | Value::Literal(_)
+                    | Value::Injection(..)
+                    | Value::ListNil
+                    | Value::ListCons(..)
+                    | Value::Thunk(_)
+                    | Value::Lift { .. }
+                    | Value::Quote(_)
+                    | Value::QuoteComputation(_)
+                    | Value::StaticLambda(_)
+                    | Value::StaticApplication(..)
+                    | Value::Hole(_)
+                    | Value::Mark { .. }
+                    | Value::Reify(_) => return Err(Refusal::MachineInvariant),
                 };
                 Ok(self.erased_value(at, image))
             },
-            | CoreNode::Term(TermNode::Computation(at)) => {
+            CoreNode::Term(TermNode::Computation(at)) => {
                 let image = match *(self.arena.computation(at).ok_or(dangling)?) {
-                    | Computation::DataCase {
+                    Computation::DataCase {
                         ref scrutinee,
                         ref motive,
                         ref branches,
@@ -233,13 +336,13 @@ impl Erasure<'_, '_>
                             .collect::<Result<_, _>>()?;
                         target.computation_data_case(scrutinee, motive, branches)
                     },
-                    | Computation::RecordProjection(ref record, ref label) => {
+                    Computation::RecordProjection(ref record, ref label) => {
                         target.computation_record_projection(value(*record)?, label.clone())
                     },
-                    | Computation::TupleProjection(ref tuple, component) => {
+                    Computation::TupleProjection(ref tuple, component) => {
                         target.computation_tuple_projection(value(*tuple)?, component)
                     },
-                    | Computation::Case {
+                    Computation::Case {
                         ref scrutinee,
                         ref branches,
                     } => {
@@ -251,21 +354,45 @@ impl Erasure<'_, '_>
                         )?;
                         target.computation_case(scrutinee, &branches)
                     },
-                    | _ => return Err(Refusal::MachineInvariant),
+                    Computation::Primitive { .. }
+                    | Computation::Transport(..)
+                    | Computation::PathTransport { .. }
+                    | Computation::Ride { .. }
+                    | Computation::TelescopeTransport { .. }
+                    | Computation::Lambda(_)
+                    | Computation::Fixpoint { .. }
+                    | Computation::Application(..)
+                    | Computation::Return(_)
+                    | Computation::Bind(..)
+                    | Computation::Force(_)
+                    | Computation::Split { .. }
+                    | Computation::Hole(_)
+                    | Computation::Mark { .. }
+                    | Computation::ListFold { .. }
+                    | Computation::Perform { .. }
+                    | Computation::Handle { .. }
+                    | Computation::Exercise { .. }
+                    | Computation::Scope { .. }
+                    | Computation::Resume(..)
+                    | Computation::Reset(_)
+                    | Computation::Shift(_)
+                    | Computation::With(..)
+                    | Computation::Project(..)
+                    | Computation::Session(_) => return Err(Refusal::MachineInvariant),
                 };
                 Ok(self.erased_computation(at, image))
             },
-            | CoreNode::Type(TypeNode::Value(at)) => {
+            CoreNode::Type(TypeNode::Value(at)) => {
                 let image = match *(self.arena.value_type(at).ok_or(dangling)?) {
-                    | ValueType::Data {
+                    ValueType::Data {
                         ref declaration,
                         ref arguments,
                     } => {
                         let crossing = match self.block {
-                            | Block::Open { source, kernel } if source == *declaration => {
+                            Block::Open { source, kernel } if source == *declaration => {
                                 Some(kernel)
                             },
-                            | Block::Open { .. } | Block::Closed => {
+                            Block::Open { .. } | Block::Closed => {
                                 self.positions.admitted.get(declaration).copied()
                             },
                         };
@@ -280,7 +407,7 @@ impl Erasure<'_, '_>
                             .collect::<Result<_, _>>()?;
                         target.value_type_data(position, arguments)
                     },
-                    | ValueType::Record(ref fields) => {
+                    ValueType::Record(ref fields) => {
                         let fields = fields
                             .iter()
                             .map(|(label, &field)| {
@@ -289,7 +416,7 @@ impl Erasure<'_, '_>
                             .collect::<Result<_, _>>()?;
                         target.value_type_record(fields)
                     },
-                    | ValueType::Product(ref components) => {
+                    ValueType::Product(ref components) => {
                         let components = components
                             .iter()
                             .copied()
@@ -297,7 +424,7 @@ impl Erasure<'_, '_>
                             .collect::<Result<alloc::vec::Vec<_>, _>>()?;
                         target.value_type_product(&components)
                     },
-                    | ValueType::Sum(ref summands) => {
+                    ValueType::Sum(ref summands) => {
                         let summands = summands.iter().copied().map(value_type).collect::<Result<
                             alloc::vec::Vec<_>,
                             _,
@@ -305,7 +432,7 @@ impl Erasure<'_, '_>
                         )?;
                         target.value_type_sum(&summands)
                     },
-                    | ValueType::Session(ref session) => {
+                    ValueType::Session(ref session) => {
                         let payloads = session
                             .payloads()
                             .iter()
@@ -315,11 +442,26 @@ impl Erasure<'_, '_>
                         let payloads = target.value_type_product(&payloads);
                         target.value_type_session(alloc::sync::Arc::new(graph(session)), payloads)
                     },
-                    | _ => return Err(Refusal::MachineInvariant),
+                    ValueType::PathUniverse(..)
+                    | ValueType::Path { .. }
+                    | ValueType::Flow { .. }
+                    | ValueType::Run(_)
+                    | ValueType::Base(_)
+                    | ValueType::Sigma { .. }
+                    | ValueType::List(_)
+                    | ValueType::Thunk(_)
+                    | ValueType::Universe { .. }
+                    | ValueType::Lift { .. }
+                    | ValueType::Element { .. }
+                    | ValueType::Abstract(_)
+                    | ValueType::StaticPi { .. }
+                    | ValueType::Unknown
+                    | ValueType::Stack { .. }
+                    | ValueType::Capability { .. } => return Err(Refusal::MachineInvariant),
                 };
                 Ok(self.erased_value_type(at, image))
             },
-            | CoreNode::Type(TypeNode::Computation(_)) => Err(Refusal::MachineInvariant),
+            CoreNode::Type(TypeNode::Computation(_)) => Err(Refusal::MachineInvariant),
         }
     }
 }
@@ -369,17 +511,17 @@ fn graph(session: &gandr_core_term::session::SessionType) -> gandr_kernel_term::
         .nodes()
         .iter()
         .map(|node| match *node {
-            | ProtocolNode::Send { payload, next } => {
+            ProtocolNode::Send { payload, next } => {
                 Node::Send(PayloadSlot(usize::from(payload)), state(next))
             },
-            | ProtocolNode::Receive { payload, next } => {
+            ProtocolNode::Receive { payload, next } => {
                 Node::Receive(PayloadSlot(usize::from(payload)), state(next))
             },
-            | ProtocolNode::Select(ref branches) => Node::Select(labels(branches)),
-            | ProtocolNode::Offer(ref branches) => Node::Offer(labels(branches)),
-            | ProtocolNode::End => Node::End,
-            | ProtocolNode::Mu(body) => Node::Mu(state(body)),
-            | ProtocolNode::Recur(binder) => Node::Var(state(binder)),
+            ProtocolNode::Select(ref branches) => Node::Select(labels(branches)),
+            ProtocolNode::Offer(ref branches) => Node::Offer(labels(branches)),
+            ProtocolNode::End => Node::End,
+            ProtocolNode::Mu(body) => Node::Mu(state(body)),
+            ProtocolNode::Recur(binder) => Node::Var(state(binder)),
         })
         .collect();
     gandr_kernel_term::session::Graph {

@@ -181,8 +181,8 @@ pub fn elaborate(
         .iter()
         .map(|(&at, &decided)| {
             (at, match decided {
-                | Nesting::Suspended => gandr_core_term::Nesting::Thunk,
-                | Nesting::Ran(_) => gandr_core_term::Nesting::Run,
+                Nesting::Suspended => gandr_core_term::Nesting::Thunk,
+                Nesting::Ran(_) => gandr_core_term::Nesting::Run,
             })
         })
         .collect();

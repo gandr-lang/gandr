@@ -495,10 +495,10 @@ impl core::fmt::Display for OrderError
     ) -> core::fmt::Result
     {
         let message = match *self {
-            | Self::UnknownPosition => "order-maintenance operation on an unknown or stale handle",
-            | Self::StructureIdExhausted => "order-maintenance structure identifiers are exhausted",
-            | Self::CapacityExhausted => "order-maintenance structure is at capacity",
-            | Self::Inconsistent => "order-maintenance arena is internally inconsistent",
+            Self::UnknownPosition => "order-maintenance operation on an unknown or stale handle",
+            Self::StructureIdExhausted => "order-maintenance structure identifiers are exhausted",
+            Self::CapacityExhausted => "order-maintenance structure is at capacity",
+            Self::Inconsistent => "order-maintenance arena is internally inconsistent",
         };
         f.write_str(message)
     }
@@ -1262,12 +1262,12 @@ impl<T> OrderMaintenance<T>
         let len = self.len.decremented().ok_or(OrderError::Inconsistent)?;
         // Unlink from the neighbours and the head/tail before freeing the slot.
         match prev_index {
-            | Some(prev) => self.set_next(prev, next_index)?,
-            | None => self.head = next_index,
+            Some(prev) => self.set_next(prev, next_index)?,
+            None => self.head = next_index,
         }
         match next_index {
-            | Some(next) => self.set_prev(next, prev_index)?,
-            | None => self.tail = prev_index,
+            Some(next) => self.set_prev(next, prev_index)?,
+            None => self.tail = prev_index,
         }
         let slot_position =
             usize::try_from(pos.index).map_err(|_ignored| OrderError::Inconsistent)?;
@@ -1279,11 +1279,11 @@ impl<T> OrderMaintenance<T>
         // so a handle carrying the final generation can never be re-minted.
         let successor = generation.successor();
         let replacement = match successor {
-            | Some(free_generation) => Slot::Free(Free {
+            Some(free_generation) => Slot::Free(Free {
                 generation: free_generation,
                 next_free: self.free_head,
             }),
-            | None => Slot::Retired,
+            None => Slot::Retired,
         };
         let freed = core::mem::replace(slot, replacement);
         if successor.is_some() {
@@ -1291,8 +1291,8 @@ impl<T> OrderMaintenance<T>
         }
         self.len = len;
         match freed {
-            | Slot::Occupied(occupied_slot) => Ok(Some(occupied_slot.value)),
-            | Slot::Free(_) | Slot::Retired => Err(OrderError::Inconsistent),
+            Slot::Occupied(occupied_slot) => Ok(Some(occupied_slot.value)),
+            Slot::Free(_) | Slot::Retired => Err(OrderError::Inconsistent),
         }
     }
 
@@ -1431,8 +1431,8 @@ impl<T> OrderMaintenance<T>
     ) -> Option<&Occupied<T>>
     {
         match *self.slot(index)? {
-            | Slot::Occupied(ref occupied) => Some(occupied),
-            | Slot::Free(_) | Slot::Retired => None,
+            Slot::Occupied(ref occupied) => Some(occupied),
+            Slot::Free(_) | Slot::Retired => None,
         }
     }
 
@@ -1465,8 +1465,8 @@ impl<T> OrderMaintenance<T>
         let position = usize::try_from(index).ok()?;
         let slot = self.slots.get_mut(position)?;
         match *slot {
-            | Slot::Occupied(ref mut occupied) => Some(occupied),
-            | Slot::Free(_) | Slot::Retired => None,
+            Slot::Occupied(ref mut occupied) => Some(occupied),
+            Slot::Free(_) | Slot::Retired => None,
         }
     }
 
@@ -1707,11 +1707,11 @@ impl<T> OrderMaintenance<T>
                 .get_mut(free_position)
                 .ok_or(OrderError::Inconsistent)?;
             let free = match *slot {
-                | Slot::Free(ref free) => Free {
+                Slot::Free(ref free) => Free {
                     generation: free.generation,
                     next_free: free.next_free,
                 },
-                | Slot::Occupied(_) | Slot::Retired => return Err(OrderError::Inconsistent),
+                Slot::Occupied(_) | Slot::Retired => return Err(OrderError::Inconsistent),
             };
             *slot = Slot::Occupied(Occupied {
                 generation: free.generation,
@@ -1894,12 +1894,12 @@ impl<T> OrderMaintenance<T>
     {
         let pos = self.alloc(label, prev_index, next_index, value)?;
         match prev_index {
-            | Some(prev) => self.set_next(prev, Some(pos.index))?,
-            | None => self.head = Some(pos.index),
+            Some(prev) => self.set_next(prev, Some(pos.index))?,
+            None => self.head = Some(pos.index),
         }
         match next_index {
-            | Some(next) => self.set_prev(next, Some(pos.index))?,
-            | None => self.tail = Some(pos.index),
+            Some(next) => self.set_prev(next, Some(pos.index))?,
+            None => self.tail = Some(pos.index),
         }
         Ok(pos)
     }
@@ -2143,14 +2143,14 @@ impl<T> OrderMaintenance<T>
         // after its predecessor, which is the anchor and therefore always in
         // the window, or at the front when there is no predecessor.
         let insert_at = match prev_index {
-            | Some(prev) => {
+            Some(prev) => {
                 let found = window
                     .iter()
                     .position(|&index| index == prev)
                     .ok_or(OrderError::Inconsistent)?;
                 found.checked_add(1).ok_or(OrderError::Inconsistent)?
             },
-            | None => 0,
+            None => 0,
         };
         // The elements just outside the window keep their labels and bound the
         // rebuilt segment.
@@ -2389,14 +2389,14 @@ impl<T> OrderMaintenance<T>
             self.set_next(index, next_link)?;
         }
         match (left_outer, sequence.first()) {
-            | (Some(outer), Some(&first)) => self.set_next(outer, Some(first))?,
-            | (None, Some(&first)) => self.head = Some(first),
-            | (_, None) => {},
+            (Some(outer), Some(&first)) => self.set_next(outer, Some(first))?,
+            (None, Some(&first)) => self.head = Some(first),
+            (_, None) => {},
         }
         match (right_outer, sequence.last()) {
-            | (Some(outer), Some(&last)) => self.set_prev(outer, Some(last))?,
-            | (None, Some(&last)) => self.tail = Some(last),
-            | (_, None) => {},
+            (Some(outer), Some(&last)) => self.set_prev(outer, Some(last))?,
+            (None, Some(&last)) => self.tail = Some(last),
+            (_, None) => {},
         }
         Ok(())
     }

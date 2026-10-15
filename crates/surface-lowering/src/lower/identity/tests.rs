@@ -96,19 +96,19 @@ pub(in crate::lower) fn judged(
         .filter_map(|declaration| {
             let origin = OriginToken::from(usize::from(declaration.origin()));
             let (declared, defined) = match declaration.outcome() {
-                | DeclarationOutcome::Completed {
+                DeclarationOutcome::Completed {
                     declared_type,
                     body,
                 } => (Maybe::Present(declared_type), Maybe::Present(body)),
-                | DeclarationOutcome::Uncompleted { declared_type } => (
+                DeclarationOutcome::Uncompleted { declared_type } => (
                     Maybe::Present(declared_type),
                     Maybe::Absent(body::Absent::Hole),
                 ),
-                | DeclarationOutcome::Bodied { body } => (
+                DeclarationOutcome::Bodied { body } => (
                     Maybe::Absent(signature::Absent::Unsigned),
                     Maybe::Present(body),
                 ),
-                | DeclarationOutcome::Data(_)
+                DeclarationOutcome::Data(_)
                 | DeclarationOutcome::Abstract(_)
                 | DeclarationOutcome::Refused(_) => return None,
             };
@@ -189,8 +189,11 @@ fn tail_of(
 ) -> ComputationId
 {
     let body = match outcome_of(module, name) {
-        | DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => body,
-        | other => panic!("`{name:?}` lowers a body: {other:?}"),
+        DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => body,
+        other @ (DeclarationOutcome::Uncompleted { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::Refused(_)) => panic!("`{name:?}` lowers a body: {other:?}"),
     };
     let Some(&Value::Thunk(mut computation)) = arena.value(body)
     else {
@@ -622,12 +625,12 @@ fn back_then_and_cong_unfold_to_transports()
         &mut arena,
     );
     let transport = |name: &str| match arena.computation(tail_of(&module, &arena, name.into())) {
-        | Some(&Computation::PathTransport {
+        Some(&Computation::PathTransport {
             motive,
             path,
             value,
         }) => (motive, path, value),
-        | other => panic!("`{name}` unfolds to a transport: {other:?}"),
+        other => panic!("`{name}` unfolds to a transport: {other:?}"),
     };
 
     let (motive, path, value) = transport("flip");
@@ -731,17 +734,21 @@ fn a_derived_operation_synthesises_its_path_at_the_words()
             panic!("`{name}` is the value its transport returns");
         };
         match arena.computation(computation) {
-            | Some(&Computation::PathTransport {
+            Some(&Computation::PathTransport {
                 motive,
                 path,
                 value,
             }) => (motive, path, value),
-            | other => panic!("`{name}` unfolds to a transport: {other:?}"),
+            other => panic!("`{name}` unfolds to a transport: {other:?}"),
         }
     };
     let body = |name: &str| match outcome_of(&module, name.into()) {
-        | DeclarationOutcome::Completed { body, .. } => body,
-        | other => panic!("`{name}` lowers both halves: {other:?}"),
+        DeclarationOutcome::Completed { body, .. } => body,
+        other @ (DeclarationOutcome::Uncompleted { .. }
+        | DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers both halves: {other:?}"),
     };
     let moving = |at| arena.value(at) == Some(&variable(0_u32.into()));
 
@@ -893,9 +900,9 @@ fn a_dependent_transport_lowers_to_its_telescope()
         .map(|at| at.saturating_add("Path(Integer, ".len()));
     assert_eq!(
         match module.origins().value(left) {
-            | Maybe::Present(origin) =>
+            Maybe::Present(origin) =>
                 Some((usize::from(origin.span().start()), origin.provenance())),
-            | Maybe::Absent(_) => None,
+            Maybe::Absent(_) => None,
         },
         written.map(|at| (at, Provenance::Written)),
         "the moved endpoint answers where it is written"
@@ -1194,10 +1201,15 @@ fn a_move_out_of_shape_is_refused()
         &mut arena,
     );
     let boundary = |name: &str| match outcome_of(&module, name.into()) {
-        | DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment { boundary, .. }) => {
+        DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment { boundary, .. }) => {
             Some(boundary)
         },
-        | _ => None,
+        DeclarationOutcome::Completed { .. }
+        | DeclarationOutcome::Uncompleted { .. }
+        | DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::Refused(_) => None,
     };
     assert_eq!(
         ["skipped", "bare", "twice", "called", "named"].map(boundary),

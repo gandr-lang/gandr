@@ -180,9 +180,9 @@ mod tests
         S: Source<Node = CoreNode>,
     {
         match root {
-            | Root::Type(node) => present_type(source, node, page, form),
-            | Root::Value(node) => present_value(source, node, page, form),
-            | Root::Computation(node) => present_computation(source, node, page, form),
+            Root::Type(node) => present_type(source, node, page, form),
+            Root::Value(node) => present_value(source, node, page, form),
+            Root::Computation(node) => present_computation(source, node, page, form),
         }
         .expect("a presentation within the default ceilings lays out")
     }
@@ -544,8 +544,8 @@ mod tests
     {
         let table = Table(rows);
         let presentation = match reading {
-            | Reading::AsType => present_type(&table, Row(0), wide(), Form::Explicit),
-            | Reading::AsValue => present_value(&table, Row(0), wide(), Form::Explicit),
+            Reading::AsType => present_type(&table, Row(0), wide(), Form::Explicit),
+            Reading::AsValue => present_value(&table, Row(0), wide(), Form::Explicit),
         }
         .expect("a table presentation lays out");
         (presentation.to_string(), presentation.fidelity())

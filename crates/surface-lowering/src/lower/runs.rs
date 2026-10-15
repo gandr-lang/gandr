@@ -225,10 +225,8 @@ impl Lowerer<'_, '_>
             .filter(|&&(_, origin)| origin.provenance() == Provenance::Inserted(Insertion::Nested))
             .map(|&(_, origin)| {
                 let asked = match self.collected.owner_of(origin.node()) {
-                    | Maybe::Present(slot) => {
-                        self.asked_runs.get(&slot).copied().unwrap_or_default()
-                    },
-                    | Maybe::Absent(_) => AskedRuns::Unasked,
+                    Maybe::Present(slot) => self.asked_runs.get(&slot).copied().unwrap_or_default(),
+                    Maybe::Absent(_) => AskedRuns::Unasked,
                 };
                 let spelling = if self.leading.contains(&origin.span().start()) {
                     RunSpelling::Parenthesised
@@ -281,8 +279,8 @@ impl Lowerer<'_, '_>
             return;
         }
         let asked = match entry.payload() {
-            | Maybe::Absent(_) => AskedRuns::Every,
-            | Maybe::Present(_) => AskedRuns::Effectful,
+            Maybe::Absent(_) => AskedRuns::Every,
+            Maybe::Present(_) => AskedRuns::Effectful,
         };
         for slot in slots {
             let held = self.asked_runs.entry(slot).or_default();
@@ -330,7 +328,7 @@ fn operand_of(
         return RunOperand::Grouped;
     };
     match former {
-        | Former::Return
+        Former::Return
         | Former::Exit
         | Former::Become
         | Former::Force
@@ -338,7 +336,7 @@ fn operand_of(
         | Former::Binary
         | Former::Unary
         | Former::Unadmitted => RunOperand::Grouped,
-        | Former::Name
+        Former::Name
         | Former::Constructor
         | Former::Hole
         | Former::Number

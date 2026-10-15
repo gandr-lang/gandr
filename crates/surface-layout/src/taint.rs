@@ -146,19 +146,19 @@ pub(crate) fn taint(
 ) -> Result<MeasureSet, RenderError>
 {
     match set {
-        | MeasureSet::Frontier(frontier) => {
+        MeasureSet::Frontier(frontier) => {
             let mut iter = frontier.into_iter();
             match iter.next() {
-                | Some(first) => {
+                Some(first) => {
                     for measure in iter {
                         release(measure)?;
                     }
                     Ok(MeasureSet::Tainted(TaintPromise::Ready(first)))
                 },
-                | None => Ok(MeasureSet::Frontier(Vec::new())),
+                None => Ok(MeasureSet::Frontier(Vec::new())),
             }
         },
-        | MeasureSet::Tainted(promise) => Ok(MeasureSet::Tainted(promise)),
+        MeasureSet::Tainted(promise) => Ok(MeasureSet::Tainted(promise)),
     }
 }
 
@@ -244,7 +244,7 @@ pub(crate) fn merge(
 ) -> Result<MeasureSet, RenderError>
 {
     match (left, right) {
-        | (MeasureSet::Frontier(left), MeasureSet::Frontier(right)) => {
+        (MeasureSet::Frontier(left), MeasureSet::Frontier(right)) => {
             let mut combined = left;
             combined
                 .try_reserve(right.len())
@@ -254,12 +254,12 @@ pub(crate) fn merge(
             combined.extend(right);
             Ok(MeasureSet::Frontier(combined))
         },
-        | (MeasureSet::Frontier(frontier), MeasureSet::Tainted(promise))
+        (MeasureSet::Frontier(frontier), MeasureSet::Tainted(promise))
         | (MeasureSet::Tainted(promise), MeasureSet::Frontier(frontier)) => {
             release(promise)?;
             Ok(MeasureSet::Frontier(frontier))
         },
-        | (MeasureSet::Tainted(left), MeasureSet::Tainted(right)) => {
+        (MeasureSet::Tainted(left), MeasureSet::Tainted(right)) => {
             release(right)?;
             Ok(MeasureSet::Tainted(left))
         },
@@ -293,12 +293,12 @@ pub(crate) fn merge(
 pub(crate) fn first(set: &MeasureSet) -> Maybe<Measure, first::Absent>
 {
     match *set {
-        | MeasureSet::Frontier(ref frontier) => match frontier.first() {
-            | Some(&measure) => Maybe::Present(measure),
-            | None => Maybe::Absent(first::Absent::Empty),
+        MeasureSet::Frontier(ref frontier) => match frontier.first() {
+            Some(&measure) => Maybe::Present(measure),
+            None => Maybe::Absent(first::Absent::Empty),
         },
-        | MeasureSet::Tainted(TaintPromise::Ready(measure)) => Maybe::Present(measure),
-        | MeasureSet::Tainted(TaintPromise::Deferred { .. }) => {
+        MeasureSet::Tainted(TaintPromise::Ready(measure)) => Maybe::Present(measure),
+        MeasureSet::Tainted(TaintPromise::Deferred { .. }) => {
             Maybe::Absent(first::Absent::Deferred)
         },
     }

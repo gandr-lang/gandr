@@ -417,7 +417,7 @@ fn check_circuit_rule(
     check_free_term_symbols(&rule.sphere.rhs, signature, span, diagnostics);
     for node in &rule.body.nodes {
         match *node {
-            | CircuitNode::Frame(ref frame) => {
+            CircuitNode::Frame(ref frame) => {
                 if signature.contains(frame.head.name()) {
                     continue;
                 }
@@ -432,7 +432,7 @@ fn check_circuit_rule(
                     span,
                 ));
             },
-            | CircuitNode::Redex(ref redex) => {
+            CircuitNode::Redex(ref redex) => {
                 // An undeclared telescope means the redex heads are simply not
                 // declared here — not that they are unknown. The check bites
                 // only where a telescope was written.
@@ -454,8 +454,8 @@ fn check_circuit_rule(
     }
 
     let derived = match derive_boundaries(&rule.body) {
-        | Ok(derived) => derived,
-        | Err(CircuitDerivationError::CyclicWiring(port)) => {
+        Ok(derived) => derived,
+        Err(CircuitDerivationError::CyclicWiring(port)) => {
             diagnostics.push(located(
                 WfKind::CyclicCircuitWiring,
                 format!(
@@ -467,7 +467,7 @@ fn check_circuit_rule(
             ));
             return;
         },
-        | Err(CircuitDerivationError::NodeBudget { budget }) => {
+        Err(CircuitDerivationError::NodeBudget { budget }) => {
             diagnostics.push(located(
                 WfKind::CircuitDerivationBudget,
                 format!(
@@ -481,7 +481,7 @@ fn check_circuit_rule(
             ));
             return;
         },
-        | Err(CircuitDerivationError::SplitOutputs(port)) => {
+        Err(CircuitDerivationError::SplitOutputs(port)) => {
             diagnostics.push(located(
                 WfKind::SplitCircuitOutputs,
                 format!(
@@ -555,10 +555,10 @@ impl fmt::Display for AttributeOwner
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Datatype => "the datatype",
-            | Self::Constructor => "the constructor",
-            | Self::Parameter => "the parameter",
-            | Self::Operation => "the operation",
+            Self::Datatype => "the datatype",
+            Self::Constructor => "the constructor",
+            Self::Parameter => "the parameter",
+            Self::Operation => "the operation",
         })
     }
 }

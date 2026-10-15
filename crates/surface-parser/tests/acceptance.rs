@@ -2327,18 +2327,16 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
     let mut ranks: Vec<(&str, &str, usize)> = Vec::new();
     for (id, def) in pbg.iter_molds() {
         let rule = pbg.rule_of(id)?.name;
-        let rank = match ranks
+        let rank = if let Some(entry) = ranks
             .iter_mut()
             .find(|&&mut (name, label, _)| name == rule && label == def.label)
         {
-            | Some(entry) => {
-                entry.2 = entry.2.saturating_add(1);
-                entry.2
-            },
-            | None => {
-                ranks.push((rule, def.label, 0));
-                0
-            },
+            entry.2 = entry.2.saturating_add(1);
+            entry.2
+        }
+        else {
+            ranks.push((rule, def.label, 0));
+            0
         };
         let index = usize::try_from(u32::from(id))?;
         if spellings.len() <= index {
@@ -2369,9 +2367,13 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
                 })
                 .collect();
             let name = match node {
-                | NodeLabel::Tile(mold) => format!("tile {}", spelled(mold)),
-                | NodeLabel::Meld(mold) => format!("meld {}", spelled(mold)),
-                | other => format!("{other:?}"),
+                NodeLabel::Tile(mold) => format!("tile {}", spelled(mold)),
+                NodeLabel::Meld(mold) => format!("meld {}", spelled(mold)),
+                other @ (NodeLabel::Wald
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space
+                | NodeLabel::Doc) => format!("{other:?}"),
             };
             preimage.extend_from_slice(name.as_bytes());
             preimage.push(0);
@@ -2481,13 +2483,13 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
             let fields: Vec<&str> = got.split('\t').collect();
             let recorded_fields: Vec<&str> = want.split('\t').collect();
             match (fields.as_slice(), recorded_fields.as_slice()) {
-                | (&["T"], &["T", ..]) => {},
-                | (&["W", ..], &["W", ..]) => {
+                (&["T"], &["T", ..]) => {},
+                (&["W", ..], &["W", ..]) => {
                     if got != want {
                         moved.push(format!("{rel} whole"));
                     }
                 },
-                | (
+                (
                     &["T", ref cut @ .., obligations, nodes],
                     &["T", ref recorded_cut @ .., old_obligations, old_nodes],
                 ) if cut.len() == 3 && recorded_cut.len() == 3 => {
@@ -2508,7 +2510,7 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
                         ));
                     }
                 },
-                | _ => {
+                _ => {
                     stale.push(format!("{rel} row {row} is malformed; {}", rerecord(&rel)));
                     break;
                 },
@@ -2701,11 +2703,11 @@ fn run_reads_as_a_bind_or_an_inline_run_by_what_follows() -> Result<(), Box<dyn 
             .map(NodeIndex::from)
             .filter(|&node| text(tree, node) == "run")
             .filter_map(|node| match label_of(tree, node) {
-                | Some(NodeLabel::Tile(mold)) => pbg
+                Some(NodeLabel::Tile(mold)) => pbg
                     .rule_of(mold)
                     .ok()
                     .map(|rule| rule.name == "run_expression"),
-                | _ => None,
+                _ => None,
             })
             .collect();
         assert_eq!(read, inline, "{src:?} reads each `run` by what follows it");

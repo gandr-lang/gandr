@@ -456,18 +456,18 @@ impl Derivations
                 sink.record(decision);
             }
             match derivation.ending {
-                | Ending::Alone => {},
-                | Ending::Children(ref children) => stack.extend(children.iter().rev()),
-                | Ending::Agreed { pair, ref children } => {
+                Ending::Alone => {},
+                Ending::Children(ref children) => stack.extend(children.iter().rev()),
+                Ending::Agreed { pair, ref children } => {
                     let settled = settle(core, domain, pair)?;
                     match settled {
-                        | Settlement::Identical | Settlement::StructurallyEqual => {
+                        Settlement::Identical | Settlement::StructurallyEqual => {
                             sink.record(ConversionDecision::ComparedShared {
                                 left: TraceNode::of(pair.0),
                                 right: TraceNode::of(pair.1),
                             });
                         },
-                        | Settlement::GuardedApart
+                        Settlement::GuardedApart
                         | Settlement::StructurallyApart
                         | Settlement::Deferred(_) => {
                             sink.record(ConversionDecision::Decompose);
@@ -514,11 +514,11 @@ fn settle(
 ) -> Result<Settlement, ConversionFault>
 {
     match pair {
-        | (Glued::Value(left), Glued::Value(right)) => convert_values(core, domain, left, right),
-        | (Glued::Computation(left), Glued::Computation(right)) => {
+        (Glued::Value(left), Glued::Value(right)) => convert_values(core, domain, left, right),
+        (Glued::Computation(left), Glued::Computation(right)) => {
             convert_computations(core, domain, left, right)
         },
-        | (Glued::Value(_), Glued::Computation(_)) | (Glued::Computation(_), Glued::Value(_)) => {
+        (Glued::Value(_), Glued::Computation(_)) | (Glued::Computation(_), Glued::Value(_)) => {
             Err(ConversionFault::Polarity)
         },
     }

@@ -268,10 +268,10 @@ def wrong = "text" ;
         let mut escaped = false;
         for character in text.chars() {
             match (escaped, character) {
-                | (false, '\u{1b}') => escaped = true,
-                | (false, _) => plain.push(character),
-                | (true, 'm') => escaped = false,
-                | (true, _) => {},
+                (false, '\u{1b}') => escaped = true,
+                (false, _) => plain.push(character),
+                (true, 'm') => escaped = false,
+                (true, _) => {},
             }
         }
         plain

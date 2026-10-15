@@ -230,32 +230,32 @@ impl App
     ) -> Result<Handled, LoopError>
     {
         match key {
-            | Key::Char(typed) => self.line.push(typed),
-            | Key::Backspace => {
+            Key::Char(typed) => self.line.push(typed),
+            Key::Backspace => {
                 let _removed = self.line.pop();
             },
-            | Key::Enter => {
+            Key::Enter => {
                 let line = core::mem::take(&mut self.line);
                 let event = self.repl.offer(SourceText::from(line.as_str()))?;
                 match event {
-                    | LoopEvent::Continue => {
+                    LoopEvent::Continue => {
                         if self.repl.prompt() == Prompt::Continuing {
                             self.waiting.push(line);
                         }
                     },
-                    | LoopEvent::Block(block) => {
+                    LoopEvent::Block(block) => {
                         self.waiting.clear();
                         self.transcript.push(block);
                     },
-                    | LoopEvent::Quit => return Ok(Handled::Quit),
+                    LoopEvent::Quit => return Ok(Handled::Quit),
                 }
             },
-            | Key::Interrupt => {
+            Key::Interrupt => {
                 self.repl.discard();
                 self.line.clear();
                 self.waiting.clear();
             },
-            | Key::Quit => return Ok(Handled::Quit),
+            Key::Quit => return Ok(Handled::Quit),
         }
         Ok(Handled::Continue)
     }

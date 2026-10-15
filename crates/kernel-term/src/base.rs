@@ -679,9 +679,9 @@ impl Literal
     pub const fn base_type(&self) -> BaseType
     {
         match *self {
-            | Self::Integer(_) => BaseType::Integer,
-            | Self::Text(_) => BaseType::String,
-            | Self::Numeric(_) => BaseType::Numeric,
+            Self::Integer(_) => BaseType::Integer,
+            Self::Text(_) => BaseType::String,
+            Self::Numeric(_) => BaseType::Numeric,
         }
     }
 }

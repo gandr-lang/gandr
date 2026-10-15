@@ -259,19 +259,19 @@ impl Reader<'_, '_>
         };
         while let Some(frame) = pending.pop() {
             match frame {
-                | TermFrame::Read(at) => {
+                TermFrame::Read(at) => {
                     let pieces = self.pieces(at)?;
                     if let [Piece::Tile { label, .. }] = *pieces.as_slice() {
                         match label.as_ref() {
-                            | "identifier" | "type_variable" => {
+                            "identifier" | "type_variable" => {
                                 terms.push(FreeTerm::var(self.text(at).0));
                                 written.nodes.push(leaf(at.span));
                             },
-                            | "constructor" => {
+                            "constructor" => {
                                 terms.push(FreeTerm::ctor(self.text(at).0, []));
                                 written.nodes.push(leaf(at.span));
                             },
-                            | _ => {
+                            _ => {
                                 return Err(DescriptionDiagnostic {
                                     span: at.span,
                                     fault: DescriptionFault::Malformed,
@@ -291,14 +291,14 @@ impl Reader<'_, '_>
                         }
                         run.end()?;
                         match <[Placed; 1]>::try_from(components) {
-                            | Ok([only]) => pending.push(TermFrame::Read(only)),
-                            | Err(components) if components.is_empty() => {
+                            Ok([only]) => pending.push(TermFrame::Read(only)),
+                            Err(components) if components.is_empty() => {
                                 return Err(DescriptionDiagnostic {
                                     span: at.span,
                                     fault: DescriptionFault::Malformed,
                                 });
                             },
-                            | Err(components) => {
+                            Err(components) => {
                                 written.nodes.push(leaf(at.span));
                                 pending.push(TermFrame::Gather(ArgumentCount(components.len())));
                                 pending.extend(components.into_iter().rev().map(TermFrame::Read));
@@ -336,7 +336,7 @@ impl Reader<'_, '_>
                     ));
                     pending.extend(args.into_iter().rev().map(TermFrame::Read));
                 },
-                | TermFrame::Apply(head, count, kind) => {
+                TermFrame::Apply(head, count, kind) => {
                     let Some(start) = terms.len().checked_sub(count.0)
                     else {
                         return Err(DescriptionDiagnostic {
@@ -346,12 +346,12 @@ impl Reader<'_, '_>
                     };
                     let args = terms.drain(start ..);
                     let term = match kind {
-                        | TermKind::Constructor => FreeTerm::ctor(head, args),
-                        | TermKind::Operation => FreeTerm::op(head, args),
+                        TermKind::Constructor => FreeTerm::ctor(head, args),
+                        TermKind::Operation => FreeTerm::op(head, args),
                     };
                     terms.push(term);
                 },
-                | TermFrame::Gather(count) => {
+                TermFrame::Gather(count) => {
                     let Some(start) = terms.len().checked_sub(count.0)
                     else {
                         return Err(DescriptionDiagnostic {

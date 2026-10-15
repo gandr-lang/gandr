@@ -801,8 +801,8 @@ fn value_type_id_at(
 ) -> Option<ValueTypeId>
 {
     match nodes.get(global.offset().0) {
-        | Some(&DecodedNode::ValueType(id)) => Some(id),
-        | _ => None,
+        Some(&DecodedNode::ValueType(id)) => Some(id),
+        _ => None,
     }
 }
 
@@ -832,8 +832,8 @@ fn value_id_at(
 ) -> Option<ValueId>
 {
     match nodes.get(global.offset().0) {
-        | Some(&DecodedNode::Value(id)) => Some(id),
-        | _ => None,
+        Some(&DecodedNode::Value(id)) => Some(id),
+        _ => None,
     }
 }
 
@@ -921,7 +921,7 @@ fn build_declarations(
                 site: MalformedSite::Polarity,
             })?;
         let declaration = match meta.kind {
-            | DeclKind::Data => {
+            DeclKind::Data => {
                 let resolve = |root: &GlobalIndex| {
                     value_type_id_at(&table.nodes, *root).ok_or(DecodeError::Malformed {
                         site: MalformedSite::Polarity,
@@ -940,14 +940,14 @@ fn build_declarations(
                 let presentation =
                     crate::presented::Presentation::new(core::mem::take(&mut meta.rules));
                 let presentation = match meta.cells.take() {
-                    | Some(cells) => presentation.carrying(cells),
-                    | None => presentation,
+                    Some(cells) => presentation.carrying(cells),
+                    None => presentation,
                 };
                 DeclarationBuilder::new(&mut table.arena)
                     .data(meta.levels.clone(), parameters, constructors, declared)
                     .presented(presentation)
             },
-            | DeclKind::Def => {
+            DeclKind::Def => {
                 let root = meta.root_body.ok_or(DecodeError::Malformed {
                     site: MalformedSite::ChildOrder,
                 })?;
@@ -974,7 +974,7 @@ fn build_declarations(
                     .relating(related)
                     .lawful(core::mem::take(&mut meta.laws))
             },
-            | DeclKind::AbstractType => {
+            DeclKind::AbstractType => {
                 let (root, extent) = meta.sealed.ok_or(DecodeError::Malformed {
                     site: MalformedSite::ChildOrder,
                 })?;
@@ -995,7 +995,7 @@ fn build_declarations(
                     SealScope::Closed(extent),
                 )
             },
-            | DeclKind::Axiom => {
+            DeclKind::Axiom => {
                 DeclarationBuilder::new(&mut table.arena).axiom(meta.levels.clone(), declared)
             },
         };
@@ -1667,7 +1667,7 @@ fn decode_declaration(
     let mut rules = Vec::new();
     let mut cells = None;
     let root_body = match kind {
-        | DeclKind::Data => {
+        DeclKind::Data => {
             let count = usize::from(reader.read_usize()?);
             for _ in 0 .. count {
                 parameters.push(decode_root(reader, table, Family::ValueType)?);
@@ -1708,7 +1708,7 @@ fn decode_declaration(
             }
             None
         },
-        | DeclKind::Def => {
+        DeclKind::Def => {
             let body = decode_root(reader, table, Family::Value)?;
             provenance = decode_definition_slots(reader)?;
             // A relating definition closes with its pairs, and a lawful one
@@ -1736,13 +1736,13 @@ fn decode_declaration(
         // its scope's extent: no body, and therefore no per-definition
         // annotation slots. Whether the extent fits the artifact is decided at
         // assembly, where the declaration count is known.
-        | DeclKind::AbstractType => {
+        DeclKind::AbstractType => {
             let representation = decode_root(reader, table, Family::ValueType)?;
             let extent = SealExtent::from(usize::from(reader.read_usize()?));
             sealed = Some((representation, extent));
             None
         },
-        | DeclKind::Axiom => None,
+        DeclKind::Axiom => None,
     };
     Ok(DeclMeta {
         mark,
@@ -1793,10 +1793,10 @@ fn decode_rule_side(
         let tag = reader.next_tag()?;
         let ordinal = reader.read_usize()?;
         let node = match tag {
-            | tags::RULE_CONSTRUCTOR => crate::presented::RuleNode::Constructor(
+            tags::RULE_CONSTRUCTOR => crate::presented::RuleNode::Constructor(
                 crate::term::ConstructorTag::from(usize::from(ordinal)),
             ),
-            | tags::RULE_VARIABLE => {
+            tags::RULE_VARIABLE => {
                 let ordinal = u32::try_from(usize::from(ordinal)).map_err(|_overflow| {
                     DecodeError::Malformed {
                         site: MalformedSite::IndexRange,
@@ -1804,7 +1804,7 @@ fn decode_rule_side(
                 })?;
                 crate::presented::RuleNode::Variable(crate::presented::RuleVariable::from(ordinal))
             },
-            | other => {
+            other => {
                 return Err(DecodeError::UnknownTag {
                     site: TagSite::RuleNode,
                     tag: other,
@@ -1956,7 +1956,7 @@ fn decode_entry(
     let tag = reader.next_tag()?;
     let mut children: Vec<GlobalIndex> = Vec::new();
     let (node, family) = match tag {
-        | tags::NODE_VT_DATA => {
+        tags::NODE_VT_DATA => {
             let declaration = ConstantIndex::from(usize::from(reader.read_usize()?));
             let count = usize::from(reader.read_usize()?);
             let mut arguments = Vec::new();
@@ -1968,7 +1968,7 @@ fn decode_entry(
                 Family::ValueType,
             )
         },
-        | tags::NODE_VT_RECORD | tags::NODE_V_RECORD => {
+        tags::NODE_VT_RECORD | tags::NODE_V_RECORD => {
             let count = usize::from(reader.read_usize()?);
             let mut labels = Vec::new();
             for _ in 0 .. count {
@@ -1997,7 +1997,7 @@ fn decode_entry(
                 )
             }
         },
-        | tags::NODE_V_CONSTRUCTOR => {
+        tags::NODE_V_CONSTRUCTOR => {
             let tag = crate::ConstructorTag::from(usize::from(reader.read_usize()?));
             let count = usize::from(reader.read_usize()?);
             let datatype = read_value_type(reader, table, this, &mut children)?;
@@ -2010,7 +2010,7 @@ fn decode_entry(
                 Family::Value,
             )
         },
-        | tags::NODE_C_DATA_CASE => {
+        tags::NODE_C_DATA_CASE => {
             let count = usize::from(reader.read_usize()?);
             let scrutinee = read_value(reader, table, this, &mut children)?;
             let motive = read_comp_type(reader, table, this, &mut children)?;
@@ -2027,7 +2027,7 @@ fn decode_entry(
                 Family::Computation,
             )
         },
-        | tags::NODE_C_SIGMA_SPLIT => {
+        tags::NODE_C_SIGMA_SPLIT => {
             let scrutinee = read_value(reader, table, this, &mut children)?;
             let motive = read_comp_type(reader, table, this, &mut children)?;
             let body = read_computation(reader, table, this, &mut children)?;
@@ -2038,7 +2038,7 @@ fn decode_entry(
                 Family::Computation,
             )
         },
-        | tags::NODE_C_RECORD_PROJECTION => {
+        tags::NODE_C_RECORD_PROJECTION => {
             let label = crate::FieldLabel::from(reader.read_text(MalformedSite::LiteralPayload)?);
             let record = read_value(reader, table, this, &mut children)?;
             (
@@ -2046,7 +2046,7 @@ fn decode_entry(
                 Family::Computation,
             )
         },
-        | tags::NODE_C_TUPLE_PROJECTION => {
+        tags::NODE_C_TUPLE_PROJECTION => {
             let component = crate::Component::from(usize::from(reader.read_usize()?));
             let tuple = read_value(reader, table, this, &mut children)?;
             (
@@ -2056,7 +2056,7 @@ fn decode_entry(
                 Family::Computation,
             )
         },
-        | tags::NODE_VT_SESSION => {
+        tags::NODE_VT_SESSION => {
             let graph = session::graph(reader)?;
             let payloads = read_value_type(reader, table, this, &mut children)?;
             let id = table
@@ -2064,7 +2064,7 @@ fn decode_entry(
                 .value_type_session(alloc::sync::Arc::new(graph), payloads);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_V_SESSION_PATH => {
+        tags::NODE_V_SESSION_PATH => {
             let evidence = session::evidence(reader)?;
             let path_type = read_value_type(reader, table, this, &mut children)?;
             let payload_paths = read_value(reader, table, this, &mut children)?;
@@ -2075,13 +2075,13 @@ fn decode_entry(
             );
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_VT_PATH_UNIVERSE => {
+        tags::NODE_VT_PATH_UNIVERSE => {
             let source = read_value(reader, table, this, &mut children)?;
             let target = read_value(reader, table, this, &mut children)?;
             let id = table.arena.value_type_path_universe(source, target);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_V_SESSION_FLOW => {
+        tags::NODE_V_SESSION_FLOW => {
             let evidence = session::evidence(reader)?;
             let flow_type = read_value_type(reader, table, this, &mut children)?;
             let payload_paths = read_value(reader, table, this, &mut children)?;
@@ -2092,20 +2092,20 @@ fn decode_entry(
             );
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_VT_FLOW_UNIVERSE => {
+        tags::NODE_VT_FLOW_UNIVERSE => {
             let source = read_value(reader, table, this, &mut children)?;
             let target = read_value(reader, table, this, &mut children)?;
             let id = table.arena.value_type_flow_universe(source, target);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_V_PATH_REFL => {
+        tags::NODE_V_PATH_REFL => {
             let code = read_value(reader, table, this, &mut children)?;
             (
                 DecodedNode::Value(table.arena.value_path_refl(code)),
                 Family::Value,
             )
         },
-        | tags::NODE_V_PATH_PRODUCT => {
+        tags::NODE_V_PATH_PRODUCT => {
             let first = read_value(reader, table, this, &mut children)?;
             let second = read_value(reader, table, this, &mut children)?;
             (
@@ -2113,7 +2113,7 @@ fn decode_entry(
                 Family::Value,
             )
         },
-        | tags::NODE_V_PATH_EQUIV => {
+        tags::NODE_V_PATH_EQUIV => {
             let source = decode_dialogues(reader)?;
             let target = decode_dialogues(reader)?;
             let evidence = alloc::sync::Arc::new(crate::PathEvidence { source, target });
@@ -2125,7 +2125,7 @@ fn decode_entry(
                 .value_path_equiv(path_type, forward, backward, evidence);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_C_TRANSPORT => {
+        tags::NODE_C_TRANSPORT => {
             let path = read_value(reader, table, this, &mut children)?;
             let value = read_value(reader, table, this, &mut children)?;
             (
@@ -2133,7 +2133,7 @@ fn decode_entry(
                 Family::Computation,
             )
         },
-        | tags::NODE_VT_PATH => {
+        tags::NODE_VT_PATH => {
             let domain = read_value_type(reader, table, this, &mut children)?;
             let left = read_value(reader, table, this, &mut children)
                 .map_err(|error| named_polarity(error, MalformedSite::PathEndpoint))?;
@@ -2142,7 +2142,7 @@ fn decode_entry(
             let id = table.arena.value_type_path(domain, left, right);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_V_HERE => {
+        tags::NODE_V_HERE => {
             let left = decode_dialogue(reader)?;
             let right = decode_dialogue(reader)?;
             let point = read_value(reader, table, this, &mut children)?;
@@ -2157,14 +2157,14 @@ fn decode_entry(
             };
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_RETURNED => {
+        tags::NODE_V_RETURNED => {
             let computation = read_computation(reader, table, this, &mut children)?;
             (
                 DecodedNode::Value(table.arena.value_returned(computation)),
                 Family::Value,
             )
         },
-        | tags::NODE_C_PATH_TRANSPORT => {
+        tags::NODE_C_PATH_TRANSPORT => {
             let motive = read_value_type(reader, table, this, &mut children)
                 .map_err(|error| named_polarity(error, MalformedSite::TransportMotive))?;
             let path = read_value(reader, table, this, &mut children)?;
@@ -2172,7 +2172,7 @@ fn decode_entry(
             let id = table.arena.computation_path_transport(motive, path, value);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_C_TELESCOPE_TRANSPORT => {
+        tags::NODE_C_TELESCOPE_TRANSPORT => {
             let motive = read_comp_type(reader, table, this, &mut children)
                 .map_err(|error| named_polarity(error, MalformedSite::TelescopeMotive))?;
             let path = read_value(reader, table, this, &mut children)?;
@@ -2184,7 +2184,7 @@ fn decode_entry(
                 .computation_telescope_transport(motive, path, start, over, value);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_VT_FLOW => {
+        tags::NODE_VT_FLOW => {
             let domain = read_value_type(reader, table, this, &mut children)?;
             let source = read_value(reader, table, this, &mut children)
                 .map_err(|error| named_polarity(error, MalformedSite::FlowEndpoint))?;
@@ -2193,7 +2193,7 @@ fn decode_entry(
             let id = table.arena.value_type_flow(domain, source, target);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_V_STAY => {
+        tags::NODE_V_STAY => {
             let left = decode_dialogue(reader)?;
             let right = decode_dialogue(reader)?;
             let point = read_value(reader, table, this, &mut children)?;
@@ -2208,7 +2208,7 @@ fn decode_entry(
             };
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_FORWARD_FLOW => {
+        tags::NODE_V_FORWARD_FLOW => {
             let dialogues = decode_dialogues(reader)?;
             let flow_type = read_value_type(reader, table, this, &mut children)?;
             let translator = read_value(reader, table, this, &mut children)?;
@@ -2224,27 +2224,27 @@ fn decode_entry(
             );
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_FUNCTION_FLOW => {
+        tags::NODE_V_FUNCTION_FLOW => {
             let flow_type = read_value_type(reader, table, this, &mut children)?;
             let domain = read_value(reader, table, this, &mut children)?;
             let codomain = read_value(reader, table, this, &mut children)?;
             let id = table.arena.value_function_flow(flow_type, domain, codomain);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_THEN => {
+        tags::NODE_V_THEN => {
             let seam = decode_seam(reader)?;
             let first = read_value(reader, table, this, &mut children)?;
             let second = read_value(reader, table, this, &mut children)?;
             let id = table.arena.value_then(first, second, seam);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_FLOW_PRODUCT => {
+        tags::NODE_V_FLOW_PRODUCT => {
             let first = read_value(reader, table, this, &mut children)?;
             let second = read_value(reader, table, this, &mut children)?;
             let id = table.arena.value_flow_product(first, second);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_C_RIDE => {
+        tags::NODE_C_RIDE => {
             let motive = read_value_type(reader, table, this, &mut children)
                 .map_err(|error| named_polarity(error, MalformedSite::RideMotive))?;
             let flow = read_value(reader, table, this, &mut children)?;
@@ -2252,7 +2252,7 @@ fn decode_entry(
             let id = table.arena.computation_ride(motive, flow, value);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_C_TELESCOPE_RIDE => {
+        tags::NODE_C_TELESCOPE_RIDE => {
             let motive = read_comp_type(reader, table, this, &mut children)
                 .map_err(|error| named_polarity(error, MalformedSite::TelescopeRideMotive))?;
             let flow = read_value(reader, table, this, &mut children)?;
@@ -2264,7 +2264,7 @@ fn decode_entry(
                 .computation_telescope_ride(motive, flow, start, over, value);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_V_HIGHER => {
+        tags::NODE_V_HIGHER => {
             let program = decode_higher_program(reader)?;
             let mut evidence = Vec::new();
             for layer in &program.layers {
@@ -2277,7 +2277,7 @@ fn decode_entry(
                 .value_higher(alloc::sync::Arc::new(program), evidence.into_boxed_slice());
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_HIGHER_EVALUATION => {
+        tags::NODE_V_HIGHER_EVALUATION => {
             let count = reader.read_uvarint()?;
             let mut dialogues = Vec::new();
             for _ in 0 .. u64::from(count) {
@@ -2302,7 +2302,7 @@ fn decode_entry(
             );
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_QUANTIFIED_EVALUATION => {
+        tags::NODE_V_QUANTIFIED_EVALUATION => {
             let count = reader.read_uvarint()?;
             let mut steps = Vec::new();
             for _ in 0 .. u64::from(count) {
@@ -2311,8 +2311,8 @@ fn decode_entry(
                 let right = decode_dialogue(reader)?;
                 let dialogues = crate::EvaluationDialogues { left, right };
                 steps.push(match word.checked_sub(1) {
-                    | None => crate::QuantifiedStep::Return(dialogues),
-                    | Some(fibre) => crate::QuantifiedStep::Apply {
+                    None => crate::QuantifiedStep::Return(dialogues),
+                    Some(fibre) => crate::QuantifiedStep::Apply {
                         fibre: crate::DeBruijnIndex::from(u32::try_from(fibre).map_err(
                             |_overflow| DecodeError::Malformed {
                                 site: crate::MalformedSite::PathEvidence,
@@ -2325,8 +2325,8 @@ fn decode_entry(
             let mut values = Vec::new();
             for step in &steps {
                 let owed = match *step {
-                    | crate::QuantifiedStep::Return(_) => 3_u8,
-                    | crate::QuantifiedStep::Apply { .. } => 2_u8,
+                    crate::QuantifiedStep::Return(_) => 3_u8,
+                    crate::QuantifiedStep::Apply { .. } => 2_u8,
                 };
                 for _ in 0 .. owed {
                     values.push(read_value(reader, table, this, &mut children)?);
@@ -2338,7 +2338,7 @@ fn decode_entry(
             );
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_C_RELATED_APPLICATION => {
+        tags::NODE_C_RELATED_APPLICATION => {
             let path = read_value(reader, table, this, &mut children)?;
             let left = read_value(reader, table, this, &mut children)?;
             let right = read_value(reader, table, this, &mut children)?;
@@ -2350,24 +2350,24 @@ fn decode_entry(
                     .computation_related_application(path, (left, right), evidence, body);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_VT_BASE => {
+        tags::NODE_VT_BASE => {
             let base = decode_base_type(reader)?;
             let id = table.arena.value_type_base(base);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_VT_UNIVERSE => {
+        tags::NODE_VT_UNIVERSE => {
             let level = decode_level(reader)?;
             let id = table.arena.value_type_universe(GroundSort::Value, level);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_VT_COMPUTATION_UNIVERSE => {
+        tags::NODE_VT_COMPUTATION_UNIVERSE => {
             let level = decode_level(reader)?;
             let id = table
                 .arena
                 .value_type_universe(GroundSort::Computation, level);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_VT_ABSTRACT => {
+        tags::NODE_VT_ABSTRACT => {
             // The payload is an admission position, not a table index: an atom
             // names a declaration, so resolving it is a choke point's job on
             // replay rather than the parser's. Decode only bounds the integer.
@@ -2377,7 +2377,7 @@ fn decode_entry(
                 .value_type_abstract(ConstantIndex::from(usize::from(atom)));
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_VT_PRODUCT => {
+        tags::NODE_VT_PRODUCT => {
             let count = usize::from(reader.read_usize()?);
             let mut components = Vec::new();
             for _ in 0 .. count {
@@ -2386,22 +2386,22 @@ fn decode_entry(
             let id = table.arena.value_type_product(&components);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_VT_LIST => {
+        tags::NODE_VT_LIST => {
             let element = read_value_type(reader, table, this, &mut children)?;
             let id = table.arena.value_type_list(element);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_V_LIST_NIL => {
+        tags::NODE_V_LIST_NIL => {
             let id = table.arena.value_list_nil();
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_LIST_CONS => {
+        tags::NODE_V_LIST_CONS => {
             let head = read_value(reader, table, this, &mut children)?;
             let tail = read_value(reader, table, this, &mut children)?;
             let id = table.arena.value_list_cons(head, tail);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_C_LIST_FOLD => {
+        tags::NODE_C_LIST_FOLD => {
             let element = read_value_type(reader, table, this, &mut children)?;
             let result = read_value_type(reader, table, this, &mut children)?;
             let list = read_value(reader, table, this, &mut children)?;
@@ -2412,7 +2412,7 @@ fn decode_entry(
                 .computation_list_fold(element, result, list, on_nil, on_cons);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_VT_SUM => {
+        tags::NODE_VT_SUM => {
             let count = usize::from(reader.read_usize()?);
             let mut summands = Vec::new();
             for _ in 0 .. count {
@@ -2421,84 +2421,84 @@ fn decode_entry(
             let id = table.arena.value_type_sum(&summands);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_VT_THUNK => {
+        tags::NODE_VT_THUNK => {
             let body = read_comp_type(reader, table, this, &mut children)?;
             let id = table.arena.value_type_thunk(body);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_VT_LIFT => {
+        tags::NODE_VT_LIFT => {
             let target = decode_level(reader)?;
             let inner = read_value_type(reader, table, this, &mut children)?;
             let id = table.arena.value_type_lift(inner, target);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_VT_ELEMENT => {
+        tags::NODE_VT_ELEMENT => {
             let target = decode_level(reader)?;
             let code = read_value(reader, table, this, &mut children)?;
             let id = table.arena.value_type_element(code, target);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_VT_STATIC_PI => {
+        tags::NODE_VT_STATIC_PI => {
             let domain = read_value_type(reader, table, this, &mut children)?;
             let codomain = read_value_type(reader, table, this, &mut children)?;
             let id = table.arena.value_type_static_pi(domain, codomain);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_VT_SIGMA => {
+        tags::NODE_VT_SIGMA => {
             let first = read_value_type(reader, table, this, &mut children)?;
             let second = read_value_type(reader, table, this, &mut children)?;
             let id = table.arena.value_type_sigma(first, second);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_CT_RETURNER => {
+        tags::NODE_CT_RETURNER => {
             let result = read_value_type(reader, table, this, &mut children)?;
             let id = table.arena.comp_type_returner(result);
             (DecodedNode::CompType(id), Family::CompType)
         },
-        | tags::NODE_CT_ARROW => {
+        tags::NODE_CT_ARROW => {
             let domain = read_value_type(reader, table, this, &mut children)?;
             let codomain = read_comp_type(reader, table, this, &mut children)?;
             let id = table.arena.comp_type_arrow(domain, codomain);
             (DecodedNode::CompType(id), Family::CompType)
         },
-        | tags::NODE_CT_PI => {
+        tags::NODE_CT_PI => {
             let domain = read_value_type(reader, table, this, &mut children)?;
             let codomain = read_comp_type(reader, table, this, &mut children)?;
             let id = table.arena.comp_type_pi(domain, codomain);
             (DecodedNode::CompType(id), Family::CompType)
         },
-        | tags::NODE_CT_ELEMENT => {
+        tags::NODE_CT_ELEMENT => {
             let target = decode_level(reader)?;
             let code = read_value(reader, table, this, &mut children)?;
             let id = table.arena.comp_type_element(code, target);
             (DecodedNode::CompType(id), Family::CompType)
         },
-        | tags::NODE_CT_WITH => {
+        tags::NODE_CT_WITH => {
             let left = read_comp_type(reader, table, this, &mut children)?;
             let right = read_comp_type(reader, table, this, &mut children)?;
             let id = table.arena.comp_type_with(left, right);
             (DecodedNode::CompType(id), Family::CompType)
         },
-        | tags::NODE_V_VARIABLE => {
+        tags::NODE_V_VARIABLE => {
             let index = reader.read_u32()?;
             let id = table
                 .arena
                 .value_variable(DeBruijnIndex::from(u32::from(index)));
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_CONSTANT => {
+        tags::NODE_V_CONSTANT => {
             let index = reader.read_usize()?;
             let id = table
                 .arena
                 .value_constant(ConstantIndex::from(usize::from(index)));
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_LITERAL => {
+        tags::NODE_V_LITERAL => {
             let literal = decode_literal(reader)?;
             let id = table.arena.value_literal(literal);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_TUPLE => {
+        tags::NODE_V_TUPLE => {
             let count = usize::from(reader.read_usize()?);
             let mut components = Vec::new();
             for _ in 0 .. count {
@@ -2507,73 +2507,73 @@ fn decode_entry(
             let id = table.arena.value_tuple(&components);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_INJECTION => {
+        tags::NODE_V_INJECTION => {
             let summand = Summand::from(usize::from(reader.read_usize()?));
             let body = read_value(reader, table, this, &mut children)?;
             let id = table.arena.value_injection(summand, body);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_THUNK => {
+        tags::NODE_V_THUNK => {
             let body = read_computation(reader, table, this, &mut children)?;
             let id = table.arena.value_thunk(body);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_LIFT => {
+        tags::NODE_V_LIFT => {
             let target = decode_level(reader)?;
             let body = read_value(reader, table, this, &mut children)?;
             let id = table.arena.value_lift(target, body);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_QUOTE => {
+        tags::NODE_V_QUOTE => {
             let quoted = read_value_type(reader, table, this, &mut children)?;
             let id = table.arena.value_quote(quoted);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_QUOTE_COMPUTATION => {
+        tags::NODE_V_QUOTE_COMPUTATION => {
             let quoted = read_comp_type(reader, table, this, &mut children)?;
             let id = table.arena.value_quote_computation(quoted);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_STATIC_APPLICATION => {
+        tags::NODE_V_STATIC_APPLICATION => {
             let head = read_value(reader, table, this, &mut children)?;
             let argument = read_value(reader, table, this, &mut children)?;
             let id = table.arena.value_static_application(head, argument);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_C_LAMBDA => {
+        tags::NODE_C_LAMBDA => {
             let body = read_computation(reader, table, this, &mut children)?;
             let id = table.arena.computation_lambda(body);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_C_FIXPOINT => {
+        tags::NODE_C_FIXPOINT => {
             let evidence = decode_evidence(reader)?;
             let body = read_computation(reader, table, this, &mut children)?;
             let id = table.arena.computation_fixpoint(body, evidence);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_C_APPLICATION => {
+        tags::NODE_C_APPLICATION => {
             let head = read_computation(reader, table, this, &mut children)?;
             let argument = read_value(reader, table, this, &mut children)?;
             let id = table.arena.computation_application(head, argument);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_C_RETURN => {
+        tags::NODE_C_RETURN => {
             let value = read_value(reader, table, this, &mut children)?;
             let id = table.arena.computation_return(value);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_C_BIND => {
+        tags::NODE_C_BIND => {
             let bound = read_computation(reader, table, this, &mut children)?;
             let body = read_computation(reader, table, this, &mut children)?;
             let id = table.arena.computation_bind(bound, body);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_C_FORCE => {
+        tags::NODE_C_FORCE => {
             let value = read_value(reader, table, this, &mut children)?;
             let id = table.arena.computation_force(value);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_C_CASE => {
+        tags::NODE_C_CASE => {
             let count = usize::from(reader.read_usize()?);
             let scrutinee = read_value(reader, table, this, &mut children)?;
             let mut branches = Vec::new();
@@ -2583,19 +2583,19 @@ fn decode_entry(
             let id = table.arena.computation_case(scrutinee, &branches);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_C_WITH => {
+        tags::NODE_C_WITH => {
             let left = read_computation(reader, table, this, &mut children)?;
             let right = read_computation(reader, table, this, &mut children)?;
             let id = table.arena.computation_with(left, right);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_C_PROJECT => {
+        tags::NODE_C_PROJECT => {
             let side = decode_side(reader)?;
             let pair = read_computation(reader, table, this, &mut children)?;
             let id = table.arena.computation_project(side, pair);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | other => {
+        other => {
             return Err(DecodeError::UnknownTag {
                 site: TagSite::Node,
                 tag: other,
@@ -2671,10 +2671,15 @@ fn named_polarity(
 ) -> DecodeError
 {
     match error {
-        | DecodeError::Malformed {
+        DecodeError::Malformed {
             site: MalformedSite::Polarity,
         } => DecodeError::Malformed { site },
-        | other => other,
+        other @ (DecodeError::Truncated
+        | DecodeError::UnknownTag { .. }
+        | DecodeError::Malformed { .. }
+        | DecodeError::ReservedDeclarationKind { .. }
+        | DecodeError::ReservedSlotOccupied { .. }
+        | DecodeError::UnsupportedVersion { .. }) => other,
     }
 }
 
@@ -2749,9 +2754,9 @@ fn decode_higher_program(reader: &mut ByteReader<'_>) -> Result<crate::HigherPro
         let kind = reader.next_tag()?;
         let target = position(reader)?;
         layers.push(match kind {
-            | tags::HIGHER_GUARD => crate::HigherLayer::Guard { tail: target },
-            | tags::HIGHER_REDIRECT => crate::HigherLayer::Redirect(target),
-            | other => {
+            tags::HIGHER_GUARD => crate::HigherLayer::Guard { tail: target },
+            tags::HIGHER_REDIRECT => crate::HigherLayer::Redirect(target),
+            other => {
                 return Err(DecodeError::UnknownTag {
                     site: TagSite::HigherLayer,
                     tag: other,
@@ -2763,7 +2768,7 @@ fn decode_higher_program(reader: &mut ByteReader<'_>) -> Result<crate::HigherPro
         usize::try_from(target.0).is_ok_and(|target| target < layers.len())
     };
     let targets_in_range = layers.iter().all(|layer| match *layer {
-        | crate::HigherLayer::Guard { tail: target } | crate::HigherLayer::Redirect(target) => {
+        crate::HigherLayer::Guard { tail: target } | crate::HigherLayer::Redirect(target) => {
             in_range(target)
         },
     });
@@ -2900,10 +2905,12 @@ fn read_value_type(
 {
     let child = read_child(reader, table, this, Family::ValueType, children)?;
     match child {
-        | DecodedNode::ValueType(id) => Ok(id),
-        | _ => Err(DecodeError::Malformed {
-            site: MalformedSite::Polarity,
-        }),
+        DecodedNode::ValueType(id) => Ok(id),
+        DecodedNode::CompType(_) | DecodedNode::Value(_) | DecodedNode::Computation(_) => {
+            Err(DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            })
+        },
     }
 }
 
@@ -2947,10 +2954,12 @@ fn read_comp_type(
 {
     let child = read_child(reader, table, this, Family::CompType, children)?;
     match child {
-        | DecodedNode::CompType(id) => Ok(id),
-        | _ => Err(DecodeError::Malformed {
-            site: MalformedSite::Polarity,
-        }),
+        DecodedNode::CompType(id) => Ok(id),
+        DecodedNode::ValueType(_) | DecodedNode::Value(_) | DecodedNode::Computation(_) => {
+            Err(DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            })
+        },
     }
 }
 
@@ -2994,10 +3003,12 @@ fn read_value(
 {
     let child = read_child(reader, table, this, Family::Value, children)?;
     match child {
-        | DecodedNode::Value(id) => Ok(id),
-        | _ => Err(DecodeError::Malformed {
-            site: MalformedSite::Polarity,
-        }),
+        DecodedNode::Value(id) => Ok(id),
+        DecodedNode::ValueType(_) | DecodedNode::CompType(_) | DecodedNode::Computation(_) => {
+            Err(DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            })
+        },
     }
 }
 
@@ -3041,10 +3052,12 @@ fn read_computation(
 {
     let child = read_child(reader, table, this, Family::Computation, children)?;
     match child {
-        | DecodedNode::Computation(id) => Ok(id),
-        | _ => Err(DecodeError::Malformed {
-            site: MalformedSite::Polarity,
-        }),
+        DecodedNode::Computation(id) => Ok(id),
+        DecodedNode::ValueType(_) | DecodedNode::CompType(_) | DecodedNode::Value(_) => {
+            Err(DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            })
+        },
     }
 }
 
@@ -3078,9 +3091,9 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 {
     let tag = reader.next_tag()?;
     match tag {
-        | tags::ADMISSION_CHECKED => Ok(AdmissionMark::Checked),
-        | tags::ADMISSION_UNCHECKED => Ok(AdmissionMark::UncheckedBypass),
-        | other => Err(DecodeError::UnknownTag {
+        tags::ADMISSION_CHECKED => Ok(AdmissionMark::Checked),
+        tags::ADMISSION_UNCHECKED => Ok(AdmissionMark::UncheckedBypass),
+        other => Err(DecodeError::UnknownTag {
             site: TagSite::Admission,
             tag: other,
         }),
@@ -3116,23 +3129,23 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 {
     match kind {
-        | tags::KIND_DATA | tags::KIND_DATA_PRESENTED | tags::KIND_DATA_WORDS => Ok(DeclKind::Data),
-        | tags::KIND_DEF | tags::KIND_DEF_RELATING | tags::KIND_DEF_LAWFUL => Ok(DeclKind::Def),
-        | tags::KIND_AXIOM => Ok(DeclKind::Axiom),
+        tags::KIND_DATA | tags::KIND_DATA_PRESENTED | tags::KIND_DATA_WORDS => Ok(DeclKind::Data),
+        tags::KIND_DEF | tags::KIND_DEF_RELATING | tags::KIND_DEF_LAWFUL => Ok(DeclKind::Def),
+        tags::KIND_AXIOM => Ok(DeclKind::Axiom),
         // The abstract-type kind is deliberately live here: it was reserved with
         // the other three and sealing made it real, so it is decoded rather than
         // refused.
-        | tags::KIND_ABSTRACT_TYPE => Ok(DeclKind::AbstractType),
-        | tags::KIND_MODULE_SIG => Err(DecodeError::ReservedDeclarationKind {
+        tags::KIND_ABSTRACT_TYPE => Ok(DeclKind::AbstractType),
+        tags::KIND_MODULE_SIG => Err(DecodeError::ReservedDeclarationKind {
             kind: ReservedKind::ModuleSig,
         }),
-        | tags::KIND_MODULE_DEF => Err(DecodeError::ReservedDeclarationKind {
+        tags::KIND_MODULE_DEF => Err(DecodeError::ReservedDeclarationKind {
             kind: ReservedKind::ModuleDef,
         }),
-        | tags::KIND_FUNCTOR_DEF => Err(DecodeError::ReservedDeclarationKind {
+        tags::KIND_FUNCTOR_DEF => Err(DecodeError::ReservedDeclarationKind {
             kind: ReservedKind::FunctorDef,
         }),
-        | other => Err(DecodeError::UnknownTag {
+        other => Err(DecodeError::UnknownTag {
             site: TagSite::DeclarationKind,
             tag: other,
         }),
@@ -3415,8 +3428,8 @@ fn decode_level_signature(reader: &mut ByteReader<'_>) -> Result<LevelSignature,
         let left = decode_level(reader)?;
         let right = decode_level(reader)?;
         let constraint = match relation {
-            | ConstraintRelation::Leq => LandmarkConstraint::leq(left, right),
-            | ConstraintRelation::Eq => LandmarkConstraint::equal(left, right),
+            ConstraintRelation::Leq => LandmarkConstraint::leq(left, right),
+            ConstraintRelation::Eq => LandmarkConstraint::equal(left, right),
         };
         let constraint = constraint.map_err(|_error| DecodeError::Malformed {
             site: MalformedSite::ConstraintForm,
@@ -3459,9 +3472,9 @@ fn decode_relation(reader: &mut ByteReader<'_>) -> Result<ConstraintRelation, De
 {
     let tag = reader.next_tag()?;
     match tag {
-        | tags::RELATION_LEQ => Ok(ConstraintRelation::Leq),
-        | tags::RELATION_EQ => Ok(ConstraintRelation::Eq),
-        | other => Err(DecodeError::UnknownTag {
+        tags::RELATION_LEQ => Ok(ConstraintRelation::Leq),
+        tags::RELATION_EQ => Ok(ConstraintRelation::Eq),
+        other => Err(DecodeError::UnknownTag {
             site: TagSite::ConstraintRelation,
             tag: other,
         }),
@@ -3602,10 +3615,10 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
 {
     let tag = reader.next_tag()?;
     match tag {
-        | tags::BASE_INTEGER => Ok(BaseType::Integer),
-        | tags::BASE_STRING => Ok(BaseType::String),
-        | tags::BASE_NUMERIC => Ok(BaseType::Numeric),
-        | other => Err(DecodeError::UnknownTag {
+        tags::BASE_INTEGER => Ok(BaseType::Integer),
+        tags::BASE_STRING => Ok(BaseType::String),
+        tags::BASE_NUMERIC => Ok(BaseType::Numeric),
+        other => Err(DecodeError::UnknownTag {
             site: TagSite::BaseType,
             tag: other,
         }),
@@ -3638,9 +3651,9 @@ fn decode_evidence(reader: &mut ByteReader<'_>) -> Result<crate::FixpointEvidenc
 {
     let tag = reader.next_tag()?;
     match tag {
-        | tags::FIXPOINT_PARTIAL => Ok(crate::FixpointEvidence::Partial),
-        | tags::FIXPOINT_STRUCTURAL_DESCENT => Ok(crate::FixpointEvidence::StructuralDescent),
-        | other => Err(DecodeError::UnknownTag {
+        tags::FIXPOINT_PARTIAL => Ok(crate::FixpointEvidence::Partial),
+        tags::FIXPOINT_STRUCTURAL_DESCENT => Ok(crate::FixpointEvidence::StructuralDescent),
+        other => Err(DecodeError::UnknownTag {
             site: TagSite::FixpointEvidence,
             tag: other,
         }),
@@ -3673,9 +3686,9 @@ fn decode_side(reader: &mut ByteReader<'_>) -> Result<crate::Side, DecodeError>
 {
     let tag = reader.next_tag()?;
     match tag {
-        | tags::SIDE_LEFT => Ok(crate::Side::Left),
-        | tags::SIDE_RIGHT => Ok(crate::Side::Right),
-        | other => Err(DecodeError::UnknownTag {
+        tags::SIDE_LEFT => Ok(crate::Side::Left),
+        tags::SIDE_RIGHT => Ok(crate::Side::Right),
+        other => Err(DecodeError::UnknownTag {
             site: TagSite::ProjectionSide,
             tag: other,
         }),
@@ -3708,9 +3721,9 @@ fn decode_seam(reader: &mut ByteReader<'_>) -> Result<crate::Seam, DecodeError>
 {
     let tag = reader.next_tag()?;
     match tag {
-        | tags::SEAM_SEQUENCE => Ok(crate::Seam::Sequence),
-        | tags::SEAM_FEEDBACK => Ok(crate::Seam::Feedback),
-        | other => Err(DecodeError::UnknownTag {
+        tags::SEAM_SEQUENCE => Ok(crate::Seam::Sequence),
+        tags::SEAM_FEEDBACK => Ok(crate::Seam::Feedback),
+        other => Err(DecodeError::UnknownTag {
             site: TagSite::Seam,
             tag: other,
         }),
@@ -3765,16 +3778,16 @@ fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
 {
     let tag = reader.next_tag()?;
     match tag {
-        | tags::LITERAL_INTEGER => {
+        tags::LITERAL_INTEGER => {
             let sign = decode_sign(reader)?;
             let magnitude = decode_magnitude(reader)?;
             Ok(Literal::Integer(IntegerLiteral::new(sign, magnitude)))
         },
-        | tags::LITERAL_TEXT => {
+        tags::LITERAL_TEXT => {
             let content = reader.read_text(MalformedSite::LiteralPayload)?;
             Ok(Literal::Text(StringLiteral::new(content)))
         },
-        | tags::LITERAL_NUMERIC => {
+        tags::LITERAL_NUMERIC => {
             let sign = decode_sign(reader)?;
             let integer_part = decode_magnitude(reader)?;
             let fraction = decode_fraction(reader)?;
@@ -3784,7 +3797,7 @@ fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
                 fraction,
             )))
         },
-        | other => Err(DecodeError::UnknownTag {
+        other => Err(DecodeError::UnknownTag {
             site: TagSite::LiteralKind,
             tag: other,
         }),
@@ -3819,9 +3832,9 @@ fn decode_sign(reader: &mut ByteReader<'_>) -> Result<Sign, DecodeError>
 {
     let tag = reader.next_tag()?;
     match tag {
-        | tags::SIGN_NON_NEGATIVE => Ok(Sign::NonNegative),
-        | tags::SIGN_NEGATIVE => Ok(Sign::Negative),
-        | other => Err(DecodeError::UnknownTag {
+        tags::SIGN_NON_NEGATIVE => Ok(Sign::NonNegative),
+        tags::SIGN_NEGATIVE => Ok(Sign::Negative),
+        other => Err(DecodeError::UnknownTag {
             site: TagSite::Sign,
             tag: other,
         }),
@@ -4090,76 +4103,76 @@ mod tests
             };
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             let admission = match byte {
-                | 0 => Ok(super::AdmissionMark::Checked),
-                | 1 => Ok(super::AdmissionMark::UncheckedBypass),
-                | _ => Err(unknown(super::TagSite::Admission)),
+                0 => Ok(super::AdmissionMark::Checked),
+                1 => Ok(super::AdmissionMark::UncheckedBypass),
+                _ => Err(unknown(super::TagSite::Admission)),
             };
             assert_eq!(super::decode_admission(&mut reader), admission);
             assert_eq!(reader.position.0, 1);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             let relation = match byte {
-                | 0 => Ok(super::ConstraintRelation::Leq),
-                | 1 => Ok(super::ConstraintRelation::Eq),
-                | _ => Err(unknown(super::TagSite::ConstraintRelation)),
+                0 => Ok(super::ConstraintRelation::Leq),
+                1 => Ok(super::ConstraintRelation::Eq),
+                _ => Err(unknown(super::TagSite::ConstraintRelation)),
             };
             assert_eq!(super::decode_relation(&mut reader), relation);
             assert_eq!(reader.position.0, 1);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             let base = match byte {
-                | 0 => Ok(super::BaseType::Integer),
-                | 1 => Ok(super::BaseType::String),
-                | 2 => Ok(super::BaseType::Numeric),
-                | _ => Err(unknown(super::TagSite::BaseType)),
+                0 => Ok(super::BaseType::Integer),
+                1 => Ok(super::BaseType::String),
+                2 => Ok(super::BaseType::Numeric),
+                _ => Err(unknown(super::TagSite::BaseType)),
             };
             assert_eq!(super::decode_base_type(&mut reader), base);
             assert_eq!(reader.position.0, 1);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             let evidence = match byte {
-                | 0 => Ok(crate::FixpointEvidence::Partial),
-                | 1 => Ok(crate::FixpointEvidence::StructuralDescent),
-                | _ => Err(unknown(super::TagSite::FixpointEvidence)),
+                0 => Ok(crate::FixpointEvidence::Partial),
+                1 => Ok(crate::FixpointEvidence::StructuralDescent),
+                _ => Err(unknown(super::TagSite::FixpointEvidence)),
             };
             assert_eq!(super::decode_evidence(&mut reader), evidence);
             assert_eq!(reader.position.0, 1);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             let side = match byte {
-                | 0 => Ok(crate::Side::Left),
-                | 1 => Ok(crate::Side::Right),
-                | _ => Err(unknown(super::TagSite::ProjectionSide)),
+                0 => Ok(crate::Side::Left),
+                1 => Ok(crate::Side::Right),
+                _ => Err(unknown(super::TagSite::ProjectionSide)),
             };
             assert_eq!(super::decode_side(&mut reader), side);
             assert_eq!(reader.position.0, 1);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             let seam = match byte {
-                | 0 => Ok(crate::Seam::Sequence),
-                | 1 => Ok(crate::Seam::Feedback),
-                | _ => Err(unknown(super::TagSite::Seam)),
+                0 => Ok(crate::Seam::Sequence),
+                1 => Ok(crate::Seam::Feedback),
+                _ => Err(unknown(super::TagSite::Seam)),
             };
             assert_eq!(super::decode_seam(&mut reader), seam);
             assert_eq!(reader.position.0, 1);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             let sign = match byte {
-                | 0 => Ok(super::Sign::NonNegative),
-                | 1 => Ok(super::Sign::Negative),
-                | _ => Err(unknown(super::TagSite::Sign)),
+                0 => Ok(super::Sign::NonNegative),
+                1 => Ok(super::Sign::Negative),
+                _ => Err(unknown(super::TagSite::Sign)),
             };
             assert_eq!(super::decode_sign(&mut reader), sign);
             assert_eq!(reader.position.0, 1);
             let kind = match byte {
-                | 0 | 7 | 9 => Ok(super::DeclKind::Def),
-                | 1 => Ok(super::DeclKind::Axiom),
-                | 2 => Ok(super::DeclKind::AbstractType),
-                | 3 => Err(DecodeError::ReservedDeclarationKind {
+                0 | 7 | 9 => Ok(super::DeclKind::Def),
+                1 => Ok(super::DeclKind::Axiom),
+                2 => Ok(super::DeclKind::AbstractType),
+                3 => Err(DecodeError::ReservedDeclarationKind {
                     kind: super::ReservedKind::ModuleSig,
                 }),
-                | 4 => Err(DecodeError::ReservedDeclarationKind {
+                4 => Err(DecodeError::ReservedDeclarationKind {
                     kind: super::ReservedKind::ModuleDef,
                 }),
-                | 5 => Err(DecodeError::ReservedDeclarationKind {
+                5 => Err(DecodeError::ReservedDeclarationKind {
                     kind: super::ReservedKind::FunctorDef,
                 }),
-                | 6 | 8 | 10 => Ok(super::DeclKind::Data),
-                | _ => Err(unknown(super::TagSite::DeclarationKind)),
+                6 | 8 | 10 => Ok(super::DeclKind::Data),
+                _ => Err(unknown(super::TagSite::DeclarationKind)),
             };
             assert_eq!(super::declaration_kind(super::WireTag::from(byte)), kind);
             if byte > 2 {
@@ -4374,20 +4387,20 @@ mod tests
         ];
         let nodes_equal =
             |first: super::DecodedNode, second: super::DecodedNode| match (first, second) {
-                | (super::DecodedNode::ValueType(first), super::DecodedNode::ValueType(second)) => {
+                (super::DecodedNode::ValueType(first), super::DecodedNode::ValueType(second)) => {
                     first == second
                 },
-                | (super::DecodedNode::Value(first), super::DecodedNode::Value(second)) => {
+                (super::DecodedNode::Value(first), super::DecodedNode::Value(second)) => {
                     first == second
                 },
-                | (super::DecodedNode::CompType(first), super::DecodedNode::CompType(second)) => {
+                (super::DecodedNode::CompType(first), super::DecodedNode::CompType(second)) => {
                     first == second
                 },
-                | (
+                (
                     super::DecodedNode::Computation(first),
                     super::DecodedNode::Computation(second),
                 ) => first == second,
-                | _ => false,
+                _ => false,
             };
         for index in 0_u8 ..= 9 {
             let global = super::GlobalIndex::from(u32::from(index));
@@ -4430,26 +4443,26 @@ mod tests
                 let mut children = prefix.to_vec();
                 let next = table.next_index();
                 let result = match required {
-                    | super::Family::ValueType => {
+                    super::Family::ValueType => {
                         super::read_value_type(&mut reader, &table, next, &mut children)
                             .map(super::DecodedNode::ValueType)
                     },
-                    | super::Family::Value => {
+                    super::Family::Value => {
                         super::read_value(&mut reader, &table, next, &mut children)
                             .map(super::DecodedNode::Value)
                     },
-                    | super::Family::CompType => {
+                    super::Family::CompType => {
                         super::read_comp_type(&mut reader, &table, next, &mut children)
                             .map(super::DecodedNode::CompType)
                     },
-                    | super::Family::Computation => {
+                    super::Family::Computation => {
                         super::read_computation(&mut reader, &table, next, &mut children)
                             .map(super::DecodedNode::Computation)
                     },
                 };
                 assert_eq!(reader.position.0, 1);
                 match (result, expected) {
-                    | (Ok(node), Ok(_)) => {
+                    (Ok(node), Ok(_)) => {
                         let stored = table
                             .nodes
                             .get(usize::from(index))
@@ -4460,20 +4473,20 @@ mod tests
                         expected_children.push(global);
                         assert_eq!(children, expected_children);
                     },
-                    | (Err(actual), Err(expected)) => {
+                    (Err(actual), Err(expected)) => {
                         assert_eq!(actual, expected);
                         assert_eq!(children, prefix);
                     },
-                    | _ => panic!("reference family or refusal precedence changed"),
+                    _ => panic!("reference family or refusal precedence changed"),
                 }
             }
             let expected_type = match table.nodes.get(usize::from(index)).copied() {
-                | Some(super::DecodedNode::ValueType(id)) => Some(id),
-                | _ => None,
+                Some(super::DecodedNode::ValueType(id)) => Some(id),
+                _ => None,
             };
             let expected_value = match table.nodes.get(usize::from(index)).copied() {
-                | Some(super::DecodedNode::Value(id)) => Some(id),
-                | _ => None,
+                Some(super::DecodedNode::Value(id)) => Some(id),
+                _ => None,
             };
             assert_eq!(super::value_type_id_at(&table.nodes, global), expected_type);
             assert_eq!(super::value_id_at(&table.nodes, global), expected_value);
@@ -4501,19 +4514,15 @@ mod tests
             let mut table = super::Table::new();
             for children in edges {
                 let resolve = |index: usize| match table.nodes.get(index).copied() {
-                    | Some(super::DecodedNode::ValueType(id)) => id,
-                    | _ => panic!("fixture child must be an earlier value type"),
+                    Some(super::DecodedNode::ValueType(id)) => id,
+                    _ => panic!("fixture child must be an earlier value type"),
                 };
                 let first = children.first().copied().map(resolve);
                 let second = children.get(1).copied().map(resolve);
                 let id = match (first, second) {
-                    | (None, _) => table.arena.value_type_unit(),
-                    | (Some(first), None) => {
-                        table.arena.value_type_lift(first, super::Level::zero())
-                    },
-                    | (Some(first), Some(second)) => {
-                        table.arena.value_type_product(&[first, second])
-                    },
+                    (None, _) => table.arena.value_type_unit(),
+                    (Some(first), None) => table.arena.value_type_lift(first, super::Level::zero()),
+                    (Some(first), Some(second)) => table.arena.value_type_product(&[first, second]),
                 };
                 table.nodes.push(super::DecodedNode::ValueType(id));
                 table.families.push(super::Family::ValueType);
@@ -5760,16 +5769,16 @@ mod tests
             assert_eq!(reader.position.0, bytes.len());
             let decoded = table.nodes.last().copied().expect("appended row");
             match (family, decoded) {
-                | (super::DecodedNode::ValueType(_), super::DecodedNode::ValueType(id)) => {
+                (super::DecodedNode::ValueType(_), super::DecodedNode::ValueType(id)) => {
                     assert_eq!(table.arena.value_type(id), value_types.next());
                 },
-                | (super::DecodedNode::Value(_), super::DecodedNode::Value(id)) => {
+                (super::DecodedNode::Value(_), super::DecodedNode::Value(id)) => {
                     assert_eq!(table.arena.value(id), values.next());
                 },
-                | (super::DecodedNode::Computation(_), super::DecodedNode::Computation(id)) => {
+                (super::DecodedNode::Computation(_), super::DecodedNode::Computation(id)) => {
                     assert_eq!(table.arena.computation(id), computations.next());
                 },
-                | _ => panic!("wrong node family"),
+                _ => panic!("wrong node family"),
             }
             assert!(
                 table
@@ -6120,16 +6129,16 @@ mod tests
             assert_eq!(reader.position.0, bytes.len());
             let decoded = table.nodes.last().copied().expect("appended row");
             match (family, decoded) {
-                | (super::DecodedNode::ValueType(_), super::DecodedNode::ValueType(id)) => {
+                (super::DecodedNode::ValueType(_), super::DecodedNode::ValueType(id)) => {
                     assert_eq!(table.arena.value_type(id), value_types.next());
                 },
-                | (super::DecodedNode::Value(_), super::DecodedNode::Value(id)) => {
+                (super::DecodedNode::Value(_), super::DecodedNode::Value(id)) => {
                     assert_eq!(table.arena.value(id), values.next());
                 },
-                | (super::DecodedNode::Computation(_), super::DecodedNode::Computation(id)) => {
+                (super::DecodedNode::Computation(_), super::DecodedNode::Computation(id)) => {
                     assert_eq!(table.arena.computation(id), computations.next());
                 },
-                | _ => panic!("wrong node family"),
+                _ => panic!("wrong node family"),
             }
             assert!(
                 table

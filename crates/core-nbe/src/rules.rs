@@ -98,8 +98,8 @@ impl Frozen
     ) -> Membership
     {
         let held = match side {
-            | ConversionSide::Left => &self.left,
-            | ConversionSide::Right => &self.right,
+            ConversionSide::Left => &self.left,
+            ConversionSide::Right => &self.right,
         };
         if held.contains(&constant) {
             Membership::Held
@@ -150,8 +150,8 @@ impl Frozen
     )
     {
         let held = match side {
-            | ConversionSide::Left => &mut self.left,
-            | ConversionSide::Right => &mut self.right,
+            ConversionSide::Left => &mut self.left,
+            ConversionSide::Right => &mut self.right,
         };
         if !held.contains(&constant) {
             held.push(constant);
@@ -339,7 +339,7 @@ impl Choice
     pub(crate) fn alternatives(self) -> (Combination, Vec<Move>)
     {
         match self {
-            | Self::Same => (
+            Self::Same => (
                 Combination::Biased,
                 Vec::from([
                     Move::Shortcut,
@@ -347,18 +347,18 @@ impl Choice
                     Move::PostponeUnfold(ConversionSide::Left),
                 ]),
             ),
-            | Self::Different => (
+            Self::Different => (
                 Combination::Biased,
                 Vec::from([
                     Move::FreezeUnfold(ConversionSide::Left),
                     Move::PostponeUnfold(ConversionSide::Left),
                 ]),
             ),
-            | Self::Frozen { defined } => (
+            Self::Frozen { defined } => (
                 Combination::Either,
                 Vec::from([Move::Shortcut, Move::Unfold(defined)]),
             ),
-            | Self::Lambda { defined } => (
+            Self::Lambda { defined } => (
                 Combination::Biased,
                 Vec::from([Move::FreezeEta(defined), Move::Unfold(defined)]),
             ),
@@ -558,13 +558,13 @@ pub fn projection_key(
 ) -> Result<ProjectionKey<'_>, ConversionFault>
 {
     match core.computation(source) {
-        | Some(&gandr_core_term::Computation::RecordProjection(_, ref label)) => {
+        Some(&gandr_core_term::Computation::RecordProjection(_, ref label)) => {
             Ok(ProjectionKey::Label(label))
         },
-        | Some(&gandr_core_term::Computation::TupleProjection(_, component)) => {
+        Some(&gandr_core_term::Computation::TupleProjection(_, component)) => {
             Ok(ProjectionKey::Component(component))
         },
-        | _ => Err(ConversionFault::MachineInvariant),
+        _ => Err(ConversionFault::MachineInvariant),
     }
 }
 
@@ -595,19 +595,29 @@ fn elimination_shape<'core>(
 ) -> Result<EliminationShape<'core>, ConversionFault>
 {
     match elimination {
-        | Elimination::DataCase(closure) => case_source(core, domain, closure)
+        Elimination::DataCase(closure) => case_source(core, domain, closure)
             .map(|(_, branches)| EliminationShape::DataCase(branches.len())),
-        | Elimination::Projection(source) => {
+        Elimination::Projection(source) => {
             projection_key(core, source).map(EliminationShape::Projection)
         },
-        | Elimination::Split(closure) => {
+        Elimination::Split(closure) => {
             split_source(core, domain, closure).map(|(arity, _)| EliminationShape::Split(arity))
         },
-        | Elimination::Case(branches) => domain
+        Elimination::Case(branches) => domain
             .branches(branches)
             .map(|held| EliminationShape::Case(held.len()))
             .map_err(ConversionFault::Domain),
-        | _ => Ok(EliminationShape::Ordinary(core::mem::discriminant(
+        Elimination::Transport(_)
+        | Elimination::ProductTransport(_)
+        | Elimination::PathTransport { .. }
+        | Elimination::Ride { .. }
+        | Elimination::TelescopeTransport { .. }
+        | Elimination::Apply(_)
+        | Elimination::Force
+        | Elimination::Bind(_)
+        | Elimination::ListFold { .. }
+        | Elimination::StaticApply(_)
+        | Elimination::Fixpoint(_) => Ok(EliminationShape::Ordinary(core::mem::discriminant(
             &elimination,
         ))),
     }
@@ -620,8 +630,8 @@ fn elimination_shape<'core>(
 pub const fn other(side: ConversionSide) -> ConversionSide
 {
     match side {
-        | ConversionSide::Left => ConversionSide::Right,
-        | ConversionSide::Right => ConversionSide::Left,
+        ConversionSide::Left => ConversionSide::Right,
+        ConversionSide::Right => ConversionSide::Left,
     }
 }
 
@@ -673,16 +683,16 @@ pub fn head(
         .neutral(neutral)
         .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
     Ok(match (held.head(), held.unfolding()) {
-        | (NeutralHead::Constant(constant), Unfolding::Unforced(_) | Unfolding::Forced(_)) => {
+        (NeutralHead::Constant(constant), Unfolding::Unforced(_) | Unfolding::Forced(_)) => {
             match frozen.holds(side, constant) {
-                | Membership::Held => Head::Frozen(constant),
-                | Membership::Absent => Head::Defined(constant),
+                Membership::Held => Head::Frozen(constant),
+                Membership::Absent => Head::Defined(constant),
             }
         },
-        | (NeutralHead::Constant(_), Unfolding::Rigid)
+        (NeutralHead::Constant(_), Unfolding::Rigid)
         | (NeutralHead::Variable { .. } | NeutralHead::Module(_), _) => Head::Rigid,
-        | (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, _) => Head::Indeterminate,
-        | (NeutralHead::Returned(computation), _) => {
+        (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, _) => Head::Indeterminate,
+        (NeutralHead::Returned(computation), _) => {
             return endpoint_head(domain, frozen, side, computation);
         },
     })
@@ -749,13 +759,13 @@ fn endpoint_head(
         .neutral(neutral)
         .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
     Ok(match (held.head(), held.unfolding()) {
-        | (
+        (
             NeutralHead::Constant(constant),
             Unfolding::Unforced(_) | Unfolding::Forced(Glued::Value(_)),
         ) if frozen.holds(side, constant) == Membership::Absent => Head::Endpoint(constant),
-        | (NeutralHead::Constant(_), Unfolding::Rigid)
+        (NeutralHead::Constant(_), Unfolding::Rigid)
         | (NeutralHead::Variable { .. } | NeutralHead::Module(_), _) => Head::Held,
-        | _ => Head::Indeterminate,
+        _ => Head::Indeterminate,
     })
 }
 
@@ -821,8 +831,8 @@ pub fn held_call(
             .neutral(neutral)
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
         match held.head() {
-            | NeutralHead::Returned(inner) => focus = inner,
-            | NeutralHead::Constant(_)
+            NeutralHead::Returned(inner) => focus = inner,
+            NeutralHead::Constant(_)
             | NeutralHead::Variable { .. }
             | NeutralHead::Module(_)
             | NeutralHead::Hole { .. }
@@ -912,7 +922,7 @@ pub fn spine_subgoals(
             return Ok(Spines::Disagree);
         }
         match (left_elimination, right_elimination) {
-            | (Elimination::DataCase(left), Elimination::DataCase(right)) => {
+            (Elimination::DataCase(left), Elimination::DataCase(right)) => {
                 let EliminationShape::DataCase(count) = shape
                 else {
                     return Err(ConversionFault::MachineInvariant);
@@ -924,21 +934,19 @@ pub fn spine_subgoals(
                     tag: gandr_core_term::ConstructorTag::from(index),
                 }));
             },
-            | (Elimination::Projection(_), Elimination::Projection(_))
+            (Elimination::Projection(_), Elimination::Projection(_))
             | (Elimination::Force, Elimination::Force) => {},
-            | (Elimination::Transport(left_argument), Elimination::Transport(right_argument))
+            (Elimination::Transport(left_argument), Elimination::Transport(right_argument))
             | (
                 Elimination::ProductTransport(left_argument),
                 Elimination::ProductTransport(right_argument),
             )
             | (Elimination::Apply(left_argument), Elimination::Apply(right_argument))
-            | (
-                Elimination::StaticApply(left_argument),
-                Elimination::StaticApply(right_argument),
-            ) => {
+            | (Elimination::StaticApply(left_argument), Elimination::StaticApply(right_argument)) =>
+            {
                 subgoals.push(Subgoal::Values(left_argument, right_argument));
             },
-            | (
+            (
                 Elimination::PathTransport {
                     motive: left_motive,
                     value: left_value,
@@ -963,7 +971,7 @@ pub fn spine_subgoals(
             },
             // A telescope motive binds through its own arrows, so it compares
             // as a code at the spine's depth, the way captured classifiers do.
-            | (
+            (
                 Elimination::TelescopeTransport {
                     motive: left_motive,
                     start: left_start,
@@ -984,16 +992,16 @@ pub fn spine_subgoals(
                     Subgoal::Values(left_value, right_value),
                 ]);
             },
-            | (Elimination::Bind(left_body), Elimination::Bind(right_body)) => {
+            (Elimination::Bind(left_body), Elimination::Bind(right_body)) => {
                 subgoals.push(Subgoal::Opened(left_body, right_body));
             },
-            | (Elimination::Split(left_split), Elimination::Split(right_split)) => {
+            (Elimination::Split(left_split), Elimination::Split(right_split)) => {
                 subgoals.push(Subgoal::SplitBodies(left_split, right_split));
             },
-            | (Elimination::Fixpoint(left_fixpoint), Elimination::Fixpoint(right_fixpoint)) => {
+            (Elimination::Fixpoint(left_fixpoint), Elimination::Fixpoint(right_fixpoint)) => {
                 subgoals.push(Subgoal::Fixpoints(left_fixpoint, right_fixpoint));
             },
-            | (
+            (
                 Elimination::ListFold {
                     on_nil: ln,
                     on_cons: lc,
@@ -1012,7 +1020,7 @@ pub fn spine_subgoals(
                     gandr_core_term::ComponentCount::from(2_usize),
                 ));
             },
-            | (Elimination::Case(left_branches), Elimination::Case(right_branches)) => {
+            (Elimination::Case(left_branches), Elimination::Case(right_branches)) => {
                 let left_branches = domain
                     .branches(left_branches)
                     .map_err(ConversionFault::Domain)?;
@@ -1023,7 +1031,7 @@ pub fn spine_subgoals(
                     |(&left_branch, &right_branch)| Subgoal::Opened(left_branch, right_branch),
                 ));
             },
-            | (
+            (
                 Elimination::Transport(_)
                 | Elimination::DataCase(_)
                 | Elimination::Split(_)
@@ -1144,13 +1152,13 @@ pub fn plan(
 ) -> Result<Plan, ConversionFault>
 {
     match (left, right) {
-        | (Glued::Value(one), Glued::Value(other)) => {
+        (Glued::Value(one), Glued::Value(other)) => {
             plan_values(core, domain, definitions, frozen, one, other)
         },
-        | (Glued::Computation(one), Glued::Computation(other)) => {
+        (Glued::Computation(one), Glued::Computation(other)) => {
             plan_comps(core, domain, frozen, one, other)
         },
-        | (Glued::Value(_), Glued::Computation(_)) | (Glued::Computation(_), Glued::Value(_)) => {
+        (Glued::Value(_), Glued::Computation(_)) | (Glued::Computation(_), Glued::Value(_)) => {
             Err(ConversionFault::Polarity)
         },
     }
@@ -1218,13 +1226,13 @@ fn plan_constants(
         arity = same_arity(domain, left_neutral, right_neutral)?;
     }
     let planned = match (left, right) {
-        | (Neutrality::Neutral(_, Head::Endpoint(_)), _) => {
+        (Neutrality::Neutral(_, Head::Endpoint(_)), _) => {
             Plan::Step(Step::Unfold(ConversionSide::Left))
         },
-        | (_, Neutrality::Neutral(_, Head::Endpoint(_))) => {
+        (_, Neutrality::Neutral(_, Head::Endpoint(_))) => {
             Plan::Step(Step::Unfold(ConversionSide::Right))
         },
-        | (
+        (
             Neutrality::Neutral(_, Head::Defined(one)),
             Neutrality::Neutral(_, Head::Defined(other)),
         ) => {
@@ -1235,31 +1243,31 @@ fn plan_constants(
                 Plan::Choose(Choice::Different)
             }
         },
-        | (
+        (
             Neutrality::Neutral(_, Head::Defined(one)),
             Neutrality::Neutral(_, Head::Frozen(other)),
         ) if one == other && arity == Arity::Same => Plan::Choose(Choice::Frozen {
             defined: ConversionSide::Left,
         }),
-        | (
+        (
             Neutrality::Neutral(_, Head::Frozen(one)),
             Neutrality::Neutral(_, Head::Defined(other)),
         ) if one == other && arity == Arity::Same => Plan::Choose(Choice::Frozen {
             defined: ConversionSide::Right,
         }),
-        | (Neutrality::Neutral(_, Head::Defined(_)), _) => match lambda {
-            | Lambda::Right => Plan::Choose(Choice::Lambda {
+        (Neutrality::Neutral(_, Head::Defined(_)), _) => match lambda {
+            Lambda::Right => Plan::Choose(Choice::Lambda {
                 defined: ConversionSide::Left,
             }),
-            | Lambda::Left | Lambda::Neither => Plan::Step(Step::Unfold(ConversionSide::Left)),
+            Lambda::Left | Lambda::Neither => Plan::Step(Step::Unfold(ConversionSide::Left)),
         },
-        | (_, Neutrality::Neutral(_, Head::Defined(_))) => match lambda {
-            | Lambda::Left => Plan::Choose(Choice::Lambda {
+        (_, Neutrality::Neutral(_, Head::Defined(_))) => match lambda {
+            Lambda::Left => Plan::Choose(Choice::Lambda {
                 defined: ConversionSide::Right,
             }),
-            | Lambda::Right | Lambda::Neither => Plan::Step(Step::Unfold(ConversionSide::Right)),
+            Lambda::Right | Lambda::Neither => Plan::Step(Step::Unfold(ConversionSide::Right)),
         },
-        | (
+        (
             Neutrality::Former
             | Neutrality::Neutral(
                 _,
@@ -1351,14 +1359,14 @@ fn plan_rigid(
         return Ok(Plan::Leaf(Settled::NotConvertible));
     }
     match bind_step(one.spine(), other.spine()) {
-        | BindStep::Reassociate(side) => return Ok(Plan::Step(Step::Reassociate(side))),
-        | BindStep::ReturnEta(side) => return Ok(Plan::Step(Step::ReturnEta(side))),
-        | BindStep::Normal => {},
+        BindStep::Reassociate(side) => return Ok(Plan::Step(Step::Reassociate(side))),
+        BindStep::ReturnEta(side) => return Ok(Plan::Step(Step::ReturnEta(side))),
+        BindStep::Normal => {},
     }
     let spines = spine_subgoals(core, domain, left, right)?;
     Ok(match spines {
-        | Spines::Agree(subgoals) => Plan::Decompose(subgoals),
-        | Spines::Disagree => Plan::Leaf(Settled::NotConvertible),
+        Spines::Agree(subgoals) => Plan::Decompose(subgoals),
+        Spines::Disagree => Plan::Leaf(Settled::NotConvertible),
     })
 }
 
@@ -1473,11 +1481,11 @@ fn value_neutrality(
 ) -> Result<Neutrality, ConversionFault>
 {
     Ok(match value {
-        | DomainValue::Neutral { neutral, .. } => {
+        DomainValue::Neutral { neutral, .. } => {
             let read = head(domain, frozen, side, neutral)?;
             Neutrality::Neutral(neutral, read)
         },
-        | DomainValue::PathCertificate { .. }
+        DomainValue::PathCertificate { .. }
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
@@ -1530,11 +1538,11 @@ fn comp_neutrality(
 ) -> Result<Neutrality, ConversionFault>
 {
     Ok(match comp {
-        | DomainComp::Neutral { neutral, .. } => {
+        DomainComp::Neutral { neutral, .. } => {
             let read = head(domain, frozen, side, neutral)?;
             Neutrality::Neutral(neutral, read)
         },
-        | DomainComp::Lambda { .. } | DomainComp::Return { .. } | DomainComp::Fixpoint { .. } => {
+        DomainComp::Lambda { .. } | DomainComp::Return { .. } | DomainComp::Fixpoint { .. } => {
             Neutrality::Former
         },
     })
@@ -1574,9 +1582,9 @@ const fn determinacy(
 ) -> Determinacy
 {
     match (left, right) {
-        | (Neutrality::Neutral(_, Head::Indeterminate), _)
+        (Neutrality::Neutral(_, Head::Indeterminate), _)
         | (_, Neutrality::Neutral(_, Head::Indeterminate)) => Determinacy::Indeterminate,
-        | (
+        (
             Neutrality::Former
             | Neutrality::Neutral(
                 _,
@@ -1648,14 +1656,14 @@ fn whole(
         return Ok(None);
     }
     let settled = match term {
-        | Term::Values(left, right) => crate::conv::convert_values(core, domain, left, right)?,
-        | Term::Comps(left, right) => crate::conv::convert_computations(core, domain, left, right)?,
+        Term::Values(left, right) => crate::conv::convert_values(core, domain, left, right)?,
+        Term::Comps(left, right) => crate::conv::convert_computations(core, domain, left, right)?,
     };
     Ok(Some(match settled {
-        | crate::conv::Settlement::Identical | crate::conv::Settlement::StructurallyEqual => {
+        crate::conv::Settlement::Identical | crate::conv::Settlement::StructurallyEqual => {
             Plan::Shared(Settled::Convertible)
         },
-        | crate::conv::Settlement::GuardedApart
+        crate::conv::Settlement::GuardedApart
         | crate::conv::Settlement::StructurallyApart
         | crate::conv::Settlement::Deferred(_) => Plan::Decline(DeclineReason::Indeterminate),
     }))
@@ -1687,8 +1695,8 @@ fn payload(
 ) -> Result<&gandr_kernel_term::Literal, ConversionFault>
 {
     match core.value(literal) {
-        | Some(&Value::Literal(ref held)) => Ok(held),
-        | Some(_) | None => Err(ConversionFault::LiteralPayload { literal }),
+        Some(&Value::Literal(ref held)) => Ok(held),
+        Some(_) | None => Err(ConversionFault::LiteralPayload { literal }),
     }
 }
 
@@ -1741,9 +1749,9 @@ fn plan_values(
 {
     let early = early_values(domain, left, right)?;
     match early {
-        | Early::Identical => return Ok(Plan::Shared(Settled::Convertible)),
-        | Early::Apart => return Ok(Plan::Shared(Settled::NotConvertible)),
-        | Early::Open => {},
+        Early::Identical => return Ok(Plan::Shared(Settled::Convertible)),
+        Early::Apart => return Ok(Plan::Shared(Settled::NotConvertible)),
+        Early::Open => {},
     }
     let (Some(&one), Some(&other)) = (domain.value(left), domain.value(right))
     else {
@@ -1767,7 +1775,7 @@ fn plan_values(
         return Ok(planned);
     }
     let planned = match (one, other) {
-        | (
+        (
             DomainValue::Constructor {
                 datatype: left_source,
                 tag: left_tag,
@@ -1800,7 +1808,7 @@ fn plan_values(
             );
             Plan::Decompose(subgoals)
         },
-        | (
+        (
             DomainValue::Record {
                 source: left_source,
                 fields: left_fields,
@@ -1845,7 +1853,7 @@ fn plan_values(
                     .collect(),
             )
         },
-        | (
+        (
             DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
             DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
         ) => Plan::Shared(
@@ -1858,7 +1866,7 @@ fn plan_values(
                 Settled::NotConvertible
             },
         ),
-        | (
+        (
             DomainValue::Tuple {
                 fields: left_fields,
                 ..
@@ -1890,10 +1898,10 @@ fn plan_values(
                 )
             }
         },
-        | (DomainValue::ListNil { .. }, DomainValue::ListNil { .. }) => {
+        (DomainValue::ListNil { .. }, DomainValue::ListNil { .. }) => {
             Plan::Leaf(Settled::Convertible)
         },
-        | (
+        (
             DomainValue::Literal { literal: first, .. },
             DomainValue::Literal {
                 literal: second, ..
@@ -1911,7 +1919,7 @@ fn plan_values(
                 Settled::NotConvertible
             })
         },
-        | (
+        (
             DomainValue::ListCons {
                 first: left_first,
                 second: left_second,
@@ -1926,7 +1934,7 @@ fn plan_values(
             Subgoal::Values(left_first, right_first),
             Subgoal::Values(left_second, right_second),
         ])),
-        | (
+        (
             DomainValue::Flow {
                 former: left_former,
                 parts: left_parts,
@@ -1955,7 +1963,7 @@ fn plan_values(
                 Plan::Leaf(Settled::NotConvertible)
             }
         },
-        | (
+        (
             DomainValue::Injection {
                 summand: left_summand,
                 body: left_body,
@@ -1974,7 +1982,7 @@ fn plan_values(
                 Plan::Leaf(Settled::NotConvertible)
             }
         },
-        | (
+        (
             DomainValue::Here {
                 point: left_point, ..
             },
@@ -1982,7 +1990,7 @@ fn plan_values(
                 point: right_point, ..
             },
         ) => Plan::Decompose(Vec::from([Subgoal::Values(left_point, right_point)])),
-        | (
+        (
             DomainValue::Lift {
                 target: left_target,
                 body: left_body,
@@ -2006,9 +2014,9 @@ fn plan_values(
                 Plan::Leaf(Settled::NotConvertible)
             }
         },
-        | (DomainValue::Thunk { .. }, DomainValue::Thunk { .. } | DomainValue::Neutral { .. })
+        (DomainValue::Thunk { .. }, DomainValue::Thunk { .. } | DomainValue::Neutral { .. })
         | (DomainValue::Neutral { .. }, DomainValue::Thunk { .. }) => Plan::Step(Step::Force),
-        | (
+        (
             DomainValue::Neutral {
                 neutral: left_neutral,
                 ..
@@ -2021,7 +2029,7 @@ fn plan_values(
         // Two codes compare whole: α-equal closes them as shared, rigid and
         // α-distinct separates them as shared, and anything that could still
         // unfold inside a type is declined rather than answered.
-        | (
+        (
             DomainValue::Code {
                 code: left_code, ..
             },
@@ -2036,15 +2044,15 @@ fn plan_values(
                 left_code,
                 right_code,
             )? {
-                | CodeComparison::Equal => Plan::Shared(Settled::Convertible),
-                | CodeComparison::Apart => Plan::Shared(Settled::NotConvertible),
-                | CodeComparison::Undecided => Plan::Decline(DeclineReason::UndecidedCodes),
+                CodeComparison::Equal => Plan::Shared(Settled::Convertible),
+                CodeComparison::Apart => Plan::Shared(Settled::NotConvertible),
+                CodeComparison::Undecided => Plan::Decline(DeclineReason::UndecidedCodes),
             }
         },
         // Two static lambdas compare whole by the same α-walk, and a static
         // lambda against a stuck operator is declined: η could relate them,
         // and this rung does not expand an operator.
-        | (
+        (
             DomainValue::StaticLambda {
                 lambda: left_lambda,
                 ..
@@ -2061,16 +2069,16 @@ fn plan_values(
                 left_lambda,
                 right_lambda,
             )? {
-                | CodeComparison::Equal => Plan::Shared(Settled::Convertible),
-                | CodeComparison::Apart => Plan::Shared(Settled::NotConvertible),
-                | CodeComparison::Undecided => Plan::Decline(DeclineReason::UndecidedCodes),
+                CodeComparison::Equal => Plan::Shared(Settled::Convertible),
+                CodeComparison::Apart => Plan::Shared(Settled::NotConvertible),
+                CodeComparison::Undecided => Plan::Decline(DeclineReason::UndecidedCodes),
             }
         },
-        | (DomainValue::StaticLambda { .. }, DomainValue::Neutral { .. })
+        (DomainValue::StaticLambda { .. }, DomainValue::Neutral { .. })
         | (DomainValue::Neutral { .. }, DomainValue::StaticLambda { .. }) => {
             Plan::Decline(DeclineReason::UndecidedCodes)
         },
-        | (
+        (
             DomainValue::PathCertificate { .. }
             | DomainValue::Constructor { .. }
             | DomainValue::Record { .. }
@@ -2128,9 +2136,9 @@ fn plan_comps(
 {
     let early = early_comps(domain, left, right)?;
     match early {
-        | Early::Identical => return Ok(Plan::Shared(Settled::Convertible)),
-        | Early::Apart => return Ok(Plan::Shared(Settled::NotConvertible)),
-        | Early::Open => {},
+        Early::Identical => return Ok(Plan::Shared(Settled::Convertible)),
+        Early::Apart => return Ok(Plan::Shared(Settled::NotConvertible)),
+        Early::Open => {},
     }
     let (Some(&one), Some(&other)) = (domain.computation(left), domain.computation(right))
     else {
@@ -2139,9 +2147,9 @@ fn plan_comps(
     let left_head = comp_neutrality(domain, frozen, ConversionSide::Left, one)?;
     let right_head = comp_neutrality(domain, frozen, ConversionSide::Right, other)?;
     let lambda = match (one, other) {
-        | (DomainComp::Lambda { .. }, DomainComp::Neutral { .. }) => Lambda::Left,
-        | (DomainComp::Neutral { .. }, DomainComp::Lambda { .. }) => Lambda::Right,
-        | (
+        (DomainComp::Lambda { .. }, DomainComp::Neutral { .. }) => Lambda::Left,
+        (DomainComp::Neutral { .. }, DomainComp::Lambda { .. }) => Lambda::Right,
+        (
             DomainComp::Lambda { .. }
             | DomainComp::Return { .. }
             | DomainComp::Neutral { .. }
@@ -2165,7 +2173,7 @@ fn plan_comps(
         return Ok(planned);
     }
     let planned = match (one, other) {
-        | (
+        (
             DomainComp::Lambda {
                 body: left_body, ..
             },
@@ -2173,7 +2181,7 @@ fn plan_comps(
                 body: right_body, ..
             },
         ) => Plan::Decompose(Vec::from([Subgoal::Opened(left_body, right_body)])),
-        | (
+        (
             DomainComp::Return {
                 value: left_value, ..
             },
@@ -2183,7 +2191,7 @@ fn plan_comps(
         ) => Plan::Decompose(Vec::from([Subgoal::Values(left_value, right_value)])),
         // Congruence only: two fixpoints compare by their bodies under one
         // self variable, whatever claims they carry.
-        | (
+        (
             DomainComp::Fixpoint {
                 recursive: left_recursive,
                 ..
@@ -2196,13 +2204,13 @@ fn plan_comps(
             left_recursive,
             right_recursive,
         )])),
-        | (DomainComp::Lambda { .. }, DomainComp::Neutral { .. }) => {
+        (DomainComp::Lambda { .. }, DomainComp::Neutral { .. }) => {
             Plan::Step(Step::Eta(ConversionSide::Right))
         },
-        | (DomainComp::Neutral { .. }, DomainComp::Lambda { .. }) => {
+        (DomainComp::Neutral { .. }, DomainComp::Lambda { .. }) => {
             Plan::Step(Step::Eta(ConversionSide::Left))
         },
-        | (
+        (
             DomainComp::Neutral {
                 neutral: left_neutral,
                 ..
@@ -2212,7 +2220,7 @@ fn plan_comps(
                 ..
             },
         ) => return plan_rigid(core, domain, left_neutral, right_neutral),
-        | (
+        (
             DomainComp::Lambda { .. }
             | DomainComp::Return { .. }
             | DomainComp::Neutral { .. }

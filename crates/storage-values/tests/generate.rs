@@ -99,13 +99,13 @@ impl Shape
     pub fn tag(self) -> ConstructorTag
     {
         ConstructorTag::from(match self {
-            | Self::Unit => 0x30_u8,
-            | Self::Word => 0x31_u8,
-            | Self::Bytes => 0x32_u8,
-            | Self::Pair => 0x33_u8,
-            | Self::Tagged => 0x34_u8,
-            | Self::Labelled => 0x35_u8,
-            | Self::List => 0x36_u8,
+            Self::Unit => 0x30_u8,
+            Self::Word => 0x31_u8,
+            Self::Bytes => 0x32_u8,
+            Self::Pair => 0x33_u8,
+            Self::Tagged => 0x34_u8,
+            Self::Labelled => 0x35_u8,
+            Self::List => 0x36_u8,
         })
     }
 
@@ -116,13 +116,13 @@ impl Shape
     const fn fields(self) -> &'static [Field]
     {
         match self {
-            | Self::Unit => &[],
-            | Self::Word => &[Field::Word],
-            | Self::Bytes => &[Field::Bytes],
-            | Self::Pair => &[Field::Child, Field::Child],
-            | Self::Tagged => &[Field::Word, Field::Child],
-            | Self::Labelled => &[Field::Child, Field::Bytes, Field::Child],
-            | Self::List => &[Field::Count],
+            Self::Unit => &[],
+            Self::Word => &[Field::Word],
+            Self::Bytes => &[Field::Bytes],
+            Self::Pair => &[Field::Child, Field::Child],
+            Self::Tagged => &[Field::Word, Field::Child],
+            Self::Labelled => &[Field::Child, Field::Bytes, Field::Child],
+            Self::List => &[Field::Count],
         }
     }
 
@@ -262,11 +262,11 @@ impl Owed
             return Next::Field(field);
         }
         match self.children.checked_sub(1_u64) {
-            | Some(left) => {
+            Some(left) => {
                 self.children = left;
                 Next::Field(Field::Child)
             },
-            | None => Next::Close,
+            None => Next::Close,
         }
     }
 }
@@ -482,8 +482,8 @@ impl Tree
         let mut depth = 0_usize;
         for (index, item) in self.0.iter().enumerate().skip(open.0) {
             match *item {
-                | Item::Open(_) => depth = depth.checked_add(1_usize).expect("a value's depth"),
-                | Item::Close => {
+                Item::Open(_) => depth = depth.checked_add(1_usize).expect("a value's depth"),
+                Item::Close => {
                     depth = depth
                         .checked_sub(1_usize)
                         .expect("a subtree starts at an open record");
@@ -491,7 +491,7 @@ impl Tree
                         return Self(self.0[open.0 ..= index].to_vec());
                     }
                 },
-                | Item::Word(_) | Item::Bytes(_) => {},
+                Item::Word(_) | Item::Bytes(_) => {},
             }
         }
         panic!("the open record at {open:?} is closed in a balanced value")
@@ -542,7 +542,7 @@ impl Tree
         let mut depth = 0_u64;
         for (index, item) in self.0.iter().enumerate() {
             match *item {
-                | Item::Open(shape) => {
+                Item::Open(shape) => {
                     if matches!(shape, Shape::Word | Shape::Bytes) {
                         leaves.push(Leaf {
                             payload: ItemIndex(index.checked_add(1_usize).expect("a record index")),
@@ -551,12 +551,12 @@ impl Tree
                     }
                     depth = depth.checked_add(1_u64).expect("a value's depth");
                 },
-                | Item::Close => {
+                Item::Close => {
                     depth = depth
                         .checked_sub(1_u64)
                         .expect("a close ends an open constructor");
                 },
-                | Item::Word(_) | Item::Bytes(_) => {},
+                Item::Word(_) | Item::Bytes(_) => {},
             }
         }
         leaves
@@ -613,12 +613,12 @@ impl Tree
     )
     {
         match self.0[leaf.payload.0] {
-            | Item::Word(ref mut word) => *word = CanonicalWord::from(!u64::from(*word)),
-            | Item::Bytes(Payload(ref mut bytes)) => match bytes.first_mut() {
-                | Some(first) => *first = !*first,
-                | None => bytes.push(0_u8),
+            Item::Word(ref mut word) => *word = CanonicalWord::from(!u64::from(*word)),
+            Item::Bytes(Payload(ref mut bytes)) => match bytes.first_mut() {
+                Some(first) => *first = !*first,
+                None => bytes.push(0_u8),
             },
-            | Item::Open(_) | Item::Close => panic!("{leaf:?} names no payload"),
+            Item::Open(_) | Item::Close => panic!("{leaf:?} names no payload"),
         }
     }
 }
@@ -653,10 +653,10 @@ impl CanonicalValue for Tree
     {
         for item in &self.0 {
             match *item {
-                | Item::Open(shape) => sink.open(shape.tag())?,
-                | Item::Word(word) => sink.word(word)?,
-                | Item::Bytes(ref payload) => sink.bytes(TokenBytes::from(payload.0.as_slice()))?,
-                | Item::Close => sink.close()?,
+                Item::Open(shape) => sink.open(shape.tag())?,
+                Item::Word(word) => sink.word(word)?,
+                Item::Bytes(ref payload) => sink.bytes(TokenBytes::from(payload.0.as_slice()))?,
+                Item::Close => sink.close()?,
             }
         }
 
@@ -690,28 +690,28 @@ impl CanonicalValue for Tree
 
         loop {
             match next {
-                | Next::Field(Field::Child) => {
+                Next::Field(Field::Child) => {
                     let tag = reader.read_tag()?;
                     let shape = Shape::of_tag(tag, reader)?;
                     items.push(Item::Open(shape));
                     open.push(Owed::new(shape));
                 },
-                | Next::Field(Field::Word) => {
+                Next::Field(Field::Word) => {
                     let word = reader.read_word()?;
                     items.push(Item::Word(word));
                 },
-                | Next::Field(Field::Count) => {
+                Next::Field(Field::Count) => {
                     let count = reader.read_word()?;
                     if let Some(owed) = open.last_mut() {
                         owed.children = u64::from(count);
                     }
                     items.push(Item::Word(count));
                 },
-                | Next::Field(Field::Bytes) => {
+                Next::Field(Field::Bytes) => {
                     let bytes = reader.read_bytes()?;
                     items.push(Item::Bytes(Payload(<&[u8]>::from(bytes).to_vec())));
                 },
-                | Next::Close => {
+                Next::Close => {
                     reader.read_close()?;
                     items.push(Item::Close);
                     open.pop();
@@ -877,8 +877,8 @@ impl Arena
     {
         RecordCount(slots.iter().fold(2_u64, |total, slot| {
             total.saturating_add(match *slot {
-                | Slot::Child(child) => self.0[child.0].records.0,
-                | Slot::Word(_) | Slot::Bytes(_) => 1_u64,
+                Slot::Child(child) => self.0[child.0].records.0,
+                Slot::Word(_) | Slot::Bytes(_) => 1_u64,
             })
         }))
     }
@@ -1101,25 +1101,25 @@ impl Arena
     ) -> NodeId
     {
         match *step {
-            | Step::Unit => self.within(Shape::Unit, Vec::new()),
-            | Step::Word(word) => self.within(Shape::Word, vec![Slot::Word(word)]),
-            | Step::Bytes(ref payload) => {
+            Step::Unit => self.within(Shape::Unit, Vec::new()),
+            Step::Word(word) => self.within(Shape::Word, vec![Slot::Word(word)]),
+            Step::Bytes(ref payload) => {
                 self.within(Shape::Bytes, vec![Slot::Bytes(payload.clone())])
             },
-            | Step::Pair(left, right) => {
+            Step::Pair(left, right) => {
                 let left = self.pick(left);
                 let right = self.pick(right);
                 self.within(Shape::Pair, vec![Slot::Child(left), Slot::Child(right)])
             },
-            | Step::Twice(back) => {
+            Step::Twice(back) => {
                 let child = self.pick(back);
                 self.within(Shape::Pair, vec![Slot::Child(child), Slot::Child(child)])
             },
-            | Step::Tagged(word, back) => {
+            Step::Tagged(word, back) => {
                 let child = self.pick(back);
                 self.within(Shape::Tagged, vec![Slot::Word(word), Slot::Child(child)])
             },
-            | Step::Labelled(left, ref label, right) => {
+            Step::Labelled(left, ref label, right) => {
                 let left = self.pick(left);
                 let right = self.pick(right);
                 self.within(Shape::Labelled, vec![
@@ -1128,11 +1128,11 @@ impl Arena
                     Slot::Child(right),
                 ])
             },
-            | Step::Fan(ref backs) => {
+            Step::Fan(ref backs) => {
                 let children: Vec<NodeId> = backs.iter().map(|&back| self.pick(back)).collect();
                 self.within(Shape::List, fan(&children))
             },
-            | Step::Spine(length, word, back) => {
+            Step::Spine(length, word, back) => {
                 let mut node = self.pick(back);
                 for level in 0_u32 .. length.0 {
                     let word = CanonicalWord::from(u64::from(word).wrapping_add(u64::from(level)));
@@ -1172,16 +1172,16 @@ impl Arena
 
         while let Some(task) = pending.pop() {
             match task {
-                | Task::Item(item) => items.push(item),
-                | Task::Node(id) => {
+                Task::Item(item) => items.push(item),
+                Task::Node(id) => {
                     let node = &self.0[id.0];
                     items.push(Item::Open(node.shape));
                     pending.push(Task::Item(Item::Close));
                     for slot in node.slots.iter().rev() {
                         pending.push(match *slot {
-                            | Slot::Word(word) => Task::Item(Item::Word(word)),
-                            | Slot::Bytes(ref payload) => Task::Item(Item::Bytes(payload.clone())),
-                            | Slot::Child(child) => Task::Node(child),
+                            Slot::Word(word) => Task::Item(Item::Word(word)),
+                            Slot::Bytes(ref payload) => Task::Item(Item::Bytes(payload.clone())),
+                            Slot::Child(child) => Task::Node(child),
                         });
                     }
                 },
@@ -1292,8 +1292,8 @@ fn build(
         frontier.remove(0_usize);
     }
     let root = match *frontier.as_slice() {
-        | [only] => only,
-        | _ => arena.list(&frontier),
+        [only] => only,
+        _ => arena.list(&frontier),
     };
 
     arena.tree(root)
@@ -1731,12 +1731,12 @@ impl PriorValue
     ) -> Tree
     {
         match *self {
-            | Self::Fresh(ref value) => value.clone(),
-            | Self::Subtree(index) => {
+            Self::Fresh(ref value) => value.clone(),
+            Self::Subtree(index) => {
                 let opens = main.opens();
                 main.subtree(opens[index.index(opens.len())])
             },
-            | Self::Edited(index) => {
+            Self::Edited(index) => {
                 let mut edited = main.clone();
                 let leaves = main.leaves();
                 if !leaves.is_empty() {
@@ -1744,7 +1744,7 @@ impl PriorValue
                 }
                 edited
             },
-            | Self::Itself => main.clone(),
+            Self::Itself => main.clone(),
         }
     }
 }
@@ -1771,8 +1771,8 @@ impl PriorProfile
     ) -> ValueProfile
     {
         match *self {
-            | Self::Same => *main,
-            | Self::Other(other) => other,
+            Self::Same => *main,
+            Self::Other(other) => other,
         }
     }
 }
@@ -2315,8 +2315,8 @@ fn builds_preserve_reuse_and_trim_oldest_roots()
             .iter()
             .skip(2_usize)
             .filter_map(|item| match *item {
-                | Item::Word(word) => Some(u64::from(word)),
-                | Item::Open(_) | Item::Bytes(_) | Item::Close => None,
+                Item::Word(word) => Some(u64::from(word)),
+                Item::Open(_) | Item::Bytes(_) | Item::Close => None,
             })
             .eq(1_u64 ..= 1364_u64)
     );

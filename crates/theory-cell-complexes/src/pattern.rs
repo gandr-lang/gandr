@@ -387,8 +387,8 @@ impl ProdHead
     pub const fn arity(&self) -> ArgumentCount
     {
         match *self {
-            | Self::Ctor(_, arity) => arity,
-            | Self::Meta(_) => ArgumentCount(0),
+            Self::Ctor(_, arity) => arity,
+            Self::Meta(_) => ArgumentCount(0),
         }
     }
 }
@@ -483,12 +483,12 @@ impl ProdPat
         let mut args: Vec<Self> = args.into_iter().collect();
         let arity = ArgumentCount(args.len());
         let mut below = match args.pop() {
-            | Some(last) => {
+            Some(last) => {
                 let mut below = last.below;
                 below.push(last.root);
                 below
             },
-            | None => Vec::new(),
+            None => Vec::new(),
         };
         for arg in args.into_iter().rev() {
             below.extend(arg.below);
@@ -615,8 +615,8 @@ where
 {
     if let ProdHead::Meta(ref var) = prod.root.head {
         return match lookup(var) {
-            | Maybe::Present(image) => image.to_pattern(),
-            | Maybe::Absent(_) => prod.to_pattern(),
+            Maybe::Present(image) => image.to_pattern(),
+            Maybe::Absent(_) => prod.to_pattern(),
         };
     }
     let mut below: Vec<ProdEntry> = Vec::with_capacity(prod.below.len());
@@ -625,17 +625,17 @@ where
     let mut completed: Vec<PatternSize> = Vec::new();
     for entry in prod.below {
         match entry.head {
-            | ProdHead::Meta(ref var) => match lookup(var) {
-                | Maybe::Present(image) => {
+            ProdHead::Meta(ref var) => match lookup(var) {
+                Maybe::Present(image) => {
                     below.extend(image.entries().cloned());
                     completed.push(image.size());
                 },
-                | Maybe::Absent(_) => {
+                Maybe::Absent(_) => {
                     below.push(entry.clone());
                     completed.push(PatternSize::ONE);
                 },
             },
-            | ProdHead::Ctor(_, arity) => {
+            ProdHead::Ctor(_, arity) => {
                 let first = completed.len().saturating_sub(arity.0);
                 let extent = completed
                     .drain(first ..)
@@ -680,8 +680,8 @@ impl<'pattern> ProdRef<'pattern>
     pub fn view(self) -> ProdView<'pattern>
     {
         match self.root.head {
-            | ProdHead::Meta(ref var) => ProdView::Meta(var),
-            | ProdHead::Ctor(ref ctor, _) => ProdView::Ctor {
+            ProdHead::Meta(ref var) => ProdView::Meta(var),
+            ProdHead::Ctor(ref ctor, _) => ProdView::Ctor {
                 ctor,
                 args: self.children(),
             },
@@ -752,8 +752,8 @@ impl<'pattern> ProdRef<'pattern>
     pub fn metavars(self) -> impl Iterator<Item = &'pattern MetaVar>
     {
         self.preorder().filter_map(|entry| match entry.head {
-            | ProdHead::Meta(ref var) => Some(var),
-            | ProdHead::Ctor(..) => None,
+            ProdHead::Meta(ref var) => Some(var),
+            ProdHead::Ctor(..) => None,
         })
     }
 
@@ -996,9 +996,9 @@ impl ConsHead
     pub const fn continuations(&self) -> ContinuationCount
     {
         match *self {
-            | Self::Op { rets, .. } => rets,
-            | Self::Frame(_) => ContinuationCount::ONE,
-            | Self::Top | Self::Meta(_) => ContinuationCount(0),
+            Self::Op { rets, .. } => rets,
+            Self::Frame(_) => ContinuationCount::ONE,
+            Self::Top | Self::Meta(_) => ContinuationCount(0),
         }
     }
 
@@ -1012,8 +1012,8 @@ impl ConsHead
     pub const fn args(&self) -> &[ProdPat]
     {
         match *self {
-            | Self::Op { ref args, .. } => args.as_slice(),
-            | Self::Frame(_) | Self::Top | Self::Meta(_) => &[],
+            Self::Op { ref args, .. } => args.as_slice(),
+            Self::Frame(_) | Self::Top | Self::Meta(_) => &[],
         }
     }
 }
@@ -1146,12 +1146,12 @@ impl ConsPat
         let mut rets: Vec<Self> = rets.into_iter().collect();
         let count = ContinuationCount(rets.len());
         let mut below = match rets.pop() {
-            | Some(last) => {
+            Some(last) => {
                 let mut below = last.below;
                 below.push(last.root);
                 below
             },
-            | None => Vec::new(),
+            None => Vec::new(),
         };
         for ret in rets.into_iter().rev() {
             below.extend(ret.below);
@@ -1329,7 +1329,7 @@ where
             TableExtent(sum.0.saturating_add(part.0))
         });
         let head = match entry.head {
-            | ConsHead::Op {
+            ConsHead::Op {
                 ref op,
                 ref args,
                 rets,
@@ -1341,15 +1341,14 @@ where
                     .collect(),
                 rets,
             },
-            | ConsHead::Frame(_) | ConsHead::Top | ConsHead::Meta(_) => entry.head.clone(),
+            ConsHead::Frame(_) | ConsHead::Top | ConsHead::Meta(_) => entry.head.clone(),
         };
         table.push(ConsEntry { head, extent });
         completed.push(extent);
     }
-    match table.pop() {
-        | Some(root) => ConsPat { below: table, root },
-        | None => ConsPat::top(),
-    }
+    table
+        .pop()
+        .map_or_else(ConsPat::top, |root| ConsPat { below: table, root })
 }
 
 /// A borrowed consumer subtree: a contiguous range of a consumer table.
@@ -1391,19 +1390,19 @@ impl<'pattern> ConsRef<'pattern>
     pub fn view(self) -> ConsView<'pattern>
     {
         match self.root.head {
-            | ConsHead::Top => ConsView::Top,
-            | ConsHead::Meta(ref var) => ConsView::Meta(var),
-            | ConsHead::Frame(ref ctor) => ConsView::Frame {
+            ConsHead::Top => ConsView::Top,
+            ConsHead::Meta(ref var) => ConsView::Meta(var),
+            ConsHead::Frame(ref ctor) => ConsView::Frame {
                 ctor,
                 ret: match self.below.split_last() {
-                    | Some((root, below)) => ConsRef { below, root },
-                    | None => ConsRef {
+                    Some((root, below)) => ConsRef { below, root },
+                    None => ConsRef {
                         below: &[],
                         root: &TERMINAL_ENTRY,
                     },
                 },
             },
-            | ConsHead::Op {
+            ConsHead::Op {
                 ref op, ref args, ..
             } => ConsView::Op {
                 op,
@@ -1509,8 +1508,8 @@ impl<'pattern> ConsRef<'pattern>
     {
         self.preorder().flat_map(|head| {
             let end = match *head {
-                | ConsHead::Meta(ref var) => Some(var),
-                | ConsHead::Op { .. } | ConsHead::Frame(_) | ConsHead::Top => None,
+                ConsHead::Meta(ref var) => Some(var),
+                ConsHead::Op { .. } | ConsHead::Frame(_) | ConsHead::Top => None,
             };
             head.args()
                 .iter()
@@ -1563,9 +1562,9 @@ impl<'pattern> ConsRef<'pattern>
     pub fn bare_meta(self) -> Maybe<&'pattern MetaVar, bare_end::Absent>
     {
         match self.root.head {
-            | ConsHead::Meta(ref var) => Maybe::Present(var),
-            | ConsHead::Top => Maybe::Absent(bare_end::Absent::Terminal),
-            | ConsHead::Op { .. } | ConsHead::Frame(_) => Maybe::Absent(bare_end::Absent::Framed),
+            ConsHead::Meta(ref var) => Maybe::Present(var),
+            ConsHead::Top => Maybe::Absent(bare_end::Absent::Terminal),
+            ConsHead::Op { .. } | ConsHead::Frame(_) => Maybe::Absent(bare_end::Absent::Framed),
         }
     }
 
@@ -1929,9 +1928,9 @@ impl Node
     pub fn to_ref(&self) -> NodeRef<'_>
     {
         match *self {
-            | Self::Prod(ref prod) => NodeRef::Prod(prod.to_ref()),
-            | Self::Cons(ref cons) => NodeRef::Cons(cons.to_ref()),
-            | Self::Cmd(ref cmd) => NodeRef::Cmd(cmd),
+            Self::Prod(ref prod) => NodeRef::Prod(prod.to_ref()),
+            Self::Cons(ref cons) => NodeRef::Cons(cons.to_ref()),
+            Self::Cmd(ref cmd) => NodeRef::Cmd(cmd),
         }
     }
 }
@@ -1959,9 +1958,9 @@ impl NodeRef<'_>
     pub fn to_node(self) -> Node
     {
         match self {
-            | Self::Prod(prod) => Node::Prod(prod.to_pattern()),
-            | Self::Cons(cons) => Node::Cons(cons.to_pattern()),
-            | Self::Cmd(cmd) => Node::Cmd(cmd.clone()),
+            Self::Prod(prod) => Node::Prod(prod.to_pattern()),
+            Self::Cons(cons) => Node::Cons(cons.to_pattern()),
+            Self::Cmd(cmd) => Node::Cmd(cmd.clone()),
         }
     }
 
@@ -1994,20 +1993,21 @@ impl NodeRef<'_>
     {
         let index = usize::from(step);
         match self {
-            | Self::Cmd(cmd) => match index {
-                | 0 => Maybe::Present(Self::Prod(cmd.prod.to_ref())),
-                | 1 => Maybe::Present(Self::Cons(cmd.cons.to_ref())),
-                | _ => Maybe::Absent(position_read::Absent::OffPattern),
+            Self::Cmd(cmd) => match index {
+                0 => Maybe::Present(Self::Prod(cmd.prod.to_ref())),
+                1 => Maybe::Present(Self::Cons(cmd.cons.to_ref())),
+                _ => Maybe::Absent(position_read::Absent::OffPattern),
             },
-            | Self::Prod(prod) => prod.nth_child(step).map(|(child, _)| Self::Prod(child)),
-            | Self::Cons(cons) => {
+            Self::Prod(prod) => prod.nth_child(step).map(|(child, _)| Self::Prod(child)),
+            Self::Cons(cons) => {
                 let args = cons.root.head.args();
-                match args.get(index) {
-                    | Some(arg) => Maybe::Present(Self::Prod(arg.to_ref())),
-                    | None => cons
-                        .nth_child(PositionStep::from(index.saturating_sub(args.len())))
-                        .map(|(child, _)| Self::Cons(child)),
-                }
+                args.get(index).map_or_else(
+                    || {
+                        cons.nth_child(PositionStep::from(index.saturating_sub(args.len())))
+                            .map(|(child, _)| Self::Cons(child))
+                    },
+                    |arg| Maybe::Present(Self::Prod(arg.to_ref())),
+                )
             },
         }
     }
@@ -2139,8 +2139,8 @@ pub fn subterm_at<'pattern>(
     let mut cursor = root;
     for &step in pos.steps() {
         cursor = match cursor.child(step) {
-            | Maybe::Present(child) => child,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(child) => child,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
     }
     Maybe::Present(cursor)
@@ -2170,8 +2170,8 @@ impl core::fmt::Display for SpliceRefusal
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::OffPattern => "the position addresses no subterm of the pattern",
-            | Self::CategoryMismatch => {
+            Self::OffPattern => "the position addresses no subterm of the pattern",
+            Self::CategoryMismatch => {
                 "the replacement's category differs from the subterm it would replace"
             },
         })
@@ -2225,15 +2225,15 @@ pub fn splice_at(
 ) -> Result<Node, SpliceRefusal>
 {
     match root {
-        | NodeRef::Cmd(cmd) => {
+        NodeRef::Cmd(cmd) => {
             let spliced = splice_cmd(cmd, pos, replacement)?;
             Ok(Node::Cmd(spliced))
         },
-        | NodeRef::Prod(prod) => {
+        NodeRef::Prod(prod) => {
             let spliced = splice_prod(prod, pos.steps(), replacement)?;
             Ok(Node::Prod(spliced))
         },
-        | NodeRef::Cons(cons) => {
+        NodeRef::Cons(cons) => {
             let spliced = splice_cons(cons, pos.steps(), replacement)?;
             Ok(Node::Cons(spliced))
         },
@@ -2282,20 +2282,20 @@ pub fn splice_cmd(
     let Some((&first, rest)) = pos.steps().split_first()
     else {
         return match replacement {
-            | Node::Cmd(replacement) => Ok(replacement),
-            | Node::Prod(_) | Node::Cons(_) => Err(SpliceRefusal::CategoryMismatch),
+            Node::Cmd(replacement) => Ok(replacement),
+            Node::Prod(_) | Node::Cons(_) => Err(SpliceRefusal::CategoryMismatch),
         };
     };
     match usize::from(first) {
-        | 0 => {
+        0 => {
             let prod = splice_prod(cmd.prod.to_ref(), rest, replacement)?;
             Ok(CmdPat::cut(cmd.polarity, prod, cmd.cons.clone()))
         },
-        | 1 => {
+        1 => {
             let cons = splice_cons(cmd.cons.to_ref(), rest, replacement)?;
             Ok(CmdPat::cut(cmd.polarity, cmd.prod.clone(), cons))
         },
-        | _ => Err(SpliceRefusal::OffPattern),
+        _ => Err(SpliceRefusal::OffPattern),
     }
 }
 
@@ -2333,13 +2333,13 @@ fn splice_prod(
     else {
         let at_slot = descend_prod(prod, steps);
         return Err(match at_slot {
-            | Maybe::Present(_) => SpliceRefusal::CategoryMismatch,
-            | Maybe::Absent(position_read::Absent::OffPattern) => SpliceRefusal::OffPattern,
+            Maybe::Present(_) => SpliceRefusal::CategoryMismatch,
+            Maybe::Absent(position_read::Absent::OffPattern) => SpliceRefusal::OffPattern,
         });
     };
     let (target, start, ancestors) = match descend_prod(prod, steps) {
-        | Maybe::Present(found) => found,
-        | Maybe::Absent(position_read::Absent::OffPattern) => {
+        Maybe::Present(found) => found,
+        Maybe::Absent(position_read::Absent::OffPattern) => {
             return Err(SpliceRefusal::OffPattern);
         },
     };
@@ -2429,8 +2429,8 @@ fn descend_prod<'pattern>(
             ancestors.push(BelowIndex(root_index));
         }
         let (child, offset) = match cursor.nth_child(step) {
-            | Maybe::Present(found) => found,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(found) => found,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         start = start.saturating_add(offset.0);
         cursor = child;
@@ -2493,8 +2493,8 @@ fn splice_cons(
         }
         let (child, offset) =
             match cursor.nth_child(PositionStep::from(index.saturating_sub(arity))) {
-                | Maybe::Present(found) => found,
-                | Maybe::Absent(position_read::Absent::OffPattern) => {
+                Maybe::Present(found) => found,
+                Maybe::Absent(position_read::Absent::OffPattern) => {
                     return Err(SpliceRefusal::OffPattern);
                 },
             };
@@ -2585,8 +2585,8 @@ fn splice_cons_argument(
 {
     let mut rebuilt = cons.to_pattern();
     let entry = match site {
-        | EntrySite::Root => &mut rebuilt.root,
-        | EntrySite::Below(at) => rebuilt
+        EntrySite::Root => &mut rebuilt.root,
+        EntrySite::Below(at) => rebuilt
             .below
             .get_mut(at.0)
             .ok_or(SpliceRefusal::OffPattern)?,

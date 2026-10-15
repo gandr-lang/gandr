@@ -49,14 +49,14 @@ use gandr_surface_syntax::ByteOffset as SourceOffset;
 fn class_phrase(class: Oblig) -> String
 {
     String::from(match class {
-        | Oblig::MissingMeld => "a missing term",
-        | Oblig::MissingTile => "a missing delimiter",
-        | Oblig::IncompleteTile => "a partially typed keyword",
-        | Oblig::UnmoldedTok => "a token outside the grammar",
-        | Oblig::InconMeld => "a term of the wrong sort",
-        | Oblig::ExtraMeld => "two terms where one was expected",
-        | Oblig::ReservedKeyword => "a reserved keyword used as a name",
-        | Oblig::AmbiguousPrec => "operators of incomparable precedence",
+        Oblig::MissingMeld => "a missing term",
+        Oblig::MissingTile => "a missing delimiter",
+        Oblig::IncompleteTile => "a partially typed keyword",
+        Oblig::UnmoldedTok => "a token outside the grammar",
+        Oblig::InconMeld => "a term of the wrong sort",
+        Oblig::ExtraMeld => "two terms where one was expected",
+        Oblig::ReservedKeyword => "a reserved keyword used as a name",
+        Oblig::AmbiguousPrec => "operators of incomparable precedence",
     })
 }
 
@@ -109,10 +109,7 @@ pub fn repair_cards(
         .map(|obligation| {
             let start = usize::from(obligation.span.start()).saturating_sub(base);
             let end = usize::from(obligation.span.end()).saturating_sub(base);
-            let span = match ByteRange::new(ByteOffset::from(start), ByteOffset::from(end)) {
-                | Ok(range) => Some(range),
-                | Err(_) => None,
-            };
+            let span = ByteRange::new(ByteOffset::from(start), ByteOffset::from(end)).ok();
             DiagCard {
                 code: DiagnosticCode::ParseRepair,
                 message: DiagnosticMessage::ParseRepair {

@@ -132,7 +132,7 @@ impl fmt::Display for LoopError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Fault(ref fault) => write!(f, "the session faulted: {fault}"),
+            Self::Fault(ref fault) => write!(f, "the session faulted: {fault}"),
         }
     }
 }
@@ -463,8 +463,8 @@ impl SessionLoop
     {
         let echo = SourceText::from(<&str>::from(line).trim());
         let block = match command {
-            | Command::Quit => return Ok(LoopEvent::Quit),
-            | Command::Help => TranscriptBlock {
+            Command::Quit => return Ok(LoopEvent::Quit),
+            Command::Help => TranscriptBlock {
                 source: echo.to_string(),
                 source_hl: Vec::new(),
                 lines: HELP
@@ -472,7 +472,7 @@ impl SessionLoop
                     .map(|row| (OutKind::Info, String::from(*row)))
                     .collect(),
             },
-            | Command::Reset => {
+            Command::Reset => {
                 self.session = fresh(self.session.grammar().clone());
                 self.accepted.clear();
                 self.standings = Standings::default();
@@ -482,19 +482,19 @@ impl SessionLoop
                     String::from("every declaration is forgotten"),
                 )
             },
-            | Command::Load(path) => match std::fs::read_to_string(path) {
-                | Ok(text) => self.submit(
+            Command::Load(path) => match std::fs::read_to_string(path) {
+                Ok(text) => self.submit(
                     Echo::new(echo.to_string(), Vec::new()),
                     SourceText::from(text.as_str()),
                     Subject::Declarations,
                 )?,
-                | Err(error) => answer(
+                Err(error) => answer(
                     echo,
                     OutKind::Diag,
                     format!("cannot read `{}`: {error}", path.display()),
                 ),
             },
-            | Command::TypeOf(expression) => {
+            Command::TypeOf(expression) => {
                 let probe = self.probe_name();
                 let chunk = format!("def {probe} = {expression} ;");
                 self.submit(
@@ -503,14 +503,14 @@ impl SessionLoop
                     Subject::Probe { name: &probe },
                 )?
             },
-            | Command::Usage(missing) => {
+            Command::Usage(missing) => {
                 let usage = match missing {
-                    | Missing::Path => ":load needs a file: :load <file>",
-                    | Missing::Expression => ":type needs an expression: :type <expression>",
+                    Missing::Path => ":load needs a file: :load <file>",
+                    Missing::Expression => ":type needs an expression: :type <expression>",
                 };
                 answer(echo, OutKind::Info, String::from(usage))
             },
-            | Command::Unknown(word) => answer(
+            Command::Unknown(word) => answer(
                 echo,
                 OutKind::Info,
                 format!("no command `:{word}`; :help lists them"),

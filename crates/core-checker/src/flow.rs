@@ -294,9 +294,9 @@ impl Polarity
     const fn flipped(self) -> Self
     {
         match self {
-            | Self::Positive => Self::Negative,
-            | Self::Negative => Self::Positive,
-            | Self::Invariant => Self::Invariant,
+            Self::Positive => Self::Negative,
+            Self::Negative => Self::Positive,
+            Self::Invariant => Self::Invariant,
         }
     }
 }
@@ -358,10 +358,32 @@ pub fn session_code(
     };
     let quoted = context.whnf_value_type(quoted)?;
     match value_type_view(context.arena(), quoted)? {
-        | ValueTypeView::Session(session) if session.state() == session.protocol().root() => {
+        ValueTypeView::Session(session) if session.state() == session.protocol().root() => {
             Ok(Maybe::Present(session.clone()))
         },
-        | _ => elsewhere,
+        ValueTypeView::Data { .. }
+        | ValueTypeView::Record(_)
+        | ValueTypeView::Stack { .. }
+        | ValueTypeView::PathUniverse(..)
+        | ValueTypeView::Path { .. }
+        | ValueTypeView::Flow { .. }
+        | ValueTypeView::Run(_)
+        | ValueTypeView::Sum(_)
+        | ValueTypeView::List(_)
+        | ValueTypeView::Integer
+        | ValueTypeView::String
+        | ValueTypeView::Unit
+        | ValueTypeView::Thunk(_)
+        | ValueTypeView::Universe { .. }
+        | ValueTypeView::Lift { .. }
+        | ValueTypeView::Element { .. }
+        | ValueTypeView::Product(_)
+        | ValueTypeView::StaticPi { .. }
+        | ValueTypeView::Sigma { .. }
+        | ValueTypeView::Abstract(_)
+        | ValueTypeView::Capability { .. }
+        | ValueTypeView::Session(_)
+        | ValueTypeView::Unknown => elsewhere,
     }
 }
 
@@ -388,11 +410,11 @@ fn quoted(
 {
     let head = context.whnf_code(code)?;
     match context.arena().value(head) {
-        | Some(&Value::Quote(quoted)) => {
+        Some(&Value::Quote(quoted)) => {
             let quoted = context.whnf_value_type(quoted)?;
             Ok(context.arena_mut().value_quote(quoted))
         },
-        | _ => Err(CheckRefusal::MachineInvariant),
+        _ => Err(CheckRefusal::MachineInvariant),
     }
 }
 
@@ -422,8 +444,8 @@ fn sessions(
 ) -> Result<(SessionType, SessionType), CheckRefusal>
 {
     let mut read = |code| match session_code(context, code)? {
-        | Maybe::Present(session) => Ok(session),
-        | Maybe::Absent(_) => Err(CheckRefusal::SessionCodeExpected { at: code }),
+        Maybe::Present(session) => Ok(session),
+        Maybe::Absent(_) => Err(CheckRefusal::SessionCodeExpected { at: code }),
     };
     let left = read(source)?;
     let right = read(target)?;
@@ -506,12 +528,12 @@ pub fn decide(
 {
     let (left, right) = sessions(context, (source, target))?;
     let (engine_relation, unrelated) = match relation {
-        | SessionRelation::Equivalence => {
+        SessionRelation::Equivalence => {
             (Relation::Equivalent, CheckRefusal::SessionNotEquivalent {
                 at,
             })
         },
-        | SessionRelation::Subtyping => (Relation::Subtype, CheckRefusal::SessionNotSubtype { at }),
+        SessionRelation::Subtyping => (Relation::Subtype, CheckRefusal::SessionNotSubtype { at }),
     };
     let Maybe::Present(evidence) = relation_evidence(context, (&left, &right), engine_relation)?
     else {
@@ -521,8 +543,8 @@ pub fn decide(
     let target = quoted(context, target)?;
     let arena = context.arena_mut();
     let classifier = match relation {
-        | SessionRelation::Equivalence => arena.value_type_path_universe(source, target),
-        | SessionRelation::Subtyping => {
+        SessionRelation::Equivalence => arena.value_type_path_universe(source, target),
+        SessionRelation::Subtyping => {
             let universe = universe(arena);
             arena.value_type_flow(universe, source, target)
         },
@@ -549,8 +571,8 @@ pub fn identity(
 {
     let universe = universe(arena);
     match relation {
-        | SessionRelation::Equivalence => arena.value_type_path(universe, source, target),
-        | SessionRelation::Subtyping => arena.value_type_flow(universe, source, target),
+        SessionRelation::Equivalence => arena.value_type_path(universe, source, target),
+        SessionRelation::Subtyping => arena.value_type_flow(universe, source, target),
     }
 }
 
@@ -635,12 +657,33 @@ pub fn endpoints(
 {
     let head = context.whnf_value_type(classifier)?;
     match value_type_view(context.arena(), head)? {
-        | ValueTypeView::Flow {
+        ValueTypeView::Flow {
             carrier,
             source,
             target,
         } => Ok((carrier, source, target)),
-        | _ => Err(CheckRefusal::ShapeMismatch {
+        ValueTypeView::Data { .. }
+        | ValueTypeView::Record(_)
+        | ValueTypeView::Stack { .. }
+        | ValueTypeView::PathUniverse(..)
+        | ValueTypeView::Path { .. }
+        | ValueTypeView::Run(_)
+        | ValueTypeView::Sum(_)
+        | ValueTypeView::List(_)
+        | ValueTypeView::Integer
+        | ValueTypeView::String
+        | ValueTypeView::Unit
+        | ValueTypeView::Thunk(_)
+        | ValueTypeView::Universe { .. }
+        | ValueTypeView::Lift { .. }
+        | ValueTypeView::Element { .. }
+        | ValueTypeView::Product(_)
+        | ValueTypeView::StaticPi { .. }
+        | ValueTypeView::Sigma { .. }
+        | ValueTypeView::Abstract(_)
+        | ValueTypeView::Capability { .. }
+        | ValueTypeView::Session(_)
+        | ValueTypeView::Unknown => Err(CheckRefusal::ShapeMismatch {
             at,
             wanted: ExpectedShape::Flow,
             found: TypeNode::Value(classifier),
@@ -680,9 +723,9 @@ fn convertible(
         return Ok(Agreement::Convertible);
     }
     match context.definitions().relate_terms(arena, left, right) {
-        | Ok(Maybe::Present(_)) => Ok(Agreement::Convertible),
-        | Ok(Maybe::Absent(_)) | Err(CheckRefusal::Undecided { .. }) => Ok(Agreement::Apart),
-        | Err(fault) => Err(fault),
+        Ok(Maybe::Present(_)) => Ok(Agreement::Convertible),
+        Ok(Maybe::Absent(_)) | Err(CheckRefusal::Undecided { .. }) => Ok(Agreement::Apart),
+        Err(fault) => Err(fault),
     }
 }
 
@@ -728,9 +771,9 @@ pub fn covariant(
 {
     let reach = |node| loose_reach(arena, node).map(usize::from);
     match reach(CoreNode::Type(TypeNode::Value(motive)))? {
-        | 0 => return Ok(()),
-        | 1 => {},
-        | _ => return Err(CheckRefusal::RideUnsupported { at }),
+        0 => return Ok(()),
+        1 => {},
+        _ => return Err(CheckRefusal::RideUnsupported { at }),
     }
     let refused = CheckRefusal::NonCovariantMotive { at };
     let dangling = |node| CheckRefusal::DanglingNode { node };
@@ -738,9 +781,9 @@ pub fn covariant(
     while let Some((position, polarity, depth)) = work.pop() {
         let under = depth.checked_add(1).ok_or(CheckRefusal::MachineInvariant)?;
         let node = match position {
-            | Position::ValueType(id) => CoreNode::Type(TypeNode::Value(id)),
-            | Position::CompType(id) => CoreNode::Type(TypeNode::Computation(id)),
-            | Position::Value(id) => CoreNode::Term(TermNode::Value(id)),
+            Position::ValueType(id) => CoreNode::Type(TypeNode::Value(id)),
+            Position::CompType(id) => CoreNode::Type(TypeNode::Computation(id)),
+            Position::Value(id) => CoreNode::Term(TermNode::Value(id)),
         };
         if reach(node)? <= depth {
             continue;
@@ -750,22 +793,54 @@ pub fn covariant(
         }
         let flipped = polarity.flipped();
         match position {
-            | Position::Value(id) => match *arena.value(id).ok_or_else(|| dangling(node))? {
-                | Value::Variable {
+            Position::Value(id) => match *arena.value(id).ok_or_else(|| dangling(node))? {
+                Value::Variable {
                     zone: Zone::Intuitionistic,
                     index,
                 } if polarity == Polarity::Positive
                     && usize::try_from(u32::from(index)).ok() == Some(depth) => {},
-                | _ => return Err(refused),
+                Value::Primitive { .. }
+                | Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::PathEquiv { .. }
+                | Value::Here(_)
+                | Value::Funext(..)
+                | Value::Equiv(..)
+                | Value::Ua { .. }
+                | Value::SessionRelated { .. }
+                | Value::Stay(_)
+                | Value::Then(..)
+                | Value::FlowProduct(..)
+                | Value::Forward(_)
+                | Value::FunctionFlow(..)
+                | Value::Recorded(_)
+                | Value::Returned(_)
+                | Value::Nested(_)
+                | Value::Run(_)
+                | Value::Variable { .. }
+                | Value::Constant(_)
+                | Value::Literal(_)
+                | Value::Tuple(_)
+                | Value::Injection(..)
+                | Value::ListNil
+                | Value::ListCons(..)
+                | Value::Thunk(_)
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)
+                | Value::StaticLambda(_)
+                | Value::StaticApplication(..)
+                | Value::Constructor { .. }
+                | Value::Record(_)
+                | Value::Hole(_)
+                | Value::Mark { .. }
+                | Value::Reify(_) => return Err(refused),
             },
-            | Position::ValueType(id) => match *arena
-                .value_type(id)
-                .ok_or_else(|| dangling(node))?
-            {
-                | ValueType::Run(code) | ValueType::Element { code, .. } => {
+            Position::ValueType(id) => match *arena.value_type(id).ok_or_else(|| dangling(node))? {
+                ValueType::Run(code) | ValueType::Element { code, .. } => {
                     work.push((Position::Value(code), polarity, depth));
                 },
-                | ValueType::Flow {
+                ValueType::Flow {
                     carrier,
                     source,
                     target,
@@ -774,25 +849,25 @@ pub fn covariant(
                     work.push((Position::Value(source), flipped, depth));
                     work.push((Position::Value(target), polarity, depth));
                 },
-                | ValueType::Record(ref fields) => work.extend(
+                ValueType::Record(ref fields) => work.extend(
                     fields
                         .values()
                         .map(|&field| (Position::ValueType(field), polarity, depth)),
                 ),
-                | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => work.extend(
+                ValueType::Product(ref parts) | ValueType::Sum(ref parts) => work.extend(
                     parts
                         .iter()
                         .map(|&part| (Position::ValueType(part), polarity, depth)),
                 ),
-                | ValueType::List(inner) | ValueType::Lift { inner, .. } => {
+                ValueType::List(inner) | ValueType::Lift { inner, .. } => {
                     work.push((Position::ValueType(inner), polarity, depth));
                 },
-                | ValueType::Thunk(body) => work.push((Position::CompType(body), polarity, depth)),
-                | ValueType::StaticPi { domain, codomain } => {
+                ValueType::Thunk(body) => work.push((Position::CompType(body), polarity, depth)),
+                ValueType::StaticPi { domain, codomain } => {
                     work.push((Position::ValueType(domain), flipped, depth));
                     work.push((Position::ValueType(codomain), polarity, depth));
                 },
-                | ValueType::Data { .. }
+                ValueType::Data { .. }
                 | ValueType::Sigma { .. }
                 | ValueType::PathUniverse(..)
                 | ValueType::Path { .. }
@@ -804,26 +879,26 @@ pub fn covariant(
                 | ValueType::Session(_)
                 | ValueType::Capability { .. } => return Err(refused),
             },
-            | Position::CompType(id) => match *arena.comp_type(id).ok_or_else(|| dangling(node))? {
-                | CompType::Returner { result, .. } => {
+            Position::CompType(id) => match *arena.comp_type(id).ok_or_else(|| dangling(node))? {
+                CompType::Returner { result, .. } => {
                     work.push((Position::ValueType(result), polarity, depth));
                 },
-                | CompType::Arrow { domain, codomain } => {
+                CompType::Arrow { domain, codomain } => {
                     work.push((Position::ValueType(domain), flipped, depth));
                     work.push((Position::CompType(codomain), polarity, depth));
                 },
-                | CompType::Pi { domain, codomain } => {
+                CompType::Pi { domain, codomain } => {
                     work.push((Position::ValueType(domain), flipped, depth));
                     work.push((Position::CompType(codomain), polarity, under));
                 },
-                | CompType::Element { code, .. } => {
+                CompType::Element { code, .. } => {
                     work.push((Position::Value(code), polarity, depth));
                 },
-                | CompType::With(first, second) => {
+                CompType::With(first, second) => {
                     work.push((Position::CompType(first), polarity, depth));
                     work.push((Position::CompType(second), polarity, depth));
                 },
-                | CompType::Unknown => return Err(refused),
+                CompType::Unknown => return Err(refused),
             },
         }
     }
@@ -995,22 +1070,39 @@ fn computed(
             .value_type(position)
             .ok_or(CheckRefusal::DanglingNode { node })?
         {
-            | ValueType::Element {
+            ValueType::Element {
                 code: decoded,
                 ref target,
             } if code(decoded) && *target == Level::zero() => {},
-            | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+            ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                 pending.extend(parts.iter().copied());
             },
-            | ValueType::List(element) => pending.push(element),
-            | ValueType::Flow {
+            ValueType::List(element) => pending.push(element),
+            ValueType::Flow {
                 carrier,
                 source,
                 target,
             } if code(target)
                 && !reads(CoreNode::Type(TypeNode::Value(carrier)))?
                 && !reads(CoreNode::Term(TermNode::Value(source)))? => {},
-            | _ => return Err(unsupported),
+            ValueType::Data { .. }
+            | ValueType::Record(_)
+            | ValueType::PathUniverse(..)
+            | ValueType::Path { .. }
+            | ValueType::Flow { .. }
+            | ValueType::Run(_)
+            | ValueType::Base(_)
+            | ValueType::Sigma { .. }
+            | ValueType::Thunk(_)
+            | ValueType::Universe { .. }
+            | ValueType::Lift { .. }
+            | ValueType::Element { .. }
+            | ValueType::Abstract(_)
+            | ValueType::StaticPi { .. }
+            | ValueType::Unknown
+            | ValueType::Stack { .. }
+            | ValueType::Session(_)
+            | ValueType::Capability { .. } => return Err(unsupported),
         }
     }
     Ok(())
@@ -1077,9 +1169,9 @@ pub fn admit(
             .protocol()
             .node(ProtocolState::from(position))
         {
-            | Ok(&ProtocolNode::Offer(ref branches)) => Ok(Some(branches.len())),
-            | Ok(_) => Ok(None),
-            | Err(_) => Err(CheckRefusal::MachineInvariant),
+            Ok(&ProtocolNode::Offer(ref branches)) => Ok(Some(branches.len())),
+            Ok(_) => Ok(None),
+            Err(_) => Err(CheckRefusal::MachineInvariant),
         };
         if let (Some(wide), Some(narrow)) = (
             offers(&left, pair.source.0)?,
@@ -1129,9 +1221,29 @@ pub fn run_premises(
 {
     let head = context.whnf_value_type(expected)?;
     let protocol = match value_type_view(context.arena(), head)? {
-        | ValueTypeView::Run(protocol) => protocol,
-        | ValueTypeView::Unknown => return Ok(Vec::new()),
-        | _ => {
+        ValueTypeView::Run(protocol) => protocol,
+        ValueTypeView::Unknown => return Ok(Vec::new()),
+        ValueTypeView::Data { .. }
+        | ValueTypeView::Record(_)
+        | ValueTypeView::Stack { .. }
+        | ValueTypeView::PathUniverse(..)
+        | ValueTypeView::Path { .. }
+        | ValueTypeView::Flow { .. }
+        | ValueTypeView::Sum(_)
+        | ValueTypeView::List(_)
+        | ValueTypeView::Integer
+        | ValueTypeView::String
+        | ValueTypeView::Unit
+        | ValueTypeView::Thunk(_)
+        | ValueTypeView::Universe { .. }
+        | ValueTypeView::Lift { .. }
+        | ValueTypeView::Element { .. }
+        | ValueTypeView::Product(_)
+        | ValueTypeView::StaticPi { .. }
+        | ValueTypeView::Sigma { .. }
+        | ValueTypeView::Abstract(_)
+        | ValueTypeView::Capability { .. }
+        | ValueTypeView::Session(_) => {
             return Err(CheckRefusal::ShapeMismatch {
                 at: TermNode::Value(at),
                 wanted: ExpectedShape::Run,
@@ -1158,20 +1270,20 @@ pub fn run_premises(
     let mut current = session;
     for movement in moves.iter() {
         let next = match (current.step(), movement) {
-            | (Ok(ProtocolStep::Send { payload, next }), &RecordedMove::Sent(value))
+            (Ok(ProtocolStep::Send { payload, next }), &RecordedMove::Sent(value))
             | (Ok(ProtocolStep::Receive { payload, next }), &RecordedMove::Received(value)) => {
                 premises.push((value, payload));
                 next
             },
-            | (Ok(ProtocolStep::Select(branches)), &RecordedMove::Selected(ref label))
+            (Ok(ProtocolStep::Select(branches)), &RecordedMove::Selected(ref label))
             | (Ok(ProtocolStep::Offer(branches)), &RecordedMove::Offered(ref label)) => {
                 match branches.get(label) {
-                    | Ok(Maybe::Present(next)) => next,
-                    | Ok(Maybe::Absent(_)) | Err(_) => return Err(CheckRefusal::MachineInvariant),
+                    Ok(Maybe::Present(next)) => next,
+                    Ok(Maybe::Absent(_)) | Err(_) => return Err(CheckRefusal::MachineInvariant),
                 }
             },
-            | (Ok(ProtocolStep::End), &RecordedMove::Closed) => break,
-            | _ => return Err(CheckRefusal::MachineInvariant),
+            (Ok(ProtocolStep::End), &RecordedMove::Closed) => break,
+            _ => return Err(CheckRefusal::MachineInvariant),
         };
         current = next;
     }
@@ -1192,11 +1304,11 @@ fn skeleton(moves: &[RecordedMove]) -> Vec<Move>
     moves
         .iter()
         .map(|movement| match *movement {
-            | RecordedMove::Sent(_) => Move::Send(payload),
-            | RecordedMove::Received(_) => Move::Receive(payload),
-            | RecordedMove::Selected(ref label) => Move::Select(Label::from(label.as_ref())),
-            | RecordedMove::Offered(ref label) => Move::Offer(Label::from(label.as_ref())),
-            | RecordedMove::Closed => Move::End,
+            RecordedMove::Sent(_) => Move::Send(payload),
+            RecordedMove::Received(_) => Move::Receive(payload),
+            RecordedMove::Selected(ref label) => Move::Select(Label::from(label.as_ref())),
+            RecordedMove::Offered(ref label) => Move::Offer(Label::from(label.as_ref())),
+            RecordedMove::Closed => Move::End,
         })
         .collect()
 }
@@ -1231,18 +1343,18 @@ fn replay_refusal(
 ) -> CheckRefusal
 {
     let fault = match *error {
-        | ReplayError::Refused {
+        ReplayError::Refused {
             at: index, reason, ..
         } => match reason {
-            | gandr_core_session::Refusal::WrongLabel => RunFault::WrongLabel(step(index)),
-            | gandr_core_session::Refusal::WrongDirection => RunFault::WrongDirection(step(index)),
-            | gandr_core_session::Refusal::ResumeAfterEnd => RunFault::ResumeAfterEnd(step(index)),
-            | gandr_core_session::Refusal::WrongPayloadIdentity => {
+            gandr_core_session::Refusal::WrongLabel => RunFault::WrongLabel(step(index)),
+            gandr_core_session::Refusal::WrongDirection => RunFault::WrongDirection(step(index)),
+            gandr_core_session::Refusal::ResumeAfterEnd => RunFault::ResumeAfterEnd(step(index)),
+            gandr_core_session::Refusal::WrongPayloadIdentity => {
                 return CheckRefusal::MachineInvariant;
             },
         },
-        | ReplayError::IncompleteRun { at: index, .. } => RunFault::Incomplete(step(index)),
-        | ReplayError::InvalidType(_) => return CheckRefusal::MachineInvariant,
+        ReplayError::IncompleteRun { at: index, .. } => RunFault::Incomplete(step(index)),
+        ReplayError::InvalidType(_) => return CheckRefusal::MachineInvariant,
     };
     CheckRefusal::RunNotAdmitted { at, fault }
 }
@@ -1267,26 +1379,26 @@ fn transport_refusal(
 ) -> CheckRefusal
 {
     match *error {
-        | TransportError::Replay(ref replayed) => replay_refusal(at, replayed),
-        | TransportError::Move {
+        TransportError::Replay(ref replayed) => replay_refusal(at, replayed),
+        TransportError::Move {
             at: index,
             ref reason,
         } => {
             let fault = match *reason {
-                | gandr_core_session::Refusal::WrongLabel => RunFault::WrongLabel(step(index)),
-                | gandr_core_session::Refusal::WrongDirection => {
+                gandr_core_session::Refusal::WrongLabel => RunFault::WrongLabel(step(index)),
+                gandr_core_session::Refusal::WrongDirection => {
                     RunFault::WrongDirection(step(index))
                 },
-                | gandr_core_session::Refusal::ResumeAfterEnd => {
+                gandr_core_session::Refusal::ResumeAfterEnd => {
                     RunFault::ResumeAfterEnd(step(index))
                 },
-                | gandr_core_session::Refusal::WrongPayloadIdentity => {
+                gandr_core_session::Refusal::WrongPayloadIdentity => {
                     return CheckRefusal::MachineInvariant;
                 },
             };
             CheckRefusal::RunNotAdmitted { at, fault }
         },
-        | TransportError::MissingPayload(_)
+        TransportError::MissingPayload(_)
         | TransportError::CodeBinding
         | TransportError::Direction
         | TransportError::ExpectedSessionFlow

@@ -52,7 +52,7 @@ impl TreeKind
     const fn tag(self) -> WireTag
     {
         match self {
-            | Self::MerkleSearch => WireTag(0x01_u8),
+            Self::MerkleSearch => WireTag(0x01_u8),
         }
     }
 }
@@ -95,8 +95,8 @@ impl EncodingVersion
     pub const fn number(self) -> WireVersion
     {
         match self {
-            | Self::V1 => WireVersion(1_u16),
-            | Self::V2 => WireVersion(2_u16),
+            Self::V1 => WireVersion(1_u16),
+            Self::V2 => WireVersion(2_u16),
         }
     }
 
@@ -169,7 +169,7 @@ impl HashAlgorithm
     const fn tag(self) -> WireTag
     {
         match self {
-            | Self::Blake3 => WireTag(0x01_u8),
+            Self::Blake3 => WireTag(0x01_u8),
         }
     }
 }
@@ -208,7 +208,7 @@ impl SeparatorConvention
     const fn tag(self) -> WireTag
     {
         match self {
-            | Self::FirstKey => WireTag(0x01_u8),
+            Self::FirstKey => WireTag(0x01_u8),
         }
     }
 }

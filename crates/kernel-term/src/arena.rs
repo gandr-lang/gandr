@@ -184,7 +184,7 @@ impl crate::decl::DeclarationContent
     pub const fn declared_id(&self) -> ValueTypeId
     {
         match *self {
-            | Self::Def { declared, .. }
+            Self::Def { declared, .. }
             | Self::Axiom { declared }
             | Self::Data { kind: declared, .. }
             | Self::AbstractType { kind: declared, .. } => declared,
@@ -3042,8 +3042,8 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
     {
         let mut children: Vec<AnyNode> = Vec::new();
         match node {
-            | AnyNode::Value(id) => match self.value(id) {
-                | Some(&Value::Constructor {
+            AnyNode::Value(id) => match self.value(id) {
+                Some(&Value::Constructor {
                     datatype,
                     ref fields,
                     ..
@@ -3051,20 +3051,20 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::ValueType(datatype));
                     children.extend(fields.iter().copied().map(AnyNode::Value));
                 },
-                | Some(&Value::Record(ref fields)) => {
+                Some(&Value::Record(ref fields)) => {
                     children.extend(fields.values().copied().map(AnyNode::Value));
                 },
-                | Some(
+                Some(
                     &Value::ListNil
                     | &Value::Variable(_)
                     | &Value::Constant(_)
                     | &Value::Literal(_),
                 )
                 | None => {},
-                | Some(&Value::Tuple(ref components)) => {
+                Some(&Value::Tuple(ref components)) => {
                     children.extend(components.iter().copied().map(AnyNode::Value));
                 },
-                | Some(&Value::PathEquiv {
+                Some(&Value::PathEquiv {
                     path_type,
                     forward,
                     backward,
@@ -3074,7 +3074,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::Value(forward));
                     children.push(AnyNode::Value(backward));
                 },
-                | Some(
+                Some(
                     &Value::SessionPath {
                         path_type,
                         payload_paths,
@@ -3089,14 +3089,14 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::ValueType(path_type));
                     children.push(AnyNode::Value(payload_paths));
                 },
-                | Some(
+                Some(
                     &Value::PathRefl(code)
                     | &Value::Here { point: code, .. }
                     | &Value::Stay { point: code, .. },
                 ) => {
                     children.push(AnyNode::Value(code));
                 },
-                | Some(&Value::ForwardFlow {
+                Some(&Value::ForwardFlow {
                     flow_type,
                     translator,
                     ref outputs,
@@ -3106,7 +3106,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::Value(translator));
                     children.extend(outputs.iter().copied().map(AnyNode::Value));
                 },
-                | Some(&Value::FunctionFlow {
+                Some(&Value::FunctionFlow {
                     flow_type,
                     domain,
                     codomain,
@@ -3115,7 +3115,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::Value(domain));
                     children.push(AnyNode::Value(codomain));
                 },
-                | Some(
+                Some(
                     &Value::Higher {
                         evidence: ref values,
                         ..
@@ -3127,7 +3127,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 ) => {
                     children.extend(values.iter().copied().map(AnyNode::Value));
                 },
-                | Some(&Value::HigherEvaluation { ref components, .. }) => {
+                Some(&Value::HigherEvaluation { ref components, .. }) => {
                     for component in components {
                         children.extend([
                             AnyNode::Value(component.left),
@@ -3136,7 +3136,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                         ]);
                     }
                 },
-                | Some(
+                Some(
                     &Value::PathProduct(first, second)
                     | &Value::FlowProduct(first, second)
                     | &Value::ListCons(first, second)
@@ -3146,19 +3146,19 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::Value(first));
                     children.push(AnyNode::Value(second));
                 },
-                | Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) => {
+                Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) => {
                     children.push(AnyNode::Value(body));
                 },
-                | Some(&Value::Thunk(body) | &Value::Returned(body)) => {
+                Some(&Value::Thunk(body) | &Value::Returned(body)) => {
                     children.push(AnyNode::Computation(body));
                 },
-                | Some(&Value::Quote(quoted)) => children.push(AnyNode::ValueType(quoted)),
-                | Some(&Value::QuoteComputation(quoted)) => {
+                Some(&Value::Quote(quoted)) => children.push(AnyNode::ValueType(quoted)),
+                Some(&Value::QuoteComputation(quoted)) => {
                     children.push(AnyNode::CompType(quoted));
                 },
             },
-            | AnyNode::Computation(id) => match self.computation(id) {
-                | Some(&Computation::DataCase {
+            AnyNode::Computation(id) => match self.computation(id) {
+                Some(&Computation::DataCase {
                     scrutinee,
                     motive,
                     ref branches,
@@ -3166,7 +3166,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.extend([AnyNode::Value(scrutinee), AnyNode::CompType(motive)]);
                     children.extend(branches.iter().copied().map(AnyNode::Computation));
                 },
-                | Some(&Computation::SigmaSplit {
+                Some(&Computation::SigmaSplit {
                     scrutinee,
                     motive,
                     body,
@@ -3177,14 +3177,14 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                         AnyNode::Computation(body),
                     ]);
                 },
-                | Some(
+                Some(
                     &(Computation::RecordProjection(record, _)
                     | Computation::TupleProjection(record, _)),
                 ) => {
                     children.push(AnyNode::Value(record));
                 },
-                | None => {},
-                | Some(&Computation::ListFold {
+                None => {},
+                Some(&Computation::ListFold {
                     element,
                     result,
                     list,
@@ -3199,11 +3199,11 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                         AnyNode::Computation(on_cons),
                     ]);
                 },
-                | Some(&Computation::Transport(path, value)) => {
+                Some(&Computation::Transport(path, value)) => {
                     children.push(AnyNode::Value(path));
                     children.push(AnyNode::Value(value));
                 },
-                | Some(
+                Some(
                     &Computation::PathTransport {
                         motive,
                         path,
@@ -3221,7 +3221,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                         AnyNode::Value(value),
                     ]);
                 },
-                | Some(
+                Some(
                     &Computation::TelescopeTransport {
                         motive,
                         path,
@@ -3245,7 +3245,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                         AnyNode::Value(value),
                     ]);
                 },
-                | Some(&Computation::RelatedApplication {
+                Some(&Computation::RelatedApplication {
                     path,
                     left,
                     right,
@@ -3260,25 +3260,25 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                         AnyNode::Computation(body),
                     ]);
                 },
-                | Some(
+                Some(
                     &Computation::Lambda(body)
                     | &Computation::Fixpoint { body, .. }
                     | &Computation::Project(_, body),
                 ) => {
                     children.push(AnyNode::Computation(body));
                 },
-                | Some(&Computation::Application(head, argument)) => {
+                Some(&Computation::Application(head, argument)) => {
                     children.push(AnyNode::Computation(head));
                     children.push(AnyNode::Value(argument));
                 },
-                | Some(&Computation::Return(value) | &Computation::Force(value)) => {
+                Some(&Computation::Return(value) | &Computation::Force(value)) => {
                     children.push(AnyNode::Value(value));
                 },
-                | Some(&Computation::Bind(bound, body) | &Computation::With(bound, body)) => {
+                Some(&Computation::Bind(bound, body) | &Computation::With(bound, body)) => {
                     children.push(AnyNode::Computation(bound));
                     children.push(AnyNode::Computation(body));
                 },
-                | Some(&Computation::Case {
+                Some(&Computation::Case {
                     scrutinee,
                     ref branches,
                 }) => {
@@ -3286,21 +3286,21 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.extend(branches.iter().copied().map(AnyNode::Computation));
                 },
             },
-            | AnyNode::ValueType(id) => match self.value_type(id) {
-                | Some(&ValueType::Data { ref arguments, .. }) => {
+            AnyNode::ValueType(id) => match self.value_type(id) {
+                Some(&ValueType::Data { ref arguments, .. }) => {
                     children.extend(arguments.iter().copied().map(AnyNode::Value));
                 },
-                | Some(&ValueType::Record(ref fields)) => {
+                Some(&ValueType::Record(ref fields)) => {
                     children.extend(fields.values().copied().map(AnyNode::ValueType));
                 },
-                | Some(
+                Some(
                     &ValueType::Base(_) | &ValueType::Universe { .. } | &ValueType::Abstract(_),
                 )
                 | None => {},
-                | Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => {
+                Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => {
                     children.extend(parts.iter().copied().map(AnyNode::ValueType));
                 },
-                | Some(
+                Some(
                     &ValueType::StaticPi {
                         domain: first,
                         codomain: second,
@@ -3310,17 +3310,17 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::ValueType(first));
                     children.push(AnyNode::ValueType(second));
                 },
-                | Some(&ValueType::Session { payloads, .. }) => {
+                Some(&ValueType::Session { payloads, .. }) => {
                     children.push(AnyNode::ValueType(payloads));
                 },
-                | Some(
+                Some(
                     &ValueType::PathUniverse(source, target)
                     | &ValueType::FlowUniverse(source, target),
                 ) => {
                     children.push(AnyNode::Value(source));
                     children.push(AnyNode::Value(target));
                 },
-                | Some(
+                Some(
                     &ValueType::Path {
                         domain,
                         left,
@@ -3338,25 +3338,25 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                         AnyNode::Value(right),
                     ]);
                 },
-                | Some(&ValueType::Thunk(body)) => children.push(AnyNode::CompType(body)),
-                | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+                Some(&ValueType::Thunk(body)) => children.push(AnyNode::CompType(body)),
+                Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
                     children.push(AnyNode::ValueType(inner));
                 },
                 // The one edge that leaves the type language: a code is a value,
                 // which is what lets a type mention a bound variable at all.
-                | Some(&ValueType::Element { code, .. }) => children.push(AnyNode::Value(code)),
+                Some(&ValueType::Element { code, .. }) => children.push(AnyNode::Value(code)),
             },
-            | AnyNode::CompType(id) => match self.comp_type(id) {
-                | None => {},
-                | Some(&CompType::Returner(result)) => children.push(AnyNode::ValueType(result)),
-                | Some(
+            AnyNode::CompType(id) => match self.comp_type(id) {
+                None => {},
+                Some(&CompType::Returner(result)) => children.push(AnyNode::ValueType(result)),
+                Some(
                     &CompType::Arrow { domain, codomain } | &CompType::Pi { domain, codomain },
                 ) => {
                     children.push(AnyNode::ValueType(domain));
                     children.push(AnyNode::CompType(codomain));
                 },
-                | Some(&CompType::Element { code, .. }) => children.push(AnyNode::Value(code)),
-                | Some(&CompType::With(first, second)) => {
+                Some(&CompType::Element { code, .. }) => children.push(AnyNode::Value(code)),
+                Some(&CompType::With(first, second)) => {
                     children.push(AnyNode::CompType(first));
                     children.push(AnyNode::CompType(second));
                 },

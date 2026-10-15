@@ -676,14 +676,14 @@ impl Edit<'_>
 
         for step in &self.undo {
             match *step {
-                | Undo::Minted(object, part) => {
+                Undo::Minted(object, part) => {
                     if self.store.liveness(object, part)? == Liveness::Live {
                         for &equation in schema.rooted(object) {
                             affected.insert((equation, part));
                         }
                     }
                 },
-                | Undo::Arrow(arrow, part, _) => {
+                Undo::Arrow(arrow, part, _) => {
                     for occurrence in schema.occurrences(arrow) {
                         let equation = schema.equation_at(occurrence.equation)?;
                         let side = equation.side(occurrence.side);
@@ -699,7 +699,7 @@ impl Edit<'_>
                         }
                     }
                 },
-                | Undo::Value(..) | Undo::Deleted(..) => {},
+                Undo::Value(..) | Undo::Deleted(..) => {},
             }
         }
 
@@ -857,12 +857,12 @@ impl Edit<'_>
     {
         while let Some(step) = self.undo.pop() {
             match step {
-                | Undo::Minted(object, part) => {
+                Undo::Minted(object, part) => {
                     if let Some(table) = self.store.tables.get_mut(usize::from(object)) {
                         table.remove(part);
                     }
                 },
-                | Undo::Arrow(arrow, part, prior) => {
+                Undo::Arrow(arrow, part, prior) => {
                     let Ok(slot) = part.slot()
                     else {
                         continue;
@@ -875,18 +875,18 @@ impl Edit<'_>
                         column.index_remove(current, part);
                     }
                     match prior {
-                        | Prior::Set(old) => {
+                        Prior::Set(old) => {
                             if let Some(cell) = column.targets.get_mut(usize::from(slot)) {
                                 *cell = old;
                             }
                             column.index_insert(old, part);
                         },
-                        | Prior::Unset => {
+                        Prior::Unset => {
                             self.unset_arrows.insert((arrow, part));
                         },
                     }
                 },
-                | Undo::Value(attribute, part, prior) => {
+                Undo::Value(attribute, part, prior) => {
                     let Ok(slot) = part.slot()
                     else {
                         continue;
@@ -899,18 +899,18 @@ impl Edit<'_>
                         column.index_remove(&current, part);
                     }
                     match prior {
-                        | Prior::Set(old) => {
+                        Prior::Set(old) => {
                             column.index_insert(&old, part);
                             if let Some(cell) = column.values.get_mut(usize::from(slot)) {
                                 *cell = old;
                             }
                         },
-                        | Prior::Unset => {
+                        Prior::Unset => {
                             self.unset_values.insert((attribute, part));
                         },
                     }
                 },
-                | Undo::Deleted(object, part) => {
+                Undo::Deleted(object, part) => {
                     if let Some(table) = self.store.tables.get_mut(usize::from(object)) {
                         table.restore(part);
                     }

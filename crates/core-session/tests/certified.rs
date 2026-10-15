@@ -103,8 +103,8 @@ fn evidence(
 ) -> Evidence
 {
     match relate(source, target, relation).expect("valid finite arenas") {
-        | RelationResult::Related(evidence) => evidence,
-        | RelationResult::Unrelated => panic!("fixture relation must hold"),
+        RelationResult::Related(evidence) => evidence,
+        RelationResult::Unrelated => panic!("fixture relation must hold"),
     }
 }
 

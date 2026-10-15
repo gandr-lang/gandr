@@ -523,20 +523,20 @@ pub fn apply(
 {
     let mut edited = statements.to_vec();
     match *edit {
-        | Edit::Replace(at, ref statement) => {
+        Edit::Replace(at, ref statement) => {
             if let Some(slot) = edited.get_mut(at) {
                 slot.clone_from(statement);
             }
         },
-        | Edit::Insert(at, ref statement) => {
+        Edit::Insert(at, ref statement) => {
             edited.insert(at.min(edited.len()), statement.clone());
         },
-        | Edit::Delete(at) => {
+        Edit::Delete(at) => {
             if at < edited.len() {
                 let _removed = edited.remove(at);
             }
         },
-        | Edit::Rename(at, to) => {
+        Edit::Rename(at, to) => {
             if let Some(old) = edited.get(at).map(|slot| slot.name) {
                 for slot in &mut edited {
                     if slot.name == old {
@@ -550,17 +550,17 @@ pub fn apply(
                 }
             }
         },
-        | Edit::Swap(first, second) => {
+        Edit::Swap(first, second) => {
             if first < edited.len() && second < edited.len() {
                 edited.swap(first, second);
             }
         },
-        | Edit::Ascribe(at, ascription) => {
+        Edit::Ascribe(at, ascription) => {
             if let Some(slot) = edited.get_mut(at) {
                 slot.ascription = ascription;
             }
         },
-        | Edit::Revalue(at, value) => {
+        Edit::Revalue(at, value) => {
             if let Some(slot) = edited.get_mut(at)
                 && let Body::Int(ref mut literal)
                 | Body::Delay(ref mut literal)
@@ -706,19 +706,19 @@ pub fn render(statements: &[Stmt]) -> String
         }
         if let Some(ascription) = statement.ascription {
             let written = match ascription {
-                | Ascription::Integer => "Integer",
-                | Ascription::Text => "String",
-                | Ascription::Delayed => "+U (-F Integer)",
+                Ascription::Integer => "Integer",
+                Ascription::Text => "String",
+                Ascription::Delayed => "+U (-F Integer)",
             };
             writeln!(text, "def d{name} : {written} ;").expect("a string takes every write");
         }
         let defined = match statement.body {
-            | Body::Int(literal) => format!("{literal}"),
-            | Body::Str(content) => format!("\"{content}\""),
-            | Body::Ref(read) => format!("d{read}"),
-            | Body::Delay(literal) => format!("thunk {{ return {literal} }}"),
-            | Body::Call(read) => format!("thunk {{ become (force d{read})(0) }}"),
-            | Body::Function(_) | Body::Absent => continue,
+            Body::Int(literal) => format!("{literal}"),
+            Body::Str(content) => format!("\"{content}\""),
+            Body::Ref(read) => format!("d{read}"),
+            Body::Delay(literal) => format!("thunk {{ return {literal} }}"),
+            Body::Call(read) => format!("thunk {{ become (force d{read})(0) }}"),
+            Body::Function(_) | Body::Absent => continue,
         };
         writeln!(text, "def d{name} = {defined} ;").expect("a string takes every write");
     }

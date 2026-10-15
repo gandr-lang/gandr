@@ -83,18 +83,18 @@ struct Cli
 fn main() -> ExitCode
 {
     let cli = match <Cli as clap::Parser>::try_parse() {
-        | Ok(cli) => cli,
-        | Err(error) => {
+        Ok(cli) => cli,
+        Err(error) => {
             return match (error.print(), error.use_stderr()) {
-                | (Ok(()), false) => ExitCode::SUCCESS,
-                | (Ok(()), true) | (Err(_), _) => ExitCode::from(REFUSED),
+                (Ok(()), false) => ExitCode::SUCCESS,
+                (Ok(()), true) | (Err(_), _) => ExitCode::from(REFUSED),
             };
         },
     };
     match rank(cli) {
-        | Ok(()) => ExitCode::SUCCESS,
-        | Err(error) => match writeln!(std::io::stderr(), "spec-cost: {error}") {
-            | Ok(()) | Err(_) => ExitCode::from(REFUSED),
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => match writeln!(std::io::stderr(), "spec-cost: {error}") {
+            Ok(()) | Err(_) => ExitCode::from(REFUSED),
         },
     }
 }

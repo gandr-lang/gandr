@@ -254,8 +254,8 @@ fn unknown_code(
 ) -> Knowledge
 {
     match arena.value(code) {
-        | Some(&(Value::Hole(_) | Value::Mark { .. })) => Knowledge::Unknown,
-        | Some(_) | None => Knowledge::Known,
+        Some(&(Value::Hole(_) | Value::Mark { .. })) => Knowledge::Unknown,
+        Some(_) | None => Knowledge::Known,
     }
 }
 
@@ -288,9 +288,9 @@ pub fn value_type_knowledge(
 ) -> Knowledge
 {
     match arena.value_type(subject) {
-        | Some(&ValueType::Unknown) => Knowledge::Unknown,
-        | Some(&ValueType::Element { code, .. }) => unknown_code(arena, code),
-        | Some(_) | None => Knowledge::Known,
+        Some(&ValueType::Unknown) => Knowledge::Unknown,
+        Some(&ValueType::Element { code, .. }) => unknown_code(arena, code),
+        Some(_) | None => Knowledge::Known,
     }
 }
 
@@ -321,9 +321,9 @@ pub fn comp_type_knowledge(
 ) -> Knowledge
 {
     match arena.comp_type(subject) {
-        | Some(&CompType::Unknown) => Knowledge::Unknown,
-        | Some(&CompType::Element { code, .. }) => unknown_code(arena, code),
-        | Some(_) | None => Knowledge::Known,
+        Some(&CompType::Unknown) => Knowledge::Unknown,
+        Some(&CompType::Element { code, .. }) => unknown_code(arena, code),
+        Some(_) | None => Knowledge::Known,
     }
 }
 
@@ -375,9 +375,9 @@ pub fn matched_thunk(
         return Maybe::Present(arena.comp_type_unknown());
     }
     match arena.value_type(subject) {
-        | Some(&ValueType::Thunk(body)) => Maybe::Present(body),
-        | Some(_) => mismatched(),
-        | None => dangling(),
+        Some(&ValueType::Thunk(body)) => Maybe::Present(body),
+        Some(_) => mismatched(),
+        None => dangling(),
     }
 }
 
@@ -424,11 +424,11 @@ pub fn matched_product(
         return Maybe::Present(Components::Unknown(arena.value_type_unknown()));
     }
     match arena.value_type(subject) {
-        | Some(&ValueType::Product(ref components)) => {
+        Some(&ValueType::Product(ref components)) => {
             Maybe::Present(Components::Known(components.clone()))
         },
-        | Some(_) => mismatched(),
-        | None => dangling(),
+        Some(_) => mismatched(),
+        None => dangling(),
     }
 }
 
@@ -463,11 +463,9 @@ pub fn matched_sum(
         return Maybe::Present(Components::Unknown(arena.value_type_unknown()));
     }
     match arena.value_type(subject) {
-        | Some(&ValueType::Sum(ref summands)) => {
-            Maybe::Present(Components::Known(summands.clone()))
-        },
-        | Some(_) => mismatched(),
-        | None => dangling(),
+        Some(&ValueType::Sum(ref summands)) => Maybe::Present(Components::Known(summands.clone())),
+        Some(_) => mismatched(),
+        None => dangling(),
     }
 }
 
@@ -502,9 +500,9 @@ pub fn matched_static_pi(
         return Maybe::Present((unknown, unknown));
     }
     match arena.value_type(subject) {
-        | Some(&ValueType::StaticPi { domain, codomain }) => Maybe::Present((domain, codomain)),
-        | Some(_) => mismatched(),
-        | None => dangling(),
+        Some(&ValueType::StaticPi { domain, codomain }) => Maybe::Present((domain, codomain)),
+        Some(_) => mismatched(),
+        None => dangling(),
     }
 }
 
@@ -537,9 +535,9 @@ pub fn matched_returner(
         return Maybe::Present(arena.value_type_unknown());
     }
     match arena.comp_type(subject) {
-        | Some(&CompType::Returner { result, .. }) => Maybe::Present(result),
-        | Some(_) => mismatched(),
-        | None => dangling(),
+        Some(&CompType::Returner { result, .. }) => Maybe::Present(result),
+        Some(_) => mismatched(),
+        None => dangling(),
     }
 }
 
@@ -584,18 +582,18 @@ pub fn matched_function(
         });
     }
     match arena.comp_type(subject) {
-        | Some(&CompType::Arrow { domain, codomain }) => Maybe::Present(MatchedFunction {
+        Some(&CompType::Arrow { domain, codomain }) => Maybe::Present(MatchedFunction {
             domain,
             codomain,
             scope: CodomainScope::Ambient,
         }),
-        | Some(&CompType::Pi { domain, codomain }) => Maybe::Present(MatchedFunction {
+        Some(&CompType::Pi { domain, codomain }) => Maybe::Present(MatchedFunction {
             domain,
             codomain,
             scope: CodomainScope::UnderBinder,
         }),
-        | Some(_) => mismatched(),
-        | None => dangling(),
+        Some(_) => mismatched(),
+        None => dangling(),
     }
 }
 
@@ -628,9 +626,9 @@ pub fn matched_list(
         return Maybe::Present(arena.value_type_unknown());
     }
     match arena.value_type(subject) {
-        | Some(&ValueType::List(element)) => Maybe::Present(element),
-        | Some(_) => mismatched(),
-        | None => dangling(),
+        Some(&ValueType::List(element)) => Maybe::Present(element),
+        Some(_) => mismatched(),
+        None => dangling(),
     }
 }
 
@@ -665,9 +663,9 @@ pub fn matched_stack(
         return Maybe::Present((unknown, unknown));
     }
     match arena.value_type(subject) {
-        | Some(&ValueType::Stack { input, output }) => Maybe::Present((input, output)),
-        | Some(_) => mismatched(),
-        | None => dangling(),
+        Some(&ValueType::Stack { input, output }) => Maybe::Present((input, output)),
+        Some(_) => mismatched(),
+        None => dangling(),
     }
 }
 
@@ -701,9 +699,9 @@ pub fn matched_with(
         return Maybe::Present((unknown, unknown));
     }
     match arena.comp_type(subject) {
-        | Some(&CompType::With(first, second)) => Maybe::Present((first, second)),
-        | Some(_) => mismatched(),
-        | None => dangling(),
+        Some(&CompType::With(first, second)) => Maybe::Present((first, second)),
+        Some(_) => mismatched(),
+        None => dangling(),
     }
 }
 

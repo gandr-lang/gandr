@@ -211,8 +211,17 @@ impl Relation
     {
         let node = self.node(self.root)?;
         match node.clause {
-            | Clause::Function(argument, result) => Ok((argument, result)),
-            | _ => Err(RelationError::Classifier),
+            Clause::Function(argument, result) => Ok((argument, result)),
+            Clause::Unit
+            | Clause::Empty
+            | Clause::Discrete
+            | Clause::Universe
+            | Clause::Certificate
+            | Clause::Product(..)
+            | Clause::Sum(..)
+            | Clause::List(_)
+            | Clause::CaseLeft(..)
+            | Clause::CaseRight(..) => Err(RelationError::Classifier),
         }
     }
 
@@ -305,7 +314,7 @@ impl Relation
             allowance.charge()?;
             let node = self.node(relation)?;
             let patterns = match node.clause {
-                | Clause::Unit => {
+                Clause::Unit => {
                     let unit = arena.value_unit();
                     Vec::from([RelatedPattern {
                         context: Vec::new(),
@@ -314,7 +323,7 @@ impl Relation
                         proof: unit,
                     }])
                 },
-                | Clause::Discrete => {
+                Clause::Discrete => {
                     let leaf = arena.value_variable(DeBruijnIndex::from(0_u32));
                     Vec::from([RelatedPattern {
                         context: Vec::from([node.source]),
@@ -323,7 +332,7 @@ impl Relation
                         proof: arena.value_unit(),
                     }])
                 },
-                | Clause::Function(..) => {
+                Clause::Function(..) => {
                     let source = arena.value_variable(DeBruijnIndex::from(1_u32));
                     let target = arena.value_variable(DeBruijnIndex::from(0_u32));
                     let premise = arena.value_type_path(node.source, source, target);
@@ -334,7 +343,7 @@ impl Relation
                         proof: target,
                     }])
                 },
-                | Clause::Sum(first, second) | Clause::Product(first, second) => {
+                Clause::Sum(first, second) | Clause::Product(first, second) => {
                     if !expanded {
                         pending.push((relation, true));
                         pending.push((second, false));
@@ -345,7 +354,7 @@ impl Relation
                     let first = values.pop().ok_or(RelationError::Arena)?;
                     let mut joined = Vec::new();
                     match node.clause {
-                        | Clause::Sum(..) => {
+                        Clause::Sum(..) => {
                             joined.reserve(first.len().saturating_add(second.len()));
                             for (side, branch) in [(Side::Left, first), (Side::Right, second)] {
                                 for mut pattern in branch {
@@ -362,7 +371,16 @@ impl Relation
                                 }
                             }
                         },
-                        | _ => {
+                        Clause::Unit
+                        | Clause::Empty
+                        | Clause::Discrete
+                        | Clause::Universe
+                        | Clause::Certificate
+                        | Clause::Product(..)
+                        | Clause::Function(..)
+                        | Clause::List(_)
+                        | Clause::CaseLeft(..)
+                        | Clause::CaseRight(..) => {
                             for left in &first {
                                 for right in &second {
                                     allowance.charge()?;
@@ -411,10 +429,10 @@ impl Relation
                     }
                     joined
                 },
-                | Clause::List(_) => return Err(RelationError::RecursiveObservationRequired),
-                | Clause::Universe => return Err(RelationError::CertificateOperationRequired),
-                | Clause::Certificate => return Err(RelationError::HigherFieldRequired),
-                | Clause::Empty | Clause::CaseLeft(..) | Clause::CaseRight(..) => {
+                Clause::List(_) => return Err(RelationError::RecursiveObservationRequired),
+                Clause::Universe => return Err(RelationError::CertificateOperationRequired),
+                Clause::Certificate => return Err(RelationError::HigherFieldRequired),
+                Clause::Empty | Clause::CaseLeft(..) | Clause::CaseRight(..) => {
                     return Err(RelationError::Classifier);
                 },
             };
@@ -552,8 +570,27 @@ impl Relation
         let ty = fiber.native(arena)?;
         if let Err(error) = check_value(arena, context, proof, ty) {
             return Err(match error {
-                | RelationError::Typing(error) => RelationError::Pointwise(component, error),
-                | error => error,
+                RelationError::Typing(error) => RelationError::Pointwise(component, error),
+                error @ (RelationError::Arena
+                | RelationError::UnsupportedCode(_)
+                | RelationError::UnsupportedType(_)
+                | RelationError::AbstractInterface(_)
+                | RelationError::Path(_)
+                | RelationError::Boundary
+                | RelationError::NonFibrant
+                | RelationError::NeutralFiber
+                | RelationError::Evidence
+                | RelationError::Classifier
+                | RelationError::HigherEvaluationRequired
+                | RelationError::Coverage
+                | RelationError::Pointwise(..)
+                | RelationError::Evaluation(..)
+                | RelationError::QuantifiedStep(_)
+                | RelationError::HigherOrderDomain(_)
+                | RelationError::RecursiveObservationRequired
+                | RelationError::HigherFieldRequired
+                | RelationError::CertificateOperationRequired
+                | RelationError::Budget) => error,
             });
         }
         Ok(Application::Return {
@@ -816,7 +853,7 @@ impl Relation
                 allowance.charge()?;
                 let step = steps.next().ok_or(RelationError::Coverage)?;
                 match *step {
-                    | Quantified::Return {
+                    Quantified::Return {
                         left: ref left_result,
                         right: ref right_result,
                         proof,
@@ -848,7 +885,7 @@ impl Relation
                             ]),
                         });
                     },
-                    | Quantified::Apply {
+                    Quantified::Apply {
                         fibre,
                         left: ref left_reduction,
                         right: ref right_reduction,
@@ -980,10 +1017,20 @@ impl Relation
         self.nodes
             .iter()
             .find_map(|node| match node.clause {
-                | Clause::Function(argument, result) if node.source == classifier => {
+                Clause::Function(argument, result) if node.source == classifier => {
                     Some((argument, result))
                 },
-                | _ => None,
+                Clause::Unit
+                | Clause::Empty
+                | Clause::Discrete
+                | Clause::Universe
+                | Clause::Certificate
+                | Clause::Product(..)
+                | Clause::Sum(..)
+                | Clause::Function(..)
+                | Clause::List(_)
+                | Clause::CaseLeft(..)
+                | Clause::CaseRight(..) => None,
             })
             .ok_or(RelationError::QuantifiedStep(component))
     }
@@ -1027,13 +1074,13 @@ impl Relation
                 continue;
             }
             match self.node(id)?.clause {
-                | Clause::Function(..) => return Ok(Order::Higher),
-                | Clause::Product(first, second)
+                Clause::Function(..) => return Ok(Order::Higher),
+                Clause::Product(first, second)
                 | Clause::Sum(first, second)
                 | Clause::CaseLeft(first, second)
                 | Clause::CaseRight(first, second) => pending.extend([first, second]),
-                | Clause::List(element) => pending.push(element),
-                | Clause::Unit
+                Clause::List(element) => pending.push(element),
+                Clause::Unit
                 | Clause::Empty
                 | Clause::Discrete
                 | Clause::Universe
@@ -1502,8 +1549,8 @@ fn stuck(
         body = inner;
     }
     let (application, continuation) = match arena.computation(body) {
-        | Some(&Computation::Bind(bound, rest)) => (bound, Continuation::Bind(rest)),
-        | _ => (body, Continuation::Tail),
+        Some(&Computation::Bind(bound, rest)) => (bound, Continuation::Bind(rest)),
+        _ => (body, Continuation::Tail),
     };
     let Some(&Computation::Application(forced, input)) = arena.computation(application)
     else {
@@ -1551,8 +1598,8 @@ fn resume(
 {
     let (value, extension) = output;
     match continuation {
-        | Continuation::Tail => arena.computation_return(value),
-        | Continuation::Bind(body) => {
+        Continuation::Tail => arena.computation_return(value),
+        Continuation::Bind(body) => {
             let weakened = shift_computation(
                 arena,
                 table,

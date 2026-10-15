@@ -355,8 +355,8 @@ pub fn value_bridge(
         expected,
     };
     match convert(context, Pairing::Assignable(found, wanted))? {
-        | Agreement::Convertible => Ok(()),
-        | Agreement::Apart
+        Agreement::Convertible => Ok(()),
+        Agreement::Apart
             if matches!(
                 value_type_view(context.arena(), wanted)?,
                 ValueTypeView::Capability { .. }
@@ -367,9 +367,9 @@ pub fn value_bridge(
         {
             Err(CheckRefusal::CapabilityForged { at, expected })
         },
-        | Agreement::Apart => Err(CheckRefusal::TypeMismatch(mismatch)),
-        | Agreement::Amplified => Err(CheckRefusal::CapabilityAmplified(mismatch)),
-        | Agreement::Escaped => Err(CheckRefusal::CapabilityEscaped {
+        Agreement::Apart => Err(CheckRefusal::TypeMismatch(mismatch)),
+        Agreement::Amplified => Err(CheckRefusal::CapabilityAmplified(mismatch)),
+        Agreement::Escaped => Err(CheckRefusal::CapabilityEscaped {
             at: TermNode::Value(at),
             found: crate::refusal::TypeNode::Value(synthesised),
         }),
@@ -428,10 +428,10 @@ pub fn comp_bridge(
         expected,
     };
     match convert(context, Pairing::SubComps(synthesised, expected))? {
-        | Agreement::Convertible => Ok(()),
-        | Agreement::Apart => Err(CheckRefusal::TypeMismatch(mismatch)),
-        | Agreement::Amplified => Err(CheckRefusal::CapabilityAmplified(mismatch)),
-        | Agreement::Escaped => Err(CheckRefusal::CapabilityEscaped {
+        Agreement::Convertible => Ok(()),
+        Agreement::Apart => Err(CheckRefusal::TypeMismatch(mismatch)),
+        Agreement::Amplified => Err(CheckRefusal::CapabilityAmplified(mismatch)),
+        Agreement::Escaped => Err(CheckRefusal::CapabilityEscaped {
             at: TermNode::Computation(at),
             found: crate::refusal::TypeNode::Computation(synthesised),
         }),
@@ -497,7 +497,7 @@ pub fn decode_bridge(
         .arena_mut()
         .value_type_universe(Sort::Ground(sort), target.clone());
     match value_type_view(context.arena(), found)? {
-        | ValueTypeView::Universe {
+        ValueTypeView::Universe {
             sort: found_sort,
             level,
         } => {
@@ -519,8 +519,8 @@ pub fn decode_bridge(
                 Ok(())
             }
         },
-        | ValueTypeView::Unknown => Ok(()),
-        | ValueTypeView::PathUniverse(..)
+        ValueTypeView::Unknown => Ok(()),
+        ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
@@ -689,11 +689,11 @@ fn convert(
     let mut met = BTreeSet::new();
     while let Some(pairing) = pending.pop() {
         let reflexive = match pairing {
-            | Pairing::Values(left, right)
+            Pairing::Values(left, right)
             | Pairing::Assignable(left, right)
             | Pairing::SubValues(left, right) => left == right,
-            | Pairing::Comps(left, right) | Pairing::SubComps(left, right) => left == right,
-            | Pairing::Codes(left, right)
+            Pairing::Comps(left, right) | Pairing::SubComps(left, right) => left == right,
+            Pairing::Codes(left, right)
             | Pairing::Terms(left, right)
             | Pairing::Endpoints(left, right) => left == right,
         };
@@ -718,27 +718,27 @@ fn convert(
             }
         };
         let agrees = match pairing {
-            | Pairing::Terms(left, right) => {
+            Pairing::Terms(left, right) => {
                 root_knowledge(context, left)? == Knowledge::Unknown
                     || root_knowledge(context, right)? == Knowledge::Unknown
                     || gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
                         == gandr_core_term::CertificateEquality::Equal
             },
-            | Pairing::Endpoints(left, right) => {
+            Pairing::Endpoints(left, right) => {
                 root_knowledge(context, left)? == Knowledge::Unknown
                     || root_knowledge(context, right)? == Knowledge::Unknown
                     || gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
                         == gandr_core_term::CertificateEquality::Equal
                     || endpoints_agree(context, left, right)? == Agreement::Convertible
             },
-            | Pairing::Assignable(left, right) => {
+            Pairing::Assignable(left, right) => {
                 let left = context.whnf_value_type(left)?;
                 let right = context.whnf_value_type(right)?;
                 match (
                     value_type_view(context.arena(), left)?,
                     value_type_view(context.arena(), right)?,
                 ) {
-                    | (ValueTypeView::Record(found), ValueTypeView::Record(wanted)) => {
+                    (ValueTypeView::Record(found), ValueTypeView::Record(wanted)) => {
                         for (label, &expected) in wanted {
                             let Some(&synthesised) = found.get(label)
                             else {
@@ -747,18 +747,18 @@ fn convert(
                             pending.push(Pairing::Assignable(synthesised, expected));
                         }
                     },
-                    | _ => pending.push(Pairing::SubValues(left, right)),
+                    _ => pending.push(Pairing::SubValues(left, right)),
                 }
                 true
             },
-            | Pairing::Values(left, right) | Pairing::SubValues(left, right) => {
+            Pairing::Values(left, right) | Pairing::SubValues(left, right) => {
                 let left = context.whnf_value_type(left)?;
                 let right = context.whnf_value_type(right)?;
                 match (
                     value_type_view(context.arena(), left)?,
                     value_type_view(context.arena(), right)?,
                 ) {
-                    | (
+                    (
                         ValueTypeView::Data {
                             declaration: a,
                             arguments: aa,
@@ -782,7 +782,7 @@ fn convert(
                     // those words, as the kernel reads them: both endpoints
                     // spell the point, or one does and the other converts
                     // with it.
-                    | (
+                    (
                         ValueTypeView::Data {
                             declaration,
                             arguments,
@@ -822,14 +822,14 @@ fn convert(
                             false
                         }
                     },
-                    | (ValueTypeView::Record(a), ValueTypeView::Record(b)) => {
+                    (ValueTypeView::Record(a), ValueTypeView::Record(b)) => {
                         if a.len() != b.len() || !a.keys().eq(b.keys()) {
                             return Ok(Agreement::Apart);
                         }
                         pending.extend(a.values().zip(b.values()).map(|(&a, &b)| values(a, b)));
                         true
                     },
-                    | (
+                    (
                         ValueTypeView::Stack {
                             input: a,
                             output: b,
@@ -842,12 +842,12 @@ fn convert(
                         pending.extend([comps(c, a), comps(b, d)]);
                         true
                     },
-                    | (ValueTypeView::PathUniverse(a, b), ValueTypeView::PathUniverse(c, d)) => {
+                    (ValueTypeView::PathUniverse(a, b), ValueTypeView::PathUniverse(c, d)) => {
                         pending.push(Pairing::Codes(a, c));
                         pending.push(Pairing::Codes(b, d));
                         true
                     },
-                    | (
+                    (
                         ValueTypeView::Path {
                             carrier: a,
                             left: first,
@@ -880,23 +880,23 @@ fn convert(
                     // may take an offer its supertype lacks, so moving a run
                     // along a subtyping is the checked `ride`, never a
                     // silent subsumption.
-                    | (ValueTypeView::Run(left), ValueTypeView::Run(right)) => {
+                    (ValueTypeView::Run(left), ValueTypeView::Run(right)) => {
                         pending.push(Pairing::Codes(left, right));
                         true
                     },
-                    | (ValueTypeView::List(left), ValueTypeView::List(right)) => {
+                    (ValueTypeView::List(left), ValueTypeView::List(right)) => {
                         pending.push(values(left, right));
                         true
                     },
-                    | (ValueTypeView::Unknown, _)
+                    (ValueTypeView::Unknown, _)
                     | (_, ValueTypeView::Unknown)
                     | (ValueTypeView::Integer, ValueTypeView::Integer)
                     | (ValueTypeView::String, ValueTypeView::String)
                     | (ValueTypeView::Unit, ValueTypeView::Unit) => true,
-                    | (ValueTypeView::Abstract(left), ValueTypeView::Abstract(right)) => {
+                    (ValueTypeView::Abstract(left), ValueTypeView::Abstract(right)) => {
                         left == right
                     },
-                    | (
+                    (
                         ValueTypeView::Capability {
                             authority: found,
                             grade: found_grade,
@@ -925,11 +925,11 @@ fn convert(
                                 && (found_grade, found_region) == (wanted_grade, wanted_region)
                         }
                     },
-                    | (ValueTypeView::Thunk(left), ValueTypeView::Thunk(right)) => {
+                    (ValueTypeView::Thunk(left), ValueTypeView::Thunk(right)) => {
                         pending.push(comps(left, right));
                         true
                     },
-                    | (
+                    (
                         ValueTypeView::Universe {
                             sort: left_sort,
                             level: left_level,
@@ -939,7 +939,7 @@ fn convert(
                             level: right_level,
                         },
                     ) => left_sort == right_sort && left_level == right_level,
-                    | (
+                    (
                         ValueTypeView::Lift {
                             inner: left_inner,
                             target: left_target,
@@ -952,7 +952,7 @@ fn convert(
                         pending.push(values(left_inner, right_inner));
                         left_target == right_target
                     },
-                    | (
+                    (
                         ValueTypeView::Element {
                             code: left_code,
                             target: left_target,
@@ -965,7 +965,7 @@ fn convert(
                         pending.push(Pairing::Codes(left_code, right_code));
                         left_target == right_target
                     },
-                    | (ValueTypeView::Sum(left), ValueTypeView::Sum(right))
+                    (ValueTypeView::Sum(left), ValueTypeView::Sum(right))
                     | (ValueTypeView::Product(left), ValueTypeView::Product(right)) => {
                         let same = left.len() == right.len();
                         if same {
@@ -978,7 +978,7 @@ fn convert(
                         }
                         same
                     },
-                    | (ValueTypeView::Session(_), ValueTypeView::Session(_)) => {
+                    (ValueTypeView::Session(_), ValueTypeView::Session(_)) => {
                         let relation = if subtyping {
                             gandr_core_session::Relation::Subtype
                         }
@@ -986,7 +986,7 @@ fn convert(
                             gandr_core_session::Relation::Equivalent
                         };
                         match crate::session::relate(context, left, right, relation)? {
-                            | Maybe::Present(payloads) => {
+                            Maybe::Present(payloads) => {
                                 pending.extend(
                                     payloads
                                         .into_iter()
@@ -994,10 +994,10 @@ fn convert(
                                 );
                                 true
                             },
-                            | Maybe::Absent(_) => false,
+                            Maybe::Absent(_) => false,
                         }
                     },
-                    | (
+                    (
                         ValueTypeView::StaticPi {
                             domain: left_first,
                             codomain: left_second,
@@ -1013,7 +1013,7 @@ fn convert(
                     },
                     // The second factors stand under one binder each, at the
                     // same index, so they compare as they stand.
-                    | (
+                    (
                         ValueTypeView::Sigma {
                             first: left_first,
                             second: left_second,
@@ -1027,7 +1027,7 @@ fn convert(
                         pending.push(values(left_first, right_first));
                         true
                     },
-                    | (
+                    (
                         ValueTypeView::PathUniverse(..)
                         | ValueTypeView::Path { .. }
                         | ValueTypeView::Flow { .. }
@@ -1054,19 +1054,19 @@ fn convert(
                     ) => false,
                 }
             },
-            | Pairing::Comps(left, right) | Pairing::SubComps(left, right) => {
+            Pairing::Comps(left, right) | Pairing::SubComps(left, right) => {
                 let left = context.whnf_comp_type(left)?;
                 let right = context.whnf_comp_type(right)?;
                 match (
                     comp_type_view(context.arena(), left)?,
                     comp_type_view(context.arena(), right)?,
                 ) {
-                    | (CompTypeView::Unknown, _) | (_, CompTypeView::Unknown) => true,
-                    | (CompTypeView::With(a, b), CompTypeView::With(c, d)) => {
+                    (CompTypeView::Unknown, _) | (_, CompTypeView::Unknown) => true,
+                    (CompTypeView::With(a, b), CompTypeView::With(c, d)) => {
                         pending.extend([comps(a, c), comps(b, d)]);
                         true
                     },
-                    | (
+                    (
                         CompTypeView::Returner {
                             result: left,
                             effects: first,
@@ -1114,7 +1114,7 @@ fn convert(
                         }
                         same_shape
                     },
-                    | (
+                    (
                         CompTypeView::Arrow {
                             domain: left_domain,
                             codomain: left_codomain,
@@ -1138,7 +1138,7 @@ fn convert(
                         pending.push(values(right_domain, left_domain));
                         true
                     },
-                    | (
+                    (
                         CompTypeView::Element {
                             code: left_code,
                             target: left_target,
@@ -1151,7 +1151,7 @@ fn convert(
                         pending.push(Pairing::Codes(left_code, right_code));
                         left_target == right_target
                     },
-                    | (
+                    (
                         CompTypeView::Returner { .. }
                         | CompTypeView::With(..)
                         | CompTypeView::Arrow { .. }
@@ -1161,7 +1161,7 @@ fn convert(
                     ) => false,
                 }
             },
-            | Pairing::Codes(left, right) => {
+            Pairing::Codes(left, right) => {
                 let left = context.whnf_code(left)?;
                 let right = context.whnf_code(right)?;
                 left == right
@@ -1312,10 +1312,10 @@ fn convert(
                                         left_moves.iter().zip(right_moves.iter()).rev().filter_map(
                                             |(left, right)| match (left.payload(), right.payload())
                                             {
-                                                | (Maybe::Present(left), Maybe::Present(right)) => {
+                                                (Maybe::Present(left), Maybe::Present(right)) => {
                                                     Some(Pairing::Codes(left, right))
                                                 },
-                                                | _ => None,
+                                                _ => None,
                                             },
                                         ),
                                     );
@@ -1325,7 +1325,7 @@ fn convert(
                             else {
                                 {
                                     match *matched_left_value {
-                                        | Value::PathRefl(_)
+                                        Value::PathRefl(_)
                                         | Value::Here(_)
                                         | Value::Stay(_)
                                         | Value::Then(..)
@@ -1671,14 +1671,14 @@ mod tests
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         for pairing in pairs {
             let swapped = match pairing {
-                | Pairing::Assignable(left, right) => Pairing::Assignable(right, left),
-                | Pairing::Values(left, right) => Pairing::Values(right, left),
-                | Pairing::Comps(left, right) => Pairing::Comps(right, left),
-                | Pairing::Codes(left, right) => Pairing::Codes(right, left),
-                | Pairing::Terms(left, right) => Pairing::Terms(right, left),
-                | Pairing::Endpoints(left, right) => Pairing::Endpoints(right, left),
-                | Pairing::SubValues(left, right) => Pairing::SubValues(right, left),
-                | Pairing::SubComps(left, right) => Pairing::SubComps(right, left),
+                Pairing::Assignable(left, right) => Pairing::Assignable(right, left),
+                Pairing::Values(left, right) => Pairing::Values(right, left),
+                Pairing::Comps(left, right) => Pairing::Comps(right, left),
+                Pairing::Codes(left, right) => Pairing::Codes(right, left),
+                Pairing::Terms(left, right) => Pairing::Terms(right, left),
+                Pairing::Endpoints(left, right) => Pairing::Endpoints(right, left),
+                Pairing::SubValues(left, right) => Pairing::SubValues(right, left),
+                Pairing::SubComps(left, right) => Pairing::SubComps(right, left),
             };
             assert_eq!(
                 convert(&mut context, pairing),
@@ -1725,14 +1725,14 @@ mod tests
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         for pairing in consistent {
             let swapped = match pairing {
-                | Pairing::Assignable(left, right) => Pairing::Assignable(right, left),
-                | Pairing::Values(left, right) => Pairing::Values(right, left),
-                | Pairing::SubValues(left, right) => Pairing::SubValues(right, left),
-                | Pairing::Comps(left, right) => Pairing::Comps(right, left),
-                | Pairing::SubComps(left, right) => Pairing::SubComps(right, left),
-                | Pairing::Codes(left, right) => Pairing::Codes(right, left),
-                | Pairing::Terms(left, right) => Pairing::Terms(right, left),
-                | Pairing::Endpoints(left, right) => Pairing::Endpoints(right, left),
+                Pairing::Assignable(left, right) => Pairing::Assignable(right, left),
+                Pairing::Values(left, right) => Pairing::Values(right, left),
+                Pairing::SubValues(left, right) => Pairing::SubValues(right, left),
+                Pairing::Comps(left, right) => Pairing::Comps(right, left),
+                Pairing::SubComps(left, right) => Pairing::SubComps(right, left),
+                Pairing::Codes(left, right) => Pairing::Codes(right, left),
+                Pairing::Terms(left, right) => Pairing::Terms(right, left),
+                Pairing::Endpoints(left, right) => Pairing::Endpoints(right, left),
             };
             assert_eq!(
                 convert(&mut context, pairing),

@@ -205,8 +205,8 @@ fn typed_line(
 ) -> String
 {
     match *spelling {
-        | Maybe::Present(ref spelling) => format!("{name} : {spelling}"),
-        | Maybe::Absent(_) => name.to_string(),
+        Maybe::Present(ref spelling) => format!("{name} : {spelling}"),
+        Maybe::Absent(_) => name.to_string(),
     }
 }
 
@@ -236,16 +236,18 @@ fn typed_line(
                             && end.parse::<usize>().is_ok_and(|at| at == usize::from(span.end()))))))]
 fn card_line(card: &DiagCard) -> String
 {
-    match card.span {
-        | Some(range) => format!(
-            "warning[{}]: {} at {}..{}",
-            card.code,
-            card.message,
-            usize::from(range.start()),
-            usize::from(range.end())
-        ),
-        | None => format!("warning[{}]: {}", card.code, card.message),
-    }
+    card.span.map_or_else(
+        || format!("warning[{}]: {}", card.code, card.message),
+        |range| {
+            format!(
+                "warning[{}]: {} at {}..{}",
+                card.code,
+                card.message,
+                usize::from(range.start()),
+                usize::from(range.end())
+            )
+        },
+    )
 }
 
 /// The transcript line of what one run came to: its kind and its text.
@@ -274,9 +276,9 @@ fn card_line(card: &DiagCard) -> String
 fn evaluation_line(evaluation: &Evaluation<'_>) -> (OutKind, String)
 {
     let kind = match *evaluation {
-        | Evaluation::Value(_) => OutKind::Value,
-        | Evaluation::Blamed(_) => OutKind::Blame,
-        | Evaluation::Stuck(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_) => {
+        Evaluation::Value(_) => OutKind::Value,
+        Evaluation::Blamed(_) => OutKind::Blame,
+        Evaluation::Stuck(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_) => {
             OutKind::Stuck
         },
     };
@@ -369,15 +371,15 @@ pub fn encode_submission(
     for diagnostic in entries(&step, Verb::Check(Goals::Reported)) {
         let rendered = render(&diagnostic, style, Verbosity::User).to_string();
         match diagnostic.severity {
-            | Severity::Goal => {},
-            | Severity::Warning => {
+            Severity::Goal => {},
+            Severity::Warning => {
                 lines.push((OutKind::Diag, String::from(rendered.trim_end())));
             },
-            | Severity::Error | Severity::Note => {
+            Severity::Error | Severity::Note => {
                 refused = true;
                 lines.push((OutKind::Diag, String::from(rendered.trim_end())));
             },
-            | Severity::Ledger => lines.push((OutKind::Info, rendered)),
+            Severity::Ledger => lines.push((OutKind::Info, rendered)),
         }
     }
     let mut standings = Standings::default();
@@ -399,24 +401,24 @@ pub fn encode_submission(
             let changed = prior.0.get(&name) != Some(&outcome);
             if !refused && (introduced || changed) {
                 match (subject, &outcome) {
-                    | (
+                    (
                         Subject::Probe { name: probe },
                         &(Outcome::Checks(_) | Outcome::Runs(_) | Outcome::Normalizes(_)),
                     ) if probe == name => {
                         let spelling = type_of(resume, fragment);
                         let line = match spelling {
-                            | Maybe::Present(spelling) => format!(": {spelling}"),
-                            | Maybe::Absent(_) => String::from(":"),
+                            Maybe::Present(spelling) => format!(": {spelling}"),
+                            Maybe::Absent(_) => String::from(":"),
                         };
                         lines.push((OutKind::Type, line));
                     },
-                    | (Subject::Declarations, &Outcome::Checks(owed)) if usize::from(owed) > 0 => {
+                    (Subject::Declarations, &Outcome::Checks(owed)) if usize::from(owed) > 0 => {
                         lines.push((
                             OutKind::Goal,
                             typed_line(fragment, &type_of(resume, fragment)),
                         ));
                     },
-                    | (
+                    (
                         Subject::Declarations,
                         &(Outcome::Checks(_) | Outcome::Runs(_) | Outcome::Normalizes(_)),
                     ) => {
@@ -428,7 +430,7 @@ pub fn encode_submission(
                             lines.push(evaluation_line(&evaluation));
                         }
                     },
-                    | (
+                    (
                         Subject::Probe { .. } | Subject::Declarations,
                         &(Outcome::Checks(_)
                         | Outcome::Refuses(_)
@@ -442,8 +444,8 @@ pub fn encode_submission(
     }
     lines.extend(cards.iter().map(|card| (OutKind::Diag, card_line(card))));
     let disposition = match (subject, refused) {
-        | (Subject::Declarations, false) => Disposition::Kept(standings),
-        | (Subject::Declarations, true) | (Subject::Probe { .. }, _) => Disposition::Dropped,
+        (Subject::Declarations, false) => Disposition::Kept(standings),
+        (Subject::Declarations, true) | (Subject::Probe { .. }, _) => Disposition::Dropped,
     };
     Encoded {
         block: TranscriptBlock {

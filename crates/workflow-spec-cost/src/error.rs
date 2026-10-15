@@ -111,11 +111,11 @@ impl fmt::Display for CostError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Io {
+            Self::Io {
                 ref path,
                 ref message,
             } => write!(f, "{}: {message}", path.display()),
-            | Self::Source {
+            Self::Source {
                 ref path,
                 ref message,
             } => write!(
@@ -123,36 +123,36 @@ impl fmt::Display for CostError
                 "{}: not Rust the parser reads: {message}",
                 path.display()
             ),
-            | Self::Command {
+            Self::Command {
                 ref command,
                 ref message,
             } => write!(f, "`{command}` failed: {message}"),
-            | Self::Listing { ref message } => {
+            Self::Listing { ref message } => {
                 write!(f, "nextest's test list is not readable: {message}")
             },
-            | Self::UnknownTest {
+            Self::UnknownTest {
                 ref binary,
                 ref test,
             } => write!(f, "`{binary}` lists no test `{test}`"),
-            | Self::Workload { ref text } => {
+            Self::Workload { ref text } => {
                 write!(
                     f,
                     "`{text}` is not a test binary and a test separated by a space"
                 )
             },
-            | Self::Factor { ref text } => {
+            Self::Factor { ref text } => {
                 write!(f, "`{text}` is not a ratio with at most two decimals")
             },
-            | Self::Seconds { ref text } => {
+            Self::Seconds { ref text } => {
                 write!(f, "`{text}` is not a non-negative number of seconds")
             },
-            | Self::NoWorkloads { ref dir } => write!(
+            Self::NoWorkloads { ref dir } => write!(
                 f,
                 "{}: no stored run names an enforcing test; run `mise run ci:timing` first",
                 dir.display()
             ),
-            | Self::Timing(ref error) => fmt::Display::fmt(error, f),
-            | Self::Output { ref message } => write!(f, "standard output: {message}"),
+            Self::Timing(ref error) => fmt::Display::fmt(error, f),
+            Self::Output { ref message } => write!(f, "standard output: {message}"),
         }
     }
 }

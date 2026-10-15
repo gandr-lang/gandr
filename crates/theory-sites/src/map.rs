@@ -187,8 +187,8 @@ impl VertexSet
     ) -> Membership
     {
         match end {
-            | End::Open => Membership::Outside,
-            | End::Vertex(vertex) => self.contains(vertex),
+            End::Open => Membership::Outside,
+            End::Vertex(vertex) => self.contains(vertex),
         }
     }
 
@@ -340,13 +340,13 @@ impl fmt::Display for MapObstruction
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::ImageCount { .. } => "one vertex image per source vertex",
-            | Self::WireImageCount { .. } => "one wire image per source wire",
-            | Self::ImageOutOfRange { .. } => "a vertex image inside the target",
-            | Self::WireOutOfRange { .. } => "a wire image inside the target",
-            | Self::Overlap { .. } => "disjointness",
-            | Self::Boundary { .. } => "boundary",
-            | Self::Fusion { .. } => "fusion",
+            Self::ImageCount { .. } => "one vertex image per source vertex",
+            Self::WireImageCount { .. } => "one wire image per source wire",
+            Self::ImageOutOfRange { .. } => "a vertex image inside the target",
+            Self::WireOutOfRange { .. } => "a wire image inside the target",
+            Self::Overlap { .. } => "disjointness",
+            Self::Boundary { .. } => "boundary",
+            Self::Fusion { .. } => "fusion",
         })
     }
 }
@@ -827,12 +827,12 @@ impl SiteMap
     {
         let image = self.image(vertex);
         let near = |ends: Ends| match leg {
-            | Leg::Input => ends.consumer(),
-            | Leg::Output => ends.producer(),
+            Leg::Input => ends.consumer(),
+            Leg::Output => ends.producer(),
         };
         let far = |ends: Ends| match leg {
-            | Leg::Input => ends.producer(),
-            | Leg::Output => ends.consumer(),
+            Leg::Input => ends.producer(),
+            Leg::Output => ends.consumer(),
         };
         let expected: Vec<Wire> = target
             .ends()
@@ -1192,10 +1192,10 @@ impl SiteMap
             .iter()
             .all(|mark| *mark == Membership::Inside);
         let wires = match (injective, surjective) {
-            | (true, true) => WireForm::Bijective,
-            | (true, false) => WireForm::Injective,
-            | (false, true) => WireForm::Surjective,
-            | (false, false) => WireForm::Neither,
+            (true, true) => WireForm::Bijective,
+            (true, false) => WireForm::Injective,
+            (false, true) => WireForm::Surjective,
+            (false, false) => WireForm::Neither,
         };
         MapForm {
             images,
@@ -1391,13 +1391,13 @@ impl Iterator for Odometer
     fn next(&mut self) -> Option<Self::Item>
     {
         self.progress = match self.progress {
-            | Progress::Done => return None,
-            | Progress::Fresh => Progress::Running,
-            | Progress::Running => self.advance(),
+            Progress::Done => return None,
+            Progress::Fresh => Progress::Running,
+            Progress::Running => self.advance(),
         };
         match self.progress {
-            | Progress::Done => None,
-            | Progress::Fresh | Progress::Running => Some(self.digits.clone()),
+            Progress::Done => None,
+            Progress::Fresh | Progress::Running => Some(self.digits.clone()),
         }
     }
 }
@@ -1576,8 +1576,8 @@ fn wire_candidates(
 ) -> Vec<Vec<Wire>>
 {
     let image_of = |end: End| match end {
-        | End::Open => None,
-        | End::Vertex(vertex) => Some(
+        End::Open => None,
+        End::Vertex(vertex) => Some(
             images
                 .get(usize::from(vertex))
                 .copied()

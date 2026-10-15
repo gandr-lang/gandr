@@ -1187,8 +1187,15 @@ mod native_formers
                 let assumed: Vec<_> = crossed.readmitted()[1 .. 5]
                     .iter()
                     .map(|entry| match *entry.outcome() {
-                        | Outcome::Assumed { admitted, .. } => admitted.position(),
-                        | ref other => panic!("each hole crosses as an axiom: {other:?}"),
+                        Outcome::Assumed { admitted, .. } => admitted.position(),
+                        ref other @ (Outcome::Data { .. }
+                        | Outcome::Defined { .. }
+                        | Outcome::Marked(_)
+                        | Outcome::Static
+                        | Outcome::Refused(_)
+                        | Outcome::Rejected(_)) => {
+                            panic!("each hole crosses as an axiom: {other:?}")
+                        },
                     })
                     .collect();
                 let Outcome::Defined { ref audit, .. } = *crossed.readmitted()[5].outcome()

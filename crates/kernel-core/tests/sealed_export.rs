@@ -54,8 +54,8 @@ mod sealed_export
             .iter()
             .map(|entry| {
                 let mark = match entry.admission() {
-                    | Admission::Checked => AdmissionMark::Checked,
-                    | Admission::Unchecked => AdmissionMark::UncheckedBypass,
+                    Admission::Checked => AdmissionMark::Checked,
+                    Admission::Unchecked => AdmissionMark::UncheckedBypass,
                 };
                 MarkedDeclaration::new(mark, entry.declaration().clone())
             })
@@ -152,8 +152,8 @@ mod sealed_export
             .iter()
             .enumerate()
             .filter_map(|(position, marked)| match *marked.declaration().content() {
-                | DeclarationContent::AbstractType { scope, .. } => Some((position, scope)),
-                | DeclarationContent::Def { .. }
+                DeclarationContent::AbstractType { scope, .. } => Some((position, scope)),
+                DeclarationContent::Def { .. }
                 | DeclarationContent::Axiom { .. }
                 | DeclarationContent::Data { .. } => None,
             })

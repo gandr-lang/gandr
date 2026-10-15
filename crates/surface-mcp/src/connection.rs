@@ -127,8 +127,8 @@ impl Connection
         };
         let method = object.get("method").and_then(Value::as_str);
         match (object.get("id"), method) {
-            | (Some(id), Some(_)) => vec![self.request(workspace, id, object)],
-            | (None, Some("notifications/cancelled")) => {
+            (Some(id), Some(_)) => vec![self.request(workspace, id, object)],
+            (None, Some("notifications/cancelled")) => {
                 if let Some(id) = object
                     .get("params")
                     .and_then(|params| params.get("requestId"))
@@ -137,11 +137,11 @@ impl Connection
                 }
                 Vec::new()
             },
-            | (None, Some(_)) => Vec::new(),
-            | (Some(_), None) if object.contains_key("result") || object.contains_key("error") => {
+            (None, Some(_)) => Vec::new(),
+            (Some(_), None) if object.contains_key("result") || object.contains_key("error") => {
                 Vec::new()
             },
-            | (Some(_) | None, None) => vec![failure(&Value::Null, Refusal::InvalidRequest)],
+            (Some(_) | None, None) => vec![failure(&Value::Null, Refusal::InvalidRequest)],
         }
     }
 
@@ -224,9 +224,9 @@ impl Connection
             .and_then(Value::as_str)
             .unwrap_or_default();
         match method {
-            | "initialize" => return success(id, initialized(&params)),
-            | "server/discover" => return success(id, discovered()),
-            | _ => {},
+            "initialize" => return success(id, initialized(&params)),
+            "server/discover" => return success(id, discovered()),
+            _ => {},
         }
         if let Some(version) = params
             .get("_meta")
@@ -246,27 +246,27 @@ impl Connection
             });
         }
         let answered = match method {
-            | "ping" => Ok(json!({})),
-            | "tools/list" => {
+            "ping" => Ok(json!({})),
+            "tools/list" => {
                 Ok(json!({ "tools": tools::list(), "ttlMs": 0_u32, "cacheScope": "private" }))
             },
-            | "tools/call" => Ok(self.call(workspace, &params)),
-            | "resources/list" => Ok(listed(workspace)),
-            | "resources/read" => read(workspace, &params),
-            | "resources/subscribe" => resource(&params).map(|resource| {
+            "tools/call" => Ok(self.call(workspace, &params)),
+            "resources/list" => Ok(listed(workspace)),
+            "resources/read" => read(workspace, &params),
+            "resources/subscribe" => resource(&params).map(|resource| {
                 let _new = self.subscribed.insert(resource);
                 json!({})
             }),
-            | "resources/unsubscribe" => resource(&params).map(|resource| {
+            "resources/unsubscribe" => resource(&params).map(|resource| {
                 let _held = self.subscribed.remove(&resource);
                 json!({})
             }),
-            | "subscriptions/listen" => return self.listen(id, &params),
-            | _ => Err(Refusal::MethodNotFound),
+            "subscriptions/listen" => return self.listen(id, &params),
+            _ => Err(Refusal::MethodNotFound),
         };
         match answered {
-            | Ok(result) => success(id, result),
-            | Err(refusal) => failure(id, refusal),
+            Ok(result) => success(id, result),
+            Err(refusal) => failure(id, refusal),
         }
     }
 
@@ -288,8 +288,8 @@ impl Connection
             .unwrap_or_else(|| json!({}));
         let (mut structured, failed) = match tools::call(workspace, params.get("name"), &arguments)
         {
-            | Ok(structured) => (structured, false),
-            | Err(refusal) => (json!({ "error": refusal.to_string() }), true),
+            Ok(structured) => (structured, false),
+            Err(refusal) => (json!({ "error": refusal.to_string() }), true),
         };
         if let Some(object) = structured.as_object_mut() {
             drop(object.insert(String::from("changes"), changes));
@@ -551,10 +551,10 @@ fn failure(
 ) -> Value
 {
     let (code, message) = match refusal {
-        | Refusal::Parse => (-32_700_i32, "Parse error"),
-        | Refusal::InvalidRequest => (-32_600_i32, "Invalid Request"),
-        | Refusal::MethodNotFound => (-32_601_i32, "Method not found"),
-        | Refusal::ResourceNotFound => (-32_602_i32, "Resource not found"),
+        Refusal::Parse => (-32_700_i32, "Parse error"),
+        Refusal::InvalidRequest => (-32_600_i32, "Invalid Request"),
+        Refusal::MethodNotFound => (-32_601_i32, "Method not found"),
+        Refusal::ResourceNotFound => (-32_602_i32, "Resource not found"),
     };
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
 }

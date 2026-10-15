@@ -241,8 +241,8 @@ pub mod zone
             Ordering::AcqRel,
             Ordering::Acquire,
         ) {
-            | Ok(_) => fresh,
-            | Err(published) => {
+            Ok(_) => fresh,
+            Err(published) => {
                 if !fresh.0.is_null() {
                     // SAFETY: `fresh` came from `malloc_create_zone`, was
                     // never published, and nothing was allocated from it.

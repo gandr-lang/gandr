@@ -386,9 +386,9 @@ impl Evaluation<'_>
     pub const fn status(&self) -> RunStatus
     {
         match *self {
-            | Self::Value(_) => RunStatus::Value,
-            | Self::Blamed(_) | Self::Stuck(_) | Self::Unfinished(_) => RunStatus::Failed,
-            | Self::Unrunnable(_) => RunStatus::Unreached,
+            Self::Value(_) => RunStatus::Value,
+            Self::Blamed(_) | Self::Stuck(_) | Self::Unfinished(_) => RunStatus::Failed,
+            Self::Unrunnable(_) => RunStatus::Unreached,
         }
     }
 }
@@ -421,40 +421,40 @@ impl fmt::Display for Evaluation<'_>
     ) -> fmt::Result
     {
         match *self {
-            | Self::Unrunnable(Unrunnable::Data(declaration)) => {
+            Self::Unrunnable(Unrunnable::Data(declaration)) => {
                 write!(f, "unrunnable: `{declaration}` is a datatype declaration")
             },
-            | Self::Value(ref value) => fmt::Display::fmt(value, f),
-            | Self::Blamed(goal) => write!(f, "blame: `{goal}` is owed its body"),
-            | Self::Stuck(ref stuck) => write!(f, "stuck: {stuck}"),
-            | Self::Unfinished(Unfinished::Fault(fault)) => write!(f, "unfinished: {fault}"),
-            | Self::Unfinished(Unfinished::Readback(refusal)) => {
+            Self::Value(ref value) => fmt::Display::fmt(value, f),
+            Self::Blamed(goal) => write!(f, "blame: `{goal}` is owed its body"),
+            Self::Stuck(ref stuck) => write!(f, "stuck: {stuck}"),
+            Self::Unfinished(Unfinished::Fault(fault)) => write!(f, "unfinished: {fault}"),
+            Self::Unfinished(Unfinished::Readback(refusal)) => {
                 write!(f, "unfinished: {refusal}")
             },
-            | Self::Unfinished(Unfinished::Inconsistent(constant)) => write!(
+            Self::Unfinished(Unfinished::Inconsistent(constant)) => write!(
                 f,
                 "unfinished: the machine carried defined constant {} as itself",
                 usize::from(constant)
             ),
-            | Self::Unfinished(Unfinished::Unspelled) => {
+            Self::Unfinished(Unfinished::Unspelled) => {
                 f.write_str("unfinished: the value is too large to spell")
             },
-            | Self::Unrunnable(Unrunnable::Undeclared(constant)) => write!(
+            Self::Unrunnable(Unrunnable::Undeclared(constant)) => write!(
                 f,
                 "unrunnable: no declaration sits at admission position {}",
                 usize::from(constant)
             ),
-            | Self::Unrunnable(Unrunnable::Refused(declaration)) => {
+            Self::Unrunnable(Unrunnable::Refused(declaration)) => {
                 write!(f, "unrunnable: `{declaration}` was refused")
             },
-            | Self::Unrunnable(Unrunnable::Unfocused {
+            Self::Unrunnable(Unrunnable::Unfocused {
                 declaration,
                 refusal: FocusRefusal::Code(_),
             }) => write!(
                 f,
                 "unrunnable: `{declaration}` is a code, which the machine carries no image of"
             ),
-            | Self::Unrunnable(Unrunnable::Unfocused {
+            Self::Unrunnable(Unrunnable::Unfocused {
                 declaration,
                 refusal,
             }) => write!(f, "unrunnable: `{declaration}` did not focus: {refusal}"),
@@ -532,21 +532,21 @@ impl<'source> Program<'source>
             }
             let body = verdicts.definitions().get(&constant).copied();
             let (definition, slot) = match (verdict, body) {
-                | (Some(Verdict::Data), _) => (Definition::Opaque, Slot::Opaque(Opacity::Data)),
-                | (Some(Verdict::Checked { .. } | Verdict::Synthesised { .. }), Some(body)) => {
+                (Some(Verdict::Data), _) => (Definition::Opaque, Slot::Opaque(Opacity::Data)),
+                (Some(Verdict::Checked { .. } | Verdict::Synthesised { .. }), Some(body)) => {
                     match focus_value(core, body, &mut arena, &mut provenance) {
-                        | Ok(producer) => (
+                        Ok(producer) => (
                             Definition::Transparent(producer),
                             Slot::Defined(references(core, body)),
                         ),
-                        | Err(refusal) => (
+                        Err(refusal) => (
                             Definition::Opaque,
                             Slot::Opaque(Opacity::Unfocused(refusal)),
                         ),
                     }
                 },
-                | (Some(Verdict::Owed(_)), _) => (Definition::Opaque, Slot::Opaque(Opacity::Owed)),
-                | (
+                (Some(Verdict::Owed(_)), _) => (Definition::Opaque, Slot::Opaque(Opacity::Owed)),
+                (
                     Some(
                         Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Refused(_),
                     )
@@ -595,8 +595,8 @@ impl<'source> Program<'source>
     pub fn target(&self) -> Maybe<ConstantIndex, run_target::Absent>
     {
         match self.declarations.keys().next_back() {
-            | Some(&last) => Maybe::Present(last),
-            | None => Maybe::Absent(run_target::Absent::NoDeclaration),
+            Some(&last) => Maybe::Present(last),
+            None => Maybe::Absent(run_target::Absent::NoDeclaration),
         }
     }
 
@@ -625,10 +625,10 @@ impl<'source> Program<'source>
         constant: ConstantIndex,
     ) -> Maybe<SurfaceName<'source>, declaration_name::Absent>
     {
-        match self.declarations.get(&constant) {
-            | Some(declared) => Maybe::Present(declared.name),
-            | None => Maybe::Absent(declaration_name::Absent::Undeclared),
-        }
+        self.declarations.get(&constant).map_or(
+            Maybe::Absent(declaration_name::Absent::Undeclared),
+            |declared| Maybe::Present(declared.name),
+        )
     }
 
     /// Each declaration whose accepted body did not focus, with the focusing's
@@ -657,8 +657,8 @@ impl<'source> Program<'source>
         self.declarations
             .values()
             .filter_map(|declared| match declared.slot {
-                | Slot::Opaque(Opacity::Unfocused(refusal)) => Some((declared.name, refusal)),
-                | Slot::Defined(_)
+                Slot::Opaque(Opacity::Unfocused(refusal)) => Some((declared.name, refusal)),
+                Slot::Defined(_)
                 | Slot::Opaque(Opacity::Data | Opacity::Owed | Opacity::Refused) => None,
             })
     }
@@ -751,14 +751,14 @@ impl<'source> Program<'source>
             return Evaluation::Unrunnable(unrunnable);
         }
         let (returned, forced) = match self.entries(constant) {
-            | Ok(entries) => entries,
-            | Err(refusal) => {
+            Ok(entries) => entries,
+            Err(refusal) => {
                 return Evaluation::Unrunnable(match self.name(constant) {
-                    | Maybe::Present(declaration) => Unrunnable::Unfocused {
+                    Maybe::Present(declaration) => Unrunnable::Unfocused {
                         declaration,
                         refusal,
                     },
-                    | Maybe::Absent(declaration_name::Absent::Undeclared) => {
+                    Maybe::Absent(declaration_name::Absent::Undeclared) => {
                         Unrunnable::Undeclared(constant)
                     },
                 });
@@ -767,25 +767,25 @@ impl<'source> Program<'source>
         let budget = StepCount::from(RUN_BUDGET);
         let mut machine = Machine::new(&self.arena, &self.definitions);
         let returned = match machine.run(returned, budget) {
-            | Ok(outcome) => outcome,
-            | Err(fault) => return Evaluation::Unfinished(Unfinished::Fault(fault)),
+            Ok(outcome) => outcome,
+            Err(fault) => return Evaluation::Unfinished(Unfinished::Fault(fault)),
         };
         let terminal = match self.halted(&machine, returned) {
-            | Ok(value) => value,
-            | Err(evaluation) => return evaluation,
+            Ok(value) => value,
+            Err(evaluation) => return evaluation,
         };
         let terminal = match machine.store().value(terminal) {
-            | Some(&(HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. })) => {
+            Some(&(HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. })) => {
                 let forced = match machine.run(forced, budget) {
-                    | Ok(outcome) => outcome,
-                    | Err(fault) => return Evaluation::Unfinished(Unfinished::Fault(fault)),
+                    Ok(outcome) => outcome,
+                    Err(fault) => return Evaluation::Unfinished(Unfinished::Fault(fault)),
                 };
                 match self.halted(&machine, forced) {
-                    | Ok(value) => value,
-                    | Err(evaluation) => return evaluation,
+                    Ok(value) => value,
+                    Err(evaluation) => return evaluation,
                 }
             },
-            | Some(
+            Some(
                 &(HeapValue::Literal(_)
                 | HeapValue::Constructed { .. }
                 | HeapValue::Stack { .. }
@@ -797,10 +797,10 @@ impl<'source> Program<'source>
         };
         let mut core = CoreArena::new();
         match machine.read_back(terminal, &mut core) {
-            | Ok(read) => self
+            Ok(read) => self
                 .spell(&core, read)
                 .map_or_else(Evaluation::Unfinished, Evaluation::Value),
-            | Err(refusal) => Evaluation::Unfinished(Unfinished::Readback(refusal)),
+            Err(refusal) => Evaluation::Unfinished(Unfinished::Readback(refusal)),
         }
     }
 
@@ -867,15 +867,15 @@ impl<'source> Program<'source>
                 continue;
             }
             match declared.slot {
-                | Slot::Opaque(Opacity::Data) => {
+                Slot::Opaque(Opacity::Data) => {
                     return Maybe::Present(Unrunnable::Data(declared.name));
                 },
-                | Slot::Defined(ref referred) => pending.extend(referred.iter().copied()),
-                | Slot::Opaque(Opacity::Owed) => {},
-                | Slot::Opaque(Opacity::Refused) => {
+                Slot::Defined(ref referred) => pending.extend(referred.iter().copied()),
+                Slot::Opaque(Opacity::Owed) => {},
+                Slot::Opaque(Opacity::Refused) => {
                     return Maybe::Present(Unrunnable::Refused(declared.name));
                 },
-                | Slot::Opaque(Opacity::Unfocused(refusal)) => {
+                Slot::Opaque(Opacity::Unfocused(refusal)) => {
                     return Maybe::Present(Unrunnable::Unfocused {
                         declaration: declared.name,
                         refusal,
@@ -969,17 +969,17 @@ impl<'source> Program<'source>
     ) -> Result<HeapValueId, Evaluation<'source>>
     {
         match outcome {
-            | Outcome::Halted(value) => match Self::opaque_within(machine, value) {
-                | Maybe::Present(constant) => Err(self.met(constant)),
-                | Maybe::Absent(carried::Absent::Carried) => Ok(value),
+            Outcome::Halted(value) => match Self::opaque_within(machine, value) {
+                Maybe::Present(constant) => Err(self.met(constant)),
+                Maybe::Absent(carried::Absent::Carried) => Ok(value),
             },
-            | Outcome::Stuck(stuck) => {
+            Outcome::Stuck(stuck) => {
                 let observed = match stuck {
-                    | Stuck::Unobservable { value, .. }
+                    Stuck::Unobservable { value, .. }
                     | Stuck::ResumedNonStack { value, .. }
                     | Stuck::Unmatched { value, .. }
                     | Stuck::NonScalar(value) => machine.store().value(value),
-                    | Stuck::UnboundVariable { .. }
+                    Stuck::UnboundVariable { .. }
                     | Stuck::PerformNoHandler(_)
                     | Stuck::ShiftNoReset(_)
                     | Stuck::Primitive(_)
@@ -991,8 +991,8 @@ impl<'source> Program<'source>
                     | Stuck::IllFormedConsumer(_) => None,
                 };
                 match observed {
-                    | Some(&HeapValue::Opaque(constant)) => Err(self.met(constant)),
-                    | Some(
+                    Some(&HeapValue::Opaque(constant)) => Err(self.met(constant)),
+                    Some(
                         &(HeapValue::Literal(_)
                         | HeapValue::Constructed { .. }
                         | HeapValue::Stack { .. }
@@ -1037,11 +1037,11 @@ impl<'source> Program<'source>
         let mut pending = Vec::from([value]);
         while let Some(id) = pending.pop() {
             match machine.store().value(id) {
-                | Some(&HeapValue::Opaque(constant)) => return Maybe::Present(constant),
-                | Some(&HeapValue::Constructed { ref fields, .. }) => {
+                Some(&HeapValue::Opaque(constant)) => return Maybe::Present(constant),
+                Some(&HeapValue::Constructed { ref fields, .. }) => {
                     pending.extend(fields.iter().rev().copied());
                 },
-                | Some(
+                Some(
                     &(HeapValue::Stack { .. }
                     | HeapValue::Literal(_)
                     | HeapValue::Thunk { .. }
@@ -1085,30 +1085,30 @@ impl<'source> Program<'source>
     ) -> Evaluation<'source>
     {
         match self.declarations.get(&constant) {
-            | Some(&Declared {
+            Some(&Declared {
                 name,
                 slot: Slot::Opaque(Opacity::Data),
             }) => Evaluation::Unrunnable(Unrunnable::Data(name)),
-            | Some(&Declared {
+            Some(&Declared {
                 name,
                 slot: Slot::Opaque(Opacity::Owed),
             }) => Evaluation::Blamed(name),
-            | Some(&Declared {
+            Some(&Declared {
                 name,
                 slot: Slot::Opaque(Opacity::Refused),
             }) => Evaluation::Unrunnable(Unrunnable::Refused(name)),
-            | Some(&Declared {
+            Some(&Declared {
                 name,
                 slot: Slot::Opaque(Opacity::Unfocused(refusal)),
             }) => Evaluation::Unrunnable(Unrunnable::Unfocused {
                 declaration: name,
                 refusal,
             }),
-            | Some(&Declared {
+            Some(&Declared {
                 slot: Slot::Defined(_),
                 ..
             }) => Evaluation::Unfinished(Unfinished::Inconsistent(constant)),
-            | None => Evaluation::Unrunnable(Unrunnable::Undeclared(constant)),
+            None => Evaluation::Unrunnable(Unrunnable::Undeclared(constant)),
         }
     }
 
@@ -1224,27 +1224,27 @@ fn references(
     let mut pending = Vec::from([Node::Value(body)]);
     while let Some(node) = pending.pop() {
         match node {
-            | Node::Value(id) => match core.value(id) {
-                | Some(&Value::Constructor { ref fields, .. }) => {
+            Node::Value(id) => match core.value(id) {
+                Some(&Value::Constructor { ref fields, .. }) => {
                     pending.extend(fields.iter().copied().map(Node::Value));
                 },
-                | Some(&Value::Record(ref fields)) => {
+                Some(&Value::Record(ref fields)) => {
                     pending.extend(fields.values().copied().map(Node::Value));
                 },
-                | Some(&Value::Reify(ref frames)) => {
+                Some(&Value::Reify(ref frames)) => {
                     pending.extend(frames.iter().filter_map(|frame| match *frame {
-                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                        gandr_core_term::control::StackFrame::Apply(value) => {
                             Some(Node::Value(value))
                         },
-                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                        gandr_core_term::control::StackFrame::Bind(body) => {
                             Some(Node::Computation(body))
                         },
-                        | gandr_core_term::control::StackFrame::Project(_) => None,
+                        gandr_core_term::control::StackFrame::Project(_) => None,
                     }));
                 },
 
-                | Some(&Value::Constant(constant)) => referred.push(constant),
-                | Some(
+                Some(&Value::Constant(constant)) => referred.push(constant),
+                Some(
                     &(Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
@@ -1270,10 +1270,10 @@ fn references(
                 ) => {
                     pending.extend([Node::Value(first), Node::Value(second)]);
                 },
-                | Some(&Value::Tuple(ref components)) => {
+                Some(&Value::Tuple(ref components)) => {
                     pending.extend(components.iter().map(|&component| Node::Value(component)));
                 },
-                | Some(
+                Some(
                     &(Value::PathRefl(inner)
                     | Value::Here(inner)
                     | Value::Stay(inner)
@@ -1284,13 +1284,13 @@ fn references(
                 ) => {
                     pending.push(Node::Value(inner));
                 },
-                | Some(&Value::Recorded(ref moves)) => {
+                Some(&Value::Recorded(ref moves)) => {
                     pending.extend(moves.iter().filter_map(|step| match step.payload() {
-                        | Maybe::Present(payload) => Some(Node::Value(payload)),
-                        | Maybe::Absent(_) => None,
+                        Maybe::Present(payload) => Some(Node::Value(payload)),
+                        Maybe::Absent(_) => None,
                     }));
                 },
-                | Some(
+                Some(
                     &Value::Thunk(computation)
                     | &Value::Returned(computation)
                     | &Value::Nested(computation)
@@ -1298,7 +1298,7 @@ fn references(
                 ) => {
                     pending.push(Node::Computation(computation));
                 },
-                | Some(
+                Some(
                     &Value::Primitive { .. }
                     | &(Value::Variable { .. }
                     | Value::ListNil
@@ -1311,8 +1311,8 @@ fn references(
                 )
                 | None => {},
             },
-            | Node::Computation(id) => match core.computation(id) {
-                | Some(&Computation::DataCase {
+            Node::Computation(id) => match core.computation(id) {
+                Some(&Computation::DataCase {
                     scrutinee,
                     ref branches,
                     ..
@@ -1320,14 +1320,14 @@ fn references(
                     pending.push(Node::Value(scrutinee));
                     pending.extend(branches.iter().copied().map(Node::Computation));
                 },
-                | Some(
+                Some(
                     &(Computation::RecordProjection(record, _)
                     | Computation::TupleProjection(record, _)),
                 ) => {
                     pending.push(Node::Value(record));
                 },
-                | Some(&Computation::Perform { payload, .. }) => pending.push(Node::Value(payload)),
-                | Some(
+                Some(&Computation::Perform { payload, .. }) => pending.push(Node::Value(payload)),
+                Some(
                     &(Computation::Handle {
                         subject,
                         on_return,
@@ -1344,12 +1344,12 @@ fn references(
                     pending.extend([Node::Computation(subject), Node::Computation(on_return)]);
                     pending.extend(clauses.iter().map(|clause| Node::Computation(clause.body)));
                 },
-                | Some(&Computation::Exercise {
+                Some(&Computation::Exercise {
                     capability,
                     payload,
                     ..
                 }) => pending.extend([Node::Value(capability), Node::Value(payload)]),
-                | Some(
+                Some(
                     &(Computation::Resume(value, body)
                     | Computation::Split {
                         scrutinee: value,
@@ -1359,16 +1359,16 @@ fn references(
                 ) => {
                     pending.extend([Node::Value(value), Node::Computation(body)]);
                 },
-                | Some(
+                Some(
                     &(Computation::Reset(body)
                     | Computation::Shift(body)
                     | Computation::Project(_, body)),
                 ) => pending.push(Node::Computation(body)),
-                | Some(&Computation::With(first, second)) => {
+                Some(&Computation::With(first, second)) => {
                     pending.extend([Node::Computation(first), Node::Computation(second)]);
                 },
 
-                | Some(&Computation::ListFold {
+                Some(&Computation::ListFold {
                     list,
                     on_nil,
                     on_cons,
@@ -1378,10 +1378,10 @@ fn references(
                     Node::Computation(on_nil),
                     Node::Computation(on_cons),
                 ]),
-                | Some(&Computation::Primitive { ref arguments, .. }) => {
+                Some(&Computation::Primitive { ref arguments, .. }) => {
                     pending.extend(arguments.iter().copied().map(Node::Value));
                 },
-                | Some(
+                Some(
                     &(Computation::Transport(path, value)
                     | Computation::PathTransport { path, value, .. }),
                 ) => {
@@ -1389,8 +1389,8 @@ fn references(
                 },
                 // A ride runs as the return of its value: the flow it rides is
                 // erased, so the run never reaches what the flow names.
-                | Some(&Computation::Ride { value, .. }) => pending.push(Node::Value(value)),
-                | Some(&Computation::TelescopeTransport {
+                Some(&Computation::Ride { value, .. }) => pending.push(Node::Value(value)),
+                Some(&Computation::TelescopeTransport {
                     path,
                     start,
                     over,
@@ -1399,31 +1399,31 @@ fn references(
                 }) => {
                     pending.extend([path, start, over, value].map(Node::Value));
                 },
-                | Some(&Computation::Lambda(inner)) => pending.push(Node::Computation(inner)),
-                | Some(&Computation::Application(head, argument)) => {
+                Some(&Computation::Lambda(inner)) => pending.push(Node::Computation(inner)),
+                Some(&Computation::Application(head, argument)) => {
                     pending.extend([Node::Computation(head), Node::Value(argument)]);
                 },
-                | Some(&(Computation::Return(value) | Computation::Force(value))) => {
+                Some(&(Computation::Return(value) | Computation::Force(value))) => {
                     pending.push(Node::Value(value));
                 },
-                | Some(&Computation::Bind(bound, rest)) => {
+                Some(&Computation::Bind(bound, rest)) => {
                     pending.extend([Node::Computation(bound), Node::Computation(rest)]);
                 },
-                | Some(&Computation::Case {
+                Some(&Computation::Case {
                     scrutinee,
                     ref branches,
                 }) => {
                     pending.push(Node::Value(scrutinee));
                     pending.extend(branches.iter().map(|&branch| Node::Computation(branch)));
                 },
-                | Some(&(Computation::Mark { body, .. } | Computation::Fixpoint { body, .. })) => {
+                Some(&(Computation::Mark { body, .. } | Computation::Fixpoint { body, .. })) => {
                     pending.push(Node::Computation(body));
                 },
-                | Some(&Computation::Session(ref action)) => {
+                Some(&Computation::Session(ref action)) => {
                     pending.extend(action.values().map(Node::Value));
                     pending.extend(action.computations().map(Node::Computation));
                 },
-                | Some(&Computation::Hole(_)) | None => {},
+                Some(&Computation::Hole(_)) | None => {},
             },
         }
     }
@@ -1475,9 +1475,9 @@ mod tests
         let grammar = built_in().expect("the built-in grammar builds");
         let mut lowerings = LoweringCount::default();
         match compose(&grammar, CorpusRoot::Fixture, source.into(), &mut lowerings) {
-            | Ok(Composed::Settled { program, .. }) => program,
-            | Ok(Composed::Refused(refusal)) => panic!("refused as a whole: {refusal}"),
-            | Err(fault) => panic!("faulted: {fault}"),
+            Ok(Composed::Settled { program, .. }) => program,
+            Ok(Composed::Refused(refusal)) => panic!("refused as a whole: {refusal}"),
+            Err(fault) => panic!("faulted: {fault}"),
         }
     }
 
@@ -2112,16 +2112,16 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
         let mut pending = vec![Node::Producer(root)];
         while let Some(next) = pending.pop() {
             match next {
-                | Node::Producer(id) => match program.arena.producer(id) {
-                    | Some(
+                Node::Producer(id) => match program.arena.producer(id) {
+                    Some(
                         &(ProducerNode::Thunk { body }
                         | ProducerNode::Fixpoint { body, .. }
                         | ProducerNode::Mu { body }),
                     ) => pending.push(Node::Command(body)),
-                    | Some(&ProducerNode::Cocase { ref arms }) => {
+                    Some(&ProducerNode::Cocase { ref arms }) => {
                         pending.extend(arms.iter().map(|arm| Node::Command(arm.body)));
                     },
-                    | Some(&ProducerNode::Constructor {
+                    Some(&ProducerNode::Constructor {
                         ref producers,
                         consumers: ref fields,
                         ..
@@ -2129,16 +2129,16 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
                         pending.extend(producers.iter().copied().map(Node::Producer));
                         pending.extend(fields.iter().copied().map(Node::Consumer));
                     },
-                    | _ => {},
+                    _ => {},
                 },
-                | Node::Consumer(id) => {
+                Node::Consumer(id) => {
                     let Some(node) = program.arena.consumer(id)
                     else {
                         continue;
                     };
                     match *node {
-                        | ConsumerNode::MuTilde { body } => pending.push(Node::Command(body)),
-                        | ConsumerNode::Destructor {
+                        ConsumerNode::MuTilde { body } => pending.push(Node::Command(body)),
+                        ConsumerNode::Destructor {
                             ref producers,
                             consumers: ref fields,
                             ..
@@ -2146,18 +2146,21 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
                             pending.extend(producers.iter().copied().map(Node::Producer));
                             pending.extend(fields.iter().copied().map(Node::Consumer));
                         },
-                        | ConsumerNode::Case { ref arms } => {
+                        ConsumerNode::Case { ref arms } => {
                             pending.extend(arms.iter().map(|arm| Node::Command(arm.body)));
                         },
-                        | ConsumerNode::DataCase { ref branches, then } => {
+                        ConsumerNode::DataCase { ref branches, then } => {
                             pending.extend(branches.iter().copied().map(Node::Producer));
                             pending.push(Node::Consumer(then));
                         },
-                        | _ => {},
+                        ConsumerNode::Covariable(_)
+                        | ConsumerNode::Select { .. }
+                        | ConsumerNode::ListFold { .. }
+                        | ConsumerNode::Top => {},
                     }
                     consumers.push(node.clone());
                 },
-                | Node::Command(id) => {
+                Node::Command(id) => {
                     let Some(node) = program.arena.command(id)
                     else {
                         continue;

@@ -109,8 +109,8 @@ impl<Id> core::ops::Deref for Arguments<Id>
     fn deref(&self) -> &Self::Target
     {
         match *self {
-            | Self::Unary(ref value) => core::slice::from_ref(value),
-            | Self::Binary(ref values) => values,
+            Self::Unary(ref value) => core::slice::from_ref(value),
+            Self::Binary(ref values) => values,
         }
     }
 }
@@ -125,8 +125,8 @@ impl<Id> core::ops::DerefMut for Arguments<Id>
     fn deref_mut(&mut self) -> &mut Self::Target
     {
         match *self {
-            | Self::Unary(ref mut value) => core::slice::from_mut(value),
-            | Self::Binary(ref mut values) => values,
+            Self::Unary(ref mut value) => core::slice::from_mut(value),
+            Self::Binary(ref mut values) => values,
         }
     }
 }
@@ -155,8 +155,8 @@ impl PrimitiveType
     ) -> ValueTypeId
     {
         match self {
-            | Self::Integer => arena.value_type_base(BaseType::Integer),
-            | Self::Boolean => {
+            Self::Integer => arena.value_type_base(BaseType::Integer),
+            Self::Boolean => {
                 let unit = arena.value_type_unit();
                 arena.value_type_sum(&[unit, unit])
             },
@@ -395,10 +395,10 @@ impl fmt::Display for PrimitiveError
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Arity => "native primitive argument count mismatch",
-            | Self::ArgumentType => "native primitive argument type mismatch",
-            | Self::DivisionByZero => "native integer division by zero",
-            | Self::InvalidInteger => "invalid native integer representation",
+            Self::Arity => "native primitive argument count mismatch",
+            Self::ArgumentType => "native primitive argument type mismatch",
+            Self::DivisionByZero => "native integer division by zero",
+            Self::InvalidInteger => "invalid native integer representation",
         })
     }
 }
@@ -555,20 +555,32 @@ impl Primitive
         let first = arguments.first().ok_or(PrimitiveError::Arity)?;
         if self.0.operation == Operation::First {
             return Ok(match *first {
-                | Scalar::Integer(integer) => Scalar::Integer(integer.clone()),
-                | Scalar::Boolean(side) => Scalar::Boolean(side),
+                Scalar::Integer(integer) => Scalar::Integer(integer.clone()),
+                Scalar::Boolean(side) => Scalar::Boolean(side),
             });
         }
         if let Scalar::Boolean(left) = *first {
             let right = match arguments.get(1) {
-                | Some(&Scalar::Boolean(side)) => side,
-                | _ => Side::Right,
+                Some(&Scalar::Boolean(side)) => side,
+                _ => Side::Right,
             };
             let answer = match self.0.operation {
-                | Operation::And => left == Side::Left && right == Side::Left,
-                | Operation::Or => left == Side::Left || right == Side::Left,
-                | Operation::Not => left != Side::Left,
-                | _ => return Err(PrimitiveError::ArgumentType),
+                Operation::And => left == Side::Left && right == Side::Left,
+                Operation::Or => left == Side::Left || right == Side::Left,
+                Operation::Not => left != Side::Left,
+                Operation::First
+                | Operation::Add
+                | Operation::Sub
+                | Operation::Mul
+                | Operation::Div
+                | Operation::Mod
+                | Operation::Neg
+                | Operation::Eq
+                | Operation::Ne
+                | Operation::Lt
+                | Operation::Le
+                | Operation::Gt
+                | Operation::Ge => return Err(PrimitiveError::ArgumentType),
             };
             return Ok(Scalar::Boolean(if answer {
                 Side::Left
@@ -584,32 +596,30 @@ impl Primitive
         let right = arguments.get(1).ok_or(PrimitiveError::Arity)?;
         let right = right.integer()?;
         let answer = match self.0.operation {
-            | Operation::Add => return scalar(&left.add(right)),
-            | Operation::Sub => return scalar(&left.sub(right)),
-            | Operation::Mul => return scalar(&left.mul(right)),
-            | Operation::Div => {
+            Operation::Add => return scalar(&left.add(right)),
+            Operation::Sub => return scalar(&left.sub(right)),
+            Operation::Mul => return scalar(&left.mul(right)),
+            Operation::Div => {
                 let quotient = left
                     .checked_div(&right)
                     .ok_or(PrimitiveError::DivisionByZero)?;
                 return scalar(&quotient);
             },
-            | Operation::Mod => {
+            Operation::Mod => {
                 if right == BigInt::ZERO {
                     return Err(PrimitiveError::DivisionByZero);
                 }
                 return scalar(&left.rem(right));
             },
-            | Operation::Eq => left == right,
-            | Operation::Ne => left != right,
-            | Operation::Lt => left < right,
-            | Operation::Le => left <= right,
-            | Operation::Gt => left > right,
-            | Operation::Ge => left >= right,
-            | Operation::First
-            | Operation::Neg
-            | Operation::And
-            | Operation::Or
-            | Operation::Not => return Err(PrimitiveError::ArgumentType),
+            Operation::Eq => left == right,
+            Operation::Ne => left != right,
+            Operation::Lt => left < right,
+            Operation::Le => left <= right,
+            Operation::Gt => left > right,
+            Operation::Ge => left >= right,
+            Operation::First | Operation::Neg | Operation::And | Operation::Or | Operation::Not => {
+                return Err(PrimitiveError::ArgumentType);
+            },
         };
         Ok(Scalar::Boolean(if answer {
             Side::Left
@@ -662,8 +672,8 @@ impl<Integer> Scalar<Integer>
     pub const fn classifier(&self) -> PrimitiveType
     {
         match *self {
-            | Self::Integer(_) => PrimitiveType::Integer,
-            | Self::Boolean(_) => PrimitiveType::Boolean,
+            Self::Integer(_) => PrimitiveType::Integer,
+            Self::Boolean(_) => PrimitiveType::Boolean,
         }
     }
 }
@@ -719,8 +729,8 @@ impl Scalar
     pub const fn borrowed(&self) -> Scalar<&IntegerLiteral>
     {
         match *self {
-            | Self::Integer(ref value) => Scalar::Integer(value),
-            | Self::Boolean(side) => Scalar::Boolean(side),
+            Self::Integer(ref value) => Scalar::Integer(value),
+            Self::Boolean(side) => Scalar::Boolean(side),
         }
     }
 
@@ -736,8 +746,8 @@ impl Scalar
     ) -> ValueId
     {
         match self {
-            | Self::Integer(integer) => arena.value_literal(Literal::Integer(integer)),
-            | Self::Boolean(side) => {
+            Self::Integer(integer) => arena.value_literal(Literal::Integer(integer)),
+            Self::Boolean(side) => {
                 let unit = arena.value_unit();
                 arena.value_injection(side.into(), unit)
             },
@@ -985,8 +995,8 @@ mod tests
             panic!("saturated primitive");
         };
         let operands = arguments.map(|argument| match arena.value(argument) {
-            | Some(&Value::Literal(Literal::Integer(ref integer))) => Scalar::Integer(integer),
-            | _ => panic!("substituted operand"),
+            Some(&Value::Literal(Literal::Integer(ref integer))) => Scalar::Integer(integer),
+            _ => panic!("substituted operand"),
         });
         assert_eq!(primitive.evaluate(&operands), Ok(integer(Digits("12"))));
     }

@@ -965,11 +965,11 @@ impl Reading
     const fn sort(self) -> FragmentSort
     {
         match self {
-            | Self::Unread | Self::Function => FragmentSort::Declaration,
-            | Self::ValueType(_frame) => FragmentSort::ValueType,
-            | Self::CompType(_frame) | Self::Result(_frame) => FragmentSort::CompType,
-            | Self::Value(_frame) => FragmentSort::Value,
-            | Self::Computation(_frame) | Self::Head(_frame) => FragmentSort::Computation,
+            Self::Unread | Self::Function => FragmentSort::Declaration,
+            Self::ValueType(_frame) => FragmentSort::ValueType,
+            Self::CompType(_frame) | Self::Result(_frame) => FragmentSort::CompType,
+            Self::Value(_frame) => FragmentSort::Value,
+            Self::Computation(_frame) | Self::Head(_frame) => FragmentSort::Computation,
         }
     }
 
@@ -1008,11 +1008,9 @@ impl Reading
     const fn family(self) -> Family
     {
         match self {
-            | Self::Unread | Self::Function => Family::Neither,
-            | Self::ValueType(_frame) | Self::CompType(_frame) | Self::Result(_frame) => {
-                Family::Type
-            },
-            | Self::Value(_frame) | Self::Computation(_frame) | Self::Head(_frame) => Family::Term,
+            Self::Unread | Self::Function => Family::Neither,
+            Self::ValueType(_frame) | Self::CompType(_frame) | Self::Result(_frame) => Family::Type,
+            Self::Value(_frame) | Self::Computation(_frame) | Self::Head(_frame) => Family::Term,
         }
     }
 
@@ -1060,8 +1058,8 @@ impl Reading
     const fn frame(self) -> Frame
     {
         match self {
-            | Self::Unread | Self::Function => Frame::Outermost,
-            | Self::ValueType(frame)
+            Self::Unread | Self::Function => Frame::Outermost,
+            Self::ValueType(frame)
             | Self::CompType(frame)
             | Self::Value(frame)
             | Self::Computation(frame)
@@ -1109,11 +1107,11 @@ impl Reading
     const fn positional_universe(self) -> Universe
     {
         match self {
-            | Self::CompType(_) => Universe {
+            Self::CompType(_) => Universe {
                 sort: GroundSort::Computation,
                 level: LevelConstant::ZERO,
             },
-            | Self::Unread
+            Self::Unread
             | Self::Function
             | Self::ValueType(_)
             | Self::Value(_)
@@ -1208,8 +1206,8 @@ enum Ending
 fn ending(former: Former) -> Ending
 {
     match former {
-        | Former::Exit | Former::Become | Former::Break | Former::Continue => Ending::Exit,
-        | Former::Block
+        Former::Exit | Former::Become | Former::Break | Former::Continue => Ending::Exit,
+        Former::Block
         | Former::Case
         | Former::Offer
         | Former::LazyRecord
@@ -1219,7 +1217,7 @@ fn ending(former: Former) -> Ending
         | Former::Loop
         | Former::While
         | Former::For => Ending::Passes,
-        | Former::Name
+        Former::Name
         | Former::Constructor
         | Former::Number
         | Former::Text
@@ -1289,8 +1287,8 @@ fn ending(former: Former) -> Ending
 fn iterating(former: Former) -> Ending
 {
     match ending(former) {
-        | Ending::Exit => Ending::Exit,
-        | Ending::Passes
+        Ending::Exit => Ending::Exit,
+        Ending::Passes
             if matches!(
                 former,
                 Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole
@@ -1298,7 +1296,7 @@ fn iterating(former: Former) -> Ending
         {
             Ending::Passes
         },
-        | Ending::Passes | Ending::Inferred => Ending::Inferred,
+        Ending::Passes | Ending::Inferred => Ending::Inferred,
     }
 }
 
@@ -1394,7 +1392,7 @@ fn iterating(former: Former) -> Ending
 const fn family_of(former: Former) -> Family
 {
     match former {
-        | Former::Name
+        Former::Name
         | Former::Constructor
         | Former::Hole
         | Former::Number
@@ -1426,7 +1424,7 @@ const fn family_of(former: Former) -> Family
         | Former::Scope
         | Former::Action
         | Former::Offer => Family::Term,
-        | Former::TypeHead
+        Former::TypeHead
         | Former::TypePath
         | Former::Universe
         | Former::TypeApplication
@@ -1445,7 +1443,7 @@ const fn family_of(former: Former) -> Family
         | Former::PathType
         | Former::CapabilityType
         | Former::SessionType => Family::Type,
-        | Former::Declaration
+        Former::Declaration
         | Former::AttributeBlock
         | Former::Import
         | Former::Module
@@ -1902,8 +1900,8 @@ impl Resolved
     const fn term(self) -> Plan
     {
         match self {
-            | Self::Binder(bound) => Plan::Variable(bound.index, bound.binder),
-            | Self::Declaration { constant, .. } => Plan::Constant(constant),
+            Self::Binder(bound) => Plan::Variable(bound.index, bound.binder),
+            Self::Declaration { constant, .. } => Plan::Constant(constant),
         }
     }
 }
@@ -2468,9 +2466,9 @@ impl Site
     ) -> Result<Placed, LoweringRefusal<'source>>
     {
         match run {
-            | Run::One(operand) => Ok(operand),
-            | Run::Empty(gap) => Err(self.fault(gap, FormFault::MissingOperand)),
-            | Run::Several { extra, .. } => Err(self.fault(extra.span, FormFault::ExtraOperand)),
+            Run::One(operand) => Ok(operand),
+            Run::Empty(gap) => Err(self.fault(gap, FormFault::MissingOperand)),
+            Run::Several { extra, .. } => Err(self.fault(extra.span, FormFault::ExtraOperand)),
         }
     }
 }
@@ -2956,9 +2954,9 @@ pub fn lower_module<'source>(
         return Ok(empty(outermost));
     };
     match shape_of(pbg, root)? {
-        | Shape::Root => {},
-        | Shape::Layout => return Ok(empty(outermost)),
-        | Shape::Form { name, .. } => {
+        Shape::Root => {},
+        Shape::Layout => return Ok(empty(outermost)),
+        Shape::Form { name, .. } => {
             return Err(LoweringRefusal::OutOfFragment {
                 span: root.span(),
                 form: name,
@@ -2966,7 +2964,7 @@ pub fn lower_module<'source>(
                 boundary: FragmentBoundary::WrongSort,
             });
         },
-        | Shape::Repair(repair) => {
+        Shape::Repair(repair) => {
             return Err(LoweringRefusal::MalformedForm {
                 span: root.span(),
                 form: FormName::ROOT,
@@ -3303,10 +3301,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 continue;
             }
             match structure.stratum {
-                | Stratum::Module | Stratum::Instance(_) => {
+                Stratum::Module | Stratum::Instance(_) => {
                     tops.push(StructureIndex::from(position));
                 },
-                | Stratum::Functor(_) => {
+                Stratum::Functor(_) => {
                     let mut subtree = Trie::empty();
                     let _fresh = subtree.insert(
                         &NamePath::root(),
@@ -3323,7 +3321,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         shadowing.push(StructureIndex::from(position));
                     }
                 },
-                | Stratum::Parameter(_) => {},
+                Stratum::Parameter(_) => {},
             }
         }
         for functor in shadowing {
@@ -3416,14 +3414,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             for &export in &entry.exports {
                 let (segment, site, recognized) = match export {
-                    | Member::Slot(slot) => {
+                    Member::Slot(slot) => {
                         let Some(member) = self.collected.slots.get(usize::from(slot))
                         else {
                             continue;
                         };
                         (member.name, member.named.span, Recognized::ModuleComponent)
                     },
-                    | Member::Module(nested) => {
+                    Member::Module(nested) => {
                         let Some(member) = self.collected.structures.get(usize::from(nested))
                         else {
                             continue;
@@ -3439,11 +3437,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Binding::new(recognized, RecognitionSite::Source(site)),
                 );
                 match export {
-                    | Member::Slot(slot) => {
+                    Member::Slot(slot) => {
                         let read = entry.exported_as.get(&slot).copied().unwrap_or(slot);
                         let _replaced = self.exported.insert(root.extended(&path), read);
                     },
-                    | Member::Module(nested) => work.push((nested, path)),
+                    Member::Module(nested) => work.push((nested, path)),
                 }
             }
         }
@@ -3547,8 +3545,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .recognition
             .note_binder(Segment::from(name.as_ref()), binder.span);
         match noted {
-            | Ok(()) => Ok(()),
-            | Err(_refused) => Err(LoweringRefusal::ShadowedBuiltin {
+            Ok(()) => Ok(()),
+            Err(_refused) => Err(LoweringRefusal::ShadowedBuiltin {
                 span: binder.span,
                 name,
             }),
@@ -3659,13 +3657,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             if let Maybe::Present(half) = slot.definition {
                 match half.operand {
-                    | Operand::Written(operand) => {
+                    Operand::Written(operand) => {
                         seeds.push((operand.node, Reading::Value(Frame::Outermost)));
                     },
-                    | Operand::Function => {
+                    Operand::Function => {
                         seeds.push((half.declaration.node, Reading::Function));
                     },
-                    | Operand::Member(_)
+                    Operand::Member(_)
                     | Operand::Data(_)
                     | Operand::Words(_)
                     | Operand::Loop { .. }
@@ -3757,8 +3755,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         let shape = shape_of(self.pbg, node)?;
         let value = match shape {
-            | Shape::Form { former, .. } => is_value_form(former),
-            | Shape::Root | Shape::Repair(_) | Shape::Layout => ValueForm(false),
+            Shape::Form { former, .. } => is_value_form(former),
+            Shape::Root | Shape::Repair(_) | Shape::Layout => ValueForm(false),
         };
 
         Ok((shape, value))
@@ -4231,9 +4229,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let cursor = Cursor::new(&pieces.pieces, site.at.span);
         match former {
-            | Former::Name => self.name(site),
-            | Former::Constructor => self.constructor(site),
-            | Former::Hole => {
+            Former::Name => self.name(site),
+            Former::Constructor => self.constructor(site),
+            Former::Hole => {
                 let identity = u32::try_from(usize::from(site.at.node)).map_err(|_overflow| {
                     LoweringRefusal::BudgetExceeded {
                         budget: self.fuel.budget,
@@ -4251,57 +4249,57 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.plan(site, plan);
                 Ok(())
             },
-            | Former::Number => self.number(site),
-            | Former::Text => self.text(site, pieces),
-            | Former::Parenthesized => self.parenthesized(site, cursor),
-            | Former::Unit => {
+            Former::Number => self.number(site),
+            Former::Text => self.text(site, pieces),
+            Former::Parenthesized => self.parenthesized(site, cursor),
+            Former::Unit => {
                 let _frame = self.require(site, Produced::Value)?;
                 self.plan(site, Plan::Unit);
                 Ok(())
             },
-            | Former::Thunk => self.thunk(site, cursor),
-            | Former::Lambda => self.lambda(site, cursor),
-            | Former::Block => self.sequenced(site, cursor),
-            | Former::Return => self.keyed(site, cursor, TileName::PURE),
-            | Former::Exit => self.keyed(site, cursor, TileName::RETURN),
-            | Former::Become => self.tail_call(site, cursor),
-            | Former::Loop => self.looped(site, cursor),
-            | Former::While => self.repeated(site, cursor),
-            | Former::For => Err(LoweringRefusal::ForNeedsListCase { span: site.at.span }),
-            | Former::Break => self.broken(site, cursor),
-            | Former::Continue => self.continued(site, cursor),
-            | Former::Force => self.keyed(site, cursor, TileName::FORCE),
-            | Former::Run => self.run(site, cursor),
-            | Former::Call => self.call(site, cursor),
-            | Former::Case => self.case(site, cursor),
-            | Former::Telescope => self.telescope(site, cursor),
-            | Former::Injection => self.injection(site, cursor),
-            | Former::LazyRecord => self.copattern(site, cursor),
-            | Former::Binary | Former::Unary => self.operator(site, pieces),
-            | Former::Projection => self.projection(site, pieces),
-            | Former::TypeHead => self.type_head(site),
-            | Former::TypePath => self.type_path(site, pieces),
-            | Former::Universe => self.universe(site, cursor),
-            | Former::TypeApplication => self.type_application(site, cursor),
-            | Former::ThunkType | Former::ReturnerType => self.formed_type(site, cursor),
-            | Former::ArrowType => self.arrow(site, cursor),
-            | Former::ProductType => self.chain(site, cursor, Former::ProductType),
-            | Former::SumType => self.chain(site, cursor, Former::SumType),
-            | Former::LazyProductType => self.lazy_product(site, cursor),
-            | Former::TelescopeType => self.telescope_type(site, cursor),
-            | Former::LabelledSumType => self.labelled_sum_type(site, cursor),
-            | Former::LazyRecordType => self.lazy_record_type(site, cursor),
-            | Former::ValueFunctionType => self.value_function(site, cursor),
-            | Former::StaticAbstraction => self.static_abstraction(site, cursor),
-            | Former::ParenthesizedType => self.parenthesized_type(site, cursor),
-            | Former::PathType => self.path_type(site, cursor),
-            | Former::CapabilityType => self.capability_type(site, cursor),
-            | Former::Scope => self.capability_scope(site, pieces),
-            | Former::Instantiation => self.instantiation(site, cursor),
-            | Former::SessionType => self.session_type(site),
-            | Former::Action | Former::Offer => self.session_action(site, cursor),
-            | Former::Declaration | Former::Module => self.function(site, cursor),
-            | Former::AttributeBlock
+            Former::Thunk => self.thunk(site, cursor),
+            Former::Lambda => self.lambda(site, cursor),
+            Former::Block => self.sequenced(site, cursor),
+            Former::Return => self.keyed(site, cursor, TileName::PURE),
+            Former::Exit => self.keyed(site, cursor, TileName::RETURN),
+            Former::Become => self.tail_call(site, cursor),
+            Former::Loop => self.looped(site, cursor),
+            Former::While => self.repeated(site, cursor),
+            Former::For => Err(LoweringRefusal::ForNeedsListCase { span: site.at.span }),
+            Former::Break => self.broken(site, cursor),
+            Former::Continue => self.continued(site, cursor),
+            Former::Force => self.keyed(site, cursor, TileName::FORCE),
+            Former::Run => self.run(site, cursor),
+            Former::Call => self.call(site, cursor),
+            Former::Case => self.case(site, cursor),
+            Former::Telescope => self.telescope(site, cursor),
+            Former::Injection => self.injection(site, cursor),
+            Former::LazyRecord => self.copattern(site, cursor),
+            Former::Binary | Former::Unary => self.operator(site, pieces),
+            Former::Projection => self.projection(site, pieces),
+            Former::TypeHead => self.type_head(site),
+            Former::TypePath => self.type_path(site, pieces),
+            Former::Universe => self.universe(site, cursor),
+            Former::TypeApplication => self.type_application(site, cursor),
+            Former::ThunkType | Former::ReturnerType => self.formed_type(site, cursor),
+            Former::ArrowType => self.arrow(site, cursor),
+            Former::ProductType => self.chain(site, cursor, Former::ProductType),
+            Former::SumType => self.chain(site, cursor, Former::SumType),
+            Former::LazyProductType => self.lazy_product(site, cursor),
+            Former::TelescopeType => self.telescope_type(site, cursor),
+            Former::LabelledSumType => self.labelled_sum_type(site, cursor),
+            Former::LazyRecordType => self.lazy_record_type(site, cursor),
+            Former::ValueFunctionType => self.value_function(site, cursor),
+            Former::StaticAbstraction => self.static_abstraction(site, cursor),
+            Former::ParenthesizedType => self.parenthesized_type(site, cursor),
+            Former::PathType => self.path_type(site, cursor),
+            Former::CapabilityType => self.capability_type(site, cursor),
+            Former::Scope => self.capability_scope(site, pieces),
+            Former::Instantiation => self.instantiation(site, cursor),
+            Former::SessionType => self.session_type(site),
+            Former::Action | Former::Offer => self.session_action(site, cursor),
+            Former::Declaration | Former::Module => self.function(site, cursor),
+            Former::AttributeBlock
             | Former::Import
             | Former::Data
             | Former::Reserved
@@ -4413,42 +4411,40 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
         let (frame, bridge) = match (site.reading, produced) {
-            | (Reading::Value(frame), Produced::Value)
+            (Reading::Value(frame), Produced::Value)
             | (Reading::Computation(frame) | Reading::Head(frame), Produced::Computation)
             | (Reading::ValueType(frame), Produced::ValueType)
             | (Reading::CompType(frame) | Reading::Result(frame), Produced::CompType) => {
                 (frame, Bridge::Bare)
             },
-            | (Reading::Head(frame), Produced::Value) => {
-                (frame, Bridge::Inserted(Insertion::Force))
-            },
-            | (Reading::Result(frame), Produced::ValueType) => {
+            (Reading::Head(frame), Produced::Value) => (frame, Bridge::Inserted(Insertion::Force)),
+            (Reading::Result(frame), Produced::ValueType) => {
                 (frame, Bridge::Inserted(Insertion::Returner))
             },
-            | (Reading::Value(frame), Produced::ValueType | Produced::CompType) => {
+            (Reading::Value(frame), Produced::ValueType | Produced::CompType) => {
                 (frame, Bridge::Inserted(Insertion::Quote))
             },
-            | (Reading::Value(frame), Produced::Computation)
+            (Reading::Value(frame), Produced::Computation)
                 if self.at_endpoint.contains(&site.at.node) =>
             {
                 (frame, Bridge::Inserted(Insertion::Endpoint))
             },
-            | (Reading::Value(frame), Produced::Computation) => {
+            (Reading::Value(frame), Produced::Computation) => {
                 (frame, Bridge::Inserted(Insertion::Nested))
             },
-            | (Reading::Computation(frame), Produced::Value)
+            (Reading::Computation(frame), Produced::Value)
                 if self.tested.contains(&site.at.node) || self.results.contains(&site.at.node) =>
             {
                 (frame, Bridge::Inserted(Insertion::Return))
             },
-            | (Reading::Computation(frame), Produced::Value)
+            (Reading::Computation(frame), Produced::Value)
                 if self.exits.contains(&site.at.node) =>
             {
                 let _tail = self.inferred.insert(site.at.node);
                 let _exit = self.leaving.insert(site.at.node);
                 (frame, Bridge::Inserted(Insertion::Return))
             },
-            | _ => return Err(site.out(FragmentBoundary::WrongSort)),
+            _ => return Err(site.out(FragmentBoundary::WrongSort)),
         };
         if let Some(held) = self.bridges.get_mut(usize::from(site.at.node)) {
             *held = bridge;
@@ -4561,11 +4557,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     );
                 if target < own || own_family {
                     let declared = match entry.signature {
-                        | Maybe::Present(Half {
+                        Maybe::Present(Half {
                             operand: Operand::Written(written),
                             ..
                         }) => Maybe::Present(written.node),
-                        | Maybe::Present(_) | Maybe::Absent(_) => {
+                        Maybe::Present(_) | Maybe::Absent(_) => {
                             Maybe::Absent(binder_type::Absent::Untyped)
                         },
                     };
@@ -4645,12 +4641,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let frame = self.require(site, Produced::Value)?;
         let name = self.name_at(site.at);
         match self.resolve_name(site, frame, name)? {
-            | Maybe::Present(resolved) => {
+            Maybe::Present(resolved) => {
                 let plan = self.resolved_term(site, frame, resolved);
                 self.plan(site, plan);
                 Ok(())
             },
-            | Maybe::Absent(_) => {
+            Maybe::Absent(_) => {
                 if name.as_ref() == identity::NIL {
                     self.plan(site, Plan::ListNil);
                     return Ok(());
@@ -4759,11 +4755,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.stated_type(site, stated);
         }
         let quoted = match type_atom(name) {
-            | Maybe::Present(atom) => Plan::Atom(atom),
-            | Maybe::Absent(_) if name.as_ref() == TileName::UNIVERSE.as_ref() => {
+            Maybe::Present(atom) => Plan::Atom(atom),
+            Maybe::Absent(_) if name.as_ref() == TileName::UNIVERSE.as_ref() => {
                 Plan::Universe(Universe::FUSS_FREE)
             },
-            | Maybe::Absent(_) => return Err(site.out(FragmentBoundary::Unadmitted)),
+            Maybe::Absent(_) => return Err(site.out(FragmentBoundary::Unadmitted)),
         };
         let _frame = self.require(site, Produced::ValueType)?;
         self.plan(site, quoted);
@@ -4806,7 +4802,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Plan
     {
         match resolved {
-            | Resolved::Binder(bound) if self.in_type.contains(&site.at.node) => {
+            Resolved::Binder(bound) if self.in_type.contains(&site.at.node) => {
                 self.scope.mention(bound.binder);
                 let none = Stretch {
                     start: self.operands.len(),
@@ -4820,7 +4816,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     none,
                 )
             },
-            | Resolved::Binder(_) | Resolved::Declaration { .. } => resolved.term(),
+            Resolved::Binder(_) | Resolved::Declaration { .. } => resolved.term(),
         }
     }
 
@@ -5215,11 +5211,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let frame = self.require(site, Produced::Computation)?;
         let body = self.block(site, &mut cursor, frame)?;
         let answer = match self.answers.get(&site.at.node) {
-            | Some(&answer) => {
+            Some(&answer) => {
                 let _passed = self.answers.insert(body.last, answer);
                 Maybe::Present(answer)
             },
-            | None => Maybe::Absent(native::answered::Absent::Unstated),
+            None => Maybe::Absent(native::answered::Absent::Unstated),
         };
         self.pass_paths(site.at.node, body.last);
         if self.exitable.contains(&site.at.node) {
@@ -5303,9 +5299,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         loop {
             match cursor.read() {
-                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::DEF => break,
-                | Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) => {},
-                | Maybe::Absent(_) => {
+                Maybe::Present(Piece::Tile { label, .. }) if label == TileName::DEF => break,
+                Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) => {},
+                Maybe::Absent(_) => {
                     return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
                 },
             }
@@ -5318,13 +5314,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut recursion = Maybe::Absent(recursion::Absent::Plain);
         loop {
             let binder = match cursor.peek() {
-                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => {
+                Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => {
                     let _close = cursor.tile(TileName::PAREN_CLOSE);
                     break;
                 },
-                | Maybe::Present(Piece::Tile { label, at }) if label == TileName::IDENTIFIER => at,
-                | Maybe::Present(Piece::Tile { label, at }) if TileName::BINDERS.contains(&label) =>
-                {
+                Maybe::Present(Piece::Tile { label, at }) if label == TileName::IDENTIFIER => at,
+                Maybe::Present(Piece::Tile { label, at }) if TileName::BINDERS.contains(&label) => {
                     let parameter = Site {
                         at,
                         name: FormName::PARAMETER,
@@ -5332,18 +5327,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     };
                     return Err(parameter.out(FragmentBoundary::Unadmitted));
                 },
-                | Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => {
+                Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => {
                     return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
                 },
             };
             let _binder = cursor.tile(TileName::IDENTIFIER);
             let declared = match cursor.tile(TileName::COLON) {
-                | Maybe::Present(_) => {
+                Maybe::Present(_) => {
                     let declared = function.one(cursor.operands())?;
                     self.read(declared.node, Reading::ValueType(frame));
                     Maybe::Present(declared.node)
                 },
-                | Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
+                Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
             };
             let name = self.name_at(binder);
             self.note_binder(binder, name)?;
@@ -5367,10 +5362,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             let written = Maybe::Present(binder.span);
             let bound = match declared {
-                | Maybe::Present(declared) => {
-                    self.scope.extend_typed(frame, name, declared, written)
-                },
-                | Maybe::Absent(_) => self.scope.extend(frame, name, written),
+                Maybe::Present(declared) => self.scope.extend_typed(frame, name, declared, written),
+                Maybe::Absent(_) => self.scope.extend(frame, name, written),
             };
             self.parameters.push(Parameter {
                 binder: binder.node,
@@ -5396,16 +5389,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
             end: self.parameters.len(),
         };
         let result = match cursor.tile(TileName::ARROW) {
-            | Maybe::Present(_) => {
+            Maybe::Present(_) => {
                 let result = function.one(cursor.operands())?;
                 self.read(result.node, Reading::Result(frame));
                 Maybe::Present(result.node)
             },
-            | Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
+            Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
         };
         let block = self.block(function, &mut cursor, frame)?;
         let answer = match result {
-            | Maybe::Present(node) => {
+            Maybe::Present(node) => {
                 let answer = native::Answer {
                     node,
                     frame,
@@ -5414,7 +5407,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let _first = self.answers.insert(block.last, answer);
                 Maybe::Present(answer)
             },
-            | Maybe::Absent(_) => Maybe::Absent(native::answered::Absent::Unstated),
+            Maybe::Absent(_) => Maybe::Absent(native::answered::Absent::Unstated),
         };
         self.open_body(function, block, answer)?;
 
@@ -5495,14 +5488,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut frame = frame;
         loop {
             match cursor.peek() {
-                | Maybe::Present(Piece::Operand(_)) => {
+                Maybe::Present(Piece::Operand(_)) => {
                     let run = cursor.operands();
                     if let Maybe::Present(semicolon) = cursor.at(TileName::SEMICOLON) {
                         let first = match run {
-                            | Run::One(written) | Run::Several { first: written, .. } => {
-                                written.span
-                            },
-                            | Run::Empty(gap) => gap,
+                            Run::One(written) | Run::Several { first: written, .. } => written.span,
+                            Run::Empty(gap) => gap,
                         };
                         let span = first.join(semicolon.span);
                         let mut ahead = cursor.clone();
@@ -5554,7 +5545,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         last: last.node,
                     });
                 },
-                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::BRACE_CLOSE => {
+                Maybe::Present(Piece::Tile { label, .. }) if label == TileName::BRACE_CLOSE => {
                     let braced = ByteSpan::new(open.span.start(), site.at.span.end())
                         .unwrap_or(site.at.span);
                     let as_block = Site {
@@ -5567,9 +5558,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     };
                     return Err(as_block.out(FragmentBoundary::Arity(OperandCount::from(0_usize))));
                 },
-                | Maybe::Present(Piece::Tile { label, at }) => {
+                Maybe::Present(Piece::Tile { label, at }) => {
                     match statement_form(label, cursor) {
-                        | Maybe::Present((form, boundary)) => {
+                        Maybe::Present((form, boundary)) => {
                             return Err(LoweringRefusal::OutOfFragment {
                                 span: at.span,
                                 form,
@@ -5577,10 +5568,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 boundary,
                             });
                         },
-                        | Maybe::Absent(statement::Absent::NotAKeyword) => {
+                        Maybe::Absent(statement::Absent::NotAKeyword) => {
                             return Err(site.fault(at.span, FormFault::MisplacedTile));
                         },
-                        | Maybe::Absent(statement::Absent::Read) => {},
+                        Maybe::Absent(statement::Absent::Read) => {},
                     }
                     let _keyword = cursor.read();
                     frame = if label == TileName::RUN {
@@ -5601,7 +5592,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         self.fork(cursor, at, frame)?
                     };
                 },
-                | Maybe::Absent(_) => {
+                Maybe::Absent(_) => {
                     return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
                 },
             }
@@ -5840,21 +5831,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Err(statement.fault(binder.span, FormFault::MisplacedTile));
         };
         match shape_of(self.pbg, node)? {
-            | Shape::Form {
+            Shape::Form {
                 former: Former::Name,
                 ..
             } => Ok(self.name_at(binder)),
-            | Shape::Form { name, .. } if name == FormName::WILDCARD => Ok(SurfaceName::from("")),
-            | Shape::Form { name, .. } => Err(LoweringRefusal::OutOfFragment {
+            Shape::Form { name, .. } if name == FormName::WILDCARD => Ok(SurfaceName::from("")),
+            Shape::Form { name, .. } => Err(LoweringRefusal::OutOfFragment {
                 span: binder.span,
                 form: name,
                 sort: FragmentSort::Pattern,
                 boundary: FragmentBoundary::Unadmitted,
             }),
-            | Shape::Repair(repair) => {
-                Err(statement.fault(binder.span, FormFault::Repaired(repair)))
-            },
-            | Shape::Root | Shape::Layout => {
+            Shape::Repair(repair) => Err(statement.fault(binder.span, FormFault::Repaired(repair))),
+            Shape::Root | Shape::Layout => {
                 Err(statement.fault(binder.span, FormFault::MisplacedTile))
             },
         }
@@ -6261,16 +6250,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.cons(site, letter, rest);
         }
         let frame = self.require(site, Produced::Computation)?;
-        let (label, arguments) = match pieces.pieces.as_slice() {
-            | &[Piece::Tile { label, .. }, Piece::Operand(argument)] => {
+        let (label, arguments) = match *pieces.pieces.as_slice() {
+            [Piece::Tile { label, .. }, Piece::Operand(argument)] => {
                 (label, Arguments::Unary(argument.node))
             },
-            | &[
+            [
                 Piece::Operand(first),
                 Piece::Tile { label, .. },
                 Piece::Operand(second),
             ] => (label, Arguments::Binary([first.node, second.node])),
-            | _ => return Err(site.fault(site.at.span, FormFault::MisplacedTile)),
+            _ => return Err(site.fault(site.at.span, FormFault::MisplacedTile)),
         };
         if label == TileName::THEN
             && let Arguments::Binary([first, second]) = arguments
@@ -6281,11 +6270,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             PRELUDE
                 .iter()
                 .find(|primitive| match (primitive.operator(), arguments) {
-                    | (Operator::Prefix(spelling), Arguments::Unary(_))
+                    (Operator::Prefix(spelling), Arguments::Unary(_))
                     | (Operator::Infix(spelling), Arguments::Binary(_)) => {
                         spelling == label.as_ref()
                     },
-                    | _ => false,
+                    _ => false,
                 })
         else {
             return Err(site.out(FragmentBoundary::Unadmitted));
@@ -6373,7 +6362,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Err(site.out(FragmentBoundary::Unadmitted));
             };
             match shape_of(self.pbg, node)? {
-                | Shape::Form {
+                Shape::Form {
                     former: Former::Projection,
                     ..
                 } => {
@@ -6385,18 +6374,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     links.push((inner, selected));
                     target = inner;
                 },
-                | Shape::Form {
+                Shape::Form {
                     former: Former::Constructor | Former::Name,
                     ..
                 } => break target,
-                | Shape::Form {
+                Shape::Form {
                     former: Former::Call,
                     ..
                 } => {
                     self.refuse_applied(target, &mut chain)?;
                     return Err(site.out(FragmentBoundary::Unadmitted));
                 },
-                | Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+                Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
                     return Err(site.out(FragmentBoundary::Unadmitted));
                 },
             }
@@ -6414,21 +6403,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let path = NamePath::from(segments);
         match self.recognition.resolve_path(&path) {
-            | PathResolution::Complete(Recognized::BuiltinPrimitive { primitive, .. }) => {
+            PathResolution::Complete(Recognized::BuiltinPrimitive { primitive, .. }) => {
                 self.plan(site, Plan::Primitive(primitive));
                 Ok(())
             },
-            | PathResolution::Complete(Recognized::ModuleComponent) => {
+            PathResolution::Complete(Recognized::ModuleComponent) => {
                 let Some(&exported) = self.exported.get(&path)
                 else {
                     return Err(site.out(FragmentBoundary::Unadmitted));
                 };
                 self.select(site, exported)
             },
-            | PathResolution::Complete(Recognized::ModuleNamespace) => {
+            PathResolution::Complete(Recognized::ModuleNamespace) => {
                 Err(site.out(FragmentBoundary::WrongSort))
             },
-            | PathResolution::UnknownMember { depth, .. } => {
+            PathResolution::UnknownMember { depth, .. } => {
                 let Some(&(prefix, selected)) = links
                     .len()
                     .checked_sub(usize::from(depth))
@@ -6442,7 +6431,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     member: self.name_at(selected),
                 })
             },
-            | PathResolution::Complete(_) | PathResolution::Ungoverned => {
+            PathResolution::Complete(_) | PathResolution::Ungoverned => {
                 Err(site.out(FragmentBoundary::Unadmitted))
             },
         }
@@ -6713,8 +6702,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let _frame = self.require(site, Produced::ValueType)?;
         let plan = match stated.meaning {
-            | TypeMeaning::Manifest(defined) => Plan::Transparent(defined.node),
-            | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => {
+            TypeMeaning::Manifest(defined) => Plan::Transparent(defined.node),
+            TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => {
                 let Some(atom) = self.collected.slots.get(usize::from(stated.held))
                 else {
                     return Err(site.out(FragmentBoundary::Unadmitted));
@@ -6729,15 +6718,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     });
                 }
                 match stated.meaning {
-                    | TypeMeaning::Instantiated { defined, instance } => {
+                    TypeMeaning::Instantiated { defined, instance } => {
                         Plan::Instantiated(instance, defined.node)
                     },
-                    | TypeMeaning::Sealed | TypeMeaning::Manifest(_) | TypeMeaning::Family(_) => {
+                    TypeMeaning::Sealed | TypeMeaning::Manifest(_) | TypeMeaning::Family(_) => {
                         Plan::Sealed(atom.constant)
                     },
                 }
             },
-            | TypeMeaning::Family(_) => {
+            TypeMeaning::Family(_) => {
                 return Err(site.out(FragmentBoundary::Arity(OperandCount::from(0_usize))));
             },
         };
@@ -6934,7 +6923,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Err(site.out(FragmentBoundary::Unadmitted));
             };
             match shape_of(self.pbg, node)? {
-                | Shape::Form {
+                Shape::Form {
                     former: Former::TypePath,
                     ..
                 } => {
@@ -6946,18 +6935,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     links.push((inner, selected));
                     target = inner;
                 },
-                | Shape::Form {
+                Shape::Form {
                     former: Former::TypeHead,
                     ..
                 } => break target,
-                | Shape::Form {
+                Shape::Form {
                     former: Former::TypeApplication,
                     ..
                 } => {
                     self.refuse_applied(target, &mut chain)?;
                     return Err(site.out(FragmentBoundary::Unadmitted));
                 },
-                | Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+                Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
                     return Err(site.out(FragmentBoundary::Unadmitted));
                 },
             }
@@ -6975,7 +6964,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let path = NamePath::from(segments);
         match self.recognition.resolve_path(&path) {
-            | PathResolution::Complete(Recognized::ModuleType) => {
+            PathResolution::Complete(Recognized::ModuleType) => {
                 let Some(&stated) = self.exported_types.get(&path)
                 else {
                     return Err(site.out(FragmentBoundary::Unadmitted));
@@ -6992,7 +6981,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }
                 self.stated_type(site, stated)
             },
-            | PathResolution::UnknownMember { depth, .. } => {
+            PathResolution::UnknownMember { depth, .. } => {
                 let Some(&(prefix, selected)) = links
                     .len()
                     .checked_sub(usize::from(depth))
@@ -7006,12 +6995,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     member: self.name_at(selected),
                 })
             },
-            | PathResolution::Ungoverned => Err(LoweringRefusal::UnresolvedTypeHead {
+            PathResolution::Ungoverned => Err(LoweringRefusal::UnresolvedTypeHead {
                 span: head.span,
                 name: self.name_at(head),
                 arity: HeadArity::Nullary,
             }),
-            | PathResolution::Complete(_) => Err(site.out(FragmentBoundary::WrongSort)),
+            PathResolution::Complete(_) => Err(site.out(FragmentBoundary::WrongSort)),
         }
     }
 
@@ -7158,14 +7147,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(Universe::FUSS_FREE);
         }
         let sort = match (cursor.tile(TileName::PLUS), cursor.tile(TileName::MINUS)) {
-            | (Maybe::Present(_), _) => GroundSort::Value,
-            | (Maybe::Absent(_), Maybe::Present(_)) => GroundSort::Computation,
-            | (Maybe::Absent(_), Maybe::Absent(_)) => {
+            (Maybe::Present(_), _) => GroundSort::Value,
+            (Maybe::Absent(_), Maybe::Present(_)) => GroundSort::Computation,
+            (Maybe::Absent(_), Maybe::Absent(_)) => {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             },
         };
         let level = match cursor.tile(TileName::COMMA) {
-            | Maybe::Present(_) => {
+            Maybe::Present(_) => {
                 let Maybe::Present(numeral) = cursor.tile(TileName::NUMBER)
                 else {
                     return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
@@ -7182,7 +7171,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 };
                 LevelConstant::from(level)
             },
-            | Maybe::Absent(_) => LevelConstant::ZERO,
+            Maybe::Absent(_) => LevelConstant::ZERO,
         };
         closed(site, cursor, TileName::BRACKET_CLOSE)?;
         exhausted(site, cursor)?;
@@ -7260,31 +7249,31 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             let mut cursor = Cursor::new(&scratch.pieces, site.at.span);
             let step = match (read, former) {
-                | (Ok(()), Former::Universe) if remaining == 0_usize => {
+                (Ok(()), Former::Universe) if remaining == 0_usize => {
                     ControlFlow::Break(self.universe_of(site, &mut cursor).unwrap_or(fallback))
                 },
-                | (Ok(()), Former::ParenthesizedType) => {
+                (Ok(()), Former::ParenthesizedType) => {
                     let _open = cursor.tile(TileName::PAREN_OPEN);
                     match cursor.operands() {
-                        | Run::One(operand) => ControlFlow::Continue(operand.node),
-                        | Run::Empty(_) | Run::Several { .. } => ControlFlow::Break(fallback),
+                        Run::One(operand) => ControlFlow::Continue(operand.node),
+                        Run::Empty(_) | Run::Several { .. } => ControlFlow::Break(fallback),
                     }
                 },
-                | (Ok(()), Former::ArrowType) if remaining > 0_usize => {
+                (Ok(()), Former::ArrowType) if remaining > 0_usize => {
                     remaining = remaining.saturating_sub(1_usize);
                     let _domain = cursor.operands();
                     let _arrow = cursor.tile(TileName::ARROW);
                     match cursor.operands() {
-                        | Run::One(operand) => ControlFlow::Continue(operand.node),
-                        | Run::Empty(_) | Run::Several { .. } => ControlFlow::Break(fallback),
+                        Run::One(operand) => ControlFlow::Continue(operand.node),
+                        Run::Empty(_) | Run::Several { .. } => ControlFlow::Break(fallback),
                     }
                 },
-                | _ => ControlFlow::Break(fallback),
+                _ => ControlFlow::Break(fallback),
             };
             self.scratch = scratch;
             match step {
-                | ControlFlow::Continue(operand) => position = operand,
-                | ControlFlow::Break(universe) => return Ok(universe),
+                ControlFlow::Continue(operand) => position = operand,
+                ControlFlow::Break(universe) => return Ok(universe),
             }
         }
     }
@@ -7338,13 +7327,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let head = match cursor.peek() {
-            | Maybe::Present(Piece::Tile { label, at })
+            Maybe::Present(Piece::Tile { label, at })
                 if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE =>
             {
                 let _head = cursor.tile(label);
                 at
             },
-            | Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => {
+            Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             },
         };
@@ -7352,7 +7341,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let start = self.operands.len();
         let read = arguments(site, &mut cursor, &mut self.operands);
         match read.and_then(|()| self.stated_named(site, name)) {
-            | Ok(Maybe::Present(TypeComponent {
+            Ok(Maybe::Present(TypeComponent {
                 meaning: TypeMeaning::Family(family),
                 held,
                 ..
@@ -7363,8 +7352,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 };
                 return self.expansion(site, family, held, applied);
             },
-            | Ok(Maybe::Present(_) | Maybe::Absent(_)) => {},
-            | Err(refusal) => {
+            Ok(Maybe::Present(_) | Maybe::Absent(_)) => {},
+            Err(refusal) => {
                 self.operands.truncate(start);
                 return Err(refusal);
             },
@@ -7374,15 +7363,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.resolve_name(named, site.reading.frame(), name)
         });
         match resolved {
-            | Ok(Maybe::Present(resolved)) => {
+            Ok(Maybe::Present(resolved)) => {
                 let applied = Stretch {
                     start,
                     end: self.operands.len(),
                 };
                 return self.static_application(site, resolved, applied);
             },
-            | Ok(Maybe::Absent(named::Absent::Unresolved)) => {},
-            | Err(refusal) => {
+            Ok(Maybe::Absent(named::Absent::Unresolved)) => {},
+            Err(refusal) => {
                 self.operands.truncate(start);
                 return Err(refusal);
             },
@@ -7490,14 +7479,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let from = site.reading.frame();
         let (code, declared) = match resolved {
-            | Resolved::Binder(bound) => (
+            Resolved::Binder(bound) => (
                 Code::Bound {
                     from,
                     binder: bound.binder,
                 },
                 bound.declared,
             ),
-            | Resolved::Declaration { constant, declared } => (Code::Constant(constant), declared),
+            Resolved::Declaration { constant, declared } => (Code::Constant(constant), declared),
         };
         let (plan, produced) = if let Reading::Value(_) = site.reading {
             (Plan::StaticApplication(code, applied), Produced::Value)
@@ -7507,11 +7496,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let universe =
                 self.written_universe(declared, count, site.reading.positional_universe())?;
             let produced = match universe.sort {
-                | GroundSort::Value => Produced::ValueType,
-                | GroundSort::Computation => Produced::CompType,
+                GroundSort::Value => Produced::ValueType,
+                GroundSort::Computation => Produced::CompType,
             };
             let plan = match code {
-                | Code::Constant(constant)
+                Code::Constant(constant)
                     if matches!(
                         self.collected
                             .slots
@@ -7525,7 +7514,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 {
                     Plan::Unquote(constant, applied, universe)
                 },
-                | Code::Constant(_) | Code::Bound { .. } => Plan::Decode(code, applied, universe),
+                Code::Constant(_) | Code::Bound { .. } => Plan::Decode(code, applied, universe),
             };
             (plan, produced)
         };
@@ -7602,14 +7591,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
             match former {
-                | TypeFormer::Thunk => self.grade(site, &mut cursor)?,
-                | TypeFormer::Returner => {
+                TypeFormer::Thunk => self.grade(site, &mut cursor)?,
+                TypeFormer::Returner => {
                     let row = self.returner_row(site, &mut cursor)?;
                     let argument = site.one(cursor.operands())?;
                     exhausted(site, &cursor)?;
                     return self.effectful(site, row, argument.node);
                 },
-                | TypeFormer::List | TypeFormer::Run => {
+                TypeFormer::List | TypeFormer::Run => {
                     return Err(site.folded(FormName::GRADE, FragmentBoundary::Unadmitted));
                 },
             }
@@ -7730,14 +7719,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let produced = match former {
-            | TypeFormer::Thunk | TypeFormer::List | TypeFormer::Run => Produced::ValueType,
-            | TypeFormer::Returner => Produced::CompType,
+            TypeFormer::Thunk | TypeFormer::List | TypeFormer::Run => Produced::ValueType,
+            TypeFormer::Returner => Produced::CompType,
         };
         let frame = self.require(site, produced)?;
         let inner = match former {
-            | TypeFormer::Thunk => Reading::CompType(frame),
-            | TypeFormer::Returner | TypeFormer::List => Reading::ValueType(frame),
-            | TypeFormer::Run => Reading::Value(frame),
+            TypeFormer::Thunk => Reading::CompType(frame),
+            TypeFormer::Returner | TypeFormer::List => Reading::ValueType(frame),
+            TypeFormer::Run => Reading::Value(frame),
         };
         self.read(argument, inner);
 
@@ -7885,11 +7874,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .spend()
                 .and_then(|()| self.chained(site, operand, former))
             {
-                | Ok(Some([inner_first, inner_second])) => {
+                Ok(Some([inner_first, inner_second])) => {
                     pending.extend([inner_second, inner_first]);
                 },
-                | Ok(None) => self.operands.push(operand),
-                | Err(refusal) => {
+                Ok(None) => self.operands.push(operand),
+                Err(refusal) => {
                     self.operands.truncate(start);
                     return Err(refusal);
                 },
@@ -8173,13 +8162,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let frame = self.require(site, Produced::Value)?;
         closed(site, &mut cursor, TileName::BACKSLASH)?;
         let binder = match cursor.peek() {
-            | Maybe::Present(Piece::Tile { label, at })
+            Maybe::Present(Piece::Tile { label, at })
                 if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE =>
             {
                 let _binder = cursor.tile(label);
                 at
             },
-            | Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => {
+            Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             },
         };
@@ -8469,10 +8458,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .iter()
             .flat_map(|structure| structure.types.iter().chain(&structure.type_members))
             .filter_map(|component| match component.meaning {
-                | TypeMeaning::Manifest(defined) => Some(defined),
-                | TypeMeaning::Sealed
-                | TypeMeaning::Family(_)
-                | TypeMeaning::Instantiated { .. } => None,
+                TypeMeaning::Manifest(defined) => Some(defined),
+                TypeMeaning::Sealed | TypeMeaning::Family(_) | TypeMeaning::Instantiated { .. } => {
+                    None
+                },
             })
             .chain(self.collected.families.iter().flat_map(|family| {
                 family
@@ -8566,23 +8555,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         for site in &self.labels {
             let labelled = match site.read {
-                | LabelRead::ValueType(frame) => match self.value_type_at(site.held) {
-                    | Maybe::Present(ty) => Labelled::ValueType {
+                LabelRead::ValueType(frame) => match self.value_type_at(site.held) {
+                    Maybe::Present(ty) => Labelled::ValueType {
                         ty,
                         context: named(frame),
                     },
-                    | Maybe::Absent(_) => continue,
+                    Maybe::Absent(_) => continue,
                 },
-                | LabelRead::CompType(frame) => match self.comp_type_at(site.held) {
-                    | Maybe::Present(ty) => Labelled::CompType {
+                LabelRead::CompType(frame) => match self.comp_type_at(site.held) {
+                    Maybe::Present(ty) => Labelled::CompType {
                         ty,
                         context: named(frame),
                     },
-                    | Maybe::Absent(_) => continue,
+                    Maybe::Absent(_) => continue,
                 },
-                | LabelRead::Term => match self.value_at(site.held) {
-                    | Maybe::Present(value) => Labelled::Value(value),
-                    | Maybe::Absent(_) => continue,
+                LabelRead::Term => match self.value_at(site.held) {
+                    Maybe::Present(value) => Labelled::Value(value),
+                    Maybe::Absent(_) => continue,
                 },
             };
             sink.origins.record_label(Label {
@@ -8704,7 +8693,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .get(&position)
             .map(|&call| self.origin_at(call));
         let bridged = match (bridge, minted, called) {
-            | (
+            (
                 Bridge::Inserted(Insertion::Force),
                 Maybe::Present(Lowered::Value(forced)),
                 Some(Maybe::Present(call)),
@@ -8712,13 +8701,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let id = sink.arena.computation_force(forced);
                 Maybe::Present(sink.computation(id, call))
             },
-            | (_, minted, _) => sink.bridge(minted, bridge, origin),
+            (_, minted, _) => sink.bridge(minted, bridge, origin),
         };
         let bridged = match bridged {
-            | Maybe::Present(Lowered::Computation(returned)) if self.crossing.contains(&position) => {
+            Maybe::Present(Lowered::Computation(returned)) if self.crossing.contains(&position) => {
                 Maybe::Present(Lowered::Computation(Self::unwind(sink, returned, origin)))
             },
-            | bridged => bridged,
+            bridged @ (Maybe::Present(_) | Maybe::Absent(_)) => bridged,
         };
         if self.leaving.contains(&position)
             && let Maybe::Present(Lowered::Computation(exit)) = bridged
@@ -8726,8 +8715,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let _first = sink.exits.insert(exit);
             if self.inferred.contains(&position) {
                 self.elided.push((position, match bridge {
-                    | Bridge::Inserted(Insertion::Return) => Exit::Return,
-                    | Bridge::Bare | Bridge::Inserted(_) => Exit::Become,
+                    Bridge::Inserted(Insertion::Return) => Exit::Return,
+                    Bridge::Bare | Bridge::Inserted(_) => Exit::Become,
                 }));
             }
         }
@@ -8737,10 +8726,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let _first = sink.breaks.insert(broken);
         }
         let bridged = match (self.reentered.get(&position), bridged) {
-            | (Some(&own), Maybe::Present(Lowered::Computation(end))) => Maybe::Present(
+            (Some(&own), Maybe::Present(Lowered::Computation(end))) => Maybe::Present(
                 Lowered::Computation(self.rerun(position, end, own, sink, origin)),
             ),
-            | (_, bridged) => bridged,
+            (_, bridged) => bridged,
         };
         if let Some(held) = self.lowered.get_mut(usize::from(position)) {
             *held = bridged;
@@ -8918,15 +8907,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         match plan {
-            | Plan::ValueHole(hole) => {
+            Plan::ValueHole(hole) => {
                 let id = sink.arena.value_hole(hole);
                 Maybe::Present(sink.value(id, origin))
             },
-            | Plan::CompHole(hole) => {
+            Plan::CompHole(hole) => {
                 let id = sink.arena.computation_hole(hole);
                 Maybe::Present(sink.computation(id, origin))
             },
-            | Plan::Primitive(primitive) => {
+            Plan::Primitive(primitive) => {
                 let id = primitive.thunk(sink.arena);
                 if let Some(&Value::Primitive { body, .. }) = sink.arena.value(id) {
                     let mut current = body;
@@ -8936,14 +8925,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         *ancestor = current;
                         count = count.saturating_add(1);
                         match sink.arena.computation(current) {
-                            | Some(&Computation::Lambda(inner)) => current = inner,
-                            | Some(&Computation::Primitive { ref arguments, .. }) => {
+                            Some(&Computation::Lambda(inner)) => current = inner,
+                            Some(&Computation::Primitive { ref arguments, .. }) => {
                                 for &argument in arguments.iter().rev() {
                                     sink.origins.record_value(argument, origin);
                                 }
                                 break;
                             },
-                            | _ => break,
+                            _ => break,
                         }
                     }
                     for &computation in ancestors.iter().take(count).rev() {
@@ -8952,56 +8941,54 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }
                 Maybe::Present(sink.value(id, origin))
             },
-            | Plan::PrimitiveCall(primitive, arguments) => {
+            Plan::PrimitiveCall(primitive, arguments) => {
                 use gandr_core_term::primitive::Arguments;
                 let arguments = match arguments {
-                    | Arguments::Unary(argument) => self.value_at(argument).map(Arguments::Unary),
-                    | Arguments::Binary([first, second]) => {
-                        self.value_at(first).and_then(|first| {
-                            self.value_at(second)
-                                .map(|second| Arguments::Binary([first, second]))
-                        })
-                    },
+                    Arguments::Unary(argument) => self.value_at(argument).map(Arguments::Unary),
+                    Arguments::Binary([first, second]) => self.value_at(first).and_then(|first| {
+                        self.value_at(second)
+                            .map(|second| Arguments::Binary([first, second]))
+                    }),
                 };
                 arguments.map(|arguments| {
                     let id = sink.arena.computation_primitive(primitive, arguments);
                     sink.computation(id, origin)
                 })
             },
-            | Plan::Unplanned => Maybe::Absent(lowered::Absent::Unminted),
-            | Plan::Variable(index, binder) => {
+            Plan::Unplanned => Maybe::Absent(lowered::Absent::Unminted),
+            Plan::Variable(index, binder) => {
                 let id = sink.arena.value_variable(self.scope.zone(binder), index);
                 if let Maybe::Present(site) = self.scope.site(binder) {
                     sink.origins.record_binding(id, site);
                 }
                 Maybe::Present(sink.value(id, origin))
             },
-            | Plan::Constant(constant) => {
+            Plan::Constant(constant) => {
                 let id = sink.arena.value_constant(constant);
                 Maybe::Present(sink.value(id, origin))
             },
-            | Plan::Unit => {
+            Plan::Unit => {
                 let id = sink.arena.value_unit();
                 Maybe::Present(sink.value(id, origin))
             },
-            | Plan::Literal(literal) => {
+            Plan::Literal(literal) => {
                 let id = sink.arena.value_literal(literal);
                 Maybe::Present(sink.value(id, origin))
             },
-            | Plan::Atom(atom) => Maybe::Present(sink.atom(atom, origin)),
-            | Plan::Instantiated(instance, defined) => self
+            Plan::Atom(atom) => Maybe::Present(sink.atom(atom, origin)),
+            Plan::Instantiated(instance, defined) => self
                 .instance_types
                 .get(&(instance, defined))
                 .copied()
                 .map_or(Maybe::Absent(lowered::Absent::Unminted), |id| {
                     Maybe::Present(Lowered::ValueType(id))
                 }),
-            | Plan::Sealed(atom) => {
+            Plan::Sealed(atom) => {
                 let id = sink.arena.value_type_abstract(atom);
                 sink.origins.record_value_type(id, origin);
                 Maybe::Present(Lowered::ValueType(id))
             },
-            | Plan::Universe(universe) => {
+            Plan::Universe(universe) => {
                 let id = sink.arena.value_type_universe(
                     Sort::Ground(universe.sort),
                     Level::constant(universe.level),
@@ -9009,96 +8996,88 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.origins.record_value_type(id, origin);
                 Maybe::Present(Lowered::ValueType(id))
             },
-            | Plan::Decode(code, arguments, universe) => {
+            Plan::Decode(code, arguments, universe) => {
                 self.mint_decode(code, arguments, universe, sink, origin)
             },
-            | Plan::Unquote(function, arguments, universe) => {
+            Plan::Unquote(function, arguments, universe) => {
                 self.mint_unquote(function, arguments, universe, sink, origin)
             },
-            | Plan::StaticApplication(code, arguments) => self
+            Plan::StaticApplication(code, arguments) => self
                 .mint_code(code, arguments, sink, origin)
                 .map(Lowered::Value),
-            | Plan::Tuple(members) => self.mint_tuple(members, sink, origin),
-            | Plan::Record(ref fields) => self.mint_record(fields, sink, origin),
-            | Plan::Injection(summand, body) => self.mint_injection(summand, body, sink, origin),
-            | Plan::ValueFunction(domains, codomain) => {
+            Plan::Tuple(members) => self.mint_tuple(members, sink, origin),
+            Plan::Record(ref fields) => self.mint_record(fields, sink, origin),
+            Plan::Injection(summand, body) => self.mint_injection(summand, body, sink, origin),
+            Plan::ValueFunction(domains, codomain) => {
                 self.mint_value_function(domains, codomain, sink, origin)
             },
-            | Plan::Telescope(entries, codomain) => {
+            Plan::Telescope(entries, codomain) => {
                 self.mint_telescope(entries, codomain, sink, origin)
             },
-            | Plan::DependentArrow(entries, codomain) => {
+            Plan::DependentArrow(entries, codomain) => {
                 self.mint_dependent_arrow(entries, codomain, sink, origin)
             },
-            | Plan::Transparent(child) => self.lowered_at(child),
-            | Plan::Former(former, argument) => self.mint_former(former, argument, sink, origin),
-            | Plan::Application(head, arguments) => {
+            Plan::Transparent(child) => self.lowered_at(child),
+            Plan::Former(former, argument) => self.mint_former(former, argument, sink, origin),
+            Plan::Application(head, arguments) => {
                 self.mint_application(head, arguments, sink, origin)
             },
-            | Plan::Function(function) => self.mint_function(&function, sink, origin),
-            | Plan::Data(constant, arguments) => {
-                self.mint_family(constant, arguments, sink, origin)
-            },
-            | Plan::Expansion(family, arguments) => {
+            Plan::Function(function) => self.mint_function(&function, sink, origin),
+            Plan::Data(constant, arguments) => self.mint_family(constant, arguments, sink, origin),
+            Plan::Expansion(family, arguments) => {
                 self.mint_expansion(family, arguments, sink, origin)
             },
-            | Plan::Constructor(constructed) => self.mint_constructor(constructed, sink, origin),
-            | Plan::Case(case) => self.mint_case(case, sink, origin),
-            | Plan::EmptyCase(scrutinee) => self.value_at(scrutinee).map(|scrutinised| {
+            Plan::Constructor(constructed) => self.mint_constructor(constructed, sink, origin),
+            Plan::Case(case) => self.mint_case(case, sink, origin),
+            Plan::EmptyCase(scrutinee) => self.value_at(scrutinee).map(|scrutinised| {
                 let id = sink.arena.computation_case(scrutinised, &[]);
                 sink.computation(id, origin)
             }),
-            | Plan::Product(components) => self.mint_product(components, sink, origin),
-            | Plan::RecordType(ref fields, binders, last) => {
+            Plan::Product(components) => self.mint_product(components, sink, origin),
+            Plan::RecordType(ref fields, binders, last) => {
                 self.mint_labelled_type(fields, binders, last, sink, origin)
             },
-            | Plan::Sum(summands) => self.mint_sum(summands, sink, origin),
-            | Plan::With(entries) => self.mint_with(entries, sink, origin),
-            | Plan::Copattern(clauses) => self.mint_copattern(clauses, sink, origin),
-            | Plan::Observe(subject, observed) => {
-                self.mint_observe(subject, observed, sink, origin)
-            },
-            | Plan::Select(subject, selected) => self.mint_select(subject, selected, sink, origin),
-            | Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
-            | Plan::Loop(body) => self.mint_loop(body, sink, origin),
-            | Plan::While(condition, body) => self.mint_while(condition, body, sink, origin),
-            | Plan::Break => {
+            Plan::Sum(summands) => self.mint_sum(summands, sink, origin),
+            Plan::With(entries) => self.mint_with(entries, sink, origin),
+            Plan::Copattern(clauses) => self.mint_copattern(clauses, sink, origin),
+            Plan::Observe(subject, observed) => self.mint_observe(subject, observed, sink, origin),
+            Plan::Select(subject, selected) => self.mint_select(subject, selected, sink, origin),
+            Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
+            Plan::Loop(body) => self.mint_loop(body, sink, origin),
+            Plan::While(condition, body) => self.mint_while(condition, body, sink, origin),
+            Plan::Break => {
                 let unit = sink.arena.value_unit();
                 sink.origins.record_value(unit, origin);
                 let id = sink.arena.computation_return(unit);
                 Maybe::Present(sink.computation(id, origin))
             },
-            | Plan::Reenter(index) => {
+            Plan::Reenter(index) => {
                 let own = sink.arena.value_variable(Zone::Intuitionistic, index);
                 sink.origins.record_value(own, origin);
                 let id = sink.arena.computation_force(own);
                 Maybe::Present(sink.computation(id, origin))
             },
-            | Plan::Derived(derived) => self.mint_derived(derived, sink, origin),
-            | Plan::TelescopeTransport(transported) => {
+            Plan::Derived(derived) => self.mint_derived(derived, sink, origin),
+            Plan::TelescopeTransport(transported) => {
                 self.mint_telescope_transport(transported, sink, origin)
             },
-            | Plan::Capability(ref authority, grade) => {
+            Plan::Capability(ref authority, grade) => {
                 Self::mint_capability(authority, grade, sink, origin)
             },
-            | Plan::Effectful(ref row, argument) => {
-                self.mint_effectful(row, argument, sink, origin)
-            },
-            | Plan::Exercise(exercised) => self.mint_exercise(exercised, sink, origin),
-            | Plan::Scope(scoped) => self.mint_scope(scoped, sink, origin),
-            | Plan::Resume(continuation, reply) => {
+            Plan::Effectful(ref row, argument) => self.mint_effectful(row, argument, sink, origin),
+            Plan::Exercise(exercised) => self.mint_exercise(exercised, sink, origin),
+            Plan::Scope(scoped) => self.mint_scope(scoped, sink, origin),
+            Plan::Resume(continuation, reply) => {
                 self.mint_resume(continuation, reply, sink, origin)
             },
-            | Plan::Session(ref protocol, payloads, ref written) => {
+            Plan::Session(ref protocol, payloads, ref written) => {
                 self.mint_session(protocol, payloads, written, sink, origin)
             },
-            | Plan::Action(ref action, subject) => self.mint_action(action, subject, sink, origin),
-            | Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),
-            | Plan::Ride(motive, flow, value) => {
-                self.mint_ride((motive, flow, value), sink, origin)
-            },
-            | Plan::FlowThen(first, second) => self.mint_flow_then(first, second, sink, origin),
-            | Plan::Arrow(..)
+            Plan::Action(ref action, subject) => self.mint_action(action, subject, sink, origin),
+            Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),
+            Plan::Ride(motive, flow, value) => self.mint_ride((motive, flow, value), sink, origin),
+            Plan::FlowThen(first, second) => self.mint_flow_then(first, second, sink, origin),
+            Plan::Arrow(..)
             | Plan::StaticPi(..)
             | Plan::Path(..)
             | Plan::Flow(..)
@@ -9198,11 +9177,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         let mut applied = match code {
-            | Code::Bound { from, binder } => sink.arena.value_variable(
+            Code::Bound { from, binder } => sink.arena.value_variable(
                 Zone::Intuitionistic,
                 self.scope.telescope_index(from, binder),
             ),
-            | Code::Constant(constant) => sink.arena.value_constant(constant),
+            Code::Constant(constant) => sink.arena.value_constant(constant),
         };
         sink.origins.record_value(applied, origin);
         for &argument in written {
@@ -9291,18 +9270,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let value = match self.mint_code(code, arguments, sink, origin) {
-            | Maybe::Present(value) => value,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(value) => value,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let level = Level::constant(universe.level);
         let decoded = origin.inserted(Insertion::Decode);
         match universe.sort {
-            | GroundSort::Value => {
+            GroundSort::Value => {
                 let id = sink.arena.value_type_element(value, level);
                 sink.origins.record_value_type(id, decoded);
                 Maybe::Present(Lowered::ValueType(id))
             },
-            | GroundSort::Computation => {
+            GroundSort::Computation => {
                 let id = sink.arena.comp_type_element(value, level);
                 sink.origins.record_comp_type(id, decoded);
                 Maybe::Present(Lowered::CompType(id))
@@ -9387,12 +9366,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let level = Level::constant(universe.level);
         let decoded = origin.inserted(Insertion::Decode);
         match universe.sort {
-            | GroundSort::Value => {
+            GroundSort::Value => {
                 let id = sink.arena.value_type_element(code, level);
                 sink.origins.record_value_type(id, decoded);
                 Maybe::Present(Lowered::ValueType(id))
             },
-            | GroundSort::Computation => {
+            GroundSort::Computation => {
                 let id = sink.arena.comp_type_element(code, level);
                 sink.origins.record_comp_type(id, decoded);
                 Maybe::Present(Lowered::CompType(id))
@@ -9448,8 +9427,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut components = Vec::with_capacity(written.len());
         for &member in written {
             match self.value_at(member) {
-                | Maybe::Present(component) => components.push(component),
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(component) => components.push(component),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         let id = sink.arena.value_tuple(&components);
@@ -9505,8 +9484,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut parts = Vec::with_capacity(written.len());
         for &component in written {
             match self.value_type_at(component) {
-                | Maybe::Present(part) => parts.push(part),
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(part) => parts.push(part),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         let id = sink.arena.value_type_product(&parts);
@@ -9588,8 +9567,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         let returned = match self.value_type_at(codomain) {
-            | Maybe::Present(returned) => returned,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(returned) => returned,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let mut arrow = sink.arena.comp_type_returner(returned);
         sink.origins.record_comp_type(arrow, origin);
@@ -9665,22 +9644,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         match former {
-            | TypeFormer::Thunk => self.comp_type_at(argument).map(|inner| {
+            TypeFormer::Thunk => self.comp_type_at(argument).map(|inner| {
                 let id = sink.arena.value_type_thunk(inner);
                 sink.origins.record_value_type(id, origin);
                 Lowered::ValueType(id)
             }),
-            | TypeFormer::Returner => self.value_type_at(argument).map(|inner| {
+            TypeFormer::Returner => self.value_type_at(argument).map(|inner| {
                 let id = sink.arena.comp_type_returner(inner);
                 sink.origins.record_comp_type(id, origin);
                 Lowered::CompType(id)
             }),
-            | TypeFormer::List => self.value_type_at(argument).map(|element| {
+            TypeFormer::List => self.value_type_at(argument).map(|element| {
                 let id = sink.arena.value_type_list(element);
                 sink.origins.record_value_type(id, origin);
                 Lowered::ValueType(id)
             }),
-            | TypeFormer::Run => self.value_at(argument).map(|session| {
+            TypeFormer::Run => self.value_at(argument).map(|session| {
                 let id = sink.arena.value_type_run(session);
                 sink.origins.record_value_type(id, origin);
                 Lowered::ValueType(id)
@@ -9739,21 +9718,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         match *plan {
-            | Plan::Arrow(domain, codomain) => self.value_type_at(domain).and_then(|from| {
+            Plan::Arrow(domain, codomain) => self.value_type_at(domain).and_then(|from| {
                 self.comp_type_at(codomain).map(|to| {
                     let id = sink.arena.comp_type_arrow(from, to);
                     sink.origins.record_comp_type(id, origin);
                     Lowered::CompType(id)
                 })
             }),
-            | Plan::StaticPi(domain, codomain) => self.value_type_at(domain).and_then(|from| {
+            Plan::StaticPi(domain, codomain) => self.value_type_at(domain).and_then(|from| {
                 self.value_type_at(codomain).map(|to| {
                     let id = sink.arena.value_type_static_pi(from, to);
                     sink.origins.record_value_type(id, origin);
                     Lowered::ValueType(id)
                 })
             }),
-            | Plan::Path(carrier, left, right) => self.value_type_at(carrier).and_then(|over| {
+            Plan::Path(carrier, left, right) => self.value_type_at(carrier).and_then(|over| {
                 self.value_at(left).and_then(|from| {
                     self.value_at(right).map(|to| {
                         let id = sink.arena.value_type_path(over, from, to);
@@ -9762,29 +9741,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     })
                 })
             }),
-            | Plan::Here(point) => self.value_at(point).map(|at| {
+            Plan::Here(point) => self.value_at(point).map(|at| {
                 let id = sink.arena.value_here(at);
                 sink.value(id, origin)
             }),
-            | Plan::Funext(left, right) => self.value_at(left).and_then(|first| {
+            Plan::Funext(left, right) => self.value_at(left).and_then(|first| {
                 self.value_at(right).map(|second| {
                     let id = sink.arena.value_funext(first, second);
                     sink.value(id, origin)
                 })
             }),
-            | Plan::Equiv(forward, backward) => self.value_at(forward).and_then(|first| {
+            Plan::Equiv(forward, backward) => self.value_at(forward).and_then(|first| {
                 self.value_at(backward).map(|second| {
                     let id = sink.arena.value_equiv(first, second);
                     sink.value(id, origin)
                 })
             }),
-            | Plan::PathProduct(first, second) => self.value_at(first).and_then(|left| {
+            Plan::PathProduct(first, second) => self.value_at(first).and_then(|left| {
                 self.value_at(second).map(|right| {
                     let id = sink.arena.value_path_product(left, right);
                     sink.value(id, origin)
                 })
             }),
-            | Plan::Ua {
+            Plan::Ua {
                 stratum,
                 ref sides,
                 named,
@@ -9799,40 +9778,40 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     sink.value(id, origin)
                 })
             }),
-            | Plan::ListNil => {
+            Plan::ListNil => {
                 let id = sink.arena.value_list_nil();
                 Maybe::Present(sink.value(id, origin))
             },
-            | Plan::ListCons(head, tail) => self.value_at(head).and_then(|first| {
+            Plan::ListCons(head, tail) => self.value_at(head).and_then(|first| {
                 self.value_at(tail).map(|rest| {
                     let id = sink.arena.value_list_cons(first, rest);
                     sink.value(id, origin)
                 })
             }),
-            | Plan::Transport(abstraction, path, value) => {
+            Plan::Transport(abstraction, path, value) => {
                 self.mint_transport((abstraction, path, value), sink, origin)
             },
-            | Plan::StaticLambda(body) => self.value_at(body).map(|under| {
+            Plan::StaticLambda(body) => self.value_at(body).map(|under| {
                 let id = sink.arena.value_static_lambda(under);
                 sink.value(id, origin)
             }),
-            | Plan::Thunk(body) => self.mint_body(body, sink, origin).map(|suspended| {
+            Plan::Thunk(body) => self.mint_body(body, sink, origin).map(|suspended| {
                 let id = sink.arena.value_thunk(suspended);
                 sink.value(id, origin)
             }),
-            | Plan::Return(value) => self.value_at(value).map(|returned| {
+            Plan::Return(value) => self.value_at(value).map(|returned| {
                 let id = sink.arena.computation_return(returned);
                 sink.computation(id, origin)
             }),
-            | Plan::Force(value) => self.value_at(value).map(|forced| {
+            Plan::Force(value) => self.value_at(value).map(|forced| {
                 let id = sink.arena.computation_force(forced);
                 sink.computation(id, origin)
             }),
-            | Plan::Run(computation) => self.computation_at(computation).map(|ran| {
+            Plan::Run(computation) => self.computation_at(computation).map(|ran| {
                 let id = sink.arena.value_run(ran);
                 sink.value(id, origin)
             }),
-            | Plan::Flow(carrier, left, right) => self.value_type_at(carrier).and_then(|over| {
+            Plan::Flow(carrier, left, right) => self.value_type_at(carrier).and_then(|over| {
                 self.value_at(left).and_then(|from| {
                     self.value_at(right).map(|to| {
                         let id = sink.arena.value_type_flow(over, from, to);
@@ -9841,33 +9820,33 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     })
                 })
             }),
-            | Plan::SessionRelated(relation, left, right) => self.value_at(left).and_then(|from| {
+            Plan::SessionRelated(relation, left, right) => self.value_at(left).and_then(|from| {
                 self.value_at(right).map(|to| {
                     let id = sink.arena.value_session_related(relation, from, to);
                     sink.value(id, origin)
                 })
             }),
-            | Plan::Stay(point) => self.value_at(point).map(|at| {
+            Plan::Stay(point) => self.value_at(point).map(|at| {
                 let id = sink.arena.value_stay(at);
                 sink.value(id, origin)
             }),
-            | Plan::Forward(translator) => self.value_at(translator).map(|map| {
+            Plan::Forward(translator) => self.value_at(translator).map(|map| {
                 let id = sink.arena.value_forward(map);
                 sink.value(id, origin)
             }),
-            | Plan::FunctionFlow(domain, codomain) => self.value_at(domain).and_then(|into| {
+            Plan::FunctionFlow(domain, codomain) => self.value_at(domain).and_then(|into| {
                 self.value_at(codomain).map(|out| {
                     let id = sink.arena.value_function_flow(into, out);
                     sink.value(id, origin)
                 })
             }),
-            | Plan::FlowProduct(first, second) => self.value_at(first).and_then(|left| {
+            Plan::FlowProduct(first, second) => self.value_at(first).and_then(|left| {
                 self.value_at(second).map(|right| {
                     let id = sink.arena.value_flow_product(left, right);
                     sink.value(id, origin)
                 })
             }),
-            | Plan::Lambda(body, binder) => self.mint_body(body, sink, origin).map(|under| {
+            Plan::Lambda(body, binder) => self.mint_body(body, sink, origin).map(|under| {
                 let id = sink.arena.computation_lambda(under);
                 let lowered = sink.computation(id, origin);
                 if let Maybe::Present(name) = self.origin_at(binder) {
@@ -9875,7 +9854,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }
                 lowered
             }),
-            | Plan::Unplanned
+            Plan::Unplanned
             | Plan::ValueHole(_)
             | Plan::CompHole(_)
             | Plan::Variable(..)
@@ -9985,8 +9964,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let statements = stretch(&self.statements, block.statements);
         let mut chain = match self.computation_at(block.last) {
-            | Maybe::Present(last) => last,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(last) => last,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         for statement in statements {
             if let Maybe::Absent(reason) = self.statement_parts(statement) {
@@ -10021,9 +10000,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
             let split = match statement.binding {
-                | StatementBinding::Named(_) | StatementBinding::Forked { .. } => None,
-                | StatementBinding::Discarded => Some(gandr_core_term::ComponentCount::default()),
-                | StatementBinding::Split(arity) => Some(arity),
+                StatementBinding::Named(_) | StatementBinding::Forked { .. } => None,
+                StatementBinding::Discarded => Some(gandr_core_term::ComponentCount::default()),
+                StatementBinding::Split(arity) => Some(arity),
             };
             if let Some(arity) = split {
                 let tuple = sink
@@ -10075,11 +10054,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<(), lowered::Absent>
     {
         match statement.binding {
-            | StatementBinding::Forked { protocol, child } => self
+            StatementBinding::Forked { protocol, child } => self
                 .value_type_at(protocol)
                 .and_then(|_protocol| self.computation_at(child))
                 .map(|_child| ()),
-            | StatementBinding::Named(_)
+            StatementBinding::Named(_)
             | StatementBinding::Discarded
             | StatementBinding::Split(_) => self.computation_at(statement.bound).map(|_bound| ()),
         }
@@ -10135,8 +10114,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let mut applied = match self.computation_at(head) {
-            | Maybe::Present(called) => called,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(called) => called,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let arguments = stretch(&self.operands, arguments);
         for &argument in arguments {
@@ -10146,8 +10125,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         for &argument in arguments {
             let passed = match self.value_at(argument) {
-                | Maybe::Present(passed) => passed,
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(passed) => passed,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
             let id = sink.arena.computation_application(applied, passed);
             sink.origins.record_computation(id, origin);
@@ -10214,12 +10193,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         let mut body = match self.mint_body(function.block, sink, origin) {
-            | Maybe::Present(block) => block,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(block) => block,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let mut fixpoint = match self.evidence(function) {
-            | Maybe::Present(evidence) => Some(evidence),
-            | Maybe::Absent(_) => None,
+            Maybe::Present(evidence) => Some(evidence),
+            Maybe::Absent(_) => None,
         };
         for parameter in parameters.iter().rev() {
             let Maybe::Present(binder) = self.origin_at(parameter.binder)
@@ -10311,8 +10290,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Maybe::Absent(lowered::Absent::Unstated);
         };
         let mut declared = match self.comp_type_at(result) {
-            | Maybe::Present(result) => result,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(result) => result,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         for parameter in parameters {
             let Maybe::Present(written) = parameter.declared
@@ -10412,8 +10391,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<ValueId, lowered::Absent>
     {
         self.lowered_at(position).and_then(|held| match held {
-            | Lowered::Value(id) => Maybe::Present(id),
-            | Lowered::Computation(_)
+            Lowered::Value(id) => Maybe::Present(id),
+            Lowered::Computation(_)
             | Lowered::ValueType(_)
             | Lowered::CompType(_)
             | Lowered::Function { .. } => Maybe::Absent(lowered::Absent::OtherSort),
@@ -10450,8 +10429,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<ComputationId, lowered::Absent>
     {
         self.lowered_at(position).and_then(|held| match held {
-            | Lowered::Computation(id) => Maybe::Present(id),
-            | Lowered::Value(_)
+            Lowered::Computation(id) => Maybe::Present(id),
+            Lowered::Value(_)
             | Lowered::ValueType(_)
             | Lowered::CompType(_)
             | Lowered::Function { .. } => Maybe::Absent(lowered::Absent::OtherSort),
@@ -10488,8 +10467,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<ValueTypeId, lowered::Absent>
     {
         self.lowered_at(position).and_then(|held| match held {
-            | Lowered::ValueType(id) => Maybe::Present(id),
-            | Lowered::Value(_)
+            Lowered::ValueType(id) => Maybe::Present(id),
+            Lowered::Value(_)
             | Lowered::Computation(_)
             | Lowered::CompType(_)
             | Lowered::Function { .. } => Maybe::Absent(lowered::Absent::OtherSort),
@@ -10526,8 +10505,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<CompTypeId, lowered::Absent>
     {
         self.lowered_at(position).and_then(|held| match held {
-            | Lowered::CompType(id) => Maybe::Present(id),
-            | Lowered::Value(_)
+            Lowered::CompType(id) => Maybe::Present(id),
+            Lowered::Value(_)
             | Lowered::Computation(_)
             | Lowered::ValueType(_)
             | Lowered::Function { .. } => Maybe::Absent(lowered::Absent::OtherSort),
@@ -10564,8 +10543,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<ValueTypeId, lowered::Absent>
     {
         self.lowered_at(position).and_then(|held| match held {
-            | Lowered::Function { signature, .. } => signature,
-            | Lowered::Value(_)
+            Lowered::Function { signature, .. } => signature,
+            Lowered::Value(_)
             | Lowered::Computation(_)
             | Lowered::ValueType(_)
             | Lowered::CompType(_) => Maybe::Absent(lowered::Absent::OtherSort),
@@ -10601,8 +10580,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<ValueId, lowered::Absent>
     {
         self.lowered_at(position).and_then(|held| match held {
-            | Lowered::Function { body, .. } => Maybe::Present(body),
-            | Lowered::Value(_)
+            Lowered::Function { body, .. } => Maybe::Present(body),
+            Lowered::Value(_)
             | Lowered::Computation(_)
             | Lowered::ValueType(_)
             | Lowered::CompType(_) => Maybe::Absent(lowered::Absent::OtherSort),
@@ -10731,7 +10710,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             for written in &module.attributes {
                 self.fuel.spend()?;
                 match self.read_attribute(written, &mut seen, arena) {
-                    | Ok(Filing::Filed { entry, laws }) => {
+                    Ok(Filing::Filed { entry, laws }) => {
                         if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
                             self.asked.extend(
                                 (usize::from(module.first) .. usize::from(module.end))
@@ -10749,8 +10728,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             table.file_laws(key, laws);
                         }
                     },
-                    | Ok(Filing::Unlowered) => {},
-                    | Err(refusal) => {
+                    Ok(Filing::Unlowered) => {},
+                    Err(refusal) => {
                         if refusal.classify() == FailureClass::EngineFault {
                             return Err(refusal);
                         }
@@ -10822,7 +10801,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             for written in core::mem::take(&mut slot.attributes) {
                 self.fuel.spend()?;
                 match self.read_attribute(&written, &mut seen, arena) {
-                    | Ok(Filing::Filed { entry, laws }) => {
+                    Ok(Filing::Filed { entry, laws }) => {
                         if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
                             let _first = self.asked.insert(SlotIndex::from(index));
                         }
@@ -10833,8 +10812,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             table.file_laws(key, laws);
                         }
                     },
-                    | Ok(Filing::Unlowered) => {},
-                    | Err(refusal) => {
+                    Ok(Filing::Unlowered) => {},
+                    Err(refusal) => {
                         if refusal.classify() == FailureClass::EngineFault {
                             return Err(refusal);
                         }
@@ -11063,7 +11042,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.payload_form_of(written, name)?,
             written.payload,
         ) {
-            | (AttributeSchema::MarkerOr(option), PayloadForm::Text, Payload::Written(placed))
+            (AttributeSchema::MarkerOr(option), PayloadForm::Text, Payload::Written(placed))
                 if !matches!(
                     parse_literal(Former::Text, self.text_at(placed)),
                     Maybe::Present(Literal::Text(ref text)) if text.as_ref() == option
@@ -11071,21 +11050,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
             {
                 PayloadForm::OtherText
             },
-            | (_, form, _) => form,
+            (_, form, _) => form,
         };
         match payload_verdict(schema, form) {
-            | PayloadVerdict::Admitted => {},
-            | PayloadVerdict::Missing => {
+            PayloadVerdict::Admitted => {},
+            PayloadVerdict::Missing => {
                 return Err(LoweringRefusal::MissingPayload {
                     span: written.span,
                     name,
                     expected: schema,
                 });
             },
-            | PayloadVerdict::IllTyped => {
+            PayloadVerdict::IllTyped => {
                 let span = match written.payload {
-                    | Payload::Written(payload) => payload.span,
-                    | Payload::Unwritten => written.span,
+                    Payload::Written(payload) => payload.span,
+                    Payload::Unwritten => written.span,
                 };
                 return Err(LoweringRefusal::IllTypedPayload {
                     span,
@@ -11096,8 +11075,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
         }
         let (value, named) = match written.payload {
-            | Payload::Unwritten => (Maybe::Absent(payload::Absent::Marker), Vec::new()),
-            | Payload::Written(placed) => {
+            Payload::Unwritten => (Maybe::Absent(payload::Absent::Marker), Vec::new()),
+            Payload::Written(placed) => {
                 let Maybe::Present(value) = self.value_at(placed.node)
                 else {
                     return Ok(Filing::Unlowered);
@@ -11250,12 +11229,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<NodeKey, declaration_half::Absent>
     {
         match slot.refusal {
-            | Maybe::Present((
+            Maybe::Present((
                 at,
                 LoweringRefusal::DuplicateDefinition { .. }
                 | LoweringRefusal::DuplicateSignature { .. },
             )) => Maybe::Present(self.key_at(at)),
-            | Maybe::Present(_) | Maybe::Absent(_) => {
+            Maybe::Present(_) | Maybe::Absent(_) => {
                 Maybe::Absent(declaration_half::Absent::Unwritten)
             },
         }
@@ -11453,18 +11432,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<DeclarationOutcome<'source>, lowered::Absent>
     {
         match self.collected.stratum_of(slot.container) {
-            | Stratum::Module => self.own_outcome(position, slot),
-            | Stratum::Functor(_) | Stratum::Parameter(_) => {
-                match self.own_outcome(position, slot) {
-                    | Maybe::Present(DeclarationOutcome::Refused(refusal)) => {
-                        Maybe::Present(DeclarationOutcome::Refused(refusal))
-                    },
-                    | Maybe::Present(_) | Maybe::Absent(_) => {
-                        Maybe::Absent(lowered::Absent::Templated)
-                    },
-                }
+            Stratum::Module => self.own_outcome(position, slot),
+            Stratum::Functor(_) | Stratum::Parameter(_) => match self.own_outcome(position, slot) {
+                Maybe::Present(DeclarationOutcome::Refused(refusal)) => {
+                    Maybe::Present(DeclarationOutcome::Refused(refusal))
+                },
+                Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Templated),
             },
-            | Stratum::Instance(_) => self
+            Stratum::Instance(_) => self
                 .instantiated
                 .get(&position)
                 .copied()
@@ -11692,15 +11667,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Maybe::Absent(lowered::Absent::Unminted);
         }
         let declared = match slot.signature {
-            | Maybe::Present(half) => match half.operand {
-                | Operand::Written(written) => self.value_type_at(written.node),
-                | Operand::Function => self.signature_at(half.declaration.node),
-                | Operand::Model(_) => self
+            Maybe::Present(half) => match half.operand {
+                Operand::Written(written) => self.value_type_at(written.node),
+                Operand::Function => self.signature_at(half.declaration.node),
+                Operand::Model(_) => self
                     .modelled
                     .get(&position)
                     .copied()
                     .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                | Operand::Member(_)
+                Operand::Member(_)
                 | Operand::Data(_)
                 | Operand::Words(_)
                 | Operand::Loop { .. }
@@ -11709,18 +11684,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Operand::Presented
                 | Operand::Code => Maybe::Absent(lowered::Absent::Unminted),
             },
-            | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
+            Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
         let body = match slot.definition {
-            | Maybe::Present(half) => match half.operand {
-                | Operand::Written(written) => self.value_at(written.node),
-                | Operand::Function => self.function_body_at(half.declaration.node),
-                | Operand::Member(_) => self
+            Maybe::Present(half) => match half.operand {
+                Operand::Written(written) => self.value_at(written.node),
+                Operand::Function => self.function_body_at(half.declaration.node),
+                Operand::Member(_) => self
                     .witnessed
                     .get(&position)
                     .copied()
                     .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                | Operand::Data(_)
+                Operand::Data(_)
                 | Operand::Words(_)
                 | Operand::Loop { .. }
                 | Operand::Operation
@@ -11729,22 +11704,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Operand::Code
                 | Operand::Model(_) => Maybe::Absent(lowered::Absent::Unminted),
             },
-            | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
+            Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
         match (declared, body) {
-            | (Maybe::Present(declared_type), Maybe::Present(body)) => {
+            (Maybe::Present(declared_type), Maybe::Present(body)) => {
                 Maybe::Present(DeclarationOutcome::Completed {
                     declared_type,
                     body,
                 })
             },
-            | (Maybe::Present(declared_type), Maybe::Absent(_)) => {
+            (Maybe::Present(declared_type), Maybe::Absent(_)) => {
                 Maybe::Present(DeclarationOutcome::Uncompleted { declared_type })
             },
-            | (Maybe::Absent(_), Maybe::Present(body)) => {
+            (Maybe::Absent(_), Maybe::Present(body)) => {
                 Maybe::Present(DeclarationOutcome::Bodied { body })
             },
-            | (Maybe::Absent(reason), Maybe::Absent(_)) => Maybe::Absent(reason),
+            (Maybe::Absent(reason), Maybe::Absent(_)) => Maybe::Absent(reason),
         }
     }
 
@@ -11912,7 +11887,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let mut modules = Vec::new();
             for &export in &structure.exports {
                 match export {
-                    | Member::Slot(slot) => {
+                    Member::Slot(slot) => {
                         let read = structure.exported_as.get(&slot).copied().unwrap_or(slot);
                         if let Some(member) = self.collected.slots.get(usize::from(slot))
                             && let Some(reader) = self.collected.slots.get(usize::from(read))
@@ -11923,7 +11898,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             });
                         }
                     },
-                    | Member::Module(nested) => {
+                    Member::Module(nested) => {
                         if let Some(member) = self.collected.structures.get(usize::from(nested)) {
                             modules.push(member.name);
                         }
@@ -11934,14 +11909,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let mut sealed = Vec::new();
             for component in structure.exported_types() {
                 match component.meaning {
-                    | TypeMeaning::Manifest(defined) => types.push(ManifestComponent {
+                    TypeMeaning::Manifest(defined) => types.push(ManifestComponent {
                         name: component.name,
                         defined: match self.value_type_at(defined.node) {
-                            | Maybe::Present(id) => Maybe::Present(id),
-                            | Maybe::Absent(_) => Maybe::Absent(manifest_type::Absent::Unlowered),
+                            Maybe::Present(id) => Maybe::Present(id),
+                            Maybe::Absent(_) => Maybe::Absent(manifest_type::Absent::Unlowered),
                         },
                     }),
-                    | TypeMeaning::Sealed => {
+                    TypeMeaning::Sealed => {
                         if let Some(atom) = self.collected.slots.get(usize::from(component.held)) {
                             sealed.push(SealedComponent {
                                 name: component.name,
@@ -11949,7 +11924,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             });
                         }
                     },
-                    | TypeMeaning::Instantiated { defined, instance } => {
+                    TypeMeaning::Instantiated { defined, instance } => {
                         types.push(ManifestComponent {
                             name: component.name,
                             defined: self
@@ -11962,7 +11937,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 ),
                         });
                     },
-                    | TypeMeaning::Family(_) => {},
+                    TypeMeaning::Family(_) => {},
                 }
             }
             lowered.push(LoweredStructure::new(
@@ -12097,36 +12072,36 @@ impl Sink<'_>
         };
         let inserted = origin.inserted(insertion);
         match (minted, insertion) {
-            | (Maybe::Present(Lowered::Value(forced)), Insertion::Force) => {
+            (Maybe::Present(Lowered::Value(forced)), Insertion::Force) => {
                 let id = self.arena.computation_force(forced);
                 Maybe::Present(self.computation(id, inserted))
             },
-            | (Maybe::Present(Lowered::ValueType(returned)), Insertion::Returner) => {
+            (Maybe::Present(Lowered::ValueType(returned)), Insertion::Returner) => {
                 let id = self.arena.comp_type_returner(returned);
                 self.origins.record_comp_type(id, inserted);
                 Maybe::Present(Lowered::CompType(id))
             },
-            | (Maybe::Present(Lowered::ValueType(quoted)), Insertion::Quote) => {
+            (Maybe::Present(Lowered::ValueType(quoted)), Insertion::Quote) => {
                 let id = self.arena.value_quote(quoted);
                 Maybe::Present(self.value(id, inserted))
             },
-            | (Maybe::Present(Lowered::CompType(quoted)), Insertion::Quote) => {
+            (Maybe::Present(Lowered::CompType(quoted)), Insertion::Quote) => {
                 let id = self.arena.value_quote_computation(quoted);
                 Maybe::Present(self.value(id, inserted))
             },
-            | (Maybe::Present(Lowered::Computation(returned)), Insertion::Endpoint) => {
+            (Maybe::Present(Lowered::Computation(returned)), Insertion::Endpoint) => {
                 let id = self.arena.value_returned(returned);
                 Maybe::Present(self.value(id, inserted))
             },
-            | (Maybe::Present(Lowered::Computation(nested)), Insertion::Nested) => {
+            (Maybe::Present(Lowered::Computation(nested)), Insertion::Nested) => {
                 let id = self.arena.value_nested(nested);
                 Maybe::Present(self.value(id, inserted))
             },
-            | (Maybe::Present(Lowered::Value(returned)), Insertion::Return) => {
+            (Maybe::Present(Lowered::Value(returned)), Insertion::Return) => {
                 let id = self.arena.computation_return(returned);
                 Maybe::Present(self.computation(id, inserted))
             },
-            | (
+            (
                 Maybe::Present(_),
                 Insertion::Force
                 | Insertion::Thunk
@@ -12143,7 +12118,7 @@ impl Sink<'_>
                 | Insertion::Nested
                 | Insertion::Unwind,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
-            | (Maybe::Absent(reason), _) => Maybe::Absent(reason),
+            (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }
     }
 
@@ -12245,15 +12220,15 @@ impl Sink<'_>
     ) -> Lowered
     {
         let id = match atom {
-            | TypeAtom::Boolean => {
+            TypeAtom::Boolean => {
                 let unit = self.arena.value_type_unit();
                 self.origins.record_value_type(unit, origin);
                 self.arena.value_type_sum(&[unit, unit])
             },
-            | TypeAtom::Unit => self.arena.value_type_unit(),
-            | TypeAtom::Integer => self.arena.value_type_base(BaseType::Integer),
-            | TypeAtom::Text => self.arena.value_type_base(BaseType::String),
-            | TypeAtom::Void => self.arena.value_type_sum(&[]),
+            TypeAtom::Unit => self.arena.value_type_unit(),
+            TypeAtom::Integer => self.arena.value_type_base(BaseType::Integer),
+            TypeAtom::Text => self.arena.value_type_base(BaseType::String),
+            TypeAtom::Void => self.arena.value_type_sum(&[]),
         };
         self.origins.record_value_type(id, origin);
 
@@ -12348,8 +12323,8 @@ fn parameter<'source>(
         return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
     }
     match first {
-        | Some(binder) if count == 1_usize => Ok(binder),
-        | Some(_) | None => Err(site.out(FragmentBoundary::Arity(OperandCount::from(count)))),
+        Some(binder) if count == 1_usize => Ok(binder),
+        Some(_) | None => Err(site.out(FragmentBoundary::Arity(OperandCount::from(count)))),
     }
 }
 
@@ -12455,10 +12430,10 @@ fn statement_form(
         let mut ahead = cursor.clone();
         let _fork = ahead.read();
         return match ahead.at(TileName::BANG) {
-            | Maybe::Present(_) => {
+            Maybe::Present(_) => {
                 Maybe::Present((FormName::FORK_SHARED_STATEMENT, FragmentBoundary::Reserved))
             },
-            | Maybe::Absent(_) => Maybe::Absent(statement::Absent::Read),
+            Maybe::Absent(_) => Maybe::Absent(statement::Absent::Read),
         };
     }
     if label == TileName::RUN || label == TileName::RECV {
@@ -12632,8 +12607,8 @@ fn closed<'source>(
 ) -> Result<(), LoweringRefusal<'source>>
 {
     match cursor.tile(label) {
-        | Maybe::Present(_) => Ok(()),
-        | Maybe::Absent(_) => Err(site.fault(cursor.here(), FormFault::MisplacedTile)),
+        Maybe::Present(_) => Ok(()),
+        Maybe::Absent(_) => Err(site.fault(cursor.here(), FormFault::MisplacedTile)),
     }
 }
 
@@ -12671,11 +12646,11 @@ fn exhausted<'source>(
 ) -> Result<(), LoweringRefusal<'source>>
 {
     match cursor.peek() {
-        | Maybe::Absent(_) => Ok(()),
-        | Maybe::Present(Piece::Operand(stray)) => {
+        Maybe::Absent(_) => Ok(()),
+        Maybe::Present(Piece::Operand(stray)) => {
             Err(site.fault(stray.span, FormFault::ExtraOperand))
         },
-        | Maybe::Present(Piece::Tile { at, .. }) => {
+        Maybe::Present(Piece::Tile { at, .. }) => {
             Err(site.fault(at.span, FormFault::MisplacedTile))
         },
     }
@@ -12870,9 +12845,9 @@ pub fn parse_literal(
 {
     let spelled: &str = text.as_ref();
     let found = match former {
-        | Former::Number => Magnitude::from_decimal_text(String::from(spelled))
+        Former::Number => Magnitude::from_decimal_text(String::from(spelled))
             .map(|magnitude| Literal::Integer(IntegerLiteral::new(Sign::NonNegative, magnitude))),
-        | Former::Text => spelled
+        Former::Text => spelled
             .strip_prefix('"')
             .and_then(|opened| opened.strip_suffix('"'))
             .map(|content| {
@@ -12880,7 +12855,7 @@ pub fn parse_literal(
                     content,
                 ))))
             }),
-        | Former::Name
+        Former::Name
         | Former::Hole
         | Former::Binary
         | Former::Unary
@@ -13009,17 +12984,17 @@ pub fn decode_escapes(content: SourceFragment<'_>) -> String
             continue;
         }
         match chars.next() {
-            | Some('n') => decoded.push('\n'),
-            | Some('t') => decoded.push('\t'),
-            | Some('r') => decoded.push('\r'),
-            | Some('0') => decoded.push('\0'),
-            | Some('\r') => {
+            Some('n') => decoded.push('\n'),
+            Some('t') => decoded.push('\t'),
+            Some('r') => decoded.push('\r'),
+            Some('0') => decoded.push('\0'),
+            Some('\r') => {
                 if chars.peek() == Some(&'\n') {
                     let _break = chars.next();
                 }
             },
-            | Some('\n') | None => {},
-            | Some(other) => decoded.push(other),
+            Some('\n') | None => {},
+            Some(other) => decoded.push(other),
         }
     }
 
@@ -13149,8 +13124,8 @@ mod tests
                 Maybe::Present(_)
             ));
             match arena.computation(body) {
-                | Some(&Computation::Lambda(inner)) => body = inner,
-                | Some(&Computation::Primitive { ref arguments, .. }) => {
+                Some(&Computation::Lambda(inner)) => body = inner,
+                Some(&Computation::Primitive { ref arguments, .. }) => {
                     for &argument in arguments.iter() {
                         assert!(matches!(
                             module.origins().value(argument),
@@ -13159,7 +13134,7 @@ mod tests
                     }
                     break;
                 },
-                | other => panic!("native closure shape: {other:?}"),
+                other => panic!("native closure shape: {other:?}"),
             }
         }
     }
@@ -13185,8 +13160,8 @@ mod tests
             panic!("native subtraction");
         };
         let operands = arguments.map(|argument| match arena.value(argument) {
-            | Some(&Value::Literal(Literal::Integer(ref integer))) => integer.magnitude().as_ref(),
-            | _ => panic!("integer operand"),
+            Some(&Value::Literal(Literal::Integer(ref integer))) => integer.magnitude().as_ref(),
+            _ => panic!("integer operand"),
         });
         assert_eq!(operands, ["19", "7"]);
         assert_eq!(
@@ -13444,10 +13419,10 @@ mod tests
     fn body_of(outcome: DeclarationOutcome<'_>) -> gandr_core_term::ValueId
     {
         match outcome {
-            | DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => {
+            DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => {
                 body
             },
-            | DeclarationOutcome::Uncompleted { .. }
+            DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::Refused(_) => {
@@ -13477,9 +13452,9 @@ mod tests
     fn declared_of(outcome: DeclarationOutcome<'_>) -> gandr_core_term::ValueTypeId
     {
         match outcome {
-            | DeclarationOutcome::Completed { declared_type, .. }
+            DeclarationOutcome::Completed { declared_type, .. }
             | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
-            | DeclarationOutcome::Bodied { .. }
+            DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::Refused(_) => {
@@ -13719,11 +13694,11 @@ mod tests
             "`+U` against a bracket is the bridge"
         );
         let summands = |id| match arena.value_type(id) {
-            | Some(&ValueType::Sum(ref parts)) => parts
+            Some(&ValueType::Sum(ref parts)) => parts
                 .iter()
                 .map(|&part| spine(&arena, part).join(" "))
                 .collect::<Vec<_>>(),
-            | _ => Vec::new(),
+            _ => Vec::new(),
         };
         assert_eq!(
             summands(declared_of(lowered[1])),
@@ -13911,10 +13886,10 @@ mod tests
             panic!("the result is a returner");
         };
         let decoded = |id| match arena.value_type(id) {
-            | Some(&ValueType::Element { code, ref target }) => {
+            Some(&ValueType::Element { code, ref target }) => {
                 (arena.value(code).cloned(), Some(target.clone()))
             },
-            | _ => (None, None),
+            _ => (None, None),
         };
         let fuss_free = Level::constant(LevelConstant::ZERO);
         let innermost = Value::Variable {
@@ -13963,10 +13938,10 @@ mod tests
         );
         let lowered = outcomes(&module);
         let decoded = |id| match arena.value_type(id) {
-            | Some(&ValueType::Element { code, ref target }) => {
+            Some(&ValueType::Element { code, ref target }) => {
                 (arena.value(code).cloned(), Some(target.clone()))
             },
-            | _ => (None, None),
+            _ => (None, None),
         };
         assert_eq!(
             decoded(declared_of(lowered[1])),
@@ -13997,10 +13972,10 @@ mod tests
             panic!("`+U c` is a thunk type");
         };
         let comp_decoded = |id| match arena.comp_type(id) {
-            | Some(&CompType::Element { code, ref target }) => {
+            Some(&CompType::Element { code, ref target }) => {
                 (arena.value(code).cloned(), Some(target.clone()))
             },
-            | _ => (None, None),
+            _ => (None, None),
         };
         let code = (
             Some(Value::Variable {
@@ -14039,13 +14014,11 @@ mod tests
                 .value(body)
                 .map(|origin| origin.provenance());
             match arena.value(body) {
-                | Some(&Value::Quote(inner)) => {
-                    (arena.value_type(inner).cloned(), None, provenance)
-                },
-                | Some(&Value::QuoteComputation(inner)) => {
+                Some(&Value::Quote(inner)) => (arena.value_type(inner).cloned(), None, provenance),
+                Some(&Value::QuoteComputation(inner)) => {
                     (None, arena.comp_type(inner).cloned(), provenance)
                 },
-                | _ => (None, None, provenance),
+                _ => (None, None, provenance),
             }
         };
         let inserted = Maybe::Present(Provenance::Inserted(Insertion::Quote));
@@ -14666,8 +14639,8 @@ mod tests
             panic!("the second statement binds over the rest of the block");
         };
         let returned = |id| match arena.computation(id) {
-            | Some(&Computation::Return(value)) => arena.value(value).cloned(),
-            | _ => None,
+            Some(&Computation::Return(value)) => arena.value(value).cloned(),
+            _ => None,
         };
 
         assert_eq!(
@@ -14708,10 +14681,10 @@ mod tests
             panic!("the named statement is the outer bind");
         };
         let written = |opener| match module.origins().binder(opener) {
-            | Maybe::Present(origin) => {
+            Maybe::Present(origin) => {
                 text.get(usize::from(origin.span().start()) .. usize::from(origin.span().end()))
             },
-            | Maybe::Absent(_) => None,
+            Maybe::Absent(_) => None,
         };
         assert_eq!(
             written(lambda),
@@ -14770,8 +14743,8 @@ mod tests
         };
         assert_eq!(arena.value(scrutinee), Some(&variable(0_u32)));
         let returned = |id| match arena.computation(id) {
-            | Some(&Computation::Return(value)) => arena.value(value).cloned(),
-            | _ => None,
+            Some(&Computation::Return(value)) => arena.value(value).cloned(),
+            _ => None,
         };
         assert_eq!(
             [returned(discarded), returned(body)],
@@ -15313,36 +15286,36 @@ mod tests
         let mut tokens = Vec::new();
         while let Some(next) = pending.pop() {
             match next {
-                | TypeNode::Value(at) => match arena.value_type(at) {
-                    | Some(&ValueType::Base(base)) => tokens.push(format!("{base:?}")),
-                    | Some(&ValueType::Product(ref parts)) if parts.is_empty() => {
+                TypeNode::Value(at) => match arena.value_type(at) {
+                    Some(&ValueType::Base(base)) => tokens.push(format!("{base:?}")),
+                    Some(&ValueType::Product(ref parts)) if parts.is_empty() => {
                         tokens.push(String::from("Unit"));
                     },
-                    | Some(&ValueType::Thunk(inner)) => {
+                    Some(&ValueType::Thunk(inner)) => {
                         tokens.push(String::from("U"));
                         pending.push(TypeNode::Computation(inner));
                     },
-                    | Some(&ValueType::Product(ref parts)) => {
+                    Some(&ValueType::Product(ref parts)) => {
                         tokens.push(String::from("*"));
                         pending.extend(parts.iter().rev().map(|&part| TypeNode::Value(part)));
                     },
-                    | Some(&ValueType::Sum(ref parts)) => {
+                    Some(&ValueType::Sum(ref parts)) => {
                         tokens.push(String::from("+"));
                         pending.extend(parts.iter().rev().map(|&part| TypeNode::Value(part)));
                     },
-                    | other => tokens.push(format!("{other:?}")),
+                    other => tokens.push(format!("{other:?}")),
                 },
-                | TypeNode::Computation(at) => match arena.comp_type(at) {
-                    | Some(&CompType::Returner { result: inner, .. }) => {
+                TypeNode::Computation(at) => match arena.comp_type(at) {
+                    Some(&CompType::Returner { result: inner, .. }) => {
                         tokens.push(String::from("F"));
                         pending.push(TypeNode::Value(inner));
                     },
-                    | Some(&CompType::Arrow { domain, codomain }) => {
+                    Some(&CompType::Arrow { domain, codomain }) => {
                         tokens.push(String::from("->"));
                         pending.push(TypeNode::Computation(codomain));
                         pending.push(TypeNode::Value(domain));
                     },
-                    | other => tokens.push(format!("{other:?}")),
+                    other => tokens.push(format!("{other:?}")),
                 },
             }
         }
@@ -15430,8 +15403,8 @@ mod tests
                 })
         };
         let pi = |id| match arena.value_type(id) {
-            | Some(&ValueType::StaticPi { domain, codomain }) => Some((domain, codomain)),
-            | _ => None,
+            Some(&ValueType::StaticPi { domain, codomain }) => Some((domain, codomain)),
+            _ => None,
         };
         let Some((family, rest)) = pi(declared_of(outcomes(&module)[0]))
         else {
@@ -15516,8 +15489,8 @@ mod tests
                 })
         };
         let parts = |id| match arena.value_type(id) {
-            | Some(&ValueType::Product(ref parts)) => Some(parts.to_vec()),
-            | _ => None,
+            Some(&ValueType::Product(ref parts)) => Some(parts.to_vec()),
+            _ => None,
         };
         let spines = |id| {
             parts(id)
@@ -15593,14 +15566,14 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from("def k = \\A. \\B. A * B ;"), &mut arena);
         let lambda = |id| match arena.value(id) {
-            | Some(&Value::StaticLambda(body)) => Some(body),
-            | _ => None,
+            Some(&Value::StaticLambda(body)) => Some(body),
+            _ => None,
         };
         let decoded = |id| match arena.value_type(id) {
-            | Some(&ValueType::Element { code, ref target }) => {
+            Some(&ValueType::Element { code, ref target }) => {
                 (arena.value(code).cloned(), Some(target.clone()))
             },
-            | _ => (None, None),
+            _ => (None, None),
         };
         let variable = |index: u32| {
             (
@@ -15668,18 +15641,18 @@ mod tests
         };
         let constant = Value::Constant(ConstantIndex::from(0_usize));
         let applied = |id| match arena.value(id) {
-            | Some(&Value::StaticApplication(head, argument)) => {
+            Some(&Value::StaticApplication(head, argument)) => {
                 Some((arena.value(head).cloned(), arena.value(argument).cloned()))
             },
-            | _ => None,
+            _ => None,
         };
         let decoded = |id| match arena.comp_type(id) {
-            | Some(&CompType::Element { code, ref target }) => Some((code, target.clone())),
-            | _ => None,
+            Some(&CompType::Element { code, ref target }) => Some((code, target.clone())),
+            _ => None,
         };
         let lambda = |id| match arena.value(id) {
-            | Some(&Value::StaticLambda(body)) => Some(body),
-            | _ => None,
+            Some(&Value::StaticLambda(body)) => Some(body),
+            _ => None,
         };
 
         let Some(&ValueType::Thunk(suspended)) = arena.value_type(declared_of(lowered[1]))
@@ -16612,8 +16585,8 @@ mod tests
             key
         };
         let text = |key| match module.documentation(key) {
-            | Maybe::Present(found) => Some(String::from(found.text().as_ref())),
-            | Maybe::Absent(_) => None,
+            Maybe::Present(found) => Some(String::from(found.text().as_ref())),
+            Maybe::Absent(_) => None,
         };
 
         assert_eq!(

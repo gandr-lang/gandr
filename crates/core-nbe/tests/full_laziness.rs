@@ -100,9 +100,9 @@ mod full_laziness
         fn from(index: Index) -> Self
         {
             Self::from(match index {
-                | Index::Zero => 0_u32,
-                | Index::One => 1_u32,
-                | Index::Two => 2_u32,
+                Index::Zero => 0_u32,
+                Index::One => 1_u32,
+                Index::Two => 2_u32,
             })
         }
     }

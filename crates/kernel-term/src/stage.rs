@@ -243,20 +243,20 @@ impl fmt::Display for StageError
     ) -> fmt::Result
     {
         match *self {
-            | Self::UnknownTerm(id) => write!(f, "unknown stage term {}", id.0),
-            | Self::UnknownType(id) => write!(f, "unknown stage type {}", id.0),
-            | Self::Unbound(index) => write!(f, "unbound stage variable {}", index.0),
-            | Self::MissingHypothesis(model) => {
+            Self::UnknownTerm(id) => write!(f, "unknown stage term {}", id.0),
+            Self::UnknownType(id) => write!(f, "unknown stage type {}", id.0),
+            Self::Unbound(index) => write!(f, "unbound stage variable {}", index.0),
+            Self::MissingHypothesis(model) => {
                 write!(f, "missing In hypothesis for model {}", model.0)
             },
-            | Self::TypeMismatch => f.write_str("stage type mismatch"),
-            | Self::InnerToOuter => f.write_str("inner-to-outer elimination refused"),
-            | Self::StageMismatch => f.write_str("stage universe mismatch"),
-            | Self::Overflow => f.write_str("stage arithmetic overflow"),
-            | Self::Exhausted => f.write_str("stage work budget exhausted"),
-            | Self::InvalidCertificate => f.write_str("invalid stage certificate"),
-            | Self::Unbalanced => f.write_str("unbalanced stage worklist"),
-            | Self::NotResidual => f.write_str("not a closed first-order residual"),
+            Self::TypeMismatch => f.write_str("stage type mismatch"),
+            Self::InnerToOuter => f.write_str("inner-to-outer elimination refused"),
+            Self::StageMismatch => f.write_str("stage universe mismatch"),
+            Self::Overflow => f.write_str("stage arithmetic overflow"),
+            Self::Exhausted => f.write_str("stage work budget exhausted"),
+            Self::InvalidCertificate => f.write_str("invalid stage certificate"),
+            Self::Unbalanced => f.write_str("unbalanced stage worklist"),
+            Self::NotResidual => f.write_str("not a closed first-order residual"),
         }
     }
 }
@@ -409,8 +409,8 @@ impl Arena
     ) -> Maybe<TermId, interned::Absent>
     {
         match self.term_ids.probe(hash_of(term), &self.terms, term) {
-            | Probe::Found(position) => Maybe::Present(TermId(position)),
-            | Probe::Vacant(_) => Maybe::Absent(interned::Absent::Uninterned),
+            Probe::Found(position) => Maybe::Present(TermId(position)),
+            Probe::Vacant(_) => Maybe::Absent(interned::Absent::Uninterned),
         }
     }
 
@@ -449,19 +449,19 @@ impl Arena
     ) -> Result<TypeId, StageError>
     {
         match ty {
-            | Type::Arrow(domain, codomain) => {
+            Type::Arrow(domain, codomain) => {
                 self.ty(domain)?;
                 self.ty(codomain)?;
             },
-            | Type::Lift(inner) => {
+            Type::Lift(inner) => {
                 self.ty(inner)?;
             },
-            | Type::In(_) | Type::Universe(_) | Type::Nat(_) => {},
+            Type::In(_) | Type::Universe(_) | Type::Nat(_) => {},
         }
         let hash = hash_of(&ty);
         match self.type_ids.probe(hash, &self.types, &ty) {
-            | Probe::Found(position) => Ok(TypeId(position)),
-            | Probe::Vacant(slot) => {
+            Probe::Found(position) => Ok(TypeId(position)),
+            Probe::Vacant(slot) => {
                 let id = TypeId(self.types.len());
                 self.type_ids
                     .insert(slot, hash, &self.types)
@@ -504,15 +504,21 @@ impl Arena
             self.term(child)?;
         }
         match term {
-            | Term::Code(ty) | Term::Lambda(ty, _) | Term::Eliminate(_, ty) => {
+            Term::Code(ty) | Term::Lambda(ty, _) | Term::Eliminate(_, ty) => {
                 self.ty(ty)?;
             },
-            | _ => {},
+            Term::Variable(_)
+            | Term::Natural(..)
+            | Term::Apply(..)
+            | Term::Multiply(..)
+            | Term::Quote(_)
+            | Term::Splice(_)
+            | Term::Iterate(..) => {},
         }
         let hash = hash_of(&term);
         match self.term_ids.probe(hash, &self.terms, &term) {
-            | Probe::Found(position) => Ok(TermId(position)),
-            | Probe::Vacant(slot) => {
+            Probe::Found(position) => Ok(TermId(position)),
+            Probe::Vacant(slot) => {
                 let id = TermId(self.terms.len());
                 self.term_ids
                     .insert(slot, hash, &self.terms)
@@ -654,8 +660,8 @@ impl IntoIterator for Child
     fn into_iter(self) -> Self::IntoIter
     {
         match self {
-            | Self::Vacant => None,
-            | Self::Present(id) => Some(id),
+            Self::Vacant => None,
+            Self::Present(id) => Some(id),
         }
         .into_iter()
     }
@@ -686,8 +692,8 @@ impl Child
     pub fn iter_mut(&mut self) -> core::option::IntoIter<&mut TermId>
     {
         match *self {
-            | Self::Vacant => None,
-            | Self::Present(ref mut id) => Some(id),
+            Self::Vacant => None,
+            Self::Present(ref mut id) => Some(id),
         }
         .into_iter()
     }
@@ -704,15 +710,15 @@ impl Term
     pub fn children(self) -> [Child; 3]
     {
         match self {
-            | Self::Variable(_) | Self::Natural(..) | Self::Code(_) => [Child::Vacant; 3],
-            | Self::Lambda(_, body)
+            Self::Variable(_) | Self::Natural(..) | Self::Code(_) => [Child::Vacant; 3],
+            Self::Lambda(_, body)
             | Self::Quote(body)
             | Self::Splice(body)
             | Self::Eliminate(body, _) => [Child::Present(body), Child::Vacant, Child::Vacant],
-            | Self::Apply(first, second) | Self::Multiply(first, second) => {
+            Self::Apply(first, second) | Self::Multiply(first, second) => {
                 [Child::Present(first), Child::Present(second), Child::Vacant]
             },
-            | Self::Iterate(count, zero, step) => [
+            Self::Iterate(count, zero, step) => [
                 Child::Present(count),
                 Child::Present(zero),
                 Child::Present(step),
@@ -756,34 +762,34 @@ impl Term
     {
         let [first, second, third] = children;
         Ok(match (self, first, second, third) {
-            | (Self::Lambda(ty, _), Child::Present(body), Child::Vacant, Child::Vacant) => {
+            (Self::Lambda(ty, _), Child::Present(body), Child::Vacant, Child::Vacant) => {
                 Self::Lambda(ty, body)
             },
-            | (Self::Quote(_), Child::Present(body), Child::Vacant, Child::Vacant) => {
+            (Self::Quote(_), Child::Present(body), Child::Vacant, Child::Vacant) => {
                 Self::Quote(body)
             },
-            | (Self::Splice(_), Child::Present(body), Child::Vacant, Child::Vacant) => {
+            (Self::Splice(_), Child::Present(body), Child::Vacant, Child::Vacant) => {
                 Self::Splice(body)
             },
-            | (Self::Eliminate(_, ty), Child::Present(body), Child::Vacant, Child::Vacant) => {
+            (Self::Eliminate(_, ty), Child::Present(body), Child::Vacant, Child::Vacant) => {
                 Self::Eliminate(body, ty)
             },
-            | (Self::Apply(..), Child::Present(a), Child::Present(b), Child::Vacant) => {
+            (Self::Apply(..), Child::Present(a), Child::Present(b), Child::Vacant) => {
                 Self::Apply(a, b)
             },
-            | (Self::Multiply(..), Child::Present(a), Child::Present(b), Child::Vacant) => {
+            (Self::Multiply(..), Child::Present(a), Child::Present(b), Child::Vacant) => {
                 Self::Multiply(a, b)
             },
-            | (Self::Iterate(..), Child::Present(a), Child::Present(b), Child::Present(c)) => {
+            (Self::Iterate(..), Child::Present(a), Child::Present(b), Child::Present(c)) => {
                 Self::Iterate(a, b, c)
             },
-            | (
+            (
                 leaf @ (Self::Variable(_) | Self::Natural(..) | Self::Code(_)),
                 Child::Vacant,
                 Child::Vacant,
                 Child::Vacant,
             ) => leaf,
-            | _ => return Err(StageError::Unbalanced),
+            _ => return Err(StageError::Unbalanced),
         })
     }
 }
@@ -941,15 +947,15 @@ fn rewrite(
                 }
                 else {
                     match job {
-                        | Rewrite::Shift(amount) => {
+                        Rewrite::Shift(amount) => {
                             let raised =
                                 index.0.checked_add(amount.0).ok_or(StageError::Overflow)?;
                             arena.alloc(Term::Variable(Index(raised)))?
                         },
-                        | Rewrite::Substitute(_) if index == depth => {
+                        Rewrite::Substitute(_) if index == depth => {
                             *shifted.get(&depth).ok_or(StageError::Unbalanced)?
                         },
-                        | Rewrite::Substitute(_) => arena.alloc(Term::Variable(Index(
+                        Rewrite::Substitute(_) => arena.alloc(Term::Variable(Index(
                             index.0.checked_sub(1).ok_or(StageError::Overflow)?,
                         )))?,
                     }
@@ -1127,8 +1133,8 @@ mod tests
         let mut ids = Vec::new();
         for value in 0 .. 3_000_usize {
             let term = match (value.checked_rem(3), ids.as_slice()) {
-                | (Some(1 | 2), &[.., older, newer]) => Term::Apply(newer, older),
-                | _ => Term::Natural(Stage::Outer, Natural(value)),
+                (Some(1 | 2), &[.., older, newer]) => Term::Apply(newer, older),
+                _ => Term::Natural(Stage::Outer, Natural(value)),
             };
             terms.push(term);
             ids.push(arena.alloc(term).unwrap());

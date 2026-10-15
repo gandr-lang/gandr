@@ -207,29 +207,29 @@ impl Display for RoleName
     ) -> FmtResult
     {
         f.write_str(match self.0 {
-            | HlRole::Keyword => "Keyword",
-            | HlRole::Operator => "Operator",
-            | HlRole::FunctionDef => "FunctionDef",
-            | HlRole::FunctionCall => "FunctionCall",
-            | HlRole::VariableDef => "VariableDef",
-            | HlRole::VariableParam => "VariableParam",
-            | HlRole::Member => "Member",
-            | HlRole::Variable => "Variable",
-            | HlRole::Constructor => "Constructor",
-            | HlRole::Type => "Type",
-            | HlRole::TypeBuiltin => "TypeBuiltin",
-            | HlRole::TypeVariable => "TypeVariable",
-            | HlRole::Number => "Number",
-            | HlRole::Boolean => "Boolean",
-            | HlRole::Character => "Character",
-            | HlRole::StringLit => "StringLit",
-            | HlRole::Escape => "Escape",
-            | HlRole::Comment => "Comment",
-            | HlRole::Hole => "Hole",
-            | HlRole::Label => "Label",
-            | HlRole::Path => "Path",
-            | HlRole::Directive => "Directive",
-            | HlRole::Other => "Other",
+            HlRole::Keyword => "Keyword",
+            HlRole::Operator => "Operator",
+            HlRole::FunctionDef => "FunctionDef",
+            HlRole::FunctionCall => "FunctionCall",
+            HlRole::VariableDef => "VariableDef",
+            HlRole::VariableParam => "VariableParam",
+            HlRole::Member => "Member",
+            HlRole::Variable => "Variable",
+            HlRole::Constructor => "Constructor",
+            HlRole::Type => "Type",
+            HlRole::TypeBuiltin => "TypeBuiltin",
+            HlRole::TypeVariable => "TypeVariable",
+            HlRole::Number => "Number",
+            HlRole::Boolean => "Boolean",
+            HlRole::Character => "Character",
+            HlRole::StringLit => "StringLit",
+            HlRole::Escape => "Escape",
+            HlRole::Comment => "Comment",
+            HlRole::Hole => "Hole",
+            HlRole::Label => "Label",
+            HlRole::Path => "Path",
+            HlRole::Directive => "Directive",
+            HlRole::Other => "Other",
         })
     }
 }
@@ -289,8 +289,8 @@ fn side_of(steps: &[RCtxStep]) -> String
     let crossed: BTreeSet<String> = steps
         .iter()
         .map(|step| match step.crossed {
-            | StepSym::Tile(label) => label.to_owned(),
-            | StepSym::Sort(sort) => format!("<{}>", sort.name().0),
+            StepSym::Tile(label) => label.to_owned(),
+            StepSym::Sort(sort) => format!("<{}>", sort.name().0),
         })
         .collect();
     crossed.into_iter().collect::<Vec<_>>().join(" ")
@@ -386,8 +386,13 @@ fn corpus_roles_match_the_golden() -> Result<(), Box<dyn Error>>
             tree.positions()
                 .filter_map(|position| tree.node(position).map(Node::label))
                 .filter_map(|label| match label {
-                    | NodeLabel::Tile(mold) => Some(mold),
-                    | _ => None,
+                    NodeLabel::Tile(mold) => Some(mold),
+                    NodeLabel::Wald
+                    | NodeLabel::Meld(_)
+                    | NodeLabel::Grout { .. }
+                    | NodeLabel::GhostClose { .. }
+                    | NodeLabel::Space
+                    | NodeLabel::Doc => None,
                 }),
         );
         let spans = table.highlight(tree)?;
@@ -456,12 +461,17 @@ fn spans_partition_the_tile_bytes() -> Result<(), Box<dyn Error>>
                 usize::from(node.span().end()),
             );
             match node.label() {
-                | NodeLabel::Tile(_) => tiles.push(bytes),
-                | NodeLabel::Space if !blank(bytes.0, bytes.1) => {
+                NodeLabel::Tile(_) => tiles.push(bytes),
+                NodeLabel::Space if !blank(bytes.0, bytes.1) => {
                     tiles.push(bytes);
                     layout.insert(bytes);
                 },
-                | _ => {},
+                NodeLabel::Wald
+                | NodeLabel::Meld(_)
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space
+                | NodeLabel::Doc => {},
             }
         }
         tiles.sort_unstable();

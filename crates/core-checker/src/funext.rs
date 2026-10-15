@@ -386,13 +386,13 @@ pub fn decide(
                 arena.value_thunk(body)
             });
             match (context.read_claim(left)?, context.read_claim(right)?) {
-                | (Reading::Returned(left), Reading::Returned(right)) => {
+                (Reading::Returned(left), Reading::Returned(right)) => {
                     if agreement(context, left.normal(), right.normal())? != Agreement::Agree {
                         return Err(distinct);
                     }
                     steps.push(Step::Return { left, right });
                 },
-                | (Reading::Stuck(left), Reading::Stuck(right)) => {
+                (Reading::Stuck(left), Reading::Stuck(right)) => {
                     let (Maybe::Present(left_stuck), Maybe::Present(right_stuck)) = (
                         stuck(context, left.normal(), Binders::from(branch.binders)),
                         stuck(context, right.normal(), Binders::from(branch.binders)),
@@ -445,7 +445,7 @@ pub fn decide(
                         });
                     }
                 },
-                | (Reading::Returned(_), Reading::Stuck(_))
+                (Reading::Returned(_), Reading::Stuck(_))
                 | (Reading::Stuck(_), Reading::Returned(_)) => return Err(distinct),
             }
         }
@@ -481,9 +481,9 @@ fn agreement(
         .definitions()
         .convert_terms(context.arena(), left, right)
     {
-        | Ok(gandr_core_nbe::MachineVerdict::Convertible) => Ok(Agreement::Agree),
-        | Ok(_) | Err(CheckRefusal::Undecided { .. }) => Ok(Agreement::Differ),
-        | Err(fault) => Err(fault),
+        Ok(gandr_core_nbe::MachineVerdict::Convertible) => Ok(Agreement::Agree),
+        Ok(_) | Err(CheckRefusal::Undecided { .. }) => Ok(Agreement::Differ),
+        Err(fault) => Err(fault),
     }
 }
 
@@ -581,11 +581,30 @@ fn first_order(
     while let Some(part) = pending.pop() {
         let head = context.whnf_value_type(part)?;
         match value_type_view(context.arena(), head)? {
-            | ValueTypeView::Unit | ValueTypeView::Integer | ValueTypeView::String => {},
-            | ValueTypeView::Sum(&[first, second]) | ValueTypeView::Product(&[first, second]) => {
+            ValueTypeView::Unit | ValueTypeView::Integer | ValueTypeView::String => {},
+            ValueTypeView::Sum(&[first, second]) | ValueTypeView::Product(&[first, second]) => {
                 pending.extend([first, second]);
             },
-            | _ => return Ok(Maybe::Absent(outside::Absent::Former)),
+            ValueTypeView::Data { .. }
+            | ValueTypeView::Record(_)
+            | ValueTypeView::Stack { .. }
+            | ValueTypeView::PathUniverse(..)
+            | ValueTypeView::Path { .. }
+            | ValueTypeView::Flow { .. }
+            | ValueTypeView::Run(_)
+            | ValueTypeView::Sum(_)
+            | ValueTypeView::List(_)
+            | ValueTypeView::Thunk(_)
+            | ValueTypeView::Universe { .. }
+            | ValueTypeView::Lift { .. }
+            | ValueTypeView::Element { .. }
+            | ValueTypeView::Product(_)
+            | ValueTypeView::StaticPi { .. }
+            | ValueTypeView::Sigma { .. }
+            | ValueTypeView::Abstract(_)
+            | ValueTypeView::Capability { .. }
+            | ValueTypeView::Session(_)
+            | ValueTypeView::Unknown => return Ok(Maybe::Absent(outside::Absent::Former)),
         }
     }
     Ok(Maybe::Present(ty))
@@ -644,10 +663,10 @@ fn coverage(
         };
         allowance = left;
         match task {
-            | Task::Cover(ty) => {
+            Task::Cover(ty) => {
                 let head = context.whnf_value_type(ty)?;
                 match value_type_view(context.arena(), head)? {
-                    | ValueTypeView::Unit => {
+                    ValueTypeView::Unit => {
                         let unit = context.arena_mut().value_tuple(&[]);
                         built.push(Vec::from([Pattern {
                             binders: 0,
@@ -656,7 +675,7 @@ fn coverage(
                             coordinates: Vec::new(),
                         }]));
                     },
-                    | ValueTypeView::Integer | ValueTypeView::String => {
+                    ValueTypeView::Integer | ValueTypeView::String => {
                         let leaf = context
                             .arena_mut()
                             .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -667,7 +686,7 @@ fn coverage(
                             coordinates: Vec::new(),
                         }]));
                     },
-                    | ValueTypeView::Thunk(_) => {
+                    ValueTypeView::Thunk(_) => {
                         let Maybe::Present((argument, result)) = arrow(context, head)?
                         else {
                             return Ok(Maybe::Absent(outside::Absent::Former));
@@ -694,16 +713,34 @@ fn coverage(
                             }]),
                         }]));
                     },
-                    | ValueTypeView::Sum(&[first, second]) => {
+                    ValueTypeView::Sum(&[first, second]) => {
                         tasks.extend([Task::Sum, Task::Cover(second), Task::Cover(first)]);
                     },
-                    | ValueTypeView::Product(&[first, second]) => {
+                    ValueTypeView::Product(&[first, second]) => {
                         tasks.extend([Task::Product, Task::Cover(second), Task::Cover(first)]);
                     },
-                    | _ => return Ok(Maybe::Absent(outside::Absent::Former)),
+                    ValueTypeView::Data { .. }
+                    | ValueTypeView::Record(_)
+                    | ValueTypeView::Stack { .. }
+                    | ValueTypeView::PathUniverse(..)
+                    | ValueTypeView::Path { .. }
+                    | ValueTypeView::Flow { .. }
+                    | ValueTypeView::Run(_)
+                    | ValueTypeView::Sum(_)
+                    | ValueTypeView::List(_)
+                    | ValueTypeView::Universe { .. }
+                    | ValueTypeView::Lift { .. }
+                    | ValueTypeView::Element { .. }
+                    | ValueTypeView::Product(_)
+                    | ValueTypeView::StaticPi { .. }
+                    | ValueTypeView::Sigma { .. }
+                    | ValueTypeView::Abstract(_)
+                    | ValueTypeView::Capability { .. }
+                    | ValueTypeView::Session(_)
+                    | ValueTypeView::Unknown => return Ok(Maybe::Absent(outside::Absent::Former)),
                 }
             },
-            | Task::Sum | Task::Product => {
+            Task::Sum | Task::Product => {
                 let (Some(second), Some(first)) = (built.pop(), built.pop())
                 else {
                     return Err(CheckRefusal::MachineInvariant);
@@ -784,8 +821,8 @@ fn coverage(
         }
     }
     match (built.pop(), built.is_empty()) {
-        | (Some(patterns), true) => Ok(Maybe::Present(patterns)),
-        | _ => Err(CheckRefusal::MachineInvariant),
+        (Some(patterns), true) => Ok(Maybe::Present(patterns)),
+        _ => Err(CheckRefusal::MachineInvariant),
     }
 }
 
@@ -828,8 +865,8 @@ fn stuck(
         body = inner;
     }
     let (application, continuation) = match arena.computation(body) {
-        | Some(&Computation::Bind(bound, rest)) => (bound, Continuation::Bind(rest)),
-        | _ => (body, Continuation::Tail),
+        Some(&Computation::Bind(bound, rest)) => (bound, Continuation::Bind(rest)),
+        _ => (body, Continuation::Tail),
     };
     let Some(&Computation::Application(forced, input)) = arena.computation(application)
     else {
@@ -882,8 +919,8 @@ fn resume(
     let (value, extension) = output;
     let arena = context.arena_mut();
     match continuation {
-        | Continuation::Tail => arena.computation_return(value),
-        | Continuation::Bind(body) => {
+        Continuation::Tail => arena.computation_return(value),
+        Continuation::Bind(body) => {
             let mut carried = Vec::new();
             let weakened = gandr_core_term::shift_computation_under_traced(
                 arena,

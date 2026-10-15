@@ -370,11 +370,11 @@ impl<'source> Lowerer<'_, 'source>
         while let Some(step) = draft.work.pop() {
             self.fuel.spend()?;
             let (at, state) = match step {
-                | Walk::Leave => {
+                Walk::Leave => {
                     let _left = binders.pop();
                     continue;
                 },
-                | Walk::Node { at, state } => (at, state),
+                Walk::Node { at, state } => (at, state),
             };
             draft.sites.push(StateSite {
                 at,
@@ -386,9 +386,64 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(site.fault(at.span, FormFault::MisplacedTile));
             };
             let name = match former {
-                | Former::LabelledSumType => FormName::SELECT_SESSION_TYPE,
-                | Former::LazyRecordType => FormName::OFFER_SESSION_TYPE,
-                | _ => written,
+                Former::LabelledSumType => FormName::SELECT_SESSION_TYPE,
+                Former::LazyRecordType => FormName::OFFER_SESSION_TYPE,
+                Former::Name
+                | Former::Constructor
+                | Former::Hole
+                | Former::Number
+                | Former::Text
+                | Former::Parenthesized
+                | Former::Unit
+                | Former::Thunk
+                | Former::Lambda
+                | Former::Block
+                | Former::Return
+                | Former::Exit
+                | Former::Become
+                | Former::Loop
+                | Former::While
+                | Former::For
+                | Former::Break
+                | Former::Continue
+                | Former::Force
+                | Former::Run
+                | Former::Call
+                | Former::Case
+                | Former::Telescope
+                | Former::Injection
+                | Former::LazyRecord
+                | Former::Binary
+                | Former::Unary
+                | Former::Projection
+                | Former::TypeHead
+                | Former::TypePath
+                | Former::Universe
+                | Former::TypeApplication
+                | Former::ThunkType
+                | Former::ReturnerType
+                | Former::ArrowType
+                | Former::ProductType
+                | Former::SumType
+                | Former::LazyProductType
+                | Former::TelescopeType
+                | Former::ValueFunctionType
+                | Former::StaticAbstraction
+                | Former::ParenthesizedType
+                | Former::PathType
+                | Former::CapabilityType
+                | Former::Scope
+                | Former::Declaration
+                | Former::AttributeBlock
+                | Former::Import
+                | Former::Module
+                | Former::Data
+                | Former::Instantiation
+                | Former::SessionType
+                | Former::Action
+                | Former::Offer
+                | Former::Reserved
+                | Former::Unadmitted => written,
             };
             let here = Site {
                 at,
@@ -402,7 +457,7 @@ impl<'source> Lowerer<'_, 'source>
                 boundary: FragmentBoundary::WrongSort,
             };
             let node = match former {
-                | Former::TypeHead => {
+                Former::TypeHead => {
                     let named = self.name_at(at);
                     let Some(position) = binders.iter().rposition(|&bound| bound == named)
                     else {
@@ -411,7 +466,7 @@ impl<'source> Lowerer<'_, 'source>
                     let outward = binders.len().saturating_sub(position).saturating_sub(1);
                     ProtocolSyntax::Recur(RecursionIndex::from(outward))
                 },
-                | Former::ParenthesizedType
+                Former::ParenthesizedType
                 | Former::SessionType
                 | Former::LabelledSumType
                 | Former::LazyRecordType => {
@@ -421,7 +476,7 @@ impl<'source> Lowerer<'_, 'source>
                     }
                     let mut cursor = Cursor::new(&pieces.pieces, at.span);
                     match former {
-                        | Former::ParenthesizedType => {
+                        Former::ParenthesizedType => {
                             closed(here, &mut cursor, TileName::PAREN_OPEN)?;
                             let inner = here.one(cursor.operands())?;
                             closed(here, &mut cursor, TileName::PAREN_CLOSE)?;
@@ -429,13 +484,120 @@ impl<'source> Lowerer<'_, 'source>
                             draft.work.push(Walk::Node { at: inner, state });
                             continue;
                         },
-                        | Former::SessionType => {
+                        Former::SessionType => {
                             self.session_former(here, state, cursor, &mut draft, &mut binders)?
                         },
-                        | _ => self.choice(here, former, cursor, &mut draft)?,
+                        Former::Name
+                        | Former::Constructor
+                        | Former::Hole
+                        | Former::Number
+                        | Former::Text
+                        | Former::Parenthesized
+                        | Former::Unit
+                        | Former::Thunk
+                        | Former::Lambda
+                        | Former::Block
+                        | Former::Return
+                        | Former::Exit
+                        | Former::Become
+                        | Former::Loop
+                        | Former::While
+                        | Former::For
+                        | Former::Break
+                        | Former::Continue
+                        | Former::Force
+                        | Former::Run
+                        | Former::Call
+                        | Former::Case
+                        | Former::Telescope
+                        | Former::Injection
+                        | Former::LazyRecord
+                        | Former::Binary
+                        | Former::Unary
+                        | Former::Projection
+                        | Former::TypeHead
+                        | Former::TypePath
+                        | Former::Universe
+                        | Former::TypeApplication
+                        | Former::ThunkType
+                        | Former::ReturnerType
+                        | Former::ArrowType
+                        | Former::ProductType
+                        | Former::SumType
+                        | Former::LazyProductType
+                        | Former::TelescopeType
+                        | Former::LabelledSumType
+                        | Former::LazyRecordType
+                        | Former::ValueFunctionType
+                        | Former::StaticAbstraction
+                        | Former::PathType
+                        | Former::CapabilityType
+                        | Former::Scope
+                        | Former::Declaration
+                        | Former::AttributeBlock
+                        | Former::Import
+                        | Former::Module
+                        | Former::Data
+                        | Former::Instantiation
+                        | Former::Action
+                        | Former::Offer
+                        | Former::Reserved
+                        | Former::Unadmitted => self.choice(here, former, cursor, &mut draft)?,
                     }
                 },
-                | _ => return Err(continuation),
+                Former::Name
+                | Former::Constructor
+                | Former::Hole
+                | Former::Number
+                | Former::Text
+                | Former::Parenthesized
+                | Former::Unit
+                | Former::Thunk
+                | Former::Lambda
+                | Former::Block
+                | Former::Return
+                | Former::Exit
+                | Former::Become
+                | Former::Loop
+                | Former::While
+                | Former::For
+                | Former::Break
+                | Former::Continue
+                | Former::Force
+                | Former::Run
+                | Former::Call
+                | Former::Case
+                | Former::Telescope
+                | Former::Injection
+                | Former::LazyRecord
+                | Former::Binary
+                | Former::Unary
+                | Former::Projection
+                | Former::TypePath
+                | Former::Universe
+                | Former::TypeApplication
+                | Former::ThunkType
+                | Former::ReturnerType
+                | Former::ArrowType
+                | Former::ProductType
+                | Former::SumType
+                | Former::LazyProductType
+                | Former::TelescopeType
+                | Former::ValueFunctionType
+                | Former::StaticAbstraction
+                | Former::PathType
+                | Former::CapabilityType
+                | Former::Scope
+                | Former::Declaration
+                | Former::AttributeBlock
+                | Former::Import
+                | Former::Module
+                | Former::Data
+                | Former::Instantiation
+                | Former::Action
+                | Former::Offer
+                | Former::Reserved
+                | Former::Unadmitted => return Err(continuation),
             };
             draft.fill(state, node);
         }
@@ -451,13 +613,13 @@ impl<'source> Lowerer<'_, 'source>
             ..
         } = draft;
         let protocol = match Protocol::new(syntax, root, count) {
-            | Ok(protocol) => protocol,
-            | Err(ProtocolError::NonContractive(state)) => {
+            Ok(protocol) => protocol,
+            Err(ProtocolError::NonContractive(state)) => {
                 let at = written.get(usize::from(state)).copied().unwrap_or(site.at);
                 let name = self.form_at(at)?.map_or(site.name, |(name, _former)| name);
                 return Err(Site { at, name, ..site }.out(FragmentBoundary::NonContractive));
             },
-            | Err(_malformed) => return Err(site.out(FragmentBoundary::Unadmitted)),
+            Err(_malformed) => return Err(site.out(FragmentBoundary::Unadmitted)),
         };
         self.plan(
             site,
@@ -532,8 +694,8 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(ProtocolSyntax::Mu(inner));
         }
         let sends = match cursor.tile(TileName::BANG) {
-            | Maybe::Present(_) => true,
-            | Maybe::Absent(_) => {
+            Maybe::Present(_) => true,
+            Maybe::Absent(_) => {
                 closed(here, &mut cursor, TileName::QUESTION)?;
                 false
             },
@@ -599,8 +761,8 @@ impl<'source> Lowerer<'_, 'source>
         closed(here, &mut cursor, TileName::BRACE_OPEN)?;
         let entries = self.type_entries(here, &mut cursor, TileName::BRACE_CLOSE)?;
         let entries = match arrange(here, entries)? {
-            | Arranged::Labelled(entries) => entries,
-            | Arranged::Positional(entries) => {
+            Arranged::Labelled(entries) => entries,
+            Arranged::Positional(entries) => {
                 if let Some(first) = entries.first() {
                     return Err(here.fault(first.held.at().span, FormFault::MisplacedTile));
                 }
@@ -674,11 +836,11 @@ impl<'source> Lowerer<'_, 'source>
         }
         let spelled = self.name_at(operand);
         match self.resolve_name(subject, frame, spelled)? {
-            | Maybe::Present(Resolved::Binder(bound)) if bound.zone == Zone::Linear => {
+            Maybe::Present(Resolved::Binder(bound)) if bound.zone == Zone::Linear => {
                 Ok(bound.index)
             },
-            | Maybe::Present(_) => Err(subject.out(FragmentBoundary::Endpoint)),
-            | Maybe::Absent(_) => Err(LoweringRefusal::UnresolvedName {
+            Maybe::Present(_) => Err(subject.out(FragmentBoundary::Endpoint)),
+            Maybe::Absent(_) => Err(LoweringRefusal::UnresolvedName {
                 span: operand.span,
                 name: spelled,
             }),
@@ -1024,8 +1186,8 @@ impl<'source> Lowerer<'_, 'source>
         let mut carried: Vec<ValueTypeId> = Vec::with_capacity(operands.len());
         for &payload in operands {
             match self.value_type_at(payload) {
-                | Maybe::Present(ty) => carried.push(ty),
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(ty) => carried.push(ty),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         let Ok(session) = SessionType::new(Arc::clone(protocol), Arc::from(carried))
@@ -1107,20 +1269,20 @@ impl<'source> Lowerer<'_, 'source>
             ChildOrder::Forward,
             &mut (),
             |&mut (), payload| match self.value_at(payload) {
-                | Maybe::Present(id) => Ok(id),
-                | Maybe::Absent(reason) => Err(reason),
+                Maybe::Present(id) => Ok(id),
+                Maybe::Absent(reason) => Err(reason),
             },
             |&mut (), arm| match self.computation_at(arm) {
-                | Maybe::Present(id) => Ok(id),
-                | Maybe::Absent(reason) => Err(reason),
+                Maybe::Present(id) => Ok(id),
+                Maybe::Absent(reason) => Err(reason),
             },
             |&mut (), protocol| match self.value_type_at(protocol) {
-                | Maybe::Present(id) => Ok(id),
-                | Maybe::Absent(reason) => Err(reason),
+                Maybe::Present(id) => Ok(id),
+                Maybe::Absent(reason) => Err(reason),
             },
         );
         match minted {
-            | Ok(action) => {
+            Ok(action) => {
                 let id = sink.arena.computation_session(action);
                 sink.origins.record_label(Label {
                     span: subject,
@@ -1128,7 +1290,7 @@ impl<'source> Lowerer<'_, 'source>
                 });
                 Maybe::Present(sink.computation(id, origin))
             },
-            | Err(reason) => Maybe::Absent(reason),
+            Err(reason) => Maybe::Absent(reason),
         }
     }
 }

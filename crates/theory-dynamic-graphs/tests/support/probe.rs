@@ -73,9 +73,9 @@ impl Regime
     pub fn choices(self) -> Vec<DrawnOffset>
     {
         let raw: &[i64] = match self {
-            | Self::StrictlyPositive => &[1, 2, 3],
-            | Self::WithZero => &[0, 1, 2],
-            | Self::Mixed => &[-2, -1, 0, 1, 2],
+            Self::StrictlyPositive => &[1, 2, 3],
+            Self::WithZero => &[0, 1, 2],
+            Self::Mixed => &[-2, -1, 0, 1, 2],
         };
         raw.iter().copied().map(DrawnOffset::from).collect()
     }
@@ -88,9 +88,9 @@ impl Regime
     pub fn label(self) -> Label
     {
         match self {
-            | Self::StrictlyPositive => Label::from("offsets >= 1"),
-            | Self::WithZero => Label::from("offsets >= 0"),
-            | Self::Mixed => Label::from("offsets of either sign"),
+            Self::StrictlyPositive => Label::from("offsets >= 1"),
+            Self::WithZero => Label::from("offsets >= 0"),
+            Self::Mixed => Label::from("offsets of either sign"),
         }
     }
 }
@@ -174,8 +174,8 @@ pub fn compare(
         let order_refused = matches!(order_verdict, EdgeVerdict::Refused(_));
         let truly_refuted = matches!(valuation_verdict, ConstraintVerdict::Refuted(_));
         let valuation_refuted = match fault {
-            | Fault::ForceRefutationAt(at) if at == here => true,
-            | Fault::ForceRefutationAt(_) | Fault::None => truly_refuted,
+            Fault::ForceRefutationAt(at) if at == here => true,
+            Fault::ForceRefutationAt(_) | Fault::None => truly_refuted,
         };
 
         if valuation_refuted && !order_refused {

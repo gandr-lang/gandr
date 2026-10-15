@@ -215,14 +215,10 @@ impl HostSignatures
         name: &EffectName,
     ) -> Maybe<&EffectSig, declared::Absent>
     {
-        match self
-            .interfaces()
+        self.interfaces()
             .into_iter()
             .find(|interface| interface.name() == name)
-        {
-            | Some(found) => Maybe::Present(found),
-            | None => Maybe::Absent(declared::Absent::Undeclared),
-        }
+            .map_or(Maybe::Absent(declared::Absent::Undeclared), Maybe::Present)
     }
 
     /// The interface offering `operation`.
@@ -246,14 +242,10 @@ impl HostSignatures
         operation: &OperationName,
     ) -> Maybe<&EffectSig, declared::Absent>
     {
-        match self
-            .interfaces()
+        self.interfaces()
             .into_iter()
             .find(|interface| matches!(interface.operation(operation), Maybe::Present(_)))
-        {
-            | Some(found) => Maybe::Present(found),
-            | None => Maybe::Absent(declared::Absent::Undeclared),
-        }
+            .map_or(Maybe::Absent(declared::Absent::Undeclared), Maybe::Present)
     }
 
     /// The authority granting exactly `operations`, each under the interface

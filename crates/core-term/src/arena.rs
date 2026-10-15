@@ -217,15 +217,76 @@ impl CoreArena
         self.values
             .iter()
             .filter_map(|value| match *value {
-                | Value::Primitive { primitive, .. } => Some(primitive),
-                | _ => None,
+                Value::Primitive { primitive, .. } => Some(primitive),
+                Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::PathEquiv { .. }
+                | Value::Here(_)
+                | Value::Funext(..)
+                | Value::Equiv(..)
+                | Value::Ua { .. }
+                | Value::SessionRelated { .. }
+                | Value::Stay(_)
+                | Value::Then(..)
+                | Value::FlowProduct(..)
+                | Value::Forward(_)
+                | Value::FunctionFlow(..)
+                | Value::Recorded(_)
+                | Value::Returned(_)
+                | Value::Nested(_)
+                | Value::Run(_)
+                | Value::Variable { .. }
+                | Value::Constant(_)
+                | Value::Literal(_)
+                | Value::Tuple(_)
+                | Value::Injection(..)
+                | Value::ListNil
+                | Value::ListCons(..)
+                | Value::Thunk(_)
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)
+                | Value::StaticLambda(_)
+                | Value::StaticApplication(..)
+                | Value::Constructor { .. }
+                | Value::Record(_)
+                | Value::Hole(_)
+                | Value::Mark { .. }
+                | Value::Reify(_) => None,
             })
             .chain(
                 self.computations
                     .iter()
                     .filter_map(|computation| match *computation {
-                        | Computation::Primitive { primitive, .. } => Some(primitive),
-                        | _ => None,
+                        Computation::Primitive { primitive, .. } => Some(primitive),
+                        Computation::Transport(..)
+                        | Computation::PathTransport { .. }
+                        | Computation::Ride { .. }
+                        | Computation::TelescopeTransport { .. }
+                        | Computation::Lambda(_)
+                        | Computation::Fixpoint { .. }
+                        | Computation::Application(..)
+                        | Computation::Return(_)
+                        | Computation::Bind(..)
+                        | Computation::Force(_)
+                        | Computation::Case { .. }
+                        | Computation::Split { .. }
+                        | Computation::DataCase { .. }
+                        | Computation::RecordProjection(..)
+                        | Computation::TupleProjection(..)
+                        | Computation::Hole(_)
+                        | Computation::Mark { .. }
+                        | Computation::ListFold { .. }
+                        | Computation::Perform { .. }
+                        | Computation::Handle { .. }
+                        | Computation::Exercise { .. }
+                        | Computation::Scope { .. }
+                        | Computation::Resume(..)
+                        | Computation::Reset(_)
+                        | Computation::Shift(_)
+                        | Computation::With(..)
+                        | Computation::Project(..)
+                        | Computation::Session(_) => None,
                     }),
             )
     }

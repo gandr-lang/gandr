@@ -139,13 +139,13 @@ pub fn serve(
         let mut writable = true;
         for event in &inbox {
             let messages = match event {
-                | Event::Closed => break,
-                | Event::Line(line) if line.trim().is_empty() => continue,
-                | Event::Line(line) => match serde_json::from_str::<Value>(&line) {
-                    | Ok(message) => connection.handle(&mut lock(workspace), &message),
-                    | Err(_) => Vec::from([Connection::unreadable()]),
-                },
-                | Event::Changed(uri) => connection.changed(&uri),
+                Event::Closed => break,
+                Event::Line(line) if line.trim().is_empty() => continue,
+                Event::Line(line) => serde_json::from_str::<Value>(&line).map_or_else(
+                    |_| Vec::from([Connection::unreadable()]),
+                    |message| connection.handle(&mut lock(workspace), &message),
+                ),
+                Event::Changed(uri) => connection.changed(&uri),
             };
             if writable && send(&mut writing, &messages).is_err() {
                 // The reader is woken by the shutdown and ends the loop.

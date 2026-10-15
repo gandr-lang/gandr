@@ -747,11 +747,11 @@ impl AcyclicityMaintenance
         }
         let discovery = self.repair(edge)?;
         match discovery {
-            | Discovery::Cycle(witness) => {
+            Discovery::Cycle(witness) => {
                 self.telemetry.refusals = self.telemetry.refusals.saturating_increment();
                 Ok(EdgeVerdict::Refused(witness))
             },
-            | Discovery::Repaired => {
+            Discovery::Repaired => {
                 self.record_edge(edge)?;
                 self.telemetry.repairs = self.telemetry.repairs.saturating_increment();
                 Ok(EdgeVerdict::AdmittedAfterRepair)
@@ -988,8 +988,8 @@ impl AcyclicityMaintenance
         let epoch = scratch.epoch;
 
         match self.search_forward(scratch, edge, epoch)? {
-            | ForwardDiscovery::Reached => {},
-            | ForwardDiscovery::Cycle(witness) => return Ok(Discovery::Cycle(witness)),
+            ForwardDiscovery::Reached => {},
+            ForwardDiscovery::Cycle(witness) => return Ok(Discovery::Cycle(witness)),
         }
         self.search_backward(scratch, edge, epoch)?;
         self.relocate(scratch)?;
@@ -1328,12 +1328,12 @@ impl AcyclicityMaintenance
         for &(_, slot) in &scratch.slots {
             let candidate = self.order.prev(slot);
             let anchor = match (candidate, previous) {
-                | (Some(before), Some((previous_slot, previous_anchor)))
+                (Some(before), Some((previous_slot, previous_anchor)))
                     if before == previous_slot =>
                 {
                     previous_anchor
                 },
-                | _ => candidate,
+                _ => candidate,
             };
             scratch.anchors.push(anchor);
             previous = Some((slot, anchor));
@@ -1348,14 +1348,14 @@ impl AcyclicityMaintenance
         for (index, &node) in scratch.arrangement.iter().enumerate() {
             let anchor = scratch.anchors.get(index).copied().flatten();
             let attach = match placed {
-                | Some((previous_anchor, previous_position)) if previous_anchor == anchor => {
+                Some((previous_anchor, previous_position)) if previous_anchor == anchor => {
                     Some(previous_position)
                 },
-                | _ => anchor,
+                _ => anchor,
             };
             let fresh = match attach {
-                | Some(after) => self.order.insert_after(after, node)?,
-                | None => self.order.push_front(node)?,
+                Some(after) => self.order.insert_after(after, node)?,
+                None => self.order.push_front(node)?,
             };
             let node_index = Self::index_of(node)?;
             let entry = self
@@ -1423,10 +1423,10 @@ impl core::fmt::Display for MaintenanceError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Order(error) => write!(f, "order maintenance: {error}"),
-            | Self::NodeCapacity => f.write_str("node capacity"),
-            | Self::OrderDesynchronized => f.write_str("order desynchronized"),
-            | Self::ArithmeticOverflow => f.write_str("arithmetic overflow"),
+            Self::Order(error) => write!(f, "order maintenance: {error}"),
+            Self::NodeCapacity => f.write_str("node capacity"),
+            Self::OrderDesynchronized => f.write_str("order desynchronized"),
+            Self::ArithmeticOverflow => f.write_str("arithmetic overflow"),
         }
     }
 }

@@ -815,16 +815,16 @@ impl Projection<'_, '_, '_>
     ) -> Typing
     {
         match *verdict {
-            | Verdict::Data => Typing::Data,
-            | Verdict::Checked { evidence, .. } => Typing::Checked {
+            Verdict::Data => Typing::Data,
+            Verdict::Checked { evidence, .. } => Typing::Checked {
                 conversions: evidence.conversions(),
             },
-            | Verdict::Synthesised { synthesised, .. } => Typing::Synthesised {
+            Verdict::Synthesised { synthesised, .. } => Typing::Synthesised {
                 produced: self.value_type(synthesised.produced().id()),
                 conversions: synthesised.conversions(),
             },
-            | Verdict::Owed(_) => Typing::Owed,
-            | Verdict::Refused(refusal) => Typing::Refused(self.refusal(refusal)),
+            Verdict::Owed(_) => Typing::Owed,
+            Verdict::Refused(refusal) => Typing::Refused(self.refusal(refusal)),
         }
     }
 
@@ -850,8 +850,8 @@ impl Projection<'_, '_, '_>
     ) -> TypeContent
     {
         match node {
-            | TypeNode::Value(ty) => self.value_type(ty),
-            | TypeNode::Computation(ty) => {
+            TypeNode::Value(ty) => self.value_type(ty),
+            TypeNode::Computation(ty) => {
                 TypeContent::of(self.arena, self.layout, ArenaNode::CompType(ty))
             },
         }
@@ -879,8 +879,8 @@ impl Projection<'_, '_, '_>
     ) -> Site
     {
         match self.sites.of(node) {
-            | Maybe::Present(index) => Site::Node(index),
-            | Maybe::Absent(_) => Site::Unreached,
+            Maybe::Present(index) => Site::Node(index),
+            Maybe::Absent(_) => Site::Unreached,
         }
     }
 
@@ -894,8 +894,8 @@ impl Projection<'_, '_, '_>
     ) -> Site
     {
         match node {
-            | TermNode::Value(id) => self.site(ArenaNode::Value(id)),
-            | TermNode::Computation(id) => self.site(ArenaNode::Computation(id)),
+            TermNode::Value(id) => self.site(ArenaNode::Value(id)),
+            TermNode::Computation(id) => self.site(ArenaNode::Computation(id)),
         }
     }
 
@@ -909,9 +909,9 @@ impl Projection<'_, '_, '_>
     ) -> Site
     {
         match node {
-            | CoreNode::Term(term) => self.term_site(term),
-            | CoreNode::Type(TypeNode::Value(id)) => self.site(ArenaNode::ValueType(id)),
-            | CoreNode::Type(TypeNode::Computation(id)) => self.site(ArenaNode::CompType(id)),
+            CoreNode::Term(term) => self.term_site(term),
+            CoreNode::Type(TypeNode::Value(id)) => self.site(ArenaNode::ValueType(id)),
+            CoreNode::Type(TypeNode::Computation(id)) => self.site(ArenaNode::CompType(id)),
         }
     }
 
@@ -953,25 +953,25 @@ impl Projection<'_, '_, '_>
     ) -> Linearity
     {
         match defect {
-            | LinearityDefect::Residue { endpoint, state } => Linearity::Residue {
+            LinearityDefect::Residue { endpoint, state } => Linearity::Residue {
                 endpoint: self.endpoint(endpoint),
                 state: self.value_type(state),
             },
-            | LinearityDefect::Closed { endpoint } => Linearity::Closed {
+            LinearityDefect::Closed { endpoint } => Linearity::Closed {
                 endpoint: self.endpoint(endpoint),
             },
-            | LinearityDefect::UsedTwice { endpoint } => Linearity::UsedTwice {
+            LinearityDefect::UsedTwice { endpoint } => Linearity::UsedTwice {
                 endpoint: self.endpoint(endpoint),
             },
-            | LinearityDefect::Captured { endpoint, by } => Linearity::Captured {
+            LinearityDefect::Captured { endpoint, by } => Linearity::Captured {
                 endpoint: self.endpoint(endpoint),
                 by,
             },
-            | LinearityDefect::Delegated => Linearity::Delegated,
-            | LinearityDefect::AsValue { endpoint } => Linearity::AsValue {
+            LinearityDefect::Delegated => Linearity::Delegated,
+            LinearityDefect::AsValue { endpoint } => Linearity::AsValue {
                 endpoint: self.endpoint(endpoint),
             },
-            | LinearityDefect::ArmsDisagree {
+            LinearityDefect::ArmsDisagree {
                 endpoint,
                 first,
                 other,
@@ -980,8 +980,8 @@ impl Projection<'_, '_, '_>
                 first: self.site(ArenaNode::Computation(first)),
                 other: self.site(ArenaNode::Computation(other)),
             },
-            | LinearityDefect::Unrestricted => Linearity::Unrestricted,
-            | LinearityDefect::Unbound { index } => Linearity::Unbound { index },
+            LinearityDefect::Unrestricted => Linearity::Unrestricted,
+            LinearityDefect::Unbound { index } => Linearity::Unbound { index },
         }
     }
 
@@ -1170,118 +1170,118 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
     ) -> Refusal
     {
         match refusal {
-            | CheckRefusal::NotADataType(constant) => {
+            CheckRefusal::NotADataType(constant) => {
                 Refusal::NotADataType(self.layout.resolve(constant))
             },
-            | CheckRefusal::DataKindNotUniverse(at) => {
+            CheckRefusal::DataKindNotUniverse(at) => {
                 Refusal::DataKindNotUniverse(self.site(ArenaNode::ValueType(at)))
             },
-            | CheckRefusal::DataFieldLevel { field, kind } => Refusal::DataFieldLevel {
+            CheckRefusal::DataFieldLevel { field, kind } => Refusal::DataFieldLevel {
                 field: self.site(ArenaNode::ValueType(field)),
                 kind: self.value_type(kind),
             },
-            | CheckRefusal::RuleNotPresentable { kind, refusal } => Refusal::RuleNotPresentable {
+            CheckRefusal::RuleNotPresentable { kind, refusal } => Refusal::RuleNotPresentable {
                 kind: self.site(ArenaNode::ValueType(kind)),
                 refusal,
             },
-            | CheckRefusal::RuleNotRespected { at, rule, .. } => Refusal::RuleNotRespected {
+            CheckRefusal::RuleNotRespected { at, rule, .. } => Refusal::RuleNotRespected {
                 at: self.site(ArenaNode::Computation(at)),
                 rule,
             },
-            | CheckRefusal::NotApart { at, reason } => Refusal::NotApart {
+            CheckRefusal::NotApart { at, reason } => Refusal::NotApart {
                 at: self.site(ArenaNode::Computation(at)),
                 reason,
             },
-            | CheckRefusal::LoopNotRespected { at, cell, .. } => Refusal::LoopNotRespected {
+            CheckRefusal::LoopNotRespected { at, cell, .. } => Refusal::LoopNotRespected {
                 at: self.site(ArenaNode::Computation(at)),
                 cell,
             },
-            | CheckRefusal::AbstractKindNotUniverse(at) => {
+            CheckRefusal::AbstractKindNotUniverse(at) => {
                 Refusal::AbstractKindNotUniverse(self.site(ArenaNode::ValueType(at)))
             },
-            | CheckRefusal::RepresentationAboveKind {
+            CheckRefusal::RepresentationAboveKind {
                 representation,
                 kind,
             } => Refusal::RepresentationAboveKind {
                 representation: self.site(ArenaNode::ValueType(representation)),
                 kind: self.value_type(kind),
             },
-            | CheckRefusal::NotAnAbstractType(constant) => {
+            CheckRefusal::NotAnAbstractType(constant) => {
                 Refusal::NotAnAbstractType(self.layout.resolve(constant))
             },
-            | CheckRefusal::SealSiteRepeated(site) => Refusal::SealSiteRepeated(site),
-            | CheckRefusal::DataArgumentArity(at) => {
+            CheckRefusal::SealSiteRepeated(site) => Refusal::SealSiteRepeated(site),
+            CheckRefusal::DataArgumentArity(at) => {
                 Refusal::DataArgumentArity(self.site(ArenaNode::ValueType(at)))
             },
-            | CheckRefusal::UnknownConstructor { at, tag } => Refusal::UnknownConstructor {
+            CheckRefusal::UnknownConstructor { at, tag } => Refusal::UnknownConstructor {
                 at: self.site(ArenaNode::Value(at)),
                 tag,
             },
-            | CheckRefusal::ConstructorArity(at) => {
+            CheckRefusal::ConstructorArity(at) => {
                 Refusal::ConstructorArity(self.site(ArenaNode::Value(at)))
             },
-            | CheckRefusal::NonExhaustiveDataCase(at) => {
+            CheckRefusal::NonExhaustiveDataCase(at) => {
                 Refusal::NonExhaustiveDataCase(self.site(ArenaNode::Computation(at)))
             },
-            | CheckRefusal::AbsentRecordField(at) => {
+            CheckRefusal::AbsentRecordField(at) => {
                 Refusal::AbsentRecordField(self.site(ArenaNode::Computation(at)))
             },
-            | CheckRefusal::AbsentTupleComponent(at) => {
+            CheckRefusal::AbsentTupleComponent(at) => {
                 Refusal::AbsentTupleComponent(self.site(ArenaNode::Computation(at)))
             },
-            | CheckRefusal::MissingRecordField { at, expected } => Refusal::MissingRecordField {
+            CheckRefusal::MissingRecordField { at, expected } => Refusal::MissingRecordField {
                 at: self.site(ArenaNode::Value(at)),
                 expected: self.value_type(expected),
             },
-            | CheckRefusal::UnknownOperation { at } => Refusal::UnknownOperation {
+            CheckRefusal::UnknownOperation { at } => Refusal::UnknownOperation {
                 at: self.site(ArenaNode::Computation(at)),
             },
-            | CheckRefusal::HandlerCoverage { at } => Refusal::HandlerCoverage {
+            CheckRefusal::HandlerCoverage { at } => Refusal::HandlerCoverage {
                 at: self.site(ArenaNode::Computation(at)),
             },
-            | CheckRefusal::ShiftWithoutReset { at } => Refusal::ShiftWithoutReset {
+            CheckRefusal::ShiftWithoutReset { at } => Refusal::ShiftWithoutReset {
                 at: self.site(ArenaNode::Computation(at)),
             },
-            | CheckRefusal::DependentStack { at, synthesised } => Refusal::DependentStack {
+            CheckRefusal::DependentStack { at, synthesised } => Refusal::DependentStack {
                 at: self.site(ArenaNode::Value(at)),
                 synthesised: self.type_node(TypeNode::Computation(synthesised)),
             },
-            | CheckRefusal::EffectSignatureConflict { at, first, second } => {
+            CheckRefusal::EffectSignatureConflict { at, first, second } => {
                 Refusal::EffectSignatureConflict {
                     at: self.site(ArenaNode::Computation(at)),
                     first: self.type_node(TypeNode::Computation(first)),
                     second: self.type_node(TypeNode::Computation(second)),
                 }
             },
-            | CheckRefusal::PathCode(at) => Refusal::PathCode(self.site(ArenaNode::Value(at))),
-            | CheckRefusal::EndpointMismatch { at, left, right } => Refusal::EndpointMismatch {
+            CheckRefusal::PathCode(at) => Refusal::PathCode(self.site(ArenaNode::Value(at))),
+            CheckRefusal::EndpointMismatch { at, left, right } => Refusal::EndpointMismatch {
                 at: self.site(ArenaNode::Value(at)),
                 left: self.site(ArenaNode::Value(left)),
                 right: self.site(ArenaNode::Value(right)),
             },
-            | CheckRefusal::CompoundEndpoint { at, synthesised } => Refusal::CompoundEndpoint {
+            CheckRefusal::CompoundEndpoint { at, synthesised } => Refusal::CompoundEndpoint {
                 at: self.site(ArenaNode::Value(at)),
                 synthesised: self.type_node(TypeNode::Computation(synthesised)),
             },
-            | CheckRefusal::FunextUnsupported { at, classifier } => Refusal::FunextUnsupported {
+            CheckRefusal::FunextUnsupported { at, classifier } => Refusal::FunextUnsupported {
                 at: self.site(ArenaNode::Value(at)),
                 classifier: self.type_node(TypeNode::Value(classifier)),
             },
-            | CheckRefusal::PointwiseDistinct { at } => {
+            CheckRefusal::PointwiseDistinct { at } => {
                 Refusal::PointwiseDistinct(self.site(ArenaNode::Value(at)))
             },
-            | CheckRefusal::EquivUnsupported { at, classifier } => Refusal::EquivUnsupported {
+            CheckRefusal::EquivUnsupported { at, classifier } => Refusal::EquivUnsupported {
                 at: self.site(ArenaNode::Value(at)),
                 classifier: self.type_node(TypeNode::Value(classifier)),
             },
-            | CheckRefusal::UncertifiedStratum { at, code } => Refusal::UncertifiedStratum {
+            CheckRefusal::UncertifiedStratum { at, code } => Refusal::UncertifiedStratum {
                 at: self.site(ArenaNode::Value(at)),
                 code: self.type_node(TypeNode::Value(code)),
             },
-            | CheckRefusal::RoundTripDistinct { at } => {
+            CheckRefusal::RoundTripDistinct { at } => {
                 Refusal::RoundTripDistinct(self.site(ArenaNode::Value(at)))
             },
-            | CheckRefusal::NotOver {
+            CheckRefusal::NotOver {
                 at,
                 synthesised,
                 expected,
@@ -1290,15 +1290,15 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 synthesised: self.value_type(synthesised),
                 expected: self.value_type(expected),
             },
-            | CheckRefusal::UaUncertified { at, stratum } => Refusal::UaUncertified {
+            CheckRefusal::UaUncertified { at, stratum } => Refusal::UaUncertified {
                 at: self.site(ArenaNode::Value(at)),
                 stratum,
             },
-            | CheckRefusal::UaInequivalent { at, defect } => Refusal::UaInequivalent {
+            CheckRefusal::UaInequivalent { at, defect } => Refusal::UaInequivalent {
                 at: self.site(ArenaNode::Value(at)),
                 defect,
             },
-            | CheckRefusal::TypeMismatch(Mismatch::Value {
+            CheckRefusal::TypeMismatch(Mismatch::Value {
                 at,
                 synthesised,
                 expected,
@@ -1307,7 +1307,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 synthesised: self.value_type(synthesised),
                 expected: self.value_type(expected),
             },
-            | CheckRefusal::TypeMismatch(Mismatch::Computation {
+            CheckRefusal::TypeMismatch(Mismatch::Computation {
                 at,
                 synthesised,
                 expected,
@@ -1316,55 +1316,47 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 synthesised: self.type_node(TypeNode::Computation(synthesised)),
                 expected: self.type_node(TypeNode::Computation(expected)),
             },
-            | CheckRefusal::ShapeMismatch { at, wanted, found } => Refusal::ShapeMismatch {
+            CheckRefusal::ShapeMismatch { at, wanted, found } => Refusal::ShapeMismatch {
                 at: self.term_site(at),
                 wanted,
                 found: self.type_node(found),
             },
-            | CheckRefusal::NotSynthesisable { form } => Refusal::NotSynthesisable {
+            CheckRefusal::NotSynthesisable { form } => Refusal::NotSynthesisable {
                 form: match form {
-                    | CheckingForm::Reify(id) => Form::Reify(self.site(ArenaNode::Value(id))),
-                    | CheckingForm::Handle(id) => {
-                        Form::Handle(self.site(ArenaNode::Computation(id)))
-                    },
-                    | CheckingForm::Reset(id) => Form::Reset(self.site(ArenaNode::Computation(id))),
-                    | CheckingForm::Shift(id) => Form::Shift(self.site(ArenaNode::Computation(id))),
-                    | CheckingForm::With(id) => Form::With(self.site(ArenaNode::Computation(id))),
-                    | CheckingForm::List(id) => Form::List(self.site(ArenaNode::Value(id))),
-                    | CheckingForm::Injection(id) => {
-                        Form::Injection(self.site(ArenaNode::Value(id)))
-                    },
-                    | CheckingForm::Case(id) => Form::Case(self.site(ArenaNode::Computation(id))),
-                    | CheckingForm::Split(id) => Form::Split(self.site(ArenaNode::Computation(id))),
-                    | CheckingForm::Thunk(id) => Form::Thunk(self.site(ArenaNode::Value(id))),
-                    | CheckingForm::Lambda(id) => {
-                        Form::Lambda(self.site(ArenaNode::Computation(id)))
-                    },
-                    | CheckingForm::Return(id) => {
-                        Form::Return(self.site(ArenaNode::Computation(id)))
-                    },
-                    | CheckingForm::Hole(_) => Form::Hole,
-                    | CheckingForm::StaticLambda(id) => {
+                    CheckingForm::Reify(id) => Form::Reify(self.site(ArenaNode::Value(id))),
+                    CheckingForm::Handle(id) => Form::Handle(self.site(ArenaNode::Computation(id))),
+                    CheckingForm::Reset(id) => Form::Reset(self.site(ArenaNode::Computation(id))),
+                    CheckingForm::Shift(id) => Form::Shift(self.site(ArenaNode::Computation(id))),
+                    CheckingForm::With(id) => Form::With(self.site(ArenaNode::Computation(id))),
+                    CheckingForm::List(id) => Form::List(self.site(ArenaNode::Value(id))),
+                    CheckingForm::Injection(id) => Form::Injection(self.site(ArenaNode::Value(id))),
+                    CheckingForm::Case(id) => Form::Case(self.site(ArenaNode::Computation(id))),
+                    CheckingForm::Split(id) => Form::Split(self.site(ArenaNode::Computation(id))),
+                    CheckingForm::Thunk(id) => Form::Thunk(self.site(ArenaNode::Value(id))),
+                    CheckingForm::Lambda(id) => Form::Lambda(self.site(ArenaNode::Computation(id))),
+                    CheckingForm::Return(id) => Form::Return(self.site(ArenaNode::Computation(id))),
+                    CheckingForm::Hole(_) => Form::Hole,
+                    CheckingForm::StaticLambda(id) => {
                         Form::StaticLambda(self.site(ArenaNode::Value(id)))
                     },
-                    | CheckingForm::Fixpoint(id) => {
+                    CheckingForm::Fixpoint(id) => {
                         Form::Fixpoint(self.site(ArenaNode::Computation(id)))
                     },
-                    | CheckingForm::Nested(id) => Form::Nested(self.site(ArenaNode::Value(id))),
-                    | CheckingForm::Run(id) => Form::Run(self.site(ArenaNode::Value(id))),
-                    | CheckingForm::Offer(id) => Form::Offer(self.site(ArenaNode::Computation(id))),
-                    | CheckingForm::Scope(id) => Form::Scope(self.site(ArenaNode::Computation(id))),
+                    CheckingForm::Nested(id) => Form::Nested(self.site(ArenaNode::Value(id))),
+                    CheckingForm::Run(id) => Form::Run(self.site(ArenaNode::Value(id))),
+                    CheckingForm::Offer(id) => Form::Offer(self.site(ArenaNode::Computation(id))),
+                    CheckingForm::Scope(id) => Form::Scope(self.site(ArenaNode::Computation(id))),
                 },
             },
-            | CheckRefusal::UnknownConstant { at, constant } => Refusal::UnknownConstant {
+            CheckRefusal::UnknownConstant { at, constant } => Refusal::UnknownConstant {
                 at: self.site(ArenaNode::Value(at)),
                 constant: self.layout.resolve(constant),
             },
-            | CheckRefusal::OutOfFragment { at, former } => Refusal::OutOfFragment {
+            CheckRefusal::OutOfFragment { at, former } => Refusal::OutOfFragment {
                 at: self.core_site(at),
                 former,
             },
-            | CheckRefusal::UnboundIndex {
+            CheckRefusal::UnboundIndex {
                 at,
                 zone,
                 index,
@@ -1375,13 +1367,13 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 index,
                 depth,
             },
-            | CheckRefusal::BudgetExceeded { budget } => Refusal::BudgetExceeded { budget },
-            | CheckRefusal::DanglingNode { node } => Refusal::DanglingNode {
+            CheckRefusal::BudgetExceeded { budget } => Refusal::BudgetExceeded { budget },
+            CheckRefusal::DanglingNode { node } => Refusal::DanglingNode {
                 at: self.core_site(node),
             },
-            | CheckRefusal::AdmissionOrder { .. } => Refusal::AdmissionOrder,
-            | CheckRefusal::MachineInvariant => Refusal::MachineInvariant,
-            | CheckRefusal::SortMismatch {
+            CheckRefusal::AdmissionOrder { .. } => Refusal::AdmissionOrder,
+            CheckRefusal::MachineInvariant => Refusal::MachineInvariant,
+            CheckRefusal::SortMismatch {
                 at,
                 synthesised,
                 expected,
@@ -1390,7 +1382,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 synthesised: self.value_type(synthesised),
                 expected: self.value_type(expected),
             },
-            | CheckRefusal::LevelMismatch {
+            CheckRefusal::LevelMismatch {
                 at,
                 synthesised,
                 expected,
@@ -1399,14 +1391,14 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 synthesised: self.value_type(synthesised),
                 expected: self.value_type(expected),
             },
-            | CheckRefusal::DependentBind { at, synthesised } => Refusal::DependentBind {
+            CheckRefusal::DependentBind { at, synthesised } => Refusal::DependentBind {
                 at: self.site(ArenaNode::Computation(at)),
                 synthesised: self.type_node(TypeNode::Computation(synthesised)),
             },
-            | CheckRefusal::Undecided { at } => Refusal::Undecided {
+            CheckRefusal::Undecided { at } => Refusal::Undecided {
                 at: self.site(ArenaNode::Value(at)),
             },
-            | CheckRefusal::FamilyArity {
+            CheckRefusal::FamilyArity {
                 at,
                 expected,
                 actual,
@@ -1415,7 +1407,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 expected,
                 actual,
             },
-            | CheckRefusal::FamilyArgumentClassifier {
+            CheckRefusal::FamilyArgumentClassifier {
                 at,
                 position,
                 synthesised,
@@ -1426,31 +1418,31 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 synthesised: self.value_type(synthesised),
                 expected: self.value_type(expected),
             },
-            | CheckRefusal::StaticLambdaArgument { at } => Refusal::StaticLambdaArgument {
+            CheckRefusal::StaticLambdaArgument { at } => Refusal::StaticLambdaArgument {
                 at: self.site(ArenaNode::Value(at)),
             },
-            | CheckRefusal::StaticClassifierExpected { at, found } => {
+            CheckRefusal::StaticClassifierExpected { at, found } => {
                 Refusal::StaticClassifierExpected {
                     at: self.site(ArenaNode::ValueType(at)),
                     found: self.value_type(found),
                 }
             },
-            | CheckRefusal::NegativeOccurrence(site) => Refusal::NegativeOccurrence(site),
-            | CheckRefusal::NestedOccurrence(site) => Refusal::NestedOccurrence(site),
-            | CheckRefusal::IndexOccurrence(site) => Refusal::IndexOccurrence(site),
-            | CheckRefusal::NonUniformOccurrence(site) => Refusal::NonUniformOccurrence(site),
-            | CheckRefusal::CrossBlockReference { site, index } => Refusal::CrossBlockReference {
+            CheckRefusal::NegativeOccurrence(site) => Refusal::NegativeOccurrence(site),
+            CheckRefusal::NestedOccurrence(site) => Refusal::NestedOccurrence(site),
+            CheckRefusal::IndexOccurrence(site) => Refusal::IndexOccurrence(site),
+            CheckRefusal::NonUniformOccurrence(site) => Refusal::NonUniformOccurrence(site),
+            CheckRefusal::CrossBlockReference { site, index } => Refusal::CrossBlockReference {
                 site,
                 index: self.layout.resolve(index),
             },
-            | CheckRefusal::DescentNotReplayed { at, reason } => Refusal::DescentNotReplayed {
+            CheckRefusal::DescentNotReplayed { at, reason } => Refusal::DescentNotReplayed {
                 at: self.site(ArenaNode::Computation(at)),
                 reason,
             },
-            | CheckRefusal::UnenclosedRun { at } => Refusal::UnenclosedRun {
+            CheckRefusal::UnenclosedRun { at } => Refusal::UnenclosedRun {
                 at: self.site(ArenaNode::Value(at)),
             },
-            | CheckRefusal::SessionMismatch {
+            CheckRefusal::SessionMismatch {
                 at,
                 endpoint,
                 state,
@@ -1461,15 +1453,15 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 state: self.value_type(state),
                 defect,
             },
-            | CheckRefusal::Linearity { at, defect } => Refusal::Linearity {
+            CheckRefusal::Linearity { at, defect } => Refusal::Linearity {
                 at: self.core_site(at),
                 defect: self.linearity(defect),
             },
-            | CheckRefusal::CapabilityForged { at, expected } => Refusal::CapabilityForged {
+            CheckRefusal::CapabilityForged { at, expected } => Refusal::CapabilityForged {
                 at: self.site(ArenaNode::Value(at)),
                 expected: self.value_type(expected),
             },
-            | CheckRefusal::CapabilityAmplified(Mismatch::Value {
+            CheckRefusal::CapabilityAmplified(Mismatch::Value {
                 at,
                 synthesised,
                 expected,
@@ -1478,7 +1470,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 synthesised: self.value_type(synthesised),
                 expected: self.value_type(expected),
             },
-            | CheckRefusal::CapabilityAmplified(Mismatch::Computation {
+            CheckRefusal::CapabilityAmplified(Mismatch::Computation {
                 at,
                 synthesised,
                 expected,
@@ -1487,45 +1479,45 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 synthesised: self.type_node(TypeNode::Computation(synthesised)),
                 expected: self.type_node(TypeNode::Computation(expected)),
             },
-            | CheckRefusal::CapabilityOutsideAuthority { at, capability } => {
+            CheckRefusal::CapabilityOutsideAuthority { at, capability } => {
                 Refusal::CapabilityOutsideAuthority {
                     at: self.site(ArenaNode::Computation(at)),
                     capability: self.value_type(capability),
                 }
             },
-            | CheckRefusal::CapabilityEscaped { at, found } => Refusal::CapabilityEscaped {
+            CheckRefusal::CapabilityEscaped { at, found } => Refusal::CapabilityEscaped {
                 at: self.term_site(at),
                 found: self.type_node(found),
             },
-            | CheckRefusal::CapabilityConsumable(at) => {
+            CheckRefusal::CapabilityConsumable(at) => {
                 Refusal::CapabilityConsumable(self.site(ArenaNode::ValueType(at)))
             },
-            | CheckRefusal::CapabilityUngranted { declared, .. } => {
+            CheckRefusal::CapabilityUngranted { declared, .. } => {
                 Refusal::CapabilityUngranted(self.site(ArenaNode::ValueType(declared)))
             },
-            | CheckRefusal::SessionNotEquivalent { at } => {
+            CheckRefusal::SessionNotEquivalent { at } => {
                 Refusal::SessionNotEquivalent(self.site(ArenaNode::Value(at)))
             },
-            | CheckRefusal::SessionNotSubtype { at } => {
+            CheckRefusal::SessionNotSubtype { at } => {
                 Refusal::SessionNotSubtype(self.site(ArenaNode::Value(at)))
             },
-            | CheckRefusal::SessionCodeExpected { at } => {
+            CheckRefusal::SessionCodeExpected { at } => {
                 Refusal::SessionCodeExpected(self.site(ArenaNode::Value(at)))
             },
-            | CheckRefusal::NonCovariantMotive { at } => {
+            CheckRefusal::NonCovariantMotive { at } => {
                 Refusal::NonCovariantMotive(self.site(ArenaNode::Computation(at)))
             },
-            | CheckRefusal::RideUnsupported { at } => {
+            CheckRefusal::RideUnsupported { at } => {
                 Refusal::RideUnsupported(self.site(ArenaNode::Computation(at)))
             },
-            | CheckRefusal::RunNotAdmitted { at, fault } => Refusal::RunNotAdmitted {
+            CheckRefusal::RunNotAdmitted { at, fault } => Refusal::RunNotAdmitted {
                 at: self.site(ArenaNode::Value(at)),
                 fault,
             },
-            | CheckRefusal::ForwardUnsupported { at } => {
+            CheckRefusal::ForwardUnsupported { at } => {
                 Refusal::ForwardUnsupported(self.site(ArenaNode::Value(at)))
             },
-            | CheckRefusal::Boundary { at } => Refusal::Boundary(self.site(ArenaNode::Value(at))),
+            CheckRefusal::Boundary { at } => Refusal::Boundary(self.site(ArenaNode::Value(at))),
         }
     }
 }

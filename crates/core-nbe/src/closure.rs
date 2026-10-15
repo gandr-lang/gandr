@@ -140,8 +140,8 @@ impl Environment
     ) -> EnvironmentDepth
     {
         EnvironmentDepth(match zone {
-            | Zone::Intuitionistic => self.intuitionistic.len(),
-            | Zone::Linear => self.linear.len(),
+            Zone::Intuitionistic => self.intuitionistic.len(),
+            Zone::Linear => self.linear.len(),
         })
     }
 
@@ -205,8 +205,8 @@ impl Environment
     )
     {
         match zone {
-            | Zone::Intuitionistic => self.intuitionistic.push(bound),
-            | Zone::Linear => self.linear.push(bound),
+            Zone::Intuitionistic => self.intuitionistic.push(bound),
+            Zone::Linear => self.linear.push(bound),
         }
     }
 
@@ -252,8 +252,8 @@ impl Environment
     {
         let offset = entry_offset(self.depth(zone), index)?;
         match zone {
-            | Zone::Intuitionistic => self.intuitionistic.get(offset.0).copied(),
-            | Zone::Linear => self.linear.get(offset.0).copied(),
+            Zone::Intuitionistic => self.intuitionistic.get(offset.0).copied(),
+            Zone::Linear => self.linear.get(offset.0).copied(),
         }
     }
 
@@ -268,8 +268,8 @@ impl Environment
     ) -> &[DomainValueId]
     {
         match zone {
-            | Zone::Intuitionistic => &self.intuitionistic,
-            | Zone::Linear => &self.linear,
+            Zone::Intuitionistic => &self.intuitionistic,
+            Zone::Linear => &self.linear,
         }
     }
 }

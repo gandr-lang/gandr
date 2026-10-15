@@ -411,24 +411,24 @@ fn encode_declaration(
 )
 {
     out.put_tag(match marked.mark() {
-        | AdmissionMark::Checked => tags::ADMISSION_CHECKED,
-        | AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED,
+        AdmissionMark::Checked => tags::ADMISSION_CHECKED,
+        AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED,
     });
     let declaration = marked.declaration();
     let content = declaration.content();
     out.put_tag(match *content {
-        | DeclarationContent::Data { .. } if declaration.presentation().cells().is_some() => {
+        DeclarationContent::Data { .. } if declaration.presentation().cells().is_some() => {
             tags::KIND_DATA_WORDS
         },
-        | DeclarationContent::Data { .. } if declaration.presentation().rules().is_empty() => {
+        DeclarationContent::Data { .. } if declaration.presentation().rules().is_empty() => {
             tags::KIND_DATA
         },
-        | DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED,
-        | DeclarationContent::Def { .. } if !declaration.laws().is_empty() => tags::KIND_DEF_LAWFUL,
-        | DeclarationContent::Def { .. } if declaration.related().is_empty() => tags::KIND_DEF,
-        | DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING,
-        | DeclarationContent::Axiom { .. } => tags::KIND_AXIOM,
-        | DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE,
+        DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED,
+        DeclarationContent::Def { .. } if !declaration.laws().is_empty() => tags::KIND_DEF_LAWFUL,
+        DeclarationContent::Def { .. } if declaration.related().is_empty() => tags::KIND_DEF,
+        DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING,
+        DeclarationContent::Axiom { .. } => tags::KIND_AXIOM,
+        DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE,
     });
     encode_structured_name(out, declaration.name());
     encode_level_signature(out, declaration.levels());
@@ -437,7 +437,7 @@ fn encode_declaration(
     let mut data_roots = Vec::new();
     let mut related_roots = Vec::new();
     let (root_declared, root_body, root_sealed) = match *content {
-        | DeclarationContent::Data {
+        DeclarationContent::Data {
             kind,
             ref parameters,
             ref constructors,
@@ -452,7 +452,7 @@ fn encode_declaration(
             }
             (declared, None, None)
         },
-        | DeclarationContent::Def { declared, body } => {
+        DeclarationContent::Def { declared, body } => {
             let declared = intern(arena, interner, &mut segment, AnyNode::ValueType(declared));
             let body = intern(arena, interner, &mut segment, AnyNode::Value(body));
             // The related endpoints after the body, so a definition relating
@@ -464,7 +464,7 @@ fn encode_declaration(
             }
             (declared, Some(body), None)
         },
-        | DeclarationContent::Axiom { declared } => {
+        DeclarationContent::Axiom { declared } => {
             let declared = intern(arena, interner, &mut segment, AnyNode::ValueType(declared));
             (declared, None, None)
         },
@@ -473,7 +473,7 @@ fn encode_declaration(
         // The representation is on the wire because the kernel re-reads it
         // inside the minting admission when it replays the artifact; outside
         // that admission no rule reads it.
-        | DeclarationContent::AbstractType {
+        DeclarationContent::AbstractType {
             kind,
             representation,
             scope,
@@ -486,8 +486,8 @@ fn encode_declaration(
                 AnyNode::ValueType(representation),
             );
             let extent = match scope {
-                | SealScope::Open => remaining,
-                | SealScope::Closed(extent) => extent,
+                SealScope::Open => remaining,
+                SealScope::Closed(extent) => extent,
             };
             (declared, None, Some((representation, extent)))
         },
@@ -603,11 +603,11 @@ fn encode_rule_side(
     out.put_uvarint(WireU64::from(WireUsize::from(side.len())));
     for &node in side {
         let (tag, ordinal) = match node {
-            | crate::presented::RuleNode::Constructor(tag) => (
+            crate::presented::RuleNode::Constructor(tag) => (
                 tags::RULE_CONSTRUCTOR,
                 WireU64::from(WireUsize::from(usize::from(tag))),
             ),
-            | crate::presented::RuleNode::Variable(variable) => (
+            crate::presented::RuleNode::Variable(variable) => (
                 tags::RULE_VARIABLE,
                 WireU64::from(u64::from(u32::from(variable))),
             ),
@@ -948,13 +948,13 @@ fn encode_entry(
 {
     let mut out = EncodedArtifact::new();
     match node {
-        | AnyNode::ValueType(id) => match arena.value_type(id) {
-            | None => {
+        AnyNode::ValueType(id) => match arena.value_type(id) {
+            None => {
                 out.put_tag(tags::NODE_VT_PRODUCT);
                 out.put_uvarint(WireU64::from(WireUsize::from(0_usize)));
             },
-            | Some(value_type) => match *value_type {
-                | ValueType::Data {
+            Some(value_type) => match *value_type {
+                ValueType::Data {
                     declaration,
                     ref arguments,
                 } => {
@@ -962,230 +962,230 @@ fn encode_entry(
                     out.put_uvarint(WireU64::from(WireUsize::from(usize::from(declaration))));
                     out.put_uvarint(WireU64::from(WireUsize::from(arguments.len())));
                 },
-                | ValueType::Record(ref fields) => {
+                ValueType::Record(ref fields) => {
                     out.put_tag(tags::NODE_VT_RECORD);
                     out.put_uvarint(WireU64::from(WireUsize::from(fields.len())));
                     for label in fields.keys() {
                         encode_text(&mut out, ArtifactText::from(label.as_ref()));
                     }
                 },
-                | ValueType::Base(base) => {
+                ValueType::Base(base) => {
                     out.put_tag(tags::NODE_VT_BASE);
                     out.put_tag(base_type_tag(base));
                 },
-                | ValueType::PathUniverse(..) => out.put_tag(tags::NODE_VT_PATH_UNIVERSE),
-                | ValueType::FlowUniverse(..) => out.put_tag(tags::NODE_VT_FLOW_UNIVERSE),
-                | ValueType::Path { .. } => out.put_tag(tags::NODE_VT_PATH),
-                | ValueType::Flow { .. } => out.put_tag(tags::NODE_VT_FLOW),
-                | ValueType::Universe {
+                ValueType::PathUniverse(..) => out.put_tag(tags::NODE_VT_PATH_UNIVERSE),
+                ValueType::FlowUniverse(..) => out.put_tag(tags::NODE_VT_FLOW_UNIVERSE),
+                ValueType::Path { .. } => out.put_tag(tags::NODE_VT_PATH),
+                ValueType::Flow { .. } => out.put_tag(tags::NODE_VT_FLOW),
+                ValueType::Universe {
                     sort: GroundSort::Value,
                     ref level,
                 } => {
                     out.put_tag(tags::NODE_VT_UNIVERSE);
                     encode_level(&mut out, level);
                 },
-                | ValueType::Universe {
+                ValueType::Universe {
                     sort: GroundSort::Computation,
                     ref level,
                 } => {
                     out.put_tag(tags::NODE_VT_COMPUTATION_UNIVERSE);
                     encode_level(&mut out, level);
                 },
-                | ValueType::Abstract(atom) => {
+                ValueType::Abstract(atom) => {
                     out.put_tag(tags::NODE_VT_ABSTRACT);
                     out.put_uvarint(WireU64::from(WireUsize::from(usize::from(atom))));
                 },
-                | ValueType::Product(ref components) => {
+                ValueType::Product(ref components) => {
                     out.put_tag(tags::NODE_VT_PRODUCT);
                     out.put_uvarint(WireU64::from(WireUsize::from(components.len())));
                 },
-                | ValueType::Sigma { .. } => out.put_tag(tags::NODE_VT_SIGMA),
-                | ValueType::Sum(ref summands) => {
+                ValueType::Sigma { .. } => out.put_tag(tags::NODE_VT_SIGMA),
+                ValueType::Sum(ref summands) => {
                     out.put_tag(tags::NODE_VT_SUM);
                     out.put_uvarint(WireU64::from(WireUsize::from(summands.len())));
                 },
-                | ValueType::Session { ref graph, .. } => {
+                ValueType::Session { ref graph, .. } => {
                     out.put_tag(tags::NODE_VT_SESSION);
                     graph.write(|word| out.put_uvarint(WireU64::from(word.0)));
                 },
-                | ValueType::List(_) => out.put_tag(tags::NODE_VT_LIST),
-                | ValueType::Thunk(_) => out.put_tag(tags::NODE_VT_THUNK),
-                | ValueType::Lift { ref target, .. } => {
+                ValueType::List(_) => out.put_tag(tags::NODE_VT_LIST),
+                ValueType::Thunk(_) => out.put_tag(tags::NODE_VT_THUNK),
+                ValueType::Lift { ref target, .. } => {
                     out.put_tag(tags::NODE_VT_LIFT);
                     encode_level(&mut out, target);
                 },
-                | ValueType::Element { ref target, .. } => {
+                ValueType::Element { ref target, .. } => {
                     out.put_tag(tags::NODE_VT_ELEMENT);
                     encode_level(&mut out, target);
                 },
-                | ValueType::StaticPi { .. } => out.put_tag(tags::NODE_VT_STATIC_PI),
+                ValueType::StaticPi { .. } => out.put_tag(tags::NODE_VT_STATIC_PI),
             },
         },
-        | AnyNode::CompType(id) => match arena.comp_type(id) {
-            | Some(&CompType::Returner(_)) | None => out.put_tag(tags::NODE_CT_RETURNER),
-            | Some(&CompType::Arrow { .. }) => out.put_tag(tags::NODE_CT_ARROW),
-            | Some(&CompType::Pi { .. }) => out.put_tag(tags::NODE_CT_PI),
-            | Some(&CompType::Element { ref target, .. }) => {
+        AnyNode::CompType(id) => match arena.comp_type(id) {
+            Some(&CompType::Returner(_)) | None => out.put_tag(tags::NODE_CT_RETURNER),
+            Some(&CompType::Arrow { .. }) => out.put_tag(tags::NODE_CT_ARROW),
+            Some(&CompType::Pi { .. }) => out.put_tag(tags::NODE_CT_PI),
+            Some(&CompType::Element { ref target, .. }) => {
                 out.put_tag(tags::NODE_CT_ELEMENT);
                 encode_level(&mut out, target);
             },
-            | Some(&CompType::With(..)) => out.put_tag(tags::NODE_CT_WITH),
+            Some(&CompType::With(..)) => out.put_tag(tags::NODE_CT_WITH),
         },
-        | AnyNode::Value(id) => match arena.value(id) {
-            | None => {
+        AnyNode::Value(id) => match arena.value(id) {
+            None => {
                 out.put_tag(tags::NODE_V_TUPLE);
                 out.put_uvarint(WireU64::from(WireUsize::from(0_usize)));
             },
-            | Some(value) => match *value {
-                | Value::Constructor {
+            Some(value) => match *value {
+                Value::Constructor {
                     tag, ref fields, ..
                 } => {
                     out.put_tag(tags::NODE_V_CONSTRUCTOR);
                     out.put_uvarint(WireU64::from(WireUsize::from(usize::from(tag))));
                     out.put_uvarint(WireU64::from(WireUsize::from(fields.len())));
                 },
-                | Value::Record(ref fields) => {
+                Value::Record(ref fields) => {
                     out.put_tag(tags::NODE_V_RECORD);
                     out.put_uvarint(WireU64::from(WireUsize::from(fields.len())));
                     for label in fields.keys() {
                         encode_text(&mut out, ArtifactText::from(label.as_ref()));
                     }
                 },
-                | Value::Variable(index) => {
+                Value::Variable(index) => {
                     out.put_tag(tags::NODE_V_VARIABLE);
                     out.put_uvarint(WireU64::from(u64::from(u32::from(index))));
                 },
-                | Value::Constant(index) => {
+                Value::Constant(index) => {
                     out.put_tag(tags::NODE_V_CONSTANT);
                     out.put_uvarint(WireU64::from(WireUsize::from(usize::from(index))));
                 },
-                | Value::SessionPath { ref evidence, .. } => {
+                Value::SessionPath { ref evidence, .. } => {
                     out.put_tag(tags::NODE_V_SESSION_PATH);
                     evidence.write(|word| out.put_uvarint(WireU64::from(word.0)));
                 },
-                | Value::SessionFlow { ref evidence, .. } => {
+                Value::SessionFlow { ref evidence, .. } => {
                     out.put_tag(tags::NODE_V_SESSION_FLOW);
                     evidence.write(|word| out.put_uvarint(WireU64::from(word.0)));
                 },
-                | Value::Stay { ref dialogues, .. } => {
+                Value::Stay { ref dialogues, .. } => {
                     out.put_tag(tags::NODE_V_STAY);
                     for word in crate::identity::endpoint_words(dialogues) {
                         out.put_uvarint(WireU64::from(word.0));
                     }
                 },
-                | Value::ForwardFlow { ref dialogues, .. } => {
+                Value::ForwardFlow { ref dialogues, .. } => {
                     out.put_tag(tags::NODE_V_FORWARD_FLOW);
                     for word in crate::identity::forward_words(dialogues) {
                         out.put_uvarint(WireU64::from(word.0));
                     }
                 },
-                | Value::FunctionFlow { .. } => out.put_tag(tags::NODE_V_FUNCTION_FLOW),
-                | Value::Then { seam, .. } => {
+                Value::FunctionFlow { .. } => out.put_tag(tags::NODE_V_FUNCTION_FLOW),
+                Value::Then { seam, .. } => {
                     out.put_tag(tags::NODE_V_THEN);
                     out.put_tag(seam_tag(seam));
                 },
-                | Value::FlowProduct(..) => out.put_tag(tags::NODE_V_FLOW_PRODUCT),
-                | Value::PathRefl(_) => out.put_tag(tags::NODE_V_PATH_REFL),
-                | Value::PathProduct(..) => out.put_tag(tags::NODE_V_PATH_PRODUCT),
-                | Value::PathEquiv { ref evidence, .. } => {
+                Value::FlowProduct(..) => out.put_tag(tags::NODE_V_FLOW_PRODUCT),
+                Value::PathRefl(_) => out.put_tag(tags::NODE_V_PATH_REFL),
+                Value::PathProduct(..) => out.put_tag(tags::NODE_V_PATH_PRODUCT),
+                Value::PathEquiv { ref evidence, .. } => {
                     out.put_tag(tags::NODE_V_PATH_EQUIV);
                     for word in evidence.words() {
                         out.put_uvarint(WireU64::from(word.0));
                     }
                 },
-                | Value::Here { ref dialogues, .. } => {
+                Value::Here { ref dialogues, .. } => {
                     out.put_tag(tags::NODE_V_HERE);
                     for word in crate::identity::endpoint_words(dialogues) {
                         out.put_uvarint(WireU64::from(word.0));
                     }
                 },
-                | Value::Returned(_) => out.put_tag(tags::NODE_V_RETURNED),
-                | Value::Higher { ref program, .. } => {
+                Value::Returned(_) => out.put_tag(tags::NODE_V_RETURNED),
+                Value::Higher { ref program, .. } => {
                     out.put_tag(tags::NODE_V_HIGHER);
                     for word in program.words() {
                         out.put_uvarint(WireU64::from(word.0));
                     }
                 },
-                | Value::HigherEvaluation { ref dialogues, .. } => {
+                Value::HigherEvaluation { ref dialogues, .. } => {
                     out.put_tag(tags::NODE_V_HIGHER_EVALUATION);
                     for word in crate::identity::evaluation_words(dialogues) {
                         out.put_uvarint(WireU64::from(word.0));
                     }
                 },
-                | Value::QuantifiedEvaluation { ref steps, .. } => {
+                Value::QuantifiedEvaluation { ref steps, .. } => {
                     out.put_tag(tags::NODE_V_QUANTIFIED_EVALUATION);
                     for word in crate::identity::quantified_words(steps) {
                         out.put_uvarint(WireU64::from(word.0));
                     }
                 },
-                | Value::Literal(ref literal) => {
+                Value::Literal(ref literal) => {
                     out.put_tag(tags::NODE_V_LITERAL);
                     encode_literal(&mut out, literal);
                 },
-                | Value::Tuple(ref components) => {
+                Value::Tuple(ref components) => {
                     out.put_tag(tags::NODE_V_TUPLE);
                     out.put_uvarint(WireU64::from(WireUsize::from(components.len())));
                 },
-                | Value::ListNil => out.put_tag(tags::NODE_V_LIST_NIL),
-                | Value::ListCons(..) => out.put_tag(tags::NODE_V_LIST_CONS),
-                | Value::Injection(summand, _) => {
+                Value::ListNil => out.put_tag(tags::NODE_V_LIST_NIL),
+                Value::ListCons(..) => out.put_tag(tags::NODE_V_LIST_CONS),
+                Value::Injection(summand, _) => {
                     out.put_tag(tags::NODE_V_INJECTION);
                     out.put_uvarint(WireU64::from(WireUsize::from(usize::from(summand))));
                 },
-                | Value::Thunk(_) => out.put_tag(tags::NODE_V_THUNK),
-                | Value::Lift { ref target, .. } => {
+                Value::Thunk(_) => out.put_tag(tags::NODE_V_THUNK),
+                Value::Lift { ref target, .. } => {
                     out.put_tag(tags::NODE_V_LIFT);
                     encode_level(&mut out, target);
                 },
-                | Value::Quote(_) => out.put_tag(tags::NODE_V_QUOTE),
-                | Value::QuoteComputation(_) => out.put_tag(tags::NODE_V_QUOTE_COMPUTATION),
-                | Value::StaticApplication(..) => out.put_tag(tags::NODE_V_STATIC_APPLICATION),
+                Value::Quote(_) => out.put_tag(tags::NODE_V_QUOTE),
+                Value::QuoteComputation(_) => out.put_tag(tags::NODE_V_QUOTE_COMPUTATION),
+                Value::StaticApplication(..) => out.put_tag(tags::NODE_V_STATIC_APPLICATION),
             },
         },
-        | AnyNode::Computation(id) => match arena.computation(id) {
-            | Some(&Computation::DataCase { ref branches, .. }) => {
+        AnyNode::Computation(id) => match arena.computation(id) {
+            Some(&Computation::DataCase { ref branches, .. }) => {
                 out.put_tag(tags::NODE_C_DATA_CASE);
                 out.put_uvarint(WireU64::from(WireUsize::from(branches.len())));
             },
-            | Some(&Computation::SigmaSplit { .. }) => out.put_tag(tags::NODE_C_SIGMA_SPLIT),
-            | Some(&Computation::RecordProjection(_, ref label)) => {
+            Some(&Computation::SigmaSplit { .. }) => out.put_tag(tags::NODE_C_SIGMA_SPLIT),
+            Some(&Computation::RecordProjection(_, ref label)) => {
                 out.put_tag(tags::NODE_C_RECORD_PROJECTION);
                 encode_text(&mut out, ArtifactText::from(label.as_ref()));
             },
-            | Some(&Computation::TupleProjection(_, component)) => {
+            Some(&Computation::TupleProjection(_, component)) => {
                 out.put_tag(tags::NODE_C_TUPLE_PROJECTION);
                 out.put_uvarint(WireU64::from(WireUsize::from(usize::from(component))));
             },
-            | Some(&Computation::Transport(..)) => out.put_tag(tags::NODE_C_TRANSPORT),
-            | Some(&Computation::PathTransport { .. }) => {
+            Some(&Computation::Transport(..)) => out.put_tag(tags::NODE_C_TRANSPORT),
+            Some(&Computation::PathTransport { .. }) => {
                 out.put_tag(tags::NODE_C_PATH_TRANSPORT);
             },
-            | Some(&Computation::TelescopeTransport { .. }) => {
+            Some(&Computation::TelescopeTransport { .. }) => {
                 out.put_tag(tags::NODE_C_TELESCOPE_TRANSPORT);
             },
-            | Some(&Computation::Ride { .. }) => out.put_tag(tags::NODE_C_RIDE),
-            | Some(&Computation::TelescopeRide { .. }) => {
+            Some(&Computation::Ride { .. }) => out.put_tag(tags::NODE_C_RIDE),
+            Some(&Computation::TelescopeRide { .. }) => {
                 out.put_tag(tags::NODE_C_TELESCOPE_RIDE);
             },
-            | Some(&Computation::RelatedApplication { .. }) => {
+            Some(&Computation::RelatedApplication { .. }) => {
                 out.put_tag(tags::NODE_C_RELATED_APPLICATION);
             },
-            | Some(&Computation::Lambda(_)) => out.put_tag(tags::NODE_C_LAMBDA),
-            | Some(&Computation::Fixpoint { evidence, .. }) => {
+            Some(&Computation::Lambda(_)) => out.put_tag(tags::NODE_C_LAMBDA),
+            Some(&Computation::Fixpoint { evidence, .. }) => {
                 out.put_tag(tags::NODE_C_FIXPOINT);
                 out.put_tag(evidence_tag(evidence));
             },
-            | Some(&Computation::Application(..)) => out.put_tag(tags::NODE_C_APPLICATION),
-            | Some(&Computation::Return(_)) | None => out.put_tag(tags::NODE_C_RETURN),
-            | Some(&Computation::Bind(..)) => out.put_tag(tags::NODE_C_BIND),
-            | Some(&Computation::Force(_)) => out.put_tag(tags::NODE_C_FORCE),
-            | Some(&Computation::Case { ref branches, .. }) => {
+            Some(&Computation::Application(..)) => out.put_tag(tags::NODE_C_APPLICATION),
+            Some(&Computation::Return(_)) | None => out.put_tag(tags::NODE_C_RETURN),
+            Some(&Computation::Bind(..)) => out.put_tag(tags::NODE_C_BIND),
+            Some(&Computation::Force(_)) => out.put_tag(tags::NODE_C_FORCE),
+            Some(&Computation::Case { ref branches, .. }) => {
                 out.put_tag(tags::NODE_C_CASE);
                 out.put_uvarint(WireU64::from(WireUsize::from(branches.len())));
             },
-            | Some(&Computation::ListFold { .. }) => out.put_tag(tags::NODE_C_LIST_FOLD),
-            | Some(&Computation::With(..)) => out.put_tag(tags::NODE_C_WITH),
-            | Some(&Computation::Project(side, _)) => {
+            Some(&Computation::ListFold { .. }) => out.put_tag(tags::NODE_C_LIST_FOLD),
+            Some(&Computation::With(..)) => out.put_tag(tags::NODE_C_WITH),
+            Some(&Computation::Project(side, _)) => {
                 out.put_tag(tags::NODE_C_PROJECT);
                 out.put_tag(side_tag(side));
             },
@@ -1244,8 +1244,8 @@ fn encode_level_signature(
     out.put_uvarint(WireU64::from(WireUsize::from(constraints.len())));
     for constraint in constraints {
         out.put_tag(match constraint.relation() {
-            | ConstraintRelation::Leq => tags::RELATION_LEQ,
-            | ConstraintRelation::Eq => tags::RELATION_EQ,
+            ConstraintRelation::Leq => tags::RELATION_LEQ,
+            ConstraintRelation::Eq => tags::RELATION_EQ,
         });
         encode_level(out, constraint.left());
         encode_level(out, constraint.right());
@@ -1354,18 +1354,18 @@ fn encode_literal(
 )
 {
     match *literal {
-        | Literal::Integer(ref integer) => {
+        Literal::Integer(ref integer) => {
             out.put_tag(tags::LITERAL_INTEGER);
             out.put_tag(sign_tag(integer.sign()));
             let digits = integer.magnitude().to_digits();
             encode_text(out, ArtifactText::from(digits.as_str()));
         },
-        | Literal::Text(ref text) => {
+        Literal::Text(ref text) => {
             out.put_tag(tags::LITERAL_TEXT);
             let content = text.to_content();
             encode_text(out, ArtifactText::from(content.as_str()));
         },
-        | Literal::Numeric(ref numeric) => {
+        Literal::Numeric(ref numeric) => {
             out.put_tag(tags::LITERAL_NUMERIC);
             out.put_tag(sign_tag(numeric.sign()));
             let integer = numeric.integer_part().to_digits();
@@ -1454,9 +1454,9 @@ fn encode_text(
 fn base_type_tag(base: BaseType) -> WireTag
 {
     match base {
-        | BaseType::Integer => tags::BASE_INTEGER,
-        | BaseType::String => tags::BASE_STRING,
-        | BaseType::Numeric => tags::BASE_NUMERIC,
+        BaseType::Integer => tags::BASE_INTEGER,
+        BaseType::String => tags::BASE_STRING,
+        BaseType::Numeric => tags::BASE_NUMERIC,
     }
 }
 
@@ -1494,8 +1494,8 @@ fn base_type_tag(base: BaseType) -> WireTag
 fn sign_tag(sign: Sign) -> WireTag
 {
     match sign {
-        | Sign::NonNegative => tags::SIGN_NON_NEGATIVE,
-        | Sign::Negative => tags::SIGN_NEGATIVE,
+        Sign::NonNegative => tags::SIGN_NON_NEGATIVE,
+        Sign::Negative => tags::SIGN_NEGATIVE,
     }
 }
 
@@ -1522,8 +1522,8 @@ fn sign_tag(sign: Sign) -> WireTag
 fn evidence_tag(evidence: crate::FixpointEvidence) -> WireTag
 {
     match evidence {
-        | crate::FixpointEvidence::Partial => tags::FIXPOINT_PARTIAL,
-        | crate::FixpointEvidence::StructuralDescent => tags::FIXPOINT_STRUCTURAL_DESCENT,
+        crate::FixpointEvidence::Partial => tags::FIXPOINT_PARTIAL,
+        crate::FixpointEvidence::StructuralDescent => tags::FIXPOINT_STRUCTURAL_DESCENT,
     }
 }
 
@@ -1550,8 +1550,8 @@ fn evidence_tag(evidence: crate::FixpointEvidence) -> WireTag
 fn side_tag(side: crate::Side) -> WireTag
 {
     match side {
-        | crate::Side::Left => tags::SIDE_LEFT,
-        | crate::Side::Right => tags::SIDE_RIGHT,
+        crate::Side::Left => tags::SIDE_LEFT,
+        crate::Side::Right => tags::SIDE_RIGHT,
     }
 }
 
@@ -1578,8 +1578,8 @@ fn side_tag(side: crate::Side) -> WireTag
 fn seam_tag(seam: crate::Seam) -> WireTag
 {
     match seam {
-        | crate::Seam::Sequence => tags::SEAM_SEQUENCE,
-        | crate::Seam::Feedback => tags::SEAM_FEEDBACK,
+        crate::Seam::Sequence => tags::SEAM_SEQUENCE,
+        crate::Seam::Feedback => tags::SEAM_FEEDBACK,
     }
 }
 

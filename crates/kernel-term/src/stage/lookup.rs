@@ -466,9 +466,9 @@ impl Lookup
         let mut hole = self.home(hash);
         loop {
             match self.slots.get(hole.0) {
-                | Some(stored) if stored.position == position => break,
-                | Some(stored) if stored.position != VACANT => hole = self.next(hole),
-                | Some(_) | None => return,
+                Some(stored) if stored.position == position => break,
+                Some(stored) if stored.position != VACANT => hole = self.next(hole),
+                Some(_) | None => return,
             }
         }
         let mut next = self.next(hole);
@@ -516,8 +516,8 @@ mod tests
     ) -> Probe
     {
         match lookup.probe(hash, entries, &key) {
-            | Probe::Found(position) => Probe::Found(position),
-            | Probe::Vacant(slot) => {
+            Probe::Found(position) => Probe::Found(position),
+            Probe::Vacant(slot) => {
                 let position = entries.len();
                 lookup.insert(slot, hash, entries).unwrap();
                 entries.push(key);

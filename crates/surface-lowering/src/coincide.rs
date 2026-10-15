@@ -250,15 +250,15 @@ where
         let forward = bool::from(path_greater(&precedence, &face.lhs, &face.rhs));
         let backward = bool::from(path_greater(&precedence, &face.rhs, &face.lhs));
         let direction = match orientation {
-            | RuleOrientation::Pinned(RuleDirection::LeftToRight) if forward => {
+            RuleOrientation::Pinned(RuleDirection::LeftToRight) if forward => {
                 RuleDirection::LeftToRight
             },
-            | RuleOrientation::Pinned(RuleDirection::RightToLeft) if backward => {
+            RuleOrientation::Pinned(RuleDirection::RightToLeft) if backward => {
                 RuleDirection::RightToLeft
             },
-            | RuleOrientation::Unpinned if forward => RuleDirection::LeftToRight,
-            | RuleOrientation::Unpinned if backward => RuleDirection::RightToLeft,
-            | RuleOrientation::Pinned(_) | RuleOrientation::Unpinned => {
+            RuleOrientation::Unpinned if forward => RuleDirection::LeftToRight,
+            RuleOrientation::Unpinned if backward => RuleDirection::RightToLeft,
+            RuleOrientation::Pinned(_) | RuleOrientation::Unpinned => {
                 return Err(RuleIndex::from(index));
             },
         };
@@ -283,8 +283,8 @@ fn facing(
 ) -> RuleFace
 {
     match direction {
-        | RuleDirection::LeftToRight => face.clone(),
-        | RuleDirection::RightToLeft => {
+        RuleDirection::LeftToRight => face.clone(),
+        RuleDirection::RightToLeft => {
             let variables = derive_cell_var_meta(&face.rhs);
             RuleFace::new(
                 face.rhs.clone(),
@@ -380,9 +380,9 @@ impl CoherenceFault
     ) -> LoweringRefusal<'static>
     {
         match *self {
-            | Self::Unoriented => LoweringRefusal::RulesUnoriented { span },
-            | Self::Diverges { first, .. } => LoweringRefusal::RulesDiverge { span, first },
-            | Self::Undecided { first, .. } => LoweringRefusal::RulesUndecided { span, first },
+            Self::Unoriented => LoweringRefusal::RulesUnoriented { span },
+            Self::Diverges { first, .. } => LoweringRefusal::RulesDiverge { span, first },
+            Self::Undecided { first, .. } => LoweringRefusal::RulesUndecided { span, first },
         }
     }
 }
@@ -417,11 +417,11 @@ impl fmt::Display for CoherenceFault
     ) -> fmt::Result
     {
         match *self {
-            | Self::Unoriented => f.write_str(
+            Self::Unoriented => f.write_str(
                 "the right-hand side is not below the left in the path order, so the rules may not \
                  end",
             ),
-            | Self::Diverges {
+            Self::Diverges {
                 ref peak,
                 ref left,
                 ref right,
@@ -433,7 +433,7 @@ impl fmt::Display for CoherenceFault
                 Spelled(left),
                 Spelled(right)
             ),
-            | Self::Undecided { ref peak, .. } => write!(
+            Self::Undecided { ref peak, .. } => write!(
                 f,
                 "both rules rewrite `{}`, and its rewrites reach no normal form within \
                  {JOIN_STEPS} steps",
@@ -462,19 +462,19 @@ impl fmt::Display for Spelled<'_>
     ) -> fmt::Result
     {
         let read = match *self.0 {
-            | PairTerm::Command(ref command) => match read_command(command) {
-                | Maybe::Present(written) => Ok(written),
-                | Maybe::Absent(command_reading::Absent::Terminal) => Err("★"),
-                | Maybe::Absent(command_reading::Absent::SplitResults) => Err("…"),
+            PairTerm::Command(ref command) => match read_command(command) {
+                Maybe::Present(written) => Ok(written),
+                Maybe::Absent(command_reading::Absent::Terminal) => Err("★"),
+                Maybe::Absent(command_reading::Absent::SplitResults) => Err("…"),
             },
-            | PairTerm::Term(ref term) => match term.read() {
-                | Maybe::Present(written) => Ok(written),
-                | Maybe::Absent(term_reading::Absent::Skolem) => Err("★"),
+            PairTerm::Term(ref term) => match term.read() {
+                Maybe::Present(written) => Ok(written),
+                Maybe::Absent(term_reading::Absent::Skolem) => Err("★"),
             },
         };
         match read {
-            | Ok(written) => f.write_str(&spell(&written)),
-            | Err(sign) => f.write_str(sign),
+            Ok(written) => f.write_str(&spell(&written)),
+            Err(sign) => f.write_str(sign),
         }
     }
 }
@@ -548,14 +548,14 @@ pub(crate) fn decide<G>(
         PairTerm::Command,
     )?;
     let terms = match *presented {
-        | Maybe::Present(ref presented) => certified(
+        Maybe::Present(ref presented) => certified(
             join_critical_pairs(&presented.store, budget),
             &presented.faces,
             &rule_span,
             at,
             PairTerm::Term,
         )?,
-        | Maybe::Absent(presented_reading::Absent::NoTermFace) => Vec::new(),
+        Maybe::Absent(presented_reading::Absent::NoTermFace) => Vec::new(),
     };
     if commands.is_empty() && terms.is_empty() {
         return Ok(Coincidence::Orthogonal);
@@ -612,15 +612,15 @@ where
     let located = |left: CellId, right: CellId| {
         let span = |face: Option<usize>| face.map_or(at, rule_span);
         match (face_of(left), face_of(right)) {
-            | (Some(written_left), Some(written_right)) if written_left > written_right => {
+            (Some(written_left), Some(written_right)) if written_left > written_right => {
                 (span(Some(written_left)), span(Some(written_right)), true)
             },
-            | (written_left, written_right) => (span(written_right), span(written_left), false),
+            (written_left, written_right) => (span(written_right), span(written_left), false),
         }
     };
     match joinability {
-        | Joinability::Joined(certificates) => Ok(certificates),
-        | Joinability::Diverges {
+        Joinability::Joined(certificates) => Ok(certificates),
+        Joinability::Diverges {
             overlap,
             left,
             right,
@@ -639,7 +639,7 @@ where
                 right: Box::new(wrap(later)),
             }))
         },
-        | Joinability::Undecided(overlap) => {
+        Joinability::Undecided(overlap) => {
             let (span, first, _) = located(overlap.left, overlap.right);
             Err((span, CoherenceFault::Undecided {
                 first,
@@ -672,8 +672,8 @@ pub(crate) fn rewriting_store<'store>(
     let left_out: Vec<CellId> = circuits
         .iter()
         .filter_map(|circuit| match *circuit {
-            | CircuitCell::Admitted { cell, .. } => Some(cell),
-            | CircuitCell::Refused(_) => None,
+            CircuitCell::Admitted { cell, .. } => Some(cell),
+            CircuitCell::Refused(_) => None,
         })
         .filter(|&cell| !faces.iter().any(|&(_, face)| face == cell))
         .collect();
@@ -822,18 +822,18 @@ impl fmt::Display for NormalFormFault
     ) -> fmt::Result
     {
         match *self {
-            | Self::Undescribed => f.write_str("no normal form: the declaration has no rules"),
-            | Self::Incoherent => f.write_str("no normal form: the block's rules are refused"),
-            | Self::Unread => f.write_str("no normal form: the call does not read as a term"),
-            | Self::UnknownSymbol => {
+            Self::Undescribed => f.write_str("no normal form: the declaration has no rules"),
+            Self::Incoherent => f.write_str("no normal form: the block's rules are refused"),
+            Self::Unread => f.write_str("no normal form: the call does not read as a term"),
+            Self::UnknownSymbol => {
                 f.write_str("no normal form: the call names a symbol the block does not declare")
             },
-            | Self::NotACall(_) => {
+            Self::NotACall(_) => {
                 f.write_str("no normal form: the term is no call the block's operations read")
             },
-            | Self::Exhausted => write!(f, "no normal form within {NORMAL_FORM_STEPS} steps"),
-            | Self::Uncertified => f.write_str("no normal form: the path does not replay"),
-            | Self::Unwritable(_) => f.write_str("no normal form: it writes no term"),
+            Self::Exhausted => write!(f, "no normal form within {NORMAL_FORM_STEPS} steps"),
+            Self::Uncertified => f.write_str("no normal form: the path does not replay"),
+            Self::Unwritable(_) => f.write_str("no normal form: it writes no term"),
         }
     }
 }
@@ -891,22 +891,22 @@ pub fn normal_form<G>(
     }
     let call = read_call(description, call)?;
     let (path, normal) = match cells.presented {
-        | Maybe::Present(ref presented) => {
+        Maybe::Present(ref presented) => {
             let (path, normal) = certified_normal(&presented.store, &Term::from(&call), |term| {
                 match term.read() {
-                    | Maybe::Present(written) => Ok(written),
-                    | Maybe::Absent(reason) => Err(Unwriting::Term(reason)),
+                    Maybe::Present(written) => Ok(written),
+                    Maybe::Absent(reason) => Err(Unwriting::Term(reason)),
                 }
             })?;
             (NormalPath::Terms(path), normal)
         },
-        | Maybe::Absent(presented_reading::Absent::NoTermFace) => {
+        Maybe::Absent(presented_reading::Absent::NoTermFace) => {
             let command = elaborate_call(&call, description.polarity, &cells.operations)
                 .map_err(NormalFormFault::NotACall)?;
             let (path, normal) = certified_normal(&cells.rewriting(), &command, |command| {
                 match read_command(command) {
-                    | Maybe::Present(written) => Ok(written),
-                    | Maybe::Absent(reason) => Err(Unwriting::Command(reason)),
+                    Maybe::Present(written) => Ok(written),
+                    Maybe::Absent(reason) => Err(Unwriting::Command(reason)),
                 }
             })?;
             (NormalPath::Commands(path), normal)
@@ -1084,8 +1084,8 @@ impl<'desc> Symbol<'desc>
     ) -> FreeTerm
     {
         match self {
-            | Self::Ctor(name) => FreeTerm::ctor(name.clone(), arguments),
-            | Self::Op(name) => FreeTerm::op(name.clone(), arguments),
+            Self::Ctor(name) => FreeTerm::ctor(name.clone(), arguments),
+            Self::Op(name) => FreeTerm::op(name.clone(), arguments),
         }
     }
 }
@@ -1099,7 +1099,7 @@ impl<'desc> Symbol<'desc>
 fn spell(term: &FreeTerm) -> String
 {
     match term.view() {
-        | TermView::Results { args } => {
+        TermView::Results { args } => {
             let components: Vec<String> = args
                 .map(|component| component.to_term().to_string())
                 .collect();
@@ -1111,7 +1111,7 @@ fn spell(term: &FreeTerm) -> String
                 format!("#{{{joined}}}")
             }
         },
-        | TermView::Var(_) | TermView::Ctor { .. } | TermView::Op { .. } => term.to_string(),
+        TermView::Var(_) | TermView::Ctor { .. } | TermView::Op { .. } => term.to_string(),
     }
 }
 

@@ -148,14 +148,14 @@ impl Lowerer<'_, '_>
                 continue;
             };
             let kind = match recorded.kind {
-                | Maybe::Present(kind) => {
+                Maybe::Present(kind) => {
                     let Maybe::Present(id) = self.value_type_at(kind.node)
                     else {
                         continue;
                     };
                     id
                 },
-                | Maybe::Absent(_) => {
+                Maybe::Absent(_) => {
                     let id = sink.arena.value_type_universe(
                         Sort::Ground(Universe::FUSS_FREE.sort),
                         Level::constant(Universe::FUSS_FREE.level),
@@ -165,7 +165,7 @@ impl Lowerer<'_, '_>
                 },
             };
             match own.role {
-                | Role::Abstract => {
+                Role::Abstract => {
                     let _replaced = self.sealings.insert(slot, Sealing {
                         kind,
                         representation,
@@ -174,13 +174,12 @@ impl Lowerer<'_, '_>
                         component: recorded.component,
                     });
                 },
-                | Role::Witness => {
+                Role::Witness => {
                     let code = sink.arena.value_quote(representation);
                     let _minted = sink.value(code, written);
                     let _replaced = self.kind_checks.insert(slot, (kind, code));
                 },
-                | Role::Declared | Role::Held | Role::Operation | Role::Words | Role::Parameter => {
-                },
+                Role::Declared | Role::Held | Role::Operation | Role::Words | Role::Parameter => {},
             }
         }
     }

@@ -259,7 +259,7 @@ impl<A: Copy + Ord> Nda<A>
         for rule in &rules {
             let source_arity = arity_at(&arities, rule.source)?;
             match rule.kind {
-                | RuleKind::Free { register }
+                RuleKind::Free { register }
                 | RuleKind::Close { register }
                 | RuleKind::Drop { register } => {
                     if usize::from(register) >= usize::from(source_arity) {
@@ -277,7 +277,7 @@ impl<A: Copy + Ord> Nda<A>
                         });
                     }
                 },
-                | RuleKind::Open | RuleKind::OpenClose => {},
+                RuleKind::Open | RuleKind::OpenClose => {},
             }
             let allocation = if rule.kind == RuleKind::Open {
                 Allocation::Allowed
@@ -420,26 +420,26 @@ impl<A: Copy + Ord> Nda<A>
                         continue;
                     }
                     let allocated = match (rule.kind, *letter) {
-                        | (RuleKind::Free { register }, Letter::Free(atom))
+                        (RuleKind::Free { register }, Letter::Free(atom))
                         | (RuleKind::Close { register }, Letter::Close(atom)) => {
                             if configuration.store().name(register) != Maybe::Present(atom) {
                                 continue;
                             }
                             Maybe::Absent(EmptyRegister::Empty)
                         },
-                        | (RuleKind::Open, Letter::Open(atom)) => {
+                        (RuleKind::Open, Letter::Open(atom)) => {
                             if configuration.store().freshness(atom) != Freshness::Fresh {
                                 continue;
                             }
                             Maybe::Present(atom)
                         },
-                        | (RuleKind::OpenClose, Letter::OpenClose(atom)) => {
+                        (RuleKind::OpenClose, Letter::OpenClose(atom)) => {
                             if configuration.store().freshness(atom) != Freshness::Fresh {
                                 continue;
                             }
                             Maybe::Absent(EmptyRegister::Empty)
                         },
-                        | _ => continue,
+                        _ => continue,
                     };
                     let store = configuration.store().transfer(&rule.transfer, allocated);
                     next.insert(Configuration::new(rule.target, store));

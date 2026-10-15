@@ -582,8 +582,8 @@ impl Session
     ) -> Answer
     {
         match catch_unwind(AssertUnwindSafe(|| exchange(&mut self.client))) {
-            | Ok(answer) => answer,
-            | Err(payload) => panic!("{}{}", panic_message(&*payload).0, self.scene()),
+            Ok(answer) => answer,
+            Err(payload) => panic!("{}{}", panic_message(&*payload).0, self.scene()),
         }
     }
 

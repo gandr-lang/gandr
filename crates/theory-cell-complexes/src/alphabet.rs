@@ -198,14 +198,14 @@ where
     let mut right = right.into_iter();
     for step in left {
         match right.next() {
-            | None => return PositionOrder::EnclosedBy,
-            | Some(other) if other == step => {},
-            | Some(_) => return PositionOrder::Incomparable,
+            None => return PositionOrder::EnclosedBy,
+            Some(other) if other == step => {},
+            Some(_) => return PositionOrder::Incomparable,
         }
     }
     match right.next() {
-        | Some(_) => PositionOrder::Encloses,
-        | None => PositionOrder::Same,
+        Some(_) => PositionOrder::Encloses,
+        None => PositionOrder::Same,
     }
 }
 
@@ -246,8 +246,8 @@ impl core::fmt::Display for CommandSpliceRefusal
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::OffTerm => "the position leaves the term",
-            | Self::NotACommand => "the position addresses a subterm a command cannot replace",
+            Self::OffTerm => "the position leaves the term",
+            Self::NotACommand => "the position addresses a subterm a command cannot replace",
         })
     }
 }

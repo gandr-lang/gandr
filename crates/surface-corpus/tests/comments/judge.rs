@@ -208,16 +208,16 @@ pub fn findings_of(
                 continue;
             };
             match node.label() {
-                | NodeLabel::Doc => return true,
-                | NodeLabel::Space
+                NodeLabel::Doc => return true,
+                NodeLabel::Space
                     if tree
                         .fragment(child)
                         .is_some_and(|text| <&str>::from(text).trim_start().starts_with("//")) =>
                 {
                     return true;
                 },
-                | NodeLabel::Space => {},
-                | NodeLabel::Wald
+                NodeLabel::Space => {},
+                NodeLabel::Wald
                 | NodeLabel::Meld(_)
                 | NodeLabel::Tile(_)
                 | NodeLabel::Grout { .. }

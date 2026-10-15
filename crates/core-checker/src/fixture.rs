@@ -434,21 +434,21 @@ impl TypeRecipe
         ]);
         for &step in &self.steps {
             let entry = match step {
-                | TypeStep::Integer => Entry::Value(ValueShape::Integer),
-                | TypeStep::String => Entry::Value(ValueShape::String),
-                | TypeStep::Unit => Entry::Value(ValueShape::Unit),
-                | TypeStep::Thunk(body) => Entry::Value(ValueShape::Thunk(body.within(&comps))),
-                | TypeStep::Returner(result) => {
+                TypeStep::Integer => Entry::Value(ValueShape::Integer),
+                TypeStep::String => Entry::Value(ValueShape::String),
+                TypeStep::Unit => Entry::Value(ValueShape::Unit),
+                TypeStep::Thunk(body) => Entry::Value(ValueShape::Thunk(body.within(&comps))),
+                TypeStep::Returner(result) => {
                     Entry::Comp(CompShape::Returner(result.within(&values)))
                 },
-                | TypeStep::Arrow(domain, codomain) => Entry::Comp(CompShape::Arrow(
+                TypeStep::Arrow(domain, codomain) => Entry::Comp(CompShape::Arrow(
                     domain.within(&values),
                     codomain.within(&comps),
                 )),
             };
             match entry {
-                | Entry::Value(shape) => values.push(shape),
-                | Entry::Comp(shape) => comps.push(shape),
+                Entry::Value(shape) => values.push(shape),
+                Entry::Comp(shape) => comps.push(shape),
             }
             entries.push(entry);
         }
@@ -481,15 +481,15 @@ impl TypeRecipe
         let mut comps: Vec<CompTypeId> = Vec::new();
         for entry in self.resolve() {
             match entry {
-                | Entry::Value(shape) => values.push(match shape {
-                    | ValueShape::Integer => arena.value_type_base(BaseType::Integer),
-                    | ValueShape::String => arena.value_type_base(BaseType::String),
-                    | ValueShape::Unit => arena.value_type_unit(),
-                    | ValueShape::Thunk(body) => arena.value_type_thunk(comps[body.0]),
+                Entry::Value(shape) => values.push(match shape {
+                    ValueShape::Integer => arena.value_type_base(BaseType::Integer),
+                    ValueShape::String => arena.value_type_base(BaseType::String),
+                    ValueShape::Unit => arena.value_type_unit(),
+                    ValueShape::Thunk(body) => arena.value_type_thunk(comps[body.0]),
                 }),
-                | Entry::Comp(shape) => comps.push(match shape {
-                    | CompShape::Returner(result) => arena.comp_type_returner(values[result.0]),
-                    | CompShape::Arrow(domain, codomain) => {
+                Entry::Comp(shape) => comps.push(match shape {
+                    CompShape::Returner(result) => arena.comp_type_returner(values[result.0]),
+                    CompShape::Arrow(domain, codomain) => {
                         arena.comp_type_arrow(values[domain.0], comps[codomain.0])
                     },
                 }),
@@ -549,26 +549,26 @@ impl TypeRecipe
         let mut comp_entries = Vec::new();
         for entry in entries {
             match entry {
-                | Entry::Value(shape) => value_entries.push(shape),
-                | Entry::Comp(shape) => comp_entries.push(shape),
+                Entry::Value(shape) => value_entries.push(shape),
+                Entry::Comp(shape) => comp_entries.push(shape),
             }
         }
         let mut tokens = Vec::new();
         let mut pending = Vec::from([Entry::Value(*value_entries.last().unwrap())]);
         while let Some(entry) = pending.pop() {
             match entry {
-                | Entry::Value(ValueShape::Integer) => tokens.push(Token::Integer),
-                | Entry::Value(ValueShape::String) => tokens.push(Token::String),
-                | Entry::Value(ValueShape::Unit) => tokens.push(Token::Unit),
-                | Entry::Value(ValueShape::Thunk(body)) => {
+                Entry::Value(ValueShape::Integer) => tokens.push(Token::Integer),
+                Entry::Value(ValueShape::String) => tokens.push(Token::String),
+                Entry::Value(ValueShape::Unit) => tokens.push(Token::Unit),
+                Entry::Value(ValueShape::Thunk(body)) => {
                     tokens.push(Token::Thunk);
                     pending.push(Entry::Comp(comp_entries[body.0]));
                 },
-                | Entry::Comp(CompShape::Returner(result)) => {
+                Entry::Comp(CompShape::Returner(result)) => {
                     tokens.push(Token::Returner);
                     pending.push(Entry::Value(value_entries[result.0]));
                 },
-                | Entry::Comp(CompShape::Arrow(domain, codomain)) => {
+                Entry::Comp(CompShape::Arrow(domain, codomain)) => {
                     tokens.push(Token::Arrow);
                     pending.push(Entry::Comp(comp_entries[codomain.0]));
                     pending.push(Entry::Value(value_entries[domain.0]));
@@ -690,39 +690,39 @@ impl TermRecipe
             let value = |position: Position| pick(&terms.values, position);
             let comp = |position: Position| pick(&terms.comps, position);
             match step {
-                | TermStep::Variable(index) => {
+                TermStep::Variable(index) => {
                     let index = DeBruijnIndex::from(u32::from(index % 3));
                     terms
                         .values
                         .push(arena.value_variable(Zone::Intuitionistic, index));
                 },
-                | TermStep::Constant(position) => {
+                TermStep::Constant(position) => {
                     let constant = ConstantIndex::from(usize::from(position % 6));
                     terms.values.push(arena.value_constant(constant));
                 },
-                | TermStep::Unit => terms.values.push(arena.value_unit()),
-                | TermStep::Integer => terms.values.push(arena.value_literal(integer_literal())),
-                | TermStep::Text => terms.values.push(arena.value_literal(text_literal())),
-                | TermStep::Numeric => terms.values.push(arena.value_literal(numeric_literal())),
-                | TermStep::Thunk(body) => {
+                TermStep::Unit => terms.values.push(arena.value_unit()),
+                TermStep::Integer => terms.values.push(arena.value_literal(integer_literal())),
+                TermStep::Text => terms.values.push(arena.value_literal(text_literal())),
+                TermStep::Numeric => terms.values.push(arena.value_literal(numeric_literal())),
+                TermStep::Thunk(body) => {
                     let body = comp(body);
                     terms.values.push(arena.value_thunk(body));
                 },
-                | TermStep::Force(forced) => {
+                TermStep::Force(forced) => {
                     let forced = value(forced);
                     terms.comps.push(arena.computation_force(forced));
                 },
-                | TermStep::Apply(head, argument) => {
+                TermStep::Apply(head, argument) => {
                     let (head, argument) = (comp(head), value(argument));
                     terms
                         .comps
                         .push(arena.computation_application(head, argument));
                 },
-                | TermStep::Lambda(body) => {
+                TermStep::Lambda(body) => {
                     let body = comp(body);
                     terms.comps.push(arena.computation_lambda(body));
                 },
-                | TermStep::Return(returned) => {
+                TermStep::Return(returned) => {
                     let returned = value(returned);
                     terms.comps.push(arena.computation_return(returned));
                 },
@@ -877,49 +877,49 @@ impl TypedRecipe
             let value = |position: Position| pick(&terms.values, position);
             let comp = |position: Position| pick(&terms.comps, position);
             match step {
-                | TypedStep::Integer => {
+                TypedStep::Integer => {
                     let literal = arena.value_literal(integer_literal());
                     let atom = arena.value_type_base(BaseType::Integer);
                     terms.values.push((literal, atom, Mode::Synthesising));
                 },
-                | TypedStep::Text => {
+                TypedStep::Text => {
                     let literal = arena.value_literal(text_literal());
                     let atom = arena.value_type_base(BaseType::String);
                     terms.values.push((literal, atom, Mode::Synthesising));
                 },
-                | TypedStep::Unit => {
+                TypedStep::Unit => {
                     let unit = arena.value_unit();
                     let unit_type = arena.value_type_unit();
                     terms.values.push((unit, unit_type, Mode::Synthesising));
                 },
-                | TypedStep::Constant(source) => {
+                TypedStep::Constant(source) => {
                     let (_, declared, _) = value(source);
                     let constant = arena.value_constant(ConstantIndex::from(terms.constants.len()));
                     terms.constants.push(declared);
                     terms.values.push((constant, declared, Mode::Synthesising));
                 },
-                | TypedStep::Thunk(body) => {
+                TypedStep::Thunk(body) => {
                     let (body, body_type, _) = comp(body);
                     let thunk = arena.value_thunk(body);
                     let thunk_type = arena.value_type_thunk(body_type);
                     terms.values.push((thunk, thunk_type, Mode::Checking));
                 },
-                | TypedStep::Return(returned) => {
+                TypedStep::Return(returned) => {
                     let (returned, result, _) = value(returned);
                     let term = arena.computation_return(returned);
                     let returner = arena.comp_type_returner(result);
                     terms.comps.push((term, returner, Mode::Checking));
                 },
-                | TypedStep::Force(start) => {
+                TypedStep::Force(start) => {
                     let found =
                         rotated(&terms.values, start).find_map(|(forced, forced_type, mode)| {
                             match arena.value_type(forced_type) {
-                                | Some(&ValueType::Thunk(body_type))
+                                Some(&ValueType::Thunk(body_type))
                                     if mode == Mode::Synthesising =>
                                 {
                                     Some((forced, body_type))
                                 },
-                                | _ => None,
+                                _ => None,
                             }
                         });
                     if let Some((forced, body_type)) = found {
@@ -927,20 +927,20 @@ impl TypedRecipe
                         terms.comps.push((term, body_type, Mode::Synthesising));
                     }
                 },
-                | TypedStep::Apply(start) => {
+                TypedStep::Apply(start) => {
                     let found =
                         rotated(&terms.comps, start).find_map(
                             |(head, head_type, mode)| match arena.comp_type(head_type) {
-                                | Some(&CompType::Arrow { domain, codomain }) => {
+                                Some(&CompType::Arrow { domain, codomain }) => {
                                     Some((head, head_type, mode, domain, codomain))
                                 },
-                                | _ => None,
+                                _ => None,
                             },
                         );
                     if let Some((head, head_type, mode, domain, codomain)) = found {
                         let head = match mode {
-                            | Mode::Synthesising => head,
-                            | Mode::Checking => {
+                            Mode::Synthesising => head,
+                            Mode::Checking => {
                                 let declared = arena.value_type_thunk(head_type);
                                 let suspended = arena
                                     .value_constant(ConstantIndex::from(terms.constants.len()));
@@ -958,21 +958,21 @@ impl TypedRecipe
                         terms.comps.push((term, codomain, Mode::Synthesising));
                     }
                 },
-                | TypedStep::Suspend(body) => {
+                TypedStep::Suspend(body) => {
                     let (_, body_type, _) = comp(body);
                     let declared = arena.value_type_thunk(body_type);
                     let constant = arena.value_constant(ConstantIndex::from(terms.constants.len()));
                     terms.constants.push(declared);
                     terms.values.push((constant, declared, Mode::Synthesising));
                 },
-                | TypedStep::Lambda(body, domain) => {
+                TypedStep::Lambda(body, domain) => {
                     let (body, body_type, _) = comp(body);
                     let (_, domain, _) = value(domain);
                     let term = arena.computation_lambda(body);
                     let arrow = arena.comp_type_arrow(domain, body_type);
                     terms.comps.push((term, arrow, Mode::Checking));
                 },
-                | TypedStep::Identity(domain) => {
+                TypedStep::Identity(domain) => {
                     let (_, domain, _) = value(domain);
                     let bound =
                         arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -1060,9 +1060,9 @@ impl AtomType
     ) -> ValueTypeId
     {
         match self {
-            | Self::Integer => arena.value_type_base(BaseType::Integer),
-            | Self::String => arena.value_type_base(BaseType::String),
-            | Self::Unit => arena.value_type_unit(),
+            Self::Integer => arena.value_type_base(BaseType::Integer),
+            Self::String => arena.value_type_base(BaseType::String),
+            Self::Unit => arena.value_type_unit(),
         }
     }
 
@@ -1090,9 +1090,9 @@ impl AtomType
     ) -> ValueId
     {
         match self {
-            | Self::Integer => arena.value_literal(integer_literal()),
-            | Self::String => arena.value_literal(text_literal()),
-            | Self::Unit => arena.value_unit(),
+            Self::Integer => arena.value_literal(integer_literal()),
+            Self::String => arena.value_literal(text_literal()),
+            Self::Unit => arena.value_unit(),
         }
     }
 }
@@ -1192,8 +1192,8 @@ impl FunctionRecipe
     {
         let scope = self.scope();
         let returned = match scope.len() {
-            | 0 => self.result,
-            | _ => pick(&scope, self.returned),
+            0 => self.result,
+            _ => pick(&scope, self.returned),
         };
         if returned == self.result {
             Typing::WellTyped
@@ -1234,8 +1234,8 @@ impl FunctionRecipe
     {
         let scope = self.scope();
         let returned = match scope.len().checked_sub(1) {
-            | None => self.result.inhabitant(arena),
-            | Some(innermost) => {
+            None => self.result.inhabitant(arena),
+            Some(innermost) => {
                 let Position(chosen) = self.returned.within(&scope);
                 let index = innermost
                     .checked_sub(chosen)

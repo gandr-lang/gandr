@@ -281,8 +281,8 @@ pub(crate) fn session_at(
 ) -> Result<SessionType, CheckRefusal>
 {
     match value_type_view(context.arena(), ty)? {
-        | ValueTypeView::Session(session) => Ok(session.clone()),
-        | ValueTypeView::Data { .. }
+        ValueTypeView::Session(session) => Ok(session.clone()),
+        ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
@@ -337,15 +337,57 @@ pub(crate) fn unrestricted(
 ) -> Result<(), CheckRefusal>
 {
     let head = match value_type_view(context.arena(), declared)? {
-        | ValueTypeView::Element { .. } => context.whnf_value_type(declared)?,
-        | _ => declared,
+        ValueTypeView::Element { .. } => context.whnf_value_type(declared)?,
+        ValueTypeView::Data { .. }
+        | ValueTypeView::Record(_)
+        | ValueTypeView::Stack { .. }
+        | ValueTypeView::PathUniverse(..)
+        | ValueTypeView::Path { .. }
+        | ValueTypeView::Flow { .. }
+        | ValueTypeView::Run(_)
+        | ValueTypeView::Sum(_)
+        | ValueTypeView::List(_)
+        | ValueTypeView::Integer
+        | ValueTypeView::String
+        | ValueTypeView::Unit
+        | ValueTypeView::Thunk(_)
+        | ValueTypeView::Universe { .. }
+        | ValueTypeView::Lift { .. }
+        | ValueTypeView::Product(_)
+        | ValueTypeView::StaticPi { .. }
+        | ValueTypeView::Sigma { .. }
+        | ValueTypeView::Abstract(_)
+        | ValueTypeView::Capability { .. }
+        | ValueTypeView::Session(_)
+        | ValueTypeView::Unknown => declared,
     };
     match value_type_view(context.arena(), head)? {
-        | ValueTypeView::Session(_) => Err(CheckRefusal::Linearity {
+        ValueTypeView::Session(_) => Err(CheckRefusal::Linearity {
             at: crate::refusal::CoreNode::Type(crate::refusal::TypeNode::Value(declared)),
             defect: LinearityDefect::Unrestricted,
         }),
-        | _ => Ok(()),
+        ValueTypeView::Data { .. }
+        | ValueTypeView::Record(_)
+        | ValueTypeView::Stack { .. }
+        | ValueTypeView::PathUniverse(..)
+        | ValueTypeView::Path { .. }
+        | ValueTypeView::Flow { .. }
+        | ValueTypeView::Run(_)
+        | ValueTypeView::Sum(_)
+        | ValueTypeView::List(_)
+        | ValueTypeView::Integer
+        | ValueTypeView::String
+        | ValueTypeView::Unit
+        | ValueTypeView::Thunk(_)
+        | ValueTypeView::Universe { .. }
+        | ValueTypeView::Lift { .. }
+        | ValueTypeView::Element { .. }
+        | ValueTypeView::Product(_)
+        | ValueTypeView::StaticPi { .. }
+        | ValueTypeView::Sigma { .. }
+        | ValueTypeView::Abstract(_)
+        | ValueTypeView::Capability { .. }
+        | ValueTypeView::Unknown => Ok(()),
     }
 }
 
@@ -384,13 +426,13 @@ pub(crate) fn engine(session: &SessionType) -> Result<Session, CheckRefusal>
         .nodes()
         .iter()
         .map(|node| match *node {
-            | ProtocolNode::Send { next, .. } => Node::Send(payload, id(next)),
-            | ProtocolNode::Receive { next, .. } => Node::Receive(payload, id(next)),
-            | ProtocolNode::Select(ref branches) => Node::Select(labels(branches)),
-            | ProtocolNode::Offer(ref branches) => Node::Offer(labels(branches)),
-            | ProtocolNode::End => Node::End,
-            | ProtocolNode::Mu(body) => Node::Mu(id(body)),
-            | ProtocolNode::Recur(binder) => Node::Var(id(binder)),
+            ProtocolNode::Send { next, .. } => Node::Send(payload, id(next)),
+            ProtocolNode::Receive { next, .. } => Node::Receive(payload, id(next)),
+            ProtocolNode::Select(ref branches) => Node::Select(labels(branches)),
+            ProtocolNode::Offer(ref branches) => Node::Offer(labels(branches)),
+            ProtocolNode::End => Node::End,
+            ProtocolNode::Mu(body) => Node::Mu(id(body)),
+            ProtocolNode::Recur(binder) => Node::Var(id(binder)),
         })
         .collect();
     Session::new(nodes, id(session.protocol().root()))
@@ -447,8 +489,8 @@ pub(crate) fn relate(
     let left = session_at(context, left)?;
     let right = session_at(context, right)?;
     Ok(match related(&left, &right, relation)? {
-        | Maybe::Present(decided) => Maybe::Present(decided.payloads),
-        | Maybe::Absent(absent) => Maybe::Absent(absent),
+        Maybe::Present(decided) => Maybe::Present(decided.payloads),
+        Maybe::Absent(absent) => Maybe::Absent(absent),
     })
 }
 
@@ -498,7 +540,7 @@ pub(crate) fn related(
         .protocol()
         .node(ProtocolState::from(position))
     {
-        | Ok(&(ProtocolNode::Send { payload, .. } | ProtocolNode::Receive { payload, .. })) => {
+        Ok(&(ProtocolNode::Send { payload, .. } | ProtocolNode::Receive { payload, .. })) => {
             session
                 .payloads()
                 .get(usize::from(payload))
@@ -506,8 +548,8 @@ pub(crate) fn related(
                 .map(Some)
                 .ok_or(CheckRefusal::MachineInvariant)
         },
-        | Ok(_) => Ok(None),
-        | Err(_) => Err(CheckRefusal::MachineInvariant),
+        Ok(_) => Ok(None),
+        Err(_) => Err(CheckRefusal::MachineInvariant),
     };
     let mut payloads = Vec::new();
     for pair in &evidence.pairs {

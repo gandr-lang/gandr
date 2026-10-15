@@ -435,13 +435,13 @@ fn case_branches(
 ) -> Result<Vec<(ComputationId, ValueTypeId)>, KernelError>
 {
     match arena.value_type(scrutinee_type) {
-        | Some(&ValueType::Sum(ref summands)) if summands.len() == branches.len() => Ok(branches
+        Some(&ValueType::Sum(ref summands)) if summands.len() == branches.len() => Ok(branches
             .iter()
             .copied()
             .zip(summands.iter().copied())
             .rev()
             .collect()),
-        | _ => Err(value_shape_mismatch(
+        _ => Err(value_shape_mismatch(
             arena,
             ExpectedValueShape::Sum,
             scrutinee_type,
@@ -523,8 +523,8 @@ fn read_returned(
             .entries
             .iter()
             .map(|entry| match *entry.content() {
-                | DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
-                | DeclarationContent::Data { .. }
+                DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
+                DeclarationContent::Data { .. }
                 | DeclarationContent::Axiom { .. }
                 | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
             })
@@ -743,8 +743,8 @@ impl TypeLevelGoal
     const fn support(self) -> SupportGoal
     {
         match self {
-            | Self::Value(id) => SupportGoal::ValueTypeLevel(id),
-            | Self::Comp(id) => SupportGoal::CompTypeLevel(id),
+            Self::Value(id) => SupportGoal::ValueTypeLevel(id),
+            Self::Comp(id) => SupportGoal::CompTypeLevel(id),
         }
     }
 }
@@ -930,33 +930,31 @@ where
         if matches!(M::ACTIVITY, MemoActivity::Active) {
             let support = NodeSupport::build(arena, session, goal.support(), context.as_slice());
             match memo.recall(&support) {
-                | Some(hit) => match *hit.outcome() {
-                    | NodeOutcome::Formed(ref level) => recalled = Some(level.clone()),
+                Some(hit) => match *hit.outcome() {
+                    NodeOutcome::Formed(ref level) => recalled = Some(level.clone()),
                     // A term-shaped answer cannot have come from this walk. The
                     // memo is shared between the two machines, and a shape
                     // disagreement means the entry was not this machine's:
                     // decline it and recompute, which costs one expansion and
                     // cannot fabricate a level.
-                    | NodeOutcome::Checked
-                    | NodeOutcome::ValueType(_)
-                    | NodeOutcome::CompType(_) => {
+                    NodeOutcome::Checked | NodeOutcome::ValueType(_) | NodeOutcome::CompType(_) => {
                         frames.push(TypeLevelFrame::Memoize(support));
                     },
                 },
-                | None => frames.push(TypeLevelFrame::Memoize(support)),
+                None => frames.push(TypeLevelFrame::Memoize(support)),
             }
         }
         census.record(SupportPlane::Type, match recalled {
-            | Some(_) => ExpansionKind::Recalled,
-            | None => ExpansionKind::Expanded,
+            Some(_) => ExpansionKind::Recalled,
+            None => ExpansionKind::Expanded,
         });
         let mut produced: Level = match recalled {
-            | Some(level) => level,
-            | None => match goal {
-                | TypeLevelGoal::Value(id) => {
+            Some(level) => level,
+            None => match goal {
+                TypeLevelGoal::Value(id) => {
                     let value_type = arena.value_type(id).ok_or(KernelError::ArenaFault)?;
                     match *value_type {
-                        | ValueType::Data {
+                        ValueType::Data {
                             declaration,
                             ref arguments,
                         } => {
@@ -974,7 +972,7 @@ where
                             }
                             level
                         },
-                        | ValueType::Record(ref fields) => {
+                        ValueType::Record(ref fields) => {
                             let mut fields = fields.values().copied();
                             if let Some(first) = fields.next() {
                                 frames.extend(fields.rev().map(TypeLevelFrame::MaxSecondValue));
@@ -983,7 +981,7 @@ where
                             }
                             Level::zero()
                         },
-                        | ValueType::Session {
+                        ValueType::Session {
                             ref graph,
                             payloads,
                         } => {
@@ -994,7 +992,7 @@ where
                             goal = TypeLevelGoal::Value(payloads);
                             continue 'expand;
                         },
-                        | ValueType::PathUniverse(..) => {
+                        ValueType::PathUniverse(..) => {
                             let endpoints = crate::path_universe::endpoints(
                                 arena,
                                 id,
@@ -1005,7 +1003,7 @@ where
                             goal = TypeLevelGoal::Value(endpoints.source);
                             continue 'expand;
                         },
-                        | ValueType::FlowUniverse(..) => {
+                        ValueType::FlowUniverse(..) => {
                             let endpoints = crate::flow_universe::endpoints(
                                 arena,
                                 id,
@@ -1023,7 +1021,7 @@ where
                         // A directed identity forms alike: direction is in
                         // its introductions and its elimination, not in its
                         // formation.
-                        | ValueType::Path {
+                        ValueType::Path {
                             domain,
                             left,
                             right,
@@ -1042,11 +1040,11 @@ where
                             goal = TypeLevelGoal::Value(domain);
                             continue 'expand;
                         },
-                        | ValueType::Base(_) => Level::zero(),
+                        ValueType::Base(_) => Level::zero(),
                         // A universe of either sort forms one level above the
                         // level it carries, in the universe of value types:
                         // a code is a value whatever family it decodes into.
-                        | ValueType::Universe { ref level, .. } => {
+                        ValueType::Universe { ref level, .. } => {
                             judgement.levels.check_level_scope(level)?;
                             level.succ()?
                         },
@@ -1055,7 +1053,7 @@ where
                         // rule: nothing is inferred, nothing unfolds, and a
                         // position that does not resolve to an abstract-type
                         // declaration is refused here rather than trusted.
-                        | ValueType::Abstract(atom) => {
+                        ValueType::Abstract(atom) => {
                             abstract_atom_level(arena, judgement.entries, atom)?
                         },
                         // A code's type is the checking machine's question, so
@@ -1063,7 +1061,7 @@ where
                         // recorded for the driver to drain. Reading it is not
                         // trusting it: nothing admits until the recorded
                         // obligation has been checked.
-                        | ValueType::Element { code, ref target } => {
+                        ValueType::Element { code, ref target } => {
                             judgement.levels.check_level_scope(target)?;
                             owed.push(CodeObligation::Universe {
                                 code,
@@ -1076,7 +1074,7 @@ where
                         // A product or a sum forms at the join of its parts'
                         // levels; the unit and the empty type, with no part,
                         // form at level zero.
-                        | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                        ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                             let mut parts = parts.iter().copied();
                             if let Some(first) = parts.next() {
                                 frames.extend(parts.rev().map(TypeLevelFrame::MaxSecondValue));
@@ -1088,7 +1086,7 @@ where
                         // The dependent pair forms at the join of its factors'
                         // levels, as the dependent arrow does, its second
                         // factor formed under the first's binder.
-                        | ValueType::Sigma { first, second } => {
+                        ValueType::Sigma { first, second } => {
                             frames.push(TypeLevelFrame::MaxSecondValueUnder(first, second));
                             goal = TypeLevelGoal::Value(first);
                             continue 'expand;
@@ -1098,32 +1096,32 @@ where
                         // Pi over universes, which the walk forms in turn. Its
                         // inhabitants are codes, so it forms at the join of its
                         // children's levels, among the value types.
-                        | ValueType::StaticPi { domain, codomain } => {
+                        ValueType::StaticPi { domain, codomain } => {
                             static_classifier(arena, domain)?;
                             static_classifier(arena, codomain)?;
                             frames.push(TypeLevelFrame::MaxSecondValue(codomain));
                             goal = TypeLevelGoal::Value(domain);
                             continue 'expand;
                         },
-                        | ValueType::Thunk(body) => {
+                        ValueType::Thunk(body) => {
                             goal = TypeLevelGoal::Comp(body);
                             continue 'expand;
                         },
-                        | ValueType::List(element) => {
+                        ValueType::List(element) => {
                             goal = TypeLevelGoal::Value(element);
                             continue 'expand;
                         },
-                        | ValueType::Lift { inner, ref target } => {
+                        ValueType::Lift { inner, ref target } => {
                             frames.push(TypeLevelFrame::LiftCheck(target.clone()));
                             goal = TypeLevelGoal::Value(inner);
                             continue 'expand;
                         },
                     }
                 },
-                | TypeLevelGoal::Comp(id) => {
+                TypeLevelGoal::Comp(id) => {
                     let comp_type = arena.comp_type(id).ok_or(KernelError::ArenaFault)?;
                     match *comp_type {
-                        | CompType::Returner(result) => {
+                        CompType::Returner(result) => {
                             goal = TypeLevelGoal::Value(result);
                             continue 'expand;
                         },
@@ -1132,7 +1130,7 @@ where
                         // it: no type former is indexed by a value term, so a
                         // codomain's level is a function of its own node however
                         // many binders it stands under.
-                        | CompType::Arrow { domain, codomain } => {
+                        CompType::Arrow { domain, codomain } => {
                             frames.push(TypeLevelFrame::MaxSecondComp(codomain));
                             goal = TypeLevelGoal::Value(domain);
                             continue 'expand;
@@ -1141,7 +1139,7 @@ where
                         // domain's binder, so the walk carries a context of its
                         // own — the half of "types in the context stop being
                         // closed" that formation pays.
-                        | CompType::Pi { domain, codomain } => {
+                        CompType::Pi { domain, codomain } => {
                             frames.push(TypeLevelFrame::MaxSecondCompUnder(domain, codomain));
                             goal = TypeLevelGoal::Value(domain);
                             continue 'expand;
@@ -1149,7 +1147,7 @@ where
                         // The computation decode is the value decode's twin: the
                         // level is read off the node and the code is owed
                         // against the computation universe at that level.
-                        | CompType::Element { code, ref target } => {
+                        CompType::Element { code, ref target } => {
                             judgement.levels.check_level_scope(target)?;
                             owed.push(CodeObligation::Universe {
                                 code,
@@ -1162,7 +1160,7 @@ where
                         // The lazy product forms at the join of its two
                         // components' levels, as the arrow does: neither
                         // component binds anything.
-                        | CompType::With(first, second) => {
+                        CompType::With(first, second) => {
                             frames.push(TypeLevelFrame::MaxSecondComp(second));
                             goal = TypeLevelGoal::Comp(first);
                             continue 'expand;
@@ -1177,44 +1175,44 @@ where
                 return Ok(produced);
             };
             match frame {
-                | TypeLevelFrame::Memoize(support) => {
+                TypeLevelFrame::Memoize(support) => {
                     // A memo at its ceiling declines to record. The check
                     // proceeds unmemoized from there, which costs collapse and
                     // never correctness.
                     let _recorded = memo.remember(support, NodeOutcome::Formed(produced.clone()));
                 },
-                | TypeLevelFrame::MaxSecondValue(second) => {
+                TypeLevelFrame::MaxSecondValue(second) => {
                     frames.push(TypeLevelFrame::MaxWith(produced));
                     goal = TypeLevelGoal::Value(second);
                     continue 'expand;
                 },
-                | TypeLevelFrame::MaxSecondComp(second) => {
+                TypeLevelFrame::MaxSecondComp(second) => {
                     frames.push(TypeLevelFrame::MaxWith(produced));
                     goal = TypeLevelGoal::Comp(second);
                     continue 'expand;
                 },
-                | TypeLevelFrame::MaxSecondCompUnder(domain, second) => {
+                TypeLevelFrame::MaxSecondCompUnder(domain, second) => {
                     frames.push(TypeLevelFrame::MaxWith(produced));
                     frames.push(TypeLevelFrame::ScopeExit);
                     context.push(domain);
                     goal = TypeLevelGoal::Comp(second);
                     continue 'expand;
                 },
-                | TypeLevelFrame::MaxSecondValueUnder(first, second) => {
+                TypeLevelFrame::MaxSecondValueUnder(first, second) => {
                     frames.push(TypeLevelFrame::MaxWith(produced));
                     frames.push(TypeLevelFrame::ScopeExit);
                     context.push(first);
                     goal = TypeLevelGoal::Value(second);
                     continue 'expand;
                 },
-                | TypeLevelFrame::SessionScope(outer) => context = outer,
-                | TypeLevelFrame::ScopeExit => {
+                TypeLevelFrame::SessionScope(outer) => context = outer,
+                TypeLevelFrame::ScopeExit => {
                     let _popped = context.pop();
                 },
-                | TypeLevelFrame::MaxWith(first) => {
+                TypeLevelFrame::MaxWith(first) => {
                     produced = first.max(&produced);
                 },
-                | TypeLevelFrame::LiftCheck(target) => {
+                TypeLevelFrame::LiftCheck(target) => {
                     judgement.levels.check_level_scope(&target)?;
                     judgement.levels.check_universe_below(&produced, &target)?;
                     produced = target;
@@ -1281,11 +1279,11 @@ fn abstract_atom_level(
     };
     let kind_node = arena.value_type(kind).ok_or(KernelError::ArenaFault)?;
     match *kind_node {
-        | ValueType::Universe {
+        ValueType::Universe {
             sort: GroundSort::Value,
             ref level,
         } => Ok(level.clone()),
-        | ValueType::Universe {
+        ValueType::Universe {
             sort: GroundSort::Computation,
             ..
         }
@@ -1342,8 +1340,8 @@ fn static_classifier(
         .value_type(classifier)
         .ok_or(KernelError::ArenaFault)?
     {
-        | ValueType::Universe { .. } | ValueType::StaticPi { .. } => Ok(()),
-        | ValueType::Data { .. }
+        ValueType::Universe { .. } | ValueType::StaticPi { .. } => Ok(()),
+        ValueType::Data { .. }
         | ValueType::Record(_)
         | ValueType::PathUniverse(..)
         | ValueType::FlowUniverse(..)
@@ -1398,9 +1396,9 @@ impl Produced
     const fn outcome(self) -> NodeOutcome
     {
         match self {
-            | Self::ValueType(id) => NodeOutcome::ValueType(id),
-            | Self::CompType(id) => NodeOutcome::CompType(id),
-            | Self::Checked => NodeOutcome::Checked,
+            Self::ValueType(id) => NodeOutcome::ValueType(id),
+            Self::CompType(id) => NodeOutcome::CompType(id),
+            Self::Checked => NodeOutcome::Checked,
         }
     }
 
@@ -1435,10 +1433,10 @@ impl Produced
     const fn of_outcome(outcome: &NodeOutcome) -> Maybe<Self, term_outcome::Absent>
     {
         match *outcome {
-            | NodeOutcome::ValueType(id) => Maybe::Present(Self::ValueType(id)),
-            | NodeOutcome::CompType(id) => Maybe::Present(Self::CompType(id)),
-            | NodeOutcome::Checked => Maybe::Present(Self::Checked),
-            | NodeOutcome::Formed(_) => Maybe::Absent(term_outcome::Absent::Formation),
+            NodeOutcome::ValueType(id) => Maybe::Present(Self::ValueType(id)),
+            NodeOutcome::CompType(id) => Maybe::Present(Self::CompType(id)),
+            NodeOutcome::Checked => Maybe::Present(Self::Checked),
+            NodeOutcome::Formed(_) => Maybe::Absent(term_outcome::Absent::Formation),
         }
     }
 
@@ -1470,8 +1468,8 @@ impl Produced
     const fn value_type(self) -> Result<ValueTypeId, KernelError>
     {
         match self {
-            | Self::ValueType(id) => Ok(id),
-            | Self::CompType(_) | Self::Checked => Err(KernelError::CheckerRegisterFault(
+            Self::ValueType(id) => Ok(id),
+            Self::CompType(_) | Self::Checked => Err(KernelError::CheckerRegisterFault(
                 RegisterFault::ExpectedValueType,
             )),
         }
@@ -1505,8 +1503,8 @@ impl Produced
     const fn comp_type(self) -> Result<CompTypeId, KernelError>
     {
         match self {
-            | Self::CompType(id) => Ok(id),
-            | Self::ValueType(_) | Self::Checked => Err(KernelError::CheckerRegisterFault(
+            Self::CompType(id) => Ok(id),
+            Self::ValueType(_) | Self::Checked => Err(KernelError::CheckerRegisterFault(
                 RegisterFault::ExpectedCompType,
             )),
         }
@@ -1537,10 +1535,10 @@ impl Goal
     const fn support(self) -> SupportGoal
     {
         match self {
-            | Self::SynthValue(id) => SupportGoal::SynthValue(id),
-            | Self::CheckValue(id, expected) => SupportGoal::CheckValue(id, expected),
-            | Self::SynthComp(id) => SupportGoal::SynthComp(id),
-            | Self::CheckComp(id, expected) => SupportGoal::CheckComp(id, expected),
+            Self::SynthValue(id) => SupportGoal::SynthValue(id),
+            Self::CheckValue(id, expected) => SupportGoal::CheckValue(id, expected),
+            Self::SynthComp(id) => SupportGoal::SynthComp(id),
+            Self::CheckComp(id, expected) => SupportGoal::CheckComp(id, expected),
         }
     }
 }
@@ -1913,8 +1911,8 @@ fn slot(
     let remaining = arith::sub(arith::Int::from(context.len()), arith::Int::from(steps));
     let position = usize::from(arith::sub(remaining, arith::Int::from(1_usize)));
     match context.get(position) {
-        | Some(&found) => Maybe::Present(found),
-        | None => Maybe::Absent(context_slot::Absent::OutOfScope),
+        Some(&found) => Maybe::Present(found),
+        None => Maybe::Absent(context_slot::Absent::OutOfScope),
     }
 }
 
@@ -1963,8 +1961,8 @@ fn lookup(
 ) -> Maybe<ValueTypeId, variable_type::Absent>
 {
     let found = match slot(context, index) {
-        | Maybe::Present(found) => found,
-        | Maybe::Absent(context_slot::Absent::OutOfScope) => {
+        Maybe::Present(found) => found,
+        Maybe::Absent(context_slot::Absent::OutOfScope) => {
             return Maybe::Absent(variable_type::Absent::Unbound);
         },
     };
@@ -2107,10 +2105,11 @@ fn resolve_constant(
     index: ConstantIndex,
 ) -> Maybe<ValueTypeId, constant_type::Absent>
 {
-    match entries.get(usize::from(index)) {
-        | Some(entry) => Maybe::Present(entry.declared_id()),
-        | None => Maybe::Absent(constant_type::Absent::Unadmitted),
-    }
+    entries
+        .get(usize::from(index))
+        .map_or(Maybe::Absent(constant_type::Absent::Unadmitted), |entry| {
+            Maybe::Present(entry.declared_id())
+        })
 }
 
 /// The δ-rules the admission log offers a replay: each definition's body at
@@ -2153,8 +2152,8 @@ fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
             .entries
             .iter()
             .map(|entry| match *entry.content() {
-                | DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
-                | DeclarationContent::Data { .. }
+                DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
+                DeclarationContent::Data { .. }
                 | DeclarationContent::Axiom { .. }
                 | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
             })
@@ -2255,8 +2254,8 @@ where
             let support = NodeSupport::build(arena, session, goal.support(), context.as_slice());
             if let Some(hit) = memo.recall(&support) {
                 recalled = match Produced::of_outcome(hit.outcome()) {
-                    | Maybe::Present(outcome) => Some(outcome),
-                    | Maybe::Absent(term_outcome::Absent::Formation) => None,
+                    Maybe::Present(outcome) => Some(outcome),
+                    Maybe::Absent(term_outcome::Absent::Formation) => None,
                 };
             }
             if recalled.is_none() {
@@ -2264,14 +2263,14 @@ where
             }
         }
         census.record(SupportPlane::Term, match recalled {
-            | Some(_) => ExpansionKind::Recalled,
-            | None => ExpansionKind::Expanded,
+            Some(_) => ExpansionKind::Recalled,
+            None => ExpansionKind::Expanded,
         });
         let mut produced: Produced = match recalled {
-            | Some(outcome) => outcome,
-            | None => match goal {
-                | Goal::SynthValue(id) => match *read_value(arena, id)? {
-                    | Value::Constructor { .. } => {
+            Some(outcome) => outcome,
+            None => match goal {
+                Goal::SynthValue(id) => match *read_value(arena, id)? {
+                    Value::Constructor { .. } => {
                         let (datatype, mut goals) =
                             former::constructor(arena, judgement.entries, session, id)?;
                         let _level = type_level(
@@ -2294,7 +2293,7 @@ where
                         }
                         Produced::ValueType(datatype)
                     },
-                    | Value::Record(ref values) => {
+                    Value::Record(ref values) => {
                         let mut remaining = values
                             .iter()
                             .rev()
@@ -2312,7 +2311,7 @@ where
                         }
                         Produced::ValueType(arena.value_type_record(fields))
                     },
-                    | Value::SessionPath {
+                    Value::SessionPath {
                         path_type,
                         ref evidence,
                         payload_paths,
@@ -2351,7 +2350,7 @@ where
                         goal = Goal::CheckValue(payload_paths, expected);
                         continue 'expand;
                     },
-                    | Value::SessionFlow {
+                    Value::SessionFlow {
                         flow_type,
                         ref evidence,
                         payload_paths,
@@ -2392,14 +2391,14 @@ where
                     },
                     // `stay(c)` synthesizes the directed diagonal at the type
                     // `c` synthesizes.
-                    | Value::Stay { point, .. } => {
+                    Value::Stay { point, .. } => {
                         frames.push(Frame::SynthStay(point));
                         goal = Goal::SynthValue(point);
                         continue 'expand;
                     },
                     // A forward flow's translator checks in the empty context,
                     // as an equivalence's maps do; its images replay after.
-                    | Value::ForwardFlow {
+                    Value::ForwardFlow {
                         flow_type,
                         translator,
                         ..
@@ -2435,7 +2434,7 @@ where
                     },
                     // A function flow's boundaries synthesize in turn, each
                     // oriented by the variance its position fixes.
-                    | Value::FunctionFlow {
+                    Value::FunctionFlow {
                         flow_type, domain, ..
                     } => {
                         let _level = type_level(
@@ -2463,17 +2462,17 @@ where
                         goal = Goal::SynthValue(domain);
                         continue 'expand;
                     },
-                    | Value::Then { first, .. } => {
+                    Value::Then { first, .. } => {
                         frames.push(Frame::ThenFirst(id));
                         goal = Goal::SynthValue(first);
                         continue 'expand;
                     },
-                    | Value::FlowProduct(first, second) => {
+                    Value::FlowProduct(first, second) => {
                         frames.push(Frame::FlowProductFirst(second));
                         goal = Goal::SynthValue(first);
                         continue 'expand;
                     },
-                    | Value::PathRefl(code) => {
+                    Value::PathRefl(code) => {
                         let endpoint = crate::path_universe::code(
                             arena,
                             code,
@@ -2494,12 +2493,12 @@ where
                         )?;
                         Produced::ValueType(arena.value_type_path_universe(code, code))
                     },
-                    | Value::PathProduct(first, second) => {
+                    Value::PathProduct(first, second) => {
                         frames.push(Frame::PathProductFirst(second));
                         goal = Goal::SynthValue(first);
                         continue 'expand;
                     },
-                    | Value::PathEquiv {
+                    Value::PathEquiv {
                         path_type, forward, ..
                     } => {
                         let endpoints = crate::path_universe::endpoints(
@@ -2519,19 +2518,19 @@ where
                         goal = Goal::CheckValue(forward, translator);
                         continue 'expand;
                     },
-                    | Value::Variable(index) => {
+                    Value::Variable(index) => {
                         let synthesized = match lookup(arena, session, context.as_slice(), index) {
-                            | Maybe::Present(synthesized) => synthesized,
-                            | Maybe::Absent(variable_type::Absent::Unbound) => {
+                            Maybe::Present(synthesized) => synthesized,
+                            Maybe::Absent(variable_type::Absent::Unbound) => {
                                 return Err(KernelError::UnboundVariable { index });
                             },
                         };
                         Produced::ValueType(synthesized)
                     },
-                    | Value::Constant(index) => {
+                    Value::Constant(index) => {
                         let declared = match resolve_constant(judgement.entries, index) {
-                            | Maybe::Present(declared) => declared,
-                            | Maybe::Absent(constant_type::Absent::Unadmitted) => {
+                            Maybe::Present(declared) => declared,
+                            Maybe::Absent(constant_type::Absent::Unadmitted) => {
                                 return Err(KernelError::UnboundConstant { index });
                             },
                         };
@@ -2543,12 +2542,12 @@ where
                             seal::unseal(arena, judgement.entries, judgement.manifest, declared)?;
                         Produced::ValueType(synthesized)
                     },
-                    | Value::Literal(ref literal) => {
+                    Value::Literal(ref literal) => {
                         Produced::ValueType(arena.value_type_base(literal.base_type()))
                     },
                     // A tuple synthesizes the product of its components'
                     // types, in order; the empty tuple synthesizes the unit.
-                    | Value::Tuple(ref components) => {
+                    Value::Tuple(ref components) => {
                         let mut remaining = components.iter().rev().copied().collect::<Vec<_>>();
                         let arity = remaining.len();
                         if let Some(first) = remaining.pop() {
@@ -2561,22 +2560,22 @@ where
                         }
                         Produced::ValueType(arena.value_type_unit())
                     },
-                    | Value::Thunk(body) => {
+                    Value::Thunk(body) => {
                         frames.push(Frame::SynthThunk);
                         goal = Goal::SynthComp(body);
                         continue 'expand;
                     },
-                    | Value::Lift { ref target, body } => {
+                    Value::Lift { ref target, body } => {
                         frames.push(Frame::SynthLift(target.clone()));
                         goal = Goal::SynthValue(body);
                         continue 'expand;
                     },
-                    | Value::Injection(..) => {
+                    Value::Injection(..) => {
                         return Err(KernelError::NotInferable {
                             form: NonInferableForm::Injection,
                         });
                     },
-                    | Value::ListNil | Value::ListCons(..) => {
+                    Value::ListNil | Value::ListCons(..) => {
                         return Err(KernelError::NotInferable {
                             form: NonInferableForm::List,
                         });
@@ -2586,7 +2585,7 @@ where
                     // the one question asked, so the arm calls the formation
                     // walk directly, as the lift's frame does, and descends no
                     // further itself.
-                    | Value::Quote(quoted) => {
+                    Value::Quote(quoted) => {
                         let level = type_level(
                             arena,
                             judgement,
@@ -2601,7 +2600,7 @@ where
                         )?;
                         Produced::ValueType(arena.value_type_universe(GroundSort::Value, level))
                     },
-                    | Value::QuoteComputation(quoted) => {
+                    Value::QuoteComputation(quoted) => {
                         let level = type_level(
                             arena,
                             judgement,
@@ -2623,31 +2622,31 @@ where
                     // supplies the domain the argument checks against and the
                     // codomain it produces. No static lambda exists to stand at
                     // the head, so nothing here reduces.
-                    | Value::StaticApplication(head, argument) => {
+                    Value::StaticApplication(head, argument) => {
                         frames.push(Frame::SynthStaticApply(argument));
                         goal = Goal::SynthValue(head);
                         continue 'expand;
                     },
                     // `here(c)` synthesizes the diagonal identity at the type
                     // `c` synthesizes, a neutral fibre where that type is open.
-                    | Value::Here { point, .. } => {
+                    Value::Here { point, .. } => {
                         frames.push(Frame::SynthHere(point));
                         goal = Goal::SynthValue(point);
                         continue 'expand;
                     },
                     // A returned endpoint synthesizes the value type its
                     // computation returns.
-                    | Value::Returned(computation) => {
+                    Value::Returned(computation) => {
                         frames.push(Frame::SynthReturned);
                         goal = Goal::SynthComp(computation);
                         continue 'expand;
                     },
-                    | Value::Higher { .. } => {
+                    Value::Higher { .. } => {
                         return Err(KernelError::NotInferable {
                             form: NonInferableForm::HigherField,
                         });
                     },
-                    | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } => {
+                    Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } => {
                         return Err(KernelError::NotInferable {
                             form: NonInferableForm::HigherEvaluation,
                         });
@@ -2658,7 +2657,7 @@ where
                 // endpoints, or at a dependent pair's at a Σ domain, or at the
                 // words a looped point's free cells mint; `here`, the higher
                 // forms and the neutrals take their own arms.
-                | Goal::CheckValue(id, expected)
+                Goal::CheckValue(id, expected)
                     if crate::element_identity::goal_reading(arena, id, expected)
                         == crate::element_identity::GoalReading::Fibre =>
                 {
@@ -2700,8 +2699,8 @@ where
                     goal = Goal::CheckValue(id, fibre);
                     continue 'expand;
                 },
-                | Goal::CheckValue(id, expected) => match *read_value(arena, id)? {
-                    | Value::Record(ref values) => {
+                Goal::CheckValue(id, expected) => match *read_value(arena, id)? {
+                    Value::Record(ref values) => {
                         let Some(matched_native_node) = arena.value_type(expected)
                         else {
                             return Err(value_shape_mismatch(
@@ -2728,9 +2727,10 @@ where
                         let mut goals = values
                             .iter()
                             .rev()
-                            .map(|(label, value)| match fields.get(label) {
-                                | Some(ty) => Goal::CheckValue(*value, *ty),
-                                | None => Goal::SynthValue(*value),
+                            .map(|(label, value)| {
+                                fields.get(label).map_or(Goal::SynthValue(*value), |ty| {
+                                    Goal::CheckValue(*value, *ty)
+                                })
                             })
                             .collect::<Vec<_>>();
                         if let Some(next) = goals.pop() {
@@ -2740,9 +2740,9 @@ where
                         }
                         Produced::Checked
                     },
-                    | Value::ListNil => match arena.value_type(expected) {
-                        | Some(&ValueType::List(_)) => Produced::Checked,
-                        | _ => {
+                    Value::ListNil => match arena.value_type(expected) {
+                        Some(&ValueType::List(_)) => Produced::Checked,
+                        _ => {
                             return Err(value_shape_mismatch(
                                 arena,
                                 ExpectedValueShape::List,
@@ -2750,13 +2750,13 @@ where
                             ));
                         },
                     },
-                    | Value::ListCons(head, tail) => match arena.value_type(expected) {
-                        | Some(&ValueType::List(element)) => {
+                    Value::ListCons(head, tail) => match arena.value_type(expected) {
+                        Some(&ValueType::List(element)) => {
                             frames.push(Frame::CheckPairSecond(tail, expected));
                             goal = Goal::CheckValue(head, element);
                             continue 'expand;
                         },
-                        | _ => {
+                        _ => {
                             return Err(value_shape_mismatch(
                                 arena,
                                 ExpectedValueShape::List,
@@ -2767,18 +2767,34 @@ where
                     // An injection checks its body against the summand it
                     // names; a position past the sum's summands is a shape
                     // mismatch, as a non-sum classifier is.
-                    | Value::Injection(summand, body) => {
+                    Value::Injection(summand, body) => {
                         match arena.value_type(expected).and_then(|held| match *held {
-                            | ValueType::Sum(ref summands) => {
+                            ValueType::Sum(ref summands) => {
                                 summands.get(usize::from(summand)).copied()
                             },
-                            | _ => None,
+                            ValueType::Data { .. }
+                            | ValueType::Record(_)
+                            | ValueType::Session { .. }
+                            | ValueType::PathUniverse(..)
+                            | ValueType::FlowUniverse(..)
+                            | ValueType::Path { .. }
+                            | ValueType::Flow { .. }
+                            | ValueType::Base(_)
+                            | ValueType::Product(_)
+                            | ValueType::Sigma { .. }
+                            | ValueType::List(_)
+                            | ValueType::Thunk(_)
+                            | ValueType::Universe { .. }
+                            | ValueType::Lift { .. }
+                            | ValueType::Element { .. }
+                            | ValueType::Abstract(_)
+                            | ValueType::StaticPi { .. } => None,
                         }) {
-                            | Some(summand_type) => {
+                            Some(summand_type) => {
                                 goal = Goal::CheckValue(body, summand_type);
                                 continue 'expand;
                             },
-                            | _ => {
+                            _ => {
                                 return Err(value_shape_mismatch(
                                     arena,
                                     ExpectedValueShape::Sum,
@@ -2792,9 +2808,9 @@ where
                     // a shape mismatch. A pair checks against a dependent pair:
                     // its first component at the first factor, its second at
                     // the second factor instantiated at the first component.
-                    | Value::Tuple(ref components) => {
+                    Value::Tuple(ref components) => {
                         match (arena.value_type(expected), &**components) {
-                            | (Some(&ValueType::Product(ref parts)), _)
+                            (Some(&ValueType::Product(ref parts)), _)
                                 if parts.len() == components.len() =>
                             {
                                 let mut goals = components
@@ -2810,7 +2826,7 @@ where
                                 }
                                 Produced::Checked
                             },
-                            | (Some(&ValueType::Sigma { first, second }), &[left, right]) => {
+                            (Some(&ValueType::Sigma { first, second }), &[left, right]) => {
                                 let (table, rewrites) = session.rewrite_parts();
                                 let fibre =
                                     substitute_value_type(arena, table, rewrites, second, left);
@@ -2821,7 +2837,7 @@ where
                                 goal = Goal::CheckValue(left, first);
                                 continue 'expand;
                             },
-                            | _ => {
+                            _ => {
                                 return Err(value_shape_mismatch(
                                     arena,
                                     ExpectedValueShape::Product,
@@ -2830,12 +2846,12 @@ where
                             },
                         }
                     },
-                    | Value::Thunk(body) => match arena.value_type(expected) {
-                        | Some(&ValueType::Thunk(codomain)) => {
+                    Value::Thunk(body) => match arena.value_type(expected) {
+                        Some(&ValueType::Thunk(codomain)) => {
                             goal = Goal::CheckComp(body, codomain);
                             continue 'expand;
                         },
-                        | _ => {
+                        _ => {
                             return Err(value_shape_mismatch(
                                 arena,
                                 ExpectedValueShape::Thunk,
@@ -2843,7 +2859,7 @@ where
                             ));
                         },
                     },
-                    | Value::Here {
+                    Value::Here {
                         point,
                         ref dialogues,
                     } => {
@@ -2862,7 +2878,7 @@ where
                     // `stay(c)` checks at a flow, at either reading, by the
                     // point at the carrier and the endpoint conversions a
                     // `here` owes.
-                    | Value::Stay {
+                    Value::Stay {
                         point,
                         ref dialogues,
                     } => {
@@ -2880,7 +2896,7 @@ where
                     },
                     // A higher field owes one check per guard, each at the
                     // fibre its walk computes; none re-enters the machine.
-                    | Value::Higher {
+                    Value::Higher {
                         ref program,
                         ref evidence,
                     } => {
@@ -2904,7 +2920,7 @@ where
                     // here, unfolding what the environment admitted, and owes
                     // each component's checks in that component's pattern
                     // telescope.
-                    | Value::HigherEvaluation {
+                    Value::HigherEvaluation {
                         ref dialogues,
                         ref components,
                     } => {
@@ -2928,7 +2944,7 @@ where
                     // here, as a higher evaluation does, and owes each
                     // telescope's checks: the premise evidence, each applied
                     // input and each return's values and output evidence.
-                    | Value::QuantifiedEvaluation {
+                    Value::QuantifiedEvaluation {
                         ref steps,
                         ref children,
                     } => {
@@ -2948,7 +2964,7 @@ where
                         });
                         Produced::Checked
                     },
-                    | Value::Constructor { .. }
+                    Value::Constructor { .. }
                     | Value::Returned(_)
                     | Value::PathRefl(_)
                     | Value::PathProduct(..)
@@ -2971,28 +2987,28 @@ where
                         continue 'expand;
                     },
                 },
-                | Goal::SynthComp(id) => match *read_computation(arena, id)? {
-                    | Computation::DataCase { scrutinee, .. } => {
+                Goal::SynthComp(id) => match *read_computation(arena, id)? {
+                    Computation::DataCase { scrutinee, .. } => {
                         frames.push(Frame::DataCase(id));
                         goal = Goal::SynthValue(scrutinee);
                         continue 'expand;
                     },
-                    | Computation::SigmaSplit { scrutinee, .. } => {
+                    Computation::SigmaSplit { scrutinee, .. } => {
                         frames.push(Frame::SigmaSplit(id));
                         goal = Goal::SynthValue(scrutinee);
                         continue 'expand;
                     },
-                    | Computation::RecordProjection(record, ref label) => {
+                    Computation::RecordProjection(record, ref label) => {
                         frames.push(Frame::RecordProjection(label.clone()));
                         goal = Goal::SynthValue(record);
                         continue 'expand;
                     },
-                    | Computation::TupleProjection(tuple, component) => {
+                    Computation::TupleProjection(tuple, component) => {
                         frames.push(Frame::TupleProjection(tuple, component));
                         goal = Goal::SynthValue(tuple);
                         continue 'expand;
                     },
-                    | Computation::ListFold {
+                    Computation::ListFold {
                         element,
                         result,
                         list,
@@ -3021,52 +3037,52 @@ where
                         goal = Goal::CheckValue(list, list_type);
                         continue 'expand;
                     },
-                    | Computation::Transport(path, value) => {
+                    Computation::Transport(path, value) => {
                         frames.push(Frame::Transport(value));
                         goal = Goal::SynthValue(path);
                         continue 'expand;
                     },
-                    | Computation::PathTransport { path, .. } => {
+                    Computation::PathTransport { path, .. } => {
                         frames.push(Frame::ElementTransport(id));
                         goal = Goal::SynthValue(path);
                         continue 'expand;
                     },
-                    | Computation::TelescopeTransport { path, .. } => {
+                    Computation::TelescopeTransport { path, .. } => {
                         frames.push(Frame::TelescopePath(id));
                         goal = Goal::SynthValue(path);
                         continue 'expand;
                     },
-                    | Computation::Ride { flow, .. } => {
+                    Computation::Ride { flow, .. } => {
                         frames.push(Frame::Ride(id));
                         goal = Goal::SynthValue(flow);
                         continue 'expand;
                     },
-                    | Computation::TelescopeRide { flow, .. } => {
+                    Computation::TelescopeRide { flow, .. } => {
                         frames.push(Frame::TelescopeRideFlow(id));
                         goal = Goal::SynthValue(flow);
                         continue 'expand;
                     },
-                    | Computation::RelatedApplication { path, .. } => {
+                    Computation::RelatedApplication { path, .. } => {
                         frames.push(Frame::RelatedPath(id));
                         goal = Goal::SynthValue(path);
                         continue 'expand;
                     },
-                    | Computation::Application(head, argument) => {
+                    Computation::Application(head, argument) => {
                         frames.push(Frame::SynthApply(argument));
                         goal = Goal::SynthComp(head);
                         continue 'expand;
                     },
-                    | Computation::Force(value) => {
+                    Computation::Force(value) => {
                         frames.push(Frame::SynthForce);
                         goal = Goal::SynthValue(value);
                         continue 'expand;
                     },
-                    | Computation::Return(value) => {
+                    Computation::Return(value) => {
                         frames.push(Frame::SynthReturn);
                         goal = Goal::SynthValue(value);
                         continue 'expand;
                     },
-                    | Computation::Bind(bound, body) => {
+                    Computation::Bind(bound, body) => {
                         frames.push(Frame::SynthBind(body));
                         goal = Goal::SynthComp(bound);
                         continue 'expand;
@@ -3074,19 +3090,19 @@ where
                     // A pairing synthesizes when both components do, as a
                     // tuple does; a component that only checks makes the
                     // pairing checking-only too.
-                    | Computation::With(left, right) => {
+                    Computation::With(left, right) => {
                         frames.push(Frame::SynthWithLeft(right));
                         goal = Goal::SynthComp(left);
                         continue 'expand;
                     },
-                    | Computation::Project(side, pair) => {
+                    Computation::Project(side, pair) => {
                         frames.push(Frame::Project(side));
                         goal = Goal::SynthComp(pair);
                         continue 'expand;
                     },
                     // A case of no branches has none to synthesize a type
                     // from; it only checks.
-                    | Computation::Case {
+                    Computation::Case {
                         scrutinee,
                         ref branches,
                     } => {
@@ -3099,38 +3115,38 @@ where
                         goal = Goal::SynthValue(scrutinee);
                         continue 'expand;
                     },
-                    | Computation::Lambda(_) => {
+                    Computation::Lambda(_) => {
                         return Err(KernelError::NotInferable {
                             form: NonInferableForm::Lambda,
                         });
                     },
-                    | Computation::Fixpoint { .. } => {
+                    Computation::Fixpoint { .. } => {
                         return Err(KernelError::NotInferable {
                             form: NonInferableForm::Fixpoint,
                         });
                     },
                 },
-                | Goal::CheckComp(id, expected) => match *read_computation(arena, id)? {
+                Goal::CheckComp(id, expected) => match *read_computation(arena, id)? {
                     // A lambda pushes the arrow's domain as the innermost
                     // context slot and checks its body against the codomain
                     // read from under that slot. The dependent arrow's codomain
                     // is written under the binder already; the plain arrow's is
                     // written outside it, so it is weakened past the slot.
-                    | Computation::Lambda(body) => match arena.comp_type(expected) {
-                        | Some(&CompType::Arrow { domain, codomain }) => {
+                    Computation::Lambda(body) => match arena.comp_type(expected) {
+                        Some(&CompType::Arrow { domain, codomain }) => {
                             let scoped = weakened(arena, session, codomain);
                             context.push(domain);
                             frames.push(Frame::ScopeExit);
                             goal = Goal::CheckComp(body, scoped);
                             continue 'expand;
                         },
-                        | Some(&CompType::Pi { domain, codomain }) => {
+                        Some(&CompType::Pi { domain, codomain }) => {
                             context.push(domain);
                             frames.push(Frame::ScopeExit);
                             goal = Goal::CheckComp(body, codomain);
                             continue 'expand;
                         },
-                        | _ => {
+                        _ => {
                             return Err(comp_shape_mismatch(
                                 arena,
                                 ExpectedComputationShape::Arrow,
@@ -3144,10 +3160,10 @@ where
                     // unfolding rule's gate, not a typing condition. A
                     // structural-descent claim is replayed first, by one walk
                     // over the body.
-                    | Computation::Fixpoint { body, evidence } => {
+                    Computation::Fixpoint { body, evidence } => {
                         match evidence {
-                            | FixpointEvidence::Partial => {},
-                            | FixpointEvidence::StructuralDescent => {
+                            FixpointEvidence::Partial => {},
+                            FixpointEvidence::StructuralDescent => {
                                 descent::replay(arena, judgement, expected, body)?;
                                 root = respect::fold_root(
                                     arena,
@@ -3165,12 +3181,12 @@ where
                         goal = Goal::CheckComp(body, scoped);
                         continue 'expand;
                     },
-                    | Computation::Return(value) => match arena.comp_type(expected) {
-                        | Some(&CompType::Returner(result)) => {
+                    Computation::Return(value) => match arena.comp_type(expected) {
+                        Some(&CompType::Returner(result)) => {
                             goal = Goal::CheckValue(value, result);
                             continue 'expand;
                         },
-                        | _ => {
+                        _ => {
                             return Err(comp_shape_mismatch(
                                 arena,
                                 ExpectedComputationShape::Returner,
@@ -3178,15 +3194,15 @@ where
                             ));
                         },
                     },
-                    | Computation::Bind(bound, body) => {
+                    Computation::Bind(bound, body) => {
                         frames.push(Frame::CheckBind(body, expected));
                         goal = Goal::SynthComp(bound);
                         continue 'expand;
                     },
                     // A pairing checks against a lazy product by checking each
                     // component against its side; neither binds anything.
-                    | Computation::With(left, right) => match arena.comp_type(expected) {
-                        | Some(&CompType::With(left_type, right_type)) => {
+                    Computation::With(left, right) => match arena.comp_type(expected) {
+                        Some(&CompType::With(left_type, right_type)) => {
                             frames.push(Frame::Pending(
                                 alloc::vec![Goal::CheckComp(right, right_type)],
                                 Produced::Checked,
@@ -3194,7 +3210,7 @@ where
                             goal = Goal::CheckComp(left, left_type);
                             continue 'expand;
                         },
-                        | _ => {
+                        _ => {
                             return Err(comp_shape_mismatch(
                                 arena,
                                 ExpectedComputationShape::With,
@@ -3202,7 +3218,7 @@ where
                             ));
                         },
                     },
-                    | Computation::Case {
+                    Computation::Case {
                         scrutinee,
                         ref branches,
                     } => {
@@ -3213,7 +3229,7 @@ where
                         goal = Goal::SynthValue(scrutinee);
                         continue 'expand;
                     },
-                    | Computation::DataCase { .. }
+                    Computation::DataCase { .. }
                     | Computation::SigmaSplit { .. }
                     | Computation::RecordProjection(..)
                     | Computation::TupleProjection(..)
@@ -3240,7 +3256,7 @@ where
                 return Ok(produced);
             };
             match frame {
-                | Frame::Pending(mut goals, result) => {
+                Frame::Pending(mut goals, result) => {
                     if let Some(next) = goals.pop() {
                         frames.push(Frame::Pending(goals, result));
                         goal = next;
@@ -3248,7 +3264,7 @@ where
                     }
                     produced = result;
                 },
-                | Frame::RecordField {
+                Frame::RecordField {
                     label,
                     mut remaining,
                     mut fields,
@@ -3265,7 +3281,7 @@ where
                     }
                     produced = Produced::ValueType(arena.value_type_record(fields));
                 },
-                | Frame::RecordProjection(label) => {
+                Frame::RecordProjection(label) => {
                     let actual = produced.value_type()?;
                     let Some(matched_native_node) = arena.value_type(actual)
                     else {
@@ -3292,12 +3308,12 @@ where
                 // A projection of a dependent pair returns the first factor at
                 // the first component and, at the second, the second factor
                 // instantiated at the first component's own projection.
-                | Frame::TupleProjection(tuple, component) => {
+                Frame::TupleProjection(tuple, component) => {
                     let actual = produced.value_type()?;
                     if let Some(&ValueType::Sigma { first, second }) = arena.value_type(actual) {
                         let part = match usize::from(component) {
-                            | 0 => first,
-                            | 1 => {
+                            0 => first,
+                            1 => {
                                 let projected = arena.computation_tuple_projection(
                                     tuple,
                                     gandr_kernel_term::Component::from(0_usize),
@@ -3306,7 +3322,7 @@ where
                                 let (table, rewrites) = session.rewrite_parts();
                                 substitute_value_type(arena, table, rewrites, second, projected)
                             },
-                            | _ => return Err(KernelError::AbsentTupleComponent { component }),
+                            _ => return Err(KernelError::AbsentTupleComponent { component }),
                         };
                         produced = Produced::CompType(arena.comp_type_returner(part));
                         continue;
@@ -3324,7 +3340,7 @@ where
                         .ok_or(KernelError::AbsentTupleComponent { component })?;
                     produced = Produced::CompType(arena.comp_type_returner(part));
                 },
-                | Frame::DataCase(case) => {
+                Frame::DataCase(case) => {
                     // A scrutinee at a looped point's path is split over the
                     // words its free cells mint.
                     let datatype = judgement
@@ -3358,10 +3374,8 @@ where
                         &mut root,
                         Maybe::Absent(respect::root::Absent::Unmarked),
                     ) {
-                        | Maybe::Present((marked, reading)) if marked == case => reading,
-                        | Maybe::Present(_) | Maybe::Absent(_) => {
-                            respect::Reading::Case { datatype }
-                        },
+                        Maybe::Present((marked, reading)) if marked == case => reading,
+                        Maybe::Present(_) | Maybe::Absent(_) => respect::Reading::Case { datatype },
                     };
                     // A case of no branches over a path between two apart
                     // terms of a data type owes no branch.
@@ -3400,7 +3414,7 @@ where
                         produced = Produced::CompType(result);
                     }
                 },
-                | Frame::Respect(case, reading) => {
+                Frame::Respect(case, reading) => {
                     respect::respected(
                         arena,
                         (judgement.entries, &admitted_unfoldings(judgement)),
@@ -3409,13 +3423,13 @@ where
                         judgement.laws,
                     )?;
                 },
-                | Frame::Loops(case, datatype) => {
+                Frame::Loops(case, datatype) => {
                     loops::respected(arena, &admitted_unfoldings(judgement), (case, datatype))?;
                 },
                 // A dependent split forms its motive under the scrutinee's
                 // binder, checks its body under the two components against the
                 // motive at their pair, and returns the motive at the scrutinee.
-                | Frame::SigmaSplit(split) => {
+                Frame::SigmaSplit(split) => {
                     let scrutinee_type = produced.value_type()?;
                     let Some(&Computation::SigmaSplit {
                         scrutinee,
@@ -3473,11 +3487,11 @@ where
                     goal = Goal::CheckComp(body, expected);
                     continue 'expand;
                 },
-                | Frame::FoldNil(body, result) => {
+                Frame::FoldNil(body, result) => {
                     goal = Goal::CheckComp(body, result);
                     continue 'expand;
                 },
-                | Frame::FoldCons(element, result, body) => {
+                Frame::FoldCons(element, result, body) => {
                     let under_head = weakened(arena, session, result);
                     let Some(&CompType::Returner(folded)) = arena.comp_type(under_head)
                     else {
@@ -3491,12 +3505,12 @@ where
                     goal = Goal::CheckComp(body, under_both);
                     continue 'expand;
                 },
-                | Frame::Memoize(support) => {
+                Frame::Memoize(support) => {
                     // A memo at its ceiling declines to record; see the same
                     // note in `type_level`.
                     let _recorded = memo.remember(support, produced.outcome());
                 },
-                | Frame::PathProductFirst(second) => {
+                Frame::PathProductFirst(second) => {
                     let first_type = produced.value_type()?;
                     let endpoints = crate::path_universe::endpoints(
                         arena,
@@ -3508,7 +3522,7 @@ where
                     goal = Goal::SynthValue(second);
                     continue 'expand;
                 },
-                | Frame::PathProductSecond(first) => {
+                Frame::PathProductSecond(first) => {
                     let second_type = produced.value_type()?;
                     let second = crate::path_universe::endpoints(
                         arena,
@@ -3529,7 +3543,7 @@ where
                 // pairs must themselves be codes of the `Flow_U` vocabulary,
                 // so a component at a function or session code is refused
                 // rather than minting a classifier no other rule reads.
-                | Frame::FlowProductFirst(second) => {
+                Frame::FlowProductFirst(second) => {
                     let first_type = produced.value_type()?;
                     let endpoints = crate::flow_universe::universe_reading(
                         arena,
@@ -3541,7 +3555,7 @@ where
                     goal = Goal::SynthValue(second);
                     continue 'expand;
                 },
-                | Frame::FlowProductSecond(first) => {
+                Frame::FlowProductSecond(first) => {
                     let second_type = produced.value_type()?;
                     let second = crate::flow_universe::universe_reading(
                         arena,
@@ -3562,7 +3576,7 @@ where
                     .map_err(KernelError::Flow)?;
                     produced = Produced::ValueType(classifier);
                 },
-                | Frame::PathForward {
+                Frame::PathForward {
                     path,
                     endpoints,
                     context: outer,
@@ -3582,7 +3596,7 @@ where
                     goal = Goal::CheckValue(backward, translator);
                     continue 'expand;
                 },
-                | Frame::PathBackward {
+                Frame::PathBackward {
                     path,
                     endpoints,
                     context: outer,
@@ -3625,7 +3639,7 @@ where
                     context = outer;
                     produced = Produced::ValueType(path_type);
                 },
-                | Frame::Transport(value) => {
+                Frame::Transport(value) => {
                     let path_type = produced.value_type()?;
                     let endpoints = crate::path_universe::endpoints(
                         arena,
@@ -3639,11 +3653,11 @@ where
                     goal = Goal::CheckValue(value, endpoints.source);
                     continue 'expand;
                 },
-                | Frame::SynthHere(point) => {
+                Frame::SynthHere(point) => {
                     let domain = produced.value_type()?;
                     produced = Produced::ValueType(arena.value_type_path(domain, point, point));
                 },
-                | Frame::SynthReturned => {
+                Frame::SynthReturned => {
                     let synthesized = produced.comp_type()?;
                     let Some(&CompType::Returner(result)) = arena.comp_type(synthesized)
                     else {
@@ -3659,7 +3673,7 @@ where
                 // the laws of bind among its forced rules; an endpoint it
                 // leaves apart is related by the dialogue the `here` carries,
                 // unfolding only the admitted definitions the dialogue names.
-                | Frame::CheckHere {
+                Frame::CheckHere {
                     point,
                     left,
                     right,
@@ -3674,7 +3688,7 @@ where
                     )?;
                     produced = Produced::Checked;
                 },
-                | Frame::Components {
+                Frame::Components {
                     outer,
                     mut remaining,
                 } => {
@@ -3706,7 +3720,7 @@ where
                 // at the target: instantiation is the rewrite machine's
                 // substitution, so the law holds of every motive. A word
                 // written as the path is followed as the path it is.
-                | Frame::ElementTransport(transport) => {
+                Frame::ElementTransport(transport) => {
                     let path_type = produced.value_type()?;
                     let Some(&Computation::PathTransport { motive, value, .. }) =
                         arena.computation(transport)
@@ -3739,7 +3753,7 @@ where
                 // A telescope transport forms its motive, reads the path's
                 // carrier as the motive's first entry, and checks the start
                 // in the family's fibre over the path's source.
-                | Frame::TelescopePath(transport) => {
+                Frame::TelescopePath(transport) => {
                     let path_type = produced.value_type()?;
                     let Some(&Computation::TelescopeTransport { motive, start, .. }) =
                         arena.computation(transport)
@@ -3789,7 +3803,7 @@ where
                     goal = Goal::CheckValue(start, source_fibre);
                     continue 'expand;
                 },
-                | Frame::TelescopeStart { transport, ends } => {
+                Frame::TelescopeStart { transport, ends } => {
                     let Some(&Computation::TelescopeTransport { over, .. }) =
                         arena.computation(transport)
                     else {
@@ -3805,7 +3819,7 @@ where
                 // path to some element. The value then checks at the body
                 // instantiated at the source pair and returns at the target
                 // pair, each by iterated single substitution.
-                | Frame::TelescopeOver {
+                Frame::TelescopeOver {
                     transport,
                     ends: (left, right),
                 } => {
@@ -3870,21 +3884,21 @@ where
                     goal = Goal::CheckValue(value, source);
                     continue 'expand;
                 },
-                | Frame::SynthStay(point) => {
+                Frame::SynthStay(point) => {
                     let domain = produced.value_type()?;
                     produced = Produced::ValueType(arena.value_type_flow(domain, point, point));
                 },
                 // A forward flow's translator checked; each image opens to a
                 // leaf-natural target shape and its dialogue replays, unfolding
                 // only what the environment admitted before it.
-                | Frame::FlowForward {
+                Frame::FlowForward {
                     flow,
                     endpoints,
                     context: outer,
                 } => {
                     let (flow_type, translator, images, dialogues) = match *read_value(arena, flow)?
                     {
-                        | Value::ForwardFlow {
+                        Value::ForwardFlow {
                             flow_type,
                             translator,
                             ref outputs,
@@ -3895,7 +3909,34 @@ where
                             outputs.clone(),
                             alloc::sync::Arc::clone(dialogues),
                         ),
-                        | _ => return Err(KernelError::ArenaFault),
+                        Value::Constructor { .. }
+                        | Value::Record(_)
+                        | Value::SessionPath { .. }
+                        | Value::SessionFlow { .. }
+                        | Value::Stay { .. }
+                        | Value::FunctionFlow { .. }
+                        | Value::Then { .. }
+                        | Value::FlowProduct(..)
+                        | Value::PathRefl(_)
+                        | Value::PathProduct(..)
+                        | Value::PathEquiv { .. }
+                        | Value::Here { .. }
+                        | Value::Returned(_)
+                        | Value::Higher { .. }
+                        | Value::HigherEvaluation { .. }
+                        | Value::QuantifiedEvaluation { .. }
+                        | Value::Variable(_)
+                        | Value::Constant(_)
+                        | Value::Literal(_)
+                        | Value::Tuple(_)
+                        | Value::Injection(..)
+                        | Value::ListNil
+                        | Value::ListCons(..)
+                        | Value::Thunk(_)
+                        | Value::Lift { .. }
+                        | Value::Quote(_)
+                        | Value::QuoteComputation(_)
+                        | Value::StaticApplication(..) => return Err(KernelError::ArenaFault),
                     };
                     let unfoldings = admitted_unfoldings(judgement);
                     let watermark = arena.watermark();
@@ -3916,7 +3957,7 @@ where
                 // variance fixes at its position: the domain from the target's
                 // argument to the source's, the codomain from the source's
                 // result to the target's.
-                | Frame::FlowBoundary { flow, position } => {
+                Frame::FlowBoundary { flow, position } => {
                     let classifier = produced.value_type()?;
                     let Value::FunctionFlow {
                         flow_type,
@@ -3941,7 +3982,7 @@ where
                     )
                     .map_err(KernelError::Flow)?;
                     match position {
-                        | crate::flow_universe::Boundary::Domain => {
+                        crate::flow_universe::Boundary::Domain => {
                             frames.push(Frame::FlowBoundary {
                                 flow,
                                 position: crate::flow_universe::Boundary::Codomain,
@@ -3949,12 +3990,12 @@ where
                             goal = Goal::SynthValue(codomain);
                             continue 'expand;
                         },
-                        | crate::flow_universe::Boundary::Codomain => {
+                        crate::flow_universe::Boundary::Codomain => {
                             produced = Produced::ValueType(flow_type);
                         },
                     }
                 },
-                | Frame::ThenFirst(then) => {
+                Frame::ThenFirst(then) => {
                     let first = produced.value_type()?;
                     let Value::Then { second, .. } = *read_value(arena, then)?
                     else {
@@ -3967,7 +4008,7 @@ where
                 // **The seam gate.** The carriers agree and the first flow's
                 // target meets the second's source; a feedback seam is a
                 // cycle and is refused by name.
-                | Frame::ThenSecond { then, first } => {
+                Frame::ThenSecond { then, first } => {
                     let second_type = produced.value_type()?;
                     let Value::Then {
                         first: earlier,
@@ -3990,7 +4031,7 @@ where
                 // A ride forms its motive over the flow's carrier, passes the
                 // covariance gate, checks its value at the motive's source
                 // instance and returns at its target instance.
-                | Frame::Ride(ride) => {
+                Frame::Ride(ride) => {
                     let flow_type = produced.value_type()?;
                     let Some(&Computation::Ride { motive, value, .. }) = arena.computation(ride)
                     else {
@@ -4030,7 +4071,7 @@ where
                 // as the motive's first entry, passes the gate in both entries,
                 // and checks the start in the family's fibre over the flow's
                 // source.
-                | Frame::TelescopeRideFlow(ride) => {
+                Frame::TelescopeRideFlow(ride) => {
                     let flow_type = produced.value_type()?;
                     let Some(&Computation::TelescopeRide { motive, start, .. }) =
                         arena.computation(ride)
@@ -4092,7 +4133,7 @@ where
                     goal = Goal::CheckValue(start, source_fibre);
                     continue 'expand;
                 },
-                | Frame::TelescopeRideStart { ride, ends } => {
+                Frame::TelescopeRideStart { ride, ends } => {
                     let Some(&Computation::TelescopeRide { over, .. }) = arena.computation(ride)
                     else {
                         return Err(KernelError::ArenaFault);
@@ -4106,7 +4147,7 @@ where
                 // the flow's target, from the start ridden along the flow to
                 // some element. The value then checks at the body instantiated
                 // at the source pair and returns at the target pair.
-                | Frame::TelescopeRideOver {
+                Frame::TelescopeRideOver {
                     ride,
                     ends: (left, right),
                 } => {
@@ -4176,7 +4217,7 @@ where
                 // as a pure arrow, checks both arguments and their evidence,
                 // then synthesizes its body under both results and their
                 // identity.
-                | Frame::RelatedPath(application) => {
+                Frame::RelatedPath(application) => {
                     let path_type = produced.value_type()?;
                     let Some(&Computation::RelatedApplication {
                         left,
@@ -4198,10 +4239,10 @@ where
                         ));
                     };
                     let (argument, result) = match arena.comp_type(arrow) {
-                        | Some(&CompType::Arrow { domain, codomain }) => {
+                        Some(&CompType::Arrow { domain, codomain }) => {
                             match arena.comp_type(codomain) {
-                                | Some(&CompType::Returner(result)) => (domain, result),
-                                | _ => {
+                                Some(&CompType::Returner(result)) => (domain, result),
+                                _ => {
                                     return Err(comp_shape_mismatch(
                                         arena,
                                         ExpectedComputationShape::Returner,
@@ -4210,7 +4251,7 @@ where
                                 },
                             }
                         },
-                        | _ => {
+                        _ => {
                             return Err(comp_shape_mismatch(
                                 arena,
                                 ExpectedComputationShape::Arrow,
@@ -4253,7 +4294,7 @@ where
                     goal = Goal::CheckValue(left, argument);
                     continue 'expand;
                 },
-                | Frame::RelatedBody { body, binders } => {
+                Frame::RelatedBody { body, binders } => {
                     for binder in binders {
                         context.push(binder);
                         frames.push(Frame::Strengthen);
@@ -4262,7 +4303,7 @@ where
                     goal = Goal::SynthComp(body);
                     continue 'expand;
                 },
-                | Frame::SynthTuple {
+                Frame::SynthTuple {
                     mut remaining,
                     mut types,
                 } => {
@@ -4274,11 +4315,11 @@ where
                     }
                     produced = Produced::ValueType(arena.value_type_product(&types));
                 },
-                | Frame::SynthThunk => {
+                Frame::SynthThunk => {
                     let body_type = produced.comp_type()?;
                     produced = Produced::ValueType(arena.value_type_thunk(body_type));
                 },
-                | Frame::SynthLift(target) => {
+                Frame::SynthLift(target) => {
                     let body_type = produced.value_type()?;
                     let body_level = type_level(
                         arena,
@@ -4298,14 +4339,14 @@ where
                         .check_universe_below(&body_level, &target)?;
                     produced = Produced::ValueType(arena.value_type_lift(body_type, target));
                 },
-                | Frame::CheckPairSecond(second, second_type) => {
+                Frame::CheckPairSecond(second, second_type) => {
                     goal = Goal::CheckValue(second, second_type);
                     continue 'expand;
                 },
                 // At the level-zero universe `Flow(U₀, x, y)` and `Flow_U(x,
                 // y)` are two readings of one classifier: a flow synthesizing
                 // either checks at the other.
-                | Frame::ConvertValue(expected) => {
+                Frame::ConvertValue(expected) => {
                     let synthesized = produced.value_type()?;
                     if let Err(mismatch) = former::assignable(arena, expected, synthesized) {
                         let reading = read_returned(
@@ -4326,12 +4367,12 @@ where
                     }
                     produced = Produced::Checked;
                 },
-                | Frame::SynthApply(argument) => {
+                Frame::SynthApply(argument) => {
                     let head_type = produced.comp_type()?;
                     match arena.comp_type(head_type) {
                         // An application eliminates either arrow: check the
                         // argument against the domain and produce the codomain.
-                        | Some(&CompType::Arrow { domain, codomain }) => {
+                        Some(&CompType::Arrow { domain, codomain }) => {
                             frames.push(Frame::ProduceComp(codomain));
                             goal = Goal::CheckValue(argument, domain);
                             continue 'expand;
@@ -4342,7 +4383,7 @@ where
                         // through a code names the argument after this step, and
                         // a codomain that mentions nothing is handed back
                         // unchanged at no cost.
-                        | Some(&CompType::Pi { domain, codomain }) => {
+                        Some(&CompType::Pi { domain, codomain }) => {
                             let (table, rewrites) = session.rewrite_parts();
                             let instantiated =
                                 substitute_comp_type(arena, table, rewrites, codomain, argument);
@@ -4350,7 +4391,7 @@ where
                             goal = Goal::CheckValue(argument, domain);
                             continue 'expand;
                         },
-                        | _ => {
+                        _ => {
                             return Err(comp_shape_mismatch(
                                 arena,
                                 ExpectedComputationShape::Arrow,
@@ -4359,20 +4400,20 @@ where
                         },
                     }
                 },
-                | Frame::ProduceComp(codomain) => {
+                Frame::ProduceComp(codomain) => {
                     produced = Produced::CompType(codomain);
                 },
-                | Frame::SynthStaticApply(argument) => {
+                Frame::SynthStaticApply(argument) => {
                     let head_type = produced.value_type()?;
                     match arena.value_type(head_type) {
                         // The static Pi binds nothing, so its codomain is the
                         // application's type as it stands.
-                        | Some(&ValueType::StaticPi { domain, codomain }) => {
+                        Some(&ValueType::StaticPi { domain, codomain }) => {
                             frames.push(Frame::ProduceValue(codomain));
                             goal = Goal::CheckValue(argument, domain);
                             continue 'expand;
                         },
-                        | _ => {
+                        _ => {
                             return Err(value_shape_mismatch(
                                 arena,
                                 ExpectedValueShape::StaticPi,
@@ -4381,23 +4422,23 @@ where
                         },
                     }
                 },
-                | Frame::SessionPayload {
+                Frame::SessionPayload {
                     classifier,
                     context: outer,
                 } => {
                     context = outer;
                     produced = Produced::ValueType(classifier);
                 },
-                | Frame::ProduceValue(codomain) => {
+                Frame::ProduceValue(codomain) => {
                     produced = Produced::ValueType(codomain);
                 },
-                | Frame::SynthForce => {
+                Frame::SynthForce => {
                     let value_type = produced.value_type()?;
                     match arena.value_type(value_type) {
-                        | Some(&ValueType::Thunk(codomain)) => {
+                        Some(&ValueType::Thunk(codomain)) => {
                             produced = Produced::CompType(codomain);
                         },
-                        | _ => {
+                        _ => {
                             return Err(value_shape_mismatch(
                                 arena,
                                 ExpectedValueShape::Thunk,
@@ -4406,23 +4447,23 @@ where
                         },
                     }
                 },
-                | Frame::SynthReturn => {
+                Frame::SynthReturn => {
                     let result_type = produced.value_type()?;
                     produced = Produced::CompType(arena.comp_type_returner(result_type));
                 },
-                | Frame::SynthWithLeft(right) => {
+                Frame::SynthWithLeft(right) => {
                     let left_type = produced.comp_type()?;
                     frames.push(Frame::SynthWithRight(left_type));
                     goal = Goal::SynthComp(right);
                     continue 'expand;
                 },
-                | Frame::SynthWithRight(left_type) => {
+                Frame::SynthWithRight(left_type) => {
                     let right_type = produced.comp_type()?;
                     produced = Produced::CompType(arena.comp_type_with(left_type, right_type));
                 },
                 // A projection reads its side off the pairing's synthesized
                 // lazy product; any other classifier is refused by name.
-                | Frame::Project(side) => {
+                Frame::Project(side) => {
                     let pair_type = produced.comp_type()?;
                     let Some(&CompType::With(left_type, right_type)) = arena.comp_type(pair_type)
                     else {
@@ -4433,21 +4474,21 @@ where
                         ));
                     };
                     produced = Produced::CompType(match side {
-                        | gandr_kernel_term::Side::Left => left_type,
-                        | gandr_kernel_term::Side::Right => right_type,
+                        gandr_kernel_term::Side::Left => left_type,
+                        gandr_kernel_term::Side::Right => right_type,
                     });
                 },
-                | Frame::SynthBind(body) => {
+                Frame::SynthBind(body) => {
                     let bound_type = produced.comp_type()?;
                     match arena.comp_type(bound_type) {
-                        | Some(&CompType::Returner(result)) => {
+                        Some(&CompType::Returner(result)) => {
                             context.push(result);
                             frames.push(Frame::Strengthen);
                             frames.push(Frame::ScopeExit);
                             goal = Goal::SynthComp(body);
                             continue 'expand;
                         },
-                        | _ => {
+                        _ => {
                             return Err(comp_shape_mismatch(
                                 arena,
                                 ExpectedComputationShape::Returner,
@@ -4456,7 +4497,7 @@ where
                         },
                     }
                 },
-                | Frame::SynthCaseScrutinee(branches) => {
+                Frame::SynthCaseScrutinee(branches) => {
                     let scrutinee_type = produced.value_type()?;
                     let mut remaining = case_branches(arena, scrutinee_type, &branches)?;
                     let Some((branch, summand)) = remaining.pop()
@@ -4476,18 +4517,18 @@ where
                 },
                 // Every branch's type, strengthened out of its binder, must
                 // convert to the first branch's, which the case then has.
-                | Frame::SynthCaseBranch {
+                Frame::SynthCaseBranch {
                     mut remaining,
                     first,
                 } => {
                     let branch_type =
                         strengthened(arena, session, &context, produced.comp_type()?)?;
                     let first_type = match first {
-                        | None => branch_type,
-                        | Some(first_type) => {
+                        None => branch_type,
+                        Some(first_type) => {
                             match convertible_comp_types(arena, first_type, branch_type) {
-                                | Convertibility::Convertible => first_type,
-                                | Convertibility::Distinct => {
+                                Convertibility::Convertible => first_type,
+                                Convertibility::Distinct => {
                                     return Err(case_branch_mismatch(
                                         arena,
                                         first_type,
@@ -4509,7 +4550,7 @@ where
                     }
                     produced = Produced::CompType(first_type);
                 },
-                | Frame::ConvertComp(expected) => {
+                Frame::ConvertComp(expected) => {
                     let synthesized = produced.comp_type()?;
                     if let Err(mismatch) = convert_comp_type(arena, expected, synthesized) {
                         let reading = read_returned(
@@ -4523,17 +4564,17 @@ where
                     }
                     produced = Produced::Checked;
                 },
-                | Frame::CheckBind(body, expected) => {
+                Frame::CheckBind(body, expected) => {
                     let bound_type = produced.comp_type()?;
                     match arena.comp_type(bound_type) {
-                        | Some(&CompType::Returner(result)) => {
+                        Some(&CompType::Returner(result)) => {
                             let scoped = weakened(arena, session, expected);
                             context.push(result);
                             frames.push(Frame::ScopeExit);
                             goal = Goal::CheckComp(body, scoped);
                             continue 'expand;
                         },
-                        | _ => {
+                        _ => {
                             return Err(comp_shape_mismatch(
                                 arena,
                                 ExpectedComputationShape::Returner,
@@ -4545,7 +4586,7 @@ where
                 // Each branch checks, under its summand's binder, against the
                 // expected type read from under that binder. A case of no
                 // branches over the empty sum checks at once.
-                | Frame::CheckCaseScrutinee { branches, expected } => {
+                Frame::CheckCaseScrutinee { branches, expected } => {
                     let scrutinee_type = produced.value_type()?;
                     let remaining = case_branches(arena, scrutinee_type, &branches)?;
                     let scoped = weakened(arena, session, expected);
@@ -4555,7 +4596,7 @@ where
                     });
                     produced = Produced::Checked;
                 },
-                | Frame::CheckCaseBranch {
+                Frame::CheckCaseBranch {
                     mut remaining,
                     expected,
                 } => {
@@ -4571,10 +4612,10 @@ where
                     }
                     produced = Produced::Checked;
                 },
-                | Frame::ScopeExit => {
+                Frame::ScopeExit => {
                     let _popped = context.pop();
                 },
-                | Frame::Strengthen => {
+                Frame::Strengthen => {
                     let synthesized = produced.comp_type()?;
                     produced =
                         Produced::CompType(strengthened(arena, session, &context, synthesized)?);
@@ -4819,7 +4860,7 @@ where
     // self occurrence by name first, and formation then reads the self
     // occurrence through the block's own signature.
     let judgement = match *declaration.content() {
-        | DeclarationContent::Data {
+        DeclarationContent::Data {
             kind,
             ref parameters,
             ref constructors,
@@ -4832,7 +4873,7 @@ where
                 kind,
             })
         },
-        | DeclarationContent::Def { .. }
+        DeclarationContent::Def { .. }
         | DeclarationContent::Axiom { .. }
         | DeclarationContent::AbstractType { .. } => judgement,
     };
@@ -4851,7 +4892,7 @@ where
     )?;
     check_sealing_provenance(arena, declared, declaration.provenance())?;
     let verdict = match *declaration.content() {
-        | DeclarationContent::Data {
+        DeclarationContent::Data {
             kind,
             ref parameters,
             ref constructors,
@@ -4905,7 +4946,7 @@ where
             )?;
             Ok(())
         },
-        | DeclarationContent::Def { declared, body } => {
+        DeclarationContent::Def { declared, body } => {
             // The seal rule: inside the admission that minted an atom, a member
             // declared at the atom is checked at its representation. The
             // declaration keeps its declared type, so the member is exported at
@@ -4926,7 +4967,7 @@ where
             )?;
             Ok(())
         },
-        | DeclarationContent::Axiom { .. } => Ok(()),
+        DeclarationContent::Axiom { .. } => Ok(()),
         // A sealed atom's admission obligation is that its kind is a universe
         // of value types — the atom is a value type, so a computation universe
         // is no kind for it — and that its representation forms below that
@@ -4934,18 +4975,18 @@ where
         // There is no body to check and no inhabitant claimed, so the kernel
         // takes on nothing further — the property the atom route was chosen
         // for.
-        | DeclarationContent::AbstractType {
+        DeclarationContent::AbstractType {
             kind,
             representation,
             ..
         } => {
             let kind_node = arena.value_type(kind).ok_or(KernelError::ArenaFault)?;
             let level = match *kind_node {
-                | ValueType::Universe {
+                ValueType::Universe {
                     sort: GroundSort::Value,
                     ref level,
                 } => level.clone(),
-                | ValueType::Universe {
+                ValueType::Universe {
                     sort: GroundSort::Computation,
                     ..
                 }
@@ -5089,7 +5130,7 @@ where
             arith::Int::from(1_usize),
         ));
         match obligation {
-            | CodeObligation::Universe {
+            CodeObligation::Universe {
                 code,
                 sort,
                 level,
@@ -5109,7 +5150,7 @@ where
                     },
                 )?;
             },
-            | CodeObligation::Endpoints {
+            CodeObligation::Endpoints {
                 domain,
                 left,
                 right,
@@ -5130,7 +5171,7 @@ where
                     )?;
                 }
             },
-            | CodeObligation::Data { datatype, context } => {
+            CodeObligation::Data { datatype, context } => {
                 let Some(matched_native_node) = arena.value_type(datatype)
                 else {
                     return Err(KernelError::ArenaFault);
@@ -5155,11 +5196,11 @@ where
                         former::ParameterPrefix(index),
                     )?;
                     let argument = match arena.value_type(datatype) {
-                        | Some(&ValueType::Data { ref arguments, .. }) => arguments
+                        Some(&ValueType::Data { ref arguments, .. }) => arguments
                             .get(index)
                             .copied()
                             .ok_or(KernelError::DataArgumentArity)?,
-                        | _ => return Err(KernelError::ArenaFault),
+                        _ => return Err(KernelError::ArenaFault),
                     };
                     let _checked = run(
                         arena,

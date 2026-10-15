@@ -234,36 +234,36 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
         .iter()
         .filter_map(|lowered| {
             let (declared, defined) = match lowered.outcome() {
-                | DeclarationOutcome::Completed {
+                DeclarationOutcome::Completed {
                     declared_type,
                     body: value,
                 } => (Maybe::Present(declared_type), Maybe::Present(value)),
-                | DeclarationOutcome::Uncompleted { declared_type } => (
+                DeclarationOutcome::Uncompleted { declared_type } => (
                     Maybe::Present(declared_type),
                     Maybe::Absent(body::Absent::Hole),
                 ),
-                | DeclarationOutcome::Bodied { body: value } => (
+                DeclarationOutcome::Bodied { body: value } => (
                     Maybe::Absent(signature::Absent::Unsigned),
                     Maybe::Present(value),
                 ),
-                | DeclarationOutcome::Data(index) => {
+                DeclarationOutcome::Data(index) => {
                     return match module.data(index) {
-                        | Maybe::Present(signature) => Some(Declaration::data(
+                        Maybe::Present(signature) => Some(Declaration::data(
                             lowered.constant(),
                             Arc::clone(signature),
                             OriginToken::from(usize::from(lowered.origin())),
                         )),
-                        | Maybe::Absent(_) => None,
+                        Maybe::Absent(_) => None,
                     };
                 },
-                | DeclarationOutcome::Abstract(sealing) => {
+                DeclarationOutcome::Abstract(sealing) => {
                     return Some(Declaration::abstract_type(
                         lowered.constant(),
                         abstract_type(sealing),
                         OriginToken::from(usize::from(lowered.origin())),
                     ));
                 },
-                | DeclarationOutcome::Refused(_) => return None,
+                DeclarationOutcome::Refused(_) => return None,
             };
             let origin = OriginToken::from(usize::from(lowered.origin()));
             Some(

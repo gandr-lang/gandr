@@ -228,31 +228,31 @@ fn summarize(
     let mut summaries: Vec<Summary> = Vec::new();
     while let Some(frame) = frames.pop() {
         match frame {
-            | Frame::Enter(node) => match node.shape() {
-                | RegexShape::Empty => summaries.push(Summary {
+            Frame::Enter(node) => match node.shape() {
+                RegexShape::Empty => summaries.push(Summary {
                     nullable: true,
                     ..Summary::default()
                 }),
-                | RegexShape::Sym(Sym::Tile(_tile)) => summaries.push(Summary::default()),
-                | RegexShape::Sym(Sym::Sort(sort)) => summaries.push(Summary {
+                RegexShape::Sym(Sym::Tile(_tile)) => summaries.push(Summary::default()),
+                RegexShape::Sym(Sym::Sort(sort)) => summaries.push(Summary {
                     nullable: false,
                     first: BTreeSet::from([sort]),
                     last: BTreeSet::from([sort]),
                 }),
-                | RegexShape::Seq(items) => {
+                RegexShape::Seq(items) => {
                     frames.push(Frame::FinishSeq(items.len()));
                     frames.extend(items.into_iter().rev().map(Frame::Enter));
                 },
-                | RegexShape::Alt(items) => {
+                RegexShape::Alt(items) => {
                     frames.push(Frame::FinishAlt(items.len()));
                     frames.extend(items.into_iter().rev().map(Frame::Enter));
                 },
-                | RegexShape::Optional(inner) | RegexShape::Repeat(inner) => {
+                RegexShape::Optional(inner) | RegexShape::Repeat(inner) => {
                     frames.push(Frame::FinishNullable);
                     frames.push(Frame::Enter(inner));
                 },
             },
-            | Frame::FinishSeq(count) => {
+            Frame::FinishSeq(count) => {
                 let start = summaries.len().saturating_sub(count);
                 let children = summaries.split_off(start);
                 let mut acc = Summary {
@@ -265,7 +265,7 @@ fn summarize(
                 }
                 summaries.push(acc);
             },
-            | Frame::FinishAlt(count) => {
+            Frame::FinishAlt(count) => {
                 let start = summaries.len().saturating_sub(count);
                 let children = summaries.split_off(start);
                 let mut acc = Summary::default();
@@ -276,7 +276,7 @@ fn summarize(
                 }
                 summaries.push(acc);
             },
-            | Frame::FinishNullable => {
+            Frame::FinishNullable => {
                 if let Some(summary) = summaries.last_mut() {
                     summary.nullable = true;
                 }
@@ -312,12 +312,12 @@ fn reject_adjacent(
 ) -> Result<(), PbgError>
 {
     match (left.first(), right.first()) {
-        | (Some(&left_sort), Some(&right_sort)) => Err(PbgError::AdjacentSorts {
+        (Some(&left_sort), Some(&right_sort)) => Err(PbgError::AdjacentSorts {
             rule: rule.0,
             left: left_sort,
             right: right_sort,
         }),
-        | _ => Ok(()),
+        _ => Ok(()),
     }
 }
 

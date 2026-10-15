@@ -948,34 +948,34 @@ impl<'meter> DocBuilder<'meter>
                 return Err(BuildError::NodeIdExhausted);
             };
             let current = match u32::try_from(index) {
-                | Ok(index) => NodeId::from(index),
-                | Err(_) => return Err(BuildError::NodeIdExhausted),
+                Ok(index) => NodeId::from(index),
+                Err(_) => return Err(BuildError::NodeIdExhausted),
             };
             let candidate = match node {
-                | DocNode::Empty => DocNode::Empty,
-                | DocNode::Text(text) => DocNode::Text(text),
-                | DocNode::Verbatim(verbatim) => DocNode::Verbatim(verbatim),
-                | DocNode::Line => {
+                DocNode::Empty => DocNode::Empty,
+                DocNode::Text(text) => DocNode::Text(text),
+                DocNode::Verbatim(verbatim) => DocNode::Verbatim(verbatim),
+                DocNode::Line => {
                     let text = self.space_text_id()?;
                     DocNode::Text(text)
                 },
-                | DocNode::HardLine => DocNode::HardLine,
-                | DocNode::Concat { left, right } => DocNode::Concat {
+                DocNode::HardLine => DocNode::HardLine,
+                DocNode::Concat { left, right } => DocNode::Concat {
                     left: self.flattened_edge(left)?,
                     right: self.flattened_edge(right)?,
                 },
-                | DocNode::Nest { amount, doc } => DocNode::Nest {
+                DocNode::Nest { amount, doc } => DocNode::Nest {
                     amount,
                     doc: self.flattened_edge(doc)?,
                 },
-                | DocNode::Align { doc } => DocNode::Align {
+                DocNode::Align { doc } => DocNode::Align {
                     doc: self.flattened_edge(doc)?,
                 },
-                | DocNode::Choice { left, right } => DocNode::Choice {
+                DocNode::Choice { left, right } => DocNode::Choice {
                     left: self.flattened_edge(left)?,
                     right: self.flattened_edge(right)?,
                 },
-                | DocNode::Flatten { doc } => {
+                DocNode::Flatten { doc } => {
                     let doc = self.flattened_edge(doc)?;
                     let Ok(index) = usize::try_from(u32::from(doc))
                     else {
@@ -993,10 +993,8 @@ impl<'meter> DocBuilder<'meter>
             }
             else {
                 match self.find_flattened(candidate)? {
-                    | Maybe::Present(image) => image,
-                    | Maybe::Absent(interned::Absent::Unseen) => {
-                        self.insert_flattened(candidate)?
-                    },
+                    Maybe::Present(image) => image,
+                    Maybe::Absent(interned::Absent::Unseen) => self.insert_flattened(candidate)?,
                 }
             };
             if self.flattened.try_reserve(1usize).is_err() {
@@ -1452,8 +1450,8 @@ impl<'meter> DocBuilder<'meter>
     {
         self.meter.check_step()?;
         let image = match self.flatten_memo.get(&candidate) {
-            | Some(&image) => Maybe::Present(image),
-            | None => Maybe::Absent(interned::Absent::Unseen),
+            Some(&image) => Maybe::Present(image),
+            None => Maybe::Absent(interned::Absent::Unseen),
         };
         self.meter.charge_step()?;
         Ok(image)

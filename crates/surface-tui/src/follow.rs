@@ -99,7 +99,7 @@ impl Following
     ) -> Heard
     {
         match (frame.scope(), frame.body()) {
-            | (&FrameScope::Document(ref document), &FrameBody::Frame { ref report }) => {
+            (&FrameScope::Document(ref document), &FrameBody::Frame { ref report }) => {
                 drop(
                     self.reports
                         .insert(document.uri.clone(), (document.clone(), report.clone())),
@@ -107,8 +107,8 @@ impl Following
                 self.latest = Some(document.uri.clone());
                 Heard::Continue
             },
-            | (_, &FrameBody::Detach) => Heard::Detached,
-            | (_, &(FrameBody::Hello { .. } | FrameBody::Frame { .. } | FrameBody::Resync)) => {
+            (_, &FrameBody::Detach) => Heard::Detached,
+            (_, &(FrameBody::Hello { .. } | FrameBody::Frame { .. } | FrameBody::Resync)) => {
                 Heard::Continue
             },
         }
@@ -298,19 +298,19 @@ where
     loop {
         let _frame = terminal.draw(|frame| draw_following(frame, &following))?;
         match seen.recv() {
-            | Ok(Seen::Frame(frame)) => {
+            Ok(Seen::Frame(frame)) => {
                 if following.hear(&frame) == Heard::Detached {
                     return Ok(Ended::Completed);
                 }
             },
-            | Ok(
+            Ok(
                 Seen::Input(Input::Key(Key::Quit | Key::Interrupt | Key::Char('q'))) | Seen::Closed,
             )
             | Err(_) => {
                 return Ok(Ended::Completed);
             },
-            | Ok(Seen::Input(Input::Failed(fault))) => return Ok(Ended::Faulted(fault)),
-            | Ok(Seen::Input(
+            Ok(Seen::Input(Input::Failed(fault))) => return Ok(Ended::Faulted(fault)),
+            Ok(Seen::Input(
                 Input::Redraw | Input::Key(Key::Char(_) | Key::Backspace | Key::Enter),
             )) => {},
         }
@@ -378,7 +378,7 @@ where
     let keys = seen.clone();
     drop(thread::spawn(move || frames(reading, &seen)));
     let ended = match ratatui::try_init() {
-        | Ok(mut terminal) => {
+        Ok(mut terminal) => {
             // The keyboard is read on its own thread, started once the
             // terminal is raw so crossterm's reader sees each key as it is
             // pressed; frames paint while no key is. The thread ends with the
@@ -395,13 +395,13 @@ where
             }));
             drive_following(&mut terminal, &inbox)
         },
-        | Err(error) => Err(error),
+        Err(error) => Err(error),
     };
     let restored = ratatui::try_restore();
     drop(detach(writing));
     match (ended, restored) {
-        | (Ok(ended), Ok(())) => Ok(ended),
-        | (Err(error), _) | (Ok(_), Err(error)) => Err(error),
+        (Ok(ended), Ok(())) => Ok(ended),
+        (Err(error), _) | (Ok(_), Err(error)) => Err(error),
     }
 }
 
@@ -453,12 +453,12 @@ where
     let mut following = Following::default();
     for line in reading.lines() {
         let line = match line {
-            | Ok(line) => line,
-            | Err(error) => return Ok(Ended::Faulted(Fault::Input(error))),
+            Ok(line) => line,
+            Err(error) => return Ok(Ended::Faulted(Fault::Input(error))),
         };
         let frame = match serde_json::from_str::<RenderFrame>(&line) {
-            | Ok(frame) => frame,
-            | Err(error) => {
+            Ok(frame) => frame,
+            Err(error) => {
                 return Ok(Ended::Faulted(Fault::Input(io::Error::new(
                     io::ErrorKind::InvalidData,
                     error,

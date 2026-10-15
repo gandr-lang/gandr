@@ -82,16 +82,16 @@ pub fn step_fields<'cell>(
 ) -> impl Iterator<Item = CertificateField<'cell>>
 {
     let orient = match cell.orient() {
-        | Orientation::PolarityDerived => 0,
-        | Orientation::CompletionDerived => 1,
+        Orientation::PolarityDerived => 0,
+        Orientation::CompletionDerived => 1,
     };
     let provenance = match cell.provenance() {
-        | CellProvenance::SurfaceRule => 0,
-        | CellProvenance::MuMuTilde => 1,
-        | CellProvenance::FrameDefining => 2,
-        | CellProvenance::Eta(EtaKind::Data) => 3,
-        | CellProvenance::Eta(EtaKind::Codata) => 4,
-        | CellProvenance::DerivedByCompletion => 5,
+        CellProvenance::SurfaceRule => 0,
+        CellProvenance::MuMuTilde => 1,
+        CellProvenance::FrameDefining => 2,
+        CellProvenance::Eta(EtaKind::Data) => 3,
+        CellProvenance::Eta(EtaKind::Codata) => 4,
+        CellProvenance::DerivedByCompletion => 5,
     };
     command_fields(cell.lhs())
         .chain(command_fields(cell.rhs()))
@@ -102,9 +102,9 @@ pub fn step_fields<'cell>(
         ])
         .chain(cell.meta().vars().iter().flat_map(|var| {
             let variance = match var.variance() {
-                | CellVariance::Producer => 0,
-                | CellVariance::Consumer => 1,
-                | CellVariance::Mixed => 2,
+                CellVariance::Producer => 0,
+                CellVariance::Consumer => 1,
+                CellVariance::Mixed => 2,
             };
             let [name, category] = variable_fields(var.var());
             [
@@ -142,8 +142,8 @@ fn variable_fields(var: &MetaVar) -> [CertificateField<'_>; 2]
     [
         CertificateField::Bytes(var.hole().as_ref().as_bytes()),
         CertificateField::Tag(match var.cat() {
-            | Cat::Producer => 0,
-            | Cat::Consumer => 1,
+            Cat::Producer => 0,
+            Cat::Consumer => 1,
         }),
     ]
 }
@@ -163,11 +163,11 @@ fn producer_fields(prod: &ProdPat) -> impl Iterator<Item = CertificateField<'_>>
     prod.to_ref()
         .preorder()
         .flat_map(|entry| match *entry.head() {
-            | ProdHead::Meta(ref var) => {
+            ProdHead::Meta(ref var) => {
                 let [name, category] = variable_fields(var);
                 [CertificateField::Tag(0), name, category]
             },
-            | ProdHead::Ctor(ref name, count) => [
+            ProdHead::Ctor(ref name, count) => [
                 CertificateField::Tag(1),
                 CertificateField::Bytes(name.as_ref().as_bytes()),
                 CertificateField::Count(usize::from(count)),
@@ -195,7 +195,7 @@ fn producer_fields(prod: &ProdPat) -> impl Iterator<Item = CertificateField<'_>>
 fn consumer_fields(head: &ConsHead) -> impl Iterator<Item = CertificateField<'_>>
 {
     let prefix = match *head {
-        | ConsHead::Op {
+        ConsHead::Op {
             ref op,
             ref args,
             rets,
@@ -210,13 +210,13 @@ fn consumer_fields(head: &ConsHead) -> impl Iterator<Item = CertificateField<'_>
             Some(CertificateField::Count(args.len())),
             (rets != ContinuationCount::ONE).then_some(CertificateField::Count(usize::from(rets))),
         ],
-        | ConsHead::Frame(ref name) => [
+        ConsHead::Frame(ref name) => [
             Some(CertificateField::Tag(2)),
             Some(CertificateField::Bytes(name.as_ref().as_bytes())),
             None,
             None,
         ],
-        | ConsHead::Meta(ref var) => {
+        ConsHead::Meta(ref var) => {
             let [name, category] = variable_fields(var);
             [
                 Some(CertificateField::Tag(0)),
@@ -225,7 +225,7 @@ fn consumer_fields(head: &ConsHead) -> impl Iterator<Item = CertificateField<'_>
                 None,
             ]
         },
-        | ConsHead::Top => [Some(CertificateField::Tag(3)), None, None, None],
+        ConsHead::Top => [Some(CertificateField::Tag(3)), None, None, None],
     };
     prefix
         .into_iter()
@@ -254,8 +254,8 @@ fn command_fields(cmd: &CmdPat) -> impl Iterator<Item = CertificateField<'_>>
     [
         CertificateField::Tag(0),
         CertificateField::Tag(match cmd.polarity() {
-            | Polarity::Positive => 0,
-            | Polarity::Negative => 1,
+            Polarity::Positive => 0,
+            Polarity::Negative => 1,
         }),
     ]
     .into_iter()

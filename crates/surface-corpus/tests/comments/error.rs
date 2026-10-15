@@ -80,26 +80,26 @@ impl core::fmt::Display for CommentError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Grammar(ref detail) => {
+            Self::Grammar(ref detail) => {
                 write!(f, "the built-in grammar did not build: {detail}")
             },
-            | Self::File {
+            Self::File {
                 ref path,
                 ref detail,
             } => write!(f, "{}: {detail}", path.display()),
-            | Self::Read {
+            Self::Read {
                 ref path,
                 ref detail,
             } => write!(f, "{}: the source did not read: {detail}", path.display()),
-            | Self::Parse {
+            Self::Parse {
                 ref file,
                 ref detail,
             } => write!(f, "{file}: the parser did not commit a tree: {detail}"),
-            | Self::Mold {
+            Self::Mold {
                 ref file,
                 ref detail,
             } => write!(f, "{file}: a mold did not resolve: {detail}"),
-            | Self::Ledger {
+            Self::Ledger {
                 ref path,
                 ref detail,
             } => write!(
@@ -107,7 +107,7 @@ impl core::fmt::Display for CommentError
                 "{}: the ledger did not read or write: {detail}",
                 path.display()
             ),
-            | Self::Output(ref detail) => write!(f, "the report did not write: {detail}"),
+            Self::Output(ref detail) => write!(f, "the report did not write: {detail}"),
         }
     }
 }
