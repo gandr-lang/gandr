@@ -2487,6 +2487,10 @@ where
                 self.reassociate(id, goal, pair, side)?;
                 Ok(Turn::Again)
             },
+            Plan::Step(Step::Returned) => {
+                self.open_returned(goal, pair)?;
+                Ok(Turn::Again)
+            },
             Plan::Choose(choice) => self.choose(id, goal, choice),
             Plan::Decline(reason) => {
                 self.finish(id, Outcome::Declined(reason))?;
@@ -2644,6 +2648,50 @@ where
         }
         self.charge(StepCount(before.saturating_sub(u64::from(fuel))));
         Ok(fusing)
+    }
+
+    /// Read each side of a value pair that is a returned endpoint as the
+    /// computation it holds, recording nothing.
+    ///
+    /// # Specification
+    /// - requires: `pair` holds the goal's ready sides.
+    /// - ensures: each value side that [`crate::rules::returned`] reads as a
+    ///   computation is replaced by it; every other side, and the depth,
+    ///   unchanged.
+    /// - provides: [`Step::Returned`]: the kernel's replay reads a returned
+    ///   endpoint as its computation before any rule, so the two engines
+    ///   compare one pair and the trace needs no decision for the step.
+    /// - fails: [`ConversionFault::Domain`] for a side that does not resolve.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two endpoints over transports whose motives close
+    ///   over different environments convert once read as their computations,
+    ///   and the kernel replays the trace.
+    /// - witness: `machine::tests::two_held_transports_convert_by_their_computations`
+    #[spec(
+        captures: depth = goal.depth,
+        ensures: |ret| goal.depth == depth,
+    )]
+    fn open_returned(
+        &self,
+        goal: &mut Goal,
+        (left, right): (Glued, Glued),
+    ) -> Result<(), ConversionFault>
+    {
+        for (side, glued) in [(ConversionSide::Left, left), (ConversionSide::Right, right)] {
+            let Glued::Value(value) = glued
+            else {
+                continue;
+            };
+            if let Some(computation) = crate::rules::returned(self.domain, value)? {
+                Self::set_side(goal, side, Slot::Ready(Glued::Computation(computation)));
+            }
+        }
+        Ok(())
     }
 
     /// The turn an unfolding step leaves its goal at.
@@ -6415,7 +6463,8 @@ mod tests
              Node::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
               Computation::DataCase {scrutinee,motive,ref branches} => ret.iter().copied().eq([Node::Value(scrutinee),Node::CompType(motive)].into_iter().chain(branches.iter().copied().map(Node::Computation))),
               Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [Node::Value(record)],
-          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Session(_) | Computation::Memory(_) => false,
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Session(_) | Computation::Memory(_) => false,
+              Computation::PathTransport { motive, path, value } => ret.as_slice() == [Node::ValueType(motive), Node::Value(path), Node::Value(value)],
               Computation::ListFold { element,result,list,on_nil,on_cons } => ret.as_slice() == [Node::ValueType(element),Node::ValueType(result),Node::Value(list),Node::Computation(on_nil),Node::Computation(on_cons)],
               Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               Computation::Transport(path, value) => ret.as_slice() == [Node::Value(path), Node::Value(value)],
@@ -6430,7 +6479,8 @@ mod tests
              Node::ValueType(id) => core.value_type(id).is_some_and(|value_type| match *value_type {
               ValueType::Data {ref arguments,..} => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::ValueType)),
-              ValueType::Stack { .. } | ValueType::Capability { .. } | ValueType::Path { .. } | ValueType::Session(_) | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Staged { .. } => false,
+              ValueType::Stack { .. } | ValueType::Capability { .. } | ValueType::Session(_) | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Staged { .. } => false,
+              ValueType::Path { carrier, left, right } => ret.as_slice() == [Node::ValueType(carrier), Node::Value(left), Node::Value(right)],
               ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
               ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(Node::ValueType)),
               ValueType::StaticPi{domain:a,codomain:b} | ValueType::Sigma{first:a,second:b} => ret.as_slice() == [Node::ValueType(a),Node::ValueType(b)],
@@ -6538,8 +6588,16 @@ mod tests
                         | Computation::TupleProjection(ref record, _) => {
                             Vec::from([Node::Value(*record)])
                         },
-                        Computation::PathTransport { .. }
-                        | Computation::Ride { .. }
+                        Computation::PathTransport {
+                            motive,
+                            path,
+                            value,
+                        } => Vec::from([
+                            Node::ValueType(motive),
+                            Node::Value(path),
+                            Node::Value(value),
+                        ]),
+                        Computation::Ride { .. }
                         | Computation::TelescopeTransport { .. }
                         | Computation::Perform { .. }
                         | Computation::Handle { .. }
@@ -6613,16 +6671,22 @@ mod tests
                         },
                         ValueType::Stack { .. } => panic!("the kernel has no stack type"),
                         ValueType::Session(_) => panic!("the kernel has no session type"),
-                        ValueType::Staged { .. } => panic!("a fixture term names no stage"),
                         ValueType::Capability { .. } => {
                             panic!("the kernel has no capability type")
                         },
                         ValueType::Flow { .. } | ValueType::Run(_) => {
                             panic!("the pure fixture language has no directed identity")
                         },
-                        ValueType::Path { .. } => {
-                            panic!("the pure fixture language has no element identity")
-                        },
+                        ValueType::Staged { .. } => panic!("a fixture term names no stage"),
+                        ValueType::Path {
+                            carrier,
+                            left,
+                            right,
+                        } => Vec::from([
+                            Node::ValueType(carrier),
+                            Node::Value(left),
+                            Node::Value(right),
+                        ]),
                         ValueType::PathUniverse(source, target) => {
                             Vec::from([Node::Value(source), Node::Value(target)])
                         },
@@ -6868,8 +6932,17 @@ mod tests
                             let tuple = value(self, tuple);
                             self.arena.computation_tuple_projection(tuple, component)
                         },
-                        Computation::PathTransport { .. }
-                        | Computation::Ride { .. }
+                        Computation::PathTransport {
+                            motive,
+                            path,
+                            value: transported,
+                        } => {
+                            let motive = *self.value_types.get(&motive).expect("children first");
+                            let (path, transported) = (value(self, path), value(self, transported));
+                            self.arena
+                                .computation_path_transport(motive, path, transported)
+                        },
+                        Computation::Ride { .. }
                         | Computation::TelescopeTransport { .. }
                         | Computation::Perform { .. }
                         | Computation::Handle { .. }
@@ -6984,15 +7057,21 @@ mod tests
                         },
                         ValueType::Stack { .. } => panic!("the kernel has no stack type"),
                         ValueType::Session(_) => panic!("the kernel has no session type"),
-                        ValueType::Staged { .. } => panic!("a fixture term names no stage"),
                         ValueType::Capability { .. } => {
                             panic!("the kernel has no capability type")
                         },
                         ValueType::Flow { .. } | ValueType::Run(_) => {
                             panic!("the pure fixture language has no directed identity")
                         },
-                        ValueType::Path { .. } => {
-                            panic!("the pure fixture language has no element identity")
+                        ValueType::Staged { .. } => panic!("a fixture term names no stage"),
+                        ValueType::Path {
+                            carrier,
+                            left,
+                            right,
+                        } => {
+                            let carrier = value_type(self, carrier);
+                            let (left, right) = (value(self, left), value(self, right));
+                            self.arena.value_type_path(carrier, left, right)
                         },
                         ValueType::PathUniverse(source, target) => {
                             let (source, target) = (value(self, source), value(self, target));
@@ -8124,6 +8203,60 @@ mod tests
             MachineVerdict::Declined(DeclineReason::Indeterminate),
             verdict,
             "the endpoint stays the bind over its call: {decisions:?}"
+        );
+    }
+
+    #[test]
+    fn two_held_transports_convert_by_their_computations()
+    {
+        // `⟨comp(R)⟩` against `⟨other((), R)⟩` for the rigid path `R`, where
+        // `comp = λq. tr(y. Path(Unit, (), y), q, ())` and `other` binds one
+        // more parameter before the same transport: `p then q` written in two
+        // definitions. Both unfold to a transport stuck on `R` whose motive
+        // closes over its own definition's frame, so the walk leaves the two
+        // apart beneath the motive's binder; read as their computations, the
+        // two compare by their motives under one fresh variable and their
+        // values, and the kernel replays the reading.
+        let mut core = CoreArena::new();
+        let unit_type = core.value_type_unit();
+        let unit = core.value_unit();
+        let endpoint = innermost(&mut core);
+        let motive = core.value_type_path(unit_type, unit, endpoint);
+        let path = innermost(&mut core);
+        let transport = core.computation_path_transport(motive, path, unit);
+        let comp = core.computation_lambda(transport);
+        let comp = core.value_thunk(comp);
+        let other = core.computation_lambda(transport);
+        let other = core.computation_lambda(other);
+        let other = core.value_thunk(other);
+        let rigid = core.value_constant(Name::Rigid.constant());
+        let named = core.value_constant(Name::Zero.constant());
+        let left = call(&mut core, named, &[rigid]);
+        let left = core.value_returned(left);
+        let renamed = core.value_constant(Name::One.constant());
+        let right = call(&mut core, renamed, &[unit, rigid]);
+        let right = core.value_returned(right);
+        let moved = core.computation_path_transport(motive, rigid, rigid);
+        let moved = core.value_returned(moved);
+        let held = World::new(core, &[(Name::Zero, comp), (Name::One, other)]).holding();
+
+        let sides = Sides::Values(left, right);
+        let (verdict, decisions) = held.traced(sides);
+        assert_eq!(
+            MachineVerdict::Convertible,
+            verdict,
+            "two held transports along one path are one: {decisions:?}"
+        );
+        assert_eq!(
+            KernelVerdict::Convertible,
+            held.replayed(sides, verdict, &decisions),
+            "and the kernel replays them as their computations: {decisions:?}"
+        );
+        let (verdict, decisions) = held.traced(Sides::Values(left, moved));
+        assert_ne!(
+            MachineVerdict::Convertible,
+            verdict,
+            "a transport of another value is another endpoint: {decisions:?}"
         );
     }
 

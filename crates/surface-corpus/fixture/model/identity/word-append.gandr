@@ -1,6 +1,7 @@
 // `p then q` moves `p` along `q` in `y. Path(A, a, y)`, and that transport
 // appends on its first word whatever `q` is: the empty word is the unit, and
-// a letter stays first (#422).
+// a letter stays first (#422). Two definitions whose composites are one
+// transport, stuck on its two parameters, name one path (#440).
 
 /// The circle: one point and one loop.
 @[ checks ]
@@ -37,4 +38,42 @@ def letterFirst(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base
 @[ refuses("EndpointMismatch") ]
 def letterKept(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(loop ∷ here(Base), p), p) {
   here(p)
+}
+
+/// The composite again, under another name.
+@[ checks ]
+def other(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+  p then q
+}
+
+/// The composite with its two paths swapped.
+@[ checks ]
+def flip(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+  q then p
+}
+
+/// Both names unfold to one transport stuck on `q`, whose motives close over
+/// two definitions' environments and read the binder alone.
+@[ checks ]
+def sameComposite(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(p, q), other(p, q)) {
+  here(comp(p, q))
+}
+
+/// So the two composites agree after a letter.
+@[ checks ]
+def sameAfterLetter(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), loop ∷ comp(p, q), loop ∷ other(p, q)) {
+  here(loop ∷ comp(p, q))
+}
+
+/// And a letter before `p` comes first through either name.
+@[ checks ]
+def letterThroughNames(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(loop ∷ p, q), loop ∷ other(p, q)) {
+  here(loop ∷ comp(p, q))
+}
+
+/// The transports along `p` and along `q` are not one: the swapped composite
+/// is another path.
+@[ refuses("EndpointMismatch") ]
+def swapped(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(p, q), flip(p, q)) {
+  here(comp(p, q))
 }

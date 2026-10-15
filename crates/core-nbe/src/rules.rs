@@ -245,6 +245,10 @@ pub enum Step
     /// Make the two binds in a row nearest the head on this side one: bind
     /// associativity.
     Reassociate(ConversionSide),
+    /// Read two held endpoints as the computations they hold: the kernel's
+    /// replay reads a returned endpoint so before any rule, recording
+    /// nothing.
+    Returned,
 }
 
 /// A choice point: the alternatives a goal runs as concurrent processes.
@@ -1614,17 +1618,23 @@ enum Term
 ///
 /// A held endpoint stuck where no unfolding reaches is the call it stands
 /// for: two such endpoints over one call are one endpoint, and the kernel
-/// closes the shared comparison on the α-equal sides the walk found. Sides
-/// the walk does not equate decline, since a held endpoint's spine is a
-/// computation's, which a decomposition would compare against the other
-/// side's term rather than its call.
+/// closes the shared comparison on the α-equal sides the walk found. Two
+/// returned endpoints the walk does not equate compare as the computations
+/// they hold, as the kernel's replay reads them: the walk compares captured
+/// closures by their environments, where the machine opens them under one
+/// fresh variable. A held endpoint against any other side declines, since its
+/// spine is a computation's, which a decomposition would compare against the
+/// other side's term rather than its call.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `None` when neither side is [`Head::Held`]; a shared
 ///   [`Settled::Convertible`] when the walk finds the sides identical or
-///   structurally equal; an [`DeclineReason::Indeterminate`] decline otherwise.
-/// - provides: the comparison of a held endpoint against its own call.
+///   structurally equal; otherwise [`Step::Returned`] when both sides are
+///   values that are returned endpoints with empty spines, and an
+///   [`DeclineReason::Indeterminate`] decline when they are not.
+/// - provides: the comparison of a held endpoint against its own call, and of
+///   two held endpoints whose calls differ only beneath a binder.
 /// - fails: as the walk.
 /// - panics: none.
 ///
@@ -1633,13 +1643,18 @@ enum Term
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two endpoints over one fixpoint stuck on a variable
-///   convert and the kernel replays the shared comparison; an endpoint and a
-///   different value decline rather than settle apart.
+///   convert and the kernel replays the shared comparison; two endpoints over
+///   transports whose motives close over different environments convert by
+///   their computations; an endpoint and a different value decline rather than
+///   settle apart.
 /// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation`
 /// - witness: `machine::tests::a_continuation_casing_on_a_stuck_call_stays_whole`
+/// - witness: `machine::tests::two_held_transports_convert_by_their_computations`
 #[spec(ensures: |ret| match ret.as_ref().map(Option::as_ref) {
     Ok(None) => !matches!(heads, (Neutrality::Neutral(_, Head::Held), _) | (_, Neutrality::Neutral(_, Head::Held))),
-    Ok(Some(plan)) => matches!(*plan, Plan::Shared(Settled::Convertible) | Plan::Decline(DeclineReason::Indeterminate)),
+    Ok(Some(plan)) => matches!(*plan, Plan::Shared(Settled::Convertible) | Plan::Decline(DeclineReason::Indeterminate))
+        || (*plan == Plan::Step(Step::Returned) && matches!(term, Term::Values(left, right)
+            if matches!((returned(domain, left), returned(domain, right)), (Ok(Some(_)), Ok(Some(_)))))),
     Err(_) => true,
 })]
 fn whole(
@@ -1665,8 +1680,70 @@ fn whole(
         },
         crate::conv::Settlement::GuardedApart
         | crate::conv::Settlement::StructurallyApart
-        | crate::conv::Settlement::Deferred(_) => Plan::Decline(DeclineReason::Indeterminate),
+        | crate::conv::Settlement::Deferred(_) => match term {
+            Term::Values(left, right)
+                if returned(domain, left)?.is_some() && returned(domain, right)?.is_some() =>
+            {
+                Plan::Step(Step::Returned)
+            },
+            Term::Values(..) | Term::Comps(..) => Plan::Decline(DeclineReason::Indeterminate),
+        },
     }))
+}
+
+/// The computation a value holds when it is a returned endpoint with an empty
+/// spine.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some` of the computation when `value` is a neutral headed by a
+///   returned endpoint and eliminated by nothing; `None` for every other value.
+/// - provides: the side [`Step::Returned`] reads as its computation.
+/// - fails: [`ConversionFault::Domain`] when a node does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// - [`ConversionFault::Domain`] — a node does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two endpoints over transports whose motives close over
+///   different environments read as their computations and convert; reading a
+///   neutral with a spine as its head's computation drops the spine.
+/// - witness: `machine::tests::two_held_transports_convert_by_their_computations`
+#[spec(ensures: |ret| match domain.value(value) {
+    | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+    | Some(&DomainValue::Neutral { neutral, .. }) => match domain.neutral(neutral) {
+        | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+        | Some(node) => match node.head() {
+            | NeutralHead::Returned(computation) if node.spine().is_empty() => ret == Ok(Some(computation)),
+            | _ => ret == Ok(None),
+        },
+    },
+    | Some(_) => ret == Ok(None),
+})]
+pub fn returned(
+    domain: &DomainArena,
+    value: DomainValueId,
+) -> Result<Option<DomainCompId>, ConversionFault>
+{
+    let DomainValue::Neutral { neutral, .. } = *domain
+        .value(value)
+        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
+    else {
+        return Ok(None);
+    };
+    let held = domain
+        .neutral(neutral)
+        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+    Ok(match held.head() {
+        NeutralHead::Returned(computation) if held.spine().is_empty() => Some(computation),
+        NeutralHead::Returned(_)
+        | NeutralHead::Constant(_)
+        | NeutralHead::Variable { .. }
+        | NeutralHead::Module(_)
+        | NeutralHead::Hole { .. }
+        | NeutralHead::Mark { .. } => None,
+    })
 }
 
 /// The literal a domain literal's core id names.
