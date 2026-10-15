@@ -201,6 +201,20 @@ run = "cargo run --locked --quiet --package gandr-workflow-spec-cost -- --tests 
 description = "Every corpus source cut short and with each token dropped, against its recovery record"
 run = "cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::dropped_tokens_recover_no_worse_than_the_record)'"
 
+# The goldens a corpus source carries beside it — its recovery record and its
+# role golden — rewritten for every source. The records are a sweep and run
+# whole under the `sweeps` profile: under a pull-request profile the 30 s
+# bound cuts the rewrite short and leaves a partial record. The role golden
+# reads every source under any profile. A new or changed source runs this
+# once, then the check.
+["corpus:goldens"]
+description = "Rewrite every corpus source's recovery record and role golden"
+env.UPDATE_EXPECT = "1"
+run = [
+  "cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::dropped_tokens_recover_no_worse_than_the_record)'",
+  "cargo nextest run --locked --package gandr-surface-grammar --test tests -E 'test(=highlight::corpus_roles_match_the_golden)'",
+]
+
 # Every sweep over its whole input — the `sweeps` nextest profile, which
 # selects the tests in a `sweeps` module (.config/nextest.toml) — plain and
 # with specifications enforced, the halves side by side. Every other profile
@@ -430,6 +444,19 @@ conflicts() {
   done <<< "$ahead"
   echo "rebase onto main once they merge, then run \`pr:land\` again"
 }
+
+# A branch behind main enters the queue only to come back UNMERGEABLE or to
+# fail on what landed ahead of it, so the current branch is rebased onto
+# `origin/main` and pushed before the queue sees it. The queue then runs CI on
+# the merged result, which is the re-verification; a clean rebase runs no
+# local gate again. A rebase that conflicts stops here for a hand.
+if [[ -z "${usage_number:-}" ]]; then
+  git fetch --quiet origin main
+  if ! git merge-base --is-ancestor origin/main HEAD; then
+    git rebase --quiet origin/main || { git rebase --abort; echo 'the rebase onto origin/main conflicts; resolve it, run the hooks, and run `pr:land` again' >&2; exit 1; }
+    git push --quiet --force-with-lease
+  fi
+fi
 
 initial=$(pr_state)
 IFS=$'\t' read -r state mergeable merge_status auto commit base check_count <<< "$initial"
