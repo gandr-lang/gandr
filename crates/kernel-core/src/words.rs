@@ -1214,7 +1214,7 @@ where
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
 })]
-pub(crate) fn appended<M>(
+pub fn appended<M>(
     arena: &mut TermArena,
     (table, memo): (&mut ContentTable, &mut M),
     unfoldings: &Unfoldings,
@@ -1321,7 +1321,7 @@ where
 ///   held, the replay would refuse what the checker accepted.
 /// - witness: `native_formers::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
 #[spec(ensures: |ret| ret.is_none_or(|held| arena.computation(held).is_some()))]
-pub(crate) fn held_operand<M>(
+pub fn held_operand<M>(
     arena: &mut TermArena,
     (table, memo): (&mut ContentTable, &mut M),
     unfoldings: &Unfoldings,

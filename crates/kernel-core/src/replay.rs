@@ -2721,12 +2721,8 @@ where
     /// - hypothesis: L3 — `spin(S(x)) then spin(a)` against `loop ∷ (spin(x)
     ///   then spin(a))` at the mode switch: unfolded to the bare fixpoint, the
     ///   recursive call reads `fix f x` and the sides stay apart.
-    /// - witness: `surface-corpus` `model/identity/circle-group.gandr`
-    ///   `spinHom`
-    #[spec(ensures: |ret| match ret {
-        Ok(reduct) => matches!((term, reduct), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_))),
-        Err(_) => true,
-    })]
+    /// - witness: `native_formers::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
+    #[spec(ensures: |ret| ret.map_or(true, |reduct| matches!((term, reduct), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_)))))]
     fn unfold_refolded(
         &mut self,
         term: Term,
@@ -5816,8 +5812,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   `loop ∷ (spin(x) then spin(a))`, the recursive call held as written;
     ///   δ-stepped, it reads as the bare fixpoint at `x` and the sides stay
     ///   apart.
-    /// - witness: `surface-corpus` `model/identity/circle-group.gandr`
-    ///   `spinHom`
+    /// - witness: `native_formers::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
     #[spec(ensures: |ret| ret.is_none_or(|constant| self.unfoldings.unfolding(constant) != Unfoldable::Opaque))]
     fn shut_recursion(
         &self,

@@ -1222,20 +1222,76 @@ pub(super) fn appended(
                 return Ok(Moved::Stepped);
             }
             // An operand the run holds, a call such as `spin(Z)`, reads as
-            // what it returns, as the kernel runs a returned operand first.
-            let (read, left) =
-                super::run_held(core, domain, machine.definitions, machine.fuel, value)?;
-            machine.fuel = left;
-            let Some(read) = read
+            // what it returns, as the kernel runs a returned operand first:
+            // its computation runs on through its definitions, and what it
+            // returns moves along the path ([`ran`]).
+            let Some(computation) = super::held_endpoint(domain, value)?
             else {
                 return Ok(Moved::Unmoved);
             };
-            machine.tasks.push(Task::PathTransport(motive));
-            machine.tasks.push(Task::Supply(read));
-            machine.tasks.push(Task::Supply(path));
+            let onward = domain.native_continuation(CompBody::Appending {
+                motive,
+                path,
+                operand: value,
+            });
+            machine.tasks.push(Task::BindClosure(onward));
+            machine.tasks.push(Task::Yield);
+            machine.tasks.push(Task::Running);
+            machine.comps.push(computation);
         },
     }
     Ok(Moved::Stepped)
+}
+
+/// Move what a held operand's run returned along the path, bound by a
+/// [`CompBody::Appending`] continuation.
+///
+/// # Specification
+/// - requires: `read` is what the run of `operand`'s held computation returned;
+///   `path` and `operand` are the transport's in `motive`.
+/// - ensures: the transport of `read` along `path` in `motive` queued when
+///   `read` is no held endpoint; otherwise the transport stuck as the evaluator
+///   leaves one no rule moves, over `operand`, on the computation stack.
+/// - fails: [`EvalFault::TransportedNonPath`] for a stuck run along a path that
+///   is no neutral; as [`super::held_endpoint`] and the spine's growth
+///   otherwise.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `spin(Z) then q` reads as `q` once `spin(Z)` returns the
+///   empty word; read as its call, the transport sticks.
+/// - witness: `eval::words::tests::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+#[spec(
+    captures: [tasks = machine.tasks.len(), comps = machine.comps.len()],
+    ensures: |ret| ret.is_err() || machine.tasks.len() > tasks || machine.comps.len() > comps,
+)]
+pub(super) fn ran(
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    (motive, path, operand): (ValueClosureId, DomainValueId, DomainValueId),
+    read: DomainValueId,
+) -> Result<(), EvalFault>
+{
+    if super::held_endpoint(domain, read)?.is_none() {
+        machine.tasks.push(Task::PathTransport(motive));
+        machine.values.extend([path, read]);
+        return Ok(());
+    }
+    let Some(&DomainValue::Neutral { neutral, .. }) = domain.value(path)
+    else {
+        return Err(EvalFault::TransportedNonPath);
+    };
+    let grown = super::extend_spine(domain, neutral, crate::domain::Elimination::PathTransport {
+        motive,
+        value: operand,
+    })?;
+    machine
+        .comps
+        .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+    Ok(())
 }
 
 /// How a path family's two endpoints act on a letter, or `None` for a family
