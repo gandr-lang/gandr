@@ -1341,6 +1341,7 @@ impl Candidate
     /// - witness: `template::tests::every_member_admits_as_its_plain_replay`
     /// - witness: `template::tests::memoized_checks_respect_the_priced_allowance`
     /// - witness: `template::tests::schema_work_is_bounded_before_producer_inheritance`
+    /// - witness: `template::tests::a_produced_template_counts_each_inherited_check_as_a_replayed_step`
     #[spec(captures: [available = budget.0, checked = cache.checked(), hits = cache.hits()], ensures: |output|
         budget.0 <= available && output.as_ref().ok().is_none_or(|production| match *production {
             Production::Go(ref template) => {

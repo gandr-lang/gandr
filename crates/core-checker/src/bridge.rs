@@ -4130,6 +4130,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - hypothesis: L3 — both injections of a binary sum of units cross with
     ///   unit evidence, and the kernel accepts the evidence at their fibre.
     /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    /// - witness: `bridge::tests::a_funext_returning_a_literal_crosses_with_the_literal`
     #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|(image, evidence)| target.value(image).is_some() && target.value(evidence).is_some()))]
     fn returned(
         &mut self,
@@ -4961,6 +4962,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   chain ending at a rigid constant, and a lifted argument.
     /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
     /// - witness: `bridge::tests::every_readmission_certificate_replays`
+    /// - witness: `bridge::tests::a_code_constant_argument_crosses_as_written_in_a_run`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(CoreNode::Term(TermNode::Value(_))))))]
     fn argument(
         &mut self,

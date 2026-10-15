@@ -258,6 +258,7 @@ pub fn component(
 ///   product of native paths keeps the native classifier.
 /// - witness: `product::tests::a_product_of_written_paths_elaborates_to_the_native_product`
 /// - witness: `bridge::tests::native_path_module_round_trips`
+/// - witness: `product::tests::a_product_with_a_native_and_a_written_component_reads_as_an_element`
 pub fn classifier(
     arena: &mut CoreArena,
     first: Component,
@@ -456,6 +457,8 @@ pub fn native(
 ///   parameter each reach their own arm.
 /// - witness: `product::tests::a_product_of_written_paths_elaborates_to_the_native_product`
 /// - witness: `product::tests::what_the_product_cannot_read_it_refuses_by_name`
+/// - witness: `product::tests::a_product_with_a_native_and_a_written_component_reads_as_an_element`
+/// - witness: `ua::tests::a_statement_stands_in_a_product_as_its_derived_path`
 #[spec(ensures: |ret| match ret {
     | Ok(native) => matches!(context.arena().value(native), Some(Value::PathRefl(_) | Value::PathEquiv { .. } | Value::PathProduct(..))),
     | Err(CheckRefusal::ShapeMismatch { found, .. }) => found == TypeNode::Value(classifier),

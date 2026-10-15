@@ -428,6 +428,7 @@ fn round_trips(
 ///   a list refuses by its stratum, and a thunk type covers as nothing.
 /// - witness: `equiv::tests::an_involution_is_its_own_inverse_by_computation`
 /// - witness: `equiv::tests::what_the_rule_cannot_show_it_refuses_by_name`
+/// - witness: `equiv::tests::the_empty_sum_has_no_coverage`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(ref patterns)) => !patterns.is_empty()
         && patterns.iter().all(|pattern| context.arena().value(pattern.value).is_some()),

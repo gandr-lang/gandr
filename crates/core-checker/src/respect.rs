@@ -574,6 +574,7 @@ fn pattern_binder(
 /// - hypothesis: L3 — the circle's fold into the integers is related by the two
 ///   cancellation laws and refused when a law states another path.
 /// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+/// - witness: `native_formers::native_formers::a_law_is_stated_bare_only_over_no_variable`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 fn lawful(
     context: &mut CheckingContext<'_>,

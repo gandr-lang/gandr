@@ -341,6 +341,7 @@ pub fn universe(arena: &mut CoreArena) -> ValueTypeId
 ///   its root separate the readings.
 /// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
 /// - witness: `flow::tests::each_refusal_is_named`
+/// - witness: `flow::tests::a_session_is_a_code_only_at_its_root`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(ref session)) => session.state() == session.protocol().root(),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
@@ -943,6 +944,7 @@ pub fn covariant(
 /// - witness: `flow::tests::motives_ride_only_covariantly`
 /// - witness: `forward::tests::a_migration_is_decided_at_every_covering_input`
 /// - witness: `forward::tests::the_symmetry_ride_along_a_migration_is_refused`
+/// - witness: `flow::tests::a_ride_between_session_codes_is_fixed_only_for_a_constant_motive`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::NonCovariantMotive { at: site } | CheckRefusal::RideUnsupported { at: site }) => site == at,
     | Ok(_) | Err(_) => true,

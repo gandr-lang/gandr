@@ -345,6 +345,7 @@ fn flow_between(
 /// # Adequacy
 /// - hypothesis: L3 — a list target refuses by name.
 /// - witness: `forward::tests::what_the_rule_cannot_image_it_refuses_by_name`
+/// - witness: `forward::tests::the_rule_reads_canonical_shapes_at_their_own_arity`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(()) | Err(_) => true,
@@ -412,6 +413,7 @@ fn first_order(
 /// - hypothesis: L3 — a record of a string and an integer reads its two leaves
 ///   apart, so a field moved to a position of the other atom is refused.
 /// - witness: `forward::tests::what_the_rule_cannot_image_it_refuses_by_name`
+/// - witness: `forward::tests::the_rule_reads_canonical_shapes_at_their_own_arity`
 fn leaves(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -512,6 +514,7 @@ fn leaves(
 /// - hypothesis: L3 — a field copied naturally passes, and a constant string at
 ///   a string field refuses by name, as the kernel refuses it as `NonNatural`.
 /// - witness: `forward::tests::what_the_rule_cannot_image_it_refuses_by_name`
+/// - witness: `forward::tests::the_rule_reads_canonical_shapes_at_their_own_arity`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(()) | Err(_) => true,

@@ -311,6 +311,7 @@ enum Binding
 ///   find nothing.
 /// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`
 /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::a_field_naming_its_own_or_a_later_position_is_refused_by_name`
 #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|later| *later > position))]
 fn worst(
     arena: &CoreArena,

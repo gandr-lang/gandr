@@ -386,6 +386,12 @@ impl Universal
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the swap of a binary generator beside a constant
+    ///   keeps both corollas' translators, the constant's first in catalogue
+    ///   order.
+    /// - witness: `ua::tests::the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe`
     #[inline]
     #[must_use]
     pub fn corollas(&self) -> &[(ShapeIndex, Translators)]

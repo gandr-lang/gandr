@@ -630,6 +630,7 @@ fn share(
 /// - hypothesis: L2 — a scripted clock sets the shares on each side of the
 ///   bound, and the controller's draft or decline flips with it.
 /// - witness: `template::memo::tests::the_controller_drafts_while_drafting_pays_and_probes_when_it_stops`
+/// - witness: `template::memo::tests::drafting_stops_exactly_at_the_break_even`
 #[spec(ensures: |output| match output {
     Maybe::Present(bound) => accepted.0 < 1.0_f64 && bound.0 >= 0.0_f64 && bound.0 <= 1.0_f64,
     Maybe::Absent(Decline::NeverPays) => accepted.0 >= 1.0_f64 || accepted.0.is_nan(),
@@ -700,6 +701,7 @@ impl Switch
     /// - hypothesis: L2 — refused drafts drive the acceptance below the
     ///   break-even and the controller stops drafting but for its probes.
     /// - witness: `template::memo::tests::the_controller_drafts_while_drafting_pays_and_probes_when_it_stops`
+    /// - witness: `template::memo::tests::drafting_stops_exactly_at_the_break_even`
     #[spec(ensures: |output| matches!(output, Decision::Draft | Decision::Decline(Decline::Off)))]
     fn off(&self) -> Decision
     {
@@ -743,6 +745,7 @@ impl Controls
     /// - hypothesis: L2 — a scripted clock sets the times on each side of the
     ///   bound, and the decision flips with it.
     /// - witness: `template::memo::tests::the_controller_drafts_while_drafting_pays_and_probes_when_it_stops`
+    /// - witness: `template::memo::tests::drafting_stops_exactly_at_the_break_even`
     #[spec(ensures: |output| output != Decision::Decline(Decline::Off))]
     fn verdict(&self) -> Decision
     {
@@ -814,6 +817,7 @@ impl Controls
     /// - hypothesis: L2 — accepted and refused drafts under a scripted clock
     ///   move the decision across the break-even.
     /// - witness: `template::memo::tests::the_controller_drafts_while_drafting_pays_and_probes_when_it_stops`
+    /// - witness: `template::memo::tests::a_draft_is_sampled_against_a_positive_producer_time_only`
     #[spec(ensures: |output| matches!(output, DraftSample::Drafted { acceptance, .. } if acceptance == accepted)
         && match accepted {
             Acceptance::Accepted => self.accepted == Estimate::Measured(spent),
@@ -1018,6 +1022,7 @@ impl Template
     ///   producer's time.
     /// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
     /// - witness: `template::memo::tests::the_fresh_arm_cap_withdraws_a_widening_that_costs_the_producers_time`
+    /// - witness: `template::memo::tests::the_cap_weighs_arms_times_cost_and_measures_the_import_per_arm`
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|attempt| match *attempt {
         Attempt::Ready(_, _) => true,
         Attempt::Withdrawn(drafting) => matches!(drafting,

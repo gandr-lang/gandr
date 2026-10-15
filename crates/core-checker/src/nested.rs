@@ -139,6 +139,11 @@ impl NestedElaboration
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body whose nested runs elaborate into binds reports
+    ///   the rebuilt body beside the written one it stands for.
+    /// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
     #[inline]
     #[must_use]
     pub fn carried(&self) -> &[Carried]

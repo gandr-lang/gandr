@@ -510,6 +510,7 @@ impl Drafter
 ///   fresh run admits or binds one whose sides the kernel then refuses; the
 ///   edit-pair corpus's binders observe both.
 /// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
+/// - witness: `template::draft::tests::a_remembered_classifier_verdict_answers_only_for_its_pair`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -835,6 +836,7 @@ fn occurrences(
 ///   compact rebuilds it; the multi-program traces keep, widen, prune and
 ///   rebase, and the fresh-run comparison observes every held template.
 /// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
+/// - witness: `template::draft::tests::a_graph_is_compact_exactly_when_its_roots_reach_every_node`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -1105,6 +1107,7 @@ impl Template
     ///   matched family.
     /// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
     /// - witness: `template::tests::drafts_refuse_what_a_fresh_run_would_generalize_differently`
+    /// - witness: `template::tests::a_disagreeing_member_rebases_only_where_rebasing_is_allowed`
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|walk| match *walk {
         Walk::Matched { ref template, kind } => template.rule == self.rule
             && template.entries.len() == self.entries.len()
@@ -1827,3 +1830,6 @@ fn departure(
     }
     Ok(Fitness::Fits)
 }
+
+#[cfg(test)]
+mod tests;

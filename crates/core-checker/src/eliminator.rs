@@ -232,6 +232,7 @@ fn variables(
 ///   take the three shapes; a shape misread is a derived eliminator the checker
 ///   refuses, never one it accepts.
 /// - witness: `recursive_data::recursive_data::derived_eliminators_are_admitted_and_readmitted`
+/// - witness: `recursive_data::recursive_data::a_function_field_into_another_type_takes_no_hypothesis`
 #[spec(ensures: |ret| (ret == FieldShape::Direct)
     == matches!(arena.value_type(field), Some(&ValueType::Data { declaration, .. }) if declaration == position)
     && match ret {

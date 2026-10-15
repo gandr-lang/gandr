@@ -639,6 +639,8 @@ struct Decision
 /// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
 /// - witness: `module::tests::a_run_in_a_definition_s_own_value_is_unenclosed`
 /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
+/// - witness: `module::tests::a_typed_module_keys_what_each_run_formed`
+/// - witness: `module::tests::a_refused_first_run_leaves_its_nesting_unaccepted`
 #[spec(ensures: |ret| (run == Run::Typed || matches!(ret.typings, Maybe::Absent(typed::Absent::Unasked)))
     && match (&ret.verdict, &ret.failure) {
     | (&Verdict::Refused(refusal), &Maybe::Present(ref failure)) => failure.refusal() == refusal,

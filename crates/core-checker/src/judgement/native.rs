@@ -209,6 +209,7 @@ impl Machine<'_, '_>
     ///   under a successor's field and refused under the zero arm.
     /// - witness: `recursion::tests::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
     /// - witness: `recursion::tests::a_nullary_argument_needs_a_value_below_the_stage`
+    /// - witness: `recursion::tests::a_constructor_of_plain_fields_needs_a_value_below_the_stage`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
     pub(super) fn staged_constructor(
         &mut self,
@@ -490,6 +491,7 @@ impl Machine<'_, '_>
     ///   the circle a fixpoint's root case and a bare case are read apart.
     /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
     /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+    /// - witness: `native_formers::native_formers::a_case_over_the_circle_takes_its_constructors_and_loops_only`
     #[spec(ensures: |ret| matches!(self.root, Maybe::Absent(root::Absent::Unmarked)) && (ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Computation(_)))))))]
     pub(super) fn native_case(
         &mut self,
