@@ -52,5 +52,15 @@ enabled = true
 priority = 200
 description = "Crate README over its budget"
 suggestion = "Move mechanism, decisions and specification detail into the crate's rustdoc; never trim to pass"
-includes = ["contrib/*/README.md", "crates/*/README.md", "crates/README.md"]
+includes = ["contrib/*/README.md", "crates/*/README.md"]
 max_size = "12KB"
+
+# The crates listing carries one row per member, so it grows with the
+# workspace rather than with any one crate's prose.
+[rules.readme_crates]
+enabled = true
+priority = 200
+description = "Crates listing over its budget"
+suggestion = "Move the README-shape guidance out before trimming a member row"
+includes = ["crates/README.md"]
+max_size = "16KB"
