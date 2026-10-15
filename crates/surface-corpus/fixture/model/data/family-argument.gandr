@@ -1,0 +1,29 @@
+// A constructor written as an argument of a data family takes the type the
+// family gives that place: its parameter, under the arguments written before
+// it. `Inl(a)` in `Tagged(Integer, String, Inl(a))` is a
+// `SumOb(Integer, String)`, so it needs no annotation (#421).
+
+/// Two summands.
+@[ checks ]
+data SumOb(a : Type, b : Type) : Type {
+  Inl : (x : a) --> SumOb(a, b);
+  Inr : (y : b) --> SumOb(a, b);
+}
+
+/// A tag over a summand of the two types before it.
+@[ checks ]
+data Tagged(l : Type, r : Type, s : SumOb(l, r)) : Type {
+  Tag : (n : Integer) --> Tagged(l, r, s);
+}
+
+/// Each summand stands as the family's third argument, at its place's type.
+@[ checks ]
+def kept(a : Integer, b : String, t : Tagged(Integer, String, Inl(a)), u : Tagged(Integer, String, Inr(b))) -> -F Tagged(Integer, String, Inl(a)) {
+  return t
+}
+
+/// A `String` is no left summand of `SumOb(Integer, String)`.
+@[ refuses("TypeMismatch") ]
+def misplaced(b : String, t : Tagged(Integer, String, Inl(b))) -> -F Integer {
+  return 0
+}

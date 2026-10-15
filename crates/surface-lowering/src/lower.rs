@@ -2599,6 +2599,12 @@ struct Lowerer<'run, 'source>
     /// Each constructor written under an annotation, with the annotation's
     /// type.
     classifiers: BTreeMap<NodeIndex, NodeIndex>,
+    /// Each value argument of a data family's application, with its place.
+    argued: BTreeMap<NodeIndex, native::Argued>,
+    /// Each constructor classified by its place in a data family's
+    /// application, not yet minted: its classifier reads the arguments before
+    /// it, which the mint sweep reaches after it, so the application mints it.
+    awaiting: BTreeSet<NodeIndex>,
     /// Each label written against an entry, in the order planned.
     labels: Vec<LabelSite>,
     /// Each type head that stands for a type minted elsewhere: a manifest
@@ -3192,6 +3198,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             pieces: Pieces::new(),
             scratch: Pieces::new(),
             classifiers: BTreeMap::new(),
+            argued: BTreeMap::new(),
+            awaiting: BTreeSet::new(),
             labels: Vec::new(),
             stand_ins: BTreeSet::new(),
             answers: BTreeMap::new(),
@@ -8555,6 +8563,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .map(|parameter| parameter.classifier)
                     .chain(core::iter::once(family.defined))
             }))
+            // A data family's parameter types classify the constructors
+            // written as its arguments, wherever those stand in the tree.
+            .chain(
+                self.argued
+                    .values()
+                    .filter_map(|argued| self.collected.data.get(argued.form))
+                    .flat_map(|form| form.parameters.iter().map(|parameter| parameter.classifier)),
+            )
             .collect();
         stated.sort_unstable_by_key(|defined| (defined.span.start(), defined.node));
         stated.dedup();
@@ -8699,8 +8715,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   capture [`Self::unwind`] writes, and that capture recorded as the
     ///   exit; a `break`'s returner is recorded as a break; a loop end written
     ///   without an exit is bound and its loop run again, as [`Self::rerun`]
-    ///   writes it; a node with no plan left, or under a refused declaration
-    ///   outside a payload, is left as it is.
+    ///   writes it; a constructor awaiting its data family's application is
+    ///   left for that application, which mints it first; a node with no plan
+    ///   left, or under a refused declaration outside a payload, is left as it
+    ///   is.
     /// - provides: the per-position half of [`Self::mint`].
     /// - fails: never.
     /// - panics: none.
@@ -8718,7 +8736,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(
         captures: before = (
-            self.collected.refused(position).0 && !self.in_payload(position).0,
+            (self.collected.refused(position).0 && !self.in_payload(position).0)
+                || self.awaiting.contains(&position),
             matches!(
                 self.plans.get(usize::from(position)),
                 None | Some(&Plan::Unplanned)
@@ -8748,6 +8767,66 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if self.collected.refused(position).0 && !self.in_payload(position).0 {
             return;
         }
+        // A constructor classified by its place in a data family's application
+        // waits for the application, which mints it once every argument
+        // before it is minted.
+        if self.awaiting.contains(&position) {
+            return;
+        }
+        if let Some(&Plan::Data(_, arguments)) = self.plans.get(usize::from(position)) {
+            for place in arguments.start .. arguments.end {
+                if let Some(&argument) = self.operands.get(place)
+                    && self.awaiting.remove(&argument)
+                {
+                    self.mint_planned(argument, sink);
+                }
+            }
+        }
+        self.mint_planned(position, sink);
+    }
+
+    /// Mint the node at `position` by its plan, once, whatever declaration or
+    /// application it waits on: [`Self::mint_at`]'s mint itself.
+    ///
+    /// # Specification
+    /// - requires: every node the plan names is already minted or absent.
+    /// - ensures: the plan is taken and minted as [`Self::mint_at`] states; a
+    ///   node with no plan left is left as it is.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor awaiting its family's application is
+    ///   minted at its slot's type once the application reaches it.
+    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
+    #[spec(
+        captures: before = (
+            matches!(
+                self.plans.get(usize::from(position)),
+                None | Some(&Plan::Unplanned)
+            ),
+            self.lowered_at(position),
+            self.plans.len(),
+            self.lowered.len(),
+        ),
+        ensures: self.plans.len() == before.2
+            && self.lowered.len() == before.3
+            && (if before.0 {
+                self.lowered_at(position) == before.1
+            }
+            else {
+                matches!(
+                    self.plans.get(usize::from(position)),
+                    Some(&Plan::Unplanned)
+                )
+            }),
+    )]
+    fn mint_planned(
+        &mut self,
+        position: NodeIndex,
+        sink: &mut Sink<'_>,
+    )
+    {
         let Some(planned) = self.plans.get_mut(usize::from(position))
         else {
             return;
