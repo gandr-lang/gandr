@@ -78,7 +78,6 @@
 115 Keyword def_value val L[{] R[<pattern>]
 116 Other def_value = L[<pattern>] R[<expression>]
 117 Other def_value ; L[<expression>] R[<expression> }]
-119 Other def_value : L[<pattern>] R[<type>]
 127 Keyword def_value leta L[{] R[identifier]
 128 VariableDef def_value identifier L[leta] R[=]
 129 Other def_value = L[identifier] R[<expression>]

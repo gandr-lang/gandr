@@ -1129,6 +1129,9 @@ Err(_) => false,
                     Computation::With(first, second) => {
                         two(computation(first), computation(second), Lowering::NONE)
                     },
+                    Computation::Ascribe { body, ty } => {
+                        two(computation(body), Reached::CompType(ty), Lowering::NONE)
+                    },
                     Computation::Reset(body) | Computation::Project(_, body) => {
                         one(computation(body), Lowering::NONE)
                     },

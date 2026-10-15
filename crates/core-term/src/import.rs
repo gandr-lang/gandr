@@ -176,6 +176,10 @@ impl Image
                 | Computation::With(ref mut first, ref mut second)
                 | Computation::Bind(ref mut first, ref mut second),
             ) => [Some(C(first)), Some(C(second)), None, None, None],
+            Self::Computation(Computation::Ascribe {
+                ref mut body,
+                ref mut ty,
+            }) => [Some(C(body)), Some(CT(ty)), None, None, None],
             Self::Computation(Computation::Split {
                 ref mut scrutinee,
                 motive: SplitMotive::Scrutinee(ref mut motive),
@@ -666,6 +670,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | Computation::Application(..)
                                 | Computation::Return(_)
                                 | Computation::Bind(..)
+                                | Computation::Ascribe { .. }
                                 | Computation::Force(_)
                                 | Computation::Split { .. }
                                 | Computation::RecordProjection(..)

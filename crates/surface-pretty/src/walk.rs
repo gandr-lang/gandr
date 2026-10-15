@@ -354,7 +354,7 @@ enum Kind
         | Former::PathTransport { .. } | Former::Ride { .. } | Former::TelescopeTransport { .. } | Former::Fixpoint(_) | Former::Case { .. }
         | Former::Split { .. } | Former::DataCase { .. } | Former::RecordProjection(..) | Former::TupleProjection(..)
         | Former::ListFold { .. } | Former::Perform { .. } | Former::Handle { .. } | Former::Exercise { .. }
-        | Former::Scope { .. } | Former::Resume(..) | Former::Reset(_) | Former::Shift(_) | Former::Lazy(..)
+        | Former::Scope { .. } | Former::Resume(..) | Former::Reset(_) | Former::Shift(_) | Former::Lazy(..) | Former::Ascription { .. }
         | Former::Project(..) | Former::Send { .. } | Former::Receive(_) | Former::Select { .. } | Former::Offer { .. }
         | Former::Close(_) | Former::Fork { .. } | Former::Hold { .. } | Former::Access { .. } | Former::ResumeView { .. }
         | Former::AbortView(_)),
@@ -446,6 +446,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Reset(_)
         | Former::Shift(_)
         | Former::Lazy(..)
+        | Former::Ascription { .. }
         | Former::Project(..)
         | Former::Send { .. }
         | Former::Receive(_)
@@ -1039,6 +1040,9 @@ where
         Former::Resume(stack, computation) => Vec::from([value(stack), continues(computation)]),
         Former::Reset(body) => Vec::from([ends(body, Binds::NONE)]),
         Former::Lazy(first, second) => Vec::from([continues(first), continues(second)]),
+        Former::Ascription { body, ty } => {
+            Vec::from([Slot::of(body, admits, Binds::NONE), comp_type(ty)])
+        },
         Former::Offer { arms, .. } => {
             components(arms, Admits::Computation(Tail::Ends), Binds::NONE, None)
         },
@@ -1598,6 +1602,10 @@ enum Join
     /// A bind over the computation it runs and the rest, its binder named as
     /// a dependent arrow's is.
     Sequence,
+    /// A typed bind over the computation it ascribes, the value type its
+    /// returner returns, and the rest under the bind's binder, named as a
+    /// dependent arrow's is: `run x : A <- c ; rest`.
+    TypedSequence,
     /// A lambda over its body, its binder named as a dependent arrow's is.
     Lambda,
     /// A thunk over its body.
@@ -2819,6 +2827,7 @@ impl Walk<'_, '_>
                 | Former::Reset(_)
                 | Former::Shift(_)
                 | Former::Lazy(..)
+                | Former::Ascription { .. }
                 | Former::Project(..)
                 | Former::Send { .. }
                 | Former::Receive(_)
@@ -2834,6 +2843,53 @@ impl Walk<'_, '_>
             }
         }
         None
+    }
+
+    /// The computation and the value type of the typed bind whose bound
+    /// computation is `bound`, when it is one: `bound` the ascription of a
+    /// computation to a returner `-F A`.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: the ascribed computation and `A` when `bound` reads as an
+    ///   ascription to a pure returner; none when any link is anything else or
+    ///   the walk's remaining visits run out first. Every link read is one
+    ///   visit spent, so a recognised bind spends exactly two.
+    /// - provides: the shape the lowering gives `run x : A <- c ; rest`, which
+    ///   the printer spells back as written.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lowered typed bind spells as its source, and an
+    ///   ascription outside that shape stands as its body.
+    /// - witness: `goldens::tests::a_typed_bind_spells_as_written`
+    #[spec(
+        captures: [entry = self.remaining],
+        ensures: |ref ret| self.remaining <= entry
+            && (ret.is_none() || self.remaining.checked_add(2_u32) == Some(entry)),
+    )]
+    fn typed_bind<S>(
+        &mut self,
+        source: &S,
+        bound: S::Node,
+    ) -> Option<(S::Node, S::Node)>
+    where
+        S: Source + ?Sized,
+    {
+        let mut read = |node| {
+            self.remaining = self.remaining.checked_sub(1_u32)?;
+            Some(source.read(node))
+        };
+        let Former::Ascription { body, ty } = read(bound)?
+        else {
+            return None;
+        };
+        let Former::Returner(result) = read(ty)?
+        else {
+            return None;
+        };
+        Some((body, result))
     }
 
     /// `(a, b, …)`: `items` between parentheses, each bare, a break after
@@ -3155,6 +3211,9 @@ impl Walk<'_, '_>
             Reach::Deep => return self.approximate(Glyphs("<deep>")),
             Reach::Misplaced => return self.unspell(Unspelled::Misplaced),
         }
+        // The slots a former read whole in a shape of its own stands over, in
+        // place of its child table's.
+        let mut shaped = None;
         let join = match former {
             | Former::BaseType(BaseType::Integer) => return self.atom(Glyphs("Integer")),
             | Former::BaseType(BaseType::String) => return self.atom(Glyphs("String")),
@@ -3418,7 +3477,24 @@ impl Walk<'_, '_>
                 | Admits::Value => Some(Join::Prefix(Prefix::Pure)),
             },
             | Former::Force(_) => Some(Join::Prefix(Prefix::Force)),
-            | Former::Bind(..) => Some(Join::Sequence),
+            | Former::Bind(bound, rest) => match self.typed_bind(source, bound) {
+                Some((ascribed, result)) => {
+                    shaped = Some(Vec::from([
+                        Slot::of(ascribed, Admits::Computation(Tail::Continues), Binds::NONE),
+                        Slot::of(result, Admits::ValueType, Binds::NONE),
+                        Slot::of(rest, admits, Binds::ONE),
+                    ]));
+                    Some(Join::TypedSequence)
+                },
+                None => Some(Join::Sequence),
+            },
+            // An ascription outside a typed bind has no spelling of its own:
+            // it stands as its body, its type unwritten.
+            | Former::Ascription { body, .. } => {
+                self.fidelity = Fidelity::Approximate;
+                shaped = Some(Vec::from([Slot::of(body, admits, Binds::NONE)]));
+                None
+            },
             | Former::Lambda(_) => Some(Join::Lambda),
             // A computation where a value is read stands bare, its run left
             // to the checker, and so does the computation a returned value
@@ -3435,10 +3511,11 @@ impl Walk<'_, '_>
             tasks.push(Task::Join(join));
         }
         let below = below(depth, kind);
-        for slot in children(source, node, &former, admits, self.bodies)
-            .into_iter()
-            .rev()
-        {
+        let slots = match shaped {
+            Some(slots) => slots,
+            None => children(source, node, &former, admits, self.bodies),
+        };
+        for slot in slots.into_iter().rev() {
             for _ in 0_usize .. slot.binds.count {
                 tasks.push(Task::Unbind);
             }
@@ -4130,6 +4207,7 @@ impl Walk<'_, '_>
             Former::Reify
             | Former::Stack(..)
             | Former::With(..)
+            | Former::Ascription { .. }
             | Former::ListNil
             | Former::ListCons(..)
             | Former::PathUniverse(..)
@@ -4249,6 +4327,7 @@ impl Walk<'_, '_>
             Join::ValueFunction(Arity(domains)) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
             Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::Then | Bracket::FlowProduct | Bracket::Arrow) => Some(2_usize),
+            Join::TypedSequence => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
@@ -4256,7 +4335,7 @@ impl Walk<'_, '_>
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
                     Join::Prefix(_) | Join::EffectReturner(_) | Join::Lambda | Join::Thunk => Binding::Prefix,
                     Join::Arrow | Join::Pi | Join::StaticLambda | Join::ValueFunction(_) => Binding::Arrow,
-                    Join::Sequence => Binding::Sequence,
+                    Join::Sequence | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
                     Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Sigma | Join::Ua(_) | Join::Tuple(_) => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
@@ -4444,6 +4523,24 @@ impl Walk<'_, '_>
                 (
                     self.builder
                         .concat_all(&[run, binder, arrow, bound, semicolon, line, rest.doc])?,
+                    Binding::Sequence,
+                )
+            },
+            Join::TypedSequence => {
+                let rest = self.pop()?;
+                let result = self.pop()?;
+                let bound = self.pop()?;
+                let bound = self.bare_or_block(bound, Binding::Arrow)?;
+                let binder = self.binder(OpenBinders(0_usize))?;
+                let run = self.leaf(Glyphs("run "))?;
+                let colon = self.leaf(Glyphs(" : "))?;
+                let arrow = self.leaf(Glyphs(" <- "))?;
+                let semicolon = self.leaf(Glyphs(" ;"))?;
+                let line = Doc::LINE;
+                (
+                    self.builder.concat_all(&[
+                        run, binder, colon, result.doc, arrow, bound, semicolon, line, rest.doc,
+                    ])?,
                     Binding::Sequence,
                 )
             },

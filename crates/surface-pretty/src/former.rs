@@ -710,6 +710,17 @@ pub enum Former<'source, Node>
     Shift(Node),
     /// A lazy pair of computations, `&{c, d}`.
     Lazy(Node, Node),
+    /// A computation checked against the computation type it is ascribed.
+    /// The surface writes one only as the bound computation of a typed bind,
+    /// `run x : A <- c ; rest`, ascribed `-F A`; the printer spells that bind
+    /// whole and any other ascription as its body, approximately.
+    Ascription
+    {
+        /// The computation ascribed.
+        body: Node,
+        /// The computation type it is checked against.
+        ty: Node,
+    },
     /// An observation of one component of a lazy pair, `c.0` or `c.1`.
     Project(Component, Node),
     /// A send on a linear endpoint, `send(e, v)`.

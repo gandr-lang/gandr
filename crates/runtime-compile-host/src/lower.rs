@@ -431,6 +431,8 @@ pub fn lower_computation(
                         return Err(LowerError::OutsideSlice(Form::Primitive));
                     },
                     Computation::Return(value) => steps.push(Step::Value(value, depth)),
+                    // An ascription runs as its body runs.
+                    Computation::Ascribe { body, .. } => steps.push(Step::Computation(body, depth)),
                     Computation::Bind(bound, body) => {
                         steps.push(Step::Build(NodeKind::Bind, CtorTag::Unit, Arity(2)));
                         steps.push(Step::Computation(body, Depth(depth.0.saturating_add(1))));

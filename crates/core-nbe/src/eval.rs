@@ -4378,6 +4378,12 @@ fn step_comp(
             machine.tasks.push(Task::Comp { term: bound, env });
             Ok(())
         },
+        // An ascription runs as its body runs: the type it states is the
+        // checker's, and evaluation reads none.
+        Computation::Ascribe { body, .. } => {
+            machine.tasks.push(Task::Comp { term: body, env });
+            Ok(())
+        },
         Computation::Case { scrutinee, .. } => {
             machine.tasks.push(Task::Case { term, env });
             machine.tasks.push(Task::Value {
@@ -7102,6 +7108,7 @@ fn step_projection(
             | Computation::Application(..)
             | Computation::Return(_)
             | Computation::Bind(..)
+            | Computation::Ascribe { .. }
             | Computation::Force(_)
             | Computation::Case { .. }
             | Computation::Split { .. }

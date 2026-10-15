@@ -1251,6 +1251,15 @@ enum Frame
     },
     /// Await a projection operand's record or product classifier.
     NativeProjection(ComputationId),
+    /// Check an ascription's body against its stated type, once the type
+    /// has formed.
+    Ascription
+    {
+        /// The computation ascribed.
+        body: ComputationId,
+        /// The type it is ascribed.
+        ty: CompTypeId,
+    },
     /// Check an operation payload after forming its interface.
     PerformPayload
     {
@@ -2084,6 +2093,7 @@ impl Frame
             Self::SigmaSplitScrutinee(_) => FrameRole::SigmaSplitScrutinee,
             Self::SigmaSplitMotive { .. } => FrameRole::SigmaSplitMotive,
             Self::NativeProjection(_) => FrameRole::NativeProjection,
+            Self::Ascription { .. } => FrameRole::Ascription,
             Self::PerformPayload { .. } => FrameRole::PerformPayload,
             Self::Next(_) => FrameRole::Next,
             Self::Resume { .. } => FrameRole::Resume,
@@ -2229,6 +2239,7 @@ impl Frame
             | Self::NativeLoops { .. }
             | Self::SigmaSplitScrutinee(_)
             | Self::NativeProjection(_)
+            | Self::Ascription { .. }
             | Self::PerformPayload { .. }
             | Self::Next(_)
             | Self::Resume { .. }
@@ -2640,6 +2651,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | Frame::SigmaSplitScrutinee(_)
                     | Frame::SigmaSplitMotive { .. }
                     | Frame::NativeProjection(_)
+                    | Frame::Ascription { .. }
                     | Frame::PerformPayload { .. }
                     | Frame::Next(_)
                     | Frame::Resume { .. }
@@ -4598,8 +4610,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: a force awaits its value's synthesised type; an application
     ///   awaits its head's; a bind awaits its bound computation's; a transport
     ///   awaits its path's, running a computation nested at the path first, so
-    ///   it alone waits a second frame, the run's; a hole and a mark have the
-    ///   unknown computation type, minted, and ascend.
+    ///   it alone waits a second frame, the run's; an ascription forms its
+    ///   stated type, checks its body against it and synthesises it; a hole and
+    ///   a mark have the unknown computation type, minted, and ascend.
     /// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda, a return or a
     ///   fixpoint; [`CheckRefusal::OutOfFragment`] for a case.
     ///
@@ -4611,6 +4624,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
     /// - witness: `native_formers::native_formers::a_composite_along_a_returned_path_cancels_in_both_checkers`
+    /// - witness: `judgement::tests::an_ascription_checks_its_body_and_synthesises_its_type`
     #[spec(
         captures: before = self.frames.len(),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_)))
@@ -4638,6 +4652,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     term: record,
                     direction: Direction::Synthesise,
                 }))
+            },
+            Computation::Ascribe { body, ty } => {
+                self.wait(Frame::Ascription { body, ty });
+                Ok(Step::Descend(Goal::Form(TypeNode::Computation(ty))))
             },
             Computation::Perform {
                 ref signature,
@@ -4993,6 +5011,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::TelescopeTransport { .. }
             | Computation::Force(_)
             | Computation::Application(..)
+            | Computation::Ascribe { .. }
             | Computation::Split {
                 motive: SplitMotive::Scrutinee(_),
                 ..
@@ -6213,6 +6232,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Descend(goal))
             },
             (Frame::NativeYield(result), Produced::Checked) => Ok(Step::Ascend(result)),
+            // The ascribed type has formed: the body checks against it, and
+            // the ascription synthesises it.
+            (Frame::Ascription { body, ty }, Produced::Checked) => {
+                self.wait(Frame::NativeYield(Produced::CompType(ty)));
+                Ok(Step::Descend(Goal::Computation {
+                    term: body,
+                    direction: Direction::Check(ty),
+                }))
+            },
             (Frame::NativeCollect, Produced::ValueType(field)) => {
                 self.native_types.push(field);
                 Ok(Step::Ascend(Produced::Checked))
@@ -7461,6 +7489,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             )
             | (
                 Frame::PathBackward { .. }
+                | Frame::Ascription { .. }
                 | Frame::PerformPayload { .. }
                 | Frame::Next(_)
                 | Frame::Reset { .. }
@@ -9912,6 +9941,61 @@ mod tests
     }
 
     #[test]
+    fn an_ascription_checks_its_body_and_synthesises_its_type()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let returns_integer = arena.comp_type_returner(integer);
+        let returns_string = arena.comp_type_returner(string);
+        let suspended_integer = arena.value_type_thunk(returns_integer);
+        let returns_suspended = arena.comp_type_returner(suspended_integer);
+        let produce = arena.value_constant(ConstantIndex::from(0_usize));
+        let forced = arena.computation_force(produce);
+        let returned = arena.computation_return(produce);
+        let ascribed = arena.computation_ascribe(forced, returns_integer);
+        let mistyped = arena.computation_ascribe(forced, returns_string);
+        let checked_only = arena.computation_ascribe(returned, returns_suspended);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &[suspended_integer]);
+
+        assert_eq!(
+            synthesise_comp(&mut context, ascribed).map(|found| found.produced().id()),
+            Ok(returns_integer),
+            "an ascription synthesises the type it states"
+        );
+        assert_eq!(
+            synthesise_comp(&mut context, checked_only).map(|found| found.produced().id()),
+            Ok(returns_suspended),
+            "a return, which only checks, synthesises once ascribed"
+        );
+        assert_eq!(
+            synthesise_comp(&mut context, mistyped).map(|found| found.produced().id()),
+            Err(CheckRefusal::TypeMismatch(Mismatch::Computation {
+                at: forced,
+                synthesised: returns_integer,
+                expected: returns_string,
+            })),
+            "a body of another type is refused against the stated one"
+        );
+        let expected = form_comp_type(&mut context, returns_integer).unwrap();
+        let wrong = form_comp_type(&mut context, returns_string).unwrap();
+        assert!(
+            check_comp(&mut context, ascribed, expected).is_ok(),
+            "an ascription checks against its own type"
+        );
+        assert_eq!(
+            check_comp(&mut context, ascribed, wrong).map(|evidence| evidence.conversions()),
+            Err(CheckRefusal::TypeMismatch(Mismatch::Computation {
+                at: ascribed,
+                synthesised: returns_integer,
+                expected: returns_string,
+            })),
+            "checked elsewhere, the stated type crosses the bridge"
+        );
+    }
+
+    #[test]
     fn a_mismatched_literal_is_refused_with_both_types()
     {
         let mut arena = CoreArena::new();
@@ -11654,8 +11738,8 @@ mod tests
                             "a synthesising computation checks exactly as it synthesises, then crosses the computation bridge"
                         );
                     },
-                    | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Bind(..) | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) => {
-                        prop_assert!(false, "the free recipe mints no bind or native eliminator");
+                    | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) => {
+                        prop_assert!(false, "the free recipe mints no bind, ascription or native eliminator");
                     },
                     | Computation::ListFold { .. } | Computation::Case { .. } | Computation::Split { .. }
                     | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..)

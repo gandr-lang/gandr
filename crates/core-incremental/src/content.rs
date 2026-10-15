@@ -479,6 +479,14 @@ pub enum ContentNode
     Shift(NodeIndex),
     /// Two suspended computations.
     With(NodeIndex, NodeIndex),
+    /// A computation ascribed a computation type.
+    Ascribe
+    {
+        /// The computation ascribed.
+        body: NodeIndex,
+        /// The type it is checked against.
+        ty: NodeIndex,
+    },
     /// Select a lazy-pair component.
     Project(Side, NodeIndex),
     /// A closed table-typed native thunk.
@@ -1061,6 +1069,7 @@ impl ContentNode
         | Self::Reset(_)
         | Self::Shift(_)
         | Self::With(..)
+        | Self::Ascribe { .. }
         | Self::Project(..)
         | Self::Transport(..)
         | Self::ElementTransport { .. }
@@ -1166,6 +1175,7 @@ impl ContentNode
             | Self::Reset(_)
             | Self::Shift(_)
             | Self::With(..)
+            | Self::Ascribe { .. }
             | Self::Project(..)
             | Self::Transport(..)
             | Self::ElementTransport { .. }
@@ -1258,6 +1268,7 @@ impl ContentNode
             | Self::DependentSplit { scrutinee, motive, body, .. } => actual == Some(&[(scrutinee, V), (motive, C), (body, M)][..]),
             | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => actual == Some(&[(body, M)][..]),
             | Self::With(first, second) => actual == Some(&[(first, M), (second, M)][..]),
+            | Self::Ascribe { body, ty } => actual == Some(&[(body, M), (ty, C)][..]),
             | Self::Primitive(_, arguments) => actual.is_some_and(|children| children.iter().copied().eq(arguments.iter().copied().map(|argument| (argument, V)))),
             | Self::Session(ref action) => ret.iter().eq(action.value_types().map(|ty| (ty, A)).chain(action.values().map(|value| (value, V))).chain(action.computations().map(|body| (body, M)))),
             | Self::Memory(ref form) => ret.iter().eq(form.values().map(|value| (value, V)).chain(form.computations().map(|body| (body, M)))),
@@ -1410,6 +1421,7 @@ impl ContentNode
                 Children::of(&[(body, M)])
             },
             Self::With(first, second) => Children::of(&[(first, M), (second, M)]),
+            Self::Ascribe { body, ty } => Children::of(&[(body, M), (ty, C)]),
             Self::Session(ref action) => match *action {
                 SessionAction::Send { payload, .. } => Children::of(&[(payload, V)]),
                 SessionAction::Offer { ref arms, .. } => Children::fields(arms, M),
@@ -1593,7 +1605,7 @@ impl ContentNode
     /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
-        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
+        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
     {
@@ -1625,6 +1637,7 @@ impl ContentNode
             | Self::Reset(_)
             | Self::Shift(_)
             | Self::With(..)
+            | Self::Ascribe { .. }
             | Self::Session(_)
             | Self::Memory(_)
             | Self::SessionType(_)
@@ -2992,6 +3005,13 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 self.discover(ArenaNode::Computation(first)),
                 self.discover(ArenaNode::Computation(second)),
             ),
+            Computation::Ascribe { body, ty } => {
+                let body = self.discover(ArenaNode::Computation(body));
+                ContentNode::Ascribe {
+                    body,
+                    ty: self.discover(ArenaNode::CompType(ty)),
+                }
+            },
             Computation::Project(side, body) => {
                 ContentNode::Project(side, self.discover(ArenaNode::Computation(body)))
             },
@@ -3575,6 +3595,10 @@ where
         ContentNode::Reset(body) => ContentNode::Reset(image(body)),
         ContentNode::Shift(body) => ContentNode::Shift(image(body)),
         ContentNode::With(first, second) => ContentNode::With(image(first), image(second)),
+        ContentNode::Ascribe { body, ty } => ContentNode::Ascribe {
+            body: image(body),
+            ty: image(ty),
+        },
         ContentNode::Project(side, body) => ContentNode::Project(side, image(body)),
         ContentNode::PrimitiveValue(primitive) => ContentNode::PrimitiveValue(primitive),
         ContentNode::Primitive(primitive, mut arguments) => {
@@ -4329,6 +4353,7 @@ fn mint_node(
         | ContentNode::Reset(_)
         | ContentNode::Shift(_)
         | ContentNode::With(..)
+        | ContentNode::Ascribe { .. }
         | ContentNode::Project(..)
         | ContentNode::PrimitiveValue(_)
         | ContentNode::Primitive(..)
