@@ -618,15 +618,17 @@ impl<'arena> Engine<'arena>
     }
 
     /// The mark a wrap puts around `node`'s rewritten form, if its sites name
-    /// it, or the thunk an elaboration suspends a nested computation into, if
-    /// the checker decided it so.
+    /// it, or the thunk or returned value an elaboration stands a nested
+    /// computation as, if the checker decided it so.
     ///
     /// # Specification
     /// - requires: `rewritten` is `node`'s rewritten form, in its family.
     /// - ensures: under a wrap, a fresh mark over `rewritten` when the sites
     ///   name `node` and it is a term; under an elaboration, a fresh thunk over
     ///   the computation of `rewritten` when `node` is a nested computation the
-    ///   checker decided to suspend; `rewritten` itself otherwise.
+    ///   checker decided to suspend, and a fresh returned value over it when
+    ///   the checker decided it stands as what it returns; `rewritten` itself
+    ///   otherwise.
     /// - provides: the one point a wrap differs from a congruence, and the one
     ///   point an elaboration suspends.
     /// - fails: never.
@@ -649,10 +651,14 @@ impl<'arena> Engine<'arena>
     {
         if rewrite == Rewrite::Elaborate
             && let (Node::Value(held), Node::Value(id)) = (node, rewritten)
-            && self.nesting.get(&held) == Some(&Nesting::Thunk)
-            && let Some(&Value::Nested(suspended)) = self.arena.value(id)
+            && let Some(&decided) = self.nesting.get(&held)
+            && let Some(&Value::Nested(nested)) = self.arena.value(id)
         {
-            return Node::Value(self.arena.value_thunk(suspended));
+            match decided {
+                Nesting::Thunk => return Node::Value(self.arena.value_thunk(nested)),
+                Nesting::Returned => return Node::Value(self.arena.value_returned(nested)),
+                Nesting::Run => {},
+            }
         }
         if rewrite != Rewrite::Wrap {
             return rewritten;
@@ -3641,6 +3647,11 @@ pub enum Nesting
     /// Expected at any other type, it runs before its region and stands for
     /// the value it returns.
     Run,
+    /// Run purely where a type after it reads it — a dependent pair's first
+    /// component, a dependent function's argument — it stands as the value it
+    /// returns, `⟨c⟩`, so that type reads the computation rather than a bound
+    /// variable it could not see through.
+    Returned,
 }
 
 /// A run with no computation enclosing it to run before.

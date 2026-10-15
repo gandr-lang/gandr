@@ -5226,6 +5226,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 found: TypeNode::Value(expected),
             });
         };
+        self.read_by_a_type(left);
         let fibre = instantiate_value_type(self.context.arena_mut(), second, left);
         self.wait(Frame::PairSecond {
             second: right,
@@ -6052,11 +6053,59 @@ impl<'context, 'arena> Machine<'context, 'arena>
         match codomain {
             Codomain::Ambient(codomain) => codomain,
             Codomain::Dependent(codomain) => {
+                self.read_by_a_type(argument);
                 let lift = self.context.lifts().get(&argument).cloned();
                 let arena = self.context.arena_mut();
                 let code = lift.map_or(argument, |lift| lift.mint(arena, argument));
                 instantiate_comp_type(arena, codomain, code)
             },
+        }
+    }
+
+    /// Note that a type after `value` reads it, so a pure run there stands
+    /// as what it returns.
+    ///
+    /// # Specification
+    /// - requires: a dependent type is instantiated at `value`.
+    /// - ensures: a nested computation at `value` decided to run purely, or not
+    ///   decided yet, is decided [`Nesting::Returned`], which the run's own
+    ///   decision keeps when it runs purely; any other value, or a decision to
+    ///   suspend or to run effectfully, is left as it is.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call as a dependent pair's first component and a
+    ///   projection as a dependent function's argument each stand in the type
+    ///   after them as what they return, and the second run accepts them.
+    /// - witness: `module::tests::a_pure_run_a_type_reads_stands_as_what_it_returns`
+    #[spec(
+        captures: [
+            before = self.context.nesting().get(&value).copied(),
+            nested = matches!(self.context.arena().value(value), Some(&Value::Nested(_))),
+        ],
+        ensures: self.context.nesting().get(&value).copied() == match before {
+            None | Some(Nesting::Ran(gandr_core_term::effect::Purity::Pure)) if nested => Some(Nesting::Returned),
+            held => held,
+        },
+    )]
+    fn read_by_a_type(
+        &mut self,
+        value: ValueId,
+    )
+    {
+        if !matches!(self.context.arena().value(value), Some(&Value::Nested(_))) {
+            return;
+        }
+        match self.context.nesting().get(&value) {
+            None | Some(&Nesting::Ran(gandr_core_term::effect::Purity::Pure)) => {
+                self.context.record_nesting(value, Nesting::Returned);
+            },
+            Some(
+                &(Nesting::Suspended
+                | Nesting::Returned
+                | Nesting::Ran(gandr_core_term::effect::Purity::Effectful)),
+            ) => {},
         }
     }
 
@@ -6528,7 +6577,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         });
                     },
                 };
-                self.context.record_nesting(at, Nesting::Ran(purity));
+                // A pure run a type after it reads stands as what it returns.
+                let decided = match (purity, self.context.nesting().get(&at)) {
+                    (gandr_core_term::effect::Purity::Pure, Some(&Nesting::Returned)) => {
+                        Nesting::Returned
+                    },
+                    (
+                        gandr_core_term::effect::Purity::Pure
+                        | gandr_core_term::effect::Purity::Effectful,
+                        _,
+                    ) => Nesting::Ran(purity),
+                };
+                self.context.record_nesting(at, decided);
                 Ok(Step::Ascend(Produced::ValueType(result)))
             },
             (Frame::ReturnedEndpoint { at }, Produced::CompType(synthesised)) => {

@@ -2067,6 +2067,89 @@ mod tests
     }
 
     #[test]
+    fn a_pure_run_a_type_reads_stands_as_what_it_returns()
+    {
+        let mut arena = CoreArena::new();
+        let (function, identity) = integer_function(&mut arena);
+        let integer = arena.value_type_base(BaseType::Integer);
+        // `Σ (y : Integer). Path(Integer, y, y)`.
+        let bound = arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(0_u32),
+        );
+        let looped = arena.value_type_path(integer, bound, bound);
+        let sigma = arena.value_type_sigma(integer, looped);
+        let returns = arena.comp_type_returner(sigma);
+        let arrow = arena.comp_type_arrow(integer, returns);
+        let pairing_type = arena.value_type_thunk(arrow);
+        // `λx. return (id(x), here(⟨id(x)⟩))`, the first component a nested
+        // call the second's type reads.
+        let [nested_x, point_x] = [(); 2].map(|()| {
+            arena.value_variable(
+                gandr_core_term::Zone::Intuitionistic,
+                DeBruijnIndex::from(0_u32),
+            )
+        });
+        let first = call(&mut arena, ConstantIndex::from(0_usize), nested_x);
+        let first = arena.value_nested(first);
+        let point = call(&mut arena, ConstantIndex::from(0_usize), point_x);
+        let point = arena.value_returned(point);
+        let reflexive = arena.value_here(point);
+        let pair = arena.value_tuple(&[first, reflexive]);
+        let returned = arena.computation_return(pair);
+        let lambda = arena.computation_lambda(returned);
+        let pairing = arena.value_thunk(lambda);
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            check_module(&mut context, &[
+                declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
+                declaration(At(1), Maybe::Present(pairing_type), Maybe::Present(pairing)),
+            ])
+        };
+        let Verdict::Checked { body, .. } = report.judged()[1].verdict()
+        else {
+            panic!(
+                "the second component checks at the first's call: {:?}",
+                report.judged()[1].verdict()
+            );
+        };
+        let elaboration = &report.nested_elaborations()[&ConstantIndex::from(1_usize)];
+        assert_eq!(
+            elaboration.decisions().get(&first),
+            Some(&Nesting::Returned),
+            "a pure call the second component's type reads stands as what it returns"
+        );
+        assert!(elaboration.binds().is_empty(), "and mints no bind");
+        let Some(&gandr_core_term::Value::Thunk(lambda)) = arena.value(body)
+        else {
+            panic!("the body stays a thunk");
+        };
+        let Some(&gandr_core_term::Computation::Lambda(returned)) = arena.computation(lambda)
+        else {
+            panic!("over its lambda");
+        };
+        let Some(&gandr_core_term::Computation::Return(pair)) = arena.computation(returned)
+        else {
+            panic!("returning the pair, with nothing bound before it");
+        };
+        assert!(
+            matches!(
+                arena.value(pair).and_then(gandr_core_term::Value::components),
+                Some(&[component, _]) if matches!(arena.value(component), Some(&gandr_core_term::Value::Returned(_)))
+            ),
+            "the first component is the call's returned value"
+        );
+        let readmission = crate::bridge::readmit(&mut arena, &report);
+        assert!(
+            readmission.readmitted().iter().all(|readmitted| matches!(
+                readmitted.outcome(),
+                crate::bridge::Outcome::Defined { .. }
+            )),
+            "the kernel re-derives the elaborated body: {readmission:?}"
+        );
+    }
+
+    #[test]
     fn a_nested_computation_is_decided_by_its_expected_type()
     {
         let mut arena = CoreArena::new();

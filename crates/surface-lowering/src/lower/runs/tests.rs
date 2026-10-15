@@ -173,7 +173,7 @@ fn a_nested_run_is_spelled_as_its_written_run_reads_back()
 ///   lowering's record.
 /// - witness: `lower::runs::tests::an_explicit_runs_attribute_asks_within_its_form`
 /// - witness: `lower::runs::tests::a_nested_run_is_spelled_as_its_written_run_reads_back`
-#[spec(ensures: |ret| ret.len() == report.nested_elaborations().values().map(|elaboration| elaboration.decisions().values().filter(|decided| matches!(decided, Nesting::Ran(_))).count()).sum::<usize>())]
+#[spec(ensures: |ret| ret.len() == report.nested_elaborations().values().map(|elaboration| elaboration.decisions().values().filter(|decided| matches!(decided, Nesting::Ran(_) | Nesting::Returned)).count()).sum::<usize>())]
 fn ran(report: &ModuleReport) -> Vec<(ValueId, Purity)>
 {
     report
@@ -185,6 +185,7 @@ fn ran(report: &ModuleReport) -> Vec<(ValueId, Purity)>
                 .iter()
                 .filter_map(|(&at, &decided)| match decided {
                     Nesting::Ran(purity) => Some((at, purity)),
+                    Nesting::Returned => Some((at, Purity::Pure)),
                     Nesting::Suspended => None,
                 })
         })

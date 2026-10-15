@@ -958,8 +958,9 @@ pub fn judge<'source>(
 /// # Specification
 /// - requires: `verdicts` are the checker's over `module`'s declarations.
 /// - ensures: one record per nested computation the checker decided to run in
-///   any elaborated body, as [`LoweredModule::inferred_runs`] lists it, in
-///   source order and each once; a suspended one gives none.
+///   any elaborated body — bound before its region, or standing as what it
+///   returns, which runs purely — as [`LoweredModule::inferred_runs`] lists it,
+///   in source order and each once; a suspended one gives none.
 /// - provides: the `explicit-runs` lint's findings, before a verb filters them.
 /// - fails: never.
 /// - panics: none.
@@ -984,6 +985,7 @@ fn inferred_runs(
                     .iter()
                     .filter_map(|(&at, &decided)| match decided {
                         Nesting::Ran(purity) => Some((at, purity)),
+                        Nesting::Returned => Some((at, gandr_core_term::effect::Purity::Pure)),
                         Nesting::Suspended => None,
                     })
             }),
