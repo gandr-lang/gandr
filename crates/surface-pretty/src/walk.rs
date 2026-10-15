@@ -184,6 +184,7 @@
 //!   names a term mentions as term binders do.
 
 use alloc::borrow::Cow;
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::String;
@@ -474,6 +475,9 @@ pub enum Admits
     CompType,
     /// A value.
     Value,
+    /// A value whose type its position states: a family's argument, typed by
+    /// the family's parameter, where a parameterised constructor stands bare.
+    Stated,
     /// A computation, where a path through a body ends or where it goes on.
     Computation(Tail),
 }
@@ -495,16 +499,20 @@ pub enum Tail
     Continues,
 }
 
-/// Whether a thunk's body is spelled or the thunk written opaque.
+/// Whether a thunk's body is spelled or the thunk written opaque, and whether
+/// a parameterised constructor is written against its family.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Bodies
 {
     /// `<thunk>`: a value presented alone is a normal form, whose thunks are
-    /// closures a reader does not read.
+    /// closures a reader does not read; its constructors stand bare,
+    /// `Some(1)`, as a run's value is written.
     Opaque,
     /// `thunk { c }`: a computation presented is a body a reader reads, and
     /// so is a thunk a type mentions, a path's endpoint, which the author
-    /// wrote.
+    /// wrote; a parameterised constructor there is source that reads back,
+    /// written against its family, `(MkIx : Ix(3))`, except as a family's
+    /// argument, whose parameter states its type, `Vec(MkIx)`.
     Spelled,
 }
 
@@ -521,7 +529,7 @@ impl Bodies
             Admits::Computation(_) | Admits::Type | Admits::ValueType | Admits::CompType => {
                 Self::Spelled
             },
-            Admits::Value => Self::Opaque,
+            Admits::Value | Admits::Stated => Self::Opaque,
         }
     }
 }
@@ -559,11 +567,12 @@ enum Reach
 /// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
 /// - witness: `walk::tests::depth_boundaries_preserve_precedence_and_saturation`
 #[spec(ensures: |ret| {
-    let deep = admits == Admits::Value && depth.0 >= DEPTH_LIMIT.0;
+    let valued = matches!(admits, Admits::Value | Admits::Stated);
+    let deep = valued && depth.0 >= DEPTH_LIMIT.0;
     let admitted = matches!((admits, kind), (_, Kind::Unknown)
         | (Admits::Type, Kind::ValueType | Kind::CompType)
         | (Admits::ValueType, Kind::ValueType) | (Admits::CompType, Kind::CompType)
-        | (Admits::Value, Kind::Value) | (Admits::Computation(_), Kind::Computation));
+        | (Admits::Value | Admits::Stated, Kind::Value) | (Admits::Computation(_), Kind::Computation));
     (ret == Reach::Deep) == deep && (ret == Reach::Spell) == (!deep && admitted)
         && (ret == Reach::Misplaced) == (!deep && !admitted)
 })]
@@ -573,7 +582,7 @@ fn reach(
     kind: Kind,
 ) -> Reach
 {
-    if admits == Admits::Value && depth >= DEPTH_LIMIT {
+    if matches!(admits, Admits::Value | Admits::Stated) && depth >= DEPTH_LIMIT {
         return Reach::Deep;
     }
     match (admits, kind) {
@@ -581,12 +590,12 @@ fn reach(
         | (Admits::Type, Kind::ValueType | Kind::CompType)
         | (Admits::ValueType, Kind::ValueType)
         | (Admits::CompType, Kind::CompType)
-        | (Admits::Value, Kind::Value)
+        | (Admits::Value | Admits::Stated, Kind::Value)
         | (Admits::Computation(_), Kind::Computation) => Reach::Spell,
         (Admits::Type, Kind::Value | Kind::Computation)
         | (Admits::ValueType, Kind::CompType | Kind::Value | Kind::Computation)
         | (Admits::CompType, Kind::ValueType | Kind::Value | Kind::Computation)
-        | (Admits::Value, Kind::ValueType | Kind::CompType | Kind::Computation)
+        | (Admits::Value | Admits::Stated, Kind::ValueType | Kind::CompType | Kind::Computation)
         | (Admits::Computation(_), Kind::ValueType | Kind::CompType | Kind::Value) => {
             Reach::Misplaced
         },
@@ -768,8 +777,10 @@ where
 ///   application applies and a computation where a value is read admit
 ///   computations where the body goes on, a body in braces one where it ends,
 ///   and a bind's rest and the branches of a case what its own position admits;
-///   a thunk's body is a child only where bodies are spelled; every leaf former
-///   has none.
+///   a thunk's body is a child only where bodies are spelled; a family's
+///   arguments admit values their parameters state the type of, and a
+///   constructor's classifier is a child only where bodies are spelled and its
+///   position states no type; every leaf former has none.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -787,9 +798,16 @@ where
 #[spec(ensures: |ref ret| match *former {
     | Former::Product(arity) | Former::Sum(arity) | Former::RecordType(arity) => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
-    | Former::Tuple(arity) | Former::Record(arity) | Former::Data { arity, .. } | Former::Constructor { arity, .. }
-        | Former::Primitive { arity, .. } => ret.len() == usize::from(arity)
+    | Former::Tuple(arity) | Former::Record(arity) | Former::Primitive { arity, .. } => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
+    | Former::Data { arity, .. } => ret.len() == usize::from(arity)
+        && ret.iter().all(|slot| slot.admits == Admits::Stated && slot.binds == Binds::NONE),
+    | Former::Constructor { arity, classifier, .. } => {
+        let annotated = classifier.is_some() && bodies == Bodies::Spelled && admits != Admits::Stated;
+        ret.len() == usize::from(arity).saturating_add(usize::from(annotated))
+            && ret.iter().take(usize::from(arity)).all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE)
+            && (!annotated || ret.last().is_some_and(|slot| slot.admits == Admits::ValueType))
+    },
     | Former::Pi { .. } | Former::Sigma { .. } | Former::StaticLambda(_) | Former::Lambda(_) | Former::Bind(..) | Former::Fixpoint(_)
         | Former::Shift(_) => ret.last().is_some_and(|slot| slot.binds == Binds::ONE),
     | Former::Case { arity, .. } | Former::DataCase { arity, .. } => ret.len() == usize::from(arity).saturating_add(1_usize)
@@ -866,12 +884,22 @@ where
             components(arity, Admits::ValueType, Binds::NONE, Some(Label::Field))
         },
         Former::Tuple(arity)
-        | Former::Data { arity, .. }
-        | Former::Constructor { arity, .. }
         | Former::Primitive { arity, .. }
         | Former::Recorded {
             payloads: arity, ..
         } => components(arity, Admits::Value, Binds::NONE, None),
+        Former::Data { arity, .. } => components(arity, Admits::Stated, Binds::NONE, None),
+        Former::Constructor {
+            arity, classifier, ..
+        } => {
+            let mut slots = components(arity, Admits::Value, Binds::NONE, None);
+            if let (Some(classifier), Bodies::Spelled) = (classifier, bodies)
+                && admits != Admits::Stated
+            {
+                slots.push(value_type(classifier));
+            }
+            slots
+        },
         Former::Record(arity) => {
             components(arity, Admits::Value, Binds::NONE, Some(Label::Assignment))
         },
@@ -1135,6 +1163,10 @@ fn below(
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Binding
 {
+    /// A qualified name `M.T`: an atom everywhere but a session type's
+    /// payload, where the send's or receive's own `.` would end the payload at
+    /// the path's first `.`, so it is parenthesized there, `!(M.T). S`.
+    Qualified,
     /// A name, a literal, a universe, a bracketed or braced form, a call.
     Atom,
     /// `+U C`, `-F A`, `pure v`, `force v`, `run c`, `fn (x) { c }` or
@@ -1559,7 +1591,7 @@ enum Join
 {
     /// A bridge over one operand.
     Prefix(Prefix),
-    /// A returner prefixed by the rendered effect names.
+    /// A returner prefixed by its row of interfaces, `-F [I, …] `.
     EffectReturner(Doc),
     /// A braced former over this many entries.
     Braced
@@ -1816,6 +1848,30 @@ impl Parts
     }
 }
 
+/// The codomain of a value-function alias, as [`Walk::alias`] found it.
+#[derive(Clone, Copy, Debug)]
+enum Codomain<Node>
+{
+    /// The value type the chain's returner returns.
+    Result(Node),
+    /// A static redex whose reduct is the returner.
+    Reduct(Node),
+}
+
+/// A value-function alias as [`Walk::alias`] found it: its domains, outermost
+/// first, and its codomain.
+type AliasChain<Node> = (Vec<Node>, Codomain<Node>);
+
+/// How a static redex's reduct is spelled.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReductAs
+{
+    /// As the term it is.
+    Term,
+    /// As the value type it returns, the codomain of an alias.
+    Result,
+}
+
 /// One unit of the walk's pending work.
 #[derive(Clone, Copy, Debug)]
 enum Task<Node>
@@ -1830,10 +1886,24 @@ enum Task<Node>
         /// How many value formers enclose the node.
         depth: ValueDepth,
     },
+    /// Spell the value type a computation type returns, as the codomain of a
+    /// value-function alias: the returner's result, read on through the
+    /// static redexes, decodes and quotes [`Walk::alias`] read through to it.
+    Returned
+    {
+        /// The computation type.
+        node: Node,
+        /// How many value formers enclose the node.
+        depth: ValueDepth,
+    },
     /// Open a binder in a zone, of the former whose child follows.
     Bind(Zone),
     /// Close the innermost binder.
     Unbind,
+    /// Open one binder per finished piece of the top this many, the deepest
+    /// outermost, each standing for its piece: the binders of a static redex's
+    /// abstraction, bound to the arguments it is applied to.
+    Substitute(Arity),
     /// Spell a component the source did not answer, as `?`.
     Missing,
     /// Spell the label an entry is written after.
@@ -2221,6 +2291,10 @@ struct Walk<'walk, 'names>
     /// The zone of each open binder, outermost first; a binder's position
     /// among them names it.
     opened: Vec<Zone>,
+    /// The arguments the binders of a static redex stand for, by the binder's
+    /// position among the open ones: a redex is written as its reduct, each
+    /// occurrence of such a binder as the argument's piece.
+    substituted: BTreeMap<OpenBinders, Piece>,
     /// The names of the intuitionistic binders the root stands under,
     /// outermost first.
     context: &'names [Option<Name<'names>>],
@@ -2414,7 +2488,7 @@ impl Walk<'_, '_>
             self.fidelity == if text.is_empty() || text.contains(['\r', '\n', '\t']) { Fidelity::Approximate } else { fidelity }
                 && match *ret {
                     | Ok(()) => entry.checked_add(1_usize) == Some(self.pieces.len())
-                    && self.pieces.last().is_some_and(|piece| piece.binding == Binding::Atom),
+                    && self.pieces.last().is_some_and(|piece| piece.binding == if text.contains('.') { Binding::Qualified } else { Binding::Atom }),
                     | Err(PresentationError::Build(_)) => self.pieces.len() == entry,
                     | Err(_) => false,
                 }
@@ -2428,6 +2502,14 @@ impl Walk<'_, '_>
         let text: &str = name.as_ref();
         if text.is_empty() || text.contains(['\n', '\r', '\t']) {
             return self.unspell(Unspelled::Unprintable);
+        }
+        if text.contains('.') {
+            let doc = self.leaf(Glyphs(text))?;
+            self.pieces.push(Piece {
+                doc,
+                binding: Binding::Qualified,
+            });
+            return Ok(());
         }
         self.atom(Glyphs(text))
     }
@@ -2542,20 +2624,13 @@ impl Walk<'_, '_>
         index: DeBruijnIndex,
     ) -> Result<Doc, PresentationError>
     {
-        let mut remaining = usize::try_from(u32::from(index)).unwrap_or(usize::MAX);
-        let mut found = None;
-        for (position, &open) in self.opened.iter().enumerate().rev() {
-            if open != zone {
-                continue;
-            }
-            if remaining == 0_usize {
-                found = Some(position);
-                break;
-            }
-            remaining = remaining.saturating_sub(1_usize);
-        }
+        let found = self.opened_at(zone, index);
+        let open = self.opened.iter().filter(|&&open| open == zone).count();
+        let remaining = usize::try_from(u32::from(index))
+            .unwrap_or(usize::MAX)
+            .saturating_sub(open);
         let spelled = match found {
-            Some(position) => match self.binders.name_at(OpenBinders(position)) {
+            Some(position) => match self.binders.name_at(position) {
                 Maybe::Present(name) => Ok(name.0.clone()),
                 Maybe::Absent(_) => Err(Unspelled::Exhausted),
             },
@@ -2617,11 +2692,78 @@ impl Walk<'_, '_>
         index: DeBruijnIndex,
     ) -> Result<(), PresentationError>
     {
+        if let Some(&argument) = self
+            .opened_at(zone, index)
+            .and_then(|position| self.substituted.get(&position))
+        {
+            self.pieces.push(argument);
+            return Ok(());
+        }
         let doc = self.variable_leaf(zone, index)?;
         self.pieces.push(Piece {
             doc,
             binding: Binding::Atom,
         });
+        Ok(())
+    }
+
+    /// The position among the open binders of the one of `zone` that `index`
+    /// counts out to, if one is open.
+    ///
+    /// # Specification
+    /// trivial.
+    fn opened_at(
+        &self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Option<OpenBinders>
+    {
+        let mut remaining = usize::try_from(u32::from(index)).unwrap_or(usize::MAX);
+        for (position, &open) in self.opened.iter().enumerate().rev() {
+            if open != zone {
+                continue;
+            }
+            if remaining == 0_usize {
+                return Some(OpenBinders(position));
+            }
+            remaining = remaining.saturating_sub(1_usize);
+        }
+        None
+    }
+
+    /// Opens one binder for each of the top `arity` pieces, the deepest
+    /// outermost, each standing for its piece.
+    ///
+    /// # Specification
+    /// - requires: nothing; a stack holding fewer is reported as unbalanced.
+    /// - ensures: the pieces removed, `arity` intuitionistic binders opened,
+    ///   and each opened binder's position mapped to its piece.
+    /// - provides: the binders a redex's reduct is walked under.
+    /// - fails: as [`Self::take`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::take`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a redex of one and of two arguments, each argument
+    ///   occurring in the reduct, observe the order the binders open in.
+    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct`
+    #[spec(
+        captures: [opened = self.opened.len()],
+        ensures: |ref ret| ret.is_err() || self.opened.len() == opened.saturating_add(arity.0),
+    )]
+    fn substitute(
+        &mut self,
+        arity: Arity,
+    ) -> Result<(), PresentationError>
+    {
+        for argument in self.take(arity)? {
+            let _fresh = self
+                .substituted
+                .insert(OpenBinders(self.opened.len()), argument);
+            self.opened.push(Zone::Intuitionistic);
+        }
         Ok(())
     }
 
@@ -2702,10 +2844,14 @@ impl Walk<'_, '_>
     /// # Specification
     /// - requires: nothing; `source` may be malformed.
     /// - ensures: the domains of the arrows from `body` down, outermost first,
-    ///   and the value type the returner they end in returns; none when a link
-    ///   is anything else — a dependent arrow, an effectful returner, a missing
-    ///   or misplaced node — or the walk's remaining visits run out first.
-    ///   Every link read is one visit spent.
+    ///   and the codomain: the value type the returner they end in returns, or,
+    ///   when the chain reaches its returner through a static redex — an
+    ///   abstraction applied to as many arguments as it binds, which prints as
+    ///   its reduct — the redex, whose reduct holds no further arrow. A decode
+    ///   and a quote are read through, as they print. None when a link is
+    ///   anything else — a dependent arrow, an effectful returner, an arrow
+    ///   under a redex, a missing or misplaced node — or the walk's remaining
+    ///   visits run out first. Every link read is one visit spent.
     /// - provides: the shape `+U (A1 -> … -> An -> -F C)` the alias `(A1, …,
     ///   An) => C` stands for, which the lowering reads back to the same type.
     /// - fails: never.
@@ -2718,10 +2864,11 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — the sugared goldens spell the alias at no, one and
     ///   two domains, over a domain and a codomain that are themselves aliases,
-    ///   and keep the thunk over a dependent arrow; a source that becomes a
-    ///   cycle of thunks over returners after its scan stays within the walk's
-    ///   reads.
+    ///   over a codomain a static redex returns, and keep the thunk over a
+    ///   dependent arrow; a source that becomes a cycle of thunks over
+    ///   returners after its scan stays within the walk's reads.
     /// - witness: `goldens::tests::the_sugared_form_writes_every_sugar_its_shape_admits`
+    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
     #[spec(
         captures: [entry = self.remaining],
@@ -2732,20 +2879,55 @@ impl Walk<'_, '_>
         &mut self,
         source: &S,
         body: S::Node,
-    ) -> Option<(Vec<S::Node>, S::Node)>
+    ) -> Option<AliasChain<S::Node>>
     where
         S: Source + ?Sized,
     {
         let mut domains = Vec::new();
         let mut link = body;
+        // The first redex the chain entered, whose reduct the codomain is.
+        let mut entered = None;
         while let Some(left) = self.remaining.checked_sub(1_u32) {
             self.remaining = left;
             match source.read(link) {
                 Former::Arrow { domain, codomain } => {
+                    if entered.is_some() {
+                        return None;
+                    }
                     domains.push(domain);
                     link = codomain;
                 },
-                Former::Returner(result) => return Some((domains, result)),
+                Former::Returner(result) => {
+                    return Some((
+                        domains,
+                        entered.map_or(Codomain::Result(result), Codomain::Reduct),
+                    ));
+                },
+                // A decode and a quote print as the node they hold, so the
+                // chain reads on through them as the spelling does.
+                Former::ComputationElement(child) | Former::QuoteComputation(child) => {
+                    link = child;
+                },
+                // A redex prints as its reduct: the abstraction's body once
+                // every binder it opens takes an argument.
+                Former::StaticApplication(mut operator, _) => {
+                    let mut arguments = 1_usize;
+                    while let Former::StaticApplication(inner, _) = source.read(operator) {
+                        self.remaining = self.remaining.checked_sub(1_u32)?;
+                        arguments = arguments.saturating_add(1_usize);
+                        operator = inner;
+                    }
+                    for _ in 0_usize .. arguments {
+                        self.remaining = self.remaining.checked_sub(1_u32)?;
+                        let Former::StaticLambda(reduct) = source.read(operator)
+                        else {
+                            return None;
+                        };
+                        operator = reduct;
+                    }
+                    entered = entered.or(Some(link));
+                    link = operator;
+                },
                 Former::Reify
                 | Former::Stack(..)
                 | Former::With(..)
@@ -2769,7 +2951,6 @@ impl Walk<'_, '_>
                 | Former::Session { .. }
                 | Former::EffectfulReturner { .. }
                 | Former::Pi { .. }
-                | Former::ComputationElement(_)
                 | Former::List(_)
                 | Former::Variable { .. }
                 | Former::Constant(_)
@@ -2780,9 +2961,7 @@ impl Walk<'_, '_>
                 | Former::Injection(..)
                 | Former::Thunk(_)
                 | Former::Quote(_)
-                | Former::QuoteComputation(_)
                 | Former::StaticLambda(_)
-                | Former::StaticApplication(..)
                 | Former::Here(_)
                 | Former::Funext(..)
                 | Former::Equiv(..)
@@ -2973,9 +3152,21 @@ impl Walk<'_, '_>
         if piece.binding <= loosest {
             return Ok(piece.doc);
         }
+        self.parenthesized(piece.doc)
+    }
+
+    /// `doc` between parentheses.
+    ///
+    /// # Specification
+    /// trivial.
+    fn parenthesized(
+        &mut self,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
         let open = self.leaf(Glyphs("("))?;
         let close = self.leaf(Glyphs(")"))?;
-        self.builder.concat_all(&[open, piece.doc, close])
+        self.builder.concat_all(&[open, doc, close])
     }
 
     /// `head` then a space, or a line break indented two columns.
@@ -3258,8 +3449,26 @@ impl Walk<'_, '_>
                     | gandr_core_term::effect::capability::Region::Held => {
                         self.atom(Glyphs(spelled.as_str()))
                     },
-                    | gandr_core_term::effect::capability::Region::Scoped(_) => {
-                        self.approximate(Glyphs(spelled.as_str()))
+                    // A scoped capability names the scope whose region it
+                    // lives in, `Cap {…} at c`; past the scopes the source
+                    // names, its region goes unwritten.
+                    | gandr_core_term::effect::capability::Region::Scoped(depth) => {
+                        let named = usize::try_from(u32::from(depth))
+                            .ok()
+                            .and_then(|depth| depth.checked_sub(1_usize))
+                            .and_then(|at| source.regions().get(at).copied().flatten())
+                            .filter(|name| {
+                                let text: &str = name.as_ref();
+                                !text.is_empty() && !text.contains(char::is_whitespace)
+                            });
+                        match named {
+                            Some(name) => {
+                                spelled.push_str(" at ");
+                                spelled.push_str(name.as_ref());
+                                self.atom(Glyphs(spelled.as_str()))
+                            },
+                            None => self.approximate(Glyphs(spelled.as_str())),
+                        }
                     },
                 };
             },
@@ -3312,12 +3521,9 @@ impl Walk<'_, '_>
             | Former::Hold { .. }
             | Former::Access { .. }
             | Former::ResumeView { .. }
-            | Former::AbortView(_) => Some(self.form(source, node, &former)),
+            | Former::AbortView(_) => Some(self.form(source, node, &former, admits)),
             | Former::Reify => return self.approximate(Glyphs("<stack>")),
-            | Former::Stack(..) => {
-                self.fidelity = Fidelity::Approximate;
-                Some(Join::Bracket(Bracket::Stack))
-            },
+            | Former::Stack(..) => Some(Join::Bracket(Bracket::Stack)),
             | Former::With(..) if self.form == Form::Sugared => Some(Join::Infix {
                 infix: Infix::Lazy,
                 arity: Arity(2_usize),
@@ -3427,7 +3633,15 @@ impl Walk<'_, '_>
                     && let Some((domains, codomain)) = self.alias(source, body)
                 {
                     tasks.push(Task::Join(Join::ValueFunction(Arity(domains.len()))));
-                    for node in core::iter::once(codomain).chain(domains.into_iter().rev()) {
+                    tasks.push(match codomain {
+                        Codomain::Result(node) => Task::Visit {
+                            node,
+                            admits: Admits::ValueType,
+                            depth,
+                        },
+                        Codomain::Reduct(node) => Task::Returned { node, depth },
+                    });
+                    for node in domains.into_iter().rev() {
                         tasks.push(Task::Visit {
                             node,
                             admits: Admits::ValueType,
@@ -3440,9 +3654,15 @@ impl Walk<'_, '_>
             },
             | Former::Returner(_) => Some(Join::Prefix(Prefix::Returner)),
             | Former::EffectfulReturner { effects, .. } => {
-                let annotation = alloc::format!("-F^{effects:?} ");
+                let mut annotation = String::from("-F [");
+                for (index, interface) in effects.interfaces().iter().enumerate() {
+                    if index != 0 {
+                        annotation.push_str(", ");
+                    }
+                    annotation.push_str(interface.as_ref());
+                }
+                annotation.push_str("] ");
                 let head = self.leaf(Glyphs(&annotation))?;
-                self.fidelity = Fidelity::Approximate;
                 Some(Join::EffectReturner(head))
             },
             | Former::Arrow { .. } | Former::StaticPi { .. } => Some(Join::Arrow),
@@ -3461,7 +3681,7 @@ impl Walk<'_, '_>
                 entries: Entries::Labelled(Label::Summand),
             }),
             | Former::StaticApplication(operator, argument) => {
-                Self::spine(source, operator, argument, depth, tasks);
+                Self::spine(source, operator, argument, depth, ReductAs::Term, tasks);
                 return Ok(());
             },
             | Former::Application(function, argument) => {
@@ -3474,7 +3694,8 @@ impl Walk<'_, '_>
                 | Admits::Type
                 | Admits::ValueType
                 | Admits::CompType
-                | Admits::Value => Some(Join::Prefix(Prefix::Pure)),
+                | Admits::Value
+                | Admits::Stated => Some(Join::Prefix(Prefix::Pure)),
             },
             | Former::Force(_) => Some(Join::Prefix(Prefix::Force)),
             | Former::Bind(bound, rest) => match self.typed_bind(source, bound) {
@@ -3535,44 +3756,62 @@ impl Walk<'_, '_>
     }
 
     /// Schedules a static application and the applications under its
-    /// operator as one application, `f(a1, …, an)`.
+    /// operator as one application, `f(a1, …, an)`, or, where the operator is
+    /// a static abstraction, as the redex's reduct.
     ///
     /// # Specification
     /// - requires: the application at `depth` applies `operator` to `argument`,
     ///   and `tasks` is the walk's stack.
     /// - ensures: the operator is read down through every static application it
     ///   is, each argument scheduled at the depth the scan reaches it at, until
-    ///   an operator that is no application or one at the depth limit, which is
-    ///   scheduled as itself; the join over the operator and the arguments,
-    ///   left to right, is pushed below their visits, the operator visited
-    ///   first.
+    ///   an operator that is no application or one at the depth limit. An
+    ///   operator that is a static abstraction consumes the first arguments,
+    ///   one per binder of its chain: those arguments are visited first, then
+    ///   their binders opened standing for them, the abstraction's body walked
+    ///   under them and the binders closed; any arguments left apply to that
+    ///   reduct as below. Otherwise the operator is scheduled as itself; the
+    ///   join over the operator and the arguments, left to right, is pushed
+    ///   below their visits, the operator visited first. Read as
+    ///   [`ReductAs::Result`], a reduct with no argument left is scheduled as
+    ///   the value type it returns, the codomain of an alias.
     /// - provides: the one spelling the surface writes a spine in, which a join
     ///   over one application at a time could not give.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Termination
-    /// Every turn deepens the depth it reads at by one, and the loop stops at
-    /// [`DEPTH_LIMIT`].
+    /// Every turn of the scan deepens the depth it reads at by one, and the
+    /// loop stops at [`DEPTH_LIMIT`]; every turn of the abstraction's peel
+    /// consumes one argument, and stops when they are spent.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one- and three-argument spines observe argument order
     ///   and operator parentheses; the exact depth cutoff observes an unpeeled
-    ///   operator scheduled before its argument. Longer stable spines and
+    ///   operator scheduled before its argument; a redex of one and of two
+    ///   arguments, and one whose abstraction is applied past its chain,
+    ///   observe the reduct and the arguments left. Longer stable spines and
     ///   arbitrary changing sources are not enumerated.
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct`
     /// - witness: `walk::tests::spine_schedules_operator_first_at_the_depth_limit`
     #[spec(
         captures: [entry = tasks.len()],
         ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
-            let Some((&Task::Join(Join::Apply(Arity(arity))), visits)) = scheduled.split_first()
-            else { return false; };
-            arity > 0_usize && u32::try_from(arity).is_ok_and(|count| count <= DEPTH_LIMIT.0.max(1_u32))
-                && arity.checked_add(1_usize) == Some(visits.len())
-                && visits.iter().all(|task| matches!(*task,
-                    Task::Visit { admits: Admits::Value, depth: at, .. }
-                        if at.0 >= depth.0.saturating_add(1_u32)
-                            && at.0 <= DEPTH_LIMIT.0.max(depth.0.saturating_add(1_u32))))
+            let substituted = scheduled.iter().find_map(|task| if let Task::Substitute(Arity(count)) = *task { Some(count) } else { None });
+            if let Some(count) = substituted {
+                count > 0_usize
+                    && scheduled.iter().filter(|task| matches!(**task, Task::Unbind)).count() == count
+            }
+            else {
+                let Some((&Task::Join(Join::Apply(Arity(arity))), visits)) = scheduled.split_first()
+                else { return false; };
+                arity > 0_usize && u32::try_from(arity).is_ok_and(|count| count <= DEPTH_LIMIT.0.max(1_u32))
+                    && arity.checked_add(1_usize) == Some(visits.len())
+                    && visits.iter().all(|task| matches!(*task,
+                        Task::Visit { admits: Admits::Value, depth: at, .. }
+                            if at.0 >= depth.0.saturating_add(1_u32)
+                                && at.0 <= DEPTH_LIMIT.0.max(depth.0.saturating_add(1_u32))))
+            }
         }),
     )]
     fn spine<S>(
@@ -3580,6 +3819,7 @@ impl Walk<'_, '_>
         operator: S::Node,
         argument: S::Node,
         depth: ValueDepth,
+        reduct_as: ReductAs,
         tasks: &mut Vec<Task<S::Node>>,
     ) where
         S: Source + ?Sized,
@@ -3596,19 +3836,106 @@ impl Walk<'_, '_>
             arguments.push((next, level));
             operator = inner;
         }
-        tasks.push(Task::Join(Join::Apply(Arity(arguments.len()))));
-        for (node, at) in arguments {
+        // The arguments in the order they are applied, the first outermost.
+        arguments.reverse();
+        let mut consumed = 0_usize;
+        while consumed < arguments.len() {
+            let Former::StaticLambda(body) = source.read(operator)
+            else {
+                break;
+            };
+            operator = body;
+            consumed = consumed.saturating_add(1_usize);
+        }
+        let left = arguments.split_off(consumed);
+        if !left.is_empty() {
+            tasks.push(Task::Join(Join::Apply(Arity(left.len()))));
+        }
+        for &(node, at) in left.iter().rev() {
             tasks.push(Task::Visit {
                 node,
                 admits: Admits::Value,
                 depth: at,
             });
         }
-        tasks.push(Task::Visit {
-            node: operator,
-            admits: Admits::Value,
-            depth: level,
+        for _ in 0_usize .. consumed {
+            tasks.push(Task::Unbind);
+        }
+        tasks.push(if reduct_as == ReductAs::Result && left.is_empty() {
+            Task::Returned {
+                node: operator,
+                depth: level,
+            }
+        }
+        else {
+            Task::Visit {
+                node: operator,
+                admits: Admits::Value,
+                depth: level,
+            }
         });
+        if consumed > 0_usize {
+            tasks.push(Task::Substitute(Arity(consumed)));
+        }
+        for &(node, at) in arguments.iter().rev() {
+            tasks.push(Task::Visit {
+                node,
+                admits: Admits::Value,
+                depth: at,
+            });
+        }
+    }
+
+    /// Schedules the value type the computation type `node` returns, the
+    /// codomain of a value-function alias.
+    ///
+    /// # Specification
+    /// - requires: `node` is a codomain [`Self::alias`] found as a reduct, and
+    ///   `tasks` is the walk's stack.
+    /// - ensures: a returner's result scheduled as a value type at `depth`; a
+    ///   decode's and a quote's child scheduled the same way again; a static
+    ///   redex scheduled by [`Self::spine`] with its reduct read as its result;
+    ///   any other node, which [`Self::alias`] does not answer with, scheduled
+    ///   as the computation type it is.
+    /// - provides: the reduct half of the alias's codomain, under the binders
+    ///   the redex's spine opens for its arguments.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a thunk over an arrow into a static redex of a
+    ///   returner spells as the alias over the reduct's result.
+    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct`
+    #[spec(captures: [entry = tasks.len()], ensures: tasks.len() > entry)]
+    fn returned<S>(
+        source: &S,
+        node: S::Node,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<S::Node>>,
+    ) where
+        S: Source + ?Sized,
+    {
+        let former = source.read(node);
+        if let Former::Returner(result) = former {
+            tasks.push(Task::Visit {
+                node: result,
+                admits: Admits::ValueType,
+                depth,
+            });
+        }
+        else if let Former::ComputationElement(child) | Former::QuoteComputation(child) = former {
+            tasks.push(Task::Returned { node: child, depth });
+        }
+        else if let Former::StaticApplication(operator, argument) = former {
+            Self::spine(source, operator, argument, depth, ReductAs::Result, tasks);
+        }
+        else {
+            tasks.push(Task::Visit {
+                node,
+                admits: Admits::CompType,
+                depth,
+            });
+        }
     }
 
     /// Schedules an application and the applications under its function as
@@ -3788,22 +4115,23 @@ impl Walk<'_, '_>
     ///
     /// # Specification
     /// - requires: `former` is what `source` reads at `node`, a former
-    ///   [`children`] answers child slots for.
+    ///   [`children`] answers child slots for at a position admitting `admits`.
     /// - ensures: one more parts list, whose pieces are the former's children
     ///   in reading order: `Path(A, x, y)`; a family or a constructor as its
-    ///   name, applied to its components when it has any; a primitive and an
-    ///   operation as a call of their name; `transport(…)` over its motive —
-    ///   `\a. M`, or `+U M` for a telescope — and operands; `v.l` and `v.i`;
-    ///   `case v { … }` with one arm per branch, its pattern `+{.i = a}`, `#{a,
-    ///   b}` or a constructor's applied to its field binders, `?` for a
-    ///   constructor the source cannot name; `handle { c } with { pure(x) => r,
-    ///   oper op(p, k) => b }`, the scope's head `handle c : I`; `c.op(v)`;
-    ///   `send(e, v)`, `recv(e)`, `select(e, l)`, `offer(e) { l => c }`,
-    ///   `close(e)` and `fork (a : S) { t } as a ; u`, each endpoint named by
-    ///   its binder. The forms the grammar does not write — native transport, a
-    ///   fixpoint `rec f { c }`, a fold, `resume(k, c)`, `reset { c }`, `shift
-    ///   k { c }`, a lazy pair `&{c, d}` and its observation `c.0` — make the
-    ///   presentation approximate.
+    ///   name, applied to its components when it has any, a parameterised
+    ///   constructor written against its family as [`children`] reads its
+    ///   classifier; a primitive and an operation as a call of their name;
+    ///   `transport(…)` over its motive — `\a. M`, or `+U M` for a telescope —
+    ///   and operands; `v.l` and `v.i`; `case v { … }` with one arm per branch,
+    ///   its pattern `+{.i = a}`, `#{a, b}` or a constructor's applied to its
+    ///   field binders, `?` for a constructor the source cannot name; `handle {
+    ///   c } with { pure(x) => r, oper op(p, k) => b }`, the scope's head
+    ///   `handle c : I`; `c.op(v)`; `send(e, v)`, `recv(e)`, `select(e, l)`,
+    ///   `offer(e) { l => c }`, `close(e)` and `fork (a : S) { t } as a ; u`,
+    ///   each endpoint named by its binder. The forms the grammar does not
+    ///   write — native transport, a fixpoint `rec f { c }`, a fold, `resume(k,
+    ///   c)`, `reset { c }`, `shift k { c }`, a lazy pair `&{c, d}` and its
+    ///   observation `c.0` — make the presentation approximate.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -3826,6 +4154,7 @@ impl Walk<'_, '_>
         source: &S,
         node: S::Node,
         former: &Former<'_, S::Node>,
+        admits: Admits,
     ) -> Join
     where
         S: Source + ?Sized,
@@ -3899,12 +4228,7 @@ impl Walk<'_, '_>
                 let _ = parts.text(name).text(" ∷ ").piece(Binding::Cons);
                 Binding::Cons
             },
-            Former::Data { name, arity }
-            | Former::Constructor {
-                name,
-                arity,
-                placement: Placement::Applied,
-            } => {
+            Former::Data { name, arity } => {
                 let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
                 let _ = parts.text(name);
                 if usize::from(arity) > 0_usize {
@@ -3912,10 +4236,79 @@ impl Walk<'_, '_>
                 }
                 Binding::Atom
             },
-            Former::Primitive { name, arity } => {
-                let name = self.spelled(Some(Name::from(name.as_ref())), Unspelled::Missing);
-                let _ = parts.text(name).arguments(Arity(usize::from(arity)));
+            Former::Constructor {
+                name,
+                arity,
+                placement: Placement::Applied,
+                classifier,
+            } => {
+                // Where the spelling is source a reader reads back, a
+                // parameterised constructor is written against its family,
+                // `(MkIx : Ix(3))`, which its lowering needs, unless its
+                // position states its type.
+                let annotated = classifier.is_some()
+                    && self.bodies == Bodies::Spelled
+                    && admits != Admits::Stated;
+                let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
+                if annotated {
+                    let _ = parts.text("(");
+                }
+                let _ = parts.text(name);
+                if usize::from(arity) > 0_usize {
+                    let _ = parts.arguments(Arity(usize::from(arity)));
+                }
+                if annotated {
+                    let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
+                }
                 Binding::Atom
+            },
+            Former::Primitive { name, arity } => {
+                // A primitive the surface writes as an operator is written so:
+                // its call by name reads back as a call of the prelude
+                // constant, not as the primitive itself.
+                let operator = gandr_core_term::primitive::PRELUDE
+                    .iter()
+                    .find(|primitive| <&'static str>::from(primitive.name()) == name.as_ref())
+                    .map(|primitive| primitive.operator());
+                match (operator, usize::from(arity)) {
+                    (Some(gandr_core_term::primitive::Operator::Infix(spelling)), 2_usize) => {
+                        let _ = parts
+                            .piece(Binding::Atom)
+                            .text(format!(" {spelling} "))
+                            .piece(Binding::Atom);
+                        Binding::Cons
+                    },
+                    (Some(gandr_core_term::primitive::Operator::Prefix(spelling)), 1_usize) => {
+                        // A literal operand is parenthesized: `-(-1)`, never
+                        // `--1`.
+                        let literal = source
+                            .component(node, Component::from(0_usize))
+                            .is_some_and(|operand| {
+                                matches!(source.read(operand), Former::Literal(_))
+                            });
+                        let _ = parts.text(spelling).piece(if literal {
+                            Binding::Qualified
+                        }
+                        else {
+                            Binding::Atom
+                        });
+                        Binding::Prefix
+                    },
+                    (
+                        Some(
+                            gandr_core_term::primitive::Operator::Infix(_)
+                            | gandr_core_term::primitive::Operator::Prefix(_)
+                            | gandr_core_term::primitive::Operator::Named,
+                        )
+                        | None,
+                        _,
+                    ) => {
+                        let name =
+                            self.spelled(Some(Name::from(name.as_ref())), Unspelled::Missing);
+                        let _ = parts.text(name).arguments(Arity(usize::from(arity)));
+                        Binding::Atom
+                    },
+                }
             },
             Former::Perform { operation, .. } => {
                 let name = self.spelled(Some(operation), Unspelled::Missing);
@@ -4036,9 +4429,17 @@ impl Walk<'_, '_>
                 let _ = parts.piece(Binding::Atom).text(".").text(label);
                 Binding::Atom
             },
-            Former::TupleProjection(_, index) => {
+            Former::TupleProjection(target, index) => {
+                // A positional projection off another is parenthesized,
+                // `(p.1).0`: unparenthesized, `1.0` would read as a number.
+                let loosest = if matches!(source.read(target), Former::TupleProjection(..)) {
+                    Binding::Qualified
+                }
+                else {
+                    Binding::Atom
+                };
                 let _ = parts
-                    .piece(Binding::Atom)
+                    .piece(loosest)
                     .text(format!(".{}", usize::from(index)));
                 Binding::Atom
             },
@@ -4365,7 +4766,12 @@ impl Walk<'_, '_>
                 }
                 let mut payloads = Vec::with_capacity(count);
                 for piece in popped.into_iter().rev() {
-                    payloads.push(self.bare_up_to(piece, Binding::Atom)?);
+                    payloads.push(if piece.binding == Binding::Qualified {
+                        self.parenthesized(piece.doc)?
+                    }
+                    else {
+                        self.bare_up_to(piece, Binding::Atom)?
+                    });
                 }
                 let template = self.protocols.pop().ok_or(PresentationError::Unbalanced)?;
                 let mut items = Vec::with_capacity(template.len());
@@ -4733,11 +5139,13 @@ where
     };
     let context = source.context();
     mentioned.extend(context.iter().flatten().copied());
+    mentioned.extend(source.regions().iter().flatten().copied());
     let mut walk = Walk {
         builder,
         pieces: Vec::new(),
         binders: Binders::new(mentioned),
         opened: Vec::new(),
+        substituted: BTreeMap::new(),
         context,
         fidelity: Fidelity::Faithful,
         unspelled: BTreeSet::new(),
@@ -4766,10 +5174,20 @@ where
                 walk.remaining = left;
                 walk.visit(source, node, source.read(node), admits, depth, &mut tasks)?;
             },
+            Task::Returned { node, depth } => {
+                let Some(left) = walk.remaining.checked_sub(1_u32)
+                else {
+                    return Ok(Walked::OverBudget);
+                };
+                walk.remaining = left;
+                Walk::returned(source, node, depth, &mut tasks);
+            },
             Task::Bind(zone) => walk.opened.push(zone),
             Task::Unbind => {
                 let _closed = walk.opened.pop();
+                let _argument = walk.substituted.remove(&OpenBinders(walk.opened.len()));
             },
+            Task::Substitute(arity) => walk.substitute(arity)?,
             Task::Missing => walk.unspell(Unspelled::Missing)?,
             Task::Label(Labelled { of, index, label }) => walk.label(source, of, index, label)?,
             Task::Join(join) => walk.join(join)?,
@@ -4783,7 +5201,9 @@ where
     // fits, one statement per line otherwise.
     let doc = match admits {
         Admits::Computation(_) => walk.builder.group(root.doc)?,
-        Admits::Type | Admits::ValueType | Admits::CompType | Admits::Value => root.doc,
+        Admits::Type | Admits::ValueType | Admits::CompType | Admits::Value | Admits::Stated => {
+            root.doc
+        },
     };
     Ok(Walked::Built {
         doc,
@@ -5009,6 +5429,7 @@ mod tests
             pieces: super::Vec::new(),
             binders: super::Binders::new(super::BTreeSet::new()),
             opened: super::Vec::new(),
+            substituted: super::BTreeMap::new(),
             context: &[],
             fidelity: Fidelity::Faithful,
             unspelled: super::BTreeSet::new(),
@@ -5055,6 +5476,7 @@ mod tests
             pieces: super::Vec::new(),
             binders: super::Binders::new(super::BTreeSet::new()),
             opened: super::Vec::new(),
+            substituted: super::BTreeMap::new(),
             context: &[],
             fidelity: Fidelity::Faithful,
             unspelled: super::BTreeSet::new(),
@@ -5115,6 +5537,7 @@ mod tests
             operator,
             argument,
             super::ValueDepth(super::DEPTH_LIMIT.0.saturating_sub(1_u32)),
+            super::ReductAs::Term,
             &mut tasks,
         );
         assert!(matches!(tasks.as_slice(), [

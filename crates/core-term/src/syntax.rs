@@ -1169,18 +1169,18 @@ enum StructuralGoal
     CompType(CompTypeId, CompTypeId),
 }
 
-/// How [`equal_syntax`] reads a value-type pair.
-///
-/// # Specification
-/// trivial.
+/// Which identifications [`equal_syntax`] makes beside the syntax.
 #[derive(Clone, Copy)]
 enum Reading<'signatures>
 {
-    /// As the certificate holds it: a stage is part of its type.
+    /// As the certificate holds it: two types agree only where their syntax
+    /// does, and a stage is part of its type.
     Syntax,
-    /// As a printed type reads back: a type of words against the path type
-    /// these declarations read it as, and a staged type as its base, which is
-    /// all of it the surface writes.
+    /// As a printed type reads back: the words of the signatures' presented
+    /// types as the path at their point, two session types by their protocols'
+    /// behaviour, a decoded static redex as its reduct, as every checker reads
+    /// them, and a staged type as its base, which is all of it the surface
+    /// writes.
     Printed(&'signatures BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>),
 }
 
@@ -1260,36 +1260,53 @@ pub fn equal_type_syntax(
 
 /// Compare type syntax as [`equal_type_syntax`] does, as a printed type reads.
 ///
-/// A parameterless type of words and the path type at its cells' point read
-/// as one type, as every checker reads them; a staged type reads as its base,
-/// as the printer writes it, since the surface spells no stage.
+/// Those read as one are the types every checker reads alike — a
+/// parameterless type of words and the path type at its cells' point,
+/// reflexivity at that point and the words' empty word, two session types
+/// whose protocols behave alike from their states, a type decoding a static
+/// redex and the type its reduct decodes — and a staged type and its base, as
+/// the printer writes it, since the surface spells no stage.
 ///
 /// # Specification
 /// - requires: `signatures` holds the data declarations the types name.
 /// - ensures: [`CertificateEquality::Equal`] exactly when every reached pair,
-///   each side read at its base when it is staged, agrees in syntax after path
-///   evidence is erased, or is `Data(words, [])` against `Path(S, a, b)` with
-///   [`identified_words`] reading the path as `words`, in either order.
+///   each value type read at its base when it is staged, agrees in syntax after
+///   path evidence is erased, is `Data(words, [])` against `Path(S, a, b)` with
+///   [`identified_words`] reading the path as `words`, in either order, is
+///   `here(p)` against the empty word of such words at a point `p` spells
+///   ([`empty_word`]), in either order, or is two session types whose
+///   protocols, each unfolded at its recursion, take the same action at every
+///   pair of states reached from the two types' states — sends and receives
+///   with payload types that agree in turn, selections and offers over the same
+///   labels, `end` — whatever their nodes' positions; a decode whose code is a
+///   static abstraction applied to no more arguments than its chain has binders
+///   is read as the decode of the abstraction's body instantiated at the
+///   arguments, at most [`StaticSteps::ALLOWED`] times along one comparison.
 /// - provides: the comparison a printed type's reading back is held to: a type
 ///   of words has no name the surface writes, and is spelled as the path type
-///   it reads as; a stage has no spelling, and a staged type is spelled as its
-///   base.
+///   it reads as; a session type at a state is spelled as the protocol from
+///   that state, which reads back to a protocol at its root; a static redex the
+///   surface cannot apply is spelled as its reduct; a stage has no spelling,
+///   and a staged type is spelled as its base.
 /// - fails: returns `Different` on a dangling node.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the circle's words against the path at its point, alone
 ///   and under a path type, compare equal where the syntax alone compares
-///   different; at an endpoint off the point they stay different. A staged
+///   different; at an endpoint off the point they stay different; reflexivity
+///   at the point against the empty word compares equal, off it different. A
+///   session type past its first send against the rest of its protocol at its
+///   root, and a recursive protocol against its unfolding, compare equal; a
+///   differing payload or label stays different. A decoded redex against its
+///   reduct compares equal; against another type it stays different. A staged
 ///   type, alone and as an arrow's domain, reads as its base where the syntax
 ///   alone tells them apart, and stays different from another type.
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
+/// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state`
+/// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
 /// - witness: `syntax::tests::a_staged_type_reads_as_its_base`
-#[spec(ensures: |ret| ret == CertificateEquality::Different || match (arena.value_type(unstaged(arena, left)), arena.value_type(unstaged(arena, right))) {
-    (Some(a), Some(b)) => core::mem::discriminant(a) == core::mem::discriminant(b)
-        || matches!((a, b), (&ValueType::Data { .. }, &ValueType::Path { .. }) | (&ValueType::Path { .. }, &ValueType::Data { .. })),
-    _ => false,
-})]
+#[spec(ensures: |ret| ret == CertificateEquality::Different || (arena.value_type(left).is_some() && arena.value_type(right).is_some()))]
 #[inline]
 #[must_use]
 pub fn equal_type_reading(
@@ -1328,6 +1345,184 @@ fn unstaged(
         Some(&ValueType::Staged { base, .. }) => base,
         Some(_) | None => id,
     }
+}
+
+/// The static steps one [`equal_type_reading`] has left: a code the steps do
+/// not settle is compared as it stands.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct StaticSteps(u32);
+
+/// Whether [`StaticSteps::spend`] took a step.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Spend
+{
+    /// A step was left and is spent.
+    Taken,
+    /// No step was left.
+    Exhausted,
+}
+
+impl StaticSteps
+{
+    /// The steps one comparison starts with.
+    const ALLOWED: Self = Self(64);
+
+    /// Spend one step, if one is left.
+    ///
+    /// # Specification
+    /// - ensures: [`Spend::Taken`] and one step fewer when a step was left;
+    ///   [`Spend::Exhausted`] and no change when none was.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`equal_type_reading`].
+    /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
+    #[spec(captures: before = self.0, ensures: |ret| (ret == Spend::Taken && self.0.checked_add(1) == Some(before)) || (ret == Spend::Exhausted && before == 0 && self.0 == 0))]
+    fn spend(&mut self) -> Spend
+    {
+        match self.0.checked_sub(1_u32) {
+            Some(left) => {
+                self.0 = left;
+                Spend::Taken
+            },
+            None => Spend::Exhausted,
+        }
+    }
+}
+
+/// The code a static redex `code` reduces to in one step, or `code` itself.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a spine of static applications whose head is a static
+///   abstraction with at least as many binders as the spine has arguments, the
+///   abstraction's body instantiated at the arguments, the first applied
+///   outermost, and the binders left over still bound; `code` itself for every
+///   other code. The arena is copied the first time it is written.
+/// - provides: static β, as the checker's own step takes it, for the comparison
+///   a printed type's reading back is held to.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: `while` loops over the spine and over the arguments.
+/// - measure: the arguments left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
+#[spec(ensures: |ret| ret == code || arena.value(ret).is_some())]
+fn static_reduct(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    code: ValueId,
+) -> ValueId
+{
+    let mut arguments = Vec::new();
+    let mut head = code;
+    while let Some(&Value::StaticApplication(applied, argument)) = arena.value(head) {
+        arguments.push(argument);
+        head = applied;
+    }
+    let mut reduct = head;
+    while let Some(argument) = arguments.pop() {
+        let Some(&Value::StaticLambda(body)) = arena.value(reduct)
+        else {
+            return code;
+        };
+        reduct = crate::rewrite::instantiate_value(arena.to_mut(), body, argument);
+    }
+    if reduct == head { code } else { reduct }
+}
+
+/// The value type `ty` reads as once a static redex its decode holds is
+/// reduced, while `steps` lasts.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a decode of a code [`static_reduct`] reduces, the decode of
+///   the reduct — the quoted type itself when the reduct is a quote — taken
+///   again while it reduces and `steps` lasts, one step spent per reduction;
+///   `ty` itself for every other type.
+/// - provides: the value-type half of the static β [`equal_type_reading`] reads
+///   through.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: every turn spends one of `steps`.
+/// - measure: `steps`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
+#[spec(ensures: |ret| ret == ty || arena.value_type(ret).is_some())]
+fn decoded_value_type(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    steps: &mut StaticSteps,
+    ty: ValueTypeId,
+) -> ValueTypeId
+{
+    let mut ty = ty;
+    while let Some(&ValueType::Element { code, ref target }) = arena.value_type(ty) {
+        let target = target.clone();
+        let reduct = static_reduct(arena, code);
+        if reduct == code {
+            break;
+        }
+        if steps.spend() == Spend::Exhausted {
+            break;
+        }
+        ty = arena.to_mut().value_type_element(reduct, target);
+    }
+    ty
+}
+
+/// The computation type `ty` reads as once a static redex its decode holds is
+/// reduced, while `steps` lasts.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`decoded_value_type`], for a computation type's decode.
+/// - provides: the computation-type half of the static β [`equal_type_reading`]
+///   reads through.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: every turn spends one of `steps`.
+/// - measure: `steps`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
+#[spec(ensures: |ret| ret == ty || arena.comp_type(ret).is_some())]
+fn decoded_comp_type(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    steps: &mut StaticSteps,
+    ty: CompTypeId,
+) -> CompTypeId
+{
+    let mut ty = ty;
+    while let Some(&CompType::Element { code, ref target }) = arena.comp_type(ty) {
+        let target = target.clone();
+        let reduct = static_reduct(arena, code);
+        if reduct == code {
+            break;
+        }
+        if steps.spend() == Spend::Exhausted {
+            break;
+        }
+        ty = arena.to_mut().comp_type_element(reduct, target);
+    }
+    ty
 }
 
 quenchant_shape::reason_enum! {
@@ -1447,6 +1642,68 @@ fn read_as_words(
     Maybe::Absent(unworded::Absent::Unlooped)
 }
 
+/// Whether `here` is reflexivity at a point and `word` the empty word of a
+/// type of words over that point, which a checker reads as one path.
+///
+/// # Specification
+/// - requires: nothing; unreadable ids identify nothing.
+/// - ensures: [`CertificateEquality::Equal`] exactly when `here` is `here(p)`
+///   and `word` the constructor of tag zero with no fields of `Data(w, [])`,
+///   `w` among `signatures` with cells whose point `p` spells over their sort;
+///   [`CertificateEquality::Different`] otherwise.
+/// - provides: the value half of the identification [`read_as_words`] makes for
+///   types: `here(a)` at the point of a family's loops is its empty word, as
+///   the lowering reads it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's reflexivity at its point against its empty
+///   word, alone and under a transport, compares equal; off the point it stays
+///   different.
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
+#[spec(ensures: |ret| ret == CertificateEquality::Different || matches!(arena.value(here), Some(&Value::Here(_))))]
+fn empty_word(
+    arena: &crate::CoreArena,
+    signatures: &BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>,
+    (here, word): (ValueId, ValueId),
+) -> CertificateEquality
+{
+    let (
+        Some(&Value::Here(point)),
+        Some(&Value::Constructor {
+            datatype,
+            tag,
+            ref fields,
+        }),
+    ) = (arena.value(here), arena.value(word))
+    else {
+        return CertificateEquality::Different;
+    };
+    let Some(&ValueType::Data {
+        declaration,
+        ref arguments,
+    }) = arena.value_type(datatype)
+    else {
+        return CertificateEquality::Different;
+    };
+    let empty = tag == ConstructorTag::from(0_usize)
+        && fields.is_empty()
+        && arguments.is_empty()
+        && signatures
+            .get(&declaration)
+            .and_then(|signature| signature.presentation().cells())
+            .is_some_and(|cells| {
+                spells(arena, cells.sort(), point, cells.point()) == Spelling::Spelled
+            });
+    if empty {
+        CertificateEquality::Equal
+    }
+    else {
+        CertificateEquality::Different
+    }
+}
+
 /// Whether a value is the closed term a rule side spells.
 ///
 /// # Specification
@@ -1556,14 +1813,145 @@ fn signature_children(
     CertificateEquality::Equal
 }
 
+/// Queue the payload type pairs of two session types whose protocols behave
+/// alike from their states.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] when every pair of states reached
+///   from the two types' states, each unfolded through its `mu` and its
+///   recursion variables, takes the same action: a send against a send and a
+///   receive against a receive, their continuations paired and their payload
+///   types queued; a selection against a selection and an offer against an
+///   offer over the same labels, the arms paired label by label; `end` against
+///   `end`. [`CertificateEquality::Different`] at the first pair that does not,
+///   at a node or payload slot past either protocol, and at a state that
+///   unfolds to no action within the protocol's length.
+/// - executable: none — this is the structural comparison's work-list rule for
+///   sessions; its witness drives it through [`equal_type_reading`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state`
+fn session_children(
+    pending: &mut alloc::vec::Vec<StructuralGoal>,
+    left: &crate::session::SessionType,
+    right: &crate::session::SessionType,
+) -> CertificateEquality
+{
+    use crate::session::Protocol;
+    use crate::session::ProtocolNode;
+    use crate::session::ProtocolState;
+    /// The action `at` stands at: past every `mu` and recursion variable.
+    ///
+    /// # Specification
+    /// - ensures: the first node of the unfolding from `at` that is an action
+    ///   or `end`, with its state; none past the protocol or after more steps
+    ///   than it has nodes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a state under a `mu` and one at a recursion variable
+    ///   each reach the action the protocol takes there.
+    /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state`
+    #[spec(ensures: |ret| ret.is_none_or(|(_, node)| !matches!(*node, ProtocolNode::Mu(_) | ProtocolNode::Recur(_))))]
+    fn acting(
+        protocol: &Protocol,
+        at: ProtocolState,
+    ) -> Option<(ProtocolState, &ProtocolNode)>
+    {
+        let mut at = at;
+        for _step in 0 ..= protocol.nodes().len() {
+            match *protocol.node(at).ok()? {
+                ProtocolNode::Mu(next) | ProtocolNode::Recur(next) => at = next,
+                ref node @ (ProtocolNode::Send { .. }
+                | ProtocolNode::Receive { .. }
+                | ProtocolNode::Select(_)
+                | ProtocolNode::Offer(_)
+                | ProtocolNode::End) => return Some((at, node)),
+            }
+        }
+        None
+    }
+    let payload = |session: &crate::session::SessionType, slot: crate::session::PayloadSlot| {
+        session.payloads().get(usize::from(slot)).copied()
+    };
+    let mut seen = alloc::collections::BTreeSet::new();
+    let mut states = alloc::vec![(left.state(), right.state())];
+    while let Some((at_left, at_right)) = states.pop() {
+        let (Some((at_left, acts_left)), Some((at_right, acts_right))) = (
+            acting(left.protocol(), at_left),
+            acting(right.protocol(), at_right),
+        )
+        else {
+            return CertificateEquality::Different;
+        };
+        if !seen.insert((at_left, at_right)) {
+            continue;
+        }
+        match (acts_left, acts_right) {
+            (
+                &ProtocolNode::Send {
+                    payload: sent,
+                    next,
+                },
+                &ProtocolNode::Send {
+                    payload: other,
+                    next: then,
+                },
+            )
+            | (
+                &ProtocolNode::Receive {
+                    payload: sent,
+                    next,
+                },
+                &ProtocolNode::Receive {
+                    payload: other,
+                    next: then,
+                },
+            ) => {
+                let (Some(sent), Some(other)) = (payload(left, sent), payload(right, other))
+                else {
+                    return CertificateEquality::Different;
+                };
+                pending.push(StructuralGoal::ValueType(sent, other));
+                states.push((next, then));
+            },
+            (&ProtocolNode::Select(ref arms), &ProtocolNode::Select(ref others))
+            | (&ProtocolNode::Offer(ref arms), &ProtocolNode::Offer(ref others)) => {
+                if !arms.keys().eq(others.keys()) {
+                    return CertificateEquality::Different;
+                }
+                states.extend(arms.values().copied().zip(others.values().copied()));
+            },
+            (&ProtocolNode::End, &ProtocolNode::End) => {},
+            (
+                &(ProtocolNode::Send { .. }
+                | ProtocolNode::Receive { .. }
+                | ProtocolNode::Select(_)
+                | ProtocolNode::Offer(_)
+                | ProtocolNode::End
+                | ProtocolNode::Mu(_)
+                | ProtocolNode::Recur(_)),
+                _,
+            ) => return CertificateEquality::Different,
+        }
+    }
+    CertificateEquality::Equal
+}
+
 /// Run the shared, evidence-erasing structural comparison.
 ///
 /// # Specification
 /// - ensures: returns equal exactly when every reached pair agrees in syntax
-///   after path evidence is erased; under [`Reading::Printed`], each side of a
-///   value-type pair is first read at its base when staged, and a pair the
-///   declarations read as one type of words ([`read_as_words`]) agrees
-///   outright; no reduction is performed.
+///   after path evidence is erased or, under [`Reading::Printed`], is a pair a
+///   printed type reads back as one type: each value type at its base when it
+///   is staged, a value-type pair the signatures read as one type of words
+///   ([`read_as_words`]) agreeing outright, and two session types whose
+///   protocols behave alike from their states ([`session_children`]), and a
+///   decoded static redex read as its reduct ([`decoded_value_type`],
+///   [`decoded_comp_type`]); under [`Reading::Syntax`] no reduction is
+///   performed.
 /// - executable: none — the contract is the inductive graph comparison, not a
 ///   second traversal pretending to be an independent postcondition.
 ///
@@ -1573,7 +1961,7 @@ fn signature_children(
 /// - witness: `syntax::tests::certificate_syntax_erases_only_evidence`
 /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
-/// - witness: `syntax::tests::a_staged_type_reads_as_its_base`
+/// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state`
 fn equal_syntax(
     arena: &crate::CoreArena,
     reading: Reading<'_>,
@@ -1584,14 +1972,40 @@ fn equal_syntax(
     use StructuralGoal::Computation as C;
     use StructuralGoal::Value as V;
     use StructuralGoal::ValueType as VT;
+    let unread = BTreeMap::new();
+    let signatures = match reading {
+        Reading::Syntax => &unread,
+        Reading::Printed(signatures) => signatures,
+    };
+    let mut arena = alloc::borrow::Cow::Borrowed(arena);
+    let mut steps = StaticSteps::ALLOWED;
     let mut pending = alloc::vec![root];
     let mut visited = alloc::collections::BTreeSet::new();
     while let Some(goal) = pending.pop() {
+        let goal = match (reading, goal) {
+            (Reading::Printed(_), VT(a, b)) => {
+                let (a, b) = (unstaged(&arena, a), unstaged(&arena, b));
+                VT(
+                    decoded_value_type(&mut arena, &mut steps, a),
+                    decoded_value_type(&mut arena, &mut steps, b),
+                )
+            },
+            (Reading::Printed(_), CT(a, b)) => CT(
+                decoded_comp_type(&mut arena, &mut steps, a),
+                decoded_comp_type(&mut arena, &mut steps, b),
+            ),
+            (Reading::Printed(_), V(..) | C(..)) | (Reading::Syntax, _) => goal,
+        };
         if !visited.insert(goal) {
             continue;
         }
         match goal {
             V(a, b) => {
+                if empty_word(&arena, signatures, (a, b)) == CertificateEquality::Equal
+                    || empty_word(&arena, signatures, (b, a)) == CertificateEquality::Equal
+                {
+                    continue;
+                }
                 let (Some(a), Some(b)) = (arena.value(a), arena.value(b))
                 else {
                     return CertificateEquality::Different;
@@ -2195,18 +2609,11 @@ fn equal_syntax(
                 }
             },
             VT(a, b) => {
-                let (a, b) = match reading {
-                    Reading::Syntax => (a, b),
-                    Reading::Printed(signatures) => {
-                        let (a, b) = (unstaged(arena, a), unstaged(arena, b));
-                        if matches!(read_as_words(arena, signatures, (a, b)), Maybe::Present(_))
-                            || matches!(read_as_words(arena, signatures, (b, a)), Maybe::Present(_))
-                        {
-                            continue;
-                        }
-                        (a, b)
-                    },
-                };
+                if matches!(read_as_words(&arena, signatures, (a, b)), Maybe::Present(_))
+                    || matches!(read_as_words(&arena, signatures, (b, a)), Maybe::Present(_))
+                {
+                    continue;
+                }
                 let (Some(a), Some(b)) = (arena.value_type(a), arena.value_type(b))
                 else {
                     return CertificateEquality::Different;
@@ -2378,6 +2785,14 @@ fn equal_syntax(
                                 .zip(b.payloads())
                                 .map(|(a, b)| VT(*a, *b)),
                         );
+                    }
+                    else if let ValueType::Session(ref a) = *matched_left_value
+                        && let ValueType::Session(ref b) = *matched_right_value
+                        && matches!(reading, Reading::Printed(_))
+                    {
+                        if session_children(&mut pending, a, b) == CertificateEquality::Different {
+                            return CertificateEquality::Different;
+                        }
                     }
                     else if let ValueType::Capability {
                         authority: ref first,
@@ -2681,6 +3096,197 @@ mod tests
             equal_type_reading(&arena, &signatures, own, off_point),
             CertificateEquality::Different,
             "the words are not a path off their point"
+        );
+        // Reflexivity at the point, against the empty word, as a path's
+        // endpoint: the value half of the same identification.
+        let reflexive = arena.value_here(point);
+        let off_reflexive = arena.value_here(off);
+        let doubled = arena.value_type_path(at_point, reflexive, reflexive);
+        let off_doubled = arena.value_type_path(at_point, off_reflexive, off_reflexive);
+        assert_eq!(
+            (
+                equal_type_reading(&arena, &signatures, doubled, over_path),
+                equal_type_reading(&arena, &signatures, over_path, doubled),
+                equal_type_syntax(&arena, doubled, over_path),
+            ),
+            (
+                CertificateEquality::Equal,
+                CertificateEquality::Equal,
+                CertificateEquality::Different
+            ),
+            "reflexivity at the point reads as the empty word, in either order"
+        );
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, off_doubled, over_path),
+            CertificateEquality::Different,
+            "reflexivity off the point is no word"
+        );
+    }
+
+    #[test]
+    fn a_session_type_reads_as_its_protocol_from_its_state()
+    {
+        use alloc::sync::Arc;
+
+        use crate::session::PayloadCount;
+        use crate::session::PayloadSlot;
+        use crate::session::Protocol;
+        use crate::session::ProtocolState;
+        use crate::session::ProtocolSyntax;
+        use crate::session::RecursionIndex;
+        use crate::session::SessionType;
+
+        let slot = PayloadSlot::from;
+        let state = ProtocolState::from;
+        let mut arena = crate::CoreArena::new();
+        let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let string = arena.value_type_base(gandr_kernel_term::BaseType::String);
+        let protocol = |syntax: alloc::vec::Vec<ProtocolSyntax>, payloads: usize| {
+            Arc::new(
+                Protocol::new(syntax, state(0_usize), PayloadCount::from(payloads))
+                    .expect("the protocol is well formed"),
+            )
+        };
+        // !Integer. mu t. ?String. t, past its send.
+        let whole = protocol(
+            alloc::vec![
+                ProtocolSyntax::Send {
+                    payload: slot(0_usize),
+                    next: state(1_usize),
+                },
+                ProtocolSyntax::Mu(state(2_usize)),
+                ProtocolSyntax::Receive {
+                    payload: slot(1_usize),
+                    next: state(3_usize),
+                },
+                ProtocolSyntax::Recur(RecursionIndex::from(0_usize)),
+            ],
+            2_usize,
+        );
+        let past = SessionType::new(whole, Arc::from([integer, string]))
+            .and_then(|session| session.at(state(1_usize)))
+            .expect("the state is a node of the protocol");
+        let past = arena.value_type_session(past);
+        // mu t. ?A. t, and its unfolding ?A. mu t. ?A. t, each at its root.
+        let rest = protocol(
+            alloc::vec![
+                ProtocolSyntax::Mu(state(1_usize)),
+                ProtocolSyntax::Receive {
+                    payload: slot(0_usize),
+                    next: state(2_usize),
+                },
+                ProtocolSyntax::Recur(RecursionIndex::from(0_usize)),
+            ],
+            1_usize,
+        );
+        let unfolded = protocol(
+            alloc::vec![
+                ProtocolSyntax::Receive {
+                    payload: slot(0_usize),
+                    next: state(1_usize),
+                },
+                ProtocolSyntax::Mu(state(2_usize)),
+                ProtocolSyntax::Receive {
+                    payload: slot(0_usize),
+                    next: state(3_usize),
+                },
+                ProtocolSyntax::Recur(RecursionIndex::from(0_usize)),
+            ],
+            1_usize,
+        );
+        let mut rooted = |protocol: &Arc<Protocol>, payload| {
+            let session = SessionType::new(Arc::clone(protocol), Arc::from([payload]))
+                .expect("one payload for one slot");
+            arena.value_type_session(session)
+        };
+        let rest_of_strings = rooted(&rest, string);
+        let unfolded_strings = rooted(&unfolded, string);
+        let rest_of_integers = rooted(&rest, integer);
+        let signatures = BTreeMap::new();
+        for (other, what) in [
+            (rest_of_strings, "the rest of the protocol at its root"),
+            (unfolded_strings, "its unfolding"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, past, other),
+                CertificateEquality::Equal,
+                "the state reads as {what}"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, past, other),
+                CertificateEquality::Different,
+                "the state and {what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, past, rest_of_integers),
+            CertificateEquality::Different,
+            "a differing payload type stays different"
+        );
+    }
+
+    #[test]
+    fn a_decoded_redex_reads_as_its_reduct()
+    {
+        let mut arena = crate::CoreArena::new();
+        let level = Level::constant(gandr_kernel_strata::LevelConstant::ZERO);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let quoted_integer = arena.value_quote(integer);
+        let quoted_string = arena.value_quote(string);
+        let decoded = |arena: &mut crate::CoreArena, index: u32| {
+            let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+            arena.value_type_element(variable, level.clone())
+        };
+        // `(\a. -F (a * a))(Integer)`, a computation type's decode.
+        let a = decoded(&mut arena, 0_u32);
+        let square = arena.value_type_product(&[a, a]);
+        let returner = arena.comp_type_returner(square);
+        let body = arena.value_quote_computation(returner);
+        let operator = arena.value_static_lambda(body);
+        let redex = arena.value_static_application(operator, quoted_integer);
+        let redex = arena.comp_type_element(redex, level.clone());
+        let redex = arena.value_type_thunk(redex);
+        let squared = arena.value_type_product(&[integer, integer]);
+        let squared = arena.comp_type_returner(squared);
+        let squared = arena.value_type_thunk(squared);
+        let mixed = arena.value_type_product(&[integer, string]);
+        let mixed = arena.comp_type_returner(mixed);
+        let mixed = arena.value_type_thunk(mixed);
+        // `(\a. \b. a * b)(Integer)(String)`, a value type's decode.
+        let outer = decoded(&mut arena, 1_u32);
+        let inner = decoded(&mut arena, 0_u32);
+        let pair = arena.value_type_product(&[outer, inner]);
+        let pair = arena.value_quote(pair);
+        let pair = arena.value_static_lambda(pair);
+        let pair = arena.value_static_lambda(pair);
+        let pair = arena.value_static_application(pair, quoted_integer);
+        let pair = arena.value_static_application(pair, quoted_string);
+        let pair = arena.value_type_element(pair, level.clone());
+        let in_order = arena.value_type_product(&[integer, string]);
+        let swapped = arena.value_type_product(&[string, integer]);
+        let signatures = BTreeMap::new();
+
+        assert_eq!(
+            (
+                equal_type_reading(&arena, &signatures, redex, squared),
+                equal_type_syntax(&arena, redex, squared),
+            ),
+            (CertificateEquality::Equal, CertificateEquality::Different),
+            "the decoded redex reads as its reduct, which its syntax is not"
+        );
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, redex, mixed),
+            CertificateEquality::Different,
+            "the reduct is not another type"
+        );
+        assert_eq!(
+            (
+                equal_type_reading(&arena, &signatures, pair, in_order),
+                equal_type_reading(&arena, &signatures, pair, swapped),
+            ),
+            (CertificateEquality::Equal, CertificateEquality::Different),
+            "the first argument instantiates the outer binder"
         );
     }
 

@@ -340,6 +340,9 @@ pub struct CoreSource<'arena>
     constructors: &'arena Constructors<'arena>,
     /// The names of the binders the root stands under, outermost first.
     context: &'arena [Option<Name<'arena>>],
+    /// The names of the capability scopes the root stands in, outermost
+    /// first.
+    regions: &'arena [Option<Name<'arena>>],
 }
 
 impl<'arena> CoreSource<'arena>
@@ -361,6 +364,7 @@ impl<'arena> CoreSource<'arena>
             restoration: UNRESTORED,
             constructors: UNNAMED,
             context: &[],
+            regions: &[],
         }
     }
 
@@ -412,6 +416,21 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { context, ..self }
+    }
+
+    /// This source, its roots standing in capability scopes named by
+    /// `regions`, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn scoped(
+        self,
+        regions: &'arena [Option<Name<'arena>>],
+    ) -> Self
+    {
+        Self { regions, ..self }
     }
 
     /// The name at admission position `constant`.
@@ -542,11 +561,12 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&Value::Constant(index)), Former::Unreadable(Unreadable::Unnamed)) => usize::from(index) >= self.names.len(),
-        | (Some(&Value::Constructor { datatype, tag, ref fields }), Former::Constructor { name, arity, placement }) =>
+        | (Some(&Value::Constructor { datatype, tag, ref fields }), Former::Constructor { name, arity, placement, classifier }) =>
             usize::from(arity) == fields.len() && name == self.family(datatype)
                 .and_then(|family| self.constructors.constructor(family, Component::from(usize::from(tag))))
                 .map(|(held, _)| held)
-                && placement == self.family(datatype).map_or(crate::Placement::Applied, |family| self.constructors.placement(family, arity)),
+                && placement == self.family(datatype).map_or(crate::Placement::Applied, |family| self.constructors.placement(family, arity))
+                && classifier.is_some() == matches!(self.arena.value_type(datatype), Some(ValueType::Data { arguments, .. }) if !arguments.is_empty()),
         | (Some(&Value::Recorded(ref moves)), Former::Recorded { payloads, .. }) =>
             usize::from(payloads) == moves.iter().filter(|step| matches!(step.payload(), Maybe::Present(_))).count(),
         (Some(&Value::Hole(_)), Former::Unreadable(Unreadable::Hole)) | (Some(&Value::Mark { .. }), Former::Unreadable(Unreadable::Mark))
@@ -601,6 +621,12 @@ impl<'arena> CoreSource<'arena>
                         self.constructors
                             .placement(family, Arity::from(fields.len()))
                     }),
+                    classifier: match self.arena.value_type(datatype) {
+                        Some(&ValueType::Data { ref arguments, .. }) if !arguments.is_empty() => {
+                            Some(CoreNode::ValueType(datatype))
+                        },
+                        Some(_) | None => None,
+                    },
                 }
             },
             Value::Hole(_) => Former::Unreadable(Unreadable::Hole),
@@ -1630,6 +1656,16 @@ impl Source for CoreSource<'_>
     fn context(&self) -> &[Option<Name<'_>>]
     {
         self.context
+    }
+
+    /// The names of the capability scopes the root stands in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn regions(&self) -> &[Option<Name<'_>>]
+    {
+        self.regions
     }
 }
 

@@ -7,18 +7,29 @@
 //! The core's constructor value names the nominal type it builds, arguments
 //! and all, so the lowering has to know them where the constructor is
 //! written. A family without parameters has one classifier, which the
-//! lowering inserts; a family with parameters takes it from an annotation,
-//! `(C(…) : T(…))`, or, where the constructor is written as an argument of a
-//! data family, from that family's parameter at its place with the
-//! parameters before it replaced by the arguments written for them: `Inl(a)`
-//! in `Tagged(Integer, String, Inl(a))`, whose third parameter is
-//! `s : SumOb(l, r)`, is a `SumOb(Integer, String)`. Without either it is
-//! refused as unannotated. The arguments before the place are its siblings,
-//! which the mint sweep reaches after it, so the application mints such a
-//! constructor before itself. Inferring the arguments from the fields or any
-//! other position is the checker's work, which the lowering does not
-//! duplicate; reversal: a checker that synthesises a constructor against an
-//! expected type makes the annotation optional.
+//! lowering inserts. A family with parameters takes it from the type the
+//! constructor's position states: an annotation `(C(…) : T(…))`; the
+//! signature of the definition it is, `def x : T(…) ; def x = C(…) ;`; the
+//! answer of the body it ends, `+U (-F T(…))`, `() => T(…)` or a function's
+//! stated result, through a tail, a `pure` there or a `return`; its parent's
+//! classifier, for a field typed by the family itself or by one of its
+//! parameters; and, where it is written as an argument of a data family, that
+//! family's parameter at its place with the parameters before it replaced by
+//! the arguments written for them: `Inl(a)` in `Tagged(Integer, String,
+//! Inl(a))`, whose third parameter is `s : SumOb(l, r)`, is a
+//! `SumOb(Integer, String)`. The arguments before the place are its
+//! siblings, which the mint sweep reaches after it, so the application mints
+//! such a constructor before itself. A constructor no position types is
+//! refused as unannotated.
+//!
+//! The alternative was the checker's check mode: a constructor synthesised
+//! against its expected type, which needs the certificate to carry a
+//! classifier the checker fills in, a kernel change. Every type the lowering
+//! reads here is written in the source and closed at the position it is read
+//! from, or closed by the arguments written beside it, so the lowering
+//! carries it. Reversal: a checker that elaborates a constructor against an
+//! expected type makes the classifier the checker's, and this reading is
+//! deleted.
 //!
 //! # A match is a decision tree of eliminations
 //!
@@ -213,7 +224,8 @@
 //! indices.
 //!
 //! A constructor `C(e, …)` is a native constructor value, which names its whole
-//! classifier, as the section above reads it.
+//! classifier, taken from the type its position states as the opening section
+//! reads it.
 //!
 //! `case e -> T? { p => c, … }` compiles to a decision tree of native
 //! eliminations by the pattern-matrix construction of Maranget's _Compiling
@@ -352,8 +364,10 @@ use crate::origin::scrutinised;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
+use crate::resolve::TypeFormer;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
+use crate::resolve::type_former;
 
 #[cfg(test)]
 pub(super) mod tests;
@@ -367,6 +381,19 @@ quenchant_shape::reason_enum! {
             /// No `-> T` follows the scrutinee and no function result reaches
             /// the match.
             Unstated,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a written type gives a field no classifier.
+    pub mod inherited {
+        /// The field's type is neither its family over its own parameters nor
+        /// a parameter a written classifier gives an argument for.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No classifier is read off the type.
+            Unclassified,
         }
     }
 }
@@ -628,34 +655,74 @@ pub(super) enum Over
         /// The arm's frame.
         arm: Frame,
     },
+    /// The returner over the written value type, `-F B`: the answer of a
+    /// thunk's body whose signature writes the alias `() => B`.
+    Returning,
 }
 
-/// Where a constructor's classifier comes from.
+/// Where a constructor takes its whole classifier from.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: a written annotation names its type's node; a slot names a data
-///   family's form, the argument's place among its parameters and the stretch
-///   of the operand store the application's arguments occupy.
-/// - executable: none — the plan holds no store to check its stretch against.
+/// - ensures: a written classifier is a type node read under the constructor's
+///   frame; an answered one names the frame the constructor stands under; a
+///   slot names a data family's form, the argument's place among its parameters
+///   and the stretch of the operand store the application's arguments occupy.
+/// - executable: none — the coordinates hold no tree to check them against.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an annotated constructor, one of a family without
-///   parameters and one written as a data family's argument each lower to the
-///   constructor value over the classifier its source states.
+/// - hypothesis: L3 — an annotated constructor, one at the tail of a body a
+///   signature answers, a field of either, one written as a data family's
+///   argument, and a family without parameters.
 /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
+/// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
 /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum Classifier
 {
-    /// The annotation `(C(…) : T)` the source wrote: its type's node.
+    /// A type the source wrote for the constructor: its annotation, the
+    /// signature of the definition it is, or, for a field, the argument the
+    /// classifier of the constructor around it writes at the parameter the
+    /// field is typed by.
     Written(NodeIndex),
+    /// The value type the answer of the position returns, the answer read
+    /// under its own frame and carried to `frame`, the constructor's.
+    Answered
+    {
+        /// The answer the position states.
+        answer: Answer,
+        /// The frame the constructor stands under.
+        frame: Frame,
+    },
     /// The constructor is written as an argument of a data family: the
     /// family's parameter at its place, under the arguments before it.
     Slot(Argued),
-    /// Its family has no parameters, so the lowering inserts the one
-    /// classifier it has.
+    /// The family's one classifier, which the lowering inserts: the family
+    /// has no parameters.
     Inserted,
+}
+
+/// A form with its parentheses stripped, as [`Lowerer::unwrapped`] reads it.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the operands keep source order.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::unwrapped`].
+/// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct Unwrapped
+{
+    /// The form's node.
+    pub node: NodeIndex,
+    /// Its former.
+    pub former: Former,
+    /// The first tile it is written with.
+    pub keyword: Option<Placed>,
+    /// Its operands, left to right.
+    pub operands: Vec<NodeIndex>,
 }
 
 /// The place a value argument takes in a data family's application.
@@ -679,6 +746,30 @@ pub(super) struct Argued
     pub place: usize,
     /// The application's arguments, in the operand store.
     pub applied: Stretch,
+}
+
+/// One field of one generator of a written data family.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `form` is the family's position in the collection's data list,
+///   `tag` the generator's among the family's, and `index` the field's among
+///   the generator's.
+/// - executable: none — the coordinates hold no collection to check them
+///   against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::field_classifier`].
+/// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FieldAt
+{
+    /// The family's position in the collection's data list.
+    form: usize,
+    /// The generator's tag.
+    tag: usize,
+    /// The field's position among the generator's.
+    index: usize,
 }
 
 /// A constructor applied to its fields, as the classification planned it.
@@ -949,6 +1040,9 @@ pub(super) struct CaseForm
     loops: Vec<LoopArm>,
     /// What the origin table keeps of the arms.
     origin: CaseOrigin,
+    /// Each constructor arm's variables, in the order its leaves settle
+    /// them.
+    variables: Vec<Vec<Placed>>,
 }
 
 /// One loop arm of a match, `loop => e`.
@@ -1379,15 +1473,22 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `fields` is a stretch of the operand store, each entry a
     ///   field the site was written with, left to right.
     /// - ensures: the constructor stands as a value, each field read as a value
-    ///   under the site's frame, its classifier the annotation the site stands
-    ///   under when there is one, else, for a family with parameters, its place
-    ///   in the data family application it is an argument of, the constructor
-    ///   then awaiting that application's mint.
+    ///   under the site's frame. Its classifier is the annotation the site
+    ///   stands under, or the signature of the definition it is; else, for a
+    ///   family with parameters, the value type the answer of its position
+    ///   returns — a tail's, or a `pure`'s or `return`'s operand's — else its
+    ///   place in the data family application it is an argument of, the
+    ///   constructor then awaiting that application's mint; else the one the
+    ///   constructor around it gives the field it stands in; else, for a family
+    ///   without, the one the lowering inserts. A field typed by the family
+    ///   over its own parameters takes the constructor's classifier, and one
+    ///   typed by a parameter the argument a written classifier gives it.
     /// - provides: constructor application, bare and called.
     /// - fails: yields the arity refusal for a field count other than the
     ///   constructor's; the wrong-sort refusal outside value position; the
     ///   unannotated refusal for a constructor of a family with parameters
-    ///   under no annotation and at no data family's argument place.
+    ///   whose position states no type and that stands at no data family's
+    ///   argument place.
     /// - panics: none.
     ///
     /// # Errors
@@ -1396,9 +1497,14 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — nullary, unary and three-field constructors, a wrong
     ///   field count and a parameterised family without its annotation, each
-    ///   asserted as the exact plan's core node or refusal.
+    ///   asserted as the exact plan's core node or refusal; a parameterised
+    ///   family at a signed thunk's tail, under a `run` and as a definition,
+    ///   its recursive field and its parameter field classified with it; and
+    ///   one written as a data family's argument, classified by its place.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Constructor(planned)) if planned.fields == fields))]
     pub(super) fn construct(
         &mut self,
@@ -1420,26 +1526,49 @@ impl<'source> Lowerer<'_, 'source>
                 .map_or(0_usize, |written| written.parameters.len()),
             Generators::Presentation | Generators::Words(_) => 0_usize,
         };
+        // A constructor standing where a body ends is the value the body
+        // returns, of the type the body answers.
+        let answered = self
+            .answers
+            .get(&site.at.node)
+            .filter(|_| self.exits.contains(&site.at.node));
         let classifier = match (
             self.classifiers.get(&site.at.node),
+            answered,
             self.argued.get(&site.at.node),
+            self.inherited.get(&site.at.node),
         ) {
-            (Some(&written), _) => Classifier::Written(written),
-            (None, _) if parameters == 0 => Classifier::Inserted,
-            (None, Some(&argued)) => {
+            (Some(&written), ..) => Classifier::Written(written),
+            (None, ..) if parameters == 0 => Classifier::Inserted,
+            (None, Some(&answer), ..) => Classifier::Answered { answer, frame },
+            (None, None, Some(&argued), _) => {
                 let _first = self.awaiting.insert(site.at.node);
                 Classifier::Slot(argued)
             },
-            (None, None) => return Err(site.out(FragmentBoundary::Unannotated)),
+            (None, None, None, Some(&inherited)) => inherited,
+            (None, None, None, None) => return Err(site.out(FragmentBoundary::Unannotated)),
         };
         let family = self
             .collected
             .slots
             .get(usize::from(constructor.family))
             .map_or_else(|| ConstantIndex::from(0_usize), |slot| slot.constant);
-        for position in fields.start .. fields.end {
+        for (index, position) in (fields.start .. fields.end).enumerate() {
             if let Some(&field) = self.operands.get(position) {
                 self.read(field, Reading::Value(frame));
+                if let Generators::Written(form) = constructor.form
+                    && classifier != Classifier::Inserted
+                    && let Maybe::Present(inherited) = self.field_classifier(
+                        FieldAt {
+                            form,
+                            tag: constructor.tag,
+                            index,
+                        },
+                        classifier,
+                    )?
+                {
+                    let _first = self.inherited.insert(field, inherited);
+                }
             }
         }
         self.plan(
@@ -1453,6 +1582,274 @@ impl<'source> Lowerer<'_, 'source>
         );
 
         Ok(())
+    }
+
+    /// The classifier the field `at` names takes from its constructor's,
+    /// `classifier`.
+    ///
+    /// # Specification
+    /// - requires: `at.form` and `at.tag` name a generator the collection read.
+    /// - ensures: `classifier` itself when the field's written type, its
+    ///   parentheses stripped, is the family applied to its own parameters in
+    ///   order, or the family bare when it has none; the argument a written
+    ///   classifier, an application of the family, gives the parameter when the
+    ///   field's type is that parameter; the unclassified absence otherwise.
+    /// - provides: the classifier a constructor written in a field takes.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
+    ///   allowance; the refusals the tree's molds yield.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list's tail and head, written and answered.
+    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(found)) => found == classifier || matches!(found, Classifier::Written(_)),
+        | Ok(Maybe::Absent(_)) | Err(_) => true,
+    })]
+    fn field_classifier(
+        &mut self,
+        at: FieldAt,
+        classifier: Classifier,
+    ) -> Result<Maybe<Classifier, inherited::Absent>, LoweringRefusal<'source>>
+    {
+        let unclassified = Maybe::Absent(inherited::Absent::Unclassified);
+        let Some(data) = self.collected.data.get(at.form)
+        else {
+            return Ok(unclassified);
+        };
+        let Some(field) = data
+            .generators
+            .get(at.tag)
+            .and_then(|generator| generator.fields.get(at.index))
+        else {
+            return Ok(unclassified);
+        };
+        let named: Vec<SurfaceName<'source>> = data
+            .parameters
+            .iter()
+            .map(|parameter| self.name_at(parameter.named))
+            .collect();
+        let family = self
+            .collected
+            .slots
+            .get(usize::from(data.slot))
+            .map(|slot| slot.name);
+        let Maybe::Present(typed) = self.unwrapped(field.node)?
+        else {
+            return Ok(unclassified);
+        };
+        let spelled = |lowerer: &Self, node: NodeIndex| {
+            SurfaceName::from(
+                lowerer
+                    .tree
+                    .fragment(node)
+                    .unwrap_or_else(|| SourceFragment::from("")),
+            )
+        };
+        let head = typed.keyword.map(|at| self.name_at(at));
+        let own = spelled(self, typed.node);
+        let uniform = if typed.former == Former::TypeApplication {
+            head.is_some()
+                && head == family
+                && typed
+                    .operands
+                    .iter()
+                    .map(|&node| spelled(self, node))
+                    .eq(named.iter().copied())
+        }
+        else {
+            typed.former == Former::TypeHead && named.is_empty() && Some(own) == family
+        };
+        if uniform {
+            return Ok(Maybe::Present(classifier));
+        }
+        let Some(parameter) = named.iter().position(|name| *name == own)
+        else {
+            return Ok(unclassified);
+        };
+        let Classifier::Written(written) = classifier
+        else {
+            return Ok(unclassified);
+        };
+        let Maybe::Present(applied) = self.unwrapped(written)?
+        else {
+            return Ok(unclassified);
+        };
+        Ok(match applied.operands.get(parameter) {
+            Some(&argument) if applied.former == Former::TypeApplication => {
+                Maybe::Present(Classifier::Written(argument))
+            },
+            Some(_) | None => unclassified,
+        })
+    }
+
+    /// Give each definition its signature as the type its constructors are
+    /// checked against: a thunk's body the answer the signature states, and
+    /// any other definition the signature itself.
+    ///
+    /// # Specification
+    /// - requires: the collection has read every slot.
+    /// - ensures: for each slot whose signature and definition are both written
+    ///   types and terms: a signature `+U C`, its parentheses stripped, answers
+    ///   the definition's thunk body with `C`, and the alias `() => B` with `-F
+    ///   B`, each read under the outermost frame; any other signature
+    ///   classifies the definition.
+    /// - provides: the expected type a constructor takes its classifier from
+    ///   where the source states one only in the signature.
+    /// - fails: as [`Self::unwrapped`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a thunk signed `+U (-F T)` and `() => T`, and a
+    ///   definition signed `T`, each over a parameterised family's constructor.
+    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
+    #[spec(
+        captures: before = (self.inherited.len(), self.thunked.len()),
+        ensures: |ret| ret.is_err() || (self.inherited.len() >= before.0 && self.thunked.len() >= before.1),
+    )]
+    pub(super) fn sign_definitions(&mut self) -> Result<(), LoweringRefusal<'source>>
+    {
+        let signed: Vec<(NodeIndex, NodeIndex)> = self
+            .collected
+            .slots
+            .iter()
+            .filter_map(|slot| {
+                if let (
+                    Maybe::Present(Half {
+                        operand: Operand::Written(signature),
+                        ..
+                    }),
+                    Maybe::Present(Half {
+                        operand: Operand::Written(definition),
+                        ..
+                    }),
+                ) = (slot.signature, slot.definition)
+                {
+                    Some((definition.node, signature.node))
+                }
+                else {
+                    None
+                }
+            })
+            .collect();
+        for (definition, signature) in signed {
+            let Maybe::Present(written) = self.unwrapped(signature)?
+            else {
+                continue;
+            };
+            let thunked = matches!(written.former, Former::ThunkType | Former::ReturnerType)
+                && written.keyword.is_some_and(|at| {
+                    type_former(self.name_at(at)) == Maybe::Present(TypeFormer::Thunk)
+                });
+            let answer = match *written.operands.as_slice() {
+                [body] if thunked => Some(Answer {
+                    node: body,
+                    frame: Frame::Outermost,
+                    over: Over::Written,
+                }),
+                [domain, codomain] if written.former == Former::ValueFunctionType => {
+                    match self.unwrapped(domain)? {
+                        Maybe::Present(Unwrapped {
+                            former: Former::ParenthesizedType,
+                            ref operands,
+                            ..
+                        }) if operands.is_empty() => Some(Answer {
+                            node: codomain,
+                            frame: Frame::Outermost,
+                            over: Over::Returning,
+                        }),
+                        Maybe::Present(_) | Maybe::Absent(_) => None,
+                    }
+                },
+                _ => None,
+            };
+            if let Some(answer) = answer {
+                let _first = self.thunked.insert(definition, answer);
+            }
+            else {
+                let _first = self
+                    .inherited
+                    .insert(definition, Classifier::Written(signature));
+            }
+        }
+        Ok(())
+    }
+
+    /// The form `node` writes once its parentheses are stripped: its former,
+    /// the first tile it is written with and its operands.
+    ///
+    /// # Specification
+    /// - requires: nothing; a node the tree does not hold has no form.
+    /// - ensures: a parenthesised type around one operand read through to the
+    ///   operand; the form's former, first tile and operands, left to right;
+    ///   the unformed absence for a node that is no form.
+    /// - provides: the syntactic reading a signature and a field type are read
+    ///   by.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
+    ///   allowance; the refusals the tree's molds yield.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Termination
+    /// Every turn spends one unit of the lowerer's allowance and steps to the
+    /// operand of the node it read, strictly deeper in a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parenthesised application and a bare head.
+    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
+    #[spec(captures: before = self.fuel.remaining, ensures: self.fuel.remaining <= before)]
+    pub(super) fn unwrapped(
+        &mut self,
+        mut node: NodeIndex,
+    ) -> Result<Maybe<Unwrapped, inherited::Absent>, LoweringRefusal<'source>>
+    {
+        loop {
+            self.fuel.spend()?;
+            let Some(tree_node) = self.tree.node(node)
+            else {
+                return Ok(Maybe::Absent(inherited::Absent::Unclassified));
+            };
+            let Shape::Form { former, .. } = shape_of(self.pbg, tree_node)?
+            else {
+                return Ok(Maybe::Absent(inherited::Absent::Unclassified));
+            };
+            let mut scratch = core::mem::take(&mut self.scratch);
+            let read = read_pieces(self.pbg, self.tree, node, &mut scratch);
+            let operands: Vec<NodeIndex> = scratch
+                .pieces
+                .iter()
+                .filter_map(|piece| match *piece {
+                    Piece::Operand(operand) => Some(operand.node),
+                    Piece::Tile { .. } => None,
+                })
+                .collect();
+            let keyword = scratch.pieces.iter().find_map(|piece| match *piece {
+                Piece::Tile { at, .. } => Some(at),
+                Piece::Operand(_) => None,
+            });
+            self.scratch = scratch;
+            read?;
+            if former == Former::ParenthesizedType
+                && let [inner] = *operands.as_slice()
+            {
+                node = inner;
+                continue;
+            }
+            return Ok(Maybe::Present(Unwrapped {
+                node,
+                former,
+                keyword,
+                operands,
+            }));
+        }
     }
 
     /// Classify the word `letter ∷ rest`, written at `site`.
@@ -1883,7 +2280,6 @@ impl<'source> Lowerer<'_, 'source>
     /// applied to the arguments `applied` holds in the operand store.
     ///
     /// # Specification
-    /// - requires: `applied` is a stretch of the operand store.
     /// - ensures: the family stands as a value type over its arguments, each
     ///   read as a value under the site's frame and recorded at its place among
     ///   the family's parameters.
@@ -2158,6 +2554,7 @@ impl<'source> Lowerer<'_, 'source>
             tests,
             loops,
             origin: kept,
+            variables,
         });
         self.plan(site, Plan::Case(index));
 
@@ -2258,6 +2655,7 @@ impl<'source> Lowerer<'_, 'source>
                 arms: Vec::new(),
                 spans: Vec::new(),
             },
+            variables: Vec::new(),
         });
         self.plan(site, Plan::Case(index));
 
@@ -4594,16 +4992,19 @@ impl<'source> Lowerer<'_, 'source>
     /// Mint a constructor over its fields and its classifier.
     ///
     /// # Specification
-    /// - requires: every field and the annotation's type are already minted or
-    ///   absent; for a slot, the family's parameter type and every argument
-    ///   before the constructor's are too.
+    /// - requires: every field, the annotation's type and the answer's are
+    ///   already minted or absent; for a slot, the family's parameter type and
+    ///   every argument before the constructor's are too.
     /// - ensures: the constructor value over its fields, its classifier the
-    ///   annotation's type carried into the term's binders; for a slot, the
+    ///   annotation's type — or the type a family's argument quotes — carried
+    ///   into the term's binders; the value type the answer's returner returns
+    ///   carried from the answer's frame to the constructor's; for a slot, the
     ///   family's parameter at the constructor's place with the parameters
     ///   before it replaced by the arguments written for them; or the family
     ///   over no arguments; the classifier's origin inserted and the written
-    ///   origin on the value; nothing when a field, the annotation or a slot's
-    ///   type or argument did not lower.
+    ///   origin on the value; nothing when a field, the annotation, the answer
+    ///   or a slot's type or argument did not lower, or the answer is no
+    ///   returner.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -4633,9 +5034,20 @@ impl<'source> Lowerer<'_, 'source>
         let classified = origin.inserted(Insertion::Classifier);
         let classifier = match constructed.classifier {
             Classifier::Written(written) => {
-                let Maybe::Present(id) = self.value_type_at(written)
+                // A type written as a family's argument is read as its code;
+                // the classifier is the type it quotes.
+                let quoted = if let Maybe::Present(code) = self.value_at(written)
+                    && let Some(&gandr_core_term::Value::Quote(quoted)) = sink.arena.value(code)
+                {
+                    Some(quoted)
+                }
                 else {
-                    return Maybe::Absent(lowered::Absent::Unminted);
+                    None
+                };
+                let id = match (self.value_type_at(written), quoted) {
+                    (Maybe::Present(id), _) => id,
+                    (Maybe::Absent(_), Some(quoted)) => quoted,
+                    (Maybe::Absent(_), None) => return Maybe::Absent(lowered::Absent::Unminted),
                 };
                 let frame = self.reading(written).frame();
                 self.relocate_value_type(id, frame, sink, classified)
@@ -4643,6 +5055,35 @@ impl<'source> Lowerer<'_, 'source>
             Classifier::Slot(argued) => match self.slot_type(argued, sink, classified) {
                 Maybe::Present(id) => id,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Classifier::Answered { answer, frame } => {
+                let mark = sink.arena.watermark();
+                let written = self.answered_type(answer, sink);
+                let Maybe::Present(written) = written
+                else {
+                    return Maybe::Absent(lowered::Absent::Unminted);
+                };
+                let gap = self
+                    .scope
+                    .telescope_binders(frame)
+                    .count()
+                    .saturating_sub(self.scope.telescope_binders(answer.frame).count());
+                let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
+                let mut copies = Vec::new();
+                let carried =
+                    self.relocate(sink.arena, written, answer.frame, lift, Some(&mut copies));
+                record_copied_since(
+                    sink,
+                    mark,
+                    origin.inserted(Insertion::Classifier),
+                    Maybe::Absent(rooted::Absent::Classifier),
+                    &copies,
+                );
+                let Some(&CompType::Returner { result, .. }) = sink.arena.comp_type(carried)
+                else {
+                    return Maybe::Absent(lowered::Absent::OtherSort);
+                };
+                result
             },
             Classifier::Inserted => {
                 let id = sink.arena.value_type_data(constructed.family, Vec::new());
@@ -4787,6 +5228,39 @@ impl<'source> Lowerer<'_, 'source>
         result
     }
 
+    /// The computation type `answer` states, read under its own frame: the
+    /// written computation type, or the returner over a written value type
+    /// the position returns.
+    ///
+    /// # Specification
+    /// - requires: the answer's node is already minted or absent.
+    /// - ensures: the node's computation type for a written answer and a loop
+    ///   arm's, and a returner newly minted over the node's value type for a
+    ///   returning one; the node's absence when it did not lower.
+    /// - provides: the one reading every consumer of an answer mints it by.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function result and a thunk signed `() => T`, each
+    ///   answering a constructor's classifier.
+    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.comp_type(id).is_some()))]
+    pub(super) fn answered_type(
+        &self,
+        answer: Answer,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<CompTypeId, lowered::Absent>
+    {
+        match answer.over {
+            Over::Written | Over::Loop { .. } => self.comp_type_at(answer.node),
+            Over::Returning => match self.value_type_at(answer.node) {
+                Maybe::Present(result) => Maybe::Present(sink.arena.comp_type_returner(result)),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
+            },
+        }
+    }
+
     /// `ty`, a computation type read under `from` in a type's telescope,
     /// carried into the term context of `from` and then under `lift` more
     /// binders, each node it rewrote reported into `copies` when given.
@@ -4886,7 +5360,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         let mark = sink.arena.watermark();
         let motive = match form.answer {
-            Maybe::Present(answer) => match self.comp_type_at(answer.node) {
+            Maybe::Present(answer) => match self.answered_type(answer, sink) {
                 Maybe::Present(written) => {
                     let gap = Depth(
                         self.scope
@@ -4952,6 +5426,7 @@ impl<'source> Lowerer<'_, 'source>
                 *held = id;
             }
         }
+        self.name_fields(form, &minted, sink);
         let inserted = origin.inserted(Insertion::Match);
         let minted_root = match minted.first() {
             Some(&Maybe::Present(root)) if form.loops.is_empty() => Maybe::Present(root),
@@ -4991,6 +5466,140 @@ impl<'source> Lowerer<'_, 'source>
         sink.origins.record_case(root, kept);
 
         Maybe::Present(Lowered::Computation(root))
+    }
+
+    /// Records, for each field binder a data switch of `form`'s tree opens,
+    /// the arm variable every arm reached through it binds there, when they
+    /// agree on its name.
+    ///
+    /// # Specification
+    /// - requires: `minted` holds the tree's nodes as [`mint_test`] minted
+    ///   them, position for position.
+    /// - ensures: each lambda a minted data switch's branch opens for its field
+    ///   `f` under `d` tree binders is recorded as written at the arm variable
+    ///   that the leaves under that branch settle at level `d + f + 1`, when at
+    ///   least one leaf settles a variable there and every one that does writes
+    ///   the same name; any other binder keeps no name.
+    /// - provides: the source's name for a pattern variable, which a type
+    ///   printed inside an arm reads its field binder by.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the origins it records live in the sink's table,
+    ///   which a predicate over the lowerer cannot read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field a single arm names, and one two arms name
+    ///   alike, each answer under the written name.
+    /// - witness: `lower::native::tests::a_pattern_variable_names_its_field_binder`
+    fn name_fields(
+        &self,
+        form: &CaseForm,
+        minted: &[Maybe<ComputationId, lowered::Absent>],
+        sink: &mut Sink<'_>,
+    )
+    {
+        for (test, &held) in form.tests.iter().zip(minted) {
+            let (
+                &Test::Data {
+                    depth,
+                    ref branches,
+                    ..
+                },
+                Maybe::Present(switch),
+            ) = (test, held)
+            else {
+                continue;
+            };
+            let Some(&gandr_core_term::Computation::DataCase {
+                branches: ref lowered,
+                ..
+            }) = sink.arena.computation(switch)
+            else {
+                continue;
+            };
+            let lowered = lowered.clone();
+            for (&(arity, at), &branch) in branches.iter().zip(&lowered) {
+                let mut lambda = branch;
+                for field in 0 .. arity {
+                    let level = TreeLevel(depth.0.saturating_add(field).saturating_add(1));
+                    if let Some(origin) = self.field_name(form, at, level) {
+                        sink.origins.place_binder(lambda, origin);
+                    }
+                    let Some(&gandr_core_term::Computation::Lambda(body)) =
+                        sink.arena.computation(lambda)
+                    else {
+                        break;
+                    };
+                    lambda = body;
+                }
+            }
+        }
+    }
+
+    /// The origin of the arm variable every leaf under `at` settles at
+    /// `level`, when at least one does and all write one name.
+    ///
+    /// # Specification
+    /// - requires: `at` is a node of `form`'s tree.
+    /// - ensures: the first such variable's origin when the leaves under `at`
+    ///   that settle a variable at `level` all write the same name; none when
+    ///   no leaf does, two write different names, or the variable has no
+    ///   origin.
+    /// - provides: the name [`Self::name_fields`] records.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one pass over the subtree on an explicit stack.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::name_fields`].
+    /// - witness: `lower::native::tests::a_pattern_variable_names_its_field_binder`
+    #[spec(ensures: |ret| ret.is_none() || form.tests.get(at.0).is_some())]
+    fn field_name(
+        &self,
+        form: &CaseForm,
+        at: TestAt,
+        level: TreeLevel,
+    ) -> Option<Origin>
+    {
+        let mut named: Option<Placed> = None;
+        let mut pending = Vec::from([at]);
+        while let Some(TestAt(position)) = pending.pop() {
+            match form.tests.get(position) {
+                Some(&Test::Leaf {
+                    arm, ref bindings, ..
+                }) => {
+                    let variables = form.variables.get(arm.0).map_or(&[][..], Vec::as_slice);
+                    for (&settled, &variable) in bindings.iter().zip(variables) {
+                        if settled != level {
+                            continue;
+                        }
+                        match named {
+                            Some(first) if self.text_at(first) != self.text_at(variable) => {
+                                return None;
+                            },
+                            Some(_) => {},
+                            None => named = Some(variable),
+                        }
+                    }
+                },
+                Some(&Test::Data { ref branches, .. }) => {
+                    pending.extend(branches.iter().map(|&(_arity, child)| child));
+                },
+                Some(&Test::Sum { ref branches, .. }) => pending.extend(branches.iter().copied()),
+                Some(&(Test::Boolean { yes, no, .. } | Test::Integer { yes, no, .. })) => {
+                    pending.extend([yes, no]);
+                },
+                Some(&(Test::Split { child, .. } | Test::Record { child, .. })) => {
+                    pending.push(child);
+                },
+                Some(&(Test::Pending | Test::Stuck(_))) | None => {},
+            }
+        }
+        let variable = named?;
+        match self.origin_at(variable.node) {
+            Maybe::Present(origin) => Some(origin),
+            Maybe::Absent(_) => None,
+        }
     }
 
     /// The root data case `root` of the match `form` with a loop branch per

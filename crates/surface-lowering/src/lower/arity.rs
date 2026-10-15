@@ -1066,6 +1066,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::StaticAbstraction
                 | Former::PathType
                 | Former::CapabilityType
+                | Former::AtType
                 | Former::Scope
                 | Former::Declaration
                 | Former::AttributeBlock
@@ -1997,6 +1998,61 @@ impl<'source> Lowerer<'_, 'source>
             Plan::Select(target.node, Observed {
                 index,
                 count: stated.len(),
+            }),
+        );
+
+        Ok(Planned(true))
+    }
+
+    /// Classify a selection by position, `e.0` or `e.1`, as a projection of
+    /// the pair `e` is.
+    ///
+    /// # Specification
+    /// - requires: `site` is a projection; `pieces` is its reading.
+    /// - ensures: planned when the selected member is a number: `0` and `1`
+    ///   project the first and the second component of the pair the operand is,
+    ///   the operand read as a value under the form's frame; nothing is planned
+    ///   for a selection by name.
+    /// - fails: the unadmitted refusal for any other position, since a pair has
+    ///   two; the wrong-sort refusal where no computation is read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The selection's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both positions of a dependent pair, the second's type
+    ///   reading the first, and a third position refused.
+    /// - witness: `lower::arity::tests::a_selection_by_position_projects_a_pair`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Select(_, Observed { count: 2, .. }))))]
+    pub(super) fn positional(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let mut cursor = Cursor::new(&pieces.pieces, site.at.span);
+        let Maybe::Present(Piece::Operand(target)) = cursor.read()
+        else {
+            return Ok(Planned(false));
+        };
+        let (Maybe::Present(_dot), Maybe::Present(position)) =
+            (cursor.tile(TileName::DOT), cursor.tile(TileName::NUMBER))
+        else {
+            return Ok(Planned(false));
+        };
+        let index = match self.text_at(position).as_ref() {
+            "0" => 0_usize,
+            "1" => 1_usize,
+            _ => return Err(site.out(FragmentBoundary::Unadmitted)),
+        };
+        let frame = self.require(site, Produced::Computation)?;
+        self.read(target.node, Reading::Value(frame));
+        self.plan(
+            site,
+            Plan::Select(target.node, Observed {
+                index,
+                count: 2_usize,
             }),
         );
 

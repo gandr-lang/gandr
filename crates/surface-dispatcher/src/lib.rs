@@ -194,6 +194,8 @@ pub use crate::typed::Subject;
 pub use crate::typed::TypeTable;
 pub use crate::typed::TypedSpan;
 pub use crate::typed::checked_against;
+pub use crate::typed::reprinted;
+pub use crate::typed::signed;
 pub use crate::typed::typing;
 pub use crate::walk::SourceFault;
 pub use crate::walk::Standing;

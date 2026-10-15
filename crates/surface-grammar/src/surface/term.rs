@@ -2003,12 +2003,19 @@ fn expressions(
             t(TileLabel("]")),
         ]),
     ));
+    // A selection names its entry by label, `p.n`, or by position, `p.0`: the
+    // printer writes a projection off a pair whose labels the core does not
+    // keep by its position, and that spelling reads back.
     out.push(r(
         RuleName("projection_expression"),
         Provenance("projection_expression"),
         s,
         p.postfix,
-        seq([h(s), t(TileLabel(".")), t(TileLabel("identifier"))]),
+        seq([
+            h(s),
+            t(TileLabel(".")),
+            Regex::alt([t(TileLabel("identifier")), t(TileLabel("number"))]),
+        ]),
     ));
     primary_expressions(out, p.atom);
 }

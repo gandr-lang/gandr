@@ -120,6 +120,7 @@ use gandr_core_term::effect::EffectSig;
 use gandr_core_term::effect::OperationName;
 use gandr_core_term::effect::capability::CapabilityGrade;
 use gandr_core_term::effect::capability::Region;
+use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::effect::host::HostSignatures;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -393,7 +394,79 @@ impl<'source> Lowerer<'_, 'source>
         closed(site, &mut cursor, TileName::BRACE_CLOSE)?;
         exhausted(site, &cursor)?;
 
-        self.plan(site, super::Plan::Capability(authority, grade));
+        let region = self
+            .regions
+            .get(&site.at.node)
+            .map_or(Region::Held, |&depth| Region::Scoped(depth));
+        self.plan(site, super::Plan::Capability(authority, grade, region));
+
+        Ok(())
+    }
+
+    /// Classify a capability type placed in a scope's region, `T at c`.
+    ///
+    /// # Specification
+    /// - requires: `site` is an at type.
+    /// - ensures: the type stands as its operand, a capability type, whose
+    ///   region is recorded as the scope binding `c`: [`Region::Scoped`] at the
+    ///   number of capability scopes from the outermost to the one binding `c`,
+    ///   counted from one, the depth the checker gives the capability that
+    ///   scope introduces.
+    /// - fails: the wrong-sort refusal where no value type is read;
+    ///   [`LoweringRefusal::UnresolvedName`] at `c` when no capability scope
+    ///   around the type binds it; [`LoweringRefusal::OutOfFragment`] for an
+    ///   operand that is no capability type, which has no region; a misplaced
+    ///   tile or missing operand fault for a type out of shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The type's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a capability at the inner of two nested scopes and at
+    ///   the outer one mint their depths, a name no scope binds and a
+    ///   non-capability operand are refused, each asserted exactly.
+    /// - witness: `lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&super::Plan::Transparent(operand)) if self.regions.contains_key(&operand)))]
+    pub(super) fn at_type(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::ValueType)?;
+        let operand = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::AT)?;
+        let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        exhausted(site, &cursor)?;
+        let Some((_, Former::CapabilityType)) = self.form_at(operand)?
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted));
+        };
+        let name = self.name_at(written);
+        let unbound = move || LoweringRefusal::UnresolvedName {
+            span: written.span,
+            name,
+        };
+        let Ok(Maybe::Present(Resolved::Binder(bound))) = self.resolve_name(site, frame, name)
+        else {
+            return Err(unbound());
+        };
+        if !self.capabilities.contains(&bound.binder) {
+            return Err(unbound());
+        }
+        let depth = self
+            .scope
+            .chain(Frame::Inner(bound.binder))
+            .filter(|binder| self.capabilities.contains(binder))
+            .count();
+        let depth = u32::try_from(depth).map_err(|_overflow| unbound())?;
+        let _first = self.regions.insert(operand.node, RegionDepth::from(depth));
+        self.read(operand.node, site.reading);
+        self.plan(site, super::Plan::Transparent(operand.node));
 
         Ok(())
     }
@@ -538,7 +611,8 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a capability exactly when the node is a `Cap` form.
+    /// - ensures: a capability exactly when the node is a `Cap` form, bare or
+    ///   placed at a scope.
     /// - fails: [`LoweringRefusal::UnknownMold`].
     /// - panics: none.
     ///
@@ -566,7 +640,7 @@ impl<'source> Lowerer<'_, 'source>
 
         Ok(match shape_of(self.pbg, node)? {
             Shape::Form {
-                former: Former::CapabilityType,
+                former: Former::CapabilityType | Former::AtType,
                 ..
             } => Holder::Capability,
             Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => Holder::Other,
@@ -1003,7 +1077,7 @@ impl<'source> Lowerer<'_, 'source>
         )
     }
 
-    /// Mint a capability type over `authority` at `grade`, held for the run.
+    /// Mint a capability type over `authority` at `grade`, living in `region`.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1024,6 +1098,7 @@ impl<'source> Lowerer<'_, 'source>
     pub(super) fn mint_capability(
         authority: &Authority,
         grade: CapabilityGrade,
+        region: Region,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -1036,7 +1111,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
-        let id = sink.arena.value_type_capability(row, grade, Region::Held);
+        let id = sink.arena.value_type_capability(row, grade, region);
         sink.origins.record_value_type(id, origin);
 
         Maybe::Present(Lowered::ValueType(id))

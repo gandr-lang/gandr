@@ -984,6 +984,58 @@ fn a_parameterized_constructor_needs_its_classifier()
 }
 
 #[test]
+fn a_constructor_takes_its_classifier_from_the_type_it_answers()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}data Box(m : Maybe(Integer)) : Type {{ Boxed : Box(m); }}\n\
+         def tail : +U (-F Maybe(Integer)) ;\ndef tail = thunk {{ Some(3) }} ;\n\
+         def alias : () => Maybe(Integer) ;\ndef alias = thunk {{ None }} ;\n\
+         def pured : +U (-F Maybe(Integer)) ;\ndef pured = thunk {{ pure Some(5) }} ;\n\
+         def returned(n : Integer) -> -F Maybe(Integer) {{ return Some(n) }}\n\
+         def nested : Maybe(Maybe(Integer)) ;\ndef nested = Some(None) ;\n\
+         def boxed(b : Box(Some(1))) -> -F Integer {{ return 0 }}\n\
+         def bare = None ;\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["tail", "alias", "pured", "returned", "nested", "boxed"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    assert!(matches!(
+        refusal_of(&module, SurfaceName::from("bare")),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Unannotated,
+            ..
+        }
+    ));
+    let Some(&Value::Constructor { ref fields, .. }) =
+        arena.value(body_named(&module, SurfaceName::from("nested")))
+    else {
+        panic!("a signed constructor is a constructor value");
+    };
+    let Some(&Value::Constructor { datatype, .. }) =
+        fields.first().and_then(|&field| arena.value(field))
+    else {
+        panic!("its parameter-typed field is a constructor value");
+    };
+    assert!(matches!(
+        arena.value_type(datatype),
+        Some(&ValueType::Data { declaration, ref arguments })
+            if declaration == ConstantIndex::from(0_usize)
+                && matches!(arguments.as_slice(), [argument] if matches!(arena.value(*argument), Some(&Value::Quote(quoted)) if arena.value_type(quoted) == Some(&ValueType::Base(gandr_kernel_term::BaseType::Integer))))
+    ));
+    let report = judged(&module, &mut arena);
+    assert_accepted(&report);
+}
+
+#[test]
 fn a_constructor_takes_its_slot_as_a_family_argument()
 {
     let families = "data SumOb(a : Type, b : Type) : Type { Inl : (x : a) --> SumOb(a, b); Inr : (y : b) --> SumOb(a, b); }\ndata Tagged(l : Type, r : Type, s : SumOb(l, r)) : Type { Tag : (n : Integer) --> Tagged(l, r, s); }\n";
@@ -1031,6 +1083,76 @@ fn a_constructor_takes_its_slot_as_a_family_argument()
             .any(|judged| matches!(judged.verdict(), Verdict::Refused(_))),
         "{report:?}"
     );
+}
+
+#[test]
+fn a_pattern_variable_names_its_field_binder()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def first(m : Maybe(Integer)) -> -F Integer {{ case m {{ Some(x) => return x, None => return 0 }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let root = tail_of(&arena, body_named(&module, SurfaceName::from("first")));
+    let Some(&Computation::DataCase { ref branches, .. }) = arena.computation(root)
+    else {
+        panic!("the match is a data case");
+    };
+    let named: Vec<String> = branches
+        .iter()
+        .filter_map(|&branch| {
+            module
+                .origins()
+                .binders()
+                .iter()
+                .find(|&&(opener, _)| opener == branch)
+                .and_then(|&(_, origin)| {
+                    source
+                        .get(usize::from(origin.span().start()) .. usize::from(origin.span().end()))
+                        .map(String::from)
+                })
+        })
+        .collect();
+    assert_eq!(named, Vec::from([String::from("x")]));
+}
+
+/// A record's field lambdas are minted innermost first and an arm body's
+/// binder before them all, so naming them places each among the openers
+/// already recorded: every field answers its own variable and the table stays
+/// ascending.
+#[test]
+fn a_record_names_every_field_binder_in_order()
+{
+    let mut arena = CoreArena::new();
+    let source = "data Rgb : Type {\n  RGB : (r : Integer, g : Integer, b : Integer) --> Rgb;\n}\ndef green(c : Rgb) -> -F Integer { case c { RGB(r, g, b) => { run n : Integer <- pure g ; return n } } }\n";
+    let module = lowered(SourceText::from(source), &mut arena);
+    let root = tail_of(&arena, body_named(&module, SurfaceName::from("green")));
+    let Some(&Computation::DataCase { ref branches, .. }) = arena.computation(root)
+    else {
+        panic!("the match is a data case");
+    };
+    let binders = module.origins().binders();
+    assert!(
+        binders
+            .windows(2)
+            .all(|pair| matches!(pair, [left, right] if left.0 < right.0)),
+        "{binders:?}"
+    );
+    let mut named = Vec::new();
+    let mut lambda = *branches.first().expect("one branch");
+    while let Some(&Computation::Lambda(body)) = arena.computation(lambda) {
+        if let Ok(at) = binders.binary_search_by_key(&lambda, |&(opener, _)| opener)
+            && let Some(&(_, origin)) = binders.get(at)
+        {
+            named.extend(
+                source
+                    .get(usize::from(origin.span().start()) .. usize::from(origin.span().end()))
+                    .map(String::from),
+            );
+        }
+        lambda = body;
+    }
+    assert_eq!(named, ["r", "g", "b"].map(String::from));
 }
 
 #[test]

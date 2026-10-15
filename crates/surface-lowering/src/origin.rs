@@ -1228,6 +1228,48 @@ impl OriginTable
         record(&mut self.binders, opener, name);
     }
 
+    /// Record the name a field lambda `opener` binds, written at `name` as a
+    /// pattern variable, where it falls among the openers already recorded.
+    ///
+    /// A switch's field lambdas are named after the whole match is minted:
+    /// a branch's outermost field lambda is minted last, and an arm body's
+    /// binders before the lambdas around it, so the openers arrive out of
+    /// mint order and are placed rather than appended.
+    ///
+    /// # Specification
+    /// - requires: nothing — an opener already recorded keeps its name.
+    /// - ensures: the list holds `opener`, at `name` unless it held it before.
+    /// - intension: the pair is inserted where the binary search over the
+    ///   ascending list places it, so the list stays strictly ascending.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record of three fields names its innermost lambda
+    ///   after its outermost, below an arm body's binder recorded first.
+    /// - witness: `lower::native::tests::a_record_names_every_field_binder_in_order`
+    #[spec(
+        captures: [before = find(&self.binders, opener)],
+        ensures: find(&self.binders, opener) == match before {
+                Maybe::Present(held) => Maybe::Present(held),
+                Maybe::Absent(_) => Maybe::Present(name),
+            },
+    )]
+    #[inline]
+    pub fn place_binder(
+        &mut self,
+        opener: ComputationId,
+        name: Origin,
+    )
+    {
+        if let Err(at) = self
+            .binders
+            .binary_search_by_key(&opener, |&(held, _)| held)
+        {
+            self.binders.insert(at, (opener, name));
+        }
+    }
+
     /// Where the name the lambda or bind `opener` binds is written.
     ///
     /// # Specification

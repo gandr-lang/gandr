@@ -108,3 +108,29 @@ def answered() -> -F Integer {
     oper exit(code, k) => return 9
   }
 }
+
+/// A continuation's type is written `Stack(C, D)`, the computation it resumes
+/// from and the one it ends as; a clause hands its continuation on by it.
+@[ checks ]
+def dropped(k : Stack(-F Unit, -F Integer)) -> -F Integer {
+  return 9
+}
+
+/// A clause hands its continuation to a function stating the continuation's
+/// type, and the handled body answers what that function returns.
+@[ runs("9") ]
+def handed_on() -> -F Integer {
+  handle c : Proc {
+    c.exit(5);
+    return 1
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => dropped(k)
+  }
+}
+
+/// A continuation runs from a computation, never from a value type.
+@[ refuses("OutOfFragment") ]
+def from_a_value(k : Stack(Integer, -F Integer)) -> -F Integer {
+  return 9
+}

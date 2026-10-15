@@ -2,7 +2,7 @@ module Counter :> #{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] 
   type T = Integer;
   @[ runs("0") ]
   def zero = 0;
-  @[ runs("fn (a) { add(a, 1) }") ]
+  @[ runs("fn (a) { a + 1 }") ]
   def next(n : T) -> -F T { become n + 1 }
   @[ runs("fn (a) { a }") ]
   def read(n : T) -> -F Integer { return n }

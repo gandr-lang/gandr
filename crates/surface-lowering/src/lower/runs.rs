@@ -371,6 +371,7 @@ fn operand_of(
         | Former::LazyProductType
         | Former::TelescopeType
         | Former::CapabilityType
+        | Former::AtType
         | Former::LabelledSumType
         | Former::LazyRecordType
         | Former::ValueFunctionType

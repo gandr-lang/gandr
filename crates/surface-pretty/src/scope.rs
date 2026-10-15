@@ -50,8 +50,33 @@ impl From<BinderIndex> for usize
     }
 }
 
-/// One binder: the binder it stands under, the node that opens it and the
-/// zone it opens in.
+/// The position of one child slot among its node's children, in the
+/// printer's order.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ChildSlot(usize);
+
+impl ChildSlot
+{
+    /// The first child slot: a capability scope's subject.
+    pub const FIRST: Self = Self(0);
+}
+
+impl From<usize> for ChildSlot
+{
+    /// The slot at the position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: usize) -> Self
+    {
+        Self(position)
+    }
+}
+
+/// One binder: the binder it stands under, the node that opens it, the child
+/// slot of that node it opens over and the zone it opens in.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Binder<Node>
 {
@@ -59,6 +84,9 @@ pub struct Binder<Node>
     parent: Option<BinderIndex>,
     /// The former that opens it: a lambda, a bind, a dependent arrow, a case.
     opener: Node,
+    /// The position of the child slot it opens over, among the opener's
+    /// children in the printer's order.
+    slot: ChildSlot,
     /// The zone it opens in.
     zone: Zone,
 }
@@ -85,6 +113,19 @@ impl<Node: Copy> Binder<Node>
     pub const fn opener(&self) -> Node
     {
         self.opener
+    }
+
+    /// The position of the child slot the binder opens over, among its
+    /// opener's children in the printer's order: a capability scope's
+    /// subject is its first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn slot(&self) -> ChildSlot
+    {
+        self.slot
     }
 
     /// The zone the binder opens in.
@@ -160,13 +201,17 @@ impl<Node: Copy + Eq + Hash> Scopes<Node>
                 },
             }
             let former = source.read(node);
-            for slot in children(source, node, &former, Admits::Type, Bodies::Spelled) {
+            for (position, slot) in children(source, node, &former, Admits::Type, Bodies::Spelled)
+                .into_iter()
+                .enumerate()
+            {
                 let mut inner = scope;
                 for _ in 0_usize .. slot.binds.count {
                     let index = BinderIndex(scopes.binders.len());
                     scopes.binders.push(Binder {
                         parent: inner,
                         opener: node,
+                        slot: ChildSlot::from(position),
                         zone: slot.binds.zone,
                     });
                     inner = Some(index);

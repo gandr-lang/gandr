@@ -39,7 +39,8 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Literal;
 
-/// The grant atoms of a capability's authority, as the printer spells them.
+/// An effect row as the printer spells it: a capability's authority, operation
+/// by operation, or a returner's row, interface by interface.
 pub trait Authority: core::fmt::Debug
 {
     /// Each granted operation's name, interface by interface, each
@@ -48,6 +49,12 @@ pub trait Authority: core::fmt::Debug
     /// # Specification
     /// trivial.
     fn granted(&self) -> alloc::vec::Vec<Name<'_>>;
+
+    /// Each interface's name, in row order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn interfaces(&self) -> alloc::vec::Vec<Name<'_>>;
 }
 
 impl<Id> Authority for gandr_core_term::effect::EffectRow<Id>
@@ -67,6 +74,18 @@ where
                     .operations()
                     .map(|operation| Name::from(operation.name.as_ref()))
             })
+            .collect()
+    }
+
+    /// The name of every interface, in row order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn interfaces(&self) -> alloc::vec::Vec<Name<'_>>
+    {
+        self.signatures()
+            .map(|signature| Name::from(signature.name().as_ref()))
             .collect()
     }
 }
@@ -382,14 +401,14 @@ pub enum Former<'source, Node>
     },
     /// The returner `-F A` of a value type.
     Returner(Node),
-    /// A returner with a diagnostic row annotation, not a surface grammar form.
+    /// The returner `-F [I, …] A` of a value type whose computation may
+    /// request the interfaces of its row.
     EffectfulReturner
     {
         /// The value returned.
         result: Node,
-        /// The canonical effect names, independent of the source's type
-        /// handles.
-        effects: &'source dyn core::fmt::Debug,
+        /// The row of interfaces.
+        effects: &'source dyn Authority,
     },
     /// The arrow `A -> C`, whose codomain binds nothing.
     Arrow
@@ -533,6 +552,10 @@ pub enum Former<'source, Node>
         arity: Arity,
         /// Where its name stands to its fields.
         placement: Placement,
+        /// The family applied to its arguments, when it takes any: the type a
+        /// parameterised constructor is written against, `(C : T)`, which
+        /// source that reads back needs.
+        classifier: Option<Node>,
     },
     /// Directed identity `Flow(A, x, y)`: the carrier and the two endpoints.
     Flow
@@ -1029,6 +1052,34 @@ pub trait Source
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
     #[inline]
     fn context(&self) -> &[Option<Name<'_>>]
+    {
+        &[]
+    }
+
+    /// The names of the capability scopes the presented root stands in,
+    /// outermost first; an entry the source cannot name is none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per capability scope enclosing the root, so a
+    ///   capability type living in the region at depth `d` reads as the `d`-th
+    ///   entry, counted from one. The default is no scope: a root no scope
+    ///   encloses.
+    /// - provides: the scope a capability type's region names, which a type
+    ///   inside a scope's subject mentions.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a capability in the region of a named scope spells
+    ///   `at` that scope's name, and one past the named scopes spells without
+    ///   it, approximately.
+    /// - witness: `goldens::tests::a_scoped_capability_names_its_scope`
+    #[inline]
+    fn regions(&self) -> &[Option<Name<'_>>]
     {
         &[]
     }
