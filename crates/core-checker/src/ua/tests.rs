@@ -397,6 +397,15 @@ fn the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe()
         Some(Vec::from([ElementIndex::from(1), ElementIndex::from(0)])),
         "the translator's table is the swap"
     );
+    assert_eq!(
+        universal
+            .corollas()
+            .iter()
+            .map(|&(shape, ref translators)| (shape, translators.forward, translators.backward))
+            .collect::<Vec<_>>(),
+        [(constant, keep, keep), (binary, swap, swap)],
+        "each inhabited corolla keeps its translators, in catalogue order"
+    );
     let Some(&Value::PathProduct(unit, rest)) = arena.value(universal.path())
     else {
         panic!("degree zero, then the corollas");
@@ -882,6 +891,20 @@ fn what_the_stratum_does_not_admit_it_refuses_by_name()
             corolla: binary,
             element: ElementIndex::from(0),
         })
+    );
+    let edge = table(&mut arena, Images(&[2, 2]));
+    assert_eq!(
+        universal(
+            &mut arena,
+            &stratum,
+            (&monoid, &monoid),
+            &at_binary(edge, edge)
+        ),
+        Err(UaRefusal::Stuck {
+            corolla: binary,
+            element: ElementIndex::from(0),
+        }),
+        "a summand at the code's length is already past it"
     );
     let alone = BTreeMap::from([(binary, Translators {
         forward: swap,

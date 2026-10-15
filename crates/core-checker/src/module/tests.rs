@@ -966,6 +966,13 @@ fn a_nested_run_elaborates_into_a_bind_before_its_region()
         "each run is reported beside the bind minted for it, the inner first"
     );
     assert!(
+        elaboration
+            .carried()
+            .contains(&gandr_core_term::Carried::Value(twice, body)),
+        "the rebuild reports the body it stands for the written one: {:?}",
+        elaboration.carried()
+    );
+    assert!(
         !report
             .nested_elaborations()
             .contains_key(&ConstantIndex::from(0_usize)),

@@ -2517,6 +2517,62 @@ fn a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints()
     );
 }
 
+/// The mirror of
+/// `a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`:
+/// with the delayed endpoint on the right, the right dialogue carries the
+/// unfolding and the left none.
+#[test]
+fn a_reflexivity_carries_its_right_endpoint_s_dialogue()
+{
+    // def k : U (Integer -> F Integer) = thunk { \x. return x } ;
+    // def j : U (Integer -> F Integer) = k ;
+    // def law : Path(U (…), k, thunk { force j }) = here(k) ;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns = arena.comp_type_returner(integer);
+    let arrow = arena.comp_type_arrow(integer, returns);
+    let function = arena.value_type_thunk(arrow);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(bound);
+    let lambda = arena.computation_lambda(returned);
+    let identity = arena.value_thunk(lambda);
+    let [k, j] = [0_usize, 1_usize].map(|at| arena.value_constant(ConstantIndex::from(at)));
+    let forced = arena.computation_force(j);
+    let delayed = arena.value_thunk(forced);
+    let path = arena.value_type_path(function, k, delayed);
+    let here = arena.value_here(k);
+    let declared = Maybe::Present(function);
+    let (_, readmission) = judge_and_readmit(&mut arena, &[
+        declaration(At(0), declared, Maybe::Present(identity)),
+        declaration(At(1), declared, Maybe::Present(k)),
+        declaration(At(2), Maybe::Present(path), Maybe::Present(here)),
+    ]);
+    assert!(
+        readmission
+            .readmitted()
+            .iter()
+            .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. })),
+        "the kernel replays the right dialogue unfolding `j` under the thunk: {:?}",
+        readmission.readmitted()
+    );
+    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let Some(&DeclarationContent::Def { body, .. }) = artifact
+        .declarations()
+        .last()
+        .map(|marked| marked.declaration().content())
+    else {
+        panic!("the law is the last definition");
+    };
+    let Some(KernelValue::Here { dialogues, .. }) = artifact.arena().value(body).cloned()
+    else {
+        panic!("the law crosses as the kernel's reflexivity");
+    };
+    assert!(
+        dialogues.left.is_empty() && !dialogues.right.is_empty(),
+        "the delayed right endpoint carries its dialogue: {dialogues:?}"
+    );
+}
+
 #[test]
 fn an_ascription_crosses_with_the_endpoints_it_related()
 {
