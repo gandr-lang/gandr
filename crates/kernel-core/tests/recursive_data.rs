@@ -1037,6 +1037,56 @@ mod recursive_data
     }
 
     #[test]
+    fn a_nullary_argument_is_judged_in_each_branch_s_own_scope()
+    {
+        // `succ` first: the branch whose field shows the stage holds a value
+        // is checked before the one with nothing below it, so an answer for
+        // `rec zero` kept from the first would wrongly serve the second.
+        let mut environment = Environment::new();
+        let position = ConstantIndex::from(environment.entries().len());
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let own = arena.value_type_data(position, vec![]);
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let declaration = staging.data(
+            LevelSignature::monomorphic(),
+            vec![],
+            vec![vec![own], vec![]],
+            kind,
+        );
+        let swapped = environment
+            .add_decl(declaration)
+            .expect("a successor-first Nat is strictly positive")
+            .position();
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let nat_type = arena.value_type_data(swapped, vec![]);
+        let returner = arena.comp_type_returner(nat_type);
+        let classifier = arena.comp_type_arrow(nat_type, returner);
+        let zero = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![]);
+        // Under the `succ` branch's field: `p` 0, `x` 1, `rec` 2; under the
+        // `zero` branch: `x` 0, `rec` 1.
+        let under_field = call(arena, DeBruijnIndex::from(2), zero);
+        let on_successor = arena.computation_lambda(under_field);
+        let on_zero = call(arena, DeBruijnIndex::from(1), zero);
+        let argument = arena.value_variable(DeBruijnIndex::from(0));
+        let case = arena.computation_data_case(argument, returner, vec![on_successor, on_zero]);
+        let body = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+        let declared = arena.value_type_thunk(classifier);
+        let value = arena.value_thunk(fixpoint);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+        let root = Stage::At(StageId::from(0_usize));
+        assert_eq!(
+            environment.add_decl(declaration).map(|_admitted| ()),
+            Err(KernelError::StageNotBelow {
+                found: Standing::Top,
+                bound: below(root),
+            })
+        );
+    }
+
+    #[test]
     fn a_self_reference_never_stands_for_an_unstaged_function()
     {
         let mut environment = Environment::new();

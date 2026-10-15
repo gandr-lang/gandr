@@ -363,6 +363,99 @@ fn successor_and_transparency()
 }
 
 #[test]
+fn each_rule_reads_its_own_redex_for_transparency()
+{
+    let index = |value: usize| gandr_kernel_term::stage::Index(value);
+    let proposal = |nodes: Vec<Node>, source: usize, target: usize, rule, arms| Proposal {
+        classifiers: Vec::from([Type::Nat(Stage::Outer)]),
+        nodes,
+        equation: Step {
+            source: TermId(source),
+            target: TermId(target),
+            rule,
+        },
+        arms,
+    };
+    let natural = |value| Node::Rigid(Term::Natural(Stage::Outer, Natural(value)));
+    // `quote (splice (quote ⌜ℕ⌝))` steps to `quote ⌜ℕ⌝`.
+    let quote_splice = proposal(
+        Vec::from([
+            Node::Rigid(Term::Code(TypeId(0))),
+            Node::Rigid(Term::Quote(TermId(0))),
+            Node::Rigid(Term::Splice(TermId(1))),
+            Node::Rigid(Term::Quote(TermId(2))),
+        ]),
+        3,
+        1,
+        Rule::QuoteSplice,
+        Vec::new(),
+    );
+    // `(λx. x) p` steps to `p`, `p` one of two closed naturals.
+    let beta = |head: Node, arm: Node| {
+        proposal(
+            Vec::from([
+                natural(1),
+                arm,
+                Node::Point(Point(0)),
+                Node::Rigid(Term::Variable(index(0))),
+                head,
+                Node::Rigid(Term::Apply(TermId(4), TermId(2))),
+            ]),
+            5,
+            2,
+            Rule::Beta,
+            Vec::from([Vec::from([TermId(0), TermId(1)])]),
+        )
+    };
+    let lambda = Node::Rigid(Term::Lambda(TypeId(0), TermId(3)));
+    // `quote 1` steps to itself, its child related to itself.
+    let congruence = proposal(
+        Vec::from([natural(1), Node::Rigid(Term::Quote(TermId(0)))]),
+        1,
+        1,
+        Rule::Congruence,
+        Vec::new(),
+    );
+    for (admitted, what) in [
+        (quote_splice, "a quote of a splice"),
+        (beta(lambda, natural(2)), "a lambda applied to closed arms"),
+        (congruence, "a congruence"),
+    ] {
+        let checked = Schema::check(admitted, &mut Budget(10_000)).map(|_schema| ());
+        assert_eq!(checked, Ok(()), "{what} is transparent");
+    }
+    for (refused, what) in [
+        (
+            beta(natural(3), natural(2)),
+            "an application whose head is no lambda",
+        ),
+        (
+            beta(lambda, Node::Rigid(Term::Variable(index(1)))),
+            "an arm reading a variable it does not bind",
+        ),
+    ] {
+        let checked = Schema::check(refused, &mut Budget(10_000)).map(|_schema| ());
+        assert_eq!(
+            checked,
+            Err(Refusal::Transparency),
+            "{what} is not transparent"
+        );
+    }
+    // An arm is a closed term the point may take, once.
+    let mut repeated = beta(lambda, natural(2));
+    repeated.arms = Vec::from([Vec::from([TermId(0), TermId(0)])]);
+    let mut dependent = beta(lambda, natural(2));
+    dependent.arms = Vec::from([Vec::from([TermId(0), TermId(2)])]);
+    for (refused, what) in [
+        (repeated, "a repeated arm"),
+        (dependent, "the point itself"),
+    ] {
+        let checked = Schema::check(refused, &mut Budget(10_000)).map(|_schema| ());
+        assert_eq!(checked, Err(Refusal::Malformed), "{what} is no arm");
+    }
+}
+
+#[test]
 fn classifier_coordinates_are_not_content()
 {
     let proposal = Proposal {
@@ -679,11 +772,11 @@ fn affected_constructors_measure_fanout_not_depth()
         let mut row = schema
             .substitute(schema.classifiers(), &only(Guard(0)), &mut buffer)
             .unwrap();
+        let admitted = row.admit(&consumer, step, &mut Budget(100_000)).unwrap();
+        assert_eq!(admitted.instantiations, affected);
         assert_eq!(
-            row.admit(&consumer, step, &mut Budget(100_000))
-                .unwrap()
-                .instantiations,
-            affected
+            admitted.affected, affected,
+            "the admission carries the schema's affected count"
         );
     }
 }

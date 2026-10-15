@@ -46,6 +46,7 @@ use crate::replay::Unfoldings;
 ///   whose parts it orients, and its reverse refuses at each, naming it.
 /// - witness: `flow_universe::tests::function::directed_funext_forms_and_rides_in_variance_order`
 /// - witness: `flow_universe::tests::function::symmetry_refusal_holds_at_a_thunk_code`
+/// - witness: `flow_universe::rules::tests::a_boundary_flow_agrees_at_both_of_its_ends`
 #[spec(ensures: |ret| match ret {
     Ok(()) => true,
     Err(FlowError::Boundary(named)) => named == boundary,
@@ -272,4 +273,46 @@ pub fn oriented(
 {
     let flow = super::universe_reading(arena, classifier, budget)?;
     boundary(arena, position, flow, arrows)
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::TermArena;
+
+    use super::Arrow;
+    use super::Boundary;
+    use super::FlowError;
+    use super::FlowType;
+    use super::boundary;
+
+    #[test]
+    fn a_boundary_flow_agrees_at_both_of_its_ends()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let arrow = |code, codomain| Arrow {
+            code,
+            domain: unit,
+            codomain,
+        };
+        let arrows = (arrow(unit, unit), arrow(integer, integer));
+        let flow = |source, target| FlowType { source, target };
+        assert_eq!(
+            boundary(&arena, Boundary::Codomain, flow(unit, integer), arrows),
+            Ok(())
+        );
+        for (source, target, what) in [
+            (unit, unit, "the target end differs"),
+            (integer, integer, "the source end differs"),
+        ] {
+            assert_eq!(
+                boundary(&arena, Boundary::Codomain, flow(source, target), arrows),
+                Err(FlowError::Boundary(Boundary::Codomain)),
+                "{what}"
+            );
+        }
+    }
 }

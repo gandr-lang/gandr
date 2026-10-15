@@ -244,6 +244,46 @@ mod native_formers
     }
 
     #[test]
+    fn a_data_type_s_arguments_check_at_its_parameters()
+    {
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let universe = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let declaration = staging.data(
+            LevelSignature::monomorphic(),
+            vec![universe],
+            vec![],
+            universe,
+        );
+        let nominal = environment
+            .add_decl(declaration)
+            .expect("a type over one code")
+            .position();
+        let at = |environment: &mut Environment, code: fn(&mut TermArena) -> ValueId| {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let argument = code(arena);
+            let datatype = arena.value_type_data(nominal, vec![argument]);
+            let declaration = staging.axiom(LevelSignature::monomorphic(), datatype);
+            environment.add_decl(declaration).map(|_admitted| ())
+        };
+        assert_eq!(
+            at(&mut environment, |arena| {
+                let unit = arena.value_type_unit();
+                arena.value_quote(unit)
+            }),
+            Ok(())
+        );
+        let refused = at(&mut environment, TermArena::value_unit);
+        assert!(
+            matches!(refused, Err(KernelError::ValueShapeMismatch { .. })),
+            "a unit value is no code: {refused:?}"
+        );
+    }
+
+    #[test]
     fn data_case_checks_coverage_and_motive()
     {
         let mut environment = Environment::new();
@@ -679,6 +719,123 @@ mod native_formers
                 gandr_kernel_term::RuleIndex::from(0_usize)
             )),
             "loops in a type not read as a set are compared as written"
+        );
+    }
+
+    #[test]
+    fn a_law_states_its_path_behind_one_parameter_per_rule_variable()
+    {
+        use gandr_kernel_term::PresentedRule;
+        let base = RuleNode::Constructor(ConstructorTag::from(0_usize));
+        let around = RuleNode::Constructor(ConstructorTag::from(1_usize));
+        let x = RuleNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32));
+        let integer =
+            |arena: &mut TermArena| arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let zero = |arena: &mut TermArena| {
+            arena.value_literal(gandr_kernel_term::Literal::Integer(
+                gandr_kernel_term::IntegerLiteral::new(
+                    gandr_kernel_term::Sign::NonNegative,
+                    gandr_kernel_term::Magnitude::zero(),
+                ),
+            ))
+        };
+        // A point and a loop around it, presented by one rule sending loops
+        // back to the point: closed, or over the inner loop's field.
+        let pointed = |environment: &mut Environment, left: &[RuleNode]| {
+            let position = ConstantIndex::from(environment.entries().len());
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let own = arena.value_type_data(position, vec![]);
+            let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+            let staged = staging
+                .data(
+                    LevelSignature::monomorphic(),
+                    vec![],
+                    vec![vec![], vec![own]],
+                    kind,
+                )
+                .presented(Presentation::new(vec![PresentedRule::new(
+                    left.into(),
+                    [base].into(),
+                )]));
+            environment
+                .add_decl(staged)
+                .expect("the pointed loop admits")
+                .position()
+        };
+        let mut environment = Environment::new();
+        let closed_rule = pointed(&mut environment, &[around, base]);
+        let open_rule = pointed(&mut environment, &[around, around, x]);
+        let turn = assume(&mut environment, |arena| {
+            let integer = integer(arena);
+            let returner = arena.comp_type_returner(integer);
+            let arrow = arena.comp_type_arrow(integer, returner);
+            arena.value_type_thunk(arrow)
+        });
+        // `turn(0) = 0`, bare or behind one non-dependent parameter.
+        let statement = move |arena: &mut TermArena| {
+            let integer = integer(arena);
+            let zero = zero(arena);
+            let operation = arena.value_constant(turn);
+            let forced = arena.computation_force(operation);
+            let applied = arena.computation_application(forced, zero);
+            let turned = arena.value_returned(applied);
+            arena.value_type_path(integer, turned, zero)
+        };
+        let bare = assume(&mut environment, statement);
+        let behind = assume(&mut environment, move |arena| {
+            let integer = integer(arena);
+            let path = statement(arena);
+            let returner = arena.comp_type_returner(path);
+            let arrow = arena.comp_type_arrow(integer, returner);
+            arena.value_type_thunk(arrow)
+        });
+        // `λy. case y { base ⇒ return 0; loop(_) ⇒ turn(0) }`: each rule's
+        // sides are `turn(0)` and `0`, whatever the loop's field.
+        let fold = |environment: &mut Environment, data: ConstantIndex, law: ConstantIndex| {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let datatype = arena.value_type_data(data, vec![]);
+            let integer = integer(arena);
+            let motive = arena.comp_type_returner(integer);
+            let zero = zero(arena);
+            let point = arena.computation_return(zero);
+            let operation = arena.value_constant(turn);
+            let forced = arena.computation_force(operation);
+            let applied = arena.computation_application(forced, zero);
+            let looped = arena.computation_lambda(applied);
+            let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let case = arena.computation_data_case(argument, motive, vec![point, looped]);
+            let lambda = arena.computation_lambda(case);
+            let fixpoint = arena.computation_fixpoint(
+                lambda,
+                gandr_kernel_term::FixpointEvidence::StructuralDescent,
+            );
+            let body = arena.value_thunk(fixpoint);
+            let arrow = arena.comp_type_arrow(datatype, motive);
+            let declared = arena.value_type_thunk(arrow);
+            let declaration = staging
+                .def(LevelSignature::monomorphic(), declared, body)
+                .lawful(vec![law]);
+            environment.add_decl(declaration).map(|_admitted| ())
+        };
+        let refused = Err(KernelError::RuleNotRespected(
+            gandr_kernel_term::RuleIndex::from(0_usize),
+        ));
+        assert_eq!(
+            fold(&mut environment, closed_rule, bare),
+            Ok(()),
+            "a law over no variable states its path bare"
+        );
+        assert_eq!(
+            fold(&mut environment, open_rule, bare),
+            refused,
+            "a law over a variable does not"
+        );
+        assert_eq!(
+            fold(&mut environment, open_rule, behind),
+            Ok(()),
+            "it states it behind the variable's parameter, here a plain arrow"
         );
     }
 
@@ -1538,6 +1695,14 @@ mod native_formers
         .expect("a non-dependent loop arm chooses the loop's image");
         let collapse = case_over(&mut environment, Family::Kept, Built::Point, &[])
             .expect("a non-dependent case with no loop arm sends the loop to reflexivity");
+        assert_eq!(
+            case_over(&mut environment, Family::Kept, Built::Point, &[
+                Built::Inverse,
+                Built::Inverse,
+            ]),
+            Err(KernelError::NonExhaustiveDataCase),
+            "one loop owes one arm, not two"
+        );
         assert!(
             case_over(&mut environment, Family::Looped, Built::Empty, &[
                 Built::Stays

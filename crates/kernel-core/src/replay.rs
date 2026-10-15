@@ -3734,6 +3734,7 @@ where
     /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
     /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
     /// - witness: `replay::tests::two_reflexivities_decompose_to_their_points`
+    /// - witness: `replay::tests::the_forced_loop_compares_children_only_where_the_shapes_agree`
     #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (self.arena.value(left), self.arena.value(right));
 if let Some(matched_left_node) = matched_left_value && let Value::Constructor { datatype:a,tag:a_tag,fields:ref a_fields } = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Constructor { datatype:b,tag:b_tag,fields:ref b_fields } = *matched_right_node { {
             if a_tag != b_tag || a_fields.len() != b_fields.len() { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
@@ -6341,6 +6342,7 @@ fn rule(
 ///   reading the right side first or expanding a spine more than one bind short
 ///   changes the trace the engine's derivation must name.
 /// - witness: `replay::tests::the_laws_of_bind_replay_by_name`
+/// - witness: `replay::tests::a_bind_rule_rewrites_only_under_one_settled_head`
 #[spec(ensures: |ret| {
     let stacked = |spine: &[Elimination]| spine.windows(2).any(|pair| matches!(pair, &[Elimination::Bind(_), Elimination::Bind(_)]));
     let ends = |spine: &[Elimination]| matches!(spine.last(), Some(&Elimination::Bind(_)));
@@ -6429,6 +6431,7 @@ fn bind_rule(
 /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
 /// - witness: `replay::tests::a_ride_unfolds_its_flow_where_the_dialogue_names_it`
 /// - witness: `replay::tests::two_stuck_path_transports_compare_by_motive_and_value`
+/// - witness: `replay::tests::the_forced_loop_compares_children_only_where_the_shapes_agree`
 #[spec(ensures: |ret| {
     let compatible = left.len() == right.len() && left.iter().zip(right).all(|(one, other)| match (*one,*other) {
         (Elimination::RecordProjection(a),Elimination::RecordProjection(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::RecordProjection(_,a)),Some(Computation::RecordProjection(_,b))) if a == b),
@@ -9058,5 +9061,163 @@ mod tests
             }),
             "the motives agree, so a refutation there is contradicted"
         );
+    }
+
+    /// The forced loop compares a former's children, or an elimination
+    /// spine's, only where its own shape agrees: labels, literals, levels,
+    /// branch counts, components.
+    #[test]
+    fn the_forced_loop_compares_children_only_where_the_shapes_agree()
+    {
+        use alloc::collections::BTreeMap;
+        use alloc::string::String;
+
+        use gandr_kernel_strata::LevelConstant;
+        use gandr_kernel_term::Component;
+        use gandr_kernel_term::FieldLabel;
+        use gandr_kernel_term::Literal;
+        use gandr_kernel_term::StringLiteral;
+
+        let mut arena = TermArena::new();
+        let label = |name: &str| FieldLabel::from(String::from(name));
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let returner = arena.comp_type_returner(unit_type);
+        let returned = arena.computation_return(unit);
+        let neutral = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let record = |arena: &mut TermArena, name: &str| {
+            arena.value_record(BTreeMap::from([(label(name), unit)]))
+        };
+        let text = |arena: &mut TermArena, text: &str| {
+            arena.value_literal(Literal::Text(StringLiteral::new(String::from(text))))
+        };
+        let lift = |arena: &mut TermArena, at: u64| {
+            arena.value_lift(Level::constant(LevelConstant::from(at)), unit)
+        };
+        let data_case = |arena: &mut TermArena, count: usize| {
+            arena.computation_data_case(neutral, returner, alloc::vec![returned; count])
+        };
+        let by_label = |arena: &mut TermArena, name: &str| {
+            arena.computation_record_projection(neutral, label(name))
+        };
+        let by_component = |arena: &mut TermArena, component: usize| {
+            arena.computation_tuple_projection(neutral, Component::from(component))
+        };
+        let values = [
+            (
+                record(&mut arena, "a"),
+                record(&mut arena, "b"),
+                record(&mut arena, "a"),
+                "records",
+            ),
+            (
+                text(&mut arena, "a"),
+                text(&mut arena, "b"),
+                text(&mut arena, "a"),
+                "literals",
+            ),
+            (
+                lift(&mut arena, 0),
+                lift(&mut arena, 1),
+                lift(&mut arena, 0),
+                "lifts",
+            ),
+        ]
+        .map(|(left, apart, twin, what)| {
+            (
+                ReplaySides::Values(left, apart),
+                ReplaySides::Values(left, twin),
+                what,
+            )
+        });
+        let spines = [
+            (
+                data_case(&mut arena, 1),
+                data_case(&mut arena, 2),
+                data_case(&mut arena, 1),
+                "data cases",
+            ),
+            (
+                by_label(&mut arena, "a"),
+                by_label(&mut arena, "b"),
+                by_label(&mut arena, "a"),
+                "record projections",
+            ),
+            (
+                by_component(&mut arena, 0),
+                by_component(&mut arena, 1),
+                by_component(&mut arena, 0),
+                "tuple projections",
+            ),
+        ]
+        .map(|(left, apart, twin, what)| {
+            (
+                ReplaySides::Computations(left, apart),
+                ReplaySides::Computations(left, twin),
+                what,
+            )
+        });
+        for (apart, twin, what) in values.into_iter().chain(spines) {
+            let none = Unfoldings::default();
+            assert_ne!(
+                convert(&mut arena, &none, apart, ReplayBudget::DEFAULT),
+                KernelVerdict::Convertible,
+                "{what} of another shape are apart"
+            );
+            assert_eq!(
+                convert(&mut arena, &none, twin, ReplayBudget::DEFAULT),
+                KernelVerdict::Convertible,
+                "{what} of one shape convert"
+            );
+        }
+    }
+
+    /// A bind rule reassociates or η-expands only between one head that no
+    /// δ-rule moves.
+    #[test]
+    fn a_bind_rule_rewrites_only_under_one_settled_head()
+    {
+        use super::BindRule;
+        use super::Elimination;
+        use super::Head;
+        use super::Shape;
+        use super::Status;
+        use super::bind_rule;
+
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let continuation = arena.computation_return(unit);
+        let stacked = alloc::vec![
+            Elimination::Bind(continuation),
+            Elimination::Bind(continuation),
+        ];
+        let neutral = |head, spine: &[Elimination]| Shape::Neutral(head, spine.to_vec());
+        let variable = |index: u32| Head::Variable(DeBruijnIndex::from(index));
+        let constant = |status| Head::Constant(ConstantIndex::from(0_usize), status);
+        assert_eq!(
+            bind_rule(&neutral(variable(0), &stacked), &neutral(variable(0), &[])),
+            BindRule::Reassociate(ConversionSide::Left)
+        );
+        assert_eq!(
+            bind_rule(
+                &neutral(constant(Status::Opaque), &stacked),
+                &neutral(constant(Status::Opaque), &[])
+            ),
+            BindRule::Reassociate(ConversionSide::Left)
+        );
+        for (left, right, what) in [
+            (variable(0), variable(1), "two heads"),
+            (
+                constant(Status::Defined),
+                constant(Status::Defined),
+                "a δ-rule's head",
+            ),
+        ] {
+            assert_eq!(
+                bind_rule(&neutral(left, &stacked), &neutral(right, &[])),
+                BindRule::Normal,
+                "{what}"
+            );
+        }
     }
 }

@@ -233,4 +233,15 @@ fn universe_clause_is_native()
         interpret(&arena, Mode::Bridge, Domain::Elements(universe_code)),
         Err(RelationError::UnsupportedType(_))
     ));
+    // A path universe is a certificate clause of the identity reading, and
+    // outside the bridge's vocabulary.
+    let unit_type = arena.value_type_unit();
+    let unit_code = arena.value_quote(unit_type);
+    let paths = arena.value_type_path_universe(unit_code, unit_code);
+    let paths_code = arena.value_quote(paths);
+    assert!(interpret(&arena, Mode::Identity, Domain::Elements(paths_code)).is_ok());
+    assert!(matches!(
+        interpret(&arena, Mode::Bridge, Domain::Elements(paths_code)),
+        Err(RelationError::UnsupportedType(found)) if found == paths
+    ));
 }

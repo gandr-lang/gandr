@@ -340,3 +340,52 @@ fn typing_refusals_preserve_stage_boundary()
         Err(StageError::TypeMismatch)
     );
 }
+
+#[test]
+fn a_multiply_takes_two_inner_naturals_of_one_stage()
+{
+    let mut arena = Arena::default();
+    let first = Model(0);
+    let second = Model(1);
+    let tokens = [Type::In(first), Type::In(second)].map(|ty| arena.alloc_type(ty).unwrap());
+    let natural = |arena: &mut Arena, stage| arena.alloc(Term::Natural(stage, Natural(2))).unwrap();
+    let two = natural(&mut arena, Stage::Inner(first));
+    let product = arena.alloc(Term::Multiply(two, two)).unwrap();
+    let inferred = infer(&mut arena, &tokens, product, &mut Budget(100)).expect("a multiply");
+    assert_eq!(arena.ty(inferred), Ok(Type::Nat(Stage::Inner(first))));
+    let elsewhere = natural(&mut arena, Stage::Inner(second));
+    let outer = natural(&mut arena, Stage::Outer);
+    for (left, right, what) in [
+        (two, elsewhere, "factors of two stages"),
+        (outer, outer, "outer factors"),
+    ] {
+        let product = arena.alloc(Term::Multiply(left, right)).unwrap();
+        assert_eq!(
+            infer(&mut arena, &tokens, product, &mut Budget(100)),
+            Err(StageError::TypeMismatch),
+            "{what} do not multiply"
+        );
+    }
+}
+
+#[test]
+fn an_identical_pair_costs_one_comparison_step()
+{
+    let mut arena = Arena::default();
+    let one = arena
+        .alloc(Term::Natural(Stage::Inner(Model(0)), Natural(1)))
+        .unwrap();
+    let quoted = arena.alloc(Term::Quote(one)).unwrap();
+    let spliced = arena.alloc(Term::Splice(quoted)).unwrap();
+    assert_eq!(same(&arena, spliced, spliced, &mut Budget(1)), Ok(()));
+    let two = arena
+        .alloc(Term::Natural(Stage::Inner(Model(0)), Natural(2)))
+        .unwrap();
+    let requoted = arena.alloc(Term::Quote(two)).unwrap();
+    let other = arena.alloc(Term::Splice(requoted)).unwrap();
+    assert_eq!(
+        same(&arena, spliced, other, &mut Budget(1)),
+        Err(StageError::Exhausted),
+        "a pair that differs below its root is walked past one step"
+    );
+}

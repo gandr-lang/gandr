@@ -2266,4 +2266,252 @@ mod tests
         assert_eq!(CompTypeHead::Returner, mismatch.expected().head());
         assert_eq!(CompTypeHead::Arrow, mismatch.actual().head());
     }
+
+    /// Every former whose children line up only when its own shape agrees —
+    /// labels, tags, arities, levels, stages, graphs, programs, sides — is
+    /// distinct where that shape differs and its children agree, and
+    /// converts where both agree.
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one pair per guarded former, each built in place"
+    )]
+    fn a_former_compares_its_children_only_where_its_shape_agrees()
+    {
+        use alloc::collections::BTreeMap;
+        use alloc::string::String;
+        use alloc::sync::Arc;
+        use alloc::vec::Vec;
+
+        use gandr_kernel_term::Component;
+        use gandr_kernel_term::ConstructorTag;
+        use gandr_kernel_term::EvaluationComponent;
+        use gandr_kernel_term::EvaluationDialogues;
+        use gandr_kernel_term::FieldLabel;
+        use gandr_kernel_term::HigherDepth;
+        use gandr_kernel_term::HigherProgram;
+        use gandr_kernel_term::LayerPosition;
+        use gandr_kernel_term::QuantifiedStep;
+        use gandr_kernel_term::Stage;
+        use gandr_kernel_term::StageId;
+        use gandr_kernel_term::session::Graph;
+        use gandr_kernel_term::session::Node;
+        use gandr_kernel_term::session::State;
+
+        use super::equal_computations;
+        use super::equal_values;
+
+        let mut arena = TermArena::new();
+        let label = |name: &str| FieldLabel::from(String::from(name));
+        let (zero, one) = (level(LevelConstant::from(0)), level(LevelConstant::from(1)));
+        let unit_type = arena.value_type_unit();
+        let unit = arena.value_unit();
+        let returner = arena.comp_type_returner(unit_type);
+        let returned = arena.computation_return(unit);
+
+        // Value types: record labels, session graphs, stages.
+        let record_type = |arena: &mut TermArena, name: &str| {
+            arena.value_type_record(BTreeMap::from([(label(name), unit_type)]))
+        };
+        let session = |arena: &mut TermArena, root: usize| {
+            let graph = Arc::new(Graph {
+                root: State(root),
+                nodes: alloc::vec![Node::End, Node::End],
+            });
+            arena.value_type_session(graph, unit_type)
+        };
+        let staged = |arena: &mut TermArena, stage: usize| {
+            arena.value_type_staged(unit_type, Stage::At(StageId::from(stage)))
+        };
+        let types = [
+            (
+                record_type(&mut arena, "a"),
+                record_type(&mut arena, "b"),
+                "record labels",
+            ),
+            (
+                session(&mut arena, 0),
+                session(&mut arena, 1),
+                "session graphs",
+            ),
+            (staged(&mut arena, 0), staged(&mut arena, 1), "stages"),
+        ];
+        for (left, right, what) in types {
+            assert_eq!(
+                convertible_value_types(&arena, left, right),
+                Convertibility::Distinct,
+                "{what} differ"
+            );
+        }
+        let (a, also_a) = (record_type(&mut arena, "a"), record_type(&mut arena, "a"));
+        assert_eq!(
+            convertible_value_types(&arena, a, also_a),
+            Convertibility::Convertible,
+            "record types with one label set convert"
+        );
+        let element = |arena: &mut TermArena, at: Level| arena.comp_type_element(unit, at);
+        let (low, high) = (
+            element(&mut arena, zero.clone()),
+            element(&mut arena, one.clone()),
+        );
+        assert_eq!(
+            convertible_comp_types(&arena, low, high),
+            Convertibility::Distinct,
+            "element types at two levels"
+        );
+
+        // Values: tags, record labels, programs, evidence and component
+        // counts, step shapes, child counts, lift levels.
+        let constructor = |arena: &mut TermArena, tag: usize| {
+            arena.value_constructor(unit_type, ConstructorTag::from(tag), Vec::new())
+        };
+        let record = |arena: &mut TermArena, name: &str| {
+            arena.value_record(BTreeMap::from([(label(name), unit)]))
+        };
+        let higher = |arena: &mut TermArena, depth: u32, count: usize| {
+            let program = Arc::new(HigherProgram {
+                depth: HigherDepth(depth),
+                root: LayerPosition(0),
+                layers: Vec::new(),
+            });
+            arena.value_higher(program, alloc::vec![unit; count].into_boxed_slice())
+        };
+        let evaluation = |arena: &mut TermArena, count: usize| {
+            let component = EvaluationComponent {
+                left: unit,
+                right: unit,
+                evidence: unit,
+            };
+            let components = alloc::vec![component; count].into_boxed_slice();
+            arena.value_higher_evaluation(Arc::from([]), components)
+        };
+        let quantified = |arena: &mut TermArena, fibre: Option<u32>, count: usize| {
+            let step = fibre.map_or_else(
+                || QuantifiedStep::Return(EvaluationDialogues::default()),
+                |fibre| QuantifiedStep::Apply {
+                    fibre: DeBruijnIndex::from(fibre),
+                    dialogues: EvaluationDialogues::default(),
+                },
+            );
+            arena.value_quantified_evaluation(
+                Arc::from([step]),
+                alloc::vec![unit; count].into_boxed_slice(),
+            )
+        };
+        let lift = |arena: &mut TermArena, at: Level| arena.value_lift(at, unit);
+        let values = [
+            (
+                constructor(&mut arena, 0),
+                constructor(&mut arena, 1),
+                "constructor tags",
+            ),
+            (
+                record(&mut arena, "a"),
+                record(&mut arena, "b"),
+                "record labels",
+            ),
+            (
+                higher(&mut arena, 1, 1),
+                higher(&mut arena, 2, 1),
+                "higher programs",
+            ),
+            (
+                higher(&mut arena, 1, 1),
+                higher(&mut arena, 1, 2),
+                "higher evidence counts",
+            ),
+            (
+                evaluation(&mut arena, 1),
+                evaluation(&mut arena, 2),
+                "evaluation component counts",
+            ),
+            (
+                quantified(&mut arena, None, 1),
+                quantified(&mut arena, Some(0), 1),
+                "quantified step shapes",
+            ),
+            (
+                quantified(&mut arena, None, 1),
+                quantified(&mut arena, None, 2),
+                "quantified child counts",
+            ),
+            (lift(&mut arena, zero), lift(&mut arena, one), "lift levels"),
+        ];
+        for (left, right, what) in values {
+            assert_eq!(
+                equal_values(&arena, left, right),
+                Convertibility::Distinct,
+                "{what} differ"
+            );
+        }
+        let twins = [
+            (record(&mut arena, "a"), record(&mut arena, "a"), "records"),
+            (
+                higher(&mut arena, 1, 1),
+                higher(&mut arena, 1, 1),
+                "higher fields",
+            ),
+            (
+                quantified(&mut arena, Some(0), 1),
+                quantified(&mut arena, Some(0), 1),
+                "quantified evaluations",
+            ),
+        ];
+        for (left, right, what) in twins {
+            assert_eq!(
+                equal_values(&arena, left, right),
+                Convertibility::Convertible,
+                "{what} of one shape and one child convert"
+            );
+        }
+
+        // Computations: branch counts, labels, components, sides.
+        let data_case = |arena: &mut TermArena, count: usize| {
+            arena.computation_data_case(unit, returner, alloc::vec![returned; count])
+        };
+        let case = |arena: &mut TermArena, count: usize| {
+            arena.computation_case(unit, &alloc::vec![returned; count])
+        };
+        let by_label = |arena: &mut TermArena, name: &str| {
+            arena.computation_record_projection(unit, label(name))
+        };
+        let by_component = |arena: &mut TermArena, component: usize| {
+            arena.computation_tuple_projection(unit, Component::from(component))
+        };
+        let project = |arena: &mut TermArena, side: Side| arena.computation_project(side, returned);
+        let computations = [
+            (
+                data_case(&mut arena, 1),
+                data_case(&mut arena, 2),
+                "data-case branch counts",
+            ),
+            (
+                case(&mut arena, 1),
+                case(&mut arena, 2),
+                "case branch counts",
+            ),
+            (
+                by_label(&mut arena, "a"),
+                by_label(&mut arena, "b"),
+                "projected labels",
+            ),
+            (
+                by_component(&mut arena, 0),
+                by_component(&mut arena, 1),
+                "projected components",
+            ),
+            (
+                project(&mut arena, Side::Left),
+                project(&mut arena, Side::Right),
+                "projected sides",
+            ),
+        ];
+        for (left, right, what) in computations {
+            assert_eq!(
+                equal_computations(&arena, left, right),
+                Convertibility::Distinct,
+                "{what} differ"
+            );
+        }
+    }
 }

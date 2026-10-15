@@ -326,6 +326,7 @@ fn occurrence(
 /// - hypothesis: L3 — an endpoint naming an outer variable is clear, and one
 ///   naming the binder beneath a former reaches it.
 /// - witness: `flow_universe::tests::symmetry_motive_is_refused_at_ride`
+/// - witness: `flow_universe::motive::tests::a_value_reaches_the_binder_it_names_beneath_a_former`
 #[spec(ensures: |ret| ret == Reach::Reaches || ret == Reach::Clear)]
 fn reach_value(
     arena: &mut TermArena,
@@ -417,5 +418,39 @@ fn reach_type(
     }
     else {
         Reach::Reaches
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::TermArena;
+
+    use super::Reach;
+    use super::reach_value;
+    use crate::encoding::ContentTable;
+
+    #[test]
+    fn a_value_reaches_the_binder_it_names_beneath_a_former()
+    {
+        let mut arena = TermArena::new();
+        let mut table = ContentTable::new();
+        let at = DeBruijnIndex::from(0_u32);
+        let binder = arena.value_variable(at);
+        let outer = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let naming = arena.value_tuple(&[binder]);
+        let beside = arena.value_tuple(&[outer]);
+        let unit = arena.value_unit();
+        assert_eq!(
+            reach_value(&mut arena, &mut table, naming, at),
+            Reach::Reaches
+        );
+        assert_eq!(
+            reach_value(&mut arena, &mut table, beside, at),
+            Reach::Clear,
+            "an outer variable is past the binder, not at it"
+        );
+        assert_eq!(reach_value(&mut arena, &mut table, unit, at), Reach::Clear);
     }
 }

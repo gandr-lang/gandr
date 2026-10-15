@@ -5,6 +5,7 @@ use alloc::vec;
 use anodized::spec;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::ValueId;
 
@@ -255,4 +256,49 @@ fn certificate_identity_unfolds()
         unfold(&mut arena, left, other, budget.replay),
         Err(HigherError::Boundary)
     ));
+    // One end agreeing is not enough: `Bool ≃ (Unit × Unit) + Unit` shares
+    // negation's source and not its target.
+    let wider = wider_boolean(&mut arena, boolean.code);
+    assert!(matches!(
+        unfold(&mut arena, left, wider, budget.replay),
+        Err(HigherError::Boundary)
+    ));
+}
+
+/// `Bool ≃ (Unit × Unit) + Unit`, doubling the left constructor's payload,
+/// with engine-produced round-trip evidence.
+///
+/// # Specification
+/// trivial.
+fn wider_boolean(
+    arena: &mut TermArena,
+    source: ValueId,
+) -> ValueId
+{
+    let unit_type = arena.value_type_unit();
+    let pair_type = arena.value_type_product(&[unit_type, unit_type]);
+    let wider = arena.value_type_sum(&[pair_type, unit_type]);
+    let target = arena.value_quote(wider);
+    let unit = arena.value_unit();
+    let pair = arena.value_tuple(&[unit, unit]);
+    let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let map = |arena: &mut TermArena, left: ValueId| {
+        let left = arena.value_injection(Side::Left.into(), left);
+        let right = arena.value_injection(Side::Right.into(), variable);
+        let left = arena.computation_return(left);
+        let right = arena.computation_return(right);
+        let body = arena.computation_case(variable, &[left, right]);
+        let body = arena.computation_lambda(body);
+        arena.value_thunk(body)
+    };
+    let forward = map(arena, pair);
+    let backward = map(arena, unit);
+    let sources = [Side::Left, Side::Right].map(|side| arena.value_injection(side.into(), unit));
+    let targets = [
+        arena.value_injection(Side::Left.into(), pair),
+        arena.value_injection(Side::Right.into(), unit),
+    ];
+    let evidence = super::evidence(arena, &sources, &targets, forward, backward);
+    let classifier = arena.value_type_path_universe(source, target);
+    arena.value_path_equiv(classifier, forward, backward, evidence)
 }
