@@ -566,6 +566,123 @@ mod native_formers
     }
 
     #[test]
+    fn a_fold_into_the_paths_of_a_set_respects_its_rules()
+    {
+        use gandr_kernel_term::Presentation;
+        use gandr_kernel_term::PresentedRule;
+        use gandr_kernel_term::RuleNode;
+        let x = RuleNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32));
+        let around = RuleNode::Constructor(ConstructorTag::from(1_usize));
+        let back = RuleNode::Constructor(ConstructorTag::from(2_usize));
+        // The integers presented by successor and predecessor, the two
+        // cancellations their rules: no cells, no loop at them, a set.
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let integers = staging
+            .data(
+                LevelSignature::monomorphic(),
+                vec![],
+                vec![vec![], vec![own], vec![own]],
+                kind,
+            )
+            .presented(Presentation::new(vec![
+                PresentedRule::new([around, back, x].into(), [x].into()),
+                PresentedRule::new([back, around, x].into(), [x].into()),
+            ]));
+        let integers = environment
+            .add_decl(integers)
+            .expect("the integers admit")
+            .position();
+        // A point and its loops: the presented zero, or the native zero,
+        // which no data type reads as a set.
+        let point = |arena: &mut gandr_kernel_term::TermArena, set: bool| {
+            if set {
+                let datatype = arena.value_type_data(integers, vec![]);
+                let zero = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![]);
+                (datatype, zero)
+            }
+            else {
+                let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+                let zero = arena.value_literal(gandr_kernel_term::Literal::Integer(
+                    gandr_kernel_term::IntegerLiteral::new(
+                        gandr_kernel_term::Sign::NonNegative,
+                        gandr_kernel_term::Magnitude::zero(),
+                    ),
+                ));
+                (integer, zero)
+            }
+        };
+        let lemma = |set: bool| {
+            move |arena: &mut gandr_kernel_term::TermArena| {
+                let (carrier, zero) = point(arena, set);
+                let path = arena.value_type_path(carrier, zero, zero);
+                let returner = arena.comp_type_returner(path);
+                let arrow = arena.comp_type_arrow(path, returner);
+                arena.value_type_thunk(arrow)
+            }
+        };
+        // `fix f. λy. case y { Z ⇒ return here(0); S(x) ⇒ r ← f(x);
+        // lemma(r); P(x) ⇒ r ← f(x); lemma(r) }`: at `S(P(x))` it computes
+        // `lemma(lemma(f(x)))`, which conversion never meets with `f(x)`;
+        // both are loops at zero.
+        let fold = |environment: &mut Environment, set: bool, lemma: ConstantIndex| {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let datatype = arena.value_type_data(integers, vec![]);
+            let (carrier, zero) = point(arena, set);
+            let path = arena.value_type_path(carrier, zero, zero);
+            let motive = arena.comp_type_returner(path);
+            let reflexivity = arena.value_here(zero);
+            let base = arena.computation_return(reflexivity);
+            let mut arm = || {
+                let recursive = arena.value_variable(DeBruijnIndex::from(2_u32));
+                let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+                let forced = arena.computation_force(recursive);
+                let folded = arena.computation_application(forced, field);
+                let result = arena.value_variable(DeBruijnIndex::from(0_u32));
+                let operation = arena.value_constant(lemma);
+                let operation = arena.computation_force(operation);
+                let applied = arena.computation_application(operation, result);
+                let sequenced = arena.computation_bind(folded, applied);
+                arena.computation_lambda(sequenced)
+            };
+            let up = arm();
+            let down = arm();
+            let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let case = arena.computation_data_case(argument, motive, vec![base, up, down]);
+            let lambda = arena.computation_lambda(case);
+            let fixpoint = arena.computation_fixpoint(
+                lambda,
+                gandr_kernel_term::FixpointEvidence::StructuralDescent,
+            );
+            let body = arena.value_thunk(fixpoint);
+            let arrow = arena.comp_type_arrow(datatype, motive);
+            let declared = arena.value_type_thunk(arrow);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(declaration)
+        };
+        let in_the_set = assume(&mut environment, lemma(true));
+        let admitted = fold(&mut environment, true, in_the_set)
+            .expect("two loops at one point of a set are one loop");
+        assert_eq!(
+            environment.audit(admitted).axioms(),
+            [in_the_set],
+            "the fold rests on the lemma it calls and nothing more"
+        );
+        let native = assume(&mut environment, lemma(false));
+        assert_eq!(
+            fold(&mut environment, false, native).map(|_admitted| ()),
+            Err(KernelError::RuleNotRespected(
+                gandr_kernel_term::RuleIndex::from(0_usize)
+            )),
+            "loops in a type not read as a set are compared as written"
+        );
+    }
+
+    #[test]
     fn empty_nominal_case_eliminates_only_an_empty_declaration()
     {
         let mut environment = Environment::new();

@@ -128,10 +128,36 @@ def rec spinHom(a : Int, b : Int) -> -F Path(Path(Circle, Base, Base), spin(plus
 @[ owes(1) ]
 def windHom : (q : Path(Circle, Base, Base), p : Path(Circle, Base, Base)) => Path(Int, wind(p then q), plus(wind(q), wind(p))) ;
 
-/// The sum commutes; restated from `int-sum.gandr`, where its proof waits on
-/// #427.
+/// A successor on the left of a sum comes out of it; owed as in
+/// `int-sum.gandr`, where the kernel refuses its proof (#424).
 @[ owes(1) ]
-def plusComm : (a : Int, b : Int) => Path(Int, plus(a, b), plus(b, a)) ;
+def plusS : (a : Int, b : Int) => Path(Int, plus(S(a), b), S(plus(a, b))) ;
+
+/// A predecessor on the left of a sum comes out of it; owed as `plusS` is
+/// (#424).
+@[ owes(1) ]
+def plusP : (a : Int, b : Int) => Path(Int, plus(P(a), b), P(plus(a, b))) ;
+
+/// Zero is a left unit of the sum, by induction on the right summand.
+@[ checks ]
+def rec plusZ(b : Int) -> -F Path(Int, plus(Z, b), b) {
+  case b {
+    Z => here(Z),
+    S(x) => cong(up, plusZ[<](x)),
+    P(x) => cong(down, plusZ[<](x))
+  }
+}
+
+/// The sum commutes (cubical's `+Comm`), as `int-sum.gandr` proves it: `Int`
+/// is a set, so the case respects its rules by their endpoints alone (#427).
+@[ checks ]
+def rec plusComm(a : Int, b : Int) -> -F Path(Int, plus(a, b), plus(b, a)) {
+  case b {
+    Z => back(plusZ(a)),
+    S(x) => cong(up, plusComm[<](a, x)) then back(plusS(x, a)),
+    P(x) => cong(down, plusComm[<](a, x)) then back(plusP(x, a))
+  }
+}
 
 /// The loops commute (cubical's `comm-ΩS¹`): each composite is the spin of
 /// its winding by `sect`, the windings sum by `windHom`, and the sums commute

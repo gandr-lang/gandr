@@ -20,6 +20,14 @@
 //! against `sect(x)` converts by the commuting conversions of `F` and the
 //! chain's reading, with no law named.
 //!
+//! A dependent fold into the paths of a set meets a rule however its arms
+//! compose those paths, a `then` through a lemma included, since two parallel
+//! paths in a set are one path. Where conversion leaves the sides apart and
+//! the fold's codomain at both sides is a path type in a parameterless data
+//! type with no cells and no loop at it, whose fields are such types, the
+//! obligation holds once the two instances' endpoints convert
+//! ([`parallel_in_a_set`]), as the checker decides it.
+//!
 //! A fold into a model meets a rule only up to the model's law: the winding
 //! number computes `turn(unturn(wind(x)))` against `wind(x)`. Such a fold's
 //! definition names one law per rule ([`gandr_kernel_term::KIND_DEF_LAWFUL`]),
@@ -29,6 +37,7 @@
 //! is searched, and the definition rests on the laws it names: where the model
 //! owes them, its audit names them as axioms.
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -63,6 +72,7 @@ use crate::replay::ReplayBudget;
 use crate::replay::ReplaySides;
 use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
+use crate::rewrite::shift_comp_type;
 use crate::rewrite::shift_computation;
 use crate::rewrite::shift_value;
 use crate::rewrite::shift_value_type;
@@ -292,6 +302,16 @@ pub(super) fn respected(
                 {
                     return Ok(());
                 }
+                if let Reading::Fold { arrow, .. } = reading
+                    && parallel_in_a_set(
+                        arena,
+                        (entries, unfoldings),
+                        (arrow, rule.variables()),
+                        obliged.sides,
+                    ) == Related::Related
+                {
+                    return Ok(());
+                }
                 match (reading, laws.get(index)) {
                     (Reading::Fold { arrow, .. }, Some(&law)) => {
                         let related = lawful(
@@ -324,6 +344,8 @@ struct Obliged
     left: ComputationId,
     /// `F(r)`.
     right: ComputationId,
+    /// `l` and `r`.
+    sides: (ValueId, ValueId),
     /// The fixpoint or the case, shifted past the pattern's binders.
     head: ComputationId,
     /// The scrutinee's data application, shifted past the pattern's binders.
@@ -334,9 +356,9 @@ struct Obliged
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Related
 {
-    /// The law's instance relates them.
+    /// The law's instance, or the set the paths stand in, relates them.
     Related,
-    /// The law does not state the rule at this fold.
+    /// Neither relates the rule's sides at this fold.
     Apart,
 }
 
@@ -346,8 +368,9 @@ enum Related
 /// - requires: `head` is the fixpoint or the case `reading` names, and
 ///   `datatype` its data application.
 /// - ensures: `F(l)` and `F(r)` beneath one fresh binder per pattern variable,
-///   `head` and `datatype` shifted past them: the shifted fixpoint applied to
-///   each side, or the shifted case with each side in its scrutinee's place.
+///   with `l` and `r` themselves, `head` and `datatype` shifted past them: the
+///   shifted fixpoint applied to each side, or the shifted case with each side
+///   in its scrutinee's place.
 /// - fails: [`KernelError::ArenaFault`] for a rule side that does not build or
 ///   a case node the arena does not hold.
 /// - panics: none.
@@ -395,8 +418,8 @@ fn obligation(
         })
         .map_err(|_fault| KernelError::ArenaFault)
     };
-    let left = side(rule.left())?;
-    let right = side(rule.right())?;
+    let sides = (side(rule.left())?, side(rule.right())?);
+    let (left, right) = sides;
     let (left, right) = match reading {
         Reading::Fold { .. } => (
             arena.computation_application(head, left),
@@ -421,6 +444,7 @@ fn obligation(
     Ok(Obliged {
         left,
         right,
+        sides,
         head,
         datatype,
     })
@@ -451,6 +475,188 @@ fn pattern_binder(
             .and_then(|past| past.checked_sub(1_u32))
             .unwrap_or_default(),
     )
+}
+
+/// Whether a fold's two sides of a rule are paths in a set with the same
+/// endpoints, re-derived: the codomain of `arrow`, past the rule's
+/// `variables` binders, at `l` and at `r` is `F Path(C, a, b)` for one set
+/// `C`, and the two instances' endpoints convert.
+///
+/// Two parallel paths in a set are one path, so the fold meets the rule
+/// however its arms compose them. An endpoint is a value, a call among it
+/// written as the value its run returns; each is compared as its run, as
+/// [`lawful`] reads a law's endpoint. The checker decides the same reading
+/// δ-free and the kernel re-derives it with no trace.
+///
+/// # Specification
+/// - requires: `arrow` is the type of the fold whose two sides of a rule over
+///   `variables` pattern variables are built over `l` and `r`, beneath one
+///   binder per variable.
+/// - ensures: [`Related::Related`] exactly when `arrow` is `A → F P` or `Π (y :
+///   A). F P`, `P` at `l` and at `r` is `Path(C, a, b)` and `Path(C', a', b')`
+///   with `C` converting with `C'`, `C` a set as [`sethood`] decides, and `a`
+///   converting with `a'` and `b` with `b'`, each a returned run read as that
+///   run, under [`crate::replay::convert`]; [`Related::Apart`] otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the checker's reading: a fold over the integers into a
+///   path between two sums, its arms composing the recursive call with a lemma,
+///   is admitted; a fold into the circle's paths is refused.
+/// - witness: `native_formers::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
+#[spec(
+    captures: arrowed = matches!(arena.comp_type(arrow), Some(&(CompType::Arrow { .. } | CompType::Pi { .. }))),
+    ensures: |ret| ret == Related::Apart || arrowed,
+)]
+fn parallel_in_a_set(
+    arena: &mut TermArena,
+    (entries, unfoldings): (&[AdmittedDeclaration], &Unfoldings),
+    (arrow, variables): (CompTypeId, VariableCount),
+    (left, right): (ValueId, ValueId),
+) -> Related
+{
+    let mut table = ContentTable::default();
+    let arrow = shift_comp_type(
+        arena,
+        &mut table,
+        &mut NullMemo,
+        arrow,
+        BinderDepth::NONE,
+        BinderDepth::from(u32::from(variables)),
+    );
+    let (from, to) = if let Some(&CompType::Pi { codomain, .. }) = arena.comp_type(arrow) {
+        (
+            substitute_comp_type(arena, &mut table, &mut NullMemo, codomain, left),
+            substitute_comp_type(arena, &mut table, &mut NullMemo, codomain, right),
+        )
+    }
+    else if let Some(&CompType::Arrow { codomain, .. }) = arena.comp_type(arrow) {
+        (codomain, codomain)
+    }
+    else {
+        return Related::Apart;
+    };
+    let path = |at: CompTypeId| {
+        let Some(&CompType::Returner(result)) = arena.comp_type(at)
+        else {
+            return None;
+        };
+        let Some(&ValueType::Path {
+            domain,
+            left,
+            right,
+        }) = arena.value_type(result)
+        else {
+            return None;
+        };
+        Some((domain, left, right))
+    };
+    let (Some((carrier, from_left, from_right)), Some((other, to_left, to_right))) =
+        (path(from), path(to))
+    else {
+        return Related::Apart;
+    };
+    if sethood(arena, (entries, unfoldings), carrier) == Sethood::Unread
+        || crate::conv::convert_value_type(arena, carrier, other).is_err()
+    {
+        return Related::Apart;
+    }
+    for (from, to) in [(from_left, to_left), (from_right, to_right)] {
+        let mut in_place = |endpoint: ValueId| {
+            if let Some(&Value::Returned(run)) = arena.value(endpoint) {
+                run
+            }
+            else {
+                arena.computation_return(endpoint)
+            }
+        };
+        let sides = ReplaySides::Computations(in_place(from), in_place(to));
+        if crate::replay::convert(arena, unfoldings, sides, ReplayBudget::DEFAULT)
+            != KernelVerdict::Convertible
+        {
+            return Related::Apart;
+        }
+    }
+    Related::Related
+}
+
+/// Whether a type is read as a set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Sethood
+{
+    /// A parameterless data type with no cells and no loop at it, whose
+    /// fields are such types.
+    Set,
+    /// Any other type: one with cells or a loop at it, or one nothing here
+    /// reads as a set.
+    Unread,
+}
+
+/// Whether `carrier` is a set: a parameterless data type with no cells of
+/// its own and no loop at it, whose every constructor's fields are such types.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Sethood::Set`] exactly when every data type reached from
+///   `carrier` through constructor fields is applied to no argument, names an
+///   admitted data declaration of no parameter, carries no cells and has no
+///   loop at it among `unfoldings`' presentations; [`Sethood::Unread`]
+///   otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: a worklist over the field types of data declarations, each
+///   declaration expanded once; not recursion.
+/// - measure: the declarations not yet expanded, then the field types pending.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the checker's reading: the integers are a set and the
+///   circle is not.
+/// - witness: `native_formers::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
+#[spec(ensures: |ret| ret == Sethood::Unread || matches!(arena.value_type(carrier), Some(&ValueType::Data { ref arguments, .. }) if arguments.is_empty()))]
+fn sethood(
+    arena: &TermArena,
+    (entries, unfoldings): (&[AdmittedDeclaration], &Unfoldings),
+    carrier: ValueTypeId,
+) -> Sethood
+{
+    let presentations = unfoldings.presentations();
+    let mut expanded = BTreeSet::new();
+    let mut pending = Vec::from([carrier]);
+    while let Some(next) = pending.pop() {
+        let Some(&ValueType::Data {
+            declaration,
+            ref arguments,
+        }) = arena.value_type(next)
+        else {
+            return Sethood::Unread;
+        };
+        if !arguments.is_empty() {
+            return Sethood::Unread;
+        }
+        if !expanded.insert(declaration) {
+            continue;
+        }
+        if presentations.looping(declaration).next().is_some() {
+            return Sethood::Unread;
+        }
+        let Some(entry) = entries.get(usize::from(declaration))
+        else {
+            return Sethood::Unread;
+        };
+        let Ok(signature) = super::former::signature(entries, declaration)
+        else {
+            return Sethood::Unread;
+        };
+        if entry.declaration().presentation().cells().is_some() || !signature.parameters.is_empty()
+        {
+            return Sethood::Unread;
+        }
+        pending.extend(signature.constructors.iter().flatten().copied());
+    }
+    Sethood::Set
 }
 
 /// Decide that `law` relates the two sides a fold computes for `rule`.

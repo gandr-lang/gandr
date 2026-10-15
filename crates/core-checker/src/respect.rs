@@ -38,6 +38,21 @@
 //! and the kernel reads the same chain by its own evaluator; the two sides
 //! then meet as the one stuck call, with no law named.
 //!
+//! A dependent fold into the paths of a set meets a rule however its arms
+//! compose those paths: `plusComm` over the integers binds its call at `x`
+//! into a `then` through a lemma, which nothing reduces. A set has no cells,
+//! so two parallel paths in one are one path. Where conversion leaves the
+//! sides apart and the fold's codomain at both sides is a path type in a set
+//! ([`sethood`]: a parameterless data type with no cells and no loop at it,
+//! its fields such types), the obligation holds once the two instances'
+//! endpoints convert ([`parallel_in_a_set`]); the kernel re-derives the same
+//! reading. **Alternatives.** Owing the obligation by name under `respects`,
+//! a law per rule restating what the set already gives; comparing paths at a
+//! set by their endpoints inside conversion itself, which needs a
+//! type-directed conversion neither engine has. **Reversal.** A conversion
+//! that compares values at their types decides paths in a set there, and
+//! this reading retires into it.
+//!
 //! A fold into a model meets a rule only up to the model's law: the winding
 //! number computes `turn(unturn(wind(x)))` against `wind(x)`. Such a fold
 //! names one law per rule, in rule order ([`crate::Declaration::laws`],
@@ -65,6 +80,7 @@
 //! **Reversal.** Arms generated from a model's signature carry the laws with
 //! the model, and the attribute retires.
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -81,6 +97,7 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::instantiate_comp_type;
+use gandr_core_term::shift_comp_type;
 use gandr_core_term::shift_computation_under_traced;
 use gandr_core_term::shift_value;
 use gandr_core_term::shift_value_type;
@@ -257,6 +274,11 @@ pub fn respected(
         {
             continue;
         }
+        if let Reading::Fold { arrow, .. } = reading
+            && parallel_in_a_set(context, (arrow, amount), (left, right)) == Related::Related
+        {
+            continue;
+        }
         let law = context.admitted_laws().get(index).copied();
         let related = match (reading, law) {
             (Reading::Fold { arrow, .. }, Some(law)) => {
@@ -279,6 +301,182 @@ pub fn respected(
         }
     }
     Ok(())
+}
+
+/// Whether a fold's two sides of a rule are paths in a set with the same
+/// endpoints: `arrow`'s codomain at each rule side, `amount` binders past the
+/// fold's type, is `F Path(C, a, b)` for one set `C`, and the two instances'
+/// endpoints convert.
+///
+/// A set has no cells: two parallel paths in one are one path, so a fold
+/// into its paths meets each rule however its arms compose them, a cong of
+/// the recursive call or a chain of `then` through a lemma that nothing
+/// reduces. Its endpoints at the two sides are the rule's identification
+/// carried through the codomain, which conversion decides, so nothing about
+/// the paths themselves is compared. An endpoint is a value, a call among it
+/// written as the value its run returns; each is compared as its run, as
+/// [`lawful`] reads a law's endpoint, since a held run is compared only
+/// structurally and never meets a presented term's normal form.
+///
+/// # Specification
+/// - requires: `arrow` is the type of the fold whose two sides of a rule are
+///   built over `left` and `right`, beneath `amount` binders.
+/// - ensures: [`Related::Related`] exactly when `arrow` is `A → F P` or `Π (y :
+///   A). F P`, `P` at `left` and at `right` is `Path(C, a, b)` and `Path(C',
+///   a', b')` with `C` equivalent to `C'`, `C` a set as [`sethood`] decides,
+///   and `a` converting with `a'` and `b` with `b'`, each a returned run read
+///   as that run, under [`crate::code::CodeDefinitions::convert_rigidly`];
+///   [`Related::Apart`] otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fold over the integers into a path between two sums,
+///   whose arms compose the recursive call with a lemma, is admitted; a fold
+///   into the circle's paths is refused at the rule its words tell apart.
+/// - witness: `native_formers::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
+#[spec(
+    captures: arrowed = matches!(context.arena().comp_type(arrow), Some(&(CompType::Arrow { .. } | CompType::Pi { .. }))),
+    ensures: |ret| ret == Related::Apart || arrowed,
+)]
+fn parallel_in_a_set(
+    context: &mut CheckingContext<'_>,
+    (arrow, amount): (CompTypeId, Binders),
+    (left, right): (ValueId, ValueId),
+) -> Related
+{
+    let arena = context.arena_mut();
+    let arrow = shift_comp_type(arena, arrow, amount);
+    let (from, to) = if let Some(&CompType::Pi { codomain, .. }) = arena.comp_type(arrow) {
+        (
+            instantiate_comp_type(arena, codomain, left),
+            instantiate_comp_type(arena, codomain, right),
+        )
+    }
+    else if let Some(&CompType::Arrow { codomain, .. }) = arena.comp_type(arrow) {
+        (codomain, codomain)
+    }
+    else {
+        return Related::Apart;
+    };
+    let path = |at: CompTypeId| {
+        let Some(&CompType::Returner { result, .. }) = arena.comp_type(at)
+        else {
+            return None;
+        };
+        let Some(&ValueType::Path {
+            carrier,
+            left,
+            right,
+        }) = arena.value_type(result)
+        else {
+            return None;
+        };
+        Some((carrier, left, right))
+    };
+    let (Some((carrier, from_left, from_right)), Some((other, to_left, to_right))) =
+        (path(from), path(to))
+    else {
+        return Related::Apart;
+    };
+    if sethood(context, carrier) == Sethood::Unread
+        || !matches!(
+            crate::conversion::equivalent(context, carrier, other),
+            Ok(Agreement::Convertible)
+        )
+    {
+        return Related::Apart;
+    }
+    for (from, to) in [(from_left, to_left), (from_right, to_right)] {
+        let arena = context.arena_mut();
+        let mut in_place = |endpoint: ValueId| {
+            if let Some(&Value::Returned(run)) = arena.value(endpoint) {
+                run
+            }
+            else {
+                arena.computation_return(endpoint)
+            }
+        };
+        let sides = (in_place(from), in_place(to));
+        if let Maybe::Absent(_) = context
+            .definitions()
+            .convert_rigidly(context.arena(), sides)
+        {
+            return Related::Apart;
+        }
+    }
+    Related::Related
+}
+
+/// Whether a type is read as a set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Sethood
+{
+    /// A parameterless data type with no cells and no loop at it, whose
+    /// fields are such types.
+    Set,
+    /// Any other type: one with cells or a loop at it, or one nothing here
+    /// reads as a set.
+    Unread,
+}
+
+/// Whether `carrier` is a set: a parameterless data type with no cells of
+/// its own and no loop at it, whose every constructor's fields are such types.
+///
+/// # Specification
+/// - requires: `carrier` is formed.
+/// - ensures: [`Sethood::Set`] exactly when every data type reached from
+///   `carrier` through constructor fields is applied to no argument, declares
+///   no parameter, carries no cells and has no loop at it as
+///   [`crate::loops::loops`] finds them; [`Sethood::Unread`] otherwise. Each
+///   data type read is logged as consulted.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: a worklist over the field types of data declarations, each
+///   declaration expanded once; not recursion.
+/// - measure: the declarations not yet expanded, then the field types pending.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the integers are a set and the circle is not, so a fold
+///   into the integers' paths is admitted and one into the circle's refused.
+/// - witness: `native_formers::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
+#[spec(ensures: |ret| ret == Sethood::Unread || matches!(context.arena().value_type(carrier), Some(&ValueType::Data { ref arguments, .. }) if arguments.is_empty()))]
+fn sethood(
+    context: &mut CheckingContext<'_>,
+    carrier: ValueTypeId,
+) -> Sethood
+{
+    let mut expanded = BTreeSet::new();
+    let mut pending = Vec::from([carrier]);
+    while let Some(next) = pending.pop() {
+        let Some(&ValueType::Data {
+            declaration,
+            ref arguments,
+        }) = context.arena().value_type(next)
+        else {
+            return Sethood::Unread;
+        };
+        if !arguments.is_empty() {
+            return Sethood::Unread;
+        }
+        if !expanded.insert(declaration) {
+            continue;
+        }
+        if !crate::loops::loops(context, next).is_empty() {
+            return Sethood::Unread;
+        }
+        let Some(signature) = context.consult_data(declaration)
+        else {
+            return Sethood::Unread;
+        };
+        if signature.presentation().cells().is_some() || !signature.parameters().is_empty() {
+            return Sethood::Unread;
+        }
+        pending.extend(signature.constructors().iter().flatten().copied());
+    }
+    Sethood::Set
 }
 
 /// One rule's obligation at a fold, built beneath one fresh binder per
