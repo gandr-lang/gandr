@@ -996,6 +996,57 @@ mod recursive_data
         }
     }
 
+    /// A family's field may name a type or a constant only from an earlier
+    /// position: an abstract type, or the element of a constant code, at a
+    /// later position is a cross-block reference, and at the family's own
+    /// position an index occurrence.
+    #[test]
+    fn a_field_naming_its_own_or_a_later_position_is_refused_by_name()
+    {
+        let field = OccurrenceSite::Field {
+            tag: ConstructorTag::from(0_usize),
+            field: FieldPosition::from(0_usize),
+        };
+        let position = ConstantIndex::from(0);
+        let later = ConstantIndex::from(1);
+        let named = |abstract_type, target| {
+            let mut arena = CoreArena::new();
+            let universe = kind(&mut arena);
+            let field = if abstract_type {
+                arena.value_type_abstract(target)
+            }
+            else {
+                let code = arena.value_constant(target);
+                arena.value_type_element(code, Level::zero())
+            };
+            let declaration = Declaration::data(
+                position,
+                Arc::new(DataSignature::new(vec![], vec![vec![field]], universe)),
+                origin(position),
+            );
+            let report = check_module(
+                &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+                &[declaration],
+            );
+            report.judged()[0].verdict()
+        };
+        for (abstract_type, what) in [(true, "an abstract type"), (false, "a constant's element")] {
+            assert_eq!(
+                named(abstract_type, later),
+                Verdict::Refused(CheckRefusal::CrossBlockReference {
+                    site: field,
+                    index: later,
+                }),
+                "{what} at a later position is a cross-block reference"
+            );
+            assert_eq!(
+                named(abstract_type, position),
+                Verdict::Refused(CheckRefusal::IndexOccurrence(field)),
+                "{what} at the family's own position is an index occurrence"
+            );
+        }
+    }
+
     #[test]
     fn a_fixpoint_checks_at_every_computation_type()
     {
