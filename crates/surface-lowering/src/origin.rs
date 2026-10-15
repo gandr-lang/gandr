@@ -80,11 +80,23 @@
 //! request, its binder — without resolving the name again. A variable the
 //! lowering inserts, and one whose binder the source names nothing, records
 //! none. Witness: `lower::tests::a_variable_keeps_its_binder`.
+//!
+//! # A rewritten node answers where its source is written
+//!
+//! A node a rewrite of the lowered terms mints after the lowering — the
+//! checker's elaboration of a computation written where a value is read
+//! among them — has no syntax of its own. [`OriginTable::carry`] records for
+//! each the origin of the node it stands for, as the rewrite reports it: a
+//! rebuilt node its source's, with the source's binder name and a variable's
+//! binder, and a bind minted for a run the run's. A refusal over the rewritten
+//! terms is then published at the written node that elaborated.
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::Carried;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
@@ -521,6 +533,16 @@ where
     found.map_or(Maybe::Absent(origin::Absent::Unrecorded), Maybe::Present)
 }
 
+/// What a computation a rewrite minted stands for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Source
+{
+    /// A bind minted for the run it binds, which it answers at.
+    Run(ValueId),
+    /// A node rebuilt from the computation it stands in place of.
+    Rebuilt(ComputationId),
+}
+
 impl OriginTable
 {
     /// A table holding no origins.
@@ -588,6 +610,105 @@ impl OriginTable
     )
     {
         record(&mut self.comp_types, id, origin);
+    }
+
+    /// Record, for each node a rewrite of the lowered terms minted, the origin
+    /// of the node it stands for: a rebuilt node takes the origin of the node
+    /// it was rebuilt from, with that node's binder name and a variable's
+    /// binder, and a bind minted for a run takes the run's origin and names no
+    /// binder.
+    ///
+    /// # Specification
+    /// - requires: every node `carried` and `binds` name as minted follows
+    ///   every node this table records in its family, and every rebuilt node
+    ///   follows the node it was rebuilt from, as a rewrite mints them.
+    /// - ensures: each minted node whose source answers an origin records it,
+    ///   the source being the node `carried` pairs it with, or for a bind the
+    ///   run `binds` pairs it with, the run first and the first pair after it;
+    ///   a rebuilt opener records its source's binder and a rebuilt variable
+    ///   its source's binder span; a minted bind records no binder; nothing
+    ///   recorded before changes, and every family stays ascending.
+    /// - provides: the nodes of a body the checker elaborated, located as the
+    ///   written nodes they elaborate, so a refusal of the second run is
+    ///   published where the first run's is.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a rebuilt case, lambda and variable, a node rebuilt
+    ///   from a rebuilt node, and a bind reported both beside its run and as a
+    ///   rebuilt region separate the source each answers at, the binder it
+    ///   names and the run's precedence; a source with no origin leaves its
+    ///   copy unrecorded.
+    /// - witness: `origin::tests::an_elaborated_node_answers_where_its_source_is_written`
+    #[spec(
+        captures: before = (self.values.len(), self.computations.len(), self.declarations.len()),
+        ensures: self.values.len() >= before.0
+            && self.computations.len() >= before.1
+            && self.declarations.len() == before.2,
+    )]
+    #[inline]
+    pub fn carry(
+        &mut self,
+        carried: &[Carried],
+        binds: &[(ValueId, ComputationId)],
+    )
+    {
+        let mut values = BTreeMap::new();
+        let mut computations = BTreeMap::new();
+        let mut value_types = BTreeMap::new();
+        let mut comp_types = BTreeMap::new();
+        for &(run, bind) in binds {
+            let _first = computations.entry(bind).or_insert(Source::Run(run));
+        }
+        for pair in carried {
+            match *pair {
+                | Carried::Value(held, written) => {
+                    let _first = values.entry(written).or_insert(held);
+                },
+                | Carried::Computation(held, written) => {
+                    let _first = computations.entry(written).or_insert(Source::Rebuilt(held));
+                },
+                | Carried::ValueType(held, written) => {
+                    let _first = value_types.entry(written).or_insert(held);
+                },
+                | Carried::CompType(held, written) => {
+                    let _first = comp_types.entry(written).or_insert(held);
+                },
+            }
+        }
+        for (written, held) in values {
+            if let Maybe::Present(origin) = self.value(held) {
+                self.record_value(written, origin);
+            }
+            if let Maybe::Present(binder) = self.binding(held) {
+                self.record_binding(written, binder);
+            }
+        }
+        for (written, source) in computations {
+            let origin = match source {
+                | Source::Run(run) => self.value(run),
+                | Source::Rebuilt(held) => {
+                    if let Maybe::Present(name) = self.binder(held) {
+                        self.record_binder(written, name);
+                    }
+                    self.computation(held)
+                },
+            };
+            if let Maybe::Present(origin) = origin {
+                self.record_computation(written, origin);
+            }
+        }
+        for (written, held) in value_types {
+            if let Maybe::Present(origin) = self.value_type(held) {
+                self.record_value_type(written, origin);
+            }
+        }
+        for (written, held) in comp_types {
+            if let Maybe::Present(origin) = self.comp_type(held) {
+                self.record_comp_type(written, origin);
+            }
+        }
     }
 
     /// Record a declaration's origin and return the token naming it.
@@ -1414,6 +1535,7 @@ mod tests
     use gandr_surface_syntax::NodeIndex;
     use quenchant_shape::shape::Maybe;
 
+    use super::Carried;
     use super::Origin;
     use super::OriginCount;
     use super::OriginTable;
@@ -1496,6 +1618,70 @@ mod tests
             OriginTable::new().value(recorded),
             Maybe::Absent(origin::Absent::Unrecorded),
             "an empty family answers nothing at all"
+        );
+    }
+
+    #[test]
+    fn an_elaborated_node_answers_where_its_source_is_written()
+    {
+        let mut arena = CoreArena::new();
+        let mut table = OriginTable::new();
+        let [variable, run, bare] = [(); 3].map(|()| arena.value_unit());
+        let [lambda, region] = [(); 2].map(|()| arena.computation_return(variable));
+        table.record_value(variable, at(NodeIndex::from(1_usize)));
+        table.record_value(run, at(NodeIndex::from(2_usize)));
+        table.record_computation(lambda, at(NodeIndex::from(3_usize)));
+        table.record_computation(region, at(NodeIndex::from(4_usize)));
+        table.record_binding(variable, at(NodeIndex::from(5_usize)).span());
+        table.record_binder(lambda, at(NodeIndex::from(6_usize)));
+        let [shifted, copied] = [(); 2].map(|()| arena.value_unit());
+        let [rebuilt, closed, spliced, bind] = [(); 4].map(|()| arena.computation_return(variable));
+        // A rewrite reports in memo order, not mint order; the region is
+        // reported both as its closed body and as the bind wrapping it.
+        table.carry(
+            &[
+                Carried::Computation(closed, spliced),
+                Carried::Computation(region, bind),
+                Carried::Value(bare, copied),
+                Carried::Computation(region, closed),
+                Carried::Value(variable, shifted),
+                Carried::Computation(lambda, rebuilt),
+            ],
+            &[(run, bind)],
+        );
+        assert_eq!(
+            (table.value(shifted), table.binding(shifted)),
+            (
+                Maybe::Present(at(NodeIndex::from(1_usize))),
+                Maybe::Present(at(NodeIndex::from(5_usize)).span())
+            ),
+            "a rebuilt variable answers at its source and keeps its binder"
+        );
+        assert_eq!(
+            (table.computation(rebuilt), table.binder(rebuilt)),
+            (
+                Maybe::Present(at(NodeIndex::from(3_usize))),
+                Maybe::Present(at(NodeIndex::from(6_usize)))
+            ),
+            "a rebuilt opener answers at its source and names its binder"
+        );
+        assert_eq!(
+            table.computation(spliced),
+            Maybe::Present(at(NodeIndex::from(4_usize))),
+            "a node rebuilt from a rebuilt node answers at the written one"
+        );
+        assert_eq!(
+            (table.computation(bind), table.binder(bind)),
+            (
+                Maybe::Present(at(NodeIndex::from(2_usize))),
+                Maybe::Absent(origin::Absent::Unrecorded)
+            ),
+            "a bind answers at the run it binds, before the region it wraps, and names no binder"
+        );
+        assert_eq!(
+            table.value(copied),
+            Maybe::Absent(origin::Absent::Unrecorded),
+            "a copy of a node with no origin gains none"
         );
     }
 

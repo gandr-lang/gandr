@@ -77,6 +77,22 @@
 //! a kernel disagreement takes precedence over a settle fault, as it did when
 //! the readmission ran first.
 //!
+//! # A second-run refusal is published at the written node that elaborated
+//!
+//! A body holding a computation written where a value is read is judged
+//! twice, and the verdict, a refusal and every frame it names come from the
+//! second run, over the body the checker elaborated: nodes the lowering never
+//! minted. `judge` gives each of them the origin of the written node it
+//! elaborates before the composition is read: a rebuilt node the origin of
+//! the node it was rebuilt from, so the respect check of a case whose arms
+//! nest a call refuses at the case block as the bound spelling does, and a
+//! bind minted for a run the origin of the nested call it runs. The table is
+//! the lowering's, extended, so every face reading the composition — the
+//! terminal, the language server — locates the refusal alike. The alternative
+//! was a refusal that names the file alone, which an editor publishes nowhere.
+//! The carriage retires with the second run, whose reversal the checker's
+//! `nested` module names.
+//!
 //! # One composition serves both verbs
 //!
 //! `check` and `test` run the same walk and the same `compose`; they differ
@@ -906,7 +922,7 @@ pub fn judge<'source>(
                 report,
                 exercised,
                 unstatable,
-                origins: module.into_origins(),
+                origins: located(module.into_origins(), &verdicts),
                 spellings,
                 failures,
                 shadowed,
@@ -964,6 +980,54 @@ fn inferred_runs(
                     })
             }),
     )
+}
+
+/// The lowering's origin table, with every node the checker's elaborations
+/// minted located at the written node it elaborates.
+///
+/// A body holding a computation written where a value is read is judged
+/// twice, and the verdict is the second run's, over the elaborated body: a
+/// refusal or a frame of that run names elaborated nodes, which the lowering
+/// never minted. Each is published at the written node that elaborated: a
+/// rebuilt node at the node it was rebuilt from, so the respect check of a
+/// case whose arms nest a call refuses at the case as its bound spelling
+/// does, and a bind minted for a run at the nested call it runs.
+///
+/// # Specification
+/// - requires: `origins` is the table of the module `verdicts` judged, read
+///   before any node of that judgement was recorded in it.
+/// - ensures: `origins` with [`OriginTable::carry`] applied to every node each
+///   elaboration reports minting beside the node it stands for; `origins`
+///   itself when no body was elaborated.
+/// - provides: the table a second-run refusal is located through.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fold nesting its call and its bound twin, each refused
+///   by the rule it tells apart, refuse at one case block.
+/// - witness: `entry::tests::a_second_run_refusal_is_located_where_its_bound_spelling_is`
+#[spec(captures: [declarations = origins.declaration_count(), recorded = origins.recorded_count()],
+    ensures: |ret| ret.declaration_count() == declarations && ret.recorded_count() >= recorded)]
+fn located(
+    mut origins: OriginTable,
+    verdicts: &ModuleReport,
+) -> OriginTable
+{
+    let elaborations = verdicts.nested_elaborations();
+    if elaborations.is_empty() {
+        return origins;
+    }
+    let carried: Vec<_> = elaborations
+        .values()
+        .flat_map(|elaboration| elaboration.carried().iter().copied())
+        .collect();
+    let binds: Vec<_> = elaborations
+        .values()
+        .flat_map(|elaboration| elaboration.binds().iter().copied())
+        .collect();
+    origins.carry(&carried, &binds);
+    origins
 }
 
 /// Judge one lowered module: the second half of the composition.
@@ -1983,7 +2047,7 @@ def h = 1 ;"#,
                 report,
                 exercised,
                 unstatable,
-                origins: module.into_origins(),
+                origins: super::located(module.into_origins(), &verdicts),
                 spellings,
                 failures,
                 shadowed,

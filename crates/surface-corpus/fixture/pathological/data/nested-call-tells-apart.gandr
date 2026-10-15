@@ -1,0 +1,23 @@
+/// The integers presented by their two cancellations: `S(P(x))` and
+/// `P(S(x))` are each `x`.
+@[ checks ]
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) ==> x;
+  rule P(S(x)) ==> x;
+}
+
+/// Reads a predecessor as a successor, so `S(P(Z))`, which is `Z`, would
+/// read as `S(S(Z))`. Its calls are written where a value is read, so the
+/// case is judged on the binds they elaborate to, and refused at the case
+/// as the bound spelling is.
+@[ refuses("RuleNotRespected") ]
+def rec tell(n : Int) -> -F Int {
+  case n {
+    Z => Z,
+    S(x) => S(tell[<](x)),
+    P(x) => S(tell[<](x))
+  }
+}

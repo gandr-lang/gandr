@@ -40,8 +40,10 @@
 //! computation. A run with no computation around it — in a definition's own
 //! value, or under static content — has nowhere to run and is refused as
 //! [`CheckRefusal::UnenclosedRun`]. Each minted bind is reported beside the
-//! run it was minted for, so a consumer reads the nested call's own span at
-//! the bind and no diagnostic names the minted variable.
+//! run it was minted for, and every rebuilt node beside the node it was
+//! rebuilt from, so a consumer publishes a refusal of the second run at the
+//! written node that elaborated — the nested call's own span at its bind —
+//! and no diagnostic names the minted variable.
 //!
 //! The lowering decided every other bridge because the checker returned
 //! verdicts, not terms, and every position's sort was read off the syntax. A
