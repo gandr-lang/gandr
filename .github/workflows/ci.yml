@@ -891,6 +891,8 @@ jobs:
         run: mise run check:markdown
       - name: merge residue check
         run: mise run check:merge-residue
+      - name: corpus item comments
+        run: mise run check:corpus-comments
       - name: validate npm lock sidecars
         run: mise run check:lockfile
       - name: keep workflow tools outside the package graph

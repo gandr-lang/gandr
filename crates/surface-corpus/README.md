@@ -1,6 +1,6 @@
 # gandr-surface-corpus
 
-The expectation language over a lowered module and its verdicts — the `checks`, `owes`, `refuses`, `runs` and `normalizes` schemas, the strict and fixture corpus roots, the settle comparison, and the report a corpus runner reads its counts from — and the language's corpus itself, under `strict/` and `fixture/`.
+The expectation language over a lowered module and its verdicts — the `checks`, `owes`, `refuses`, `runs` and `normalizes` schemas, the strict and fixture corpus roots, the settle comparison, and the report a corpus runner reads its counts from — and the language's corpus itself, under `strict/` and `fixture/`. Every `.gandr` source under `fixture/` opens with a comment, and each top-level item carries a doc comment or a line comment immediately before its attribute block; `check:corpus-comments` refuses a source that does not, naming the file and the item, and ratchets against [`fixture/uncommented.ledger`](fixture/uncommented.ledger).
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -121,6 +121,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The closed refusal vocabulary, native universe-path refusals | [`refusal`](src/refusal.rs) |
 | Membership, the corpus directories, one walk, the pending set | [`root`](src/root.rs) |
 | The kernel export suite | [`kernel_export`](src/kernel_export.rs) |
+| A comment on every fixture item, the ledger ratchet | [`src/lib.rs`](src/lib.rs), [`comments`](tests/comments/lib.rs) |
 
 ## License
 
