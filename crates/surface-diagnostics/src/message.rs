@@ -503,9 +503,20 @@ fn checked(
         CheckRefusal::NotApart { .. } => {
             f.write_str("this case has no arm, but its path's endpoints are not shown apart")
         },
-        CheckRefusal::LoopNotRespected { .. } => f.write_str(
+        CheckRefusal::LoopNotRespected {
+            reason: gandr_core_checker::LoopRespect::Apart,
+            ..
+        } => f.write_str(
             "this case might tell a loop apart from staying put: carried along the loop, its \
              answer at the loop's point is not that answer",
+        ),
+        CheckRefusal::LoopNotRespected {
+            reason: gandr_core_checker::LoopRespect::NotPresentedSet,
+            ..
+        } => f.write_str(
+            "this case answers at its loop's point by a case over another looped point, and \
+             the fibre it answers in is not presented as a set: the square between the two \
+             loops is owed, and nothing here supplies it",
         ),
         CheckRefusal::LoopUndecided { .. } => f.write_str(
             "deciding whether this case respects its sort's loops ran past the checker's \
@@ -1093,6 +1104,7 @@ mod tests
                 cell: gandr_kernel_term::CellIndex::from(0_usize),
                 left: computation,
                 right: computation,
+                reason: gandr_core_checker::LoopRespect::NotPresentedSet,
             },
             CheckRefusal::LoopUndecided {
                 at: computation,

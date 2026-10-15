@@ -530,6 +530,7 @@ pub use crate::refusal::CheckingForm;
 pub use crate::refusal::Compared;
 pub use crate::refusal::CoreNode;
 pub use crate::refusal::ExpectedShape;
+pub use crate::refusal::LoopRespect;
 pub use crate::refusal::Mismatch;
 pub use crate::refusal::RunFault;
 pub use crate::refusal::RunStep;

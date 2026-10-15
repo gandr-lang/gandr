@@ -293,6 +293,8 @@ pub enum Refusal
         at: Site,
         /// The first loop the case is not shown to respect.
         cell: gandr_kernel_term::CellIndex,
+        /// Why the loop is not shown respected.
+        reason: gandr_core_checker::LoopRespect,
     },
     /// A case's obligation for a loop ran past the budget of the conversion
     /// that decides it.
@@ -1043,7 +1045,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::RuleNotPresentable {kind,refusal} = matched_left_value && let Refusal::RuleNotPresentable {kind:projected,refusal:stored} = *matched_right_value { projected == self.site(ArenaNode::ValueType(kind)) && stored == refusal }
  else if let CheckRefusal::RuleNotRespected {at,rule, ..} = matched_left_value && let Refusal::RuleNotRespected {at:projected,rule:stored} = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && stored == rule }
  else if let CheckRefusal::NotApart {at,reason} = matched_left_value && let Refusal::NotApart {at:projected,reason:stored} = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && stored == reason }
- else if let CheckRefusal::LoopNotRespected {at,cell, ..} = matched_left_value && let Refusal::LoopNotRespected {at:projected,cell:stored} = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && stored == cell }
+ else if let CheckRefusal::LoopNotRespected {at,cell,reason, ..} = matched_left_value && let Refusal::LoopNotRespected {at:projected,cell:stored,reason:kept} = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && stored == cell && kept == reason }
  else if let CheckRefusal::LoopUndecided {at,cell} = matched_left_value && let Refusal::LoopUndecided {at:projected,cell:stored} = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && stored == cell }
  else if let CheckRefusal::UnknownConstructor {at,tag} = matched_left_value && let Refusal::UnknownConstructor {at:projected,tag:stored} = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == tag }
  else if let CheckRefusal::ConstructorArity(at) = matched_left_value && let Refusal::ConstructorArity(projected) = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
@@ -1215,9 +1217,12 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 at: self.site(ArenaNode::Computation(at)),
                 reason,
             },
-            CheckRefusal::LoopNotRespected { at, cell, .. } => Refusal::LoopNotRespected {
+            CheckRefusal::LoopNotRespected {
+                at, cell, reason, ..
+            } => Refusal::LoopNotRespected {
                 at: self.site(ArenaNode::Computation(at)),
                 cell,
+                reason,
             },
             CheckRefusal::LoopUndecided { at, cell } => Refusal::LoopUndecided {
                 at: self.site(ArenaNode::Computation(at)),

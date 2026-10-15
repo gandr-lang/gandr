@@ -20,6 +20,19 @@ def contractible(x : Circle) -> -F Path(Circle, Base, x) {
   }
 }
 
+/// The same nesting as `circle-rotation.gandr`'s `rotInv1`, at a fibre that
+/// is no set: a point with a loop at it, a 1-type. Holding `b` at its point
+/// drops the square between the two loops, which only a fibre presented as a
+/// set leaves unowed, so the case is refused naming the fibre (#464).
+@[ refuses("LoopNotRespected") ]
+def rotTwin(a : Circle, b : Circle) -> -F (#{centre : Circle, around : Path(Circle, a, a)}) {
+  case a {
+    Base => case b {
+      Base => #{centre = Base, around = loop}
+    }
+  }
+}
+
 /// The degree-two map: the loop goes round twice. A loop arm of a
 /// non-dependent case chooses any loop at the image of the point, so the map
 /// is admitted.

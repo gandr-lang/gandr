@@ -11,11 +11,16 @@
 //!
 //! - **fixed**, never reading `y`: reflexivity, the empty word;
 //! - **moving**, `y` itself: the letter;
-//! - **through a chain of calls**, `⟨f(… g(y))⟩`: each function's image of the
-//!   word its inner call answered, innermost first, a function's image of a
-//!   letter the loop arm its case over the sort carries for the letter's loop,
-//!   inverted for an inverse letter, and reflexivity for a case with no loop
-//!   arm.
+//! - **through calls**, `⟨f(… g(y) … y …)⟩`: a route per occurrence of `y`, the
+//!   leftmost first, each route's image appended after the one before — `ap`
+//!   through each argument in turn, the others standing at the point. Along one
+//!   route, each function's image of the word its inner call answered,
+//!   innermost first: a function's image of a letter is the loop arm its case
+//!   over the sort carries for the letter's loop, inverted for an inverse
+//!   letter, and reflexivity for a case with no loop arm. A case over another
+//!   argument, standing at the point, selects its branch at that argument's
+//!   constructor: the letter itself where the branch returns the route's
+//!   argument, reflexivity where it ignores it; any other branch sticks.
 //!
 //! The three pieces splice as words: a piece that is reflexivity drops out,
 //! and the others concatenate when every piece but the last is a closed word.
@@ -76,12 +81,14 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_term::CellIndex;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FreeCells;
+use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::Side;
 
 use super::EvalFault;
@@ -95,7 +102,9 @@ use crate::closure::Call;
 use crate::closure::CompBody;
 use crate::closure::Conjugating;
 use crate::closure::Environment;
+use crate::closure::Mapping;
 use crate::closure::Orientation;
+use crate::closure::Route;
 use crate::closure::ValueBody;
 use crate::domain::CompTermFace;
 use crate::domain::DomainValue;
@@ -127,28 +136,106 @@ enum Action
     Through,
 }
 
-/// One call of an endpoint's chain: the function, every argument it applies
-/// in written order, and which of them carries the family's binder.
+/// One call of an endpoint's reading: the function, every argument it
+/// applies in written order, and the call one of whose arguments it answers.
 ///
 /// # Specification
-/// - ensures: `moving` names an argument of `arguments`, the only one that
-///   reads the binder; for a call bound after the previous one, the one
+/// - ensures: some argument of `arguments` reads the binder; `parent` names the
+///   call this one answers an argument of and that argument's position, `None`
+///   for the endpoint's own call; for a call bound after another, the one
 ///   argument is that call's result.
 /// - executable: none — the ids hold no arena to check them against.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `mul(b, Base)` is one link of two arguments moving at the
+/// - hypothesis: L3 — `mul(b, Base)` is one call of two arguments moving at the
 ///   first, and its loop arm reads the second as `Base`.
 /// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_of_two_arguments`
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct Link
+struct Node
 {
     /// The function called.
     function: ConstantIndex,
     /// Every argument the call applies, the first outermost.
     arguments: Vec<ValueId>,
-    /// The argument the binder runs through.
-    moving: usize,
+    /// The call whose argument this call answers, and that argument's
+    /// position.
+    parent: Option<(usize, usize)>,
+}
+
+/// What the walk over an endpoint's calls still reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Pending
+{
+    /// A call answering the argument at a position of a read call, or the
+    /// endpoint's own.
+    Call(ComputationId, Option<(usize, usize)>),
+    /// The binder itself, as the argument at a position of a read call.
+    Leaf(usize, usize),
+}
+
+/// An endpoint read as the calls it runs the family's binder through: each
+/// call once, and a route per occurrence of the binder, from the call it is
+/// an argument of out to the endpoint, the leftmost occurrence first.
+///
+/// # Specification
+/// - ensures: each leaf names a call of `nodes` and an argument position of it;
+///   following `parent` from any call reaches the endpoint's own.
+/// - executable: none — the ids hold no arena to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `mul(mul(b, Base), invLooper(b))` reads as two routes,
+///   through the first argument and then the second, and the image of the loop
+///   is the first's then the second's.
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_both_arguments_of_a_diagonal_464`
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Routes
+{
+    /// Every call read, each once.
+    nodes: Vec<Node>,
+    /// The call and argument position of each occurrence of the binder,
+    /// leftmost first.
+    leaves: Vec<(usize, usize)>,
+}
+
+/// An argument's position in a call, the first outermost.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Argument(usize);
+
+impl Routes
+{
+    /// The call `call` steps out along `route` from the binder, and the
+    /// argument position the route moves it at.
+    ///
+    /// # Specification
+    /// - ensures: `None` once the route has left the endpoint's own call, or
+    ///   for no route at `route`; the call and position otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: the `for` steps one parent per turn.
+    /// - measure: the steps left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Routes`].
+    /// - witness: `eval::words::tests::cong_along_the_loop_reads_both_arguments_of_a_diagonal_464`
+    #[spec(ensures: |ret| ret.is_none_or(|(node, position)| position.0 < node.arguments.len()))]
+    fn link(
+        &self,
+        route: Route,
+        call: Call,
+    ) -> Option<(&Node, Argument)>
+    {
+        let &(mut node, mut moving) = self.leaves.get(usize::from(route))?;
+        for _step in 0 .. usize::from(call) {
+            (node, moving) = self.nodes.get(node)?.parent?;
+        }
+        Some((self.nodes.get(node)?, Argument(moving)))
+    }
 }
 
 /// What a word's outermost node is.
@@ -690,8 +777,8 @@ fn reads_through(
 /// # Specification
 /// - requires: `endpoint` is read under the family's one binder.
 /// - ensures: [`Action::Moving`] for the binder; [`Action::Fixed`] for an
-///   endpoint that never reads it; [`Action::Through`] for a chain of calls
-///   [`calls`] reads; `None` otherwise.
+///   endpoint that never reads it; [`Action::Through`] for calls [`routes`]
+///   reads; `None` otherwise.
 /// - fails: the free-index walk's fault.
 /// - panics: none.
 ///
@@ -707,7 +794,7 @@ fn reads_through(
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| match *found {
     Some(Action::Moving) => matches!(core.value(endpoint), Some(&Value::Variable { .. })),
-    Some(Action::Through) => calls(core, endpoint).is_ok_and(|found| found.is_some()),
+    Some(Action::Through) => routes(core, endpoint).is_ok_and(|found| found.is_some()),
     Some(Action::Fixed) | None => core.value(endpoint).is_some(),
 }))]
 fn action(
@@ -723,19 +810,19 @@ fn action(
     if reads_through(core, CoreTerm::Value(endpoint), bound)? == Reading::Ignores {
         return Ok(Some(Action::Fixed));
     }
-    Ok(calls(core, endpoint)?.map(|_| Action::Through))
+    Ok(routes(core, endpoint)?.map(|_| Action::Through))
 }
 
-/// The chain of calls an endpoint runs the family's binder through,
-/// innermost first.
+/// The calls an endpoint runs the family's binder through, and a route per
+/// occurrence of the binder, the leftmost first.
 ///
 /// # Specification
 /// - requires: `endpoint` is read under the family's one binder.
-/// - ensures: `Some(chain)` exactly when the endpoint is `⟨c⟩` for a call `c`
-///   of the shape `force f a₁ … aₙ` exactly one of whose arguments reads the
-///   binder, that one the binder itself or `⟨c'⟩` for such a call, or `x ← c';
-///   force f x` for such a call `c'`, every function `f` a constant; the links
-///   innermost first, each with its arguments.
+/// - ensures: `Some(routes)` exactly when the endpoint is `⟨c⟩` for a call `c`
+///   of the shape `force f a₁ … aₙ` some of whose arguments read the binder,
+///   each of those the binder itself or `⟨c'⟩` for such a call, or `x ← c';
+///   force f x` for such a call `c'`, every function `f` a constant; each call
+///   once with its arguments, and a leaf per argument that is the binder.
 /// - fails: the free-index walk's fault.
 /// - panics: none.
 ///
@@ -743,32 +830,46 @@ fn action(
 /// As `- fails:`.
 ///
 /// # Termination
-/// - reason: the `loop` descends one call per iteration and the inner `while`
-///   one application of a spine, never recursing.
-/// - measure: the endpoint's nodes left, each a strict subterm.
+/// - reason: the `while` takes one pending call or leaf per turn, each call
+///   pending its arguments' strict subterms only, never recursing.
+/// - measure: the endpoint's nodes left.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `flip(y)` reads as a chain of one call, whose loop arm
-///   gives cong its image, and `mul(b, Base)` as one call of two arguments
-///   moving at the first.
+/// - hypothesis: L3 — `flip(y)` reads as one route of one call, whose loop arm
+///   gives cong its image; `mul(b, Base)` as one call of two arguments moving
+///   at the first; `mul(mul(b, Base), invLooper(b))` as two routes, through the
+///   first argument and then the second.
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
 /// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_of_two_arguments`
-#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| found.as_ref().is_none_or(|chain| !chain.is_empty()
-    && chain.iter().all(|link| link.moving < link.arguments.len())
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_both_arguments_of_a_diagonal_464`
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| found.as_ref().is_none_or(|read| !read.leaves.is_empty()
+    && read.leaves.iter().all(|&(node, position)| read.nodes.get(node).is_some_and(|node| position < node.arguments.len()))
     && matches!(core.value(endpoint), Some(&Value::Returned(_))))))]
-fn calls(
+fn routes(
     core: &CoreArena,
     endpoint: ValueId,
-) -> Result<Option<Vec<Link>>, EvalFault>
+) -> Result<Option<Routes>, EvalFault>
 {
-    let Some(&Value::Returned(mut call)) = core.value(endpoint)
+    let Some(&Value::Returned(call)) = core.value(endpoint)
     else {
         return Ok(None);
     };
     let binder = DeBruijnIndex::from(0_u32);
     let bound = |argument: ValueId| matches!(core.value(argument), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if index == binder);
-    let mut outermost_first = Vec::new();
-    loop {
+    let mut read = Routes {
+        nodes: Vec::new(),
+        leaves: Vec::new(),
+    };
+    let mut pending = Vec::from([Pending::Call(call, None)]);
+    while let Some(next) = pending.pop() {
+        let (call, parent) = match next {
+            Pending::Leaf(node, position) => {
+                read.leaves.push((node, position));
+                continue;
+            },
+            Pending::Call(call, parent) => (call, parent),
+        };
+        let at = read.nodes.len();
         if let Some(&Computation::Bind(first, then)) = core.computation(call) {
             let Some((function, arguments)) = spine(core, then)
             else {
@@ -781,57 +882,52 @@ fn calls(
             if !bound(argument) {
                 return Ok(None);
             }
-            outermost_first.push(Link {
+            read.nodes.push(Node {
                 function,
                 arguments,
-                moving: 0,
+                parent,
             });
-            call = first;
+            pending.push(Pending::Call(first, Some((at, 0))));
             continue;
         }
         let Some((function, arguments)) = spine(core, call)
         else {
             return Ok(None);
         };
-        let mut moving = None;
-        for (position, &argument) in arguments.iter().enumerate() {
+        // The arguments last first, so the leftmost is read first.
+        let mut moves = false;
+        for (position, &argument) in arguments.iter().enumerate().rev() {
             let mut free = FreeIndices::default();
             if free
                 .of(core, CoreTerm::Value(argument))
                 .map_err(free_fault)?
                 .intuitionistic()
                 .holds(binder)
-                == Membership::Held
+                != Membership::Held
             {
-                if moving.is_some() {
-                    return Ok(None);
-                }
-                moving = Some(position);
+                continue;
+            }
+            moves = true;
+            if bound(argument) {
+                pending.push(Pending::Leaf(at, position));
+            }
+            else if let Some(&Value::Returned(inner)) = core.value(argument) {
+                pending.push(Pending::Call(inner, Some((at, position))));
+            }
+            else {
+                return Ok(None);
             }
         }
-        let Some(moving) = moving
-        else {
+        if !moves {
             return Ok(None);
-        };
-        let Some(&argument) = arguments.get(moving)
-        else {
-            return Ok(None);
-        };
-        outermost_first.push(Link {
+        }
+        read.nodes.push(Node {
             function,
             arguments,
-            moving,
+            parent,
         });
-        if bound(argument) {
-            outermost_first.reverse();
-            return Ok(Some(outermost_first));
-        }
-        let Some(&Value::Returned(inner)) = core.value(argument)
-        else {
-            return Ok(None);
-        };
-        call = inner;
     }
+    Ok(Some(read))
 }
 
 /// The function and the arguments, the first outermost, of the call `call`
@@ -848,7 +944,7 @@ fn calls(
 /// - measure: the spine's applications left.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`calls`].
+/// - hypothesis: L3 — as [`routes`].
 /// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_of_two_arguments`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(_, ref arguments)| !arguments.is_empty()))]
 fn spine(
@@ -877,15 +973,14 @@ fn spine(
     Some((constant, arguments))
 }
 
-/// Read a definition as a case over the argument a link moves at: the thunk
-/// of one lambda per argument whose body is a data case on that argument's
-/// variable.
+/// Read a definition as a case over one of its arguments: the thunk of one
+/// lambda per argument whose body is a data case on an argument's variable.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the case and the index its argument has under the lambdas, for a
-///   constant whose manifest body ([`super::Definitions::definition`]) is such
-///   a thunk; `None` otherwise.
+/// - ensures: the case and the position, first outermost, of the argument it is
+///   over, for a constant whose manifest body
+///   ([`super::Definitions::definition`]) is such a thunk; `None` otherwise.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -896,22 +991,23 @@ fn spine(
 /// # Adequacy
 /// - hypothesis: L3 — `flip`'s manifest body is read as its case, and without
 ///   the sort's constructor count the arm after it is not found; `mul`'s as a
-///   case on its first of two arguments.
+///   case on its first of two arguments, which `mul(Base, y)` holds fixed.
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
 /// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_of_two_arguments`
-#[spec(ensures: |ret| ret.is_none_or(|(case, _)| matches!(core.computation(case), Some(&Computation::DataCase { .. }))))]
-fn cased(
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_both_arguments_of_a_diagonal_464`
+#[spec(ensures: |ret| ret.is_none_or(|(case, position)| position.0 < node.arguments.len() && matches!(core.computation(case), Some(&Computation::DataCase { .. }))))]
+fn case_of(
     core: &CoreArena,
     machine: &Machine<'_>,
-    link: &Link,
-) -> Option<(ComputationId, DeBruijnIndex)>
+    node: &Node,
+) -> Option<(ComputationId, Argument)>
 {
-    let body = machine.definitions.definition(link.function)?;
+    let body = machine.definitions.definition(node.function)?;
     let Some(&Value::Thunk(mut body)) = core.value(body)
     else {
         return None;
     };
-    for _argument in &link.arguments {
+    for _argument in &node.arguments {
         let Some(&Computation::Lambda(inner)) = core.computation(body)
         else {
             return None;
@@ -922,14 +1018,42 @@ fn cased(
     else {
         return None;
     };
-    let after = link
+    let Some(&Value::Variable {
+        zone: Zone::Intuitionistic,
+        index,
+    }) = core.value(scrutinee)
+    else {
+        return None;
+    };
+    let index = usize::try_from(u32::from(index)).ok()?;
+    let position = node.arguments.len().checked_sub(index)?.checked_sub(1)?;
+    Some((body, Argument(position)))
+}
+
+/// The index the argument at `position` of `node` has under the lambdas of
+/// its function, the first outermost.
+///
+/// # Specification
+/// - ensures: the arguments' count less one less `position`, or `None` past the
+///   last argument.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`case_of`]: `mul`'s first argument is index 1.
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_of_two_arguments`
+#[spec(ensures: |ret| ret.is_none() == (position.0 >= node.arguments.len()))]
+fn index_of(
+    node: &Node,
+    position: Argument,
+) -> Option<DeBruijnIndex>
+{
+    let after = node
         .arguments
         .len()
-        .checked_sub(link.moving)?
+        .checked_sub(position.0)?
         .checked_sub(1)?;
-    let index = DeBruijnIndex::from(u32::try_from(after).ok()?);
-    matches!(core.value(scrutinee), Some(&Value::Variable { zone: Zone::Intuitionistic, index: read }) if read == index)
-        .then_some((body, index))
+    Some(DeBruijnIndex::from(u32::try_from(after).ok()?))
 }
 
 /// What a case over a looped sort carries for one of its loops.
@@ -1129,14 +1253,12 @@ pub(super) fn transport(
                 stage: Conjugating::Left,
             });
             machine.tasks.push(Task::BindClosure(onward));
-            map(core, domain, machine, Mapping {
-                motive,
-                side: Side::Left,
-                call: Call::from(0_usize),
-                rest: path,
-                mapped: rest,
-                orientation: Orientation::Forward,
-            })?;
+            map(
+                core,
+                domain,
+                machine,
+                starting(motive, Side::Left, (path, rest)),
+            )?;
             Ok(Moved::Stepped)
         },
         (Some(left), None) => {
@@ -1147,14 +1269,12 @@ pub(super) fn transport(
                 stage: Conjugating::Right(left),
             });
             machine.tasks.push(Task::BindClosure(onward));
-            map(core, domain, machine, Mapping {
-                motive,
-                side: Side::Right,
-                call: Call::from(0_usize),
-                rest: path,
-                mapped: rest,
-                orientation: Orientation::Forward,
-            })?;
+            map(
+                core,
+                domain,
+                machine,
+                starting(motive, Side::Right, (path, rest)),
+            )?;
             Ok(Moved::Stepped)
         },
     }
@@ -1355,51 +1475,200 @@ fn family_actions(
     Ok(Some((left, right)))
 }
 
-/// The state of mapping a word through one endpoint's chain of calls.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct Mapping
-{
-    /// The path family, closed over its environment.
-    pub motive: ValueClosureId,
-    /// The endpoint whose chain maps the word.
-    pub side: Side,
-    /// The function of the chain mapping the word now.
-    pub call: Call,
-    /// The letters still to map.
-    pub rest: DomainValueId,
-    /// The image of the letters mapped so far.
-    pub mapped: DomainValueId,
-    /// Whether the letter whose image binds next is inverted.
-    pub orientation: Orientation,
-}
-
-/// Map the rest of a word through the endpoint's chain of calls: skip each
-/// letter whose image is reflexivity, and run the first loop arm an image
-/// needs, binding it into the next mapping step; once a call has read its
-/// whole word, its image is the next call's word, and when the chain is
-/// through that word is the image returned.
+/// The state that maps `word` through the endpoint at `side` of `motive`'s
+/// family from its first route's innermost call, `empty` the word's empty
+/// end.
 ///
 /// # Specification
-/// - requires: `state.mapped` is a closed word or empty; the endpoint at
-///   `state.side` of `state.motive`'s family reads as a chain of calls.
-/// - ensures: on success, either the image returned or one loop arm's run
-///   pushed with a [`CompBody::Mapping`] continuation bound after it.
+/// trivial.
+fn starting(
+    motive: ValueClosureId,
+    side: Side,
+    (word, empty): (DomainValueId, DomainValueId),
+) -> Mapping
+{
+    Mapping {
+        motive,
+        side,
+        route: Route::from(0_usize),
+        call: Call::from(0_usize),
+        word,
+        routed: empty,
+        rest: word,
+        mapped: empty,
+        orientation: Orientation::Forward,
+    }
+}
+
+/// The routes of the endpoint at `state.side` of `state.motive`'s path family,
+/// with the family's carrier and environment.
+///
+/// # Specification
+/// - requires: `state.motive` suspends a value type under one binder.
+/// - ensures: the [`routes`] of that endpoint, the family's carrier, and the
+///   environment the family is closed over.
+/// - fails: [`EvalFault::Domain`] for a closure the arena does not hold;
+///   [`EvalFault::MachineInvariant`] for one holding no value type;
+///   [`EvalFault::TransportedNonPath`] for a family that is no path type or an
+///   endpoint no route reads; the free-index walk's fault.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`map`].
+/// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ref read, _, _)| !read.leaves.is_empty()))]
+fn endpoint_routes(
+    core: &CoreArena,
+    domain: &DomainArena,
+    state: Mapping,
+) -> Result<(Routes, ValueTypeId, Environment), EvalFault>
+{
+    let stuck = EvalFault::TransportedNonPath;
+    let closure = domain
+        .value_closure(state.motive)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    let ValueBody::ValueType(family) = closure.body()
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    let Some(&ValueType::Path {
+        carrier,
+        left,
+        right,
+    }) = core.value_type(family)
+    else {
+        return Err(stuck);
+    };
+    let endpoint = match state.side {
+        Side::Left => left,
+        Side::Right => right,
+    };
+    let read = routes(core, endpoint)?.ok_or(stuck)?;
+    Ok((read, carrier, closure.environment().clone()))
+}
+
+/// The point the words at `words` loop at, as a value of `carrier`, when the
+/// carrier is their sort and the point one constructor of no fields.
+///
+/// # Specification
+/// - ensures: the constructor of `carrier` the cells' point spells, exactly
+///   when `carrier` is the parameterless sort the words' cells loop in and
+///   their point is one constructor of no fields; `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the diagonal's second route evaluates `mul(b, Base)` with
+///   `b` at `Base`, whose case then selects its branch; at any other value no
+///   branch returns the route's argument.
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_both_arguments_of_a_diagonal_464`
+#[spec(ensures: |ret| ret.is_none_or(|built| matches!(domain.value(built), Some(&DomainValue::Constructor { .. }))))]
+fn point(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &Machine<'_>,
+    (carrier, words): (ValueTypeId, ConstantIndex),
+) -> Option<DomainValueId>
+{
+    let cells = machine
+        .definitions
+        .presented(words)
+        .and_then(crate::presented::Presented::cells)?;
+    let Some(&ValueType::Data {
+        declaration,
+        ref arguments,
+    }) = core.value_type(carrier)
+    else {
+        return None;
+    };
+    if declaration != cells.sort() || !arguments.is_empty() {
+        return None;
+    }
+    let [RuleNode::Constructor(tag)] = *cells.point()
+    else {
+        return None;
+    };
+    let datatype = domain.value_closure_node(ValueBody::ValueType(carrier), Environment::new());
+    let none = domain.hold_fields([]);
+    Some(domain.value_constructor(datatype, tag, none, TermFace::Reduced))
+}
+
+/// The value the family's binder is bound to while the arguments off a route
+/// evaluate: the words' point when the endpoint has more than one route, and
+/// any value otherwise, since an argument off the only route never reads it.
+///
+/// # Specification
+/// - ensures: as the summary.
+/// - fails: [`EvalFault::TransportedNonPath`] for more than one route and a
+///   carrier holding no point of the words ([`point`]).
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`point`].
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_both_arguments_of_a_diagonal_464`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&bound| routes.leaves.len() > 1 || bound == placeholder))]
+fn held(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &Machine<'_>,
+    (routes, placeholder): (&Routes, DomainValueId),
+    (carrier, words): (ValueTypeId, ConstantIndex),
+) -> Result<DomainValueId, EvalFault>
+{
+    if routes.leaves.len() > 1 {
+        point(core, domain, machine, (carrier, words)).ok_or(EvalFault::TransportedNonPath)
+    }
+    else {
+        Ok(placeholder)
+    }
+}
+
+/// Map a word through the endpoint's routes, one after another. Along each,
+/// skip each letter whose image is reflexivity, and run the first loop arm an
+/// image needs, binding it into the next mapping step; once a call has read
+/// its whole word, its image is the next call's word. Once a route is
+/// through, its image follows the routes' before it and the next route maps
+/// the word afresh; when the last is through, their images are returned.
+///
+/// A call whose case is over another argument than the route's evaluates that
+/// argument where the family stands, and the branch it selects is the call's
+/// image ([`selected`]). The arguments off a route are evaluated with the
+/// binder at the words' point, where each route starts and ends: for `f(u(y),
+/// v(y))`, `ap_f(p) = ap_{f(-, v(pt))}(ap_u(p)) · ap_{f(u(pt), -)}(ap_v(p))`.
+///
+/// # Specification
+/// - requires: `state.mapped` and `state.routed` are closed words or empty; the
+///   endpoint at `state.side` of `state.motive`'s family reads as routes.
+/// - ensures: on success, either the routes' images returned; or one loop arm's
+///   run pushed with a [`CompBody::Mapping`] continuation bound after it; or
+///   the evaluation of the argument a case is over pushed with a
+///   [`CompBody::Selecting`] continuation bound after it.
 /// - fails: [`EvalFault::TransportedNonPath`] for a word, a function or an
-///   image no rule maps; as [`head`] otherwise.
+///   image no rule maps, or for more than one route over a carrier holding no
+///   point of the words; as [`head`] otherwise.
 /// - panics: none.
 ///
 /// # Errors
 /// As `- fails:`.
 ///
 /// # Termination
-/// - reason: the `loop` consumes one letter or one call per iteration, never
-///   recursing.
-/// - measure: the calls left, then the letters left.
+/// - reason: the `loop` consumes one letter, one call or one route per
+///   iteration, never recursing.
+/// - measure: the routes left, then the calls left, then the letters left.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the flip's chain maps the loop to its arm's answer, the
 ///   inverse, and not to the loop; skipping the arm returns the loop unmapped.
+///   The diagonal maps the loop along both routes, `mul(Base, y)` reading as
+///   its argument; mapping one route only leaves the loop.
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_both_arguments_of_a_diagonal_464`
 #[spec(
     captures: [entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err() || machine.comps.len() > entry_comps || machine.tasks.len() > entry_tasks,
@@ -1412,34 +1681,33 @@ pub(super) fn map(
 ) -> Result<(), EvalFault>
 {
     let stuck = EvalFault::TransportedNonPath;
-    let closure = domain
-        .value_closure(state.motive)
-        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
-    let ValueBody::ValueType(family) = closure.body()
-    else {
-        return Err(EvalFault::MachineInvariant);
-    };
+    let (routes, carrier, environment) = endpoint_routes(core, domain, state)?;
     let placeholder = state.rest;
-    // The family's own environment under its binder: a fixed argument never
-    // reads the binder, so any value stands for it.
-    let mut within = closure.environment().clone();
-    within.extend(Zone::Intuitionistic, placeholder);
-    let Some(&ValueType::Path { left, right, .. }) = core.value_type(family)
-    else {
-        return Err(stuck);
-    };
-    let endpoint = match state.side {
-        Side::Left => left,
-        Side::Right => right,
-    };
-    let chain = calls(core, endpoint)?.ok_or(stuck)?;
     loop {
-        let Some(link) = chain.get(usize::from(state.call))
+        let Some((node, moving)) = routes.link(state.route, state.call)
         else {
-            machine
-                .comps
-                .push(domain.comp_return(state.rest, CompTermFace::Reduced));
-            return Ok(());
+            // The route is through: its image follows the routes' before it,
+            // and the next one maps the word afresh.
+            let routed = if usize::from(state.route) == 0 {
+                state.rest
+            }
+            else {
+                concatenated(core, domain, machine, (state.routed, state.rest))?.ok_or(stuck)?
+            };
+            let next = usize::from(state.route).saturating_add(1);
+            if next >= routes.leaves.len() {
+                machine
+                    .comps
+                    .push(domain.comp_return(routed, CompTermFace::Reduced));
+                return Ok(());
+            }
+            let (_, end) = spelled(core, domain, machine, state.word)?.ok_or(stuck)?;
+            state.route = Route::from(next);
+            state.call = Call::from(0_usize);
+            state.routed = routed;
+            state.rest = state.word;
+            state.mapped = end;
+            continue;
         };
         let (tag, words, rest) = match head(core, domain, machine, state.rest)? {
             Head::Empty => {
@@ -1457,9 +1725,34 @@ pub(super) fn map(
             Head::Other => return Err(stuck),
         };
         let cell = FreeCells::generator(tag).ok_or(stuck)?;
-        let case = cased(core, machine, link).ok_or(stuck)?;
+        let (case, over) = case_of(core, machine, node).ok_or(stuck)?;
+        if over != moving {
+            // A case over another argument: that argument where the family
+            // stands selects the branch that is the call's image.
+            let &argument = node.arguments.get(over.0).ok_or(stuck)?;
+            let bound = held(
+                core,
+                domain,
+                machine,
+                (&routes, placeholder),
+                (carrier, words),
+            )?;
+            let mut within = environment;
+            within.extend(Zone::Intuitionistic, bound);
+            let onward = domain.native_continuation(CompBody::Selecting(state));
+            machine.tasks.push(Task::BindClosure(onward));
+            machine.tasks.push(Task::Yield);
+            let within = machine.hold_env(within);
+            machine.tasks.push(Task::Value {
+                term: argument,
+                env: within,
+            });
+            return Ok(());
+        }
+        let scrutinee = index_of(node, moving).ok_or(stuck)?;
         state.rest = rest;
-        let Arm::Written(arm) = loop_arm(core, machine, case, (words, cell))?.ok_or(stuck)?
+        let Arm::Written(arm) =
+            loop_arm(core, machine, (case, scrutinee), (words, cell))?.ok_or(stuck)?
         else {
             continue;
         };
@@ -1469,14 +1762,10 @@ pub(super) fn map(
         else {
             Orientation::Inverse
         };
-        let onward = domain.native_continuation(CompBody::Mapping {
-            motive: state.motive,
-            side: state.side,
-            call: state.call,
-            rest: state.rest,
-            mapped: state.mapped,
+        let onward = domain.native_continuation(CompBody::Mapping(Mapping {
             orientation,
-        });
+            ..state
+        }));
         machine.tasks.push(Task::BindClosure(onward));
         // The arm stands under the function's arguments, the first outermost.
         // It does not read the one the case is over: any value binds it. Each
@@ -1484,16 +1773,25 @@ pub(super) fn map(
         // this machine before the arm runs, the first first.
         machine.tasks.push(Task::Arm(ArmEntry {
             arm,
-            count: link.arguments.len(),
-            moving: link.moving,
+            count: node.arguments.len(),
+            moving: moving.0,
             placeholder,
         }));
+        let bound = held(
+            core,
+            domain,
+            machine,
+            (&routes, placeholder),
+            (carrier, words),
+        )?;
+        let mut within = environment;
+        within.extend(Zone::Intuitionistic, bound);
         let within = machine.hold_env(within);
-        for (_, &argument) in link
+        for (_, &argument) in node
             .arguments
             .iter()
             .enumerate()
-            .filter(|&(position, _)| position != link.moving)
+            .filter(|&(position, _)| Argument(position) != moving)
             .rev()
         {
             machine.tasks.push(Task::Value {
@@ -1503,6 +1801,84 @@ pub(super) fn map(
         }
         return Ok(());
     }
+}
+
+/// Read the branch a call's case selects, bound by a [`CompBody::Selecting`]
+/// continuation at the value the argument it is over takes where the family
+/// stands, as that call's image of the rest of the word, and map on.
+///
+/// # Specification
+/// - requires: `value` is the argument the case of the call `state` maps
+///   through is over, evaluated where the family stands; `state.rest` the word
+///   that call still maps.
+/// - ensures: as [`map`], the call's image of `state.rest` after `state.mapped`
+///   read as the next call's word: the word itself when the selected branch
+///   returns the route's argument, the empty word when it returns a value that
+///   never reads it.
+/// - fails: [`EvalFault::TransportedNonPath`] for a value that is no
+///   constructor, or a branch of any other shape; as [`map`] otherwise.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `mul(Base, y)` selects `Base => y` and maps the loop to
+///   itself; reading the branch as the empty word leaves the diagonal's image
+///   one letter short.
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_both_arguments_of_a_diagonal_464`
+#[spec(
+    captures: [entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err() || machine.comps.len() > entry_comps || machine.tasks.len() > entry_tasks,
+)]
+pub(super) fn selected(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    mut state: Mapping,
+    value: DomainValueId,
+) -> Result<(), EvalFault>
+{
+    let stuck = EvalFault::TransportedNonPath;
+    let Some(&DomainValue::Constructor { tag, fields, .. }) = domain.value(value)
+    else {
+        return Err(stuck);
+    };
+    let fields = domain.fields(fields).map_err(EvalFault::Domain)?.len();
+    let (routes, ..) = endpoint_routes(core, domain, state)?;
+    let (node, moving) = routes
+        .link(state.route, state.call)
+        .ok_or(EvalFault::MachineInvariant)?;
+    let (case, _) = case_of(core, machine, node).ok_or(EvalFault::MachineInvariant)?;
+    let Some(&Computation::DataCase { ref branches, .. }) = core.computation(case)
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    let &branch = branches.get(usize::from(tag)).ok_or(stuck)?;
+    let Some(&Computation::Return(answer)) = core.computation(branch)
+    else {
+        return Err(stuck);
+    };
+    // The route's argument under the lambdas, and then the branch's fields.
+    let index = index_of(node, moving)
+        .and_then(|index| u32::from(index).checked_add(u32::try_from(fields).ok()?))
+        .map(DeBruijnIndex::from)
+        .ok_or(stuck)?;
+    let image = if matches!(core.value(answer), Some(&Value::Variable { zone: Zone::Intuitionistic, index: read }) if read == index)
+    {
+        concatenated(core, domain, machine, (state.mapped, state.rest))?.ok_or(stuck)?
+    }
+    else if reads_through(core, CoreTerm::Value(answer), index)? == Reading::Ignores {
+        state.mapped
+    }
+    else {
+        return Err(stuck);
+    };
+    let (_, end) = spelled(core, domain, machine, image)?.ok_or(stuck)?;
+    state.call = Call::from(usize::from(state.call).saturating_add(1));
+    state.rest = image;
+    state.mapped = end;
+    map(core, domain, machine, state)
 }
 
 /// A loop arm waiting for its fixed arguments' values.
@@ -1621,14 +1997,7 @@ pub(super) fn mapped(
     // read through its body, as a transport along it is, and the mapping
     // resumes at the word.
     if let Some(body) = named(core, domain, machine, image)? {
-        let onward = domain.native_continuation(CompBody::Mapping {
-            motive: state.motive,
-            side: state.side,
-            call: state.call,
-            rest: state.rest,
-            mapped: state.mapped,
-            orientation: state.orientation,
-        });
+        let onward = domain.native_continuation(CompBody::Mapping(state));
         machine.tasks.push(Task::BindClosure(onward));
         machine.tasks.push(Task::Yield);
         machine.tasks.push(Task::Value {
@@ -1697,14 +2066,12 @@ pub(super) fn conjugated(
                         stage: Conjugating::Right(image),
                     });
                     machine.tasks.push(Task::BindClosure(onward));
-                    return map(core, domain, machine, Mapping {
-                        motive,
-                        side: Side::Right,
-                        call: Call::from(0_usize),
-                        rest: along,
-                        mapped: empty,
-                        orientation: Orientation::Forward,
-                    });
+                    return map(
+                        core,
+                        domain,
+                        machine,
+                        starting(motive, Side::Right, (along, empty)),
+                    );
                 },
             }
         },
@@ -2053,6 +2420,43 @@ mod tests
                 decided(&core, &chain, (cong, inverted)),
                 Some(MachineVerdict::NotConvertible),
                 "and not its inverse"
+            );
+        }
+    }
+
+    #[test]
+    fn cong_along_the_loop_reads_both_arguments_of_a_diagonal_464()
+    {
+        let mut core = CoreArena::new();
+        let circle = circle(&mut core);
+        let chain = chain(&circle, Count::Recorded);
+        let own = core.value_type_data(ConstantIndex::from(WORDS), Vec::new());
+        let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let twice = core.value_constructor(own, ConstructorTag::from(1_usize), vec![circle.letter]);
+        let twice = core.computation_return(twice);
+        let looped = core.computation_return(circle.letter);
+        // `cong(y. first(y, y), loop)` and `cong(y. second(y, y), loop)`: the
+        // loop runs through both arguments, the first route's image then the
+        // second's — the arm's `loop` through the argument the case is over,
+        // and through the other, the branch at the point returning it, the
+        // loop itself.
+        for constant in [FIRST, SECOND] {
+            let named = core.value_constant(ConstantIndex::from(constant));
+            let forced = core.computation_force(named);
+            let applied = core.computation_application(forced, moving);
+            let applied = core.computation_application(applied, moving);
+            let through = core.value_returned(applied);
+            let family = core.value_type_path(circle.carrier, circle.point, through);
+            let cong = core.computation_path_transport(family, circle.named, circle.empty);
+            assert_eq!(
+                decided(&core, &chain, (cong, twice)),
+                Some(MachineVerdict::Convertible),
+                "the diagonal's image of the loop is the loop through each argument in turn"
+            );
+            assert_eq!(
+                decided(&core, &chain, (cong, looped)),
+                Some(MachineVerdict::NotConvertible),
+                "and not the loop through one argument alone"
             );
         }
     }

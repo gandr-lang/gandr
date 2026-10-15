@@ -30,12 +30,18 @@
 //!   q, p)⟩`, the rest's transport held as the value it returns, as the
 //!   evaluator reads a stuck one under its letter.
 //!
-//! An endpoint's image of a letter is the loop arm the innermost function's
-//! case carries for the letter's loop — inverted along the family `z.
-//! Path(C, z, l(pt))` for an inverse letter, reflexivity for a case with no
-//! loop arm — and each further function's image of that word, its `cong`: the
-//! transport along it in `y. Path(C, l(pt), ⟨f y⟩)`. The functions are read
-//! through the evaluator's admitted bodies, the reading cong fusion takes
+//! An endpoint's image of a letter is one image per occurrence of the binder,
+//! the leftmost first, each appended after the one before by the transport in
+//! `z. Path(C, l(pt), z)`. Along one occurrence, the innermost function's
+//! image is the loop arm its case carries for the letter's loop — inverted
+//! along the family `z. Path(C, z, l(pt))` for an inverse letter, reflexivity
+//! for a case with no loop arm — or, for a case over another argument, the
+//! branch that argument's constructor selects: the letter where it returns
+//! the occurrence's argument, reflexivity where it ignores it, and the run of
+//! that argument first where it is a call. Each further function's image of
+//! that word is its `cong`: the transport along it in `y. Path(C, l(pt), ⟨f
+//! y⟩)`. The functions are read through the evaluator's admitted bodies, the
+//! reading cong fusion takes
 //! ([`mod@crate::replay`]'s `Replay::fuse`): a loop obligation is decided
 //! δ-free, and the image of a loop under a map out of the circle exists only in
 //! its definition. A configuration no row reads sticks.
@@ -122,33 +128,126 @@ enum Action
     Fixed,
     /// The endpoint is the binder: the letter itself.
     Moving,
-    /// The endpoint runs the binder through these calls, innermost first.
-    Through(Vec<Link>),
+    /// The endpoint runs the binder through these calls, a route per
+    /// occurrence of the binder.
+    Through(Routes),
 }
 
-/// One call of an endpoint's chain: the function, every argument it applies
-/// in written order, and which of them carries the family's binder.
+/// One call of an endpoint's reading: the function, every argument it
+/// applies in written order, and the call one of whose arguments it answers.
 ///
 /// # Specification
-/// - ensures: `moving` names an argument of `arguments`, the only one that
-///   reads the binder; for a call bound after the previous one, the one
+/// - ensures: some argument of `arguments` reads the binder; `parent` names the
+///   call this one answers an argument of and that argument's position, `None`
+///   for the endpoint's own call; for a call bound after another, the one
 ///   argument is that call's result.
 /// - executable: none — the ids hold no arena to check them against.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `mul(b, Base)` is one link of two arguments moving at the
+/// - hypothesis: L3 — `mul(b, Base)` is one call of two arguments moving at the
 ///   first, and its loop arm reads the second as `Base`.
 /// - witness: `native_formers::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct Link
+struct Node
 {
     /// The function called.
     function: ConstantIndex,
     /// Every argument the call applies, the first outermost, under the
     /// family's binder.
     arguments: Vec<ValueId>,
-    /// The argument the binder runs through.
-    moving: usize,
+    /// The call whose argument this call answers, and that argument's
+    /// position.
+    parent: Option<(usize, usize)>,
+}
+
+/// What the walk over an endpoint's calls still reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Pending
+{
+    /// A call answering the argument at a position of a read call, or the
+    /// endpoint's own.
+    Call(ComputationId, Option<(usize, usize)>),
+    /// The binder itself, as the argument at a position of a read call.
+    Leaf(usize, usize),
+}
+
+/// An endpoint read as the calls it runs the family's binder through: each
+/// call once, and a route per occurrence of the binder, from the call it is
+/// an argument of out to the endpoint, the leftmost occurrence first.
+///
+/// # Specification
+/// - ensures: each leaf names a call of `nodes` and an argument position of it;
+///   following `parent` from any call reaches the endpoint's own.
+/// - executable: none — the ids hold no arena to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `mul(mul(b, Base), invLooper(b))` reads as two routes,
+///   and the image of the loop is the first's then the second's.
+/// - witness: `native_formers::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Routes
+{
+    /// Every call read, each once.
+    nodes: Vec<Node>,
+    /// The call and argument position of each occurrence of the binder,
+    /// leftmost first.
+    leaves: Vec<(usize, usize)>,
+}
+
+/// An argument's position in a call, the first outermost.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Argument(usize);
+
+/// The calls along one route of an endpoint's [`Routes`], from the call the
+/// binder is an argument of out to the endpoint's own, each with the position
+/// of the argument the route moves it at.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+struct Walk<'routes>
+{
+    /// The routes walked.
+    routes: &'routes Routes,
+    /// The call and argument position the next step reads.
+    next: Option<(usize, usize)>,
+}
+
+impl<'routes> Iterator for Walk<'routes>
+{
+    type Item = (&'routes Node, Argument);
+
+    /// The next call out along the route, or `None` once the route has left
+    /// the endpoint's own call.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next(&mut self) -> Option<Self::Item>
+    {
+        let (node, moving) = self.next.take()?;
+        let found = self.routes.nodes.get(node)?;
+        self.next = found.parent;
+        Some((found, Argument(moving)))
+    }
+}
+
+impl Routes
+{
+    /// One [`Walk`] per occurrence of the binder, the leftmost first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn walks(&self) -> impl Iterator<Item = Walk<'_>>
+    {
+        self.leaves.iter().map(|&leaf| Walk {
+            routes: self,
+            next: Some(leaf),
+        })
+    }
 }
 
 /// The word a definition names, read through its admitted body: the cell's
@@ -418,20 +517,20 @@ fn concatenated(
 /// # Specification
 /// - requires: `endpoint` is read under the family's one binder.
 /// - ensures: [`Action::Moving`] for the binder; [`Action::Fixed`] for an
-///   endpoint that ignores it; [`Action::Through`] for a chain of calls
-///   [`calls`] reads; `None` otherwise.
+///   endpoint that ignores it; [`Action::Through`] for calls [`routes`] reads;
+///   `None` otherwise.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each witness family reads one action per endpoint: the
-///   point fixed, `x` moving, and the flip's and the collapse's calls through a
-///   chain; a misread action carries the answer elsewhere.
+///   point fixed, `x` moving, and the flip's and the collapse's calls as
+///   routes; a misread action carries the answer elsewhere.
 /// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
 /// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| match ret {
     Some(Action::Moving) => matches!(arena.value(endpoint), Some(&Value::Variable(_))),
-    Some(Action::Through(ref chain)) => !chain.is_empty(),
+    Some(Action::Through(ref read)) => !read.leaves.is_empty(),
     Some(Action::Fixed) | None => arena.value(endpoint).is_some(),
 })]
 fn action<M>(
@@ -450,50 +549,65 @@ where
     if binder_use(arena, table, memo, Family::Value(endpoint)) == BinderUse::Ignored {
         return Some(Action::Fixed);
     }
-    calls(arena, table, memo, endpoint).map(Action::Through)
+    routes(arena, table, memo, endpoint).map(Action::Through)
 }
 
-/// The chain of calls an endpoint runs the family's binder through,
-/// innermost first.
+/// The calls an endpoint runs the family's binder through, and a route per
+/// occurrence of the binder, the leftmost first.
 ///
 /// # Specification
 /// - requires: `endpoint` is read under the family's one binder.
-/// - ensures: `Some(chain)` exactly when the endpoint is `⟨c⟩` for a call `c`
-///   of the shape `force f a₁ … aₙ` exactly one of whose arguments reads the
-///   binder, that one the binder itself or `⟨c'⟩` for such a call, or `x ← c';
-///   force f x` for such a call `c'`, every function `f` a constant; the links
-///   innermost first, each with its arguments.
+/// - ensures: `Some(routes)` exactly when the endpoint is `⟨c⟩` for a call `c`
+///   of the shape `force f a₁ … aₙ` some of whose arguments read the binder,
+///   each of those the binder itself or `⟨c'⟩` for such a call, or `x ← c';
+///   force f x` for such a call `c'`, every function `f` a constant; each call
+///   once with its arguments, and a leaf per argument that is the binder.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Termination
-/// - reason: the `loop` descends one call per iteration, never recursing.
-/// - measure: the endpoint's nodes left, each a strict subterm.
+/// - reason: the `while` takes one pending call or leaf per turn, each call
+///   pending its arguments' strict subterms only, never recursing.
+/// - measure: the endpoint's nodes left.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the flip applied twice reads as a chain of two calls and
-///   the flip once as one, which the witness tells apart by their verdicts;
-///   `mul(b, Base)` reads as one call of two arguments moving at the first.
+/// - hypothesis: L3 — the flip applied twice reads as one route of two calls
+///   and the flip once as one call, which the witness tells apart by their
+///   verdicts; `mul(b, Base)` reads as one call of two arguments moving at the
+///   first; `mul(mul(b, Base), invLooper(b))` as two routes.
 /// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 /// - witness: `native_formers::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
-#[spec(ensures: |ret| ret.as_ref().is_none_or(|chain| !chain.is_empty()
-    && chain.iter().all(|link| link.moving < link.arguments.len())))]
-fn calls<M>(
+/// - witness: `native_formers::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|read| !read.leaves.is_empty()
+    && read.leaves.iter().all(|&(node, position)| read.nodes.get(node).is_some_and(|node| position < node.arguments.len()))))]
+fn routes<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
     memo: &mut M,
     endpoint: ValueId,
-) -> Option<Vec<Link>>
+) -> Option<Routes>
 where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
-    let Some(&Value::Returned(mut call)) = arena.value(endpoint)
+    let Some(&Value::Returned(call)) = arena.value(endpoint)
     else {
         return None;
     };
     let binder = DeBruijnIndex::from(0_u32);
-    let mut outermost_first = Vec::new();
-    loop {
+    let mut read = Routes {
+        nodes: Vec::new(),
+        leaves: Vec::new(),
+    };
+    let mut pending = Vec::from([Pending::Call(call, None)]);
+    while let Some(next) = pending.pop() {
+        let (call, parent) = match next {
+            Pending::Leaf(node, position) => {
+                read.leaves.push((node, position));
+                continue;
+            },
+            Pending::Call(call, parent) => (call, parent),
+        };
+        let at = read.nodes.len();
         if let Some(&Computation::Bind(first, then)) = arena.computation(call) {
             let (function, arguments) = spine(arena, then)?;
             let [argument] = *arguments.as_slice()
@@ -503,41 +617,42 @@ where
             if !matches!(arena.value(argument), Some(&Value::Variable(index)) if index == binder) {
                 return None;
             }
-            outermost_first.push(Link {
+            read.nodes.push(Node {
                 function,
                 arguments,
-                moving: 0,
+                parent,
             });
-            call = first;
+            pending.push(Pending::Call(first, Some((at, 0))));
             continue;
         }
         let (function, arguments) = spine(arena, call)?;
-        let mut moving = None;
-        for (position, &argument) in arguments.iter().enumerate() {
-            if binder_use(arena, table, memo, Family::Value(argument)) != BinderUse::Ignored {
-                if moving.is_some() {
-                    return None;
-                }
-                moving = Some(position);
+        // The arguments last first, so the leftmost is read first.
+        let mut moves = false;
+        for (position, &argument) in arguments.iter().enumerate().rev() {
+            if binder_use(arena, table, memo, Family::Value(argument)) == BinderUse::Ignored {
+                continue;
+            }
+            moves = true;
+            if matches!(arena.value(argument), Some(&Value::Variable(index)) if index == binder) {
+                pending.push(Pending::Leaf(at, position));
+            }
+            else if let Some(&Value::Returned(inner)) = arena.value(argument) {
+                pending.push(Pending::Call(inner, Some((at, position))));
+            }
+            else {
+                return None;
             }
         }
-        let moving = moving?;
-        let argument = *arguments.get(moving)?;
-        outermost_first.push(Link {
+        if !moves {
+            return None;
+        }
+        read.nodes.push(Node {
             function,
             arguments,
-            moving,
+            parent,
         });
-        if matches!(arena.value(argument), Some(&Value::Variable(index)) if index == binder) {
-            outermost_first.reverse();
-            return Some(outermost_first);
-        }
-        let Some(&Value::Returned(inner)) = arena.value(argument)
-        else {
-            return None;
-        };
-        call = inner;
     }
+    Some(read)
 }
 
 /// The function and the arguments, the first outermost, of the call `call`
@@ -554,7 +669,7 @@ where
 /// - measure: the spine's applications left.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`calls`].
+/// - hypothesis: L3 — as [`routes`].
 /// - witness: `native_formers::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(_, ref arguments)| !arguments.is_empty()))]
 fn spine(
@@ -680,24 +795,81 @@ enum Arm
     Written(ComputationId),
 }
 
-/// The arm the function of `link` carries for the loop of `cell` in `words`,
-/// its arguments instantiated — the one the case is over at the loop's point,
-/// each other at `fixed` — or `None` for a definition that is no case over
-/// the sort at that argument.
+/// The data case a definition's body is, under one lambda per argument, and
+/// the position of the argument it is over, or `None` for a definition whose
+/// body is no such case.
 ///
 /// # Specification
-/// - requires: `fixed` holds one value per argument of `link`, standing where
+/// - requires: nothing.
+/// - ensures: `Some((case, over))` exactly when `unfoldings` holds `function`'s
+///   body as the thunk of `count` lambdas over the data case `case` whose
+///   scrutinee is the variable of argument `over`, the first argument
+///   outermost.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` opens a lambda per argument.
+/// - measure: the arguments left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `mul`'s case is over its first argument, which the loop
+///   moves along one route of `mul(mul(b, Base), invLooper(b))` and leaves at
+///   the point along the other.
+/// - witness: `native_formers::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
+#[spec(ensures: |ret| ret.is_none_or(|(case, over)| over.0 < arguments.len() && matches!(arena.computation(case), Some(&Computation::DataCase { .. }))))]
+fn case_of(
+    arena: &TermArena,
+    unfoldings: &Unfoldings,
+    (function, arguments): (ConstantIndex, &[ValueId]),
+) -> Option<(ComputationId, Argument)>
+{
+    let Unfoldable::Body(body) = unfoldings.unfolding(function)
+    else {
+        return None;
+    };
+    let Some(&Value::Thunk(mut case)) = arena.value(body)
+    else {
+        return None;
+    };
+    for _argument in arguments {
+        let Some(&Computation::Lambda(inner)) = arena.computation(case)
+        else {
+            return None;
+        };
+        case = inner;
+    }
+    let Some(&Computation::DataCase { scrutinee, .. }) = arena.computation(case)
+    else {
+        return None;
+    };
+    let Some(&Value::Variable(index)) = arena.value(scrutinee)
+    else {
+        return None;
+    };
+    let over = arguments
+        .len()
+        .checked_sub(usize::try_from(u32::from(index)).ok()?)?
+        .checked_sub(1)?;
+    Some((case, Argument(over)))
+}
+
+/// The arm `case` carries for the loop of `cell` in `words`, its arguments
+/// instantiated — the one the case is over, `moving`, at the loop's point,
+/// each other at `fixed` — or `None` for a case whose arms are not one per
+/// constructor of the words' sort and one per loop.
+///
+/// # Specification
+/// - requires: `case` is a definition's data case over its argument `moving`,
+///   read by [`case_of`]; `fixed` holds one value per argument, standing where
 ///   the transport does.
-/// - ensures: as the summary, for a constant whose body `unfoldings` holds as
-///   the thunk of one lambda per argument over a data case on the moving
-///   argument's variable, the case's arms after one per constructor of the
+/// - ensures: as the summary, the case's arms after one per constructor of the
 ///   words' sort taken in [`Presentations::looping`]'s order.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Termination
-/// - reason: one `for` opens a lambda per argument, another substitutes one
-///   argument per turn.
+/// - reason: one `for` substitutes one argument per turn.
 /// - measure: the arguments left.
 ///
 /// # Adequacy
@@ -706,50 +878,21 @@ enum Arm
 ///   `mul`'s arm reads its second argument at the value the call passes.
 /// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 /// - witness: `native_formers::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
-#[spec(ensures: |ret| ret.is_none_or(|arm| match arm { Arm::Written(written) => arena.computation(written).is_some(), Arm::Unwritten => matches!(unfoldings.unfolding(link.function), Unfoldable::Body(_)) }))]
+#[spec(ensures: |ret| ret.is_none_or(|arm| match arm { Arm::Written(written) => arena.computation(written).is_some(), Arm::Unwritten => true }))]
 fn loop_arm<M>(
     arena: &mut TermArena,
     (table, memo): (&mut ContentTable, &mut M),
-    unfoldings: &Unfoldings,
-    (link, fixed): (&Link, &[ValueId]),
+    presentations: &Presentations,
+    (case, moving, fixed): (ComputationId, Argument, &[ValueId]),
     (words, cell): (ConstantIndex, CellIndex),
 ) -> Option<Arm>
 where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
-    let presentations = unfoldings.presentations();
-    let Unfoldable::Body(body) = unfoldings.unfolding(link.function)
+    let Some(&Computation::DataCase { ref branches, .. }) = arena.computation(case)
     else {
         return None;
     };
-    let Some(&Value::Thunk(mut case)) = arena.value(body)
-    else {
-        return None;
-    };
-    for _argument in &link.arguments {
-        let Some(&Computation::Lambda(inner)) = arena.computation(case)
-        else {
-            return None;
-        };
-        case = inner;
-    }
-    let Some(&Computation::DataCase {
-        scrutinee,
-        ref branches,
-        ..
-    }) = arena.computation(case)
-    else {
-        return None;
-    };
-    let after = link
-        .arguments
-        .len()
-        .checked_sub(link.moving)?
-        .checked_sub(1)?;
-    let over = DeBruijnIndex::from(u32::try_from(after).ok()?);
-    if !matches!(arena.value(scrutinee), Some(&Value::Variable(index)) if index == over) {
-        return None;
-    }
     let count = branches.len();
     let cells = presentations
         .presented(words)
@@ -775,8 +918,8 @@ where
     let at = point(arena, presentations, words)?;
     // The innermost argument first: each substitution leaves the arm under
     // the arguments before it, which the value is lifted past.
-    for position in (0 .. link.arguments.len()).rev() {
-        let value = if position == link.moving {
+    for position in (0 .. fixed.len()).rev() {
+        let value = if Argument(position) == moving {
             at
         }
         else {
@@ -787,6 +930,140 @@ where
         arm = substitute_computation(arena, table, memo, arm, lifted);
     }
     Some(Arm::Written(arm))
+}
+
+/// What a case over an argument the loop leaves standing makes of the moving
+/// one, the branch its argument's constructor selects read under a binder for
+/// the moving argument: the letter itself where the branch returns that
+/// binder, the empty word where it ignores it, the run of the selecting
+/// argument before the call's cong where that argument is a call; `None`
+/// otherwise.
+///
+/// # Specification
+/// - requires: `case` is a definition's data case over its argument `over`,
+///   read by [`case_of`]; `fixed` holds one value per argument, standing where
+///   the transport does; `moving` differs from `over`; `(carrier, fixed)` a
+///   carrier and a value standing there; `letter` a one-letter word and `rest`
+///   its empty word.
+/// - ensures: for `fixed[over]` a constructor, `return letter` when its branch,
+///   its fields and the arguments substituted and the moving one a binder `y`,
+///   is `return y`, and `return rest` when it is `return v` for a `v` that
+///   ignores `y`; for `fixed[over]` the returned call `⟨c⟩`, `x ← c; tr(y.
+///   Path(C, fixed, ⟨f … x … y …⟩), letter, here(fixed))`, the case's function
+///   applied at `x` where the case is over and at `y` where the letter moves,
+///   which the next step reads at `x`'s constructor; `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` opens a lambda per field and substitutes one per turn,
+///   another substitutes one argument per turn.
+/// - measure: the fields left, then the arguments left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `mul(⟨mul(Base, Base)⟩, y)` runs its first argument, and
+///   at `Base` the branch is the second: the loop through `mul`'s second
+///   argument is itself, the second route of `rotInv1`'s diagonal.
+/// - witness: `native_formers::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
+#[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()))]
+fn select<M>(
+    arena: &mut TermArena,
+    (table, memo): (&mut ContentTable, &mut M),
+    (function, case): (ConstantIndex, ComputationId),
+    (over, moving, fixed): (Argument, Argument, &[ValueId]),
+    (letter, rest, (carrier, standing)): (ValueId, ValueId, (ValueTypeId, ValueId)),
+) -> Option<ComputationId>
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let selector = *fixed.get(over.0)?;
+    let count = fixed.len();
+    if let Some(&Value::Returned(call)) = arena.value(selector) {
+        // `x ← c; tr(y. Path(C, fixed, ⟨f … x … y …⟩), letter, here(fixed))`:
+        // `x` one binder in, `y` two.
+        let two = BinderDepth::from(2_u32);
+        let one = BinderDepth::from(1_u32);
+        let named = arena.value_constant(function);
+        let mut applied = arena.computation_force(named);
+        for (position, &argument) in fixed.iter().enumerate() {
+            let passed = if Argument(position) == moving {
+                arena.value_variable(DeBruijnIndex::from(0_u32))
+            }
+            else if Argument(position) == over {
+                arena.value_variable(DeBruijnIndex::from(1_u32))
+            }
+            else {
+                shift_value(arena, table, memo, argument, BinderDepth::NONE, two)
+            };
+            applied = arena.computation_application(applied, passed);
+        }
+        let endpoint = arena.value_returned(applied);
+        let lifted_carrier = shift_value_type(arena, table, memo, carrier, BinderDepth::NONE, two);
+        let lifted_standing = shift_value(arena, table, memo, standing, BinderDepth::NONE, two);
+        let family = arena.value_type_path(lifted_carrier, lifted_standing, endpoint);
+        let moved = shift_value(arena, table, memo, letter, BinderDepth::NONE, one);
+        let start_standing = shift_value(arena, table, memo, standing, BinderDepth::NONE, one);
+        let start = arena.value_here(start_standing);
+        let cong = arena.computation_path_transport(family, moved, start);
+        return Some(arena.computation_bind(call, cong));
+    }
+    let Some(&Value::Constructor {
+        tag, ref fields, ..
+    }) = arena.value(selector)
+    else {
+        return None;
+    };
+    let fields = fields.clone();
+    let Some(&Computation::DataCase { ref branches, .. }) = arena.computation(case)
+    else {
+        return None;
+    };
+    let mut branch = *branches.get(usize::from(tag))?;
+    for _field in &fields {
+        let Some(&Computation::Lambda(inner)) = arena.computation(branch)
+        else {
+            return None;
+        };
+        branch = inner;
+    }
+    // The innermost first: the fields under every argument and the fields
+    // before them, then the arguments under those before them, all under the
+    // moving argument's binder `y`, which stands outside the arguments.
+    for (position, &field) in fields.iter().enumerate().rev() {
+        let depth =
+            BinderDepth::from(u32::try_from(count.checked_add(position)?.checked_add(1)?).ok()?);
+        let lifted = shift_value(arena, table, memo, field, BinderDepth::NONE, depth);
+        branch = substitute_computation(arena, table, memo, branch, lifted);
+    }
+    for position in (0 .. count).rev() {
+        let lifted = if Argument(position) == moving {
+            arena.value_variable(DeBruijnIndex::from(u32::try_from(position).ok()?))
+        }
+        else {
+            let depth = BinderDepth::from(u32::try_from(position.checked_add(1)?).ok()?);
+            shift_value(
+                arena,
+                table,
+                memo,
+                *fixed.get(position)?,
+                BinderDepth::NONE,
+                depth,
+            )
+        };
+        branch = substitute_computation(arena, table, memo, branch, lifted);
+    }
+    let Some(&Computation::Return(answer)) = arena.computation(branch)
+    else {
+        return None;
+    };
+    if matches!(arena.value(answer), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
+    {
+        return Some(arena.computation_return(letter));
+    }
+    if binder_use(arena, table, memo, Family::Value(answer)) == BinderUse::Ignored {
+        return Some(arena.computation_return(rest));
+    }
+    None
 }
 
 /// The family `z. Path(C, z, fixed)` or `z. Path(C, fixed, z)`, read `depth`
@@ -815,25 +1092,89 @@ where
     }
 }
 
-/// The image of the one-letter word `letter` under a chain of calls, as a
-/// computation returning the image word, or `None` when a definition is no
-/// case over the sort.
+/// The image of the one-letter word `letter` under an endpoint's calls, as a
+/// computation returning the image word: each route's image, the leftmost
+/// first, appended — `ap` through each occurrence of the binder in turn, the
+/// others standing at the point — or `None` when a route reads no further.
 ///
 /// # Specification
 /// - requires: `letter` is a one-letter word; `(carrier, fixed)` a carrier and
 ///   a value standing where the transport does; `at` the loop's point there;
-///   each link's arguments read under the family's binder, which only the
-///   moving one reads.
-/// - ensures: the innermost call's loop arm for the letter, its other arguments
-///   at the point — inverted along `z. Path(C, z, fixed)` for an inverse
-///   letter, the letter's empty word for a case with no loop arm — bound into
-///   each further call's cong of it, the transport along it in `y. Path(C,
-///   fixed, ⟨f … y …⟩)` from `here(fixed)`.
+///   `routes` read by [`routes`] under the family's binder.
+/// - ensures: the first route's [`route_image`], and each later route's bound
+///   after it and appended to it, `tr(z. Path(C, fixed, z), wₖ, w)`.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Termination
-/// - reason: one `for` over the chain's later calls and one over each call's
+/// - reason: one `for` over the routes, not recursion.
+/// - measure: the routes left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `mul(mul(b, Base), invLooper(b))` moves the loop through
+///   the outer `mul`'s first argument, then its second: `loop` then
+///   `back(loop)`, which the obligation over `b` reads as the empty word.
+/// - witness: `native_formers::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
+#[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()) && (ret.is_none() || !routes.leaves.is_empty()))]
+fn image<M>(
+    arena: &mut TermArena,
+    (table, memo): (&mut ContentTable, &mut M),
+    unfoldings: &Unfoldings,
+    (routes, at): (&Routes, ValueId),
+    (letter, (carrier, fixed)): (ValueId, (ValueTypeId, ValueId)),
+) -> Option<ComputationId>
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let mut built = None;
+    for walk in routes.walks() {
+        let next = route_image(
+            arena,
+            (table, memo),
+            unfoldings,
+            (walk, at),
+            (letter, (carrier, fixed)),
+        )?;
+        built = Some(built.map_or(next, |before| {
+            // `w · wₖ`: `wₖ` bound one binder in, `w` two, the append the
+            // transport of `w` along `wₖ` in `z. Path(C, fixed, z)`.
+            let one = BinderDepth::from(1_u32);
+            let lifted = shift_computation(arena, table, memo, next, BinderDepth::NONE, one);
+            let family = path_family(
+                arena,
+                (table, memo),
+                (carrier, fixed),
+                gandr_kernel_term::Side::Right,
+                BinderDepth::from(2_u32),
+            );
+            let along = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let start = arena.value_variable(DeBruijnIndex::from(1_u32));
+            let appended = arena.computation_path_transport(family, along, start);
+            let after = arena.computation_bind(lifted, appended);
+            arena.computation_bind(before, after)
+        }));
+    }
+    built
+}
+
+/// The image of the one-letter word `letter` along one route of an
+/// endpoint's calls, as a computation returning the image word, or `None`
+/// when a definition is no case the route reads.
+///
+/// # Specification
+/// - requires: as [`image`]; `walk` is one of [`Routes::walks`].
+/// - ensures: the innermost call's loop arm for the letter where its case is
+///   over the moving argument, its other arguments at the point — inverted
+///   along `z. Path(C, z, fixed)` for an inverse letter, the letter's empty
+///   word for a case with no loop arm — or [`select`]'s reading where the case
+///   is over another argument; bound into each further call's cong of it, the
+///   transport along it in `y. Path(C, fixed, ⟨f … y …⟩)` from `here(fixed)`,
+///   every argument off the route at the point.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` over the route's later calls and one over each call's
 ///   arguments, not recursion.
 /// - measure: the calls left, then the arguments left.
 ///
@@ -844,18 +1185,18 @@ where
 ///   each verdict turns on the image.
 /// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 /// - witness: `native_formers::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
-#[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()) && (ret.is_none() || !chain.is_empty()))]
-fn image<M>(
+#[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()))]
+fn route_image<M>(
     arena: &mut TermArena,
     (table, memo): (&mut ContentTable, &mut M),
     unfoldings: &Unfoldings,
-    (chain, at): (&[Link], ValueId),
+    (mut walk, at): (Walk<'_>, ValueId),
     (letter, (carrier, fixed)): (ValueId, (ValueTypeId, ValueId)),
 ) -> Option<ComputationId>
 where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
-    let (innermost, outer) = chain.split_first()?;
+    let (innermost, moving) = walk.next()?;
     let Head::Letter { tag, words, rest } = head(arena, unfoldings.presentations(), letter)
     else {
         return None;
@@ -868,56 +1209,63 @@ where
         .iter()
         .map(|&argument| substitute_value(arena, table, memo, argument, at))
         .collect();
-    let arm = loop_arm(
-        arena,
-        (table, memo),
-        unfoldings,
-        (innermost, &arguments),
-        (words, cell),
-    )?;
-    let mut built = match arm {
-        Arm::Unwritten => arena.computation_return(rest),
-        Arm::Written(arm) if usize::from(tag) % 2 == 1 => arm,
-        Arm::Written(arm) => {
-            let back = path_family(
-                arena,
-                (table, memo),
-                (carrier, fixed),
-                gandr_kernel_term::Side::Left,
-                BinderDepth::from(1_u32),
-            );
-            let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
-            let lifted = shift_value(
-                arena,
-                table,
-                memo,
-                fixed,
-                BinderDepth::NONE,
-                BinderDepth::from(1_u32),
-            );
-            let start = arena.value_here(lifted);
-            let inverted = arena.computation_path_transport(back, bound, start);
-            arena.computation_bind(arm, inverted)
-        },
+    let (case, over) = case_of(arena, unfoldings, (innermost.function, &arguments))?;
+    let mut built = if over == moving {
+        match loop_arm(
+            arena,
+            (table, memo),
+            unfoldings.presentations(),
+            (case, moving, &arguments),
+            (words, cell),
+        )? {
+            Arm::Unwritten => arena.computation_return(rest),
+            Arm::Written(arm) if usize::from(tag) % 2 == 1 => arm,
+            Arm::Written(arm) => {
+                let back = path_family(
+                    arena,
+                    (table, memo),
+                    (carrier, fixed),
+                    gandr_kernel_term::Side::Left,
+                    BinderDepth::from(1_u32),
+                );
+                let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+                let lifted = shift_value(
+                    arena,
+                    table,
+                    memo,
+                    fixed,
+                    BinderDepth::NONE,
+                    BinderDepth::from(1_u32),
+                );
+                let start = arena.value_here(lifted);
+                let inverted = arena.computation_path_transport(back, bound, start);
+                arena.computation_bind(arm, inverted)
+            },
+        }
+    }
+    else {
+        select(
+            arena,
+            (table, memo),
+            (innermost.function, case),
+            (over, moving, &arguments),
+            (letter, rest, (carrier, fixed)),
+        )?
     };
-    for link in outer {
+    for (link, moving) in walk {
         let amount = BinderDepth::from(2_u32);
         let lifted_carrier =
             shift_value_type(arena, table, memo, carrier, BinderDepth::NONE, amount);
         let lifted_fixed = shift_value(arena, table, memo, fixed, BinderDepth::NONE, amount);
-        let arguments: Vec<ValueId> = link
-            .arguments
-            .iter()
-            .map(|&argument| substitute_value(arena, table, memo, argument, at))
-            .collect();
         let named = arena.value_constant(link.function);
         let mut applied = arena.computation_force(named);
-        for (position, &argument) in arguments.iter().enumerate() {
-            let passed = if position == link.moving {
+        for (position, &argument) in link.arguments.iter().enumerate() {
+            let passed = if Argument(position) == moving {
                 arena.value_variable(DeBruijnIndex::from(0_u32))
             }
             else {
-                shift_value(arena, table, memo, argument, BinderDepth::NONE, amount)
+                let standing = substitute_value(arena, table, memo, argument, at);
+                shift_value(arena, table, memo, standing, BinderDepth::NONE, amount)
             };
             applied = arena.computation_application(applied, passed);
         }
@@ -1103,11 +1451,11 @@ where
     let mut images = |action: &Action, fixed: ValueId| match *action {
         Action::Fixed => Some(None),
         Action::Moving => Some(Some(arena.computation_return(path))),
-        Action::Through(ref chain) => image(
+        Action::Through(ref read) => image(
             arena,
             (table, memo),
             unfoldings,
-            (chain, at),
+            (read, at),
             (path, (base, fixed)),
         )
         .map(Some),

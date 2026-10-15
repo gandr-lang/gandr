@@ -563,21 +563,68 @@ pub enum CompBody
     },
     /// After the image of a word's letter under one function of an
     /// endpoint's chain of calls ran, append it and map the next letter.
-    Mapping
+    Mapping(Mapping),
+    /// After the argument a function's case is over evaluated where the
+    /// family stands, read the branch it selects as that function's image.
+    Selecting(Mapping),
+}
+
+/// The state of mapping a word through one endpoint's calls: the routes
+/// from each of the binder's occurrences to the endpoint, one after another,
+/// each route's functions innermost first.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Mapping
+{
+    /// The path family, closed over its environment.
+    pub motive: crate::arena::ValueClosureId,
+    /// The endpoint whose calls map the word.
+    pub side: gandr_kernel_term::Side,
+    /// The route mapping the word now.
+    pub route: Route,
+    /// The function of the route mapping the word now.
+    pub call: Call,
+    /// The word every route maps.
+    pub word: DomainValueId,
+    /// The images of the routes before this one, concatenated.
+    pub routed: DomainValueId,
+    /// The letters still to map.
+    pub rest: DomainValueId,
+    /// The image of the letters mapped so far.
+    pub mapped: DomainValueId,
+    /// Whether the letter whose image binds next is inverted.
+    pub orientation: Orientation,
+}
+
+/// A route's position among an endpoint's routes, the binder's leftmost
+/// occurrence first.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Route(usize);
+
+impl From<usize> for Route
+{
+    /// The route at `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: usize) -> Self
     {
-        /// The path family, closed over its environment.
-        motive: crate::arena::ValueClosureId,
-        /// The endpoint whose chain of calls maps the word.
-        side: gandr_kernel_term::Side,
-        /// The function of the chain mapping the word.
-        call: Call,
-        /// The letters still to map.
-        rest: DomainValueId,
-        /// The image of the letters mapped so far.
-        mapped: DomainValueId,
-        /// Whether the bound image is the letter's or its inverse's.
-        orientation: Orientation,
-    },
+        Self(position)
+    }
+}
+
+impl From<Route> for usize
+{
+    /// The route's position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(route: Route) -> Self
+    {
+        route.0
+    }
 }
 
 /// Which image of a letter a [`CompBody::Conjugated`] continuation binds.
