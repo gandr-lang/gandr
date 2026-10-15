@@ -735,6 +735,22 @@ fn lambda_reflexivity_replays_higher_evaluation()
             .expect("here transport"),
         Transport::Return(unit)
     );
+    // The diagonal of the function fibre is `here` at one function, and two
+    // distinct functions owe a higher evaluation instead.
+    let at_one = family
+        .evaluate(&arena, boolean.not, boolean.not)
+        .expect("one function's fibre");
+    assert!(matches!(
+        at_one.diagonal(&mut arena).map(|diagonal| arena.value(diagonal.value)),
+        Ok(Some(&Value::Here { point, .. })) if point == boolean.not
+    ));
+    let at_two = family
+        .evaluate(&arena, boolean.not, boolean.identity)
+        .expect("two functions' fibre");
+    assert!(matches!(
+        at_two.diagonal(&mut arena),
+        Err(RelationError::HigherEvaluationRequired)
+    ));
     assert!(matches!(
         identity.native_evidence(),
         Err(RelationError::HigherEvaluationRequired)
@@ -1226,4 +1242,67 @@ fn a_higher_order_argument_binds_its_inner_fibre()
         ),
         Err(RelationError::Typing(_))
     ));
+}
+
+#[test]
+fn coverage_keeps_a_function_coordinate_s_two_sides_apart()
+{
+    // A function coordinate relates two functions, so the pattern beside or
+    // around it relates two different values; neither a sum nor a product
+    // may collapse them to the source.
+    let mut arena = TermArena::new();
+    let inner = boolean(&mut arena).function;
+    let unit = arena.value_type_unit();
+    let variable = |index: u32| Some(Value::Variable(DeBruijnIndex::from(index)));
+    let sum = arena.value_type_sum(&[inner, unit]);
+    let product = arena.value_type_product(&[inner, unit]);
+    for (domain, what) in [(sum, "a sum"), (product, "a product")] {
+        let outer = thunk_type(&mut arena, domain, unit);
+        let code = arena.value_quote(outer);
+        let patterns = relation(&arena, Mode::Identity, code)
+            .related_patterns(&mut arena, ReplayBudget::DEFAULT)
+            .expect("first-order coverage");
+        let pattern = patterns.first().expect("a function pattern first");
+        let sides = [pattern.left, pattern.right].map(|value| {
+            let first = match arena.value(value) {
+                Some(&Value::Injection(_, payload)) => payload,
+                Some(&Value::Tuple(ref components)) => *components.first().expect("a pair"),
+                _ => panic!("{what} wraps its coordinate"),
+            };
+            arena.value(first).cloned()
+        });
+        assert_eq!(
+            sides,
+            [variable(2), variable(1)],
+            "{what} keeps the two functions"
+        );
+    }
+}
+
+#[test]
+fn a_premise_relates_the_two_entries_just_before_it_in_order()
+{
+    let mut arena = TermArena::new();
+    let inner = boolean(&mut arena).function;
+    let [zero, one] = [0_u32, 1_u32].map(|index| arena.value_variable(DeBruijnIndex::from(index)));
+    let premise = arena.value_type_path(inner, one, zero);
+    let classify = |arena: &TermArena, premise| {
+        super::premise_classifier(
+            arena,
+            &[inner, inner, premise],
+            DeBruijnIndex::from(0_u32),
+            Component(0),
+        )
+    };
+    assert!(matches!(classify(&arena, premise), Ok(domain) if domain == inner));
+    for (left, right) in [(one, one), (zero, zero), (zero, one)] {
+        let premise = arena.value_type_path(inner, left, right);
+        assert!(
+            matches!(
+                classify(&arena, premise),
+                Err(RelationError::QuantifiedStep(Component(0)))
+            ),
+            "a premise binding its sides elsewhere is no premise"
+        );
+    }
 }

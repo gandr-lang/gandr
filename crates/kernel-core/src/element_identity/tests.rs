@@ -2356,6 +2356,90 @@ fn a_definition_relating_compound_endpoints_admits()
 }
 
 #[test]
+fn a_relation_stated_the_other_way_round_admits()
+{
+    // A relation matches the set-aside pair in either orientation; its
+    // dialogue relates the relation's own sides, so the mirror of
+    // [`DELAYED`] relates `⟨force delay⟩` to `k`.
+    let mirrored = DELAYED.map(|decision| {
+        if let ConversionDecision::ReduceLeft { redex } = decision {
+            ConversionDecision::ReduceRight { redex }
+        }
+        else if let ConversionDecision::ReduceRight { redex } = decision {
+            ConversionDecision::ReduceLeft { redex }
+        }
+        else {
+            decision
+        }
+    });
+    let (mut environment, mut declarations, law, [k, endpoint]) =
+        ascribed_law(Admitted::Defined).expect("the fixture");
+    let law = law.relating(alloc::vec![RelatedEndpoints {
+        left: endpoint,
+        right: k,
+        dialogue: mirrored.to_vec(),
+    }]);
+    admit(&mut environment, &mut declarations, law)
+        .expect("the reversed relation is the same relation");
+}
+
+#[test]
+fn a_pair_s_components_stop_at_a_body_naming_its_own_position()
+{
+    // An unchecked log may hold a definition whose body names itself; the
+    // δ-walk unfolds only strictly earlier positions, so it stops and
+    // projects rather than unfold the same body forever.
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let declared = arena.value_type_unit();
+    let itself = arena.value_constant(ConstantIndex::from(0_usize));
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, itself);
+    environment.add_decl_unchecked(declaration);
+    let entries = environment.entries().to_vec();
+    let mut arena = environment.arena().clone();
+    let itself = arena.value_constant(ConstantIndex::from(0_usize));
+    let components = super::pair_components(&mut arena, &entries, itself);
+    for (index, component) in components.into_iter().enumerate() {
+        let Some(&Value::Returned(projected)) = arena.value(component)
+        else {
+            panic!("component {index} is a returned projection");
+        };
+        assert_eq!(
+            arena.computation(projected),
+            Some(&Computation::TupleProjection(
+                itself,
+                gandr_kernel_term::Component::from(index)
+            ))
+        );
+    }
+}
+
+#[test]
+fn a_quantified_evaluation_refuses_either_open_endpoint()
+{
+    let mut arena = TermArena::new();
+    let unit_type = arena.value_type_unit();
+    let returns = arena.comp_type_returner(unit_type);
+    let arrow = arena.comp_type_arrow(unit_type, returns);
+    let domain = arena.value_type_thunk(arrow);
+    let unit = arena.value_unit();
+    let returned = arena.computation_return(unit);
+    let constant = arena.computation_lambda(returned);
+    let closed = arena.value_thunk(constant);
+    let open = arena.value_variable(DeBruijnIndex::from(0_u32));
+    for (left, right) in [(open, closed), (closed, open)] {
+        let expected = arena.value_type_path(domain, left, right);
+        assert_eq!(
+            super::quantified_obligations(&mut arena, &Unfoldings::default(), expected, &[], &[])
+                .err(),
+            Some(KernelError::Identity(IdentityError::OpenFunctions)),
+            "one open endpoint is enough to refuse"
+        );
+    }
+}
+
+#[test]
 fn a_corrupted_relation_is_refused_by_name()
 {
     let refused = |alias: Admitted, dialogue: &[ConversionDecision<()>]| {
@@ -2620,6 +2704,31 @@ fn a_dependent_motive_replays_its_substitution_law()
             Err(KernelError::ComputationTypeMismatch(_))
         ));
     }
+
+    // A path over another carrier than the motive's first entry is refused.
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let elsewhere = arena.value_type_path(unit_type, unit, unit);
+    let mut domains = domains;
+    domains[2] = elsewhere;
+    let (term, declared) = function(&mut arena, &domains, target, transport);
+    let refused = check_closed_value(&mut arena, term, declared);
+    assert!(
+        matches!(refused, Err(KernelError::ValueTypeMismatch(_))),
+        "{refused:?}"
+    );
+    // A carrier that is the first entry only once its returned code runs is
+    // read through it: `El(⟨return 'Bool⟩)` is Bool.
+    let code = arena.value_quote(boolean.ty);
+    let returned = arena.computation_return(code);
+    let returned = arena.value_returned(returned);
+    let read = arena.value_type_element(returned, Level::zero());
+    let left = var(&mut arena, 1);
+    let right = var(&mut arena, 0);
+    domains[2] = arena.value_type_path(read, left, right);
+    let (term, declared) = function(&mut arena, &domains, target, transport);
+    let admitted = check_closed_value(&mut arena, term, declared);
+    assert!(admitted.is_ok(), "{admitted:?}");
 }
 
 #[test]
@@ -2796,5 +2905,91 @@ fn j_derived_in_the_singleton_checks_and_computes()
     assert_ne!(
         computes(&mut arena, at_here, returned_start),
         KernelVerdict::Convertible
+    );
+}
+
+#[test]
+fn transport_reads_its_family_s_shape_before_it_reduces()
+{
+    let mut arena = TermArena::new();
+    let mut table = ContentTable::new();
+    let mut memo = gandr_kernel_check_memo::NullMemo;
+    let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let outer = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let path = arena.value_variable(DeBruijnIndex::from(5_u32));
+    let unit = arena.value_unit();
+    let unit_type = arena.value_type_unit();
+    let reads = arena.value_type_element(binder, Level::zero());
+
+    assert_eq!(
+        super::binder_use(
+            &mut arena,
+            &mut table,
+            &mut memo,
+            super::Family::Value(outer)
+        ),
+        super::BinderUse::Ignored,
+        "a family over an outer variable alone is constant in its binder"
+    );
+    assert_eq!(
+        super::binder_use(
+            &mut arena,
+            &mut table,
+            &mut memo,
+            super::Family::Value(binder)
+        ),
+        super::BinderUse::Read,
+        "and the binder itself reads it"
+    );
+
+    let product = arena.value_type_product(&[reads, unit_type]);
+    let short = arena.value_tuple(&[unit]);
+    let raised = arena.value_type_element(
+        binder,
+        Level::constant(gandr_kernel_strata::LevelConstant::from(1)),
+    );
+    let base = arena.value_type_base(BaseType::Integer);
+    let point = arena.value_literal(Literal::Text(StringLiteral::new(
+        alloc::string::String::from("p"),
+    )));
+    let singleton = arena.value_type_path(base, point, binder);
+    let moving_domain = arena.value_type_path(reads, unit, binder);
+    let here = arena.value_here(point);
+    for (motive, value, what) in [
+        (
+            product,
+            short,
+            "a product family over a tuple of another arity",
+        ),
+        (raised, unit, "an element family above the value universe"),
+        (
+            moving_domain,
+            here,
+            "a path family whose carrier reads the binder",
+        ),
+    ] {
+        assert_eq!(
+            transport_beta(&mut arena, &mut table, &mut memo, ElementTransport {
+                motive,
+                path,
+                value,
+            }),
+            Ok(Reduction::Stuck),
+            "{what} sticks"
+        );
+    }
+    let Ok(Reduction::Reduced(reduct)) =
+        transport_beta(&mut arena, &mut table, &mut memo, ElementTransport {
+            motive: singleton,
+            path,
+            value: here,
+        })
+    else {
+        panic!("reflexivity carried in the singleton family reduces");
+    };
+    assert_eq!(
+        arena.computation(reduct),
+        Some(&Computation::Return(path)),
+        "to the path it was carried along"
     );
 }

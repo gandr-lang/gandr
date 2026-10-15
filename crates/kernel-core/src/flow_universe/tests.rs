@@ -1288,6 +1288,19 @@ fn directed_j_rides_the_telescope()
             gandr_kernel_term::AnyNode::ValueType(backward)
         )))
     );
+    // A flow over another carrier than the motive's first entry is refused
+    // by the carrier itself.
+    let number = arena.value_literal(Literal::Integer(gandr_kernel_term::IntegerLiteral::new(
+        gandr_kernel_term::Sign::NonNegative,
+        gandr_kernel_term::Magnitude::zero(),
+    )));
+    let elsewhere = arena.value_stay(number);
+    let term = arena.computation_telescope_ride(motive, elsewhere, start, over, value);
+    let refused = replay_ride_closed(&mut arena, term, expected);
+    assert!(
+        matches!(refused, Err(KernelError::ValueTypeMismatch(_))),
+        "{refused:?}"
+    );
 }
 
 /// Check a closed telescope ride and replay it against its expected result
@@ -1406,4 +1419,134 @@ fn formation_boundaries_refuse()
         ),
         Ok(KernelVerdict::Declined(_))
     ));
+}
+
+#[test]
+fn a_ride_reads_its_family_s_shape_before_it_reduces()
+{
+    let mut arena = TermArena::new();
+    let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let flow = arena.value_variable(DeBruijnIndex::from(5_u32));
+    let unit = arena.value_unit();
+    let unit_type = arena.value_type_unit();
+    let point = arena.value_literal(Literal::Text(StringLiteral::new(
+        alloc::string::String::from("p"),
+    )));
+    let reads = arena.value_type_element(binder, gandr_kernel_strata::Level::zero());
+    let raised = arena.value_type_element(
+        binder,
+        gandr_kernel_strata::Level::constant(gandr_kernel_strata::LevelConstant::from(1)),
+    );
+    let translator = arena.value_variable(DeBruijnIndex::from(6_u32));
+    let forward = arena.value_forward_flow(unit_type, translator, Vec::new().into(), Arc::from([]));
+    let product = arena.value_type_product(&[reads, unit_type]);
+    let short = arena.value_tuple(&[unit]);
+    let moving_domain = arena.value_type_flow(reads, point, binder);
+    let moving_source = arena.value_type_flow(unit_type, binder, binder);
+    let universe_moving_source = arena.value_type_flow_universe(binder, binder);
+    let singleton = arena.value_type_flow_universe(point, binder);
+    let ride = |arena: &mut TermArena, motive, flow, value| {
+        ride_beta(arena, &mut ContentTable::new(), &mut NullMemo, RideStep {
+            motive,
+            flow,
+            value,
+        })
+    };
+    for (motive, along, value, what) in [
+        (
+            product,
+            flow,
+            short,
+            "a product family over a tuple of another arity",
+        ),
+        (
+            raised,
+            forward,
+            unit,
+            "an element family above the value universe",
+        ),
+        (
+            moving_domain,
+            flow,
+            unit,
+            "a flow family whose carrier reads the binder",
+        ),
+        (
+            moving_source,
+            flow,
+            unit,
+            "a flow family whose source reads the binder",
+        ),
+        (
+            universe_moving_source,
+            flow,
+            unit,
+            "a flow-universe family whose source reads the binder",
+        ),
+    ] {
+        assert_eq!(
+            ride(&mut arena, motive, along, value),
+            Ok(Reduction::Stuck),
+            "{what} sticks"
+        );
+    }
+    assert!(
+        matches!(
+            ride(&mut arena, singleton, flow, unit),
+            Ok(Reduction::Reduced(_))
+        ),
+        "a flow ridden in the flow-universe singleton is composed"
+    );
+}
+
+#[test]
+fn the_two_readings_meet_only_at_level_zero_and_agreeing_ends()
+{
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_strata::LevelConstant;
+    use gandr_kernel_term::GroundSort;
+
+    let mut arena = TermArena::new();
+    let free = crate::presented::Presentations::default();
+    let zero = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let one = arena.value_type_universe(GroundSort::Value, Level::constant(LevelConstant::from(1)));
+    assert_eq!(level_zero_universe(&arena, zero), Reading::Universe);
+    assert_eq!(
+        level_zero_universe(&arena, one),
+        Reading::Element,
+        "a value universe above level zero is no code carrier"
+    );
+
+    let codes = [BaseType::Integer, BaseType::String, BaseType::Numeric].map(|base| {
+        let ty = arena.value_type_base(base);
+        arena.value_quote(ty)
+    });
+    let [a, b, c] = codes;
+    let as_element = arena.value_type_flow(zero, a, b);
+    let as_universe = arena.value_type_flow_universe(a, b);
+    let other_source = arena.value_type_flow_universe(c, b);
+    assert_eq!(
+        agree(&mut arena, &free, as_element, as_universe),
+        Agreement::Agree,
+        "one classifier under its two readings agrees"
+    );
+    assert_eq!(
+        agree(&mut arena, &free, as_element, other_source),
+        Agreement::Differ,
+        "a reading from another source does not, though the targets meet"
+    );
+
+    let onward = arena.value_type_flow(zero, b, c);
+    let composite = compose(
+        &mut arena,
+        &free,
+        (as_universe, onward),
+        gandr_kernel_term::Seam::Sequence,
+        (a, b),
+    )
+    .expect("the seam meets");
+    assert!(
+        matches!(arena.value_type(composite), Some(&gandr_kernel_term::ValueType::FlowUniverse(source, target)) if source == a && target == c),
+        "a composite with one side read from Flow_U is read from Flow_U"
+    );
 }

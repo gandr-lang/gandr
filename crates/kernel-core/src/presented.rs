@@ -1035,6 +1035,14 @@ mod tests
             Ok(written),
             "a reduced word is its own normal form"
         );
+        let looped = arena.value_constructor(own, Letter::Loop.tag(), alloc::vec![written]);
+        let cancelled = arena.value_constructor(own, Letter::Unloop.tag(), alloc::vec![looped]);
+        assert_eq!(
+            super::normal_form(arena, &presentations, cancelled, &mut fuel),
+            Ok(written),
+            "`unloop(loop(w))` is `w` itself: a written constructor the rewriting \
+             left whole keeps its id"
+        );
         let free = super::Presentations::default();
         assert_eq!(
             super::normal_form(arena, &free, word, &mut fuel),
@@ -1385,6 +1393,129 @@ mod tests
             Err(KernelError::WordsRefused(CellFault::Twice)),
             "one type of words per point"
         );
+    }
+
+    #[test]
+    fn words_refuse_another_table_and_admit_one_type_per_point()
+    {
+        use gandr_kernel_term::CellFault;
+
+        /// Stage the words of the loop at `point` over the table `fields`
+        /// names, `None` a field of the declaration's own type.
+        ///
+        /// # Specification
+        /// trivial.
+        fn stage(
+            environment: &mut Environment,
+            table: &[&[Option<()>]],
+            point: ConstructorTag,
+        ) -> Result<ConstantIndex, KernelError>
+        {
+            let position = ConstantIndex::from(environment.entries().len());
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+            let own = arena.value_type_data(position, Vec::new());
+            let unit = arena.value_type_unit();
+            let table = table
+                .iter()
+                .map(|fields| {
+                    fields
+                        .iter()
+                        .map(|field| field.map_or(own, |()| unit))
+                        .collect()
+                })
+                .collect();
+            let at: alloc::boxed::Box<[RuleNode]> = [RuleNode::Constructor(point)].into();
+            let cells =
+                gandr_kernel_term::FreeCells::new(ConstantIndex::from(0_usize), alloc::vec![
+                    gandr_kernel_term::FreeCell::new(at.clone(), at)
+                ]);
+            let staged = staging
+                .data(LevelSignature::monomorphic(), Vec::new(), table, kind)
+                .presented(Presentation::words(cells));
+            environment
+                .add_decl(staged)
+                .map(crate::env::CheckedId::position)
+        }
+
+        // A sort of two points.
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let staged = staging.data(
+            LevelSignature::monomorphic(),
+            Vec::new(),
+            alloc::vec![alloc::vec![], alloc::vec![]],
+            kind,
+        );
+        let _sort = environment
+            .add_decl(staged)
+            .expect("a two-point sort admits");
+        let [first, second] = [0_usize, 1_usize].map(ConstructorTag::from);
+        for (table, what) in [
+            (
+                [&[None][..], &[None], &[None]],
+                "an empty word over a field",
+            ),
+            (
+                [&[][..], &[Some(())], &[None]],
+                "a letter over another type",
+            ),
+        ] {
+            assert_eq!(
+                stage(&mut environment, &table, first),
+                Err(KernelError::WordsRefused(CellFault::NotMinted)),
+                "{what} is not the mint"
+            );
+        }
+        let minted: [&[Option<()>]; 3] = [&[], &[None], &[None]];
+        assert!(stage(&mut environment, &minted, first).is_ok());
+        assert!(
+            stage(&mut environment, &minted, second).is_ok(),
+            "the same sort's other point takes its own words"
+        );
+        assert_eq!(
+            stage(&mut environment, &minted, second),
+            Err(KernelError::WordsRefused(CellFault::Twice))
+        );
+    }
+
+    #[test]
+    fn a_side_spells_only_its_own_sort_s_tags()
+    {
+        let mut arena = TermArena::new();
+        let sort = ConstantIndex::from(0_usize);
+        let own = arena.value_type_data(sort, Vec::new());
+        let other = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let side = [Letter::Loop.node(), Letter::Base.node()];
+        let word = |arena: &mut TermArena, datatype, tag: Letter| {
+            let base = arena.value_constructor(own, Letter::Base.tag(), Vec::new());
+            arena.value_constructor(datatype, tag.tag(), alloc::vec![base])
+        };
+        let spelled = word(&mut arena, own, Letter::Loop);
+        assert_eq!(
+            super::spells(&arena, sort, spelled, &side),
+            super::Spelling::Spelled
+        );
+        for (value, what) in [
+            (
+                word(&mut arena, other, Letter::Loop),
+                "the tag over another sort",
+            ),
+            (
+                word(&mut arena, own, Letter::Unloop),
+                "another tag over the sort",
+            ),
+        ] {
+            assert_eq!(
+                super::spells(&arena, sort, value, &side),
+                super::Spelling::Apart,
+                "{what} spells nothing"
+            );
+        }
     }
 
     #[test]

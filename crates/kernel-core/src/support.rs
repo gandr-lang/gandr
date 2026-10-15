@@ -1893,6 +1893,11 @@ mod tests
             under_unit.agreement(&under_base),
             "the same node under binders of different types is two questions"
         );
+        assert_ne!(
+            gandr_kernel_check_memo::MemoKey::digest(&under_unit),
+            gandr_kernel_check_memo::MemoKey::digest(&under_base),
+            "and the memo files the two under different buckets"
+        );
     }
 
     #[test]

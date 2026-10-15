@@ -4268,4 +4268,728 @@ mod tests
             );
         }
     }
+
+    /// A child slot of a former, numbered in the order [`build`] asks for
+    /// them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Slot(usize);
+
+    /// A former's children as [`build`] asks for them, each closed or the one
+    /// open slot reading the free variable `index`, which no former here binds
+    /// deep enough to capture.
+    ///
+    /// # Specification
+    /// trivial.
+    struct Children
+    {
+        /// The slot that reads the variable, if any.
+        open: Option<Slot>,
+        /// How many slots have been asked for.
+        next: usize,
+        /// The variable the open slot reads.
+        index: DeBruijnIndex,
+    }
+
+    impl Children
+    {
+        /// Every slot closed.
+        ///
+        /// # Specification
+        /// trivial.
+        fn closed() -> Self
+        {
+            Self {
+                open: None,
+                next: 0,
+                index: DeBruijnIndex::from(0_u32),
+            }
+        }
+
+        /// Slot `open` reading `index`, every other slot closed.
+        ///
+        /// # Specification
+        /// trivial.
+        const fn opening(
+            open: Slot,
+            index: DeBruijnIndex,
+        ) -> Self
+        {
+            Self {
+                open: Some(open),
+                next: 0,
+                index,
+            }
+        }
+
+        /// The variable the next slot reads, or `None` for a closed one.
+        ///
+        /// # Specification
+        /// trivial.
+        fn read(&mut self) -> Option<DeBruijnIndex>
+        {
+            let slot = Slot(self.next);
+            self.next = self.next.saturating_add(1);
+            (self.open == Some(slot)).then_some(self.index)
+        }
+
+        /// The next slot as a value: the variable, or the unit.
+        ///
+        /// # Specification
+        /// trivial.
+        fn value(
+            &mut self,
+            arena: &mut TermArena,
+        ) -> ValueId
+        {
+            match self.read() {
+                Some(index) => arena.value_variable(index),
+                None => arena.value_unit(),
+            }
+        }
+
+        /// The next slot as a value type: the variable's element type, or the
+        /// unit type.
+        ///
+        /// # Specification
+        /// trivial.
+        fn value_type(
+            &mut self,
+            arena: &mut TermArena,
+        ) -> gandr_kernel_term::ValueTypeId
+        {
+            match self.read() {
+                Some(index) => {
+                    let code = arena.value_variable(index);
+                    arena.value_type_element(code, Level::zero())
+                },
+                None => arena.value_type_unit(),
+            }
+        }
+
+        /// The next slot as a computation returning [`Children::value`]'s.
+        ///
+        /// # Specification
+        /// trivial.
+        fn computation(
+            &mut self,
+            arena: &mut TermArena,
+        ) -> gandr_kernel_term::ComputationId
+        {
+            let value = self.value(arena);
+            arena.computation_return(value)
+        }
+
+        /// The next slot as the returner of [`Children::value_type`]'s.
+        ///
+        /// # Specification
+        /// trivial.
+        fn comp_type(
+            &mut self,
+            arena: &mut TermArena,
+        ) -> gandr_kernel_term::CompTypeId
+        {
+            let value_type = self.value_type(arena);
+            arena.comp_type_returner(value_type)
+        }
+    }
+
+    /// Every former with children, each named by its family and node.
+    #[derive(Clone, Copy, Debug)]
+    enum Former
+    {
+        Constructor,
+        Record,
+        SessionPath,
+        SessionFlow,
+        Stay,
+        ForwardFlow,
+        FunctionFlow,
+        Then,
+        FlowProduct,
+        PathRefl,
+        PathProduct,
+        PathEquiv,
+        Here,
+        Returned,
+        Higher,
+        HigherEvaluation,
+        QuantifiedEvaluation,
+        Tuple,
+        Injection,
+        ListCons,
+        Thunk,
+        Lift,
+        Quote,
+        QuoteComputation,
+        StaticApplication,
+        DataCase,
+        RecordProjection,
+        TupleProjection,
+        Lambda,
+        Application,
+        Return,
+        Bind,
+        Force,
+        Case,
+        SigmaSplit,
+        ListFold,
+        Transport,
+        PathTransport,
+        TelescopeTransport,
+        Ride,
+        TelescopeRide,
+        RelatedApplication,
+        With,
+        Project,
+        Fixpoint,
+        DataType,
+        RecordType,
+        SessionType,
+        PathUniverse,
+        FlowUniverse,
+        PathType,
+        FlowType,
+        ProductType,
+        SigmaType,
+        SumType,
+        ListType,
+        ThunkType,
+        LiftType,
+        ElementType,
+        StagedType,
+        StaticPiType,
+        Returner,
+        Arrow,
+        Pi,
+        ElementComp,
+        WithType,
+    }
+
+    /// Every [`Former`].
+    const FORMERS: &[Former] = &[
+        Former::Constructor,
+        Former::Record,
+        Former::SessionPath,
+        Former::SessionFlow,
+        Former::Stay,
+        Former::ForwardFlow,
+        Former::FunctionFlow,
+        Former::Then,
+        Former::FlowProduct,
+        Former::PathRefl,
+        Former::PathProduct,
+        Former::PathEquiv,
+        Former::Here,
+        Former::Returned,
+        Former::Higher,
+        Former::HigherEvaluation,
+        Former::QuantifiedEvaluation,
+        Former::Tuple,
+        Former::Injection,
+        Former::ListCons,
+        Former::Thunk,
+        Former::Lift,
+        Former::Quote,
+        Former::QuoteComputation,
+        Former::StaticApplication,
+        Former::DataCase,
+        Former::RecordProjection,
+        Former::TupleProjection,
+        Former::Lambda,
+        Former::Application,
+        Former::Return,
+        Former::Bind,
+        Former::Force,
+        Former::Case,
+        Former::SigmaSplit,
+        Former::ListFold,
+        Former::Transport,
+        Former::PathTransport,
+        Former::TelescopeTransport,
+        Former::Ride,
+        Former::TelescopeRide,
+        Former::RelatedApplication,
+        Former::With,
+        Former::Project,
+        Former::Fixpoint,
+        Former::DataType,
+        Former::RecordType,
+        Former::SessionType,
+        Former::PathUniverse,
+        Former::FlowUniverse,
+        Former::PathType,
+        Former::FlowType,
+        Former::ProductType,
+        Former::SigmaType,
+        Former::SumType,
+        Former::ListType,
+        Former::ThunkType,
+        Former::LiftType,
+        Former::ElementType,
+        Former::StagedType,
+        Former::StaticPiType,
+        Former::Returner,
+        Former::Arrow,
+        Former::Pi,
+        Former::ElementComp,
+        Former::WithType,
+    ];
+
+    /// `former` in `arena`, each child as `children` hands it out.
+    ///
+    /// # Specification
+    /// trivial.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one arm per former, each its constructor call"
+    )]
+    fn build(
+        arena: &mut TermArena,
+        former: Former,
+        children: &mut Children,
+    ) -> AnyNode
+    {
+        use alloc::boxed::Box;
+        use alloc::collections::BTreeMap;
+        use alloc::sync::Arc;
+        use alloc::vec::Vec;
+
+        use gandr_kernel_term::Component;
+        use gandr_kernel_term::ConstantIndex;
+        use gandr_kernel_term::ConstructorTag;
+        use gandr_kernel_term::EvaluationComponent;
+        use gandr_kernel_term::FieldLabel;
+        use gandr_kernel_term::FixpointEvidence;
+        use gandr_kernel_term::HigherDepth;
+        use gandr_kernel_term::HigherProgram;
+        use gandr_kernel_term::LayerPosition;
+        use gandr_kernel_term::PathEvidence;
+        use gandr_kernel_term::Seam;
+        use gandr_kernel_term::Side;
+        use gandr_kernel_term::Stage;
+        use gandr_kernel_term::StageId;
+        use gandr_kernel_term::Summand;
+        use gandr_kernel_term::session::Evidence;
+        use gandr_kernel_term::session::Graph;
+        use gandr_kernel_term::session::Node;
+        use gandr_kernel_term::session::State;
+
+        let label = |name: &str| FieldLabel::from(String::from(name));
+        let c = children;
+        match former {
+            Former::Constructor => {
+                let datatype = c.value_type(arena);
+                let fields = Vec::from([c.value(arena), c.value(arena)]);
+                AnyNode::Value(arena.value_constructor(
+                    datatype,
+                    ConstructorTag::from(0_usize),
+                    fields,
+                ))
+            },
+            Former::Record => {
+                let fields =
+                    BTreeMap::from([(label("a"), c.value(arena)), (label("b"), c.value(arena))]);
+                AnyNode::Value(arena.value_record(fields))
+            },
+            Former::SessionPath => {
+                let classifier = c.value_type(arena);
+                let paths = c.value(arena);
+                AnyNode::Value(arena.value_session_path(
+                    classifier,
+                    Arc::new(Evidence::default()),
+                    paths,
+                ))
+            },
+            Former::SessionFlow => {
+                let classifier = c.value_type(arena);
+                let paths = c.value(arena);
+                AnyNode::Value(arena.value_session_flow(
+                    classifier,
+                    Arc::new(Evidence::default()),
+                    paths,
+                ))
+            },
+            Former::Stay => {
+                let point = c.value(arena);
+                AnyNode::Value(arena.value_stay(point))
+            },
+            Former::ForwardFlow => {
+                let classifier = c.value_type(arena);
+                let translator = c.value(arena);
+                let outputs = Box::from([c.value(arena), c.value(arena)]);
+                AnyNode::Value(arena.value_forward_flow(
+                    classifier,
+                    translator,
+                    outputs,
+                    Arc::from([]),
+                ))
+            },
+            Former::FunctionFlow => {
+                let classifier = c.value_type(arena);
+                let (domain, codomain) = (c.value(arena), c.value(arena));
+                AnyNode::Value(arena.value_function_flow(classifier, domain, codomain))
+            },
+            Former::Then => {
+                let (first, second) = (c.value(arena), c.value(arena));
+                AnyNode::Value(arena.value_then(first, second, Seam::Sequence))
+            },
+            Former::FlowProduct => {
+                let (first, second) = (c.value(arena), c.value(arena));
+                AnyNode::Value(arena.value_flow_product(first, second))
+            },
+            Former::PathRefl => {
+                let code = c.value(arena);
+                AnyNode::Value(arena.value_path_refl(code))
+            },
+            Former::PathProduct => {
+                let (first, second) = (c.value(arena), c.value(arena));
+                AnyNode::Value(arena.value_path_product(first, second))
+            },
+            Former::PathEquiv => {
+                let classifier = c.value_type(arena);
+                let (forward, backward) = (c.value(arena), c.value(arena));
+                let evidence = Arc::new(PathEvidence::default());
+                AnyNode::Value(arena.value_path_equiv(classifier, forward, backward, evidence))
+            },
+            Former::Here => {
+                let point = c.value(arena);
+                AnyNode::Value(arena.value_here(point))
+            },
+            Former::Returned => {
+                let computation = c.computation(arena);
+                AnyNode::Value(arena.value_returned(computation))
+            },
+            Former::Higher => {
+                let program = Arc::new(HigherProgram {
+                    depth: HigherDepth(1),
+                    root: LayerPosition(0),
+                    layers: Vec::new(),
+                });
+                let evidence = Box::from([c.value(arena), c.value(arena)]);
+                AnyNode::Value(arena.value_higher(program, evidence))
+            },
+            Former::HigherEvaluation => {
+                let mut component = |arena: &mut TermArena| EvaluationComponent {
+                    left: c.value(arena),
+                    right: c.value(arena),
+                    evidence: c.value(arena),
+                };
+                let components = Box::from([component(arena), component(arena)]);
+                AnyNode::Value(arena.value_higher_evaluation(Arc::from([]), components))
+            },
+            Former::QuantifiedEvaluation => {
+                let children = Box::from([c.value(arena), c.value(arena)]);
+                AnyNode::Value(arena.value_quantified_evaluation(Arc::from([]), children))
+            },
+            Former::Tuple => {
+                let components = [c.value(arena), c.value(arena)];
+                AnyNode::Value(arena.value_tuple(&components))
+            },
+            Former::Injection => {
+                let body = c.value(arena);
+                AnyNode::Value(arena.value_injection(Summand::from(0_usize), body))
+            },
+            Former::ListCons => {
+                let (head, tail) = (c.value(arena), c.value(arena));
+                AnyNode::Value(arena.value_list_cons(head, tail))
+            },
+            Former::Thunk => {
+                let body = c.computation(arena);
+                AnyNode::Value(arena.value_thunk(body))
+            },
+            Former::Lift => {
+                let body = c.value(arena);
+                AnyNode::Value(arena.value_lift(Level::zero(), body))
+            },
+            Former::Quote => {
+                let quoted = c.value_type(arena);
+                AnyNode::Value(arena.value_quote(quoted))
+            },
+            Former::QuoteComputation => {
+                let quoted = c.comp_type(arena);
+                AnyNode::Value(arena.value_quote_computation(quoted))
+            },
+            Former::StaticApplication => {
+                let (head, argument) = (c.value(arena), c.value(arena));
+                AnyNode::Value(arena.value_static_application(head, argument))
+            },
+            Former::DataCase => {
+                let scrutinee = c.value(arena);
+                let motive = c.comp_type(arena);
+                let branches = Vec::from([c.computation(arena), c.computation(arena)]);
+                AnyNode::Computation(arena.computation_data_case(scrutinee, motive, branches))
+            },
+            Former::RecordProjection => {
+                let record = c.value(arena);
+                AnyNode::Computation(arena.computation_record_projection(record, label("a")))
+            },
+            Former::TupleProjection => {
+                let tuple = c.value(arena);
+                AnyNode::Computation(
+                    arena.computation_tuple_projection(tuple, Component::from(0_usize)),
+                )
+            },
+            Former::Lambda => {
+                let body = c.computation(arena);
+                AnyNode::Computation(arena.computation_lambda(body))
+            },
+            Former::Application => {
+                let head = c.computation(arena);
+                let argument = c.value(arena);
+                AnyNode::Computation(arena.computation_application(head, argument))
+            },
+            Former::Return => {
+                let value = c.value(arena);
+                AnyNode::Computation(arena.computation_return(value))
+            },
+            Former::Bind => {
+                let (bound, body) = (c.computation(arena), c.computation(arena));
+                AnyNode::Computation(arena.computation_bind(bound, body))
+            },
+            Former::Force => {
+                let value = c.value(arena);
+                AnyNode::Computation(arena.computation_force(value))
+            },
+            Former::Case => {
+                let scrutinee = c.value(arena);
+                let branches = [c.computation(arena), c.computation(arena)];
+                AnyNode::Computation(arena.computation_case(scrutinee, &branches))
+            },
+            Former::SigmaSplit => {
+                let scrutinee = c.value(arena);
+                let motive = c.comp_type(arena);
+                let body = c.computation(arena);
+                AnyNode::Computation(arena.computation_sigma_split(scrutinee, motive, body))
+            },
+            Former::ListFold => {
+                let (element, result) = (c.value_type(arena), c.value_type(arena));
+                let list = c.value(arena);
+                let (on_nil, on_cons) = (c.computation(arena), c.computation(arena));
+                AnyNode::Computation(
+                    arena.computation_list_fold(element, result, list, on_nil, on_cons),
+                )
+            },
+            Former::Transport => {
+                let (path, value) = (c.value(arena), c.value(arena));
+                AnyNode::Computation(arena.computation_transport(path, value))
+            },
+            Former::PathTransport => {
+                let motive = c.value_type(arena);
+                let (path, value) = (c.value(arena), c.value(arena));
+                AnyNode::Computation(arena.computation_path_transport(motive, path, value))
+            },
+            Former::TelescopeTransport => {
+                let motive = c.comp_type(arena);
+                let (path, start) = (c.value(arena), c.value(arena));
+                let (over, value) = (c.value(arena), c.value(arena));
+                AnyNode::Computation(
+                    arena.computation_telescope_transport(motive, path, start, over, value),
+                )
+            },
+            Former::Ride => {
+                let motive = c.value_type(arena);
+                let (flow, value) = (c.value(arena), c.value(arena));
+                AnyNode::Computation(arena.computation_ride(motive, flow, value))
+            },
+            Former::TelescopeRide => {
+                let motive = c.comp_type(arena);
+                let (flow, start) = (c.value(arena), c.value(arena));
+                let (over, value) = (c.value(arena), c.value(arena));
+                AnyNode::Computation(
+                    arena.computation_telescope_ride(motive, flow, start, over, value),
+                )
+            },
+            Former::RelatedApplication => {
+                let path = c.value(arena);
+                let arguments = (c.value(arena), c.value(arena));
+                let evidence = c.value(arena);
+                let body = c.computation(arena);
+                AnyNode::Computation(
+                    arena.computation_related_application(path, arguments, evidence, body),
+                )
+            },
+            Former::With => {
+                let (left, right) = (c.computation(arena), c.computation(arena));
+                AnyNode::Computation(arena.computation_with(left, right))
+            },
+            Former::Project => {
+                let pair = c.computation(arena);
+                AnyNode::Computation(arena.computation_project(Side::Left, pair))
+            },
+            Former::Fixpoint => {
+                let body = c.computation(arena);
+                AnyNode::Computation(arena.computation_fixpoint(body, FixpointEvidence::Partial))
+            },
+            Former::DataType => {
+                let arguments = Vec::from([c.value(arena), c.value(arena)]);
+                AnyNode::ValueType(arena.value_type_data(ConstantIndex::from(0_usize), arguments))
+            },
+            Former::RecordType => {
+                let fields = BTreeMap::from([
+                    (label("a"), c.value_type(arena)),
+                    (label("b"), c.value_type(arena)),
+                ]);
+                AnyNode::ValueType(arena.value_type_record(fields))
+            },
+            Former::SessionType => {
+                let graph = Arc::new(Graph {
+                    root: State(0),
+                    nodes: alloc::vec![Node::End],
+                });
+                let payloads = c.value_type(arena);
+                AnyNode::ValueType(arena.value_type_session(graph, payloads))
+            },
+            Former::PathUniverse => {
+                let (source, target) = (c.value(arena), c.value(arena));
+                AnyNode::ValueType(arena.value_type_path_universe(source, target))
+            },
+            Former::FlowUniverse => {
+                let (source, target) = (c.value(arena), c.value(arena));
+                AnyNode::ValueType(arena.value_type_flow_universe(source, target))
+            },
+            Former::PathType => {
+                let domain = c.value_type(arena);
+                let (left, right) = (c.value(arena), c.value(arena));
+                AnyNode::ValueType(arena.value_type_path(domain, left, right))
+            },
+            Former::FlowType => {
+                let domain = c.value_type(arena);
+                let (source, target) = (c.value(arena), c.value(arena));
+                AnyNode::ValueType(arena.value_type_flow(domain, source, target))
+            },
+            Former::ProductType => {
+                let components = [c.value_type(arena), c.value_type(arena)];
+                AnyNode::ValueType(arena.value_type_product(&components))
+            },
+            Former::SigmaType => {
+                let (first, second) = (c.value_type(arena), c.value_type(arena));
+                AnyNode::ValueType(arena.value_type_sigma(first, second))
+            },
+            Former::SumType => {
+                let summands = [c.value_type(arena), c.value_type(arena)];
+                AnyNode::ValueType(arena.value_type_sum(&summands))
+            },
+            Former::ListType => {
+                let element = c.value_type(arena);
+                AnyNode::ValueType(arena.value_type_list(element))
+            },
+            Former::ThunkType => {
+                let body = c.comp_type(arena);
+                AnyNode::ValueType(arena.value_type_thunk(body))
+            },
+            Former::LiftType => {
+                let inner = c.value_type(arena);
+                AnyNode::ValueType(arena.value_type_lift(inner, Level::zero()))
+            },
+            Former::ElementType => {
+                let code = c.value(arena);
+                AnyNode::ValueType(arena.value_type_element(code, Level::zero()))
+            },
+            Former::StagedType => {
+                let base = c.value_type(arena);
+                AnyNode::ValueType(arena.value_type_staged(base, Stage::At(StageId::from(0_usize))))
+            },
+            Former::StaticPiType => {
+                let (domain, codomain) = (c.value_type(arena), c.value_type(arena));
+                AnyNode::ValueType(arena.value_type_static_pi(domain, codomain))
+            },
+            Former::Returner => {
+                let result = c.value_type(arena);
+                AnyNode::CompType(arena.comp_type_returner(result))
+            },
+            Former::Arrow => {
+                let domain = c.value_type(arena);
+                let codomain = c.comp_type(arena);
+                AnyNode::CompType(arena.comp_type_arrow(domain, codomain))
+            },
+            Former::Pi => {
+                let domain = c.value_type(arena);
+                let codomain = c.comp_type(arena);
+                AnyNode::CompType(arena.comp_type_pi(domain, codomain))
+            },
+            Former::ElementComp => {
+                let code = c.value(arena);
+                AnyNode::CompType(arena.comp_type_element(code, Level::zero()))
+            },
+            Former::WithType => {
+                let (left, right) = (c.comp_type(arena), c.comp_type(arena));
+                AnyNode::CompType(arena.comp_type_with(left, right))
+            },
+        }
+    }
+
+    /// `node` shifted by one past no cutoff, under a memo that keeps nothing,
+    /// so every node's rebuild decision runs.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shifted(
+        arena: &mut TermArena,
+        node: AnyNode,
+    ) -> AnyNode
+    {
+        let mut table = ContentTable::new();
+        let memo = &mut NullMemo;
+        let (cutoff, amount) = (BinderDepth::NONE, BinderDepth::from(1_u32));
+        match node {
+            AnyNode::Value(id) => {
+                AnyNode::Value(shift_value(arena, &mut table, memo, id, cutoff, amount))
+            },
+            AnyNode::Computation(id) => AnyNode::Computation(shift_computation(
+                arena, &mut table, memo, id, cutoff, amount,
+            )),
+            AnyNode::ValueType(id) => AnyNode::ValueType(shift_value_type(
+                arena, &mut table, memo, id, cutoff, amount,
+            )),
+            AnyNode::CompType(id) => AnyNode::CompType(super::shift_comp_type(
+                arena, &mut table, memo, id, cutoff, amount,
+            )),
+        }
+    }
+
+    /// Every former rebuilds exactly where a child changed: an unchanged
+    /// former is returned as itself, minting nothing, and a change in any one
+    /// child is carried into the fresh node whichever child it is.
+    #[test]
+    fn every_former_rebuilds_exactly_where_a_child_changed()
+    {
+        for &former in FORMERS {
+            let mut arena = TermArena::new();
+            let mut closed = Children::closed();
+            let subject = build(&mut arena, former, &mut closed);
+            let before = arena.watermark();
+            assert_eq!(
+                shifted(&mut arena, subject),
+                subject,
+                "{former:?} reads no variable, so it shifts to itself"
+            );
+            assert_eq!(
+                arena.watermark(),
+                before,
+                "and {former:?} mints nothing on the way"
+            );
+            for slot in (0 .. closed.next).map(Slot) {
+                let subject = build(
+                    &mut arena,
+                    former,
+                    &mut Children::opening(slot, DeBruijnIndex::from(10_u32)),
+                );
+                let expected = build(
+                    &mut arena,
+                    former,
+                    &mut Children::opening(slot, DeBruijnIndex::from(11_u32)),
+                );
+                let result = shifted(&mut arena, subject);
+                assert_eq!(
+                    content_digest(&arena, result),
+                    content_digest(&arena, expected),
+                    "{former:?}'s {slot:?} alone reads the variable, and its rise is carried"
+                );
+            }
+        }
+    }
 }

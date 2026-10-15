@@ -775,3 +775,63 @@ pub(super) fn occurrences(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::TermArena;
+
+    use super::Finding;
+    use super::HeadSite;
+    use super::Reach;
+    use super::Telescope;
+    use super::worst;
+    use crate::rewrite::BinderDepth;
+
+    /// A field's own type, where the walk starts a field.
+    const FIELD: Reach = Reach::Head {
+        depth: BinderDepth::NONE,
+        site: HeadSite::Field,
+    };
+
+    #[test]
+    fn a_named_position_is_read_against_the_declaration_s_own()
+    {
+        let position = ConstantIndex::from(1_usize);
+        for (name, expected, what) in [
+            (
+                0_usize,
+                Ok(Finding::Admitted),
+                "an earlier position is the admitted prefix",
+            ),
+            (
+                1_usize,
+                Ok(Finding::Index),
+                "the own position inside a term is an index",
+            ),
+            (
+                2_usize,
+                Err(ConstantIndex::from(2_usize)),
+                "a later position is outside the block",
+            ),
+        ] {
+            let mut arena = TermArena::new();
+            let named = ConstantIndex::from(name);
+            let atom = arena.value_type_abstract(named);
+            assert_eq!(
+                worst(&arena, position, Telescope(0), atom, FIELD),
+                expected,
+                "as an abstract type: {what}"
+            );
+            let constant = arena.value_constant(named);
+            let element = arena.value_type_element(constant, Level::zero());
+            assert_eq!(
+                worst(&arena, position, Telescope(0), element, FIELD),
+                expected,
+                "as a constant: {what}"
+            );
+        }
+    }
+}

@@ -688,3 +688,85 @@ pub(super) fn subsumes(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageId;
+    use gandr_kernel_term::Standing;
+    use gandr_kernel_term::TermArena;
+    use gandr_kernel_term::Value;
+    use gandr_kernel_term::ValueType;
+
+    use super::Subsumed;
+    use super::stage_field;
+    use super::subsumes;
+    use crate::error::KernelError;
+    use crate::stage_order::StageOrder;
+    use crate::support::SupportContext;
+
+    #[test]
+    fn a_data_argument_moves_to_the_stage_only_where_it_quotes_the_family()
+    {
+        let mut arena = TermArena::new();
+        let mut session = SupportContext::new();
+        let stage = Stage::At(StageId::from(0_usize));
+        let recursive = arena.value_type_abstract(ConstantIndex::from(0_usize));
+        let other = arena.value_type_unit();
+        let holder = ConstantIndex::from(1_usize);
+        let quoted = arena.value_quote(recursive);
+        let holding = arena.value_type_data(holder, alloc::vec![quoted]);
+        let refined = stage_field(&mut arena, &mut session, holding, recursive, stage)
+            .expect("a readable field");
+        let Some(&ValueType::Data { ref arguments, .. }) = arena.value_type(refined)
+        else {
+            panic!("a data field stays data");
+        };
+        let [argument] = **arguments
+        else {
+            panic!("one argument");
+        };
+        let Some(&Value::Quote(quoted)) = arena.value(argument)
+        else {
+            panic!("the argument quotes a type");
+        };
+        assert!(matches!(
+            arena.value_type(quoted),
+            Some(&ValueType::Staged { base, stage: at }) if base == recursive && at == stage
+        ));
+        let quoted_other = arena.value_quote(other);
+        let elsewhere = arena.value_type_data(holder, alloc::vec![quoted_other]);
+        assert_eq!(
+            stage_field(&mut arena, &mut session, elsewhere, recursive, stage),
+            Ok(elsewhere),
+            "an argument quoting another type stays"
+        );
+    }
+
+    #[test]
+    fn a_staged_type_meets_a_staged_bound_by_the_stage_order()
+    {
+        let mut arena = TermArena::new();
+        let mut order = StageOrder::default();
+        let root = order.mint_root();
+        let child = order.mint_below(root).expect("the root is minted");
+        let base = arena.value_type_unit();
+        let at_root = arena.value_type_staged(base, Stage::At(root));
+        let at_child = arena.value_type_staged(base, Stage::At(child));
+        assert_eq!(
+            subsumes(&arena, &order, Subsumed::Values(at_root, at_child)),
+            Ok(()),
+            "a child stage is within its parent"
+        );
+        assert_eq!(
+            subsumes(&arena, &order, Subsumed::Values(at_child, at_root)),
+            Err(KernelError::StageNotBelow {
+                found: Standing::Staged(Stage::At(root)),
+                bound: Stage::At(child),
+            }),
+            "a parent is not within its child"
+        );
+    }
+}

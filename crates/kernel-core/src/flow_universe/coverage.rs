@@ -676,4 +676,59 @@ mod tests
             Err(FlowError::UnsupportedType(found)) if found == empty
         ));
     }
+
+    /// A quoted empty sum is no first-order code, at its root or beneath a
+    /// product; a tuple of another arity than its product is no natural
+    /// image; and a forward flow owes one dialogue per pattern as well as
+    /// one image.
+    #[test]
+    fn coverage_counts_every_part_it_is_owed()
+    {
+        let mut arena = TermArena::new();
+        let empty = arena.value_type_empty();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let holding = arena.value_type_product(&[integer, empty]);
+        for root in [empty, holding] {
+            let quoted = arena.value_quote(root);
+            assert_eq!(
+                super::code(&arena, quoted, &mut Allowance(u64::MAX)),
+                Err(FlowError::UnsupportedType(empty))
+            );
+        }
+
+        let pair = arena.value_type_product(&[integer, integer]);
+        let leaf = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(0_u32));
+        let short = arena.value_tuple(&[leaf]);
+        assert_eq!(
+            super::natural(
+                &arena,
+                short,
+                pair,
+                &[BaseType::Integer],
+                &mut Allowance(u64::MAX)
+            ),
+            Err(FlowError::NonNatural(short))
+        );
+
+        let unit = arena.value_type_unit();
+        let unit_value = arena.value_unit();
+        let returned = arena.computation_return(unit_value);
+        let image = arena.value_thunk(returned);
+        let translator = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(0_u32));
+        assert_eq!(
+            super::forward(
+                &mut arena,
+                &crate::replay::Unfoldings::default(),
+                super::FlowType {
+                    source: unit,
+                    target: unit,
+                },
+                translator,
+                (&[image], &[]),
+                crate::replay::ReplayBudget::DEFAULT,
+            ),
+            Err(FlowError::Coverage),
+            "one image and no dialogue for Unit's one pattern"
+        );
+    }
 }

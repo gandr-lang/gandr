@@ -424,4 +424,22 @@ mod tests
             Err(PathError::UnsupportedType(found)) if found == empty
         ));
     }
+
+    /// A quoted empty sum is no code a path carries, at its root or beneath
+    /// a product.
+    #[test]
+    fn an_empty_sum_is_no_path_code()
+    {
+        let mut arena = TermArena::new();
+        let empty = arena.value_type_empty();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let holding = arena.value_type_product(&[integer, empty]);
+        for root in [empty, holding] {
+            let quoted = arena.value_quote(root);
+            assert_eq!(
+                super::code(&arena, quoted, &mut Allowance(u64::MAX)),
+                Err(PathError::UnsupportedType(empty))
+            );
+        }
+    }
 }

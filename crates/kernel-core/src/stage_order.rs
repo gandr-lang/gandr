@@ -413,6 +413,13 @@ mod tests
         let stray = StageId::from(3_usize);
         assert_eq!(order.mint_below(stray), Err(Unminted::Parent(stray)));
         assert_eq!(order.fit(Stage::At(stray), Stage::At(stray)), Fit::NotBelow);
+        let root = order.mint_root();
+        let next = StageId::from(usize::from(root) + 1);
+        assert_eq!(
+            order.fit(Stage::At(next), Stage::At(next)),
+            Fit::NotBelow,
+            "the stage one past the last minted is unminted"
+        );
     }
 
     /// # Specification
