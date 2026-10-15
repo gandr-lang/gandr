@@ -2075,7 +2075,8 @@ impl TypeTable
         match constant.map(|constant| program.evaluate(constant)) {
             Some(Evaluation::Value(value)) => Maybe::Present(value.presentation().to_string()),
             Some(
-                Evaluation::Blamed(_)
+                Evaluation::Sealed(_)
+                | Evaluation::Blamed(_)
                 | Evaluation::Stuck(_)
                 | Evaluation::Unfinished(_)
                 | Evaluation::Unrunnable(_),

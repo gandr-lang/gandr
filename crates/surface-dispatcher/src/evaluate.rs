@@ -32,6 +32,18 @@
 //! answered differently from a hover over the same value; the choice
 //! reverses only if a run's value needs a spelling the grammar cannot write.
 //!
+//! **A run that names a hidden member is opaque at its seal.** A module
+//! matched against a signature keeps every member outside the signature out
+//! of its interface, so a normal form that mentions one — `SetoidCat.ident(a)`
+//! under `SetoidCat : Model(CatShape)` — has no spelling a reader outside the
+//! module can write. Such a run is [`Evaluation::Sealed`], reported
+//! `⟨opaque at M⟩ : T`: the module whose signature hides the first hidden
+//! member the read-back mentions, and the declared type of the declaration
+//! run. The report is never a source spelling, so nothing reads it back; the
+//! certificate is unchanged. The alternative was to print the hidden member's
+//! path, which no source outside the module resolves. The choice reverses if
+//! a signature can export a member's spelling without its definition.
+//!
 //! # Classification
 //!
 //! A run that returns a value succeeds. A run that reaches a declaration owed
@@ -65,7 +77,7 @@
 //!
 //! | What the run came to | `RunStatus` | `gandr run` exits |
 //! | -------------------- | ----------- | ----------------- |
-//! | `Evaluation::Value`: a value, spelled | `Value` | `0` |
+//! | `Evaluation::Value`: a value, spelled; `Evaluation::Sealed`: a value naming a member its module hides, opaque at that module | `Value` | `0` |
 //! | `Evaluation::Blamed`: the run reached a declaration owed its body — returned it outside any suspension, forced, applied or matched it | `Failed` | `1` |
 //! | `Evaluation::Stuck`, `Evaluation::Unfinished`: any other stop short of a value; the budget spent, the store refusing, a terminal with no reading | `Failed` | `1` |
 //! | `Evaluation::Unrunnable`: the declaration, or one it refers to, was refused or is a code | `Unreached` | `2` |
@@ -144,8 +156,10 @@ use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
+use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::present_computation_line;
+use gandr_surface_pretty::present_type;
 use quenchant_shape::shape::Maybe;
 
 quenchant_shape::reason_enum! {
@@ -204,6 +218,12 @@ pub struct Program<'source>
     declarations: BTreeMap<ConstantIndex, Declared<'source>>,
     /// The name the printer writes for each constant, by admission position.
     names: Vec<String>,
+    /// The path of the module whose signature hides each hidden member, by
+    /// the member's admission position.
+    hidden: BTreeMap<ConstantIndex, String>,
+    /// The declared type, spelled on one line, of each declaration whose run
+    /// can reach a hidden member, by admission position.
+    sealed: BTreeMap<ConstantIndex, String>,
     /// The constructors of the module's data declarations, by family.
     families: Families,
 }
@@ -293,12 +313,42 @@ impl fmt::Display for ValueSpelling
     }
 }
 
+/// A run whose value names a member its module's signature hides: the module
+/// it is opaque at and the declared type of the declaration run.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct SealedRun
+{
+    /// The path of the module whose signature hides the member.
+    module: String,
+    /// The declared type of the declaration run, spelled on one line.
+    declared: String,
+}
+
+impl fmt::Display for SealedRun
+{
+    /// Writes `⟨opaque at M⟩ : T`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(f, "⟨opaque at {}⟩ : {}", self.module, self.declared)
+    }
+}
+
 /// What running one declaration came to.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Evaluation<'source>
 {
     /// The run returned a value, or a function: its spelling.
     Value(ValueSpelling),
+    /// The run returned a value naming a member its module's signature hides:
+    /// opaque at that module.
+    Sealed(SealedRun),
     /// The run reached the named declaration, owed its body.
     Blamed(SurfaceName<'source>),
     /// The run stopped short of a value.
@@ -365,9 +415,9 @@ impl Evaluation<'_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a value is [`RunStatus::Value`]; a blamed, stuck or
-    ///   unfinished run [`RunStatus::Failed`]; an unrunnable declaration
-    ///   [`RunStatus::Unreached`].
+    /// - ensures: a value, a sealed one among them, is [`RunStatus::Value`]; a
+    ///   blamed, stuck or unfinished run [`RunStatus::Failed`]; an unrunnable
+    ///   declaration [`RunStatus::Unreached`].
     /// - provides: the one classification the driver's exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -377,7 +427,7 @@ impl Evaluation<'_>
     ///   asserted at its exact status.
     /// - witness: `evaluate::tests::each_outcome_class_has_its_status`
     #[spec(ensures: |ret| match *self {
-        Self::Value(_) => matches!(ret, RunStatus::Value),
+        Self::Value(_) | Self::Sealed(_) => matches!(ret, RunStatus::Value),
         Self::Blamed(_) | Self::Stuck(_) | Self::Unfinished(_) => matches!(ret, RunStatus::Failed),
         Self::Unrunnable(_) => matches!(ret, RunStatus::Unreached),
     })]
@@ -386,7 +436,7 @@ impl Evaluation<'_>
     pub const fn status(&self) -> RunStatus
     {
         match *self {
-            Self::Value(_) => RunStatus::Value,
+            Self::Value(_) | Self::Sealed(_) => RunStatus::Value,
             Self::Blamed(_) | Self::Stuck(_) | Self::Unfinished(_) => RunStatus::Failed,
             Self::Unrunnable(_) => RunStatus::Unreached,
         }
@@ -400,8 +450,9 @@ impl fmt::Display for Evaluation<'_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: values retain their spelling; other outcomes identify their
-    ///   class and the declaration, position or machine reason they carry.
+    /// - ensures: values retain their spelling, a sealed one as `⟨opaque at M⟩
+    ///   : T`; other outcomes identify their class and the declaration,
+    ///   position or machine reason they carry.
     /// - fails: propagates the formatter's error.
     /// - panics: none.
     /// - executable: none — a formatter exposes neither its destination nor
@@ -425,6 +476,7 @@ impl fmt::Display for Evaluation<'_>
                 write!(f, "unrunnable: `{declaration}` is a datatype declaration")
             },
             Self::Value(ref value) => fmt::Display::fmt(value, f),
+            Self::Sealed(ref sealed) => fmt::Display::fmt(sealed, f),
             Self::Blamed(goal) => write!(f, "blame: `{goal}` is owed its body"),
             Self::Stuck(ref stuck) => write!(f, "stuck: {stuck}"),
             Self::Unfinished(Unfinished::Fault(fault)) => write!(f, "unfinished: {fault}"),
@@ -478,7 +530,11 @@ impl<'source> Program<'source>
     ///   refused by the lowering or the checker, or whose body does not focus,
     ///   is carried as itself and never run. A skipped position holds no
     ///   declaration and an opaque definition; a position met again keeps its
-    ///   first declaration.
+    ///   first declaration. Each member a module matched against a signature
+    ///   keeps out of its interface is hidden at that module's path, and each
+    ///   declaration whose references reach a hidden member, transitively,
+    ///   holds its declared type spelled on one line where the printer can lay
+    ///   it out.
     /// - provides: the program every run of the module's declarations shares.
     /// - fails: never; a body that does not focus is the declaration's
     ///   standing, not a failure of the program.
@@ -563,12 +619,47 @@ impl<'source> Program<'source>
                 slot,
             });
         }
+        let names = constant_names(module);
+        let families = Families::of(module);
+        let hidden = hidden_members(module);
+        let sealed = if hidden.is_empty() {
+            BTreeMap::new()
+        }
+        else {
+            let reaching = reaching(&declarations, &hidden);
+            let printed: Vec<Name<'_>> =
+                names.iter().map(|name| Name::from(name.as_str())).collect();
+            let constructors = families.naming(&printed);
+            let source = CoreSource::new(core, &printed).naming(&constructors);
+            verdicts
+                .judged()
+                .iter()
+                .filter(|judged| reaching.contains(&judged.constant()))
+                .filter_map(|judged| {
+                    let declared = match judged.verdict() {
+                        Verdict::Checked { declared, .. } => declared.id(),
+                        Verdict::Synthesised { synthesised, .. } => synthesised.produced().id(),
+                        Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_) => return None,
+                    };
+                    present_type(
+                        &source,
+                        CoreNode::ValueType(declared),
+                        PageWidth::from(u32::from(u16::MAX)),
+                        Form::Sugared,
+                    )
+                    .ok()
+                    .map(|spelled| (judged.constant(), spelled.to_string()))
+                })
+                .collect()
+        };
         Self {
             arena,
             definitions,
             declarations,
-            names: constant_names(module),
-            families: Families::of(module),
+            names,
+            hidden,
+            sealed,
+            families,
         }
     }
 
@@ -681,7 +772,10 @@ impl<'source> Program<'source>
     ///   spelled as the grammar writes it: an integer in decimal, a text quoted
     ///   with its escapes, `unit`, a tuple as `#{a, b}`, an injection as `+{.i
     ///   = v}`, a constructor by its name, a thunk as `thunk { … }` and a
-    ///   function as its `fn`.
+    ///   function as its `fn`; a read-back terminal that mentions a member its
+    ///   module's signature hides is instead [`Evaluation::Sealed`] at that
+    ///   module with the declared type of the declaration run, or
+    ///   [`Unfinished::Unspelled`] when that type has no layout.
     /// - provides: the run stage every caller shares, so one declaration has
     ///   one outcome and one spelling wherever it is run.
     /// - fails: never; every failure is an outcome. A refused entry command
@@ -706,6 +800,7 @@ impl<'source> Program<'source>
     /// - witness: `evaluate::tests::each_outcome_class_has_its_status`
     /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
     /// - witness: `evaluate::tests::structured_values_keep_repeated_references_and_field_order`
+    /// - witness: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -737,6 +832,8 @@ impl<'source> Program<'source>
                     self.declarations.values().any(|declared| declared.name == declaration),
                 Evaluation::Unfinished(Unfinished::Inconsistent(index)) => self.declarations.get(&index)
                     .is_some_and(|declared| matches!(declared.slot, Slot::Defined(_))),
+                Evaluation::Sealed(ref sealed) => self.hidden.values().any(|module| *module == sealed.module)
+                    && self.sealed.get(&constant).is_some_and(|declared| *declared == sealed.declared),
                 Evaluation::Value(_) | Evaluation::Stuck(_)
                     | Evaluation::Unfinished(Unfinished::Fault(_) | Unfinished::Readback(_) | Unfinished::Unspelled) => true,
             }
@@ -797,11 +894,58 @@ impl<'source> Program<'source>
         };
         let mut core = CoreArena::new();
         match machine.read_back(terminal, &mut core) {
-            Ok(read) => self
-                .spell(&core, read)
-                .map_or_else(Evaluation::Unfinished, Evaluation::Value),
+            Ok(read) => match self.hidden_in(&mut core, read) {
+                Maybe::Present(module) => self.sealed.get(&constant).map_or(
+                    Evaluation::Unfinished(Unfinished::Unspelled),
+                    |declared| {
+                        Evaluation::Sealed(SealedRun {
+                            module: module.clone(),
+                            declared: declared.clone(),
+                        })
+                    },
+                ),
+                Maybe::Absent(carried::Absent::Carried) => self
+                    .spell(&core, read)
+                    .map_or_else(Evaluation::Unfinished, Evaluation::Value),
+            },
             Err(refusal) => Evaluation::Unfinished(Unfinished::Readback(refusal)),
         }
+    }
+
+    /// The module whose signature hides the first hidden member the read-back
+    /// terminal `read` mentions, outside its types.
+    ///
+    /// # Specification
+    /// - requires: `read` was read back into `core`.
+    /// - ensures: the path of the module hiding the first constant, in the
+    ///   reference walk's order, that a module's signature hides; carried when
+    ///   the terminal mentions none, or when no module hides a member, without
+    ///   walking the terminal.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one reference walk over the terminal, wrapped in a thunk
+    ///   appended to the scratch arena.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function whose body applies a member its module's
+    ///   signature hides, and runs naming only exported members of a sealed
+    ///   module.
+    /// - witness: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+    #[spec(ensures: |ret| !self.hidden.is_empty() || matches!(ret, Maybe::Absent(carried::Absent::Carried)))]
+    fn hidden_in(
+        &self,
+        core: &mut CoreArena,
+        read: ComputationId,
+    ) -> Maybe<&String, carried::Absent>
+    {
+        if self.hidden.is_empty() {
+            return Maybe::Absent(carried::Absent::Carried);
+        }
+        let terminal = core.value_thunk(read);
+        references(core, terminal)
+            .into_iter()
+            .find_map(|constant| self.hidden.get(&constant))
+            .map_or(Maybe::Absent(carried::Absent::Carried), Maybe::Present)
     }
 
     /// The first declaration reachable from `constant` through references
@@ -955,7 +1099,7 @@ impl<'source> Program<'source>
             Ok(value) => halted == Some(value)
                 && !matches!(machine.store().value(value), Some(&HeapValue::Opaque(_))),
             Err(Evaluation::Stuck(ref actual)) => stuck == Some(core::mem::discriminant(actual)),
-            Err(Evaluation::Value(_)) => false,
+            Err(Evaluation::Value(_) | Evaluation::Sealed(_)) => false,
             Err(Evaluation::Blamed(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_)) => true,
         }
     )]
@@ -1157,6 +1301,101 @@ impl<'source> Program<'source>
             .map(ValueSpelling)
             .map_err(|_refusal| Unfinished::Unspelled)
     }
+}
+
+/// Each member a module matched against a signature keeps out of its
+/// interface, with that module's path.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: every declaration whose container is a module that matching
+///   coerced, and whose admission position none of that module's exported value
+///   components resolves to, keyed by that position and holding the module's
+///   path joined by `.`; a member hidden by two modules keeps the first.
+/// - fails: never.
+/// - panics: none.
+/// - intension: a module no signature coerced is skipped without a walk.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a model whose helpers stand outside its signature, and
+///   sealed modules whose runs name only their exports.
+/// - witness: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+#[spec(ensures: |ref ret| ret.keys().all(|constant| module.declarations().iter().any(|declaration| declaration.constant() == *constant)))]
+fn hidden_members(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
+{
+    let mut hidden = BTreeMap::new();
+    for structure in module.structures() {
+        if !structure.coerced().0 {
+            continue;
+        }
+        let exported: BTreeSet<ConstantIndex> = structure
+            .values()
+            .iter()
+            .map(|component| component.constant)
+            .collect();
+        let at = structure
+            .path()
+            .iter()
+            .map(AsRef::<str>::as_ref)
+            .collect::<Vec<&str>>()
+            .join(".");
+        for declaration in module.declarations() {
+            let path = module.path_of(declaration);
+            if path
+                .split_last()
+                .is_some_and(|(_, container)| container == structure.path())
+                && !exported.contains(&declaration.constant())
+            {
+                let _first = hidden
+                    .entry(declaration.constant())
+                    .or_insert_with(|| at.clone());
+            }
+        }
+    }
+    hidden
+}
+
+/// Every declaration whose references reach a member of `hidden`, directly or
+/// through other declarations, the hidden members among them.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the least set holding every hidden member and every defined
+///   declaration one of whose references the set holds.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one pass building each constant's referrers, then a walk over
+///   them from the hidden members on an explicit stack, each declaration
+///   entered once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`hidden_members`]: a model's interface operations
+///   reach its helpers through their bodies.
+/// - witness: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+#[spec(ensures: |ref ret| hidden.keys().all(|constant| ret.contains(constant)))]
+fn reaching(
+    declarations: &BTreeMap<ConstantIndex, Declared<'_>>,
+    hidden: &BTreeMap<ConstantIndex, String>,
+) -> BTreeSet<ConstantIndex>
+{
+    let mut referrers: BTreeMap<ConstantIndex, Vec<ConstantIndex>> = BTreeMap::new();
+    for (&constant, declared) in declarations {
+        if let Slot::Defined(ref referred) = declared.slot {
+            for &target in referred {
+                referrers.entry(target).or_default().push(constant);
+            }
+        }
+    }
+    let mut reached: BTreeSet<ConstantIndex> = hidden.keys().copied().collect();
+    let mut pending: Vec<ConstantIndex> = reached.iter().copied().collect();
+    while let Some(target) = pending.pop() {
+        for &referrer in referrers.get(&target).into_iter().flatten() {
+            if reached.insert(referrer) {
+                pending.push(referrer);
+            }
+        }
+    }
+    reached
 }
 
 impl Runner for Program<'_>
@@ -1513,7 +1752,7 @@ mod tests
         requires: program.declarations.values().any(|declared| declared.name == name),
         captures: [declarations = program.declarations.len()],
         ensures: |ref ret| program.declarations.len() == declarations
-            && match *ret { Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => !program.declarations.contains_key(&index), Evaluation::Value(_) | Evaluation::Blamed(_) | Evaluation::Stuck(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_) => true }
+            && match *ret { Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => !program.declarations.contains_key(&index), Evaluation::Value(_) | Evaluation::Sealed(_) | Evaluation::Blamed(_) | Evaluation::Stuck(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_) => true }
     )]
     fn run<'source>(
         program: &mut Program<'source>,

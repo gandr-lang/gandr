@@ -818,8 +818,9 @@ pub(super) struct Hovered
 /// # Specification
 /// - requires: `source` parses under `grammar`.
 /// - ensures: one entry per character boundary of the text and its end, in
-///   order, each with whether a comment holds it, the owner of the written leaf
-///   holding it — none for layout and comments — and the hover's answer.
+///   order, each with whether a comment holds it — a line comment holding the
+///   newline that closes it — the owner of the written leaf holding it — none
+///   for layout and comments — and the hover's answer.
 /// - provides: the input of the sweep and of the hover goldens.
 /// - panics: a written byte lies in no leaf, or the server faults.
 ///
@@ -828,6 +829,7 @@ pub(super) struct Hovered
 ///   through this, and the goldens pin every answer of five sources.
 /// - witness: `editor::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
 /// - witness: `editor::editor::shapes::the_headline_sources_hover_as_their_goldens`
+/// - witness: `editor::editor::scenarios::a_line_comment_holds_the_newline_closing_it`
 #[spec(ensures: |ret| ret.len() == source.text.chars().count().saturating_add(1))]
 pub(super) fn hovered(
     grammar: &Pbg,
@@ -850,7 +852,15 @@ pub(super) fn hovered(
             let start = usize::try_from(token.start).ok()?;
             let end = usize::try_from(token.end).ok()?;
             let layout = source.text.get(start .. end)?;
-            (layout.starts_with("//") || layout.starts_with("/*")).then_some((start, end))
+            // A line comment's token stops short of the newline closing it,
+            // which belongs to the comment: commenting an item moves no count.
+            let closes = layout.starts_with("//")
+                && source
+                    .text
+                    .get(end ..)
+                    .is_some_and(|rest| rest.starts_with('\n'));
+            (layout.starts_with("//") || layout.starts_with("/*"))
+                .then_some((start, end.saturating_add(usize::from(closes))))
         })
         .collect();
     source
@@ -1224,6 +1234,32 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
         quiet.lapse(),
         Vec::<Vec<Value>>::new(),
         "the finished declaration holds nothing"
+    );
+}
+
+/// A line comment holds the newline that closes it, so commenting an item adds
+/// no position the sweep counts (#456): every position from the `//` through
+/// the line's end is a comment's, and the next line's first is not.
+#[test]
+fn a_line_comment_holds_the_newline_closing_it()
+{
+    let text = "// a note\ndata Unit : Type { Tt : Unit; }\n";
+    let source = Source {
+        uri: String::from("file:///comment-line-end.gandr"),
+        text: String::from(text),
+    };
+    let grammar = built_in().expect("the built-in grammar builds");
+    let hovers = hovered(&grammar, &source);
+    let newline = text.find('\n').expect("the comment ends its line");
+    let commented: Vec<usize> = hovers
+        .iter()
+        .filter(|hover| hover.comment)
+        .map(|hover| hover.offset)
+        .collect();
+    assert_eq!(
+        commented,
+        (0_usize ..= newline).collect::<Vec<_>>(),
+        "the comment holds its text and its closing newline, nothing after"
     );
 }
 

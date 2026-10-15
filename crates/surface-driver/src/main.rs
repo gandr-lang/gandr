@@ -1757,6 +1757,10 @@ fn script(
                     evaluation: Evaluation::Value(value),
                     ..
                 } => writeln!(stdout, "{value}")?,
+                Ran::Evaluated {
+                    evaluation: Evaluation::Sealed(sealed),
+                    ..
+                } => writeln!(stdout, "{sealed}")?,
                 Ran::Evaluated { target, evaluation } => {
                     writeln!(stderr, "gandr: {path}: `{target}` {evaluation}")?;
                 },
