@@ -216,11 +216,13 @@ mod census
         );
     }
 
-    /// The printed types that do not read back to their certificate's, by how,
-    /// above which the printer or the reading has regressed: each count must
-    /// not rise, and a commit lowering one moves its row. Absolute counts,
-    /// so a corpus source deleted takes its misses with it.
+    /// The read-back sweep: every printed type of each corpus source read back
+    /// against its certificate, counted by how the trip ends and printed as a
+    /// report. The counts are a measurement, not a gate (#467): a regression
+    /// in the printer or the reading is pinned by a witness named for its
+    /// issue, never by a count every landing must move. The classes:
     ///
+    /// - `Equal`: the spelling reads back to the certificate's type.
     /// - `Different`: a spelling that reads back as another type — an unused
     ///   binder printed (#398), a session state or a capability region dropped
     ///   (#400), a term inside a type read as another (#402).
@@ -229,26 +231,13 @@ mod census
     /// - `Unknown`: a type the printer writes with `?`, which the census of
     ///   honest `?` holds; nothing to read back.
     /// - `Unparsed`: a spelling the grammar refuses (#401).
-    /// - `Unspelled`: a type the printer could not spell at all.
-    const READ_BACK_MISSES: [(&str, usize); 6] = [
-        ("Different", 351),
-        ("Open", 1249),
-        ("Refused", 30),
-        ("Unknown", 129),
-        ("Unparsed", 174),
-        ("Unspelled", 0),
-    ];
-
-    /// The read-back sweep: every printed type of each corpus source read back
-    /// against its certificate.
+    /// - `Unspelled`: a type the printer could not spell at all — the one class
+    ///   held to zero, since every type spells.
     ///
-    /// In the plain build the sweep reads every source under every profile:
-    /// its ceilings are absolute counts over the whole corpus, which a
-    /// sample's counts can never rise above, so a change that moves one would
-    /// pass its pull request and fail only `main`'s nightly run (#454). The
-    /// counts do not depend on the build, so with specifications enforced it
-    /// reads its sample, which holds the enforced run to the test bound, and
-    /// every source under the `sweeps` profile. Every run prints the counts.
+    /// The sweep visits its sample under every pull-request profile and every
+    /// source under the `sweeps` profile, as every sweep does
+    /// (`gandr-workflow-sweep`); the nightly run prints the whole corpus's
+    /// counts.
     mod sweeps
     {
         use gandr_workflow_sweep::Sample;
@@ -258,10 +247,10 @@ mod census
 
         use super::*;
 
-        /// The sample with specifications enforced: sixty-four sources,
-        /// ranked by their BLAKE3 digest under this name, at least one of each
-        /// corpus class — `strict` and each directory below `fixture` — and
-        /// every source the change adds or modifies (`gandr-workflow-sweep`).
+        /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
+        /// this name, at least one of each corpus class — `strict` and each
+        /// directory below `fixture` — and every source the change adds or
+        /// modifies (`gandr-workflow-sweep`).
         const SAMPLE: Sample = Sample {
             name: SampleName("every_printed_type_reads_back_to_its_certificate"),
             size: SampleSize(64),
@@ -273,19 +262,15 @@ mod census
             let grammar = built_in().expect("the built-in grammar builds");
             let page = PageWidth::from(PAGE);
             let sources = gandr_workflow_sweep::corpus::sources().expect("the corpus reads");
-            let visited: BTreeSet<PathBuf> = if cfg!(anodized_panic) {
-                let sweep = Sweep::asked().expect("the run's sweep resolves");
-                let visited = sweep.visit(SAMPLE, &sources);
-                assert!(
-                    visited.len() >= SAMPLE.size.0,
-                    "the sample is drawn: {}",
-                    visited.len()
-                );
-                visited.into_iter().map(|source| source.path).collect()
-            }
-            else {
-                sources.into_iter().map(|source| source.path).collect()
-            };
+            let sweep = Sweep::asked().expect("the run's sweep resolves");
+            let visited = sweep.visit(SAMPLE, &sources);
+            assert!(
+                visited.len() >= SAMPLE.size.0,
+                "the sample is drawn: {}",
+                visited.len()
+            );
+            let visited: BTreeSet<PathBuf> =
+                visited.into_iter().map(|source| source.path).collect();
             let corpus = gandr_workflow_sweep::corpus::directory().expect("the corpus resolves");
             let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
             let mut walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
@@ -321,17 +306,10 @@ mod census
                 trips.get("Equal").is_some_and(|&equal| equal > 0_usize),
                 "the corpus's printed types read back"
             );
-            let risen: Vec<String> = READ_BACK_MISSES
-                .iter()
-                .filter_map(|&(class, ceiling)| {
-                    let count = trips.get(class).copied().unwrap_or_default();
-                    (count > ceiling).then(|| format!("{class}: {count}, above {ceiling}"))
-                })
-                .collect();
             assert_eq!(
-                risen,
-                Vec::<String>::new(),
-                "printed types that do not read back"
+                trips.get("Unspelled").copied().unwrap_or_default(),
+                0_usize,
+                "every type spells"
             );
         }
     }
