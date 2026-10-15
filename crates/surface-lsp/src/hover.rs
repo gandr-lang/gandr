@@ -709,7 +709,7 @@ mod tests
     #[test]
     fn each_marked_position_hovers_its_answer()
     {
-        let rows: [(&str, &str, Result<String, hovered::Absent>); 19] = [
+        let rows: [(&str, &str, Result<String, hovered::Absent>); 20] = [
             (
                 "a synthesised declaration's name",
                 "def ans$0wer = 42 ;\n",
@@ -775,6 +775,13 @@ mod tests
                 "a written computation type",
                 "def f(x: Integer) -> -$0F Integer { return x }\n",
                 Ok(fenced(SourceText::from("-F Integer : Type[-]"))),
+            ),
+            (
+                "a decode written as a type (#419)",
+                "data Flag : Type {\n  On : Flag;\n  Off : Flag;\n}\ndef decoded(f : Flag) -> -F \
+                 Type { case f { On => return Integer, Off => return Unit } }\ndef kept(f : \
+                 Flag, n : decoded$0(f)) -> -F decoded(f) { return n }\n",
+                Ok(fenced(SourceText::from("decoded(f) : Type"))),
             ),
             (
                 "a keyword opening a term",

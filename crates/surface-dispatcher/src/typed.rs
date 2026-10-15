@@ -122,6 +122,7 @@ use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::Insertion;
 use gandr_surface_lowering::Labelled;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::Origin;
@@ -776,7 +777,8 @@ impl TypeTable
         // a written type no kept formation reached — formed by a rule that
         // forms it outside a formation goal — at the level it reads closed. A
         // transport's written motive is a written type: the family it denotes.
-        // The run keeps the formations of these types alone.
+        // So is a decode, the type a code written where a type is read
+        // denotes. The run keeps the formations of these types alone.
         let value_types = origins
             .value_types()
             .iter()
@@ -797,7 +799,12 @@ impl TypeTable
         let written: Vec<(TypeNode, Origin, GroundSort)> = value_types
             .chain(comp_types)
             .chain(motives)
-            .filter(|&(_, origin, _)| origin.provenance() == Provenance::Written)
+            .filter(|&(_, origin, _)| {
+                matches!(
+                    origin.provenance(),
+                    Provenance::Written | Provenance::Inserted(Insertion::Decode)
+                )
+            })
             .collect();
         let mut wanted: Vec<TypeNode> = written.iter().map(|&(node, ..)| node).collect();
         wanted.sort_unstable();
@@ -1250,9 +1257,10 @@ impl TypeTable
     }
 
     /// The entry a reader pointing at `offset` means: among the entries
-    /// holding it, one of the shortest; then a binder before a term before a
-    /// type, a written node before an inserted one, and the entry latest in
-    /// the table.
+    /// holding it, one of the shortest; then a decode — the type its code
+    /// written there denotes, rather than the code — then a binder before a
+    /// term before a type, a written node before an inserted one, and the
+    /// entry latest in the table.
     ///
     /// # Specification
     /// trivial.
@@ -1268,6 +1276,7 @@ impl TypeTable
             .min_by_key(|&(position, entry)| {
                 (
                     usize::from(entry.span.end()).saturating_sub(usize::from(entry.span.start())),
+                    entry.provenance != Provenance::Inserted(Insertion::Decode),
                     entry.subject,
                     matches!(entry.provenance, Provenance::Inserted(_)),
                     core::cmp::Reverse(position),

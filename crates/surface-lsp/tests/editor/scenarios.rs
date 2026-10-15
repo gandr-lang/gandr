@@ -217,7 +217,7 @@ const KIND_FLOORS: &[KindFloor] = &[
     KindFloor("type static_abstraction name", 46, 0, 0, 0),
     KindFloor("type sum_type", 2, 3, 0, 0),
     KindFloor("type telescope_type", 0, 58, 0, 0),
-    KindFloor("type type_application", 40, 83, 0, 83), // shape: #404, #419, #420
+    KindFloor("type type_application", 40, 83, 0, 20), // shape: #404, #420
     KindFloor("type type_application name", 902, 154, 0, 0),
     KindFloor("type type_identifier", 264, 478, 1, 36), // shape: #420
     KindFloor("type type_path", 0, 0, 0, 8),            // shape: #404
