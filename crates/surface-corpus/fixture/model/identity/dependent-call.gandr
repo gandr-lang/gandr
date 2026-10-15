@@ -1,7 +1,8 @@
 // A call written where a value is read runs, and a pure one whose value a type
 // after it reads stands there as what it returns: a dependent record's first
 // component under the second's type, and a dependent function's argument
-// under the parameters after it (#426).
+// under the parameters after it (#426). A parameter function under `cong`
+// answers at its own span (#443).
 
 /// The circle: one point and one loop.
 @[ checks ]
@@ -20,10 +21,12 @@ data Int : Type {
   rule P(S(x)) <=> x;
 }
 
-/// A map's image of the loop, at the map's image of the point, owed here:
-/// the rows below read its type alone.
-@[ owes(1) ]
-def loopImage : (f : +U[ω] (Circle -> -F Int)) => Path(Int, f(Base), f(Base)) ;
+/// A map's image of the loop, at the map's image of the point: `cong` of the
+/// parameter `f` along the loop.
+@[ checks ]
+def loopImage(f : +U[ω] (Circle -> -F Int)) -> -F Path(Int, f(Base), f(Base)) {
+  cong(f, loop)
+}
 
 /// A map out of the circle as a point and a loop there: the second
 /// component's type reads the first, the call `f(Base)`.
