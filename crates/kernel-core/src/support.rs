@@ -1083,7 +1083,8 @@ impl LooseDepths
                             payloads: inner, ..
                         }
                         | ValueType::Lift { inner, .. }
-                        | ValueType::List(inner) => {
+                        | ValueType::List(inner)
+                        | ValueType::Staged { base: inner, .. } => {
                             tasks.push(ReachTask::OpenValueType(inner));
                         },
                         ValueType::Thunk(body) => tasks.push(ReachTask::OpenCompType(body)),
@@ -1279,7 +1280,7 @@ ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value_type(*id))),
 ValueType::StaticPi { domain: a, codomain: b } => self.cached_value_type(a).join(self.cached_value_type(b)),
 ValueType::Sigma { first, second } => self.cached_value_type(first).join(self.cached_value_type(second).under_binder()),
-ValueType::Session { payloads: inner, .. } | ValueType::Lift { inner, .. } | ValueType::List(inner) => self.cached_value_type(inner),
+ValueType::Session { payloads: inner, .. } | ValueType::Lift { inner, .. } | ValueType::List(inner) | ValueType::Staged { base: inner, .. } => self.cached_value_type(inner),
 ValueType::Thunk(body) => self.cached_comp_type(body),
 ValueType::Element { code, .. } => self.cached_value(code),
 }))]
@@ -1339,7 +1340,8 @@ ValueType::Element { code, .. } => self.cached_value(code),
                 payloads: inner, ..
             }
             | ValueType::Lift { inner, .. }
-            | ValueType::List(inner) => self.cached_value_type(inner),
+            | ValueType::List(inner)
+            | ValueType::Staged { base: inner, .. } => self.cached_value_type(inner),
             ValueType::Thunk(body) => self.cached_comp_type(body),
             ValueType::Element { code, .. } => self.cached_value(code),
         }

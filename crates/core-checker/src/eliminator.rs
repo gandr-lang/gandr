@@ -17,7 +17,7 @@
 //! `h = thunk (λȳ. t ← (force f) ȳ; (force rec) t)`, which needs a motive
 //! that does not name the scrutinee. The fold is untrusted: the eliminator is
 //! an ordinary declaration the checker judges and the kernel readmits, its
-//! fixpoint's structural-descent claim replayed by both.
+//! fixpoint typed by stages in both.
 //!
 //! A function field's hypothesis ranges over the function's results, where no
 //! scrutinee is in scope, so a motive naming its scrutinee at such a
@@ -371,12 +371,12 @@ fn arity(
 ///   `motive` a computation type scoped under its parameters and one scrutinee
 ///   binder of `T p̄`.
 /// - ensures: the declared type and body of `elim_T[motive]` as the module
-///   documentation states, minted into `arena`; the fixpoint carries the
-///   structural-descent claim.
+///   documentation states, minted into `arena`; the fixpoint carries structural
+///   evidence.
 /// - provides: the derived constant a definition by eliminator applies to its
 ///   parameters, its methods and its target. It is a declaration like any
-///   other: the checker judges it, the kernel readmits it, and both replay its
-///   descent claim.
+///   other: the checker judges it, the kernel readmits it, and both type its
+///   recursion by stages.
 /// - fails: a dependent motive with a function field, or a binder count past
 ///   the ceiling.
 /// - panics: none.

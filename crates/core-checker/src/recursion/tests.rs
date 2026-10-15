@@ -1,0 +1,807 @@
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
+
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::DataSignature;
+use gandr_core_term::Sort;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_kernel_core::stage_order::below;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FixpointEvidence;
+use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::Stage;
+use gandr_kernel_term::StageId;
+use gandr_kernel_term::StagedPosition;
+use gandr_kernel_term::Standing;
+use quenchant_shape::shape::Maybe;
+
+use crate::bridge;
+use crate::bridge::Outcome;
+use crate::context::CheckBudget;
+use crate::context::CheckingContext;
+use crate::declaration::Declaration;
+use crate::declaration::OriginToken;
+use crate::module::Judged;
+use crate::module::Verdict;
+use crate::module::check_declaration;
+use crate::module::check_module;
+use crate::refusal::CheckRefusal;
+use crate::refusal::ExpectedShape;
+use crate::refusal::UnadmittedFormer;
+
+/// The variable at `index`.
+///
+/// # Specification
+/// trivial.
+fn var(
+    arena: &mut CoreArena,
+    index: DeBruijnIndex,
+) -> ValueId
+{
+    arena.value_variable(Zone::Intuitionistic, index)
+}
+
+/// `(force head) arguments…`.
+///
+/// # Specification
+/// trivial.
+fn call(
+    arena: &mut CoreArena,
+    head: ValueId,
+    arguments: &[ValueId],
+) -> ComputationId
+{
+    let mut built = arena.computation_force(head);
+    for &argument in arguments {
+        built = arena.computation_application(built, argument);
+    }
+    built
+}
+
+/// The universe of small value types.
+///
+/// # Specification
+/// trivial.
+fn kind(arena: &mut CoreArena) -> ValueTypeId
+{
+    arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero())
+}
+
+/// The data type at `constant`, applied to `arguments`.
+///
+/// # Specification
+/// trivial.
+fn data(
+    arena: &mut CoreArena,
+    constant: ConstantIndex,
+    arguments: Vec<ValueId>,
+) -> ValueTypeId
+{
+    arena.value_type_data(constant, arguments)
+}
+
+/// `El code`.
+///
+/// # Specification
+/// trivial.
+fn element(
+    arena: &mut CoreArena,
+    code: ValueId,
+) -> ValueTypeId
+{
+    arena.value_type_element(code, Level::zero())
+}
+
+/// A data declaration at `constant`.
+///
+/// # Specification
+/// trivial.
+fn declare_data(
+    constant: ConstantIndex,
+    signature: DataSignature,
+) -> Declaration
+{
+    Declaration::data(
+        constant,
+        Arc::new(signature),
+        OriginToken::from(usize::from(constant)),
+    )
+}
+
+/// A definition at `constant`, declared at `declared`.
+///
+/// # Specification
+/// trivial.
+fn define(
+    constant: ConstantIndex,
+    declared: ValueTypeId,
+    body: ValueId,
+) -> Declaration
+{
+    Declaration::new(
+        constant,
+        Maybe::Present(declared),
+        Maybe::Present(body),
+        OriginToken::from(usize::from(constant)),
+    )
+}
+
+/// `Nat`, at position 0: `Zero`, `Succ Nat`.
+///
+/// # Specification
+/// trivial.
+fn nat_signature(arena: &mut CoreArena) -> DataSignature
+{
+    let kind = kind(arena);
+    let nat = data(arena, ConstantIndex::from(0), vec![]);
+    DataSignature::new(vec![], vec![vec![], vec![nat]], kind)
+}
+
+/// `Zero`.
+///
+/// # Specification
+/// trivial.
+fn zero(arena: &mut CoreArena) -> ValueId
+{
+    let nat = data(arena, ConstantIndex::from(0), vec![]);
+    arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![])
+}
+
+/// `Succ value`.
+///
+/// # Specification
+/// trivial.
+fn succ(
+    arena: &mut CoreArena,
+    value: ValueId,
+) -> ValueId
+{
+    let nat = data(arena, ConstantIndex::from(0), vec![]);
+    arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![value])
+}
+
+/// `Nat → F Nat`, thunked.
+///
+/// # Specification
+/// trivial.
+fn unary(arena: &mut CoreArena) -> ValueTypeId
+{
+    let nat = data(arena, ConstantIndex::from(0), vec![]);
+    let returner = arena.comp_type_returner(nat);
+    let classifier = arena.comp_type_arrow(nat, returner);
+    arena.value_type_thunk(classifier)
+}
+
+/// The verdict and the kernel's readmission of each declaration, judged as
+/// one module.
+///
+/// # Specification
+/// trivial.
+fn judge(
+    arena: &mut CoreArena,
+    declarations: &[Declaration],
+) -> (Vec<Verdict>, Vec<Outcome>)
+{
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let report = check_module(&mut context, declarations);
+    let readmission = bridge::readmit(arena, &report);
+    (
+        report.judged().iter().map(Judged::verdict).collect(),
+        readmission
+            .readmitted()
+            .iter()
+            .map(|readmitted| readmitted.outcome().clone())
+            .collect(),
+    )
+}
+
+/// `Nat`, then at position 1 a recursion `fix f. λ. λ. case …` over `Nat →
+/// Nat → F Nat` claiming `evidence`: the case is on the variable
+/// `scrutinee` under the two lambdas, its zero arm returns the variable
+/// `returned`, and its successor arm calls `f` on what `arguments` builds
+/// under `p` 0, then the second parameter 1, the first 2, `f` 3.
+///
+/// # Specification
+/// trivial.
+fn two_parameter(
+    arena: &mut CoreArena,
+    evidence: FixpointEvidence,
+    (scrutinee, returned): (DeBruijnIndex, DeBruijnIndex),
+    arguments: impl FnOnce(&mut CoreArena) -> Vec<ValueId>,
+) -> Vec<Declaration>
+{
+    let nat_signature = nat_signature(arena);
+    let nat = data(arena, ConstantIndex::from(0), vec![]);
+    let returner = arena.comp_type_returner(nat);
+    let inner = arena.comp_type_arrow(nat, returner);
+    let classifier = arena.comp_type_arrow(nat, inner);
+    let declared = arena.value_type_thunk(classifier);
+    let scrutinee = var(arena, scrutinee);
+    let returned = var(arena, returned);
+    let on_zero = arena.computation_return(returned);
+    let recursive = var(arena, DeBruijnIndex::from(3));
+    let built = arguments(arena);
+    let called = call(arena, recursive, &built);
+    let on_successor = arena.computation_lambda(called);
+    let case = arena.computation_data_case(scrutinee, returner, vec![on_zero, on_successor]);
+    let second = arena.computation_lambda(case);
+    let first = arena.computation_lambda(second);
+    let fixpoint = arena.computation_fixpoint(first, evidence);
+    let body = arena.value_thunk(fixpoint);
+    vec![
+        declare_data(ConstantIndex::from(0), nat_signature),
+        define(ConstantIndex::from(1), declared, body),
+    ]
+}
+
+#[test]
+fn a_recursion_descends_on_its_first_parameter()
+{
+    // plus(Succ p, n) = plus(p, Succ n): the first parameter descends and the
+    // second varies; both checkers admit it.
+    let mut arena = CoreArena::new();
+    let declarations = two_parameter(
+        &mut arena,
+        FixpointEvidence::StructuralDescent,
+        (DeBruijnIndex::from(1), DeBruijnIndex::from(0)),
+        |arena| {
+            let p = var(arena, DeBruijnIndex::from(0));
+            let n = var(arena, DeBruijnIndex::from(1));
+            let bumped = succ(arena, n);
+            vec![p, bumped]
+        },
+    );
+    let (verdicts, outcomes) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(verdicts[1], Verdict::Checked { .. }),
+        "{:?}",
+        verdicts[1]
+    );
+    assert!(
+        matches!(outcomes[1], Outcome::Defined { .. }),
+        "{:?}",
+        outcomes[1]
+    );
+
+    // plus(n, Succ p) = plus(Succ n, p), claiming the second parameter: the
+    // staged position names it, and both checkers admit it.
+    let mut arena = CoreArena::new();
+    let declarations = two_parameter(
+        &mut arena,
+        FixpointEvidence::Staged {
+            position: StagedPosition::from(1_usize),
+        },
+        (DeBruijnIndex::from(0), DeBruijnIndex::from(1)),
+        |arena| {
+            let p = var(arena, DeBruijnIndex::from(0));
+            let n = var(arena, DeBruijnIndex::from(2));
+            let bumped = succ(arena, n);
+            vec![bumped, p]
+        },
+    );
+    let (verdicts, outcomes) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(verdicts[1], Verdict::Checked { .. }),
+        "{:?}",
+        verdicts[1]
+    );
+    assert!(
+        matches!(outcomes[1], Outcome::Defined { .. }),
+        "{:?}",
+        outcomes[1]
+    );
+
+    // The control: the staged first parameter handed the second, which
+    // stands at no stage.
+    let mut arena = CoreArena::new();
+    let declarations = two_parameter(
+        &mut arena,
+        FixpointEvidence::StructuralDescent,
+        (DeBruijnIndex::from(1), DeBruijnIndex::from(0)),
+        |arena| {
+            let p = var(arena, DeBruijnIndex::from(0));
+            let n = var(arena, DeBruijnIndex::from(1));
+            vec![n, p]
+        },
+    );
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(
+            verdicts[1],
+            Verdict::Refused(CheckRefusal::StageNotBelow {
+                found: Standing::Top,
+                bound,
+                ..
+            }) if bound == below(Stage::At(StageId::from(0_usize)))
+        ),
+        "{:?}",
+        verdicts[1]
+    );
+}
+
+#[test]
+fn a_structural_fixpoint_needs_an_arrow_to_recurse_on()
+{
+    let body = |arena: &mut CoreArena, evidence| {
+        let nat_signature = nat_signature(arena);
+        let nat = data(arena, ConstantIndex::from(0), vec![]);
+        let returner = arena.comp_type_returner(nat);
+        let declared = arena.value_type_thunk(returner);
+        let zero = zero(arena);
+        let returned = arena.computation_return(zero);
+        let fixpoint = arena.computation_fixpoint(returned, evidence);
+        let body = arena.value_thunk(fixpoint);
+        vec![
+            declare_data(ConstantIndex::from(0), nat_signature),
+            define(ConstantIndex::from(1), declared, body),
+        ]
+    };
+    let mut arena = CoreArena::new();
+    let declarations = body(&mut arena, FixpointEvidence::StructuralDescent);
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(
+            verdicts[1],
+            Verdict::Refused(CheckRefusal::ShapeMismatch {
+                wanted: ExpectedShape::Arrow,
+                ..
+            })
+        ),
+        "{:?}",
+        verdicts[1]
+    );
+    // The control: the same fixpoint, partial, checks at any type.
+    let mut arena = CoreArena::new();
+    let declarations = body(&mut arena, FixpointEvidence::Partial);
+    let (verdicts, outcomes) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(verdicts[1], Verdict::Checked { .. }),
+        "{:?}",
+        verdicts[1]
+    );
+    assert!(
+        matches!(outcomes[1], Outcome::Defined { .. }),
+        "{:?}",
+        outcomes[1]
+    );
+}
+
+/// `Nat`, then at position 1 `fix f. λn. case n { Zero ↦ Zero; Succ p ↦
+/// case p { Zero ↦ Zero; Succ q ↦ f (argument) } }`, `argument` built under
+/// `q` 0, `p` 1, `n` 2, `f` 3.
+///
+/// # Specification
+/// trivial.
+fn two_deep(
+    arena: &mut CoreArena,
+    argument: impl FnOnce(&mut CoreArena) -> ValueId,
+) -> Vec<Declaration>
+{
+    let nat_signature = nat_signature(arena);
+    let nat = data(arena, ConstantIndex::from(0), vec![]);
+    let returner = arena.comp_type_returner(nat);
+    let declared = unary(arena);
+    let zero = zero(arena);
+    let on_zero = arena.computation_return(zero);
+    let recursive = var(arena, DeBruijnIndex::from(3));
+    let built = argument(arena);
+    let called = call(arena, recursive, &[built]);
+    let on_inner = arena.computation_lambda(called);
+    let inner_scrutinee = var(arena, DeBruijnIndex::from(0));
+    let inner = arena.computation_data_case(inner_scrutinee, returner, vec![on_zero, on_inner]);
+    let on_outer = arena.computation_lambda(inner);
+    let outer_scrutinee = var(arena, DeBruijnIndex::from(0));
+    let outer = arena.computation_data_case(outer_scrutinee, returner, vec![on_zero, on_outer]);
+    let lambda = arena.computation_lambda(outer);
+    let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+    let body = arena.value_thunk(fixpoint);
+    vec![
+        declare_data(ConstantIndex::from(0), nat_signature),
+        define(ConstantIndex::from(1), declared, body),
+    ]
+}
+
+#[test]
+fn a_call_on_a_value_rebuilt_below_the_stage_is_admitted()
+{
+    // f(Succ q) under n = Succ (Succ q): below n by one, and both checkers
+    // admit it.
+    let mut arena = CoreArena::new();
+    let declarations = two_deep(&mut arena, |arena| {
+        let q = var(arena, DeBruijnIndex::from(0));
+        succ(arena, q)
+    });
+    let (verdicts, outcomes) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(verdicts[1], Verdict::Checked { .. }),
+        "{:?}",
+        verdicts[1]
+    );
+    assert!(
+        matches!(outcomes[1], Outcome::Defined { .. }),
+        "{:?}",
+        outcomes[1]
+    );
+
+    // f(Succ p) under n = Succ p: `n` itself. Its field `p` stands at the
+    // outer case's stage, one below the fixpoint's, where two are wanted.
+    let mut arena = CoreArena::new();
+    let declarations = two_deep(&mut arena, |arena| {
+        let p = var(arena, DeBruijnIndex::from(1));
+        succ(arena, p)
+    });
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    let root = Stage::At(StageId::from(0_usize));
+    assert!(
+        matches!(
+            verdicts[1],
+            Verdict::Refused(CheckRefusal::StageNotBelow {
+                found: Standing::Staged(Stage::At(found)),
+                bound,
+                ..
+            }) if found == StageId::from(1_usize) && bound == below(below(root))
+        ),
+        "{:?}",
+        verdicts[1]
+    );
+}
+
+/// The arm of [`nullary_call`]'s case that calls `f Zero`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CallingArm
+{
+    /// The zero arm, which binds nothing.
+    Zero,
+    /// The successor arm, under its field.
+    Successor,
+}
+
+/// `Nat`, then at position 1 `fix f. λn. case n { Zero ↦ on_zero; Succ p ↦
+/// on_successor }`, the `calling` arm `f Zero` and the other `return Zero`.
+///
+/// # Specification
+/// trivial.
+fn nullary_call(
+    arena: &mut CoreArena,
+    calling: CallingArm,
+) -> Vec<Declaration>
+{
+    let nat_signature = nat_signature(arena);
+    let nat = data(arena, ConstantIndex::from(0), vec![]);
+    let returner = arena.comp_type_returner(nat);
+    let declared = unary(arena);
+    let arm = |arena: &mut CoreArena, calls, recursive| {
+        let zero = zero(arena);
+        if calls {
+            let recursive = var(arena, DeBruijnIndex::from(recursive));
+            call(arena, recursive, &[zero])
+        }
+        else {
+            arena.computation_return(zero)
+        }
+    };
+    // Under the zero arm: `n` 0, `f` 1; under the successor's field: `p` 0,
+    // `n` 1, `f` 2.
+    let on_zero = arm(arena, calling == CallingArm::Zero, 1);
+    let on_successor = arm(arena, calling == CallingArm::Successor, 2);
+    let on_successor = arena.computation_lambda(on_successor);
+    let scrutinee = var(arena, DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(scrutinee, returner, vec![on_zero, on_successor]);
+    let lambda = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+    let body = arena.value_thunk(fixpoint);
+    vec![
+        declare_data(ConstantIndex::from(0), nat_signature),
+        define(ConstantIndex::from(1), declared, body),
+    ]
+}
+
+#[test]
+fn a_nullary_argument_needs_a_value_below_the_stage()
+{
+    // `f Zero` under `Succ p`: `p` is a value below the fixpoint's stage, so
+    // that stage is not the empty first one, and both checkers admit it.
+    let mut arena = CoreArena::new();
+    let declarations = nullary_call(&mut arena, CallingArm::Successor);
+    let (verdicts, outcomes) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(verdicts[1], Verdict::Checked { .. }),
+        "{:?}",
+        verdicts[1]
+    );
+    assert!(
+        matches!(outcomes[1], Outcome::Defined { .. }),
+        "{:?}",
+        outcomes[1]
+    );
+
+    // `f Zero` under `Zero`: nothing in scope stands below the stage, which
+    // may be the first, and `f Zero` there need not terminate.
+    let mut arena = CoreArena::new();
+    let declarations = nullary_call(&mut arena, CallingArm::Zero);
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(
+            verdicts[1],
+            Verdict::Refused(CheckRefusal::StageNotBelow {
+                found: Standing::Top,
+                bound,
+                ..
+            }) if bound == below(Stage::At(StageId::from(0_usize)))
+        ),
+        "{:?}",
+        verdicts[1]
+    );
+}
+
+/// `List a`, at position 1: `Nil`, `Cons (El a) (List a)`.
+///
+/// # Specification
+/// trivial.
+fn list_signature(arena: &mut CoreArena) -> DataSignature
+{
+    let kind = kind(arena);
+    let code = var(arena, DeBruijnIndex::from(0));
+    let head = element(arena, code);
+    let tail = data(arena, ConstantIndex::from(1), vec![code]);
+    DataSignature::new(vec![kind], vec![vec![], vec![head, tail]], kind)
+}
+
+/// `Rose`, at position 2: `Node (List Rose)`.
+///
+/// # Specification
+/// trivial.
+fn rose_signature(arena: &mut CoreArena) -> DataSignature
+{
+    let kind = kind(arena);
+    let rose = data(arena, ConstantIndex::from(2), vec![]);
+    let code = arena.value_quote(rose);
+    let kids = data(arena, ConstantIndex::from(1), vec![code]);
+    DataSignature::new(vec![], vec![vec![kids]], kind)
+}
+
+/// `map : Π(a b : Type). U (El a → F (El b)) → List a → F (List b)` at
+/// position 3, a structural fixpoint over its list.
+///
+/// # Specification
+/// trivial.
+fn map_declaration(arena: &mut CoreArena) -> Declaration
+{
+    let declared = {
+        // Under Π a Π b: `a` 1, `b` 0.
+        let a = var(arena, DeBruijnIndex::from(1));
+        let b = var(arena, DeBruijnIndex::from(0));
+        let source = element(arena, a);
+        let target = element(arena, b);
+        let into = arena.comp_type_returner(target);
+        let step = arena.comp_type_arrow(source, into);
+        let step = arena.value_type_thunk(step);
+        let from = data(arena, ConstantIndex::from(1), vec![a]);
+        let to = data(arena, ConstantIndex::from(1), vec![b]);
+        let into_list = arena.comp_type_returner(to);
+        let last = arena.comp_type_arrow(from, into_list);
+        let middle = arena.comp_type_arrow(step, last);
+        let kind = kind(arena);
+        let inner = arena.comp_type_pi(kind, middle);
+        let outer = arena.comp_type_pi(kind, inner);
+        arena.value_type_thunk(outer)
+    };
+    // Under λxs: `xs` 0, `m` 1, `g` 2, `b` 3, `a` 4; the motive binds the
+    // scrutinee once more.
+    let motive = {
+        let b = var(arena, DeBruijnIndex::from(4));
+        let to = data(arena, ConstantIndex::from(1), vec![b]);
+        arena.comp_type_returner(to)
+    };
+    let on_nil = {
+        let b = var(arena, DeBruijnIndex::from(3));
+        let to = data(arena, ConstantIndex::from(1), vec![b]);
+        let nil = arena.value_constructor(to, ConstructorTag::from(0_usize), vec![]);
+        arena.computation_return(nil)
+    };
+    let on_cons = {
+        // Under λx λrest: `rest` 0, `x` 1, `xs` 2, `m` 3, `g` 4, `b` 5, `a` 6.
+        let function = var(arena, DeBruijnIndex::from(4));
+        let head = var(arena, DeBruijnIndex::from(1));
+        let mapped = call(arena, function, &[head]);
+        // Under `y`: `m` 4, `rest` 1.
+        let recursive = var(arena, DeBruijnIndex::from(4));
+        let rest = var(arena, DeBruijnIndex::from(1));
+        let recursed = call(arena, recursive, &[rest]);
+        // Under `r`: `r` 0, `y` 1, `b` 7.
+        let element = var(arena, DeBruijnIndex::from(7));
+        let to = data(arena, ConstantIndex::from(1), vec![element]);
+        let image = var(arena, DeBruijnIndex::from(1));
+        let images = var(arena, DeBruijnIndex::from(0));
+        let cons = arena.value_constructor(to, ConstructorTag::from(1_usize), vec![image, images]);
+        let returned = arena.computation_return(cons);
+        let inner = arena.computation_bind(recursed, returned);
+        let outer = arena.computation_bind(mapped, inner);
+        let rest_lambda = arena.computation_lambda(outer);
+        arena.computation_lambda(rest_lambda)
+    };
+    let xs = var(arena, DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(xs, motive, vec![on_nil, on_cons]);
+    let lambda = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+    let g_lambda = arena.computation_lambda(fixpoint);
+    let b_lambda = arena.computation_lambda(g_lambda);
+    let a_lambda = arena.computation_lambda(b_lambda);
+    let body = arena.value_thunk(a_lambda);
+    define(ConstantIndex::from(3), declared, body)
+}
+
+/// How `size` hands its node's children to `map`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Children
+{
+    /// The node's own field.
+    Field,
+    /// A one-element list of the node itself, at the unstaged `List Rose`.
+    Escaped,
+}
+
+/// `size : Rose → F Nat` at position 4: `fix s. λt. case t { Node kids ↦
+/// map code Nat (λu. s u) children to _. return 1 }`.
+///
+/// # Specification
+/// trivial.
+fn size_declaration(
+    arena: &mut CoreArena,
+    code: impl FnOnce(&mut CoreArena) -> ValueId,
+    children: Children,
+) -> Declaration
+{
+    let nat = data(arena, ConstantIndex::from(0), vec![]);
+    let rose = data(arena, ConstantIndex::from(2), vec![]);
+    let returner = arena.comp_type_returner(nat);
+    let classifier = arena.comp_type_arrow(rose, returner);
+    let declared = arena.value_type_thunk(classifier);
+    let map = arena.value_constant(ConstantIndex::from(3_usize));
+    let code = code(arena);
+    let nat_code = arena.value_quote(nat);
+    let zero = zero(arena);
+    let one = succ(arena, zero);
+    let counted = arena.computation_return(one);
+    // The node's arm under `kids` 0, `t` 1, `s` 2; under λu, `s` is 3.
+    let mapped_function = {
+        let recursive = var(arena, DeBruijnIndex::from(3));
+        let u = var(arena, DeBruijnIndex::from(0));
+        let called = call(arena, recursive, &[u]);
+        let lambda = arena.computation_lambda(called);
+        arena.value_thunk(lambda)
+    };
+    let listed = match children {
+        Children::Field => var(arena, DeBruijnIndex::from(0)),
+        Children::Escaped => {
+            let rose_code = arena.value_quote(rose);
+            let list = data(arena, ConstantIndex::from(1), vec![rose_code]);
+            let nil = arena.value_constructor(list, ConstructorTag::from(0_usize), vec![]);
+            let t = var(arena, DeBruijnIndex::from(1));
+            arena.value_constructor(list, ConstructorTag::from(1_usize), vec![t, nil])
+        },
+    };
+    let mapped = call(arena, map, &[code, nat_code, mapped_function, listed]);
+    let on_node = arena.computation_bind(mapped, counted);
+    let on_node = arena.computation_lambda(on_node);
+    let t = var(arena, DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(t, returner, vec![on_node]);
+    let lambda = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+    let body = arena.value_thunk(fixpoint);
+    define(ConstantIndex::from(4), declared, body)
+}
+
+/// The verdicts of `map` and of `size`, judged after `Nat`, `List` and
+/// `Rose`; `Rose` is recorded past its formation, whose occurrence walk
+/// refuses a nested occurrence before any recursion over it is typed.
+///
+/// # Specification
+/// trivial.
+fn rose_sized(
+    code: impl FnOnce(&mut CoreArena) -> ValueId,
+    children: Children,
+) -> (Verdict, Verdict)
+{
+    let mut arena = CoreArena::new();
+    let nat = nat_signature(&mut arena);
+    let list = list_signature(&mut arena);
+    let rose = rose_signature(&mut arena);
+    let map = map_declaration(&mut arena);
+    let size = size_declaration(&mut arena, code, children);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert_eq!(
+        check_declaration(&mut context, &declare_data(ConstantIndex::from(0), nat)),
+        Verdict::Data
+    );
+    assert_eq!(
+        check_declaration(&mut context, &declare_data(ConstantIndex::from(1), list)),
+        Verdict::Data
+    );
+    let rose_position = ConstantIndex::from(2_usize);
+    assert_eq!(context.admit(rose_position), Ok(()));
+    context.record_data(rose_position, Arc::new(rose));
+    let mapped = check_declaration(&mut context, &map);
+    let sized = check_declaration(&mut context, &size);
+    (mapped, sized)
+}
+
+#[test]
+fn a_rose_tree_recurses_through_map_at_its_children_s_stage()
+{
+    // The code of the children's stage: `size`'s fixpoint mints the first
+    // stage, and its case on `t` the second, one below it, at which `kids`
+    // binds `List Rose`.
+    let children = |arena: &mut CoreArena| {
+        let rose = data(arena, ConstantIndex::from(2), vec![]);
+        let staged = arena.value_type_staged(rose, Stage::At(StageId::from(1_usize)));
+        arena.value_quote(staged)
+    };
+    let (mapped, sized) = rose_sized(children, Children::Field);
+    assert!(matches!(mapped, Verdict::Checked { .. }), "{mapped:?}");
+    assert!(matches!(sized, Verdict::Checked { .. }), "{sized:?}");
+
+    // At the unstaged code, `λu. s u` takes a `u` at no stage.
+    let unstaged = |arena: &mut CoreArena| {
+        let rose = data(arena, ConstantIndex::from(2), vec![]);
+        arena.value_quote(rose)
+    };
+    let (_, sized) = rose_sized(unstaged, Children::Field);
+    assert!(
+        matches!(
+            sized,
+            Verdict::Refused(CheckRefusal::StageNotBelow {
+                found: Standing::Top,
+                ..
+            })
+        ),
+        "{sized:?}"
+    );
+
+    // The escape: a list of `t` itself, at the unstaged `List Rose`, handed
+    // to `map` at the children's stage.
+    let (_, escaped) = rose_sized(children, Children::Escaped);
+    assert!(!matches!(escaped, Verdict::Checked { .. }), "{escaped:?}");
+}
+
+#[test]
+fn a_staged_type_never_crosses_to_the_kernel()
+{
+    // A stage is the judgement's own: a term naming one, here the code of a
+    // stage this declaration never minted, is refused before the kernel is
+    // offered anything.
+    let mut arena = CoreArena::new();
+    let nat_signature = nat_signature(&mut arena);
+    let nat = data(&mut arena, ConstantIndex::from(0), vec![]);
+    let staged = arena.value_type_staged(nat, Stage::At(StageId::from(0_usize)));
+    let code = arena.value_quote(staged);
+    let declared = kind(&mut arena);
+    let declarations = [
+        declare_data(ConstantIndex::from(0), nat_signature),
+        define(ConstantIndex::from(1), declared, code),
+    ];
+    let (verdicts, outcomes) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(outcomes[1], Outcome::Marked(_)),
+        "{:?}",
+        outcomes[1]
+    );
+    assert!(
+        matches!(
+            verdicts[1],
+            Verdict::Refused(CheckRefusal::OutOfFragment {
+                former: UnadmittedFormer::Stage,
+                ..
+            })
+        ),
+        "{:?}",
+        verdicts[1]
+    );
+}

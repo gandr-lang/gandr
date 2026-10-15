@@ -82,7 +82,7 @@ pub enum Trees
         (Term::ValueType(left), Term::ValueType(right)) => match (left_arena.value_type(left), right_arena.value_type(right)) {
             (Some(a), Some(b)) => match *a {
                 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => (ret == Trees::Same) == (a == b),
-                ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Capability { .. } => ret == Trees::Different || core::mem::discriminant(a) == core::mem::discriminant(b),
+                ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Capability { .. } | ValueType::Staged { .. } => ret == Trees::Different || core::mem::discriminant(a) == core::mem::discriminant(b),
             },
             _ => ret == Trees::Different,
         },

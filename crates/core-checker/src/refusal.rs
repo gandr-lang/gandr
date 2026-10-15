@@ -259,6 +259,9 @@ pub enum UnadmittedFormer
     /// A memory form: the kernel has no store, so a held value and its
     /// accesses stay on the checker's side.
     Memory,
+    /// A stage of a structural fixpoint named in a term: the kernel mints its
+    /// own fixpoints' stages and reads none a term carries.
+    Stage,
 }
 
 /// A count of static arguments: how many a static application passes, or how
@@ -838,13 +841,19 @@ pub enum CheckRefusal
         /// The later position.
         index: ConstantIndex,
     },
-    /// A fixpoint's structural-descent claim does not replay.
-    DescentNotReplayed
+    /// A value checked where the recursion typing wants a stage it does not
+    /// stand at or below: a self-reference's argument not strictly below the
+    /// fixpoint's stage, a constructor with no recursive field where no value
+    /// in scope shows a stage below the one wanted, or a value at no stage
+    /// where one is wanted.
+    StageNotBelow
     {
-        /// The fixpoint.
-        at: ComputationId,
-        /// The first reason the descent walk met.
-        reason: gandr_kernel_term::DescentRefusal,
+        /// The value.
+        at: ValueId,
+        /// Where it stands.
+        found: gandr_kernel_term::Standing,
+        /// The stage it was wanted at or below.
+        bound: gandr_kernel_term::Stage,
     },
     /// A session action the session type of its endpoint does not admit.
     SessionMismatch
@@ -1018,23 +1027,24 @@ impl CheckRefusal
     ///   over a type that classifies no codes, an occurrence of a data
     ///   declaration's own family outside a strictly positive, uniform field,
     ///   rules that do not present their type, a reference past its block, a
-    ///   descent claim that does not replay, reflexivity at endpoints its point
-    ///   does not reach, a compound endpoint that returns no pure value, an
-    ///   abstract type's kind that is no universe, a representation above it,
-    ///   an atom naming no abstract type, translators that are no equivalence
-    ///   of species, a run with no computation enclosing it, a session action
-    ///   its endpoint's state refuses, a break of an endpoint's linear use, a
-    ///   forged, amplified, escaping, consumable or ungranted capability or one
-    ///   exercised outside its authority, sessions that are not bisimilar or
-    ///   not related by subtyping, an operand that is no session code, a ride
-    ///   whose motive is not covariant, a run its session does not admit and a
-    ///   function flow's boundary against its variance are malformed source; a
-    ///   former outside the fragment, a stratum the checker does not certify, a
-    ///   ride the checker does not move and a translator `forward` cannot image
-    ///   are unrepresentable; an unbound index, an exhausted allowance, a
-    ///   dangling id, an admission out of order, a repeated sealing site, a
-    ///   machine invariant and an undecided unfolding are engine faults;
-    ///   nothing is a user absence.
+    ///   recursive call whose argument stands below no stage its recursion
+    ///   wants, reflexivity at endpoints its point does not reach, a compound
+    ///   endpoint that returns no pure value, an abstract type's kind that is
+    ///   no universe, a representation above it, an atom naming no abstract
+    ///   type, translators that are no equivalence of species, a run with no
+    ///   computation enclosing it, a session action its endpoint's state
+    ///   refuses, a break of an endpoint's linear use, a forged, amplified,
+    ///   escaping, consumable or ungranted capability or one exercised outside
+    ///   its authority, sessions that are not bisimilar or not related by
+    ///   subtyping, an operand that is no session code, a ride whose motive is
+    ///   not covariant, a run its session does not admit and a function flow's
+    ///   boundary against its variance are malformed source; a former outside
+    ///   the fragment, a stratum the checker does not certify, a ride the
+    ///   checker does not move and a translator `forward` cannot image are
+    ///   unrepresentable; an unbound index, an exhausted allowance, a dangling
+    ///   id, an admission out of order, a repeated sealing site, a machine
+    ///   invariant and an undecided unfolding are engine faults; nothing is a
+    ///   user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -1069,7 +1079,7 @@ impl CheckRefusal
         | Self::FamilyArgumentClassifier { .. }
         | Self::StaticLambdaArgument { .. }
         | Self::StaticClassifierExpected { .. }
-        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::DescentNotReplayed { .. } | Self::UnenclosedRun { .. }
+        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::UnenclosedRun { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
         | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
@@ -1124,7 +1134,7 @@ impl CheckRefusal
             | Self::IndexOccurrence(_)
             | Self::NonUniformOccurrence(_)
             | Self::CrossBlockReference { .. }
-            | Self::DescentNotReplayed { .. }
+            | Self::StageNotBelow { .. }
             | Self::UnenclosedRun { .. }
             | Self::SessionMismatch { .. }
             | Self::Linearity { .. }
@@ -1331,7 +1341,7 @@ impl CheckRefusal
             | Self::IndexOccurrence(_)
             | Self::NonUniformOccurrence(_)
             | Self::CrossBlockReference { .. }
-            | Self::DescentNotReplayed { .. }
+            | Self::StageNotBelow { .. }
             | Self::UnenclosedRun { .. }
             | Self::Linearity { .. }
             | Self::Access { .. }

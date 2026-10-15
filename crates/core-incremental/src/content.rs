@@ -3096,7 +3096,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the corresponding former with child ids replaced by their
-    ///   discovery indices; the predicate bounds the sort and child indices.
+    ///   discovery indices; the predicate bounds the sort and child indices. A
+    ///   staged type, the judgement's own, is the unresolved node.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3105,7 +3106,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   every payload.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::ValueType
-        && !matches!(ret, ContentNode::Unresolved(_))
+        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*value_type, ValueType::Staged { .. }))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_value_type(
         &mut self,
@@ -3225,6 +3226,9 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 }
             },
             ValueType::Unknown => ContentNode::UnknownType,
+            // A stage is minted by one judgement and names nothing past it:
+            // content naming one has no identity to key on, and stays opaque.
+            ValueType::Staged { .. } => ContentNode::Unresolved(Sort::ValueType),
         }
     }
 

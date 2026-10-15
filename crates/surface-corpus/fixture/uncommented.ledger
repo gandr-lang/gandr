@@ -34,11 +34,6 @@ fragment/blamed-run.gandr:<file>
 fragment/blamed-run.gandr:later:7391cf053decbaa8
 fragment/blamed-run.gandr:main:6b17ec04fc7fbc67
 fragment/blamed-run.gandr:main:a906c1012d1d08a5
-fragment/descent-not-replayed.gandr:<file>
-fragment/descent-not-replayed.gandr:Nat:7c8cfc5b76d8efd9
-fragment/descent-not-replayed.gandr:counted:e6ab3a390d67a693
-fragment/descent-not-replayed.gandr:down:16f8f08a12ab4bb3
-fragment/descent-not-replayed.gandr:same:8b9ea4529799ba67
 fragment/exits.gandr:<file>
 fragment/exits.gandr:Nat:7c8cfc5b76d8efd9
 fragment/exits.gandr:count:5df9f72f01e5aaa2

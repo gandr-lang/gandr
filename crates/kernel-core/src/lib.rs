@@ -468,6 +468,7 @@ pub mod replay;
 pub mod rewrite;
 pub mod seal;
 pub mod stage;
+pub mod stage_order;
 pub mod support;
 mod witness;
 mod words;

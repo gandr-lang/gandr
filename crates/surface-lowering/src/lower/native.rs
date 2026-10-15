@@ -98,26 +98,26 @@
 //!
 //! # A recursive function is one fixpoint over its last parameter
 //!
-//! The core's fixpoint `fix x. M` binds its own thunk, and the structural
-//! descent it may claim replays only over `fix x. λy. case y [C] of { c_i ↦
-//! λf̄_i. N_i }`: a fixpoint at a function out of nominal data whose body
-//! cases on the argument it takes, every self call `(force x) a` at a field
-//! of the scrutinised constructor (Giménez, *Structural Recursive Definitions
-//! in Type Theory*, ICALP 1998). `def rec f(p₁, …, pₖ, y) -> C { b }`
-//! therefore lowers to `thunk (λp₁ … λpₖ. fix f. λy. b)`, and a call
-//! `f[<](p₁, …, pₖ, a)` to `(force f) a`. The parameters before the last are
-//! the uniform parameters of an inductive definition (Coquand and Paulin,
-//! *Inductively defined types*, COLOG 1988): bound outside the fixpoint, so
-//! every recursive call must pass them as themselves, and a call passing
-//! anything else is refused as non-uniform. The last parameter is the one
-//! the fixpoint recurses on, and whether `a` is one of its fields is the
-//! replay's to judge, which a call at anything else fails as
-//! `DescentNotReplayed`; the lowering neither searches for a decreasing
-//! argument nor duplicates the check.
+//! The core's fixpoint `fix x. λy. M` binds its own thunk, and the checker
+//! and the kernel type it by stages: `y` stands at a fresh stage, a case on it
+//! binds its constructor's recursive fields one stage below, and every self
+//! call `(force x) a` takes `a` strictly below the stage `y` stands at
+//! (`gandr-core-checker`'s crate documentation, § Recursion).
+//! `def rec f(p₁, …, pₖ, y) -> C { b }` therefore lowers to `thunk (λp₁ …
+//! λpₖ. fix f. λy. b)`, and a call `f[<](p₁, …, pₖ, a)` to `(force f) a`. The
+//! parameters before the last are the uniform parameters of an inductive
+//! definition (Coquand and Paulin, *Inductively defined types*, COLOG 1988):
+//! bound outside the fixpoint, so every recursive call must pass them as
+//! themselves, and a call passing anything else is refused as non-uniform.
+//! The last parameter is the one the fixpoint recurses on, its evidence's
+//! staged position the fixpoint's first, and whether `a` stands below its
+//! stage is the checkers' to judge, which a call at anything else fails as
+//! `StageNotBelow`; the lowering neither searches for a decreasing argument
+//! nor duplicates the check.
 //!
-//! `<` is the claim. A fixpoint carries structural-descent evidence when one
-//! of its calls writes it and partial evidence when none does, so the checker
-//! and the kernel replay every claim the source makes and none it does not.
+//! `<` is the claim. A fixpoint carries structural evidence when one of its
+//! calls writes it and partial evidence when none does, so the checker and
+//! the kernel type every recursion the source claims and none it does not.
 //! The function's own name is bound by one more frame, between the last
 //! parameter and the ones before it, typed by the declaration form so no
 //! signature telescope counts it — the binder exists in the body alone — and
@@ -137,23 +137,21 @@
 //! it as one item whose members are inline tiles of the block, so the module
 //! reads no declaration in it and refuses the whole source at the block's
 //! form. Reversal: one fixpoint over a bundle of the members' thunks, each
-//! member its projection, with partial evidence until a descent judgment
-//! spans the bundle; this needs the members collected as declarations from
+//! member its projection, with partial evidence until a stage typing spans
+//! the bundle; this needs the members collected as declarations from
 //! inside one form, and is its own unit.
 //!
 //! `def rec f(p₁, …, pₖ, y) -> C { b }` lowers to `thunk (λp₁ … λpₖ. fix f. λy.
-//! b)`: the core fixpoint binds its own thunk, and the structural descent it
-//! may claim replays only over a fixpoint whose body takes one argument and
-//! cases on it, every recursive call at a field of the scrutinised constructor
-//! (Giménez). A recursive call is written `f[<](p₁, …, pₖ, a)` and lowers to
-//! `(force f) a`. `<` is the claim: a fixpoint carries `StructuralDescent`
+//! b)`: the core fixpoint binds its own thunk, and its structural evidence
+//! stages the parameter the fixpoint takes first, which is the last one the
+//! source writes. A recursive call is written `f[<](p₁, …, pₖ, a)` and lowers
+//! to `(force f) a`. `<` is the claim: a fixpoint carries `StructuralDescent`
 //! evidence when one of its calls writes it and `Partial` evidence when none
-//! does, so the checker and the kernel replay every claim the source makes and
-//! none it does not, and a call at anything but a field fails the replay as
-//! `DescentNotReplayed`. The lowering neither searches for a decreasing
-//! argument nor duplicates the check. The fixpoint is marked
-//! `Insertion::Fixpoint` at the function form's origin, since the source writes
-//! no `fix`.
+//! does, so the checker and the kernel type every recursion the source claims
+//! and none it does not, and a call at an argument not below the stage fails
+//! as `StageNotBelow`. The lowering neither searches for a decreasing argument
+//! nor duplicates the check. The fixpoint is marked `Insertion::Fixpoint` at
+//! the function form's origin, since the source writes no `fix`.
 //!
 //! The function's own name is bound by one frame between the last parameter and
 //! the ones before it, typed by the declaration form so no signature telescope

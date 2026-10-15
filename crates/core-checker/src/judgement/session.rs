@@ -720,7 +720,7 @@ impl Machine<'_, '_>
             | CheckRefusal::IndexOccurrence(_)
             | CheckRefusal::NonUniformOccurrence(_)
             | CheckRefusal::CrossBlockReference { .. }
-            | CheckRefusal::DescentNotReplayed { .. }
+            | CheckRefusal::StageNotBelow { .. }
             | CheckRefusal::SessionMismatch { .. }
             | CheckRefusal::Linearity { .. }
             | CheckRefusal::UnenclosedRun { .. }

@@ -430,8 +430,12 @@ pub const SIGN_NEGATIVE: WireTag = WireTag(1);
 
 /// Fixpoint evidence: no claim, a partial fixpoint.
 pub const FIXPOINT_PARTIAL: WireTag = WireTag(0);
-/// Fixpoint evidence: a structural-descent claim.
+/// Fixpoint evidence: structural recursion on the first parameter, replayed
+/// as the stage typing at position zero.
 pub const FIXPOINT_STRUCTURAL_DESCENT: WireTag = WireTag(1);
+/// Fixpoint evidence: structural recursion on the parameter at a position,
+/// the position following as a varint.
+pub const FIXPOINT_STAGED: WireTag = WireTag(2);
 
 /// Literal kind: an integer literal.
 pub const LITERAL_INTEGER: WireTag = WireTag(0);
@@ -1357,7 +1361,7 @@ mod tests
                         Some(&crate::ValueType::Flow { .. }) => row.tag == super::NODE_VT_FLOW,
                         Some(&crate::ValueType::List(_)) => row.tag == super::NODE_VT_LIST,
                         Some(&crate::ValueType::Session { .. }) => row.tag == super::NODE_VT_SESSION,
-                        None => false,
+                        Some(&crate::ValueType::Staged { .. }) | None => false,
                     },
                     AnyNode::CompType(id) => match ret.0.comp_type(id) {
                         Some(&crate::CompType::Returner(_)) => row.tag == super::NODE_CT_RETURNER,
@@ -1651,7 +1655,8 @@ mod tests
                             | crate::ValueType::Lift { .. }
                             | crate::ValueType::Element { .. }
                             | crate::ValueType::Abstract(_)
-                            | crate::ValueType::StaticPi { .. } => 0,
+                            | crate::ValueType::StaticPi { .. }
+                            | crate::ValueType::Staged { .. } => 0,
                         })
                 },
                 AnyNode::Computation(id) => match arena.computation(id) {

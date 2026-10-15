@@ -131,7 +131,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Support | [`support`](src/support.rs) |
 | Coverage | [`coverage`](src/coverage.rs) |
 | Nominal data | [`former`](src/former.rs) |
-| Strict positivity, structural descent, derived eliminators | [`occurrence`](src/occurrence.rs), [`descent`](src/descent.rs), [`eliminator`](src/eliminator.rs) |
+| Strict positivity, stage typing, derived eliminators | [`occurrence`](src/occurrence.rs), [`recursion`](src/recursion.rs), [`eliminator`](src/eliminator.rs) |
 | Readmission, erasure, lifts and unfoldings, static operators, holes and marks, the audit, splits and export | [`bridge`](src/bridge.rs) |
 | Staged programs and their forks | [`staging`](src/staging.rs), [`fork`](src/fork.rs), [`stage`](src/stage.rs) |
 | Guarded staging families, drafts and their controller | [`template`](src/template.rs), [`template::memo`](src/template/memo.rs), [`template::draft`](src/template/draft.rs) |

@@ -52,8 +52,8 @@ use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
 use gandr_core_term::effect::Purity;
 use gandr_core_term::session::ActionKind;
-use gandr_kernel_term::DescentRefusal;
 use gandr_kernel_term::OccurrenceSite;
+use gandr_kernel_term::Standing;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::ExpectationFault;
 use gandr_surface_corpus::Refusal;
@@ -686,7 +686,7 @@ impl Annotations
             | CheckRefusal::MachineInvariant | CheckRefusal::CapabilityUngranted { .. } => ret.primary == Maybe::Present(Annotation {
                 span: declaration, label,
             }) && ret.context == UNNAMED,
-        CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::RepresentationAboveKind { .. } | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::DependentStack { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::DescentNotReplayed { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityForged { .. } | CheckRefusal::CapabilityAmplified(_) | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityEscaped { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } => ret.context == UNNAMED,
+        CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::RepresentationAboveKind { .. } | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::DependentStack { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityForged { .. } | CheckRefusal::CapabilityAmplified(_) | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityEscaped { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } => ret.context == UNNAMED,
     }
 })]
 fn checked(
@@ -822,6 +822,7 @@ fn checked(
         | CheckRefusal::SessionCodeExpected { at }
         | CheckRefusal::RunNotAdmitted { at, .. }
         | CheckRefusal::ForwardUnsupported { at }
+        | CheckRefusal::StageNotBelow { at, .. }
         | CheckRefusal::Boundary { at } => (spanned(origins.value(at)), UNNAMED),
         CheckRefusal::StaticClassifierExpected { found, .. } => {
             (spanned(origins.value_type(found)), UNNAMED)
@@ -848,7 +849,6 @@ fn checked(
                 | CheckingForm::Scope(at),
         }
         | CheckRefusal::CapabilityOutsideAuthority { at, .. }
-        | CheckRefusal::DescentNotReplayed { at, .. }
         | CheckRefusal::NonExhaustiveDataCase(at)
         | CheckRefusal::RuleNotRespected { at, .. }
         | CheckRefusal::NotApart { at, .. }
@@ -1291,10 +1291,11 @@ impl fmt::Display for Checked
                 Site(site),
                 usize::from(index)
             ),
-            | CheckRefusal::DescentNotReplayed { reason, .. } => write!(
+            | CheckRefusal::StageNotBelow { found, .. } => write!(
                 f,
-                "the fixpoint's structural-descent claim does not replay: {}",
-                Descent(reason)
+                "the value is not strictly below the parameter its structural recursion \
+                 descends on: {}",
+                Stood(found)
             ),
             | CheckRefusal::SessionMismatch { defect, .. } => match defect {
                 | ProtocolDefect::Action { expected, observed } => write!(
@@ -1622,6 +1623,7 @@ impl fmt::Display for Former
             },
             | UnadmittedFormer::HigherFlow => "a flow at a universe above level zero",
             | UnadmittedFormer::Memory => "a memory form at the pure kernel boundary",
+            | UnadmittedFormer::Stage => "a recursion's stage outside the judgement that minted it",
         })
     }
 }
@@ -1669,26 +1671,30 @@ impl fmt::Display for Site
     }
 }
 
-/// The rule of the descent walk a claim failed, as prose.
+/// Where a value a structural recursion wanted below its stage stood, as
+/// prose.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Descent(pub DescentRefusal);
+pub struct Stood(pub Standing);
 
-impl fmt::Display for Descent
+impl fmt::Display for Stood
 {
-    /// Writes the failed rule.
+    /// Writes why the value is not below the stage.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: writes what the descent walk did not find.
-    /// - provides: the reason a descent refusal names.
+    /// - ensures: writes that nothing places the value below the parameter for
+    ///   a value at no stage, and that its stage is not below the one wanted
+    ///   otherwise.
+    /// - provides: the reason a stage refusal names.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
     /// - executable: none — the formatter exposes no written text or
     ///   independent observation of the destination's failure.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — each failed rule titles a distinct subject.
+    /// - hypothesis: L3 — a value at no stage and one at a stage title distinct
+    ///   reasons.
     /// - witness: `locus::tests::recursion_titles_name_their_site_and_rule`
     #[inline]
     fn fmt(
@@ -1697,20 +1703,10 @@ impl fmt::Display for Descent
     ) -> fmt::Result
     {
         f.write_str(match self.0 {
-            DescentRefusal::NotOverData => "its type is not a function out of a datatype",
-            DescentRefusal::NotCaseOnArgument => {
-                "its body is not a case on its argument with one branch per constructor"
+            Standing::Top => {
+                "nothing places it below that parameter, neither as a field of it nor beside one"
             },
-            DescentRefusal::BranchNotOverFields => {
-                "a branch does not bind exactly its constructor's fields"
-            },
-            DescentRefusal::UnguardedSelfReference => {
-                "the recursive name stands other than at the head of a call"
-            },
-            DescentRefusal::NonDescendingCall => {
-                "a recursive call's argument is neither a field of the scrutinised constructor \
-                 nor a function field's result"
-            },
+            Standing::Staged(_) => "it stands at a stage not below the one wanted",
         })
     }
 }
@@ -1737,10 +1733,13 @@ mod tests
     use gandr_core_term::CoreArena;
     use gandr_core_term::session::ActionKind;
     use gandr_kernel_term::ConstructorTag;
-    use gandr_kernel_term::DescentRefusal;
     use gandr_kernel_term::FieldPosition;
     use gandr_kernel_term::OccurrenceSite;
     use gandr_kernel_term::ParameterPosition;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageDepth;
+    use gandr_kernel_term::StageId;
+    use gandr_kernel_term::Standing;
     use gandr_surface_corpus::Refusal;
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::Origin;
@@ -2080,7 +2079,11 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let unit = arena.value_unit();
-        let returned = arena.computation_return(unit);
+        let root = StageId::from(0_usize);
+        let below = Stage::Below {
+            anchor: root,
+            depth: StageDepth::ONE,
+        };
         let field = OccurrenceSite::Field {
             tag: ConstructorTag::from(3_usize),
             field: FieldPosition::from(5_usize),
@@ -2095,25 +2098,15 @@ mod tests
                 site: field,
                 index: 9_usize.into(),
             },
-            CheckRefusal::DescentNotReplayed {
-                at: returned,
-                reason: DescentRefusal::NotOverData,
+            CheckRefusal::StageNotBelow {
+                at: unit,
+                found: Standing::Top,
+                bound: below,
             },
-            CheckRefusal::DescentNotReplayed {
-                at: returned,
-                reason: DescentRefusal::NotCaseOnArgument,
-            },
-            CheckRefusal::DescentNotReplayed {
-                at: returned,
-                reason: DescentRefusal::BranchNotOverFields,
-            },
-            CheckRefusal::DescentNotReplayed {
-                at: returned,
-                reason: DescentRefusal::UnguardedSelfReference,
-            },
-            CheckRefusal::DescentNotReplayed {
-                at: returned,
-                reason: DescentRefusal::NonDescendingCall,
+            CheckRefusal::StageNotBelow {
+                at: unit,
+                found: Standing::Staged(Stage::At(root)),
+                bound: below,
             },
         ]
         .map(|refusal| Checked(refusal).to_string())

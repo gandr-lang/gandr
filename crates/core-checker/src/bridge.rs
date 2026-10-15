@@ -516,7 +516,7 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::IndexOccurrence(_)
         | CheckRefusal::NonUniformOccurrence(_)
         | CheckRefusal::CrossBlockReference { .. }
-        | CheckRefusal::DescentNotReplayed { .. }
+        | CheckRefusal::StageNotBelow { .. }
         | CheckRefusal::SessionMismatch { .. }
         | CheckRefusal::Linearity { .. }
         | CheckRefusal::UnenclosedRun { .. }
@@ -4501,8 +4501,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - fails: [`Refusal::Cyclic`] for an open value type;
     ///   [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Abstract`] for a
     ///   sealed atom whose abstract type did not cross, so nothing is minted at
-    ///   a guessed position; whatever the view or the decode refuses,
-    ///   converted.
+    ///   a guessed position, and naming [`UnadmittedFormer::Stage`] for a
+    ///   staged type, whose stage the kernel never reads from a term; whatever
+    ///   the view or the decode refuses, converted.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -4642,6 +4643,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     });
                 };
                 return Ok(self.erased_value_type(at, target.value_type_abstract(position)));
+            },
+            ValueTypeView::Staged { .. } => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::Stage,
+                });
             },
             ValueTypeView::Thunk(body) => (
                 Frame::ThunkType { at },

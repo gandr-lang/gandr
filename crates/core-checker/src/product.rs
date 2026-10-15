@@ -205,6 +205,7 @@ pub fn component(
                 | ValueTypeView::StaticPi { .. }
                 | ValueTypeView::Sigma { .. }
                 | ValueTypeView::Abstract(_)
+                | ValueTypeView::Staged { .. }
                 | ValueTypeView::Capability { .. }
                 | ValueTypeView::Session(_)
                 | ValueTypeView::Unknown => return Err(refused),
@@ -228,6 +229,7 @@ pub fn component(
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
+        | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::Unknown => return Err(refused),
@@ -346,6 +348,7 @@ pub fn flow_component(
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
+        | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::Unknown => return Err(refused),

@@ -231,6 +231,16 @@ pub enum ValueTypeView<'arena>
     /// A session type: the protocol state an endpoint is at, with its
     /// payloads.
     Session(&'arena gandr_core_term::session::SessionType),
+    /// A value type refined at a stage of a structural fixpoint: every value of
+    /// it is at that stage of the type it refines. Only the stage rules read
+    /// through it; every other rule meets it as a former of its own.
+    Staged
+    {
+        /// The type refined.
+        base: ValueTypeId,
+        /// The stage.
+        stage: gandr_kernel_term::Stage,
+    },
     /// The unknown type: a hole's or a mark's, or the decode of one.
     Unknown,
 }
@@ -289,9 +299,9 @@ pub enum CompTypeView<'arena>
 ///   atom, the empty product (the unit type), a thunk type, a universe of a
 ///   ground sort, a lift, a decode, a product of one or more components, a
 ///   dependent pair, a sum of any number of summands, a static Pi, a path type,
-///   a flow type, a run type, a sealed atom, a session type or a capability;
-///   the children are the node's own. The unknown type, and a decode whose code
-///   is a hole or a mark, view as [`ValueTypeView::Unknown`].
+///   a flow type, a run type, a sealed atom, a session type, a capability or a
+///   staged type; the children are the node's own. The unknown type, and a
+///   decode whose code is a hole or a mark, view as [`ValueTypeView::Unknown`].
 /// - provides: the one decision of which value types the judgement and the
 ///   bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
@@ -339,6 +349,7 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Abstract(atom)) => matches!(arena.value_type(value_type), Some(&ValueType::Abstract(found)) if found == atom),
     | Ok(ValueTypeView::Session(session)) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Session(ref found) if found == session)),
     | Ok(ValueTypeView::Capability { authority, grade, region }) => matches!(arena.value_type(value_type), Some(&ValueType::Capability { authority: ref found, grade: found_grade, region: found_region }) if found == authority && found_grade == grade && found_region == region),
+    | Ok(ValueTypeView::Staged { base, stage }) => matches!(arena.value_type(value_type), Some(&ValueType::Staged { base: found, stage: found_stage }) if found == base && found_stage == stage),
     | Ok(ValueTypeView::Unknown) => value_type_knowledge(arena, value_type) == Knowledge::Unknown,
     | Err(FragmentRefusal::DanglingNode { node }) => arena.value_type(value_type).is_none() && node == CoreNode::Type(TypeNode::Value(value_type)),
     | Err(FragmentRefusal::OutOfFragment { at, former }) => at == CoreNode::Type(TypeNode::Value(value_type))
@@ -425,6 +436,7 @@ pub fn value_type_view(
             grade,
             region,
         }),
+        ValueType::Staged { base, stage } => Ok(ValueTypeView::Staged { base, stage }),
         ValueType::Unknown => Ok(ValueTypeView::Unknown),
     }
 }

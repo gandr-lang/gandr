@@ -239,7 +239,8 @@ pub fn payload_codes(
         | ValueType::Lift { .. }
         | ValueType::Element { .. }
         | ValueType::Abstract(_)
-        | ValueType::StaticPi { .. } => Err(SessionError::PayloadTelescope),
+        | ValueType::StaticPi { .. }
+        | ValueType::Staged { .. } => Err(SessionError::PayloadTelescope),
     }
 }
 
@@ -296,7 +297,8 @@ pub fn validate_graph(
         | ValueType::Lift { .. }
         | ValueType::Element { .. }
         | ValueType::Abstract(_)
-        | ValueType::StaticPi { .. } => return Err(SessionError::PayloadTelescope),
+        | ValueType::StaticPi { .. }
+        | ValueType::Staged { .. } => return Err(SessionError::PayloadTelescope),
     };
     let mut seen = alloc::vec![false; graph.nodes.len()];
     let mut binders = alloc::vec![false; graph.nodes.len()];

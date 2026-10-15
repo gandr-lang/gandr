@@ -27,7 +27,6 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
-use gandr_kernel_term::DescentRefusal;
 use gandr_kernel_term::FieldPosition;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
@@ -256,8 +255,8 @@ fn recursive_data_checkpoints_round_trip_and_resume()
     assert!(
         matches!(
             typings[2],
-            Typing::Refused(Refusal::DescentNotReplayed {
-                reason: DescentRefusal::NotOverData,
+            Typing::Refused(Refusal::ShapeMismatch {
+                wanted: gandr_core_checker::ExpectedShape::Arrow,
                 ..
             })
         ),

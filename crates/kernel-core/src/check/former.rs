@@ -41,6 +41,7 @@ use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::StageId;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -196,7 +197,8 @@ pub(super) fn level(
         | &ValueType::Lift { .. }
         | &ValueType::Element { .. }
         | &ValueType::Abstract(_)
-        | &ValueType::StaticPi { .. } => Err(KernelError::DataKindNotUniverse),
+        | &ValueType::StaticPi { .. }
+        | &ValueType::Staged { .. } => Err(KernelError::DataKindNotUniverse),
     }
 }
 
@@ -330,7 +332,8 @@ pub(super) fn constructor(
             | &ValueType::Lift { .. }
             | &ValueType::Element { .. }
             | &ValueType::Abstract(_)
-            | &ValueType::StaticPi { .. } => {
+            | &ValueType::StaticPi { .. }
+            | &ValueType::Staged { .. } => {
                 return Err(super::value_shape_mismatch(
                     arena,
                     ExpectedValueShape::Data,
@@ -458,9 +461,11 @@ pub(super) enum Looped
 /// - requires: the scrutinee has the supplied data classifier; motive formation
 ///   is checked by the surrounding judgement.
 /// - ensures: exactly one branch obligation per constructor, in table order,
-///   then, for a case carrying a loop arm per loop of its sort
-///   (`loops::loops`), one per loop arm at `loops::arm_type`; [`Looped::Owed`]
-///   exactly when the sort has loops and the case carries no loop arm.
+///   each binding its recursive fields at the stage the case `opened`
+///   (`recursion::stage_branch`) when it opened one, then, for a case carrying
+///   a loop arm per loop of its sort (`loops::loops`), one per loop arm at
+///   `loops::arm_type`; [`Looped::Owed`] exactly when the sort has loops and
+///   the case carries no loop arm.
 /// - fails: wrong shape or a non-exhaustive branch vector: neither one branch
 ///   per constructor nor one more per loop. A presented type's rules are an
 ///   obligation the caller decides once the branches have checked, by
@@ -475,6 +480,7 @@ pub(super) enum Looped
 /// - hypothesis: L3 — omitted and surplus arms both refuse before branch
 ///   checking; a circle case with its loop arm checks the arm.
 /// - witness: `native_formers::native_formers::data_case_checks_coverage_and_motive`
+/// - witness: `recursive_data::recursive_data::a_recursion_descends_on_its_first_parameter`
 /// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|result| result.1.iter().all(|goal| matches!(goal, &Goal::CheckComp(..)))))]
 pub(super) fn case(
@@ -482,7 +488,7 @@ pub(super) fn case(
     (entries, presentations): (&[AdmittedDeclaration], &crate::presented::Presentations),
     session: &mut SupportContext,
     case: ComputationId,
-    datatype: ValueTypeId,
+    (datatype, opened): (ValueTypeId, Maybe<StageId, super::recursion::Unstaged>),
 ) -> Result<(CompTypeId, Vec<Goal>, Looped), KernelError>
 {
     let (scrutinee, motive, count) = match arena.computation(case).ok_or(KernelError::ArenaFault)? {
@@ -533,7 +539,8 @@ pub(super) fn case(
             | &ValueType::Lift { .. }
             | &ValueType::Element { .. }
             | &ValueType::Abstract(_)
-            | &ValueType::StaticPi { .. } => {
+            | &ValueType::StaticPi { .. }
+            | &ValueType::Staged { .. } => {
                 return Err(super::value_shape_mismatch(
                     arena,
                     ExpectedValueShape::Data,
@@ -571,6 +578,12 @@ pub(super) fn case(
             fields,
             motive,
         )?;
+        let expected = match opened {
+            Maybe::Present(child) => {
+                super::recursion::stage_branch(arena, session, datatype, expected, (fields, child))?
+            },
+            Maybe::Absent(_plain) => expected,
+        };
         let branch = match arena.computation(case) {
             Some(&Computation::DataCase { ref branches, .. }) => branches
                 .get(index)

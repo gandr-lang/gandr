@@ -66,8 +66,11 @@ use super::shapes;
 /// declaration's own answer is not counted there. A position inside a comment
 /// is hovered but not counted: a comment is no hover target, and corpus items
 /// carry comments saying what they demonstrate, so counting them would move
-/// the count for documentation alone.
-const UNANSWERED_CEILING: usize = 28_662;
+/// the count for documentation alone. The line end closing a line comment is
+/// still counted (#456): the comments on `fragment/stage-not-below.gandr`
+/// brought nine such positions and the blank line after its header, the ten
+/// added here to the count measured before them.
+const UNANSWERED_CEILING: usize = 28_662 + 10;
 
 /// The misses each node kind's hovers may hold, as [`KindFloor`] reads a row:
 /// the kind, then counts of the corpus positions whose smallest meaningful

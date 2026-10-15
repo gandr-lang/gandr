@@ -139,7 +139,7 @@ mod static_normalization
             Position::ValueType(id) => core.value_type(id).map_or_else(|| ret.is_empty(), |held| match *held {
                 ValueType::Product(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(Position::ValueType)),
                 ValueType::Element { code, .. } => ret.as_slice() == [Position::Value(code)],
-                ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Base(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Capability { .. } => ret.is_empty(),
+                ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Base(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Capability { .. } | ValueType::Staged { .. } => ret.is_empty(),
             }),
         }
     )]
@@ -460,7 +460,8 @@ mod static_normalization
                         | ValueType::Unknown
                         | ValueType::Stack { .. }
                         | ValueType::Session(_)
-                        | ValueType::Capability { .. }) => panic!("no type child below {other:?}"),
+                        | ValueType::Capability { .. }
+                        | ValueType::Staged { .. }) => panic!("no type child below {other:?}"),
                     }
                 },
                 (Position::ValueType(id), Position::Value(child)) => {
@@ -490,7 +491,8 @@ mod static_normalization
                         | ValueType::Unknown
                         | ValueType::Stack { .. }
                         | ValueType::Session(_)
-                        | ValueType::Capability { .. }) => panic!("no code child below {other:?}"),
+                        | ValueType::Capability { .. }
+                        | ValueType::Staged { .. }) => panic!("no code child below {other:?}"),
                     }
                 },
             };

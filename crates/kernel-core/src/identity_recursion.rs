@@ -661,7 +661,8 @@ pub fn interpret(
                     | ValueType::Lift { .. }
                     | ValueType::Element { .. }
                     | ValueType::Abstract(_)
-                    | ValueType::StaticPi { .. } => Clause::Product(left, right),
+                    | ValueType::StaticPi { .. }
+                    | ValueType::Staged { .. } => Clause::Product(left, right),
                 }
             },
             ValueType::List(element) => {
@@ -707,7 +708,8 @@ pub fn interpret(
             | ValueType::Universe { .. }
             | ValueType::Lift { .. }
             | ValueType::Element { .. }
-            | ValueType::StaticPi { .. } => return Err(RelationError::UnsupportedType(ty)),
+            | ValueType::StaticPi { .. }
+            | ValueType::Staged { .. } => return Err(RelationError::UnsupportedType(ty)),
         };
         let id = RelationId(nodes.len());
         nodes.push(Node {

@@ -982,7 +982,7 @@ impl TermArena
             ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => self.value_type(domain).is_some() && self.value(left).is_some() && self.value(right).is_some(),
             ValueType::Thunk(body) => self.comp_type(body).is_some(),
             ValueType::Session { payloads, .. } => self.value_type(payloads).is_some(),
-            ValueType::Lift { inner, .. } | ValueType::List(inner) => self.value_type(inner).is_some(),
+            ValueType::Lift { inner, .. } | ValueType::List(inner) | ValueType::Staged { base: inner, .. } => self.value_type(inner).is_some(),
             ValueType::Element { code, .. } => self.value(code).is_some(),
             ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => true,
         }, captures: entry = (self.watermark(), core::mem::discriminant(&value_type)),
@@ -2155,6 +2155,37 @@ impl TermArena
         self.alloc_value_type(ValueType::Abstract(atom))
     }
 
+    /// Mint `base` refined at `stage`, the refinement of a staged `base`
+    /// replacing its stage.
+    ///
+    /// # Specification
+    /// - requires: `base` names a value-type node already allocated in this
+    ///   arena.
+    /// - ensures: a fresh staged node at `stage` whose base is `base`, or the
+    ///   base `base` refines when `base` is itself staged; never a stage over a
+    ///   stage.
+    /// - provides: the only way to mint this former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a plain base and a staged one separate the
+    ///   replacement from a nested stage.
+    /// - witness: `arena::tests::a_stage_refines_its_base_once`
+    #[spec(ensures: |ret| matches!(self.value_type(ret), Some(&ValueType::Staged { base: minted, stage: held }) if held == stage && !matches!(self.value_type(minted), Some(ValueType::Staged { .. }))))]
+    #[inline]
+    pub fn value_type_staged(
+        &mut self,
+        base: ValueTypeId,
+        stage: crate::Stage,
+    ) -> ValueTypeId
+    {
+        let base = match self.value_type(base) {
+            Some(&ValueType::Staged { base: refined, .. }) => refined,
+            Some(_) | None => base,
+        };
+        self.alloc_value_type(ValueType::Staged { base, stage })
+    }
+
     /// Mint the type a code denotes, over an already-allocated code value,
     /// decoding a value quote on mint.
     ///
@@ -3023,7 +3054,7 @@ ValueType::Session { payloads, .. } => ret.as_slice() == [AnyNode::ValueType(pay
 ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
 ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => ret.as_slice() == [AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)],
 ValueType::Thunk(body) => ret.as_slice() == [AnyNode::CompType(body)],
-ValueType::Lift { inner, .. } | ValueType::List(inner) => ret.as_slice() == [AnyNode::ValueType(inner)],
+ValueType::Lift { inner, .. } | ValueType::List(inner) | ValueType::Staged { base: inner, .. } => ret.as_slice() == [AnyNode::ValueType(inner)],
 ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
 }),
         AnyNode::CompType(id) => match self.comp_type(id) {
@@ -3339,7 +3370,11 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     ]);
                 },
                 Some(&ValueType::Thunk(body)) => children.push(AnyNode::CompType(body)),
-                Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+                Some(
+                    &ValueType::Lift { inner, .. }
+                    | &ValueType::List(inner)
+                    | &ValueType::Staged { base: inner, .. },
+                ) => {
                     children.push(AnyNode::ValueType(inner));
                 },
                 // The one edge that leaves the type language: a code is a value,
@@ -3801,6 +3836,39 @@ mod tests
         );
         arena.truncate_to(ArenaWatermark::default());
         assert_eq!(arena, TermArena::new());
+    }
+
+    #[test]
+    fn a_stage_refines_its_base_once()
+    {
+        use super::ValueType;
+
+        let mut arena = TermArena::new();
+        let integer = arena.value_type_base(super::BaseType::Integer);
+        let root = crate::StageId::from(0_usize);
+        let child = crate::StageId::from(1_usize);
+        let at_root = arena.value_type_staged(integer, crate::Stage::At(root));
+        assert_eq!(
+            Some(&ValueType::Staged {
+                base: integer,
+                stage: crate::Stage::At(root),
+            }),
+            arena.value_type(at_root),
+            "a plain base is refined as it stands"
+        );
+        let below = crate::Stage::Below {
+            anchor: child,
+            depth: crate::StageDepth::ONE,
+        };
+        let restaged = arena.value_type_staged(at_root, below);
+        assert_eq!(
+            Some(&ValueType::Staged {
+                base: integer,
+                stage: below,
+            }),
+            arena.value_type(restaged),
+            "a staged base gives up its stage rather than nesting it"
+        );
     }
 
     #[test]

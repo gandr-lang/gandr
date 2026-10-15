@@ -290,7 +290,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::IndexOccurrence(_) => "the declared type inside an index",
         CheckRefusal::NonUniformOccurrence(_) => "the declared type at other arguments",
         CheckRefusal::CrossBlockReference { .. } => "names a later declaration",
-        CheckRefusal::DescentNotReplayed { .. } => "a descent claim that does not replay",
+        CheckRefusal::StageNotBelow { .. } => "not below the stage its recursion wants",
         CheckRefusal::SessionMismatch { defect, .. } => match defect {
             ProtocolDefect::Action { .. } => "an action the endpoint's state does not admit",
             ProtocolDefect::Label => "a label the endpoint's state does not offer",

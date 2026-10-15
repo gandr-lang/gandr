@@ -570,10 +570,14 @@ fn producer(
         ],
         ProducerNode::Fixpoint { body, evidence } => alloc::vec![
             text!("fix"),
-            Piece::Text(Token(match evidence {
-                FixpointEvidence::Partial => "{x; force(α) ⇒ ",
-                FixpointEvidence::StructuralDescent => "[<]{x; force(α) ⇒ ",
-            })),
+            match evidence {
+                FixpointEvidence::Partial => text!("{x; force(α) ⇒ "),
+                FixpointEvidence::StructuralDescent => text!("[<]{x; force(α) ⇒ "),
+                FixpointEvidence::Staged { position } => Piece::Owned(alloc::format!(
+                    "[<{}]{{x; force(α) ⇒ ",
+                    usize::from(position)
+                )),
+            },
             Piece::Command(body, depth),
             text!("}"),
         ],

@@ -2340,6 +2340,9 @@ pub fn loose_reach(
                     ValueType::Run(session) => {
                         work.push((CoreNode::Term(TermNode::Value(session)), depth));
                     },
+                    ValueType::Staged { base, .. } => {
+                        work.push((CoreNode::Type(TypeNode::Value(base)), depth));
+                    },
                     ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                         work.extend(
                             parts

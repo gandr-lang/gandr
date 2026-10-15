@@ -35,8 +35,9 @@ use gandr_core_term::BinderDepth;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
-use gandr_kernel_term::DescentRefusal;
 use gandr_kernel_term::OccurrenceSite;
+use gandr_kernel_term::Stage;
+use gandr_kernel_term::Standing;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ItemOrdinal;
@@ -586,13 +587,16 @@ pub enum Refusal
         /// What the later position names.
         index: Reference,
     },
-    /// A fixpoint's structural-descent claim does not replay.
-    DescentNotReplayed
+    /// A value checked where the recursion typing wants a stage it does not
+    /// stand at or below.
+    StageNotBelow
     {
-        /// The fixpoint.
+        /// The value.
         at: Site,
-        /// The rule of the descent walk that failed.
-        reason: DescentRefusal,
+        /// Where it stands.
+        found: Standing,
+        /// The stage it was wanted at or below.
+        bound: Stage,
     },
     /// Two accumulated rows assign different operation types to one interface.
     EffectSignatureConflict
@@ -1156,7 +1160,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
      | (CheckRefusal::IndexOccurrence(site), &Refusal::IndexOccurrence(projected))
      | (CheckRefusal::NonUniformOccurrence(site), &Refusal::NonUniformOccurrence(projected)) = (matched_left_value, matched_right_value) { site == projected }
  else if let CheckRefusal::CrossBlockReference { site, index } = matched_left_value && let Refusal::CrossBlockReference { site: projected, index: ref returned } = *matched_right_value { site == projected && *returned == self.layout.resolve(index) }
- else if let CheckRefusal::DescentNotReplayed { at, reason } = matched_left_value && let Refusal::DescentNotReplayed { at: projected, reason: returned } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && reason == returned }
+ else if let CheckRefusal::StageNotBelow { at, found, bound } = matched_left_value && let Refusal::StageNotBelow { at: projected, found: stood, bound: wanted } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stood == found && wanted == bound }
  else if let CheckRefusal::UnenclosedRun { at } = matched_left_value && let Refusal::UnenclosedRun { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::SessionMismatch { at, endpoint, state, defect } = matched_left_value && let Refusal::SessionMismatch { at: projected, endpoint: returned, state: ref stored, defect: kept } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && returned == self.endpoint(endpoint) && *stored == self.value_type(state) && kept == defect }
  else if let CheckRefusal::Linearity { at, defect } = matched_left_value && let Refusal::Linearity { at: projected, defect: ref stored } = *matched_right_value { projected == self.core_site(at) && *stored == self.linearity(defect) }
@@ -1444,9 +1448,10 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 site,
                 index: self.layout.resolve(index),
             },
-            CheckRefusal::DescentNotReplayed { at, reason } => Refusal::DescentNotReplayed {
-                at: self.site(ArenaNode::Computation(at)),
-                reason,
+            CheckRefusal::StageNotBelow { at, found, bound } => Refusal::StageNotBelow {
+                at: self.site(ArenaNode::Value(at)),
+                found,
+                bound,
             },
             CheckRefusal::UnenclosedRun { at } => Refusal::UnenclosedRun {
                 at: self.site(ArenaNode::Value(at)),

@@ -1482,6 +1482,37 @@ impl CoreArena
         self.alloc_value_type(ValueType::Abstract(atom))
     }
 
+    /// Mint `base` refined at `stage`, the refinement of a staged `base`
+    /// replacing its stage.
+    ///
+    /// # Specification
+    /// - requires: `base` names a value-type node already allocated in this
+    ///   arena.
+    /// - ensures: a fresh staged node at `stage` whose base is `base`, or the
+    ///   base `base` refines when `base` is itself staged; never a stage over a
+    ///   stage.
+    /// - provides: the only way to mint this former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a plain base and a staged one separate the
+    ///   replacement from a nested stage.
+    /// - witness: `arena::tests::a_stage_refines_its_base_once`
+    #[spec(ensures: |ret| matches!(self.value_type(ret), Some(&ValueType::Staged { base: minted, stage: held }) if held == stage && !matches!(self.value_type(minted), Some(ValueType::Staged { .. }))))]
+    #[inline]
+    pub fn value_type_staged(
+        &mut self,
+        base: ValueTypeId,
+        stage: gandr_kernel_term::Stage,
+    ) -> ValueTypeId
+    {
+        let base = match self.value_type(base) {
+            Some(&ValueType::Staged { base: refined, .. }) => refined,
+            Some(_) | None => base,
+        };
+        self.alloc_value_type(ValueType::Staged { base, stage })
+    }
+
     /// Mint the value type a code denotes, over an already-allocated code
     /// value, decoding a quote on the spot.
     ///
@@ -2453,6 +2484,37 @@ mod tests
             }),
             arena.value_type(computation_universe),
             "and so does the computation universe"
+        );
+    }
+
+    #[test]
+    fn a_stage_refines_its_base_once()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let root = gandr_kernel_term::StageId::from(0_usize);
+        let child = gandr_kernel_term::StageId::from(1_usize);
+        let at_root = arena.value_type_staged(integer, gandr_kernel_term::Stage::At(root));
+        assert_eq!(
+            Some(&ValueType::Staged {
+                base: integer,
+                stage: gandr_kernel_term::Stage::At(root),
+            }),
+            arena.value_type(at_root),
+            "a plain base is refined as it stands"
+        );
+        let below = gandr_kernel_term::Stage::Below {
+            anchor: child,
+            depth: gandr_kernel_term::StageDepth::ONE,
+        };
+        let restaged = arena.value_type_staged(at_root, below);
+        assert_eq!(
+            Some(&ValueType::Staged {
+                base: integer,
+                stage: below,
+            }),
+            arena.value_type(restaged),
+            "a staged base gives up its stage rather than nesting it"
         );
     }
 

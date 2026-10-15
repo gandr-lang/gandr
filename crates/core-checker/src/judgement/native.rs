@@ -183,6 +183,110 @@ impl Machine<'_, '_>
         Ok(Step::Descend(Goal::Form(TypeNode::Value(datatype))))
     }
 
+    /// Check a nominal constructor at a stage: its recursive fields one step
+    /// below the stage, its other fields at their declared types.
+    ///
+    /// # Specification
+    /// - requires: `term` is a constructor and `owed` what the stage it is
+    ///   checked at owes ([`crate::recursion::constructor_owes`]).
+    /// - ensures: the annotation forms before the declaration-ordered field
+    ///   checks; a recursive field checks at `owed.fields`, any other at its
+    ///   declared type; the constructor checks once they have.
+    /// - fails: [`CheckRefusal::TypeMismatch`] for an annotation that does not
+    ///   convert with the type the stage refines;
+    ///   [`CheckRefusal::StageNotBelow`] for a constructor with no recursive
+    ///   field where no hypothesis shows the wanted stage above the first
+    ///   ([`crate::recursion::room`]); otherwise as
+    ///   [`Self::native_constructor`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal`] names the failed premise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a successor rebuilt two cases deep is admitted at the
+    ///   bound, one rebuilt one case deep is refused, and a zero is admitted
+    ///   under a successor's field and refused under the zero arm.
+    /// - witness: `recursion::tests::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
+    /// - witness: `recursion::tests::a_nullary_argument_needs_a_value_below_the_stage`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
+    pub(super) fn staged_constructor(
+        &mut self,
+        term: ValueId,
+        expected: ValueTypeId,
+        owed: crate::recursion::Owed,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let &Value::Constructor {
+            datatype,
+            tag,
+            ref fields,
+        } = self.value(term)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let count = fields.len();
+        if crate::conversion::equivalent(self.context, datatype, owed.base)?
+            != crate::conversion::Agreement::Convertible
+        {
+            return Err(CheckRefusal::TypeMismatch(
+                crate::refusal::Mismatch::Value {
+                    at: term,
+                    synthesised: datatype,
+                    expected,
+                },
+            ));
+        }
+        let signature = former::signature(self.context, datatype)?;
+        let declared = signature
+            .constructors()
+            .get(usize::from(tag))
+            .ok_or(CheckRefusal::UnknownConstructor { at: term, tag })?;
+        if declared.len() != count {
+            return Err(CheckRefusal::ConstructorArity(term));
+        }
+        self.wait(Frame::NativeYield(Produced::Checked));
+        let mut recursive = 0_usize;
+        for (index, &field_type) in declared.iter().enumerate().rev() {
+            let declared_type = former::instantiate(
+                self.context,
+                datatype,
+                field_type,
+                gandr_core_term::BinderDepth::from(signature.parameters().len()),
+            )?;
+            let wanted =
+                crate::recursion::stage_field(self.context, declared_type, datatype, owed.fields)?;
+            if wanted != declared_type {
+                // A recursive field stands one step below: the constructor is
+                // above it whatever stage the field is at.
+                recursive = recursive.saturating_add(1);
+            }
+            let &Value::Constructor { ref fields, .. } = self.value(term)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            let field = fields
+                .get(index)
+                .copied()
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            self.wait(Frame::NativeNext(Goal::Value {
+                term: field,
+                direction: Direction::Check(wanted),
+            }));
+        }
+        if recursive == 0
+            && crate::recursion::room(self.context, owed.wanted)?
+                == crate::recursion::Room::Unwitnessed
+        {
+            return Err(CheckRefusal::StageNotBelow {
+                at: term,
+                found: gandr_kernel_term::Standing::Top,
+                bound: owed.wanted,
+            });
+        }
+        Ok(Step::Descend(Goal::Form(TypeNode::Value(datatype))))
+    }
+
     /// Queue each genuine parameter argument at its instantiated classifier.
     ///
     /// # Specification
@@ -367,10 +471,13 @@ impl Machine<'_, '_>
     /// # Specification
     /// - requires: `term` is a case whose scrutinee synthesized `datatype`.
     /// - ensures: exhaustive coverage before motive checking; branches remain
-    ///   ordinary ambient functions and are not given implicit field binders.
-    ///   The root a structural fixpoint marked is taken whichever case this is;
-    ///   over a presented type with rules the case is read as that fixpoint
-    ///   when it is the marked case, and as itself otherwise.
+    ///   ordinary ambient functions and are not given implicit field binders. A
+    ///   scrutinee at a stage is read as the type the stage refines, and the
+    ///   case opens one stage below it for its recursive fields
+    ///   ([`crate::recursion::open_case`]). The root a structural fixpoint
+    ///   marked is taken whichever case this is; over a presented type with
+    ///   rules the case is read as that fixpoint when it is the marked case,
+    ///   and as itself otherwise.
     /// - fails: non-data scrutinee, wrong coverage or absent declaration.
     /// - panics: none.
     ///
@@ -391,6 +498,7 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         let root = core::mem::replace(&mut self.root, Maybe::Absent(root::Absent::Unmarked));
+        let (datatype, opened) = crate::recursion::open_case(self.context, datatype)?;
         // A scrutinee at a looped point's path is split over the words its
         // free cells mint.
         let datatype = self.context.whnf_value_type(datatype)?;
@@ -417,6 +525,7 @@ impl Machine<'_, '_>
                 term,
                 datatype,
                 respect: Maybe::Absent(obligation::Absent::Absurd),
+                opened,
             });
             self.context.binders().open(Zone::Intuitionistic, datatype);
             return Ok(Step::Descend(Goal::Form(TypeNode::Computation(motive))));
@@ -489,6 +598,7 @@ impl Machine<'_, '_>
             term,
             datatype,
             respect,
+            opened,
         });
         self.context.binders().open(Zone::Intuitionistic, datatype);
         Ok(Step::Descend(Goal::Form(TypeNode::Computation(motive))))
@@ -500,9 +610,11 @@ impl Machine<'_, '_>
     /// # Specification
     /// - requires: the motive has formed under its one open scrutinee binder.
     /// - ensures: that binder closes before branch functions check; the final
-    ///   type substitutes the actual scrutinee into the motive; with `respect`
-    ///   present the rules are decided after every branch has checked and
-    ///   before the type is yielded.
+    ///   type substitutes the actual scrutinee into the motive; when the case
+    ///   `opened` a stage, each branch binds its recursive fields at it
+    ///   ([`crate::recursion::stage_branch`]); with `respect` present the rules
+    ///   are decided after every branch has checked and before the type is
+    ///   yielded.
     /// - fails: the internal scope guard or telescope instantiation.
     /// - panics: none.
     ///
@@ -522,6 +634,7 @@ impl Machine<'_, '_>
         term: ComputationId,
         datatype: ValueTypeId,
         respect: Maybe<Reading, obligation::Absent>,
+        opened: Maybe<gandr_kernel_term::StageId, crate::recursion::Unstaged>,
     ) -> Result<Step, CheckRefusal>
     {
         self.close()?;
@@ -638,6 +751,21 @@ impl Machine<'_, '_>
         for index in (0 .. constructors.constructors().len()).rev() {
             let expected =
                 former::branch_type(self.context, datatype, ConstructorTag::from(index), motive)?;
+            let expected = match opened {
+                Maybe::Present(child) => {
+                    let fields = constructors
+                        .constructors()
+                        .get(index)
+                        .map_or(&[][..], alloc::vec::Vec::as_slice);
+                    crate::recursion::stage_branch(
+                        self.context,
+                        datatype,
+                        expected,
+                        (fields, child),
+                    )?
+                },
+                Maybe::Absent(_plain) => expected,
+            };
             let branch = match self.computation(term)? {
                 &Computation::DataCase { ref branches, .. } => branches
                     .get(index)
@@ -686,7 +814,7 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// - requires: `body` is the body of the fixpoint `fixpoint`, whose
-    ///   structural-descent claim replayed at `expected`.
+    ///   structural evidence stages its first parameter at `expected`.
     /// - ensures: the case under the body's lambda beside [`Reading::Fold`]
     ///   naming the fixpoint, the domain of `expected`, read as its words where
     ///   it is a path at a looped point, and `expected` itself, when that
@@ -941,6 +1069,7 @@ impl Machine<'_, '_>
             | ValueTypeView::Product(_)
             | ValueTypeView::StaticPi { .. }
             | ValueTypeView::Abstract(_)
+            | ValueTypeView::Staged { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_) => return Err(CheckRefusal::MachineInvariant),
         };

@@ -323,6 +323,9 @@ impl Image
                 ValueType::List(ref mut ty)
                 | ValueType::Lift {
                     inner: ref mut ty, ..
+                }
+                | ValueType::Staged {
+                    base: ref mut ty, ..
                 },
             )
             | Self::CompType(CompType::Returner {
@@ -726,6 +729,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | ValueType::Lift { .. }
                                 | ValueType::Element { .. }
                                 | ValueType::Abstract(_)
+                                | ValueType::Staged { .. }
                                 | ValueType::StaticPi { .. }
                                 | ValueType::Unknown
                                 | ValueType::Stack { .. } => {},

@@ -2208,7 +2208,8 @@ fn collect_reachable(
                         payloads: inner, ..
                     }
                     | &ValueType::Lift { inner, .. }
-                    | &ValueType::List(inner),
+                    | &ValueType::List(inner)
+                    | &ValueType::Staged { base: inner, .. },
                 ) => {
                     pending.push(AnyNode::ValueType(inner));
                 },

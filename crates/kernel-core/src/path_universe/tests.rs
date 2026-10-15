@@ -101,7 +101,7 @@ ValueType::Data {ref arguments,..} => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(),
 ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
-ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::List(_) => 1,
+ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::List(_) | ValueType::Staged { .. } => 1,
 ValueType::Session { .. } | ValueType::FlowUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Base(_) | ValueType::Sigma { .. } | ValueType::Universe { .. } | ValueType::Abstract(_) => 0,
 }),
         AnyNode::CompType(id) => match arena.comp_type(id) {
@@ -227,7 +227,7 @@ fn children(
                 second: b,
             } => vec![A(a), A(b)],
             ValueType::Thunk(a) => vec![C(a)],
-            ValueType::Lift { inner: a, .. } => vec![A(a)],
+            ValueType::Lift { inner: a, .. } | ValueType::Staged { base: a, .. } => vec![A(a)],
             ValueType::Element { code: a, .. } => vec![V(a)],
             ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => Vec::new(),
         },
@@ -601,6 +601,9 @@ fn translate(
                         core.value_type_path_universe(values[&source], values[&target])
                     },
                     ValueType::Base(base) => core.value_type_base(base),
+                    ValueType::Staged { base, stage } => {
+                        core.value_type_staged(types[&base], stage)
+                    },
                     ValueType::Product(ref parts) => core.value_type_product(
                         &parts.iter().map(|part| types[part]).collect::<Vec<_>>(),
                     ),

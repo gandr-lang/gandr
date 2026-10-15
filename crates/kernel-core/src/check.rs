@@ -866,7 +866,8 @@ enum TypeLevelFrame
 ///   [`KernelError::LevelArithmetic`], [`KernelError::UniverseViolation`],
 ///   [`KernelError::LevelOracleFault`], [`KernelError::NotAnAbstractType`],
 ///   [`KernelError::AbstractTypeKindNotUniverse`],
-///   [`KernelError::StaticClassifierExpected`], [`KernelError::ArenaFault`].
+///   [`KernelError::StaticClassifierExpected`], [`KernelError::ArenaFault`];
+///   [`KernelError::StagePresented`] for a type naming a stage.
 /// - panics: none.
 ///
 /// # Errors
@@ -1116,6 +1117,9 @@ where
                             goal = TypeLevelGoal::Value(inner);
                             continue 'expand;
                         },
+                        // Formation reads presented types alone, and admission
+                        // alone mints a stage.
+                        ValueType::Staged { .. } => return Err(KernelError::StagePresented),
                     }
                 },
                 TypeLevelGoal::Comp(id) => {
@@ -1263,7 +1267,7 @@ where
 /// - witness: `check::tests::an_abstract_type_forms_at_its_declared_universe`
 /// - witness: `check::tests::an_atom_naming_a_definition_is_not_an_abstract_type`
 /// - witness: `check::tests::a_forward_atom_reference_is_not_an_abstract_type`
-#[spec(ensures: |ret| match entries.get(usize::from(atom)).map(AdmittedDeclaration::content) { Some(&DeclarationContent::AbstractType { kind, .. }) => arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node { ValueType::Universe { sort: GroundSort::Value, ref level } => ret.as_ref().is_ok_and(|actual| actual == level), ValueType::Data { .. } | ValueType::Record(_) | ValueType::Session { .. } | ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } => ret.is_err() }), _ => ret.is_err() })]
+#[spec(ensures: |ret| match entries.get(usize::from(atom)).map(AdmittedDeclaration::content) { Some(&DeclarationContent::AbstractType { kind, .. }) => arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node { ValueType::Universe { sort: GroundSort::Value, ref level } => ret.as_ref().is_ok_and(|actual| actual == level), ValueType::Data { .. } | ValueType::Record(_) | ValueType::Session { .. } | ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Staged { .. } => ret.is_err() }), _ => ret.is_err() })]
 fn abstract_atom_level(
     arena: &TermArena,
     entries: &[AdmittedDeclaration],
@@ -1303,7 +1307,8 @@ fn abstract_atom_level(
         | ValueType::Abstract(_)
         | ValueType::Path { .. }
         | ValueType::Flow { .. }
-        | ValueType::StaticPi { .. } => Err(KernelError::AbstractTypeKindNotUniverse {
+        | ValueType::StaticPi { .. }
+        | ValueType::Staged { .. } => Err(KernelError::AbstractTypeKindNotUniverse {
             actual: value_type_witness(arena, kind),
         }),
     }
@@ -1356,7 +1361,8 @@ fn static_classifier(
         | ValueType::Element { .. }
         | ValueType::Abstract(_)
         | ValueType::Path { .. }
-        | ValueType::Flow { .. } => Err(KernelError::StaticClassifierExpected {
+        | ValueType::Flow { .. }
+        | ValueType::Staged { .. } => Err(KernelError::StaticClassifierExpected {
             actual: value_type_witness(arena, classifier),
         }),
     }
@@ -1821,6 +1827,9 @@ enum Frame
     },
     /// A binder scope closes: pop the innermost context slot.
     ScopeExit,
+    /// A structural fixpoint's body has checked: the goals after it stand
+    /// under one stage fewer.
+    StageExit,
     /// A binder scope has closed: strengthen the computation type synthesized
     /// under it back out of it.
     Strengthen,
@@ -2243,6 +2252,13 @@ where
     // not.
     let mut root: Maybe<(ComputationId, respect::Reading), respect::root::Absent> =
         Maybe::Absent(respect::root::Absent::Unmarked);
+    // The stages this run's structural fixpoints and their cases mint, and how
+    // many fixpoint bodies the current goal stands under. A goal under one is
+    // neither recalled nor memoized: whether a constructor with no recursive
+    // field stands below a stage depends on every value in scope, beyond the
+    // binders its support reaches, and a stage is this run's own.
+    let mut stages = crate::stage_order::StageOrder::default();
+    let mut staged_bodies = 0_usize;
     'expand: loop {
         // Consult the memo for this goal's support before reading the node.
         // When the memo is inactive this whole block — the support
@@ -2250,7 +2266,10 @@ where
         // monomorphization removes, so the memoless path compiles to the code
         // it would have with no memo at all.
         let mut recalled: Option<Produced> = None;
-        if matches!(M::ACTIVITY, MemoActivity::Active) && matches!(root, Maybe::Absent(_)) {
+        if matches!(M::ACTIVITY, MemoActivity::Active)
+            && matches!(root, Maybe::Absent(_))
+            && staged_bodies == 0
+        {
             let support = NodeSupport::build(arena, session, goal.support(), context.as_slice());
             if let Some(hit) = memo.recall(&support) {
                 recalled = match Produced::of_outcome(hit.outcome()) {
@@ -2699,6 +2718,48 @@ where
                     goal = Goal::CheckValue(id, fibre);
                     continue 'expand;
                 },
+                // A constructor wanted at a stage checks its recursive fields
+                // one step below it, and one with none checks only where a
+                // value in scope shows the stage holds one; its annotation
+                // then meets the type the stage refines.
+                Goal::CheckValue(id, expected)
+                    if matches!(arena.value(id), Some(Value::Constructor { .. }))
+                        && matches!(arena.value_type(expected), Some(ValueType::Staged { .. })) =>
+                {
+                    let Some(&ValueType::Staged { base, stage }) = arena.value_type(expected)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let (datatype, mut goals) =
+                        former::constructor(arena, judgement.entries, session, id)?;
+                    let _level = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Value(datatype),
+                        context.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )?;
+                    recursion::constructor_fields(
+                        arena,
+                        (session, &stages, context.as_slice()),
+                        datatype,
+                        stage,
+                        &mut goals,
+                    )?;
+                    frames.push(Frame::ConvertValue(base));
+                    goals.reverse();
+                    if let Some(next) = goals.pop() {
+                        frames.push(Frame::Pending(goals, Produced::ValueType(datatype)));
+                        goal = next;
+                        continue 'expand;
+                    }
+                    Produced::ValueType(datatype)
+                },
                 Goal::CheckValue(id, expected) => match *read_value(arena, id)? {
                     Value::Record(ref values) => {
                         let Some(matched_native_node) = arena.value_type(expected)
@@ -2788,7 +2849,8 @@ where
                             | ValueType::Lift { .. }
                             | ValueType::Element { .. }
                             | ValueType::Abstract(_)
-                            | ValueType::StaticPi { .. } => None,
+                            | ValueType::StaticPi { .. }
+                            | ValueType::Staged { .. } => None,
                         }) {
                             Some(summand_type) => {
                                 goal = Goal::CheckValue(body, summand_type);
@@ -3154,28 +3216,47 @@ where
                             ));
                         },
                     },
-                    // A fixpoint checks at any computation type: its body is
-                    // checked with the self thunk as the innermost slot, against
-                    // the classifier weakened past that slot. Progress is the
-                    // unfolding rule's gate, not a typing condition. A
-                    // structural-descent claim is replayed first, by one walk
-                    // over the body.
+                    // A fixpoint checks with the self thunk as the innermost
+                    // slot, its body against the classifier weakened past that
+                    // slot. A partial one checks at any computation type, and
+                    // progress is the unfolding rule's gate, not a typing
+                    // condition. A structural one opens its stage first
+                    // (`recursion::open_fixpoint`): the self binder takes the
+                    // recursed-on parameter below the stage and the body takes
+                    // it at the stage.
                     Computation::Fixpoint { body, evidence } => {
-                        match evidence {
-                            FixpointEvidence::Partial => {},
+                        let position = match evidence {
+                            FixpointEvidence::Partial => None,
                             FixpointEvidence::StructuralDescent => {
-                                descent::replay(arena, judgement, expected, body)?;
-                                root = respect::fold_root(
-                                    arena,
-                                    judgement.presentations,
-                                    id,
-                                    expected,
-                                    body,
-                                );
+                                Some(gandr_kernel_term::StagedPosition::default())
                             },
-                        }
-                        let recursive = arena.value_type_thunk(expected);
-                        let scoped = weakened(arena, session, expected);
+                            FixpointEvidence::Staged { position } => Some(position),
+                        };
+                        let (own, inside) = match position {
+                            None => (expected, expected),
+                            Some(position) => {
+                                if usize::from(position) == 0 {
+                                    root = respect::fold_root(
+                                        arena,
+                                        judgement.presentations,
+                                        id,
+                                        expected,
+                                        body,
+                                    );
+                                }
+                                let opened = recursion::open_fixpoint(
+                                    arena,
+                                    &mut stages,
+                                    expected,
+                                    position,
+                                )?;
+                                staged_bodies = staged_bodies.saturating_add(1);
+                                frames.push(Frame::StageExit);
+                                (opened.own, opened.inside)
+                            },
+                        };
+                        let recursive = arena.value_type_thunk(own);
+                        let scoped = weakened(arena, session, inside);
                         context.push(recursive);
                         frames.push(Frame::ScopeExit);
                         goal = Goal::CheckComp(body, scoped);
@@ -3341,11 +3422,13 @@ where
                     produced = Produced::CompType(arena.comp_type_returner(part));
                 },
                 Frame::DataCase(case) => {
-                    // A scrutinee at a looped point's path is split over the
+                    // A scrutinee at a stage opens one below it, and a
+                    // scrutinee at a looped point's path is split over the
                     // words its free cells mint.
-                    let datatype = judgement
-                        .presentations
-                        .identified(arena, produced.value_type()?);
+                    let scrutinee = produced.value_type()?;
+                    let (scrutinee_type, opened) =
+                        recursion::open_case(arena, &mut stages, scrutinee)?;
+                    let datatype = judgement.presentations.identified(arena, scrutinee_type);
                     let Some(matched_native_node) = arena.computation(case)
                     else {
                         return Err(KernelError::ArenaFault);
@@ -3395,7 +3478,7 @@ where
                             (judgement.entries, judgement.presentations),
                             session,
                             case,
-                            datatype,
+                            (datatype, opened),
                         )?;
                         if looped == former::Looped::Owed {
                             frames.push(Frame::Loops(case, datatype));
@@ -4348,7 +4431,21 @@ where
                 // either checks at the other.
                 Frame::ConvertValue(expected) => {
                     let synthesized = produced.value_type()?;
-                    if let Err(mismatch) = former::assignable(arena, expected, synthesized) {
+                    let (expected, synthesized) =
+                        recursion::unstage(arena, &stages, expected, synthesized)?;
+                    // A stage below the top — a function field's, under its
+                    // thunk — is decided by the order once conversion alone
+                    // separates the two.
+                    if let Err(mismatch) = former::assignable(arena, expected, synthesized)
+                        && let Err(unsubsumed) = recursion::subsumes(
+                            arena,
+                            &stages,
+                            recursion::Subsumed::Values(expected, synthesized),
+                        )
+                    {
+                        if let KernelError::StageNotBelow { found, bound } = unsubsumed {
+                            return Err(KernelError::StageNotBelow { found, bound });
+                        }
                         let reading = read_returned(
                             arena,
                             judgement,
@@ -4552,7 +4649,16 @@ where
                 },
                 Frame::ConvertComp(expected) => {
                     let synthesized = produced.comp_type()?;
-                    if let Err(mismatch) = convert_comp_type(arena, expected, synthesized) {
+                    if let Err(mismatch) = convert_comp_type(arena, expected, synthesized)
+                        && let Err(unsubsumed) = recursion::subsumes(
+                            arena,
+                            &stages,
+                            recursion::Subsumed::Comps(expected, synthesized),
+                        )
+                    {
+                        if let KernelError::StageNotBelow { found, bound } = unsubsumed {
+                            return Err(KernelError::StageNotBelow { found, bound });
+                        }
                         let reading = read_returned(
                             arena,
                             judgement,
@@ -4615,6 +4721,7 @@ where
                 Frame::ScopeExit => {
                     let _popped = context.pop();
                 },
+                Frame::StageExit => staged_bodies = staged_bodies.saturating_sub(1),
                 Frame::Strengthen => {
                     let synthesized = produced.comp_type()?;
                     produced =
@@ -5006,7 +5113,8 @@ where
                 | ValueType::Abstract(_)
                 | ValueType::Path { .. }
                 | ValueType::Flow { .. }
-                | ValueType::StaticPi { .. } => {
+                | ValueType::StaticPi { .. }
+                | ValueType::Staged { .. } => {
                     return Err(KernelError::AbstractTypeKindNotUniverse {
                         actual: value_type_witness(arena, kind),
                     });
@@ -7080,11 +7188,11 @@ mod tests
     }
 }
 
-mod descent;
-
 mod former;
 
 mod loops;
+
+mod recursion;
 
 mod respect;
 

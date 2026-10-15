@@ -15,8 +15,10 @@ mod recursive_data
     use gandr_core_checker::CheckingContext;
     use gandr_core_checker::CheckingForm;
     use gandr_core_checker::Declaration;
+    use gandr_core_checker::ExpectedShape;
     use gandr_core_checker::ModuleReport;
     use gandr_core_checker::OriginToken;
+    use gandr_core_checker::TermNode;
     use gandr_core_checker::Verdict;
     use gandr_core_checker::bridge;
     use gandr_core_checker::bridge::Outcome;
@@ -61,7 +63,6 @@ mod recursive_data
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
-    use gandr_kernel_term::DescentRefusal;
     use gandr_kernel_term::FieldPosition;
     use gandr_kernel_term::FixpointEvidence;
     use gandr_kernel_term::GlobalIndex;
@@ -995,160 +996,6 @@ mod recursive_data
         }
     }
 
-    /// A body a descent claim is tested on, as the kernel's witnesses name
-    /// them.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum Claim
-    {
-        /// `λx. case x of { zero ↦ zero; succ p ↦ rec p }`.
-        Descends,
-        /// `λx. rec x`: no case.
-        NotCase,
-        /// `force rec`: no λ.
-        Bare,
-        /// `λx. case x of { zero ↦ zero; succ ↦ zero }`: no field binder.
-        MissingField,
-        /// `λx. case x of { …; succ p ↦ force rec }`: `rec` not applied.
-        Unguarded,
-        /// `λx. case x of { …; succ p ↦ rec x }`: no descent.
-        AtScrutinee,
-    }
-
-    /// `fix rec. M` at `Nat → F Nat`, beside `Nat` at position 0, as the
-    /// claim names `M`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the module of `Nat` and the definition, and the fixpoint's
-    ///   id.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — each claim differs from the descending one in one
-    ///   rule of the walk.
-    /// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
-    #[spec(ensures: |ret| ret.0.len() == 2)]
-    fn claimed(
-        arena: &mut CoreArena,
-        claim: Claim,
-        evidence: FixpointEvidence,
-    ) -> (Vec<Declaration>, ComputationId)
-    {
-        let [nat_signature, ..] = signatures(arena);
-        let nat = nat(arena);
-        let returner = arena.comp_type_returner(nat);
-        let classifier = arena.comp_type_arrow(nat, returner);
-        let [zero, ..] = numerals(arena);
-        let returned = arena.computation_return(zero);
-        let case_on_argument = |arena: &mut CoreArena, on_successor: ComputationId| {
-            let argument = var(arena, DeBruijnIndex::from(0));
-            let case =
-                arena.computation_data_case(argument, returner, vec![returned, on_successor]);
-            arena.computation_lambda(case)
-        };
-        // Under the body: `rec` 0. Under its λ: `x` 0, `rec` 1. Under the
-        // `succ` field: `p` 0, `x` 1, `rec` 2.
-        let body = match claim {
-            Claim::Descends => {
-                let recursive = var(arena, DeBruijnIndex::from(2));
-                let field = var(arena, DeBruijnIndex::from(0));
-                let call = call(arena, recursive, &[field]);
-                let on_successor = arena.computation_lambda(call);
-                case_on_argument(arena, on_successor)
-            },
-            Claim::NotCase => {
-                let recursive = var(arena, DeBruijnIndex::from(1));
-                let argument = var(arena, DeBruijnIndex::from(0));
-                let call = call(arena, recursive, &[argument]);
-                arena.computation_lambda(call)
-            },
-            Claim::Bare => {
-                let recursive = var(arena, DeBruijnIndex::from(0));
-                arena.computation_force(recursive)
-            },
-            Claim::MissingField => case_on_argument(arena, returned),
-            Claim::Unguarded => {
-                let recursive = var(arena, DeBruijnIndex::from(2));
-                let forced = arena.computation_force(recursive);
-                let on_successor = arena.computation_lambda(forced);
-                case_on_argument(arena, on_successor)
-            },
-            Claim::AtScrutinee => {
-                let recursive = var(arena, DeBruijnIndex::from(2));
-                let scrutinee = var(arena, DeBruijnIndex::from(1));
-                let call = call(arena, recursive, &[scrutinee]);
-                let on_successor = arena.computation_lambda(call);
-                case_on_argument(arena, on_successor)
-            },
-        };
-        let fixpoint = arena.computation_fixpoint(body, evidence);
-        let declared = arena.value_type_thunk(classifier);
-        let value = arena.value_thunk(fixpoint);
-        (
-            vec![
-                data(ConstantIndex::from(at::NAT), nat_signature),
-                definition(ConstantIndex::from(1_usize), declared, value),
-            ],
-            fixpoint,
-        )
-    }
-
-    #[test]
-    fn descent_claims_replay_or_are_refused_by_name()
-    {
-        let mut arena = CoreArena::new();
-        let (declarations, _) = claimed(
-            &mut arena,
-            Claim::Descends,
-            FixpointEvidence::StructuralDescent,
-        );
-        let (report, crossed) = run(&mut arena, &declarations);
-        assert!(matches!(
-            report.judged()[1].verdict(),
-            Verdict::Checked { .. }
-        ));
-        assert!(
-            matches!(crossed.readmitted()[1].outcome(), Outcome::Defined { .. }),
-            "{:?}",
-            crossed.readmitted()[1].outcome()
-        );
-        assert!(crossed.audit().axioms().is_empty());
-        for (claim, reason) in [
-            (Claim::NotCase, DescentRefusal::NotCaseOnArgument),
-            (Claim::Bare, DescentRefusal::NotCaseOnArgument),
-            (Claim::MissingField, DescentRefusal::BranchNotOverFields),
-            (Claim::Unguarded, DescentRefusal::UnguardedSelfReference),
-            (Claim::AtScrutinee, DescentRefusal::NonDescendingCall),
-        ] {
-            let mut arena = CoreArena::new();
-            let (declarations, fixpoint) =
-                claimed(&mut arena, claim, FixpointEvidence::StructuralDescent);
-            let (report, _) = run(&mut arena, &declarations);
-            assert_eq!(
-                report.judged()[1].verdict(),
-                Verdict::Refused(CheckRefusal::DescentNotReplayed {
-                    at: fixpoint,
-                    reason,
-                }),
-                "{claim:?}"
-            );
-        }
-        // Without a claim the same fixpoints check, as partial, and cross.
-        for claim in [Claim::NotCase, Claim::Bare] {
-            let mut arena = CoreArena::new();
-            let (declarations, _) = claimed(&mut arena, claim, FixpointEvidence::Partial);
-            let (report, crossed) = run(&mut arena, &declarations);
-            assert!(
-                matches!(report.judged()[1].verdict(), Verdict::Checked { .. }),
-                "{claim:?}"
-            );
-            assert!(
-                matches!(crossed.readmitted()[1].outcome(), Outcome::Defined { .. }),
-                "{claim:?}"
-            );
-        }
-    }
-
     #[test]
     fn a_fixpoint_checks_at_every_computation_type()
     {
@@ -1192,13 +1039,19 @@ mod recursive_data
                 form: CheckingForm::Fixpoint(headed),
             })
         );
+        // A structural claim at `F 1` has no arrow whose domain a stage could
+        // refine.
         let ((claimed, fixpoint), ..) = looping(FixpointEvidence::StructuralDescent);
-        assert_eq!(
-            claimed,
-            Verdict::Refused(CheckRefusal::DescentNotReplayed {
-                at: fixpoint,
-                reason: DescentRefusal::NotOverData,
-            })
+        assert!(
+            matches!(
+                claimed,
+                Verdict::Refused(CheckRefusal::ShapeMismatch {
+                    at: TermNode::Computation(at),
+                    wanted: ExpectedShape::Arrow,
+                    ..
+                }) if at == fixpoint
+            ),
+            "{claimed:?}"
         );
     }
 

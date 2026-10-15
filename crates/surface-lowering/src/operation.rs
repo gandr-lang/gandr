@@ -39,10 +39,11 @@
 //!
 //! **Recursion is partial.** The function closes one fixpoint over its
 //! operation's whole parameter list with [`FixpointEvidence::Partial`], so the
-//! machine unfolds it and conversion never does. A structural-descent claim
-//! needs a case on a single parameter directly under its lambda, which a
-//! multi-input operation's tree is not. Reversal: a per-column descent claim in
-//! the kernel.
+//! machine unfolds it and conversion never does. Structural evidence stages
+//! one parameter, and every recursive call must stand below that parameter's
+//! stage, which a multi-input operation's rules, descending on whichever
+//! column they match, do not promise. Reversal: a stage per column in the
+//! kernel.
 //!
 //! **Operation names resolve after declarations, before builtins.** An
 //! operation is entered in no module namespace; a name the module declares

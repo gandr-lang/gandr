@@ -425,6 +425,10 @@ fn worst(
                 Some(&ValueType::List(element)) => {
                     pending.push((AnyNode::ValueType(element), nest(reach)));
                 },
+                // A stage refines its base without moving it.
+                Some(&ValueType::Staged { base, .. }) => {
+                    pending.push((AnyNode::ValueType(base), reach));
+                },
                 Some(&ValueType::Stack { input, output }) => {
                     pending.push((AnyNode::CompType(input), Reach::Domain));
                     pending.push((AnyNode::CompType(output), nest(reach)));

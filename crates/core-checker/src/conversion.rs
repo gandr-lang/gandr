@@ -38,6 +38,17 @@
 //! where a finer walk would accept it; the kernel admits no index that holds
 //! a hole either way.
 //!
+//! # A stage is decided by the order
+//!
+//! A type refined at a stage of a structural fixpoint (`A^s`) is subsumed,
+//! not converted: where a found type meets a wanted one, `A^r` stands for
+//! `A^s` when the stage order puts `r` at or below `s` and the two bases
+//! relate, and for `A` itself, its stage forgotten; `A` never stands for
+//! `A^s`, since a value at no stage may be any size. Invariantly — a code, a
+//! data index, an equivalence — a stage equals only itself. The walk answers
+//! [`Agreement::NotBelow`] at the first pair the order refuses, which the
+//! value bridge names [`CheckRefusal::StageNotBelow`].
+//!
 //! # Smallness lives at the value bridge alone
 //!
 //! A code that synthesised the value universe at level `k` checks at the
@@ -123,8 +134,10 @@ use gandr_core_term::effect::RowInclusion;
 use gandr_core_term::effect::capability::RegionOrder;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::hole::Knowledge;
+use gandr_kernel_core::stage_order::Fit;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::Standing;
 use quenchant_shape::shape::Maybe;
 
 use crate::code::Lift;
@@ -243,6 +256,15 @@ pub enum Agreement
     Amplified,
     /// Two capabilities whose found region ends before the expected one.
     Escaped,
+    /// A value type at a stage, or at none, where a stage it does not stand
+    /// at or below is wanted.
+    NotBelow
+    {
+        /// Where the found type stands.
+        found: gandr_kernel_term::Standing,
+        /// The stage wanted.
+        bound: gandr_kernel_term::Stage,
+    },
 }
 
 /// Cross the value bridge: the type `at` synthesised against the type it is
@@ -264,7 +286,8 @@ pub enum Agreement
 ///   [`Mismatch::Value`] naming `at` and both types when they differ otherwise;
 ///   [`CheckRefusal::CapabilityForged`] when a capability is expected and the
 ///   synthesised type is of another known former;
-///   [`CheckRefusal::CapabilityAmplified`] and
+///   [`CheckRefusal::StageNotBelow`] naming `at` when a stage the order refuses
+///   is wanted; [`CheckRefusal::CapabilityAmplified`] and
 ///   [`CheckRefusal::CapabilityEscaped`] when [`convert`] finds a capability
 ///   granting less or living shorter than the one expected; the unfolding's
 ///   refusal when a decode does not unfold.
@@ -373,6 +396,9 @@ pub fn value_bridge(
             at: TermNode::Value(at),
             found: crate::refusal::TypeNode::Value(synthesised),
         }),
+        Agreement::NotBelow { found, bound } => {
+            Err(CheckRefusal::StageNotBelow { at, found, bound })
+        },
     }
 }
 
@@ -429,7 +455,7 @@ pub fn comp_bridge(
     };
     match convert(context, Pairing::SubComps(synthesised, expected))? {
         Agreement::Convertible => Ok(()),
-        Agreement::Apart => Err(CheckRefusal::TypeMismatch(mismatch)),
+        Agreement::Apart | Agreement::NotBelow { .. } => Err(CheckRefusal::TypeMismatch(mismatch)),
         Agreement::Amplified => Err(CheckRefusal::CapabilityAmplified(mismatch)),
         Agreement::Escaped => Err(CheckRefusal::CapabilityEscaped {
             at: TermNode::Computation(at),
@@ -540,6 +566,7 @@ pub fn decode_bridge(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Session(_)
+        | ValueTypeView::Staged { .. }
         | ValueTypeView::StaticPi { .. } => Err(CheckRefusal::TypeMismatch(Mismatch::Value {
             at: code,
             synthesised: found,
@@ -646,7 +673,11 @@ fn endpoints_agree(
 ///   applications of agreeing heads to agreeing arguments, or static lambdas
 ///   over agreeing bodies; two data indices agree when either root is a hole or
 ///   a mark or they are equal as syntax; [`Agreement::Apart`] at the first
-///   position they differ.
+///   position they differ. Two staged types agree invariantly at one stage and
+///   agreeing bases; under subtyping a found staged type agrees with a wanted
+///   one whose stage its own fits within, and with an unstaged type as its
+///   base, while an unstaged type against a staged one, or a stage the order
+///   refuses, is [`Agreement::NotBelow`].
 /// - fails: the refusal a view gives for a node outside the fragment or a
 ///   dangling id, and the unfolding's refusal when a decode or a code does not
 ///   reduce.
@@ -893,6 +924,44 @@ fn convert(
                     | (ValueTypeView::Integer, ValueTypeView::Integer)
                     | (ValueTypeView::String, ValueTypeView::String)
                     | (ValueTypeView::Unit, ValueTypeView::Unit) => true,
+                    // Where a found type meets a wanted one a stage is
+                    // subsumed by the order; invariantly it equals only
+                    // itself.
+                    (
+                        ValueTypeView::Staged {
+                            base: found_base,
+                            stage: found,
+                        },
+                        ValueTypeView::Staged {
+                            base: wanted_base,
+                            stage: wanted,
+                        },
+                    ) => {
+                        if subtyping {
+                            if context.stages().fit(found, wanted) == Fit::NotBelow {
+                                return Ok(Agreement::NotBelow {
+                                    found: Standing::Staged(found),
+                                    bound: wanted,
+                                });
+                            }
+                            pending.push(values(found_base, wanted_base));
+                            true
+                        }
+                        else {
+                            pending.push(values(found_base, wanted_base));
+                            found == wanted
+                        }
+                    },
+                    (ValueTypeView::Staged { base, .. }, _) if subtyping => {
+                        pending.push(values(base, right));
+                        true
+                    },
+                    (_, ValueTypeView::Staged { stage, .. }) if subtyping => {
+                        return Ok(Agreement::NotBelow {
+                            found: Standing::Top,
+                            bound: stage,
+                        });
+                    },
                     (ValueTypeView::Abstract(left), ValueTypeView::Abstract(right)) => {
                         left == right
                     },
@@ -1049,7 +1118,8 @@ fn convert(
                         | ValueTypeView::Abstract(_)
                         | ValueTypeView::Session(_)
                         | ValueTypeView::StaticPi { .. }
-                        | ValueTypeView::Capability { .. },
+                        | ValueTypeView::Capability { .. }
+                        | ValueTypeView::Staged { .. },
                         _,
                     ) => false,
                 }

@@ -1,5 +1,5 @@
-//! Recursive nominal blocks, structural-descent evidence and gated fixpoint
-//! unfolding through admission and replay.
+//! Recursive nominal blocks, structural fixpoints typed by stages and gated
+//! fixpoint unfolding through admission and replay.
 
 #[cfg(test)]
 mod recursive_data
@@ -9,6 +9,7 @@ mod recursive_data
     use gandr_kernel_core::CheckedId;
     use gandr_kernel_core::EngineClaim;
     use gandr_kernel_core::Environment;
+    use gandr_kernel_core::ExpectedComputationShape;
     use gandr_kernel_core::KernelError;
     use gandr_kernel_core::KernelVerdict;
     use gandr_kernel_core::ReplayBudget;
@@ -17,21 +18,25 @@ mod recursive_data
     use gandr_kernel_core::ReplaySides;
     use gandr_kernel_core::Unfoldings;
     use gandr_kernel_core::replay;
+    use gandr_kernel_core::stage_order::below;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::CompTypeId;
     use gandr_kernel_term::ComputationId;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
-    use gandr_kernel_term::DescentRefusal;
     use gandr_kernel_term::FieldPosition;
     use gandr_kernel_term::FixpointEvidence;
     use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::OccurrenceSite;
     use gandr_kernel_term::ParameterPosition;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageId;
+    use gandr_kernel_term::Standing;
     use gandr_kernel_term::TermArena;
     use gandr_kernel_term::ValueId;
+    use gandr_kernel_term::ValueTypeId;
 
     /// A block whose one field breaks one occurrence rule.
     #[derive(Clone, Copy, Debug)]
@@ -51,22 +56,32 @@ mod recursive_data
         Parameter,
     }
 
-    /// A fixpoint at `Nat → F Nat` whose body exercises one descent rule.
+    /// A fixpoint at `Nat → F Nat` whose body exercises one stage rule.
     #[derive(Clone, Copy, Debug)]
     enum Claim
     {
         /// `λx. case x of { zero ↦ return zero; succ ↦ λp. (force rec) p }`.
         Descends,
-        /// `λy. (force rec) y`: no case on the argument.
+        /// `λy. (force rec) y`: the call at the parameter itself.
         NotCase,
-        /// `force rec`: no λ at all.
-        Bare,
-        /// The `succ` branch opens no field.
-        MissingField,
-        /// The `succ` branch forces the self reference without a call.
-        Unguarded,
         /// The `succ` branch calls the self reference at the scrutinee.
         AtScrutinee,
+        /// `λx. case x of { zero ↦ return zero; succ ↦ λp. case p of { zero ↦
+        /// return zero; succ ↦ λq. (force rec) (succ q) } }`: a value rebuilt
+        /// below the stage.
+        Rebuilt,
+        /// The same, calling at `succ p`: the scrutinee rebuilt.
+        RebuiltAtScrutinee,
+        /// The `succ` branch calls the self reference at `zero`, with its
+        /// field `p` below the stage.
+        NullaryUnderField,
+        /// The `zero` branch calls the self reference at `zero`, with nothing
+        /// below the stage.
+        NullaryUnderZero,
+        /// The `succ` branch hands the self reference itself, and its field,
+        /// to the helper at this position, which takes any function out of
+        /// `Nat`.
+        Handed(ConstantIndex),
     }
 
     /// The motive a derived `Nat` eliminator targets.
@@ -278,27 +293,69 @@ mod recursive_data
         arena.computation_lambda(case)
     }
 
+    /// `λx. case x of { zero ↦ return zero; succ ↦ λp. case p of { zero ↦
+    /// return zero; succ ↦ λq. (force rec) (succ v) } }`, `v` the variable
+    /// `field` under `q` 0, `p` 1, `x` 2, `rec` 3.
+    ///
+    /// # Specification
+    /// trivial.
+    fn two_deep(
+        arena: &mut TermArena,
+        (nat_type, returner, returned): (ValueTypeId, CompTypeId, ComputationId),
+        field: DeBruijnIndex,
+    ) -> ComputationId
+    {
+        let field = arena.value_variable(field);
+        let rebuilt = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![field]);
+        let recursive = arena.value_variable(DeBruijnIndex::from(3));
+        let forced = arena.computation_force(recursive);
+        let called = arena.computation_application(forced, rebuilt);
+        let on_inner = arena.computation_lambda(called);
+        let inner_scrutinee = arena.value_variable(DeBruijnIndex::from(0));
+        let inner =
+            arena.computation_data_case(inner_scrutinee, returner, vec![returned, on_inner]);
+        let on_outer = arena.computation_lambda(inner);
+        case_on_argument(arena, returner, returned, on_outer)
+    }
+
+    /// `(force rec) argument`, `rec` the variable `recursive`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn call(
+        arena: &mut TermArena,
+        recursive: DeBruijnIndex,
+        argument: ValueId,
+    ) -> ComputationId
+    {
+        let recursive = arena.value_variable(recursive);
+        let forced = arena.computation_force(recursive);
+        arena.computation_application(forced, argument)
+    }
+
     /// Offer `fix rec. M` at `Nat → F Nat` with the body a claim names and the
     /// evidence given.
     ///
     /// # Specification
-    /// - requires: `nat` names the admitted `Nat`; `Claim::MissingField` and
-    ///   `Claim::Unguarded`, whose branches are ill-typed unless the descent
-    ///   walk refuses them first, are offered only with a structural-descent
-    ///   claim.
-    /// - ensures: admitted exactly when the evidence is partial or the claim
-    ///   descends; otherwise refused as `DescentNotReplayed`.
+    /// - requires: `nat` names the admitted `Nat`, and a handed claim's
+    ///   position names [`apply`]'s definition.
+    /// - ensures: admitted when the evidence is partial or every call stands
+    ///   below the fixpoint's stage; otherwise refused as `StageNotBelow`.
     /// - panics: none.
     ///
     /// # Errors
     /// The kernel's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — each claim differs from the descending one in one
-    ///   rule of the walk.
-    /// - witness: `recursive_data::recursive_data::descent_evidence_replays_or_is_refused_by_name`
-    #[spec(ensures: |ret| ret.is_ok() == (evidence == FixpointEvidence::Partial || matches!(claim, Claim::Descends))
-        && (ret.is_ok() || matches!(ret, Err(KernelError::DescentNotReplayed(_)))))]
+    /// - hypothesis: L3 — each refused claim differs from an admitted one in
+    ///   the one argument its call takes.
+    /// - witness: `recursive_data::recursive_data::a_recursion_descends_on_its_first_parameter`
+    /// - witness: `recursive_data::recursive_data::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
+    /// - witness: `recursive_data::recursive_data::a_nullary_argument_needs_a_value_below_the_stage`
+    /// - witness: `recursive_data::recursive_data::a_self_reference_never_stands_for_an_unstaged_function`
+    #[spec(ensures: |ret| ret.is_ok() == (evidence == FixpointEvidence::Partial
+            || matches!(claim, Claim::Descends | Claim::Rebuilt | Claim::NullaryUnderField))
+        && (ret.is_ok() || matches!(ret, Err(KernelError::StageNotBelow { .. }))))]
     fn claim(
         environment: &mut Environment,
         nat: ConstantIndex,
@@ -317,37 +374,50 @@ mod recursive_data
         // 1. Under the `succ` branch's field: `p` 0, `x` 1, `rec` 2.
         let body = match claim {
             Claim::Descends => {
-                let recursive = arena.value_variable(DeBruijnIndex::from(2));
                 let field = arena.value_variable(DeBruijnIndex::from(0));
-                let forced = arena.computation_force(recursive);
-                let call = arena.computation_application(forced, field);
-                let on_successor = arena.computation_lambda(call);
+                let called = call(arena, DeBruijnIndex::from(2), field);
+                let on_successor = arena.computation_lambda(called);
                 case_on_argument(arena, returner, returned, on_successor)
             },
             Claim::NotCase => {
-                let recursive = arena.value_variable(DeBruijnIndex::from(1));
                 let argument = arena.value_variable(DeBruijnIndex::from(0));
-                let forced = arena.computation_force(recursive);
-                let call = arena.computation_application(forced, argument);
-                arena.computation_lambda(call)
-            },
-            Claim::Bare => {
-                let recursive = arena.value_variable(DeBruijnIndex::from(0));
-                arena.computation_force(recursive)
-            },
-            Claim::MissingField => case_on_argument(arena, returner, returned, returned),
-            Claim::Unguarded => {
-                let recursive = arena.value_variable(DeBruijnIndex::from(2));
-                let forced = arena.computation_force(recursive);
-                let on_successor = arena.computation_lambda(forced);
-                case_on_argument(arena, returner, returned, on_successor)
+                let called = call(arena, DeBruijnIndex::from(1), argument);
+                arena.computation_lambda(called)
             },
             Claim::AtScrutinee => {
-                let recursive = arena.value_variable(DeBruijnIndex::from(2));
                 let scrutinee = arena.value_variable(DeBruijnIndex::from(1));
-                let forced = arena.computation_force(recursive);
-                let call = arena.computation_application(forced, scrutinee);
-                let on_successor = arena.computation_lambda(call);
+                let called = call(arena, DeBruijnIndex::from(2), scrutinee);
+                let on_successor = arena.computation_lambda(called);
+                case_on_argument(arena, returner, returned, on_successor)
+            },
+            Claim::Rebuilt => two_deep(
+                arena,
+                (nat_type, returner, returned),
+                DeBruijnIndex::from(0),
+            ),
+            Claim::RebuiltAtScrutinee => two_deep(
+                arena,
+                (nat_type, returner, returned),
+                DeBruijnIndex::from(1),
+            ),
+            Claim::NullaryUnderField => {
+                let called = call(arena, DeBruijnIndex::from(2), zero);
+                let on_successor = arena.computation_lambda(called);
+                case_on_argument(arena, returner, returned, on_successor)
+            },
+            Claim::NullaryUnderZero => {
+                let called = call(arena, DeBruijnIndex::from(1), zero);
+                let on_successor = arena.computation_lambda(returned);
+                case_on_argument(arena, returner, called, on_successor)
+            },
+            Claim::Handed(apply) => {
+                let helper = arena.value_constant(apply);
+                let forced = arena.computation_force(helper);
+                let recursive = arena.value_variable(DeBruijnIndex::from(2));
+                let handed = arena.computation_application(forced, recursive);
+                let field = arena.value_variable(DeBruijnIndex::from(0));
+                let called = arena.computation_application(handed, field);
+                let on_successor = arena.computation_lambda(called);
                 case_on_argument(arena, returner, returned, on_successor)
             },
         };
@@ -358,12 +428,50 @@ mod recursive_data
         environment.add_decl(declaration)
     }
 
+    /// Admit `apply : U (U (Nat → F Nat) → Nat → F Nat)`, `λg. λx. (force g)
+    /// x`: a helper that may call its function at any natural number.
+    ///
+    /// # Specification
+    /// - requires: `nat` names the admitted `Nat`.
+    /// - ensures: the returned identifier names the admitted definition.
+    /// - panics: if the kernel refuses it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a helper over unstaged functions, which a self
+    ///   reference never stands for.
+    /// - witness: `recursive_data::recursive_data::a_self_reference_never_stands_for_an_unstaged_function`
+    #[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+    fn apply(
+        environment: &mut Environment,
+        nat: ConstantIndex,
+    ) -> CheckedId
+    {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let nat_type = arena.value_type_data(nat, vec![]);
+        let returner = arena.comp_type_returner(nat_type);
+        let function = arena.comp_type_arrow(nat_type, returner);
+        let thunked = arena.value_type_thunk(function);
+        let applying = arena.comp_type_arrow(thunked, function);
+        let declared = arena.value_type_thunk(applying);
+        // Under λg λx: `x` 0, `g` 1.
+        let argument = arena.value_variable(DeBruijnIndex::from(0));
+        let called = call(arena, DeBruijnIndex::from(1), argument);
+        let inner = arena.computation_lambda(called);
+        let outer = arena.computation_lambda(inner);
+        let value = arena.value_thunk(outer);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+        environment
+            .add_decl(declaration)
+            .expect("apply checks without a fixpoint")
+    }
+
     /// Offer the loop `fix rec. force rec` at `F 1` with the evidence given.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: admitted exactly when the evidence is partial; a descent
-    ///   claim is refused as `NotOverData`.
+    /// - ensures: admitted exactly when the evidence is partial; a structural
+    ///   one, with no arrow to recurse on, is refused wanting one.
     /// - panics: none.
     ///
     /// # Errors
@@ -371,10 +479,10 @@ mod recursive_data
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a fixpoint at a non-function type checks as partial
-    ///   and refuses a descent claim.
-    /// - witness: `recursive_data::recursive_data::descent_evidence_replays_or_is_refused_by_name`
+    ///   and opens no stage when structural.
+    /// - witness: `recursive_data::recursive_data::a_structural_fixpoint_needs_an_arrow_to_recurse_on`
     #[spec(ensures: |ret| ret.is_ok() == (evidence == FixpointEvidence::Partial)
-        && (ret.is_ok() || matches!(ret, Err(KernelError::DescentNotReplayed(DescentRefusal::NotOverData)))))]
+        && (ret.is_ok() || matches!(ret, Err(KernelError::ComputationShapeMismatch { expected: ExpectedComputationShape::Arrow, .. }))))]
     fn loop_at_unit(
         environment: &mut Environment,
         evidence: FixpointEvidence,
@@ -814,7 +922,7 @@ mod recursive_data
     }
 
     #[test]
-    fn descent_evidence_replays_or_is_refused_by_name()
+    fn a_recursion_descends_on_its_first_parameter()
     {
         let mut environment = Environment::new();
         let nat = nat(&mut environment).position();
@@ -826,13 +934,8 @@ mod recursive_data
         )
         .expect("a call at the scrutinised constructor's field descends");
         assert!(environment.audit(admitted).axioms().is_empty());
-        for (fixture, reason) in [
-            (Claim::NotCase, DescentRefusal::NotCaseOnArgument),
-            (Claim::Bare, DescentRefusal::NotCaseOnArgument),
-            (Claim::MissingField, DescentRefusal::BranchNotOverFields),
-            (Claim::Unguarded, DescentRefusal::UnguardedSelfReference),
-            (Claim::AtScrutinee, DescentRefusal::NonDescendingCall),
-        ] {
+        let root = Stage::At(StageId::from(0_usize));
+        for fixture in [Claim::NotCase, Claim::AtScrutinee] {
             assert_eq!(
                 claim(
                     &mut environment,
@@ -840,20 +943,128 @@ mod recursive_data
                     fixture,
                     FixpointEvidence::StructuralDescent
                 ),
-                Err(KernelError::DescentNotReplayed(reason)),
+                Err(KernelError::StageNotBelow {
+                    found: Standing::Staged(root),
+                    bound: below(root),
+                }),
                 "{fixture:?}"
             );
-        }
-        for fixture in [Claim::NotCase, Claim::Bare] {
             claim(&mut environment, nat, fixture, FixpointEvidence::Partial)
                 .expect("a fixpoint without a claim checks as partial");
         }
-        assert_eq!(
+    }
+
+    #[test]
+    fn a_structural_fixpoint_needs_an_arrow_to_recurse_on()
+    {
+        let mut environment = Environment::new();
+        assert!(matches!(
             loop_at_unit(&mut environment, FixpointEvidence::StructuralDescent),
-            Err(KernelError::DescentNotReplayed(DescentRefusal::NotOverData))
-        );
+            Err(KernelError::ComputationShapeMismatch {
+                expected: ExpectedComputationShape::Arrow,
+                ..
+            })
+        ));
         loop_at_unit(&mut environment, FixpointEvidence::Partial)
             .expect("a loop at F 1 checks as partial");
+    }
+
+    #[test]
+    fn a_call_on_a_value_rebuilt_below_the_stage_is_admitted()
+    {
+        let mut environment = Environment::new();
+        let nat = nat(&mut environment).position();
+        let admitted = claim(
+            &mut environment,
+            nat,
+            Claim::Rebuilt,
+            FixpointEvidence::StructuralDescent,
+        )
+        .expect("succ q stands below x = succ (succ q)");
+        assert!(environment.audit(admitted).axioms().is_empty());
+        // `succ p` is `x` itself: its field `p` stands at the outer case's
+        // stage, one below the fixpoint's, where two are wanted.
+        let root = Stage::At(StageId::from(0_usize));
+        assert_eq!(
+            claim(
+                &mut environment,
+                nat,
+                Claim::RebuiltAtScrutinee,
+                FixpointEvidence::StructuralDescent
+            ),
+            Err(KernelError::StageNotBelow {
+                found: Standing::Staged(Stage::At(StageId::from(1_usize))),
+                bound: below(below(root)),
+            })
+        );
+    }
+
+    #[test]
+    fn a_nullary_argument_needs_a_value_below_the_stage()
+    {
+        let mut environment = Environment::new();
+        let nat = nat(&mut environment).position();
+        let admitted = claim(
+            &mut environment,
+            nat,
+            Claim::NullaryUnderField,
+            FixpointEvidence::StructuralDescent,
+        )
+        .expect("the field p shows the stage holds a value");
+        assert!(environment.audit(admitted).axioms().is_empty());
+        // Under `zero` nothing in scope stands below the stage, which may be
+        // the first: `rec zero` there need not terminate.
+        let root = Stage::At(StageId::from(0_usize));
+        assert_eq!(
+            claim(
+                &mut environment,
+                nat,
+                Claim::NullaryUnderZero,
+                FixpointEvidence::StructuralDescent
+            ),
+            Err(KernelError::StageNotBelow {
+                found: Standing::Top,
+                bound: below(root),
+            })
+        );
+        claim(
+            &mut environment,
+            nat,
+            Claim::NullaryUnderZero,
+            FixpointEvidence::Partial,
+        )
+        .expect("a fixpoint without a claim checks as partial");
+    }
+
+    #[test]
+    fn a_self_reference_never_stands_for_an_unstaged_function()
+    {
+        let mut environment = Environment::new();
+        let nat = nat(&mut environment).position();
+        let apply = apply(&mut environment, nat).position();
+        // `apply rec p` hands `rec` to a function that may call it at any
+        // natural number, `x` itself among them: `rec`'s domain stands below
+        // the stage, and `apply`'s at none.
+        let root = Stage::At(StageId::from(0_usize));
+        assert_eq!(
+            claim(
+                &mut environment,
+                nat,
+                Claim::Handed(apply),
+                FixpointEvidence::StructuralDescent
+            ),
+            Err(KernelError::StageNotBelow {
+                found: Standing::Top,
+                bound: below(root),
+            })
+        );
+        claim(
+            &mut environment,
+            nat,
+            Claim::Handed(apply),
+            FixpointEvidence::Partial,
+        )
+        .expect("a fixpoint without a claim checks as partial");
     }
 
     #[test]

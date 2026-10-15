@@ -3890,7 +3890,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             payloads: inner, ..
                         }
                         | &ValueType::Lift { inner, .. }
-                        | &ValueType::List(inner),
+                        | &ValueType::List(inner)
+                        | &ValueType::Staged { base: inner, .. },
                     ) => {
                         work.push(AnyNode::ValueType(inner));
                     },
@@ -4994,25 +4995,54 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         Some(&(Frame::Bind(_) | Frame::Project(_))) | None => break,
                     },
                     // A fixpoint unfolds at its gate: applied to a canonical
-                    // argument, the `<` direction, or under a bind or a projection
-                    // observing its result, the `>` direction. Conversion unfolds
-                    // only a fixpoint whose structural-descent evidence replayed,
-                    // and only at a constructor; at a partial fixpoint's gate it
-                    // declines rather than refutes.
+                    // argument at its staged position, the `<` direction, or
+                    // under a bind or a projection observing its result, the
+                    // `>` direction. Conversion unfolds only a structural
+                    // fixpoint, and only at a constructor; at a partial
+                    // fixpoint's gate it declines rather than refutes.
                     Some(&Computation::Fixpoint { body, evidence }) => {
+                        let position = match evidence {
+                            FixpointEvidence::Staged { position } => usize::from(position),
+                            FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => 0,
+                        };
+                        // The argument at the staged position: that many
+                        // applications down the stack, every frame above it an
+                        // application too.
+                        let mut reached = None;
+                        let mut observed = false;
+                        for (offset, frame) in frames.iter().rev().enumerate() {
+                            match *frame {
+                                Frame::Apply(argument) => {
+                                    if offset == position {
+                                        reached = Some((offset, argument));
+                                        break;
+                                    }
+                                },
+                                Frame::Bind(_) | Frame::Project(_) => {
+                                    observed = true;
+                                    break;
+                                },
+                            }
+                        }
                         // A fixpoint's gate inspects its argument, so a returned
                         // endpoint there runs first: `fix f c ⇝ c to x. fix f x`.
-                        if let Some(&Frame::Apply(argument)) = frames.last()
+                        if let Some((offset, argument)) = reached
                             && let Some(&Value::Returned(returned)) = self.arena.value(argument)
                         {
-                            let _argument = frames.pop();
-                            let applied = self.arena.computation_application(focus, argument);
+                            let mut applied = focus;
+                            for _argument in 0 ..= offset {
+                                let Some(Frame::Apply(argument)) = frames.pop()
+                                else {
+                                    return Err(unreadable());
+                                };
+                                applied = self.arena.computation_application(applied, argument);
+                            }
                             focus = self.bind_returned(applied, returned)?;
                             progress = Progress::Reduced;
                             continue;
                         }
-                        let gate = match frames.last() {
-                            Some(&Frame::Apply(argument)) => match self.arena.value(argument) {
+                        let gate = match reached {
+                            Some((_, argument)) => match self.arena.value(argument) {
                                 Some(&Value::Constructor { .. }) => Gate::Constructor,
                                 Some(
                                     &(Value::Variable(_)
@@ -5022,11 +5052,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 Some(_) => Gate::Canonical,
                                 None => return Err(unreadable()),
                             },
-                            Some(&(Frame::Bind(_) | Frame::Project(_))) => Gate::Observed,
+                            None if observed => Gate::Observed,
                             None => Gate::Shut,
                         };
                         match (evidence, gate) {
-                            (FixpointEvidence::StructuralDescent, Gate::Constructor) => {
+                            (
+                                FixpointEvidence::StructuralDescent
+                                | FixpointEvidence::Staged { .. },
+                                Gate::Constructor,
+                            ) => {
                                 let recursive = self.arena.value_thunk(focus);
                                 focus = self.instantiate(body, recursive);
                                 progress = Progress::Reduced;
@@ -5036,7 +5070,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 Gate::Constructor | Gate::Canonical | Gate::Observed,
                             ) => return Err(Stop::PartialFixpoint),
                             (
-                                FixpointEvidence::StructuralDescent,
+                                FixpointEvidence::StructuralDescent
+                                | FixpointEvidence::Staged { .. },
                                 Gate::Canonical | Gate::Observed | Gate::Shut,
                             )
                             | (FixpointEvidence::Partial, Gate::Shut) => break,

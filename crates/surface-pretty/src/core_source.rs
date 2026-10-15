@@ -446,7 +446,7 @@ impl<'arena> CoreSource<'arena>
         datatype: ValueTypeId,
     ) -> Option<Name<'arena>>
     {
-        match *self.arena.value_type(datatype)? {
+        match *self.arena.value_type(self.unstaged(datatype))? {
             ValueType::Data { declaration, .. } => self.name(declaration),
             ValueType::Record(_)
             | ValueType::PathUniverse(..)
@@ -467,7 +467,32 @@ impl<'arena> CoreSource<'arena>
             | ValueType::Unknown
             | ValueType::Stack { .. }
             | ValueType::Session(_)
-            | ValueType::Capability { .. } => None,
+            | ValueType::Capability { .. }
+            | ValueType::Staged { .. } => None,
+        }
+    }
+
+    /// The type the staged type `id` refines, or `id` itself: a stage is the
+    /// recursion typing's own, and a source never writes one, so a staged
+    /// type reads as the type it refines.
+    ///
+    /// # Specification
+    /// - ensures: never a staged type, since the arena holds no stage over a
+    ///   stage.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a staged type spells as the type it refines.
+    /// - witness: `core_source::tests::a_staged_type_reads_as_the_type_it_refines`
+    #[spec(ensures: |ret| !matches!(self.arena.value_type(ret), Some(ValueType::Staged { .. })))]
+    fn unstaged(
+        &self,
+        id: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        match self.arena.value_type(id) {
+            Some(&ValueType::Staged { base, .. }) => base,
+            Some(_) | None => id,
         }
     }
 
@@ -689,7 +714,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
     /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
     /// - witness: `goldens::tests::session_types_spell_their_protocol_and_payloads`
-    #[spec(ensures: |ret| match (self.arena.value_type(id), ret) {
+    #[spec(ensures: |ret| match (self.arena.value_type(self.unstaged(id)), ret) {
         | (Some(&ValueType::Stack { input, output }), Former::Stack(a, b)) => a == CoreNode::CompType(input) && b == CoreNode::CompType(output),
         | (Some(&ValueType::PathUniverse(source, target)), Former::PathUniverse(actual_source, actual_target)) => actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
         | (Some(&ValueType::Data { declaration, ref arguments }), Former::Data { name, arity }) =>
@@ -727,7 +752,7 @@ impl<'arena> CoreSource<'arena>
         id: ValueTypeId,
     ) -> Former<'arena, CoreNode>
     {
-        let Some(value_type) = self.arena.value_type(id)
+        let Some(value_type) = self.arena.value_type(self.unstaged(id))
         else {
             return Former::Unreadable(Unreadable::Dangling);
         };
@@ -802,6 +827,8 @@ impl<'arena> CoreSource<'arena>
                 grade,
                 region,
             },
+            // Never read: the arena holds no stage over a stage.
+            ValueType::Staged { .. } => Former::Unreadable(Unreadable::Dangling),
         }
     }
 
@@ -1239,7 +1266,7 @@ impl Source for CoreSource<'_>
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
     #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
-        | CoreNode::ValueType(id) => ret == match self.arena.value_type(id) {
+        | CoreNode::ValueType(id) => ret == match self.arena.value_type(self.unstaged(id)) {
             | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => parts.get(usize::from(index)).map(|&part| CoreNode::ValueType(part)),
             | Some(&ValueType::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::ValueType(field)),
             | Some(&ValueType::Data { ref arguments, .. }) => arguments.get(usize::from(index)).map(|&argument| CoreNode::Value(argument)),
@@ -1266,7 +1293,7 @@ impl Source for CoreSource<'_>
     {
         let at = usize::from(index);
         match self.restoration.restored(node) {
-            CoreNode::ValueType(id) => match *self.arena.value_type(id)? {
+            CoreNode::ValueType(id) => match *self.arena.value_type(self.unstaged(id))? {
                 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                     parts.get(at).map(|&part| CoreNode::ValueType(part))
                 },
@@ -1296,7 +1323,8 @@ impl Source for CoreSource<'_>
                 | ValueType::Sigma { .. }
                 | ValueType::Unknown
                 | ValueType::Stack { .. }
-                | ValueType::Capability { .. } => None,
+                | ValueType::Capability { .. }
+                | ValueType::Staged { .. } => None,
             },
             CoreNode::Value(id) => match *self.arena.value(id)? {
                 Value::Tuple(ref components) => components
@@ -1426,7 +1454,7 @@ impl Source for CoreSource<'_>
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
     #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
-        | CoreNode::ValueType(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.value_type(id) {
+        | CoreNode::ValueType(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.value_type(self.unstaged(id)) {
             | Some(&ValueType::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
             | Some(_) | None => None,
         },
@@ -1446,7 +1474,7 @@ impl Source for CoreSource<'_>
     {
         let at = usize::from(index);
         let label: &str = match self.restoration.restored(node) {
-            CoreNode::ValueType(id) => match *self.arena.value_type(id)? {
+            CoreNode::ValueType(id) => match *self.arena.value_type(self.unstaged(id))? {
                 ValueType::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
                 ValueType::Data { .. }
                 | ValueType::PathUniverse(..)
@@ -1467,7 +1495,8 @@ impl Source for CoreSource<'_>
                 | ValueType::Unknown
                 | ValueType::Stack { .. }
                 | ValueType::Session(_)
-                | ValueType::Capability { .. } => None,
+                | ValueType::Capability { .. }
+                | ValueType::Staged { .. } => None,
             },
             CoreNode::Value(id) => match *self.arena.value(id)? {
                 Value::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
@@ -1673,6 +1702,30 @@ mod tests
                 Former::Unreadable(Unreadable::Dangling)
             ));
         }
+    }
+
+    /// A staged type reads as the type it refines: a stage is the recursion
+    /// typing's own, and its components are the refined type's.
+    #[test]
+    fn a_staged_type_reads_as_the_type_it_refines()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let product = arena.value_type_product(&[integer, string]);
+        let staged = arena.value_type_staged(
+            product,
+            gandr_kernel_term::Stage::At(gandr_kernel_term::StageId::from(0_usize)),
+        );
+        let source = CoreSource::new(&arena, &[]);
+        assert!(matches!(
+            source.read(CoreNode::ValueType(staged)),
+            Former::Product(arity) if usize::from(arity) == 2
+        ));
+        assert_eq!(
+            source.component(CoreNode::ValueType(staged), Component::from(1_usize)),
+            Some(CoreNode::ValueType(string))
+        );
     }
 
     /// A product's, a sum's and a record's components read in order, a

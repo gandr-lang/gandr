@@ -316,8 +316,8 @@ pub enum RefusalName
     NonUniformOccurrence,
     /// A data declaration names a position after its own.
     CrossBlockReference,
-    /// A fixpoint's structural-descent claim does not replay.
-    DescentNotReplayed,
+    /// A value does not stand below the stage its structural recursion wants.
+    StageNotBelow,
     /// An operation absent from its interface.
     UnknownOperation,
     /// Handler clauses do not cover their interface exactly.
@@ -601,7 +601,7 @@ impl RefusalName
         Self::IndexOccurrence,
         Self::NonUniformOccurrence,
         Self::CrossBlockReference,
-        Self::DescentNotReplayed,
+        Self::StageNotBelow,
         Self::PathCode,
         Self::EndpointMismatch,
         Self::CompoundEndpoint,
@@ -806,7 +806,7 @@ impl RefusalName
         | (Self::IndexOccurrence, b"IndexOccurrence")
         | (Self::NonUniformOccurrence, b"NonUniformOccurrence")
         | (Self::CrossBlockReference, b"CrossBlockReference")
-        | (Self::DescentNotReplayed, b"DescentNotReplayed")
+        | (Self::StageNotBelow, b"StageNotBelow")
         | (Self::EffectSignatureConflict, b"EffectSignatureConflict")
         | (Self::UnknownOperation, b"UnknownOperation") | (Self::HandlerCoverage, b"HandlerCoverage")
         | (Self::ShiftWithoutReset, b"ShiftWithoutReset") | (Self::DependentStack, b"DependentStack")
@@ -894,7 +894,7 @@ impl RefusalName
             Self::IndexOccurrence => "IndexOccurrence",
             Self::NonUniformOccurrence => "NonUniformOccurrence",
             Self::CrossBlockReference => "CrossBlockReference",
-            Self::DescentNotReplayed => "DescentNotReplayed",
+            Self::StageNotBelow => "StageNotBelow",
             Self::UnknownOperation => "UnknownOperation",
             Self::HandlerCoverage => "HandlerCoverage",
             Self::ShiftWithoutReset => "ShiftWithoutReset",
@@ -1247,7 +1247,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::IndexOccurrence(_)), RefusalName::IndexOccurrence)
         | (Self::Checking(CheckRefusal::NonUniformOccurrence(_)), RefusalName::NonUniformOccurrence)
         | (Self::Checking(CheckRefusal::CrossBlockReference { .. }), RefusalName::CrossBlockReference)
-        | (Self::Checking(CheckRefusal::DescentNotReplayed { .. }), RefusalName::DescentNotReplayed) |
+        | (Self::Checking(CheckRefusal::StageNotBelow { .. }), RefusalName::StageNotBelow) |
         (Self::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { .. }),
         RefusalName::ExpectationOutsideFixtureRoot)
         | (Self::Checking(CheckRefusal::EffectSignatureConflict { .. }), RefusalName::EffectSignatureConflict)
@@ -1500,7 +1500,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::IndexOccurrence(_), RefusalName::IndexOccurrence)
         | (CheckRefusal::NonUniformOccurrence(_), RefusalName::NonUniformOccurrence)
         | (CheckRefusal::CrossBlockReference { .. }, RefusalName::CrossBlockReference)
-        | (CheckRefusal::DescentNotReplayed { .. }, RefusalName::DescentNotReplayed)
+        | (CheckRefusal::StageNotBelow { .. }, RefusalName::StageNotBelow)
         | (CheckRefusal::EffectSignatureConflict { .. }, RefusalName::EffectSignatureConflict)
         | (CheckRefusal::UnknownOperation { .. }, RefusalName::UnknownOperation)
         | (CheckRefusal::HandlerCoverage { .. }, RefusalName::HandlerCoverage)
@@ -1675,7 +1675,7 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::IndexOccurrence(_) => RefusalName::IndexOccurrence,
         CheckRefusal::NonUniformOccurrence(_) => RefusalName::NonUniformOccurrence,
         CheckRefusal::CrossBlockReference { .. } => RefusalName::CrossBlockReference,
-        CheckRefusal::DescentNotReplayed { .. } => RefusalName::DescentNotReplayed,
+        CheckRefusal::StageNotBelow { .. } => RefusalName::StageNotBelow,
     }
 }
 

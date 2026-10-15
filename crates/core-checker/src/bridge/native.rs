@@ -196,7 +196,8 @@ impl Erasure<'_, '_>
                     | ValueType::StaticPi { .. }
                     | ValueType::Unknown
                     | ValueType::Stack { .. }
-                    | ValueType::Capability { .. } => return Err(Refusal::MachineInvariant),
+                    | ValueType::Capability { .. }
+                    | ValueType::Staged { .. } => return Err(Refusal::MachineInvariant),
                 }
             },
             CoreNode::Type(TypeNode::Computation(_)) => return Err(Refusal::MachineInvariant),
@@ -459,7 +460,8 @@ impl Erasure<'_, '_>
                     | ValueType::StaticPi { .. }
                     | ValueType::Unknown
                     | ValueType::Stack { .. }
-                    | ValueType::Capability { .. } => return Err(Refusal::MachineInvariant),
+                    | ValueType::Capability { .. }
+                    | ValueType::Staged { .. } => return Err(Refusal::MachineInvariant),
                 };
                 Ok(self.erased_value_type(at, image))
             },

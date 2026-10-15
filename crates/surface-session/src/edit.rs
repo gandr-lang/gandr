@@ -3518,7 +3518,8 @@ where
 /// - ensures: preserves the arena node’s former and non-child payload, resolves
 ///   constants by program identity, and invokes `child` in former order with
 ///   each child’s sort. An absent arena entry is Unresolved at the requested
-///   sort.
+///   sort, and so is a staged type: a stage is one judgement's own and names
+///   nothing a program's content could hold.
 /// - panics: only if `child` panics.
 ///
 /// # Adequacy
@@ -3590,6 +3591,7 @@ where
                     if found.protocol() == session.protocol() && found.state() == session.state()
                         && found.payloads().len() == session.payloads().len()),
                 ValueType::Unknown => ret == ContentNode::UnknownType,
+                ValueType::Staged { .. } => ret == ContentNode::Unresolved(Sort::ValueType),
             },
         )
 },
@@ -3713,7 +3715,7 @@ where
                 .unwrap_or_else(|never| match never {}),
         ),
         Some(&ValueType::Unknown) => ContentNode::UnknownType,
-        None => ContentNode::Unresolved(Sort::ValueType),
+        Some(&ValueType::Staged { .. }) | None => ContentNode::Unresolved(Sort::ValueType),
     }
 }
 

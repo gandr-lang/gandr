@@ -421,6 +421,21 @@ pub enum ValueType
     /// therefore re-derived from a closed match rather than imported as a claim
     /// — no arm anywhere replaces an atom by a representation.
     Abstract(ConstantIndex),
+    /// `A^s`: the values of `base` at the stage `s` of a recursion. Admission
+    /// alone mints it — at a fixpoint's staged parameter, its self-reference's
+    /// domain and the recursive fields of a case on a staged value — so it is
+    /// no wire former: the decoder never produces it, formation refuses it in
+    /// a presented type, and the encoder writes its base. A stage refines the
+    /// type's values and never its identity: `A^s` is assignable where `A` is
+    /// wanted, and every other comparison takes it for itself. The base is
+    /// never itself staged.
+    Staged
+    {
+        /// The type the stage refines.
+        base: ValueTypeId,
+        /// The stage.
+        stage: crate::Stage,
+    },
     /// The static Pi from `A` to `B`: the classifier of a type operator from
     /// codes at `A` to codes at `B`.
     ///
@@ -490,7 +505,7 @@ impl ValueType
     /// - hypothesis: L3 — a product of two parts, the unit and the empty type
     ///   separate the product reading from the sum reading.
     /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
-    #[spec(ensures: |ret| match *self { Self::Product(ref parts) => ret == Some(&**parts), Self::Data { .. } | Self::Record(_) | Self::Session { .. } | Self::PathUniverse(..) | Self::FlowUniverse(..) | Self::Path { .. } | Self::Flow { .. } | Self::Base(_) | Self::Sigma { .. } | Self::Sum(_) | Self::List(_) | Self::Thunk(_) | Self::Universe { .. } | Self::Lift { .. } | Self::Element { .. } | Self::Abstract(_) | Self::StaticPi { .. } => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Product(ref parts) => ret == Some(&**parts), Self::Data { .. } | Self::Record(_) | Self::Session { .. } | Self::PathUniverse(..) | Self::FlowUniverse(..) | Self::Path { .. } | Self::Flow { .. } | Self::Base(_) | Self::Sigma { .. } | Self::Sum(_) | Self::List(_) | Self::Thunk(_) | Self::Universe { .. } | Self::Lift { .. } | Self::Element { .. } | Self::Abstract(_) | Self::Staged { .. } | Self::StaticPi { .. } => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn product_parts(&self) -> Option<&[ValueTypeId]>
@@ -513,6 +528,7 @@ impl ValueType
             | Self::Lift { .. }
             | Self::Element { .. }
             | Self::Abstract(_)
+            | Self::Staged { .. }
             | Self::StaticPi { .. } => None,
         }
     }
@@ -528,7 +544,7 @@ impl ValueType
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::product_parts`].
     /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
-    #[spec(ensures: |ret| match *self { Self::Sum(ref summands) => ret == Some(&**summands), Self::Data { .. } | Self::Record(_) | Self::Session { .. } | Self::PathUniverse(..) | Self::FlowUniverse(..) | Self::Path { .. } | Self::Flow { .. } | Self::Base(_) | Self::Product(_) | Self::Sigma { .. } | Self::List(_) | Self::Thunk(_) | Self::Universe { .. } | Self::Lift { .. } | Self::Element { .. } | Self::Abstract(_) | Self::StaticPi { .. } => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Sum(ref summands) => ret == Some(&**summands), Self::Data { .. } | Self::Record(_) | Self::Session { .. } | Self::PathUniverse(..) | Self::FlowUniverse(..) | Self::Path { .. } | Self::Flow { .. } | Self::Base(_) | Self::Product(_) | Self::Sigma { .. } | Self::List(_) | Self::Thunk(_) | Self::Universe { .. } | Self::Lift { .. } | Self::Element { .. } | Self::Abstract(_) | Self::Staged { .. } | Self::StaticPi { .. } => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn summands(&self) -> Option<&[ValueTypeId]>
@@ -551,6 +567,7 @@ impl ValueType
             | Self::Lift { .. }
             | Self::Element { .. }
             | Self::Abstract(_)
+            | Self::Staged { .. }
             | Self::StaticPi { .. } => None,
         }
     }

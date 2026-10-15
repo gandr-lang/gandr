@@ -308,7 +308,8 @@ pub fn authorise(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Session(_)
-        | ValueTypeView::Abstract(_) => Err(CheckRefusal::ShapeMismatch {
+        | ValueTypeView::Abstract(_)
+        | ValueTypeView::Staged { .. } => Err(CheckRefusal::ShapeMismatch {
             at: TermNode::Value(capability),
             wanted: ExpectedShape::Capability,
             found: TypeNode::Value(classifier),
@@ -381,7 +382,8 @@ pub fn reaches(
                 ValueType::List(inner)
                 | ValueType::Lift { inner, .. }
                 | ValueType::Path { carrier: inner, .. }
-                | ValueType::Flow { carrier: inner, .. } => pending.push(TypeNode::Value(inner)),
+                | ValueType::Flow { carrier: inner, .. }
+                | ValueType::Staged { base: inner, .. } => pending.push(TypeNode::Value(inner)),
                 ValueType::Thunk(body) => pending.push(TypeNode::Computation(body)),
                 ValueType::StaticPi { domain, codomain }
                 | ValueType::Sigma {

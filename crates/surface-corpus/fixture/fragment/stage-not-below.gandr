@@ -1,0 +1,34 @@
+// A marked call checks where its argument stands below the stage of the
+// parameter the recursion descends on: a field of the constructor a case on
+// that parameter opened, or a value rebuilt from one. An argument at the
+// parameter's own stage, or at no stage, is refused by name.
+
+/// Natural numbers, free: every constructor term is its own value.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// The call at the scrutinee itself: `n` stands at the stage, not below it.
+@[ refuses("StageNotBelow") ]
+def rec same(n : Nat) -> -F Nat {
+  case n {
+    Zero => return n,
+    Succ(p) => become same[<](n)
+  }
+}
+
+/// A recursion over a type with no constructors to open: nothing stands
+/// below the stage.
+@[ refuses("StageNotBelow") ]
+def rec counted(n : Integer) -> -F Integer { become counted[<](n) }
+
+/// The call at the field the case opened, one stage below the parameter's.
+@[ checks ]
+def rec down(n : Nat) -> -F Nat {
+  case n {
+    Zero => return n,
+    Succ(p) => become down[<](p)
+  }
+}

@@ -6420,7 +6420,7 @@ mod tests
              Node::ValueType(id) => core.value_type(id).is_some_and(|value_type| match *value_type {
               ValueType::Data {ref arguments,..} => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::ValueType)),
-              ValueType::Stack { .. } | ValueType::Capability { .. } | ValueType::Path { .. } | ValueType::Session(_) | ValueType::Flow { .. } | ValueType::Run(_) => false,
+              ValueType::Stack { .. } | ValueType::Capability { .. } | ValueType::Path { .. } | ValueType::Session(_) | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Staged { .. } => false,
               ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
               ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(Node::ValueType)),
               ValueType::StaticPi{domain:a,codomain:b} | ValueType::Sigma{first:a,second:b} => ret.as_slice() == [Node::ValueType(a),Node::ValueType(b)],
@@ -6600,6 +6600,7 @@ mod tests
                         },
                         ValueType::Stack { .. } => panic!("the kernel has no stack type"),
                         ValueType::Session(_) => panic!("the kernel has no session type"),
+                        ValueType::Staged { .. } => panic!("a fixture term names no stage"),
                         ValueType::Capability { .. } => {
                             panic!("the kernel has no capability type")
                         },
@@ -6967,6 +6968,7 @@ mod tests
                         },
                         ValueType::Stack { .. } => panic!("the kernel has no stack type"),
                         ValueType::Session(_) => panic!("the kernel has no session type"),
+                        ValueType::Staged { .. } => panic!("a fixture term names no stage"),
                         ValueType::Capability { .. } => {
                             panic!("the kernel has no capability type")
                         },

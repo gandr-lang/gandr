@@ -327,6 +327,7 @@ fn enter(
                 },
                 ValueType::List(inner)
                 | ValueType::Lift { inner, .. }
+                | ValueType::Staged { base: inner, .. }
                 | ValueType::Path { domain: inner, .. }
                 | ValueType::Flow { domain: inner, .. }
                 | ValueType::Session {
@@ -457,6 +458,15 @@ fn exit_value_type(
             }
             else {
                 arena.value_type_lift(rebuilt, target)
+            }
+        },
+        ValueType::Staged { base, stage } => {
+            let rebuilt = done.value_type(base)?;
+            if rebuilt == base {
+                id
+            }
+            else {
+                arena.value_type_staged(rebuilt, stage)
             }
         },
         ValueType::Path {
