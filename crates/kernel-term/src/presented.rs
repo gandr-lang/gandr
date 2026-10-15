@@ -1449,6 +1449,20 @@ impl FreeCells
         ConstructorTag::from(generator.0.saturating_mul(2).saturating_add(2))
     }
 
+    /// The generator whose letter or inverse is tagged `tag`, `None` for the
+    /// empty word: the inverse of [`Self::letter`] and [`Self::inverse`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn generator(tag: ConstructorTag) -> Option<CellIndex>
+    {
+        usize::from(tag)
+            .checked_sub(1)
+            .map(|offset| CellIndex(offset.div_euclid(2)))
+    }
+
     /// How many constructors the words take: the empty word and a letter and
     /// an inverse per cell.
     ///
@@ -1590,13 +1604,27 @@ impl From<CellIndex> for usize
     }
 }
 
-/// How many constructors a type of words takes.
+/// How many constructors a declaration takes: a type of words, or the sort
+/// its words loop at.
 ///
 /// # Specification
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ConstructorCount(usize);
+
+impl From<usize> for ConstructorCount
+{
+    /// The count `count`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
+    }
+}
 
 impl From<ConstructorCount> for usize
 {

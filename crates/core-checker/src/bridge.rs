@@ -1589,8 +1589,8 @@ where
         },
         | (Offer::Data(signature), _) => {
             positions.declare(constant, admitted);
+            positions.definitions.present(constant, signature);
             if !signature.presentation().rules().is_empty() {
-                positions.definitions.present(constant, signature);
                 positions.presentations = Presentations::of(environment.entries());
             }
             (Outcome::Data { admitted, audit }, replayed)

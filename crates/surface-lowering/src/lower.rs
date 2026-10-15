@@ -5395,7 +5395,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let block = self.block(function, &mut cursor, frame)?;
         let answer = match result {
             | Maybe::Present(node) => {
-                let answer = native::Answer { node, frame };
+                let answer = native::Answer {
+                    node,
+                    frame,
+                    over: native::Over::Written,
+                };
                 let _first = self.answers.insert(block.last, answer);
                 Maybe::Present(answer)
             },

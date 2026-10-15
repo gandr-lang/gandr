@@ -347,6 +347,7 @@ use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
+use crate::resolve::binder_site;
 use crate::resolve::binder_type;
 
 #[cfg(test)]
@@ -591,6 +592,37 @@ pub(super) struct Answer
     pub node: NodeIndex,
     /// The frame the type was read under.
     pub frame: Frame,
+    /// What the position answers of the type the node writes.
+    pub over: Over,
+}
+
+/// What a position answers of the type its answer's node writes.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a loop arm's frame binds the answer at the loop's point
+///   innermost.
+/// - executable: none — the frame is a coordinate.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `loop => back(loop)` takes its endpoints from the path
+///   over the loop, and a written answer from itself.
+/// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) enum Over
+{
+    /// The written type itself.
+    Written,
+    /// The path over a loop of a case answering the written type `B`:
+    /// `Path(B, y, y)`, `y` the case's answer at the loop's point, which the
+    /// arm's frame `arm` binds innermost. Once the case is minted the lowering
+    /// substitutes for `y` the answer [`gandr_core_term::identity::answer_at`]
+    /// reads at the point.
+    Loop
+    {
+        /// The arm's frame.
+        arm: Frame,
+    },
 }
 
 /// A constructor applied to its fields, as the classification planned it.
@@ -852,12 +884,69 @@ pub(super) struct CaseForm
     frame: Frame,
     /// The answer the motive is read from.
     answer: Maybe<Answer, answered::Absent>,
-    /// Each arm's body.
+    /// Each constructor arm's body.
     bodies: Vec<NodeIndex>,
     /// The decision tree.
     tests: Vec<Test>,
+    /// The loop arms, one per loop of the root's sort in the order its loop
+    /// branches follow its constructors' branches, or none.
+    loops: Vec<LoopArm>,
     /// What the origin table keeps of the arms.
     origin: CaseOrigin,
+}
+
+/// One loop arm of a match, `loop => e`.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `words` and `generator` name a loop the lowering collected.
+/// - executable: none — the indices name collected words.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::loop_arms`].
+/// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct LoopArm
+{
+    /// The words the loop is a letter of, by their position among the
+    /// collected words.
+    words: usize,
+    /// The loop's position among its words' cells.
+    generator: usize,
+    /// The arm's body.
+    body: NodeIndex,
+    /// The arm's pattern, the loop's name.
+    named: Placed,
+}
+
+/// The loop an arm's whole pattern names.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `words` and `generator` name a loop the lowering collected.
+/// - executable: none — the indices name collected words.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::loop_named`].
+/// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NamedLoop
+{
+    /// The words the loop is a letter of, by their position among the
+    /// collected words.
+    words: usize,
+    /// The loop's position among its words' cells.
+    generator: gandr_kernel_term::CellIndex,
+}
+
+/// What a pattern's name is to the modules enclosing it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Declared
+{
+    /// Some enclosing module binds the name to a loop.
+    Loop,
+    /// None does: the name binds a pattern variable.
+    Binder,
 }
 
 /// One pattern matrix the compiler has yet to reduce, and the tree node it
@@ -1847,6 +1936,22 @@ impl<'source> Lowerer<'_, 'source>
                 boundary: FragmentBoundary::JoinsBlock,
             });
         }
+        // A loop's name as an arm's whole pattern names the loop's arm, never
+        // a variable; the other arms compile to the tree.
+        let mut looped = Vec::new();
+        let mut constructed = Vec::with_capacity(arms.len());
+        for &(pattern, body) in &arms {
+            match self.loop_named(site, pattern)? {
+                | Maybe::Present(NamedLoop { words, generator }) => looped.push(LoopArm {
+                    words,
+                    generator: usize::from(generator),
+                    body: body.node,
+                    named: pattern,
+                }),
+                | Maybe::Absent(_) => constructed.push((pattern, body)),
+            }
+        }
+        let arms = constructed;
         let mut patterns = Written::default();
         let mut rows = Vec::new();
         let mut variables: Vec<Vec<Placed>> = Vec::with_capacity(arms.len());
@@ -1886,6 +1991,7 @@ impl<'source> Lowerer<'_, 'source>
             variables.push(bound);
         }
         let tests = self.compile(site, &patterns, rows)?;
+        let loops = self.loop_arms(site, &tests, looped)?;
         let eliminates = tests.iter().any(|test| {
             matches!(
                 *test,
@@ -1900,6 +2006,7 @@ impl<'source> Lowerer<'_, 'source>
             | Maybe::Present(node) => Maybe::Present(Answer {
                 node: node.node,
                 frame,
+                over: Over::Written,
             }),
             | Maybe::Absent(reason) => self
                 .answers
@@ -1928,6 +2035,23 @@ impl<'source> Lowerer<'_, 'source>
             }
             self.pass_paths(site.at.node, body.node);
         }
+        // A loop arm reads the case's answer at its loop's point as a binder,
+        // which the minted case replaces by that answer.
+        for arm in &loops {
+            let inner = Frame::Inner(self.scope.extend(
+                frame,
+                SurfaceName::from(""),
+                Maybe::Absent(binder_site::Absent::Unwritten),
+            ));
+            self.read(arm.body, Reading::Computation(inner));
+            if let Maybe::Present(stated) = answer {
+                let _first = self.answers.insert(arm.body, Answer {
+                    over: Over::Loop { arm: inner },
+                    ..stated
+                });
+            }
+            self.pass_paths(site.at.node, arm.body);
+        }
         let index = CaseIndex(self.cases.len());
         self.cases.push(CaseForm {
             scrutinee: scrutinee.node,
@@ -1935,6 +2059,7 @@ impl<'source> Lowerer<'_, 'source>
             answer,
             bodies: arms.iter().map(|&(_pattern, body)| body.node).collect(),
             tests,
+            loops,
             origin: kept,
         });
         self.plan(site, Plan::Case(index));
@@ -2000,6 +2125,7 @@ impl<'source> Lowerer<'_, 'source>
             | Maybe::Present(node) => Maybe::Present(Answer {
                 node: node.node,
                 frame,
+                over: Over::Written,
             }),
             | Maybe::Absent(reason) => self
                 .answers
@@ -2026,6 +2152,7 @@ impl<'source> Lowerer<'_, 'source>
                 family,
                 branches: Vec::new(),
             }]),
+            loops: Vec::new(),
             origin: CaseOrigin {
                 written: site.at.node,
                 scrutinee: scrutinee.node,
@@ -2223,6 +2350,218 @@ impl<'source> Lowerer<'_, 'source>
         Ok(alternatives)
     }
 
+    /// The loop an arm's whole pattern names, when it is a name a loop binds.
+    ///
+    /// # Specification
+    /// - requires: `pattern` is an arm's pattern of the match at `site`.
+    /// - ensures: the position of the loop's words among the collected words
+    ///   and the loop's position among its words' cells exactly when the
+    ///   pattern is a name that resolves to a loop's binding; the unnamed
+    ///   absence otherwise. A name no loop of the enclosing modules declares is
+    ///   a binder and is never resolved, so a pattern variable spelled as a
+    ///   later member or a recursive binder binds as it always has.
+    /// - fails: the name's resolution refusals, for a name a loop declares, and
+    ///   the tree's molds'.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `loop` names the circle's loop, and `x` binds.
+    /// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| matches!(found, Maybe::Absent(_)) || !self.collected.words.is_empty()))]
+    fn loop_named(
+        &mut self,
+        site: Site,
+        pattern: Placed,
+    ) -> Result<Maybe<NamedLoop, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        if !matches!(self.form_at(pattern)?, Some((name, _)) if name == FormName::IDENTIFIER)
+            || self.declares_a_loop(pattern, self.name_at(pattern))? == Declared::Binder
+        {
+            return Ok(Maybe::Absent(constructed::Absent::Unnamed));
+        }
+        Ok(match self.loop_letter(site, pattern, Inverse(false))? {
+            | Maybe::Present(Constructor {
+                form: Generators::Words(words),
+                tag,
+                ..
+            }) => match gandr_core_term::FreeCells::generator(
+                gandr_core_term::ConstructorTag::from(tag),
+            ) {
+                | Some(generator) => Maybe::Present(NamedLoop { words, generator }),
+                | None => Maybe::Absent(constructed::Absent::Unnamed),
+            },
+            | Maybe::Present(_) => Maybe::Absent(constructed::Absent::Unnamed),
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        })
+    }
+
+    /// Whether a loop named `name` is declared in a module enclosing the
+    /// declaration that owns `at`, read off the collected names without
+    /// resolving: a source with no loop answers at once.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Declared::Loop`] exactly when some module on the chain from
+    ///   the owner's container out to the top level binds `name` to a loop's
+    ///   slot.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk out spends
+    ///   the fuel.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `loop` steps out one module per iteration, each step
+    ///   spending fuel, never recursing.
+    /// - measure: the modules between the owner and the top level.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `loop` names the circle's loop at the top level and
+    ///   inside a module, while `kept` and `later` bind as pattern variables
+    ///   beside a later member of the same name; a name read as a loop there
+    ///   refuses a punned pattern.
+    /// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
+    #[spec(ensures: |ret| ret.as_ref().ok() != Some(&Declared::Loop) || !self.collected.words.is_empty())]
+    fn declares_a_loop(
+        &mut self,
+        at: Placed,
+        name: SurfaceName<'source>,
+    ) -> Result<Declared, LoweringRefusal<'source>>
+    {
+        if self.collected.words.is_empty() {
+            return Ok(Declared::Binder);
+        }
+        let Maybe::Present(own) = self.collected.owner_of(at.node)
+        else {
+            return Ok(Declared::Binder);
+        };
+        let mut container = self
+            .collected
+            .slots
+            .get(usize::from(own))
+            .map_or(crate::module::Container::TopLevel, |slot| slot.container);
+        loop {
+            self.fuel.spend()?;
+            if let Some(&target) = self.collected.by_name.get(&(container, name))
+                && let Some(Maybe::Present(Half {
+                    operand: Operand::Loop { .. },
+                    ..
+                })) = self
+                    .collected
+                    .slots
+                    .get(usize::from(target))
+                    .map(|slot| slot.definition)
+            {
+                return Ok(Declared::Loop);
+            }
+            let crate::module::Container::Module(module) = container
+            else {
+                return Ok(Declared::Binder);
+            };
+            container = self
+                .collected
+                .structures
+                .get(usize::from(module))
+                .map_or(crate::module::Container::TopLevel, |structure| {
+                    structure.container
+                });
+        }
+    }
+
+    /// The loop arms `written` of the match at `site`, in the order the loop
+    /// branches of the tree `tests`' root follow its constructors' branches.
+    ///
+    /// # Specification
+    /// - requires: `tests` is the match's compiled tree and `written` its loop
+    ///   arms, in source order.
+    /// - ensures: none for no loop arm; otherwise one arm per loop of the root
+    ///   switch's sort, words by their position among the collected words and
+    ///   loops in written order.
+    /// - fails: [`LoweringRefusal::NonExhaustiveMatch`] when the root is no
+    ///   switch on the scrutinee's constructors or a loop of its sort has no
+    ///   arm; [`LoweringRefusal::DuplicateDefinition`] at a loop's second arm;
+    ///   the wrong-sort refusal at an arm for a loop of another sort.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's loop arm follows its point's branch, and
+    ///   a loop arm over a case with no loop arm owed is refused.
+    /// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
+    #[spec(captures: count = written.len(), ensures: |ret| ret.as_ref().map_or(true, |ordered| ordered.len() <= count))]
+    fn loop_arms(
+        &self,
+        site: Site,
+        tests: &[Test],
+        written: Vec<LoopArm>,
+    ) -> Result<Vec<LoopArm>, LoweringRefusal<'source>>
+    {
+        if written.is_empty() {
+            return Ok(written);
+        }
+        let uncovered = LoweringRefusal::NonExhaustiveMatch { span: site.at.span };
+        let Some(&Test::Data {
+            level,
+            family: Maybe::Present(family),
+            ..
+        }) = tests.first()
+        else {
+            return Err(uncovered);
+        };
+        if level != TreeLevel::default() {
+            return Err(uncovered);
+        }
+        let mut owed = Vec::new();
+        for (index, words) in self.collected.words.iter().enumerate() {
+            let sort = self
+                .collected
+                .data
+                .get(words.family)
+                .and_then(|form| self.collected.slots.get(usize::from(form.slot)))
+                .map(|slot| slot.constant);
+            if sort == Some(family) {
+                owed.extend((0 .. words.loops.len()).map(|generator| (index, generator)));
+            }
+        }
+        if let Some(stray) = written
+            .iter()
+            .find(|arm| !owed.contains(&(arm.words, arm.generator)))
+        {
+            return Err(LoweringRefusal::OutOfFragment {
+                span: stray.named.span,
+                form: FormName::CASE,
+                sort: site.reading.sort(),
+                boundary: FragmentBoundary::WrongSort,
+            });
+        }
+        let mut ordered = Vec::with_capacity(owed.len());
+        for &(words, generator) in &owed {
+            let mut matching = written
+                .iter()
+                .filter(|arm| arm.words == words && arm.generator == generator);
+            let Some(&arm) = matching.next()
+            else {
+                return Err(uncovered);
+            };
+            if let Some(again) = matching.next() {
+                return Err(LoweringRefusal::DuplicateDefinition {
+                    span: again.named.span,
+                    name: SurfaceName::from(self.text_at(again.named)),
+                    first: arm.named.span,
+                });
+            }
+            ordered.push(arm);
+        }
+
+        Ok(ordered)
+    }
+
     /// Read the or-free pattern `root` of the match at `site` into
     /// `patterns`, numbering its variables into `named`; `stated` is the type
     /// the scrutinee's position states.
@@ -2398,6 +2737,11 @@ impl<'source> Lowerer<'_, 'source>
                     }),
                     | _ => Err(here.out(FragmentBoundary::Unannotated)),
                 };
+            }
+            // A loop's name in a pattern names the loop, never a variable; a
+            // loop is matched only as an arm's whole pattern.
+            if let Maybe::Present(_) = self.loop_named(site, at)? {
+                return Err(here.out(FragmentBoundary::Unadmitted));
             }
             return self.binder(at, named);
         }
@@ -3854,27 +4198,17 @@ impl<'source> Lowerer<'_, 'source>
             let _first = self.worded.insert(index, data);
             let carrier = sink.arena.value_type_data(family, Vec::new());
             sink.origins.record_value_type(carrier, origin);
-            let arities: Vec<usize> = form
+            let arities: Vec<gandr_kernel_term::FieldCount> = form
                 .generators
                 .iter()
-                .map(|generator| generator.fields.len())
+                .map(|generator| gandr_kernel_term::FieldCount::from(generator.fields.len()))
                 .collect();
-            let mut built = Vec::new();
-            for node in words.point.iter().rev() {
-                let gandr_core_term::RuleNode::Constructor(tag) = *node
-                else {
-                    continue;
-                };
-                let arity = arities.get(usize::from(tag)).copied().unwrap_or(0_usize);
-                let fields: Vec<ValueId> = built
-                    .drain(built.len().saturating_sub(arity) ..)
-                    .rev()
-                    .collect();
-                let value = sink.arena.value_constructor(carrier, tag, fields);
+            let mut minted = Vec::new();
+            let point = spelled_point(sink.arena, carrier, (&words.point, &arities), &mut minted);
+            for &value in &minted {
                 sink.origins.record_value(value, origin);
-                built.push(value);
             }
-            let Some(&point) = built.last()
+            let Maybe::Present(point) = point
             else {
                 continue;
             };
@@ -4318,7 +4652,12 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         let inserted = origin.inserted(Insertion::Match);
-        let Some(&Maybe::Present(root)) = minted.first()
+        let minted_root = match minted.first() {
+            | Some(&Maybe::Present(root)) if form.loops.is_empty() => Maybe::Present(root),
+            | Some(&Maybe::Present(root)) => self.with_loops(form, root, sink, &mut copies),
+            | Some(&Maybe::Absent(_)) | None => Maybe::Absent(lowered::Absent::Unminted),
+        };
+        let Maybe::Present(root) = minted_root
         else {
             record_copied_since(
                 sink,
@@ -4349,6 +4688,89 @@ impl<'source> Lowerer<'_, 'source>
         sink.origins.record_case(root, form.origin.clone());
 
         Maybe::Present(Lowered::Computation(root))
+    }
+
+    /// The root data case `root` of the match `form` with a loop branch per
+    /// loop arm after its constructors' branches.
+    ///
+    /// # Specification
+    /// - requires: `root` is the minted root of `form`'s tree, and `form`
+    ///   carries loop arms.
+    /// - ensures: the data case over the root's scrutinee and motive whose
+    ///   branches are the root's, then each loop arm's body in `form`'s order
+    ///   with the binder its arm reads replaced by `b`, the root's answer at
+    ///   the arm's loop's point over the root's branches as
+    ///   [`gandr_core_term::identity::answer_at`] reads it, which the checker
+    ///   reads alike; every node the replacement rewrote reported in `copies`
+    ///   beside its original. The unminted absence when the root is no data
+    ///   case, a body did not lower or a point does not spell.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's loop arm follows its point's branch and
+    ///   reads `Base`, the value that branch returns, for its answer.
+    /// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if matches!(sink.arena.computation(id), Some(gandr_core_term::Computation::DataCase { .. }))))]
+    fn with_loops(
+        &self,
+        form: &CaseForm,
+        root: ComputationId,
+        sink: &mut Sink<'_>,
+        copies: &mut Vec<Carried>,
+    ) -> Maybe<ComputationId, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let Some(&gandr_core_term::Computation::DataCase {
+            scrutinee,
+            motive,
+            ref branches,
+        }) = sink.arena.computation(root)
+        else {
+            return unminted;
+        };
+        let branches = branches.clone();
+        let mut all = branches.clone();
+        for arm in &form.loops {
+            let Maybe::Present(body) = self.computation_at(arm.body)
+            else {
+                return unminted;
+            };
+            let Some((carrier, point, arities)) =
+                self.collected.words.get(arm.words).and_then(|words| {
+                    let data = self.collected.data.get(words.family)?;
+                    let family = self.collected.slots.get(usize::from(data.slot))?.constant;
+                    let arities: Vec<gandr_kernel_term::FieldCount> = data
+                        .generators
+                        .iter()
+                        .map(|generator| {
+                            gandr_kernel_term::FieldCount::from(generator.fields.len())
+                        })
+                        .collect();
+                    Some((family, &words.point, arities))
+                })
+            else {
+                return unminted;
+            };
+            let classifier = sink.arena.value_type_data(carrier, Vec::new());
+            let Maybe::Present(at) =
+                spelled_point(sink.arena, classifier, (point, &arities), &mut Vec::new())
+            else {
+                return unminted;
+            };
+            let carried = gandr_core_term::identity::answer_at(sink.arena, at, motive, &branches);
+            let mut rewritten = Vec::new();
+            let instantiated = gandr_core_term::instantiate_computation_traced(
+                sink.arena,
+                body,
+                carried,
+                &mut rewritten,
+            );
+            exits::mark_copies(sink, &rewritten);
+            copies.extend_from_slice(&rewritten);
+            all.push(instantiated);
+        }
+        Maybe::Present(sink.arena.computation_data_case(scrutinee, motive, all))
     }
 }
 
@@ -4693,6 +5115,61 @@ fn constructed(
 {
     let classifier = arena.value_type_data(family, Vec::new());
     arena.value_constructor(classifier, tag, fields)
+}
+
+/// The closed constructor term the prefix-ordered `point` spells over
+/// `carrier`, whose constructors take `arities` fields, every value it mints
+/// reported to `minted` in mint order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the term whose prefix reading is `point`'s constructor nodes,
+///   each a constructor of `carrier` over the terms after it; the unminted
+///   absence for an empty point.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` over the point's nodes, not recursion.
+/// - measure: the nodes left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's point is `Base`, the loop arm's case at it
+///   and the words' path type alike.
+/// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
+#[spec(captures: before = minted.len(), ensures: |ret| minted.len() >= before && matches!(ret, Maybe::Absent(_)) == (minted.len() == before))]
+fn spelled_point(
+    arena: &mut CoreArena,
+    carrier: ValueTypeId,
+    (point, arities): (
+        &[gandr_core_term::RuleNode],
+        &[gandr_kernel_term::FieldCount],
+    ),
+    minted: &mut Vec<ValueId>,
+) -> Maybe<ValueId, lowered::Absent>
+{
+    let mut built = Vec::new();
+    for node in point.iter().rev() {
+        let gandr_core_term::RuleNode::Constructor(tag) = *node
+        else {
+            continue;
+        };
+        let arity = arities
+            .get(usize::from(tag))
+            .copied()
+            .map_or(0_usize, usize::from);
+        let fields: Vec<ValueId> = built
+            .drain(built.len().saturating_sub(arity) ..)
+            .rev()
+            .collect();
+        let value = arena.value_constructor(carrier, tag, fields);
+        minted.push(value);
+        built.push(value);
+    }
+    built
+        .last()
+        .copied()
+        .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present)
 }
 
 /// `ty`, read under `context` binders, with the value `scrutinee` abstracted

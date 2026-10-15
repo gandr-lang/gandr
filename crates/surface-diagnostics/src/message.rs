@@ -446,6 +446,10 @@ fn checked(
         | CheckRefusal::NotApart { .. } => {
             f.write_str("this case has no arm, but its path's endpoints are not shown apart")
         },
+        | CheckRefusal::LoopNotRespected { .. } => f.write_str(
+            "this case might tell a loop apart from staying put: carried along the loop, its \
+             answer at the loop's point is not that answer",
+        ),
         | CheckRefusal::AbstractKindNotUniverse(_) => {
             f.write_str("an abstract type's kind must be a universe")
         },
@@ -995,6 +999,12 @@ mod tests
             CheckRefusal::NotApart {
                 at: computation,
                 reason: gandr_kernel_term::Apartness::Agree,
+            },
+            CheckRefusal::LoopNotRespected {
+                at: computation,
+                cell: gandr_kernel_term::CellIndex::from(0_usize),
+                left: computation,
+                right: computation,
             },
             CheckRefusal::AbstractKindNotUniverse(value_type),
             CheckRefusal::RepresentationAboveKind {

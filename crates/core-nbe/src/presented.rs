@@ -87,6 +87,17 @@ impl Presented
             arities,
         }
     }
+
+    /// The cells the presentation's words loop by, when it is a type of
+    /// words.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn cells(&self) -> Option<&gandr_kernel_term::FreeCells>
+    {
+        self.presentation.cells()
+    }
 }
 
 /// What taking a value's normal form gave.

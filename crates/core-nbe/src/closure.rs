@@ -521,6 +521,97 @@ pub enum CompBody
     },
     /// Return the cell of the held head and the newly bound tail.
     Cons(DomainValueId),
+    /// Transport the bound value along the rest of a word in the same motive:
+    /// the continuation `y. tr(P, u, y)` the transport along a word's first
+    /// letter binds into.
+    AlongWord
+    {
+        /// The transport's motive, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The rest of the word.
+        rest: DomainValueId,
+    },
+    /// After the image of a letter under one endpoint of a path family ran,
+    /// run the other's or splice the transported path between them.
+    Conjugated
+    {
+        /// The path family, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The one-letter word transported along.
+        along: DomainValueId,
+        /// The path transported.
+        value: DomainValueId,
+        /// Which image the bound value is.
+        stage: Conjugating,
+    },
+    /// After the image of a word's letter under one function of an
+    /// endpoint's chain of calls ran, append it and map the next letter.
+    Mapping
+    {
+        /// The path family, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The endpoint whose chain of calls maps the word.
+        side: gandr_kernel_term::Side,
+        /// The function of the chain mapping the word.
+        call: Call,
+        /// The letters still to map.
+        rest: DomainValueId,
+        /// The image of the letters mapped so far.
+        mapped: DomainValueId,
+        /// Whether the bound image is the letter's or its inverse's.
+        orientation: Orientation,
+    },
+}
+
+/// Which image of a letter a [`CompBody::Conjugated`] continuation binds.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Conjugating
+{
+    /// The left endpoint's: the right one's is still to run or read.
+    Left,
+    /// The right endpoint's, after the left one's.
+    Right(DomainValueId),
+}
+
+/// A function's position in an endpoint's chain of calls, innermost first.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Call(usize);
+
+impl From<usize> for Call
+{
+    /// The function at `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: usize) -> Self
+    {
+        Self(position)
+    }
+}
+
+impl From<Call> for usize
+{
+    /// The function's position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(call: Call) -> Self
+    {
+        call.0
+    }
+}
+
+/// Whether a letter's image is read as written or inverted.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Orientation
+{
+    /// The letter's own image.
+    Forward,
+    /// The image of the letter's inverse: the letter's image inverted.
+    Inverse,
 }
 
 /// A suspended **computation** body with the environment its free variables

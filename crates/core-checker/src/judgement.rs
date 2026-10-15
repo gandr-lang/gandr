@@ -1220,6 +1220,15 @@ enum Frame
         /// How the case is read against the rules.
         reading: crate::respect::Reading,
     },
+    /// Show a case over a sort its words loop at respects each loop, once
+    /// its branches have checked.
+    NativeLoops
+    {
+        /// The case.
+        term: ComputationId,
+        /// Its scrutinee classifier.
+        datatype: ValueTypeId,
+    },
     /// Await a dependent split scrutinee's classifier, which must be a
     /// dependent pair.
     SigmaSplitScrutinee(ComputationId),
@@ -2021,6 +2030,7 @@ impl Frame
             | Self::NativeCase(_) => FrameRole::NativeCase,
             | Self::NativeMotive { .. } => FrameRole::NativeMotive,
             | Self::NativeRespect { .. } => FrameRole::NativeRespect,
+            | Self::NativeLoops { .. } => FrameRole::NativeLoops,
             | Self::SigmaSplitScrutinee(_) => FrameRole::SigmaSplitScrutinee,
             | Self::SigmaSplitMotive { .. } => FrameRole::SigmaSplitMotive,
             | Self::NativeProjection(_) => FrameRole::NativeProjection,
@@ -2161,6 +2171,7 @@ impl Frame
             | Self::NativeRecord { .. }
             | Self::NativeCase(_)
             | Self::NativeRespect { .. }
+            | Self::NativeLoops { .. }
             | Self::SigmaSplitScrutinee(_)
             | Self::NativeProjection(_)
             | Self::PerformPayload { .. }
@@ -6007,6 +6018,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }
                 Ok(Step::Ascend(Produced::Checked))
             },
+            | (Frame::NativeLoops { term, datatype }, Produced::Checked) => {
+                // As the rules are, a loop is judged on the elaborated body.
+                if self.context.nesting().is_empty() {
+                    let signature = crate::former::signature(self.context, datatype)?;
+                    crate::loops::respected(self.context, term, (datatype, &signature))?;
+                }
+                Ok(Step::Ascend(Produced::Checked))
+            },
             | (Frame::SigmaSplitScrutinee(term), Produced::ValueType(classifier)) => {
                 self.sigma_split(term, classifier)
             },
@@ -6026,6 +6045,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::NativeCase(_)
                 | Frame::NativeMotive { .. }
                 | Frame::NativeRespect { .. }
+                | Frame::NativeLoops { .. }
                 | Frame::SigmaSplitScrutinee(_)
                 | Frame::SigmaSplitMotive { .. }
                 | Frame::NativeProjection(_),

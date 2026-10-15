@@ -1,0 +1,103 @@
+// Eliminating the circle: a case over it reads its point, and the loop at the
+// point is owed. A dependent case carries its answer at the point along the
+// loop back to itself, by conversion, or supplies that path as a loop arm; a
+// non-dependent case maps the loop to reflexivity unless a loop arm chooses
+// its image. Transport along a word computes as the book's § 2.11 states it:
+// in a family of paths it composes on the side the endpoint varies, in a
+// constant family it is the identity, and in a family running its point
+// through a map it is the map's image of the word.
+
+/// The circle: one point and a loop at it.
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+/// The integers, a constant family's fibre.
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
+}
+
+/// Every point's loop: the loop at the point, carried along the loop by
+/// conjugation to itself (the book's Lemma 6.4.2 element).
+@[ checks ]
+def selfloop(x : Circle) -> -F Path(Circle, x, x) {
+  case x {
+    Base => loop
+  }
+}
+
+/// Every point's reflexivity, which conjugation fixes as well.
+@[ checks ]
+def selfrefl(x : Circle) -> -F Path(Circle, x, x) {
+  case x {
+    Base => here(Base)
+  }
+}
+
+/// The circle's flip: the point to itself and the loop to its inverse, the
+/// loop arm choosing the image.
+@[ checks ]
+def invLooper(x : Circle) -> -F Circle {
+  case x {
+    Base => Base,
+    loop => back(loop)
+  }
+}
+
+/// The flip twice is the identity, at every point: the answer at `Base` is
+/// reflexivity, and carried along the loop it is conjugated by the flip's
+/// image of its image, the loop again.
+@[ checks ]
+def involutive(x : Circle) -> -F Path(Circle, invLooper(invLooper(x)), x) {
+  case x {
+    Base => here(Base)
+  }
+}
+
+/// The map that collapses the circle to its point: no loop arm, so the loop's
+/// image is reflexivity.
+@[ checks ]
+def collapse(x : Circle) -> -F Circle {
+  case x {
+    Base => Base
+  }
+}
+
+/// The collapse's image of a path at the point.
+@[ checks ]
+def collapsed(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+  cong(collapse, p)
+}
+
+/// The collapse's image of the loop is reflexivity.
+@[ checks ]
+def collapsed_loop : Path(Path(Circle, Base, Base), collapsed(loop), here(Base)) ;
+def collapsed_loop = here(here(Base)) ;
+
+/// Transport in a family of paths from the point moves the endpoint: it
+/// post-composes with the loop.
+@[ checks ]
+def moved : Path(Path(Circle, Base, Base), transport(\x. Path(Circle, Base, x), loop, here(Base)), loop) ;
+def moved = here(loop) ;
+
+/// Transport in the family of loops at each point conjugates by the loop,
+/// which fixes the loop.
+@[ checks ]
+def conjugated : Path(Path(Circle, Base, Base), transport(\x. Path(Circle, x, x), loop, loop), loop) ;
+def conjugated = here(loop) ;
+
+/// Transport in a constant family is the identity.
+@[ checks ]
+def constant : Path(Int, transport(\x. Int, loop, Z), Z) ;
+def constant = here(Z) ;
+
+/// Transport in a family running its point through the flip is the flip's
+/// image of the loop, its inverse: the family's transport is its `cong`.
+@[ checks ]
+def flipped : Path(Path(Circle, Base, Base), transport(\x. Path(Circle, Base, invLooper(x)), loop, here(Base)), back(loop) ∷ here(Base)) ;
+def flipped = here(back(loop) ∷ here(Base)) ;

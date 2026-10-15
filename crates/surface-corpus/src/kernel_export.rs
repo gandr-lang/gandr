@@ -2014,3 +2014,106 @@ mod kernel_open_fold_readmission
         );
     }
 }
+
+/// A case over the circle readmits by the kernel's own reading of its loop
+/// obligation; a twin whose flip drops its loop arm leaves `involutive`
+/// owing a loop it no longer respects, and is refused by name there.
+mod kernel_loop_elimination_readmission
+{
+    use alloc::vec;
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::CellIndex;
+    use gandr_kernel_term::Computation;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_kernel_term::decode;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_loop_elimination_readmits_and_its_tampered_twin_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/identity/circle-elim.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("circle-elim lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("circle-elim's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations).unwrap_or_else(|refusal| {
+            panic!(
+                "circle-elim readmits, each case's loop owed by conversion or by its \
+                 loop arm: {refusal:?}"
+            )
+        });
+        let position = |name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(vec![segment]);
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"))
+        };
+        let flip = position("invLooper");
+        let involutive = position("involutive");
+        let marked = &declarations[flip];
+        let DeclarationContent::Def { declared, body } = *marked.declaration().content()
+        else {
+            panic!("`invLooper` is a definition");
+        };
+        let Some(&Value::Thunk(lambda)) = arena.value(body)
+        else {
+            panic!("`invLooper` is a thunk");
+        };
+        let Some(&Computation::Lambda(case)) = arena.computation(lambda)
+        else {
+            panic!("`invLooper` opens with a lambda");
+        };
+        let Some(Computation::DataCase {
+            scrutinee,
+            motive,
+            branches,
+        }) = arena.computation(case).cloned()
+        else {
+            panic!("`invLooper` cases on its argument");
+        };
+        assert_eq!(branches.len(), 2, "the point's branch, then the loop arm");
+        // The twin keeps the point's branch and drops the loop arm: it still
+        // checks, a non-dependent case owing nothing, but now sends the loop to
+        // reflexivity, so `invLooper(invLooper(x))` no longer follows `x`
+        // round the loop and `involutive`'s answer at `Base` is not carried
+        // to itself.
+        let collapsed = vec![branches[0]];
+        let case = arena.computation_data_case(scrutinee, motive, collapsed);
+        let lambda = arena.computation_lambda(case);
+        let body = arena.value_thunk(lambda);
+        let twin_declaration = DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, body)
+            .named(marked.declaration().name().clone());
+        let mut twin = declarations.clone();
+        twin[flip] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("the collapsed flip leaves `involutive` short of its loop");
+        assert_eq!(usize::from(refusal.position()), involutive);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::LoopNotRespected(CellIndex::from(0_usize)),
+            "the kernel names the loop `involutive` no longer respects"
+        );
+    }
+}

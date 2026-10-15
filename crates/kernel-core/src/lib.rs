@@ -470,6 +470,7 @@ pub mod seal;
 pub mod stage;
 pub mod support;
 mod witness;
+mod words;
 
 pub use crate::census::ExpansionCensus;
 pub use crate::census::ExpansionCount;

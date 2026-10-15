@@ -25,6 +25,7 @@ mod native_formers
     use gandr_kernel_core::replay;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::AdmissionMark;
+    use gandr_kernel_term::CellIndex;
     use gandr_kernel_term::CompTypeId;
     use gandr_kernel_term::Component;
     use gandr_kernel_term::ComputationId;
@@ -33,10 +34,15 @@ mod native_formers
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::DeclarationContent;
     use gandr_kernel_term::FieldLabel;
+    use gandr_kernel_term::FreeCell;
+    use gandr_kernel_term::FreeCells;
     use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::Presentation;
+    use gandr_kernel_term::RuleNode;
     use gandr_kernel_term::Side;
+    use gandr_kernel_term::TermArena;
     use gandr_kernel_term::ValueId;
     use gandr_kernel_term::ValueType;
     use gandr_kernel_term::ValueTypeId;
@@ -1112,5 +1118,285 @@ mod native_formers
         let bytes = encode(environment.arena(), &declarations);
         let decoded = decode(bytes.as_image()).expect("lazy product canonical reader");
         assert_eq!(encode(decoded.arena(), decoded.declarations()), bytes);
+    }
+
+    /// The one-point sort `S`, at constant 0.
+    const SORT: usize = 0;
+    /// The words of the loop at `S`'s point, at constant 1.
+    const WORDS: usize = 1;
+    /// `loop`, the word of the loop's letter, at constant 2.
+    const LOOP: usize = 2;
+
+    /// A value a loop witness's case answers or arms with.
+    #[derive(Clone, Copy, Debug)]
+    enum Built
+    {
+        /// The point, `Base`.
+        Point,
+        /// The empty word: reflexivity at the point.
+        Empty,
+        /// The constant `loop`, whose body is the word of its letter.
+        Named,
+        /// The word of the loop's inverse letter.
+        Inverse,
+        /// Reflexivity at the empty word.
+        Stays,
+    }
+
+    /// `built` in `arena`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn build(
+        arena: &mut TermArena,
+        built: Built,
+    ) -> ValueId
+    {
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+        let empty = arena.value_constructor(words, ConstructorTag::from(0_usize), vec![]);
+        match built {
+            | Built::Point => {
+                arena.value_constructor(carrier, ConstructorTag::from(0_usize), vec![])
+            },
+            | Built::Empty => empty,
+            | Built::Named => arena.value_constant(ConstantIndex::from(LOOP)),
+            | Built::Inverse => {
+                arena.value_constructor(words, ConstructorTag::from(2_usize), vec![empty])
+            },
+            | Built::Stays => arena.value_here(empty),
+        }
+    }
+
+    /// The one-point sort, the words of one loop at its point, and `loop`, the
+    /// word of its one letter at `Path(S, Base, Base)`, admitted in that order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn one_loop() -> Environment
+    {
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let staged = staging.data(LevelSignature::monomorphic(), vec![], vec![vec![]], kind);
+        let _sort = environment
+            .add_decl(staged)
+            .expect("the one-point sort admits");
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let own = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+        let base =
+            || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
+        let cells = FreeCells::new(ConstantIndex::from(SORT), vec![FreeCell::new(
+            base(),
+            base(),
+        )]);
+        let staged = staging
+            .data(
+                LevelSignature::monomorphic(),
+                vec![],
+                vec![vec![], vec![own], vec![own]],
+                kind,
+            )
+            .presented(Presentation::words(cells));
+        let _words = environment
+            .add_decl(staged)
+            .expect("the loop's words admit");
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let point = build(arena, Built::Point);
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let path = arena.value_type_path(carrier, point, point);
+        let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+        let empty = build(arena, Built::Empty);
+        let letter = arena.value_constructor(words, ConstructorTag::from(1_usize), vec![empty]);
+        let staged = staging.def(LevelSignature::monomorphic(), path, letter);
+        let _loop = environment
+            .add_decl(staged)
+            .expect("the loop's word checks at its path");
+        environment
+    }
+
+    /// The family a loop witness's case answers in, read under the case's
+    /// one binder `x`.
+    #[derive(Clone, Copy, Debug)]
+    enum Family
+    {
+        /// `Path(S, Base, x)`.
+        Joined,
+        /// `Path(S, x, x)`.
+        Looped,
+        /// `S`.
+        Kept,
+        /// `Path(S, ⟨f x⟩, Base)`.
+        Collapsed(ConstantIndex),
+        /// `Path(S, ⟨f x⟩, x)`.
+        Mapped(ConstantIndex),
+        /// `Path(S, ⟨f ⟨f x⟩⟩, x)`.
+        Twice(ConstantIndex),
+    }
+
+    /// `family`'s returner in `arena`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn motive(
+        arena: &mut TermArena,
+        family: Family,
+    ) -> CompTypeId
+    {
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let point = build(arena, Built::Point);
+        let x = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let call = |arena: &mut TermArena, function: ConstantIndex, argument: ValueId| {
+            let function = arena.value_constant(function);
+            let forced = arena.computation_force(function);
+            let applied = arena.computation_application(forced, argument);
+            arena.value_returned(applied)
+        };
+        let fibre = match family {
+            | Family::Joined => arena.value_type_path(carrier, point, x),
+            | Family::Looped => arena.value_type_path(carrier, x, x),
+            | Family::Kept => carrier,
+            | Family::Collapsed(function) => {
+                let image = call(arena, function, x);
+                arena.value_type_path(carrier, image, point)
+            },
+            | Family::Mapped(function) => {
+                let image = call(arena, function, x);
+                arena.value_type_path(carrier, image, x)
+            },
+            | Family::Twice(function) => {
+                let inner = call(arena, function, x);
+                let image = call(arena, function, inner);
+                arena.value_type_path(carrier, image, x)
+            },
+        };
+        arena.comp_type_returner(fibre)
+    }
+
+    /// Stage `thunk (λx. case x { Base ⇒ return answer; loop ⇒ return arm… })`
+    /// at `(x : S) → family`, the case's motive and the function's codomain
+    /// alike, and admit it at its position.
+    ///
+    /// # Specification
+    /// trivial.
+    fn case_over(
+        environment: &mut Environment,
+        family: Family,
+        answer: Built,
+        arms: &[Built],
+    ) -> Result<ConstantIndex, KernelError>
+    {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let motive = motive(arena, family);
+        let answer = build(arena, answer);
+        let mut branches = vec![arena.computation_return(answer)];
+        for &arm in arms {
+            let arm = build(arena, arm);
+            branches.push(arena.computation_return(arm));
+        }
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let case = arena.computation_data_case(scrutinee, motive, branches);
+        let lambda = arena.computation_lambda(case);
+        let pi = arena.comp_type_pi(carrier, motive);
+        let declared = arena.value_type_thunk(pi);
+        let body = arena.value_thunk(lambda);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment
+            .add_decl(staged)
+            .map(gandr_kernel_core::CheckedId::position)
+    }
+
+    #[test]
+    fn a_case_over_the_circle_owes_its_loop()
+    {
+        let mut environment = one_loop();
+        assert_eq!(
+            case_over(&mut environment, Family::Joined, Built::Empty, &[]),
+            Err(KernelError::LoopNotRespected(CellIndex::from(0_usize))),
+            "the circle is not contractible: carried along the loop, reflexivity at the point \
+             is the loop"
+        );
+        for (family, answer, what) in [
+            (
+                Family::Looped,
+                Built::Empty,
+                "reflexivity at every point respects the loop",
+            ),
+            (
+                Family::Looped,
+                Built::Named,
+                "the loop at every point respects the loop, read as its word",
+            ),
+            (
+                Family::Kept,
+                Built::Point,
+                "a non-dependent case owes no loop",
+            ),
+        ] {
+            assert!(
+                case_over(&mut environment, family, answer, &[]).is_ok(),
+                "{what}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_loop_arm_checks_at_the_path_over_its_loop()
+    {
+        let mut environment = one_loop();
+        let flip = case_over(&mut environment, Family::Kept, Built::Point, &[
+            Built::Inverse,
+        ])
+        .expect("a non-dependent loop arm chooses the loop's image");
+        let collapse = case_over(&mut environment, Family::Kept, Built::Point, &[])
+            .expect("a non-dependent case with no loop arm sends the loop to reflexivity");
+        assert!(
+            case_over(&mut environment, Family::Looped, Built::Empty, &[
+                Built::Stays
+            ])
+            .is_ok(),
+            "a dependent loop arm checks at the path over the loop"
+        );
+        assert!(
+            matches!(
+                case_over(&mut environment, Family::Joined, Built::Empty, &[
+                    Built::Stays
+                ]),
+                Err(KernelError::Identity(
+                    gandr_kernel_core::IdentityError::EndpointsDiffer {
+                        side: gandr_kernel_core::EndpointSide::Left,
+                        ..
+                    }
+                ))
+            ),
+            "a dependent loop arm at the wrong endpoints is refused: the path over the loop \
+             starts at the loop, not at reflexivity"
+        );
+        assert!(
+            case_over(&mut environment, Family::Twice(flip), Built::Empty, &[]).is_ok(),
+            "the flip twice follows the point round the loop, read through its loop arm"
+        );
+        assert!(
+            case_over(
+                &mut environment,
+                Family::Collapsed(collapse),
+                Built::Empty,
+                &[]
+            )
+            .is_ok(),
+            "the collapse's image of the loop is reflexivity"
+        );
+        assert_eq!(
+            case_over(&mut environment, Family::Mapped(flip), Built::Empty, &[]),
+            Err(KernelError::LoopNotRespected(CellIndex::from(0_usize))),
+            "the flip once is no identity: reflexivity is carried to the loop twice"
+        );
     }
 }

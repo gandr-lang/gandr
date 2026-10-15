@@ -382,15 +382,31 @@ pub(super) fn branch_type(
     Ok(result)
 }
 
+/// Whether a case still owes its sort's loops once its branches check.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Looped
+{
+    /// The case carries one branch per constructor over a sort its words loop
+    /// at: it owes each loop by conversion (`loops::respected`).
+    Owed,
+    /// No loop binds the case, or it carries a loop arm per loop, whose goals
+    /// settle them.
+    Settled,
+}
+
 /// Collect the constructor-specific branch obligations and instantiated result.
 ///
 /// # Specification
 /// - requires: the scrutinee has the supplied data classifier; motive formation
 ///   is checked by the surrounding judgement.
-/// - ensures: exactly one branch obligation per constructor, in table order.
-/// - fails: wrong shape or a non-exhaustive branch vector. A presented type's
-///   rules are an obligation the caller decides once the branches have checked,
-///   by `respect::respected`.
+/// - ensures: exactly one branch obligation per constructor, in table order,
+///   then, for a case carrying a loop arm per loop of its sort
+///   (`loops::loops`), one per loop arm at `loops::arm_type`; [`Looped::Owed`]
+///   exactly when the sort has loops and the case carries no loop arm.
+/// - fails: wrong shape or a non-exhaustive branch vector: neither one branch
+///   per constructor nor one more per loop. A presented type's rules are an
+///   obligation the caller decides once the branches have checked, by
+///   `respect::respected`, and so are owed loops, by `loops::respected`.
 /// - panics: none.
 /// The executable postcondition classifies every returned computation check.
 ///
@@ -399,16 +415,17 @@ pub(super) fn branch_type(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — omitted and surplus arms both refuse before branch
-///   checking.
+///   checking; a circle case with its loop arm checks the arm.
 /// - witness: `native_formers::native_formers::data_case_checks_coverage_and_motive`
+/// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|result| result.1.iter().all(|goal| matches!(goal, &Goal::CheckComp(..)))))]
 pub(super) fn case(
     arena: &mut TermArena,
-    entries: &[AdmittedDeclaration],
+    (entries, presentations): (&[AdmittedDeclaration], &crate::presented::Presentations),
     session: &mut SupportContext,
     case: ComputationId,
     datatype: ValueTypeId,
-) -> Result<(CompTypeId, Vec<Goal>), KernelError>
+) -> Result<(CompTypeId, Vec<Goal>, Looped), KernelError>
 {
     let (scrutinee, motive, count) = match arena.computation(case).ok_or(KernelError::ArenaFault)? {
         | &Computation::DataCase {
@@ -436,9 +453,22 @@ pub(super) fn case(
     if signature.parameters.len() != argument_count {
         return Err(KernelError::DataArgumentArity);
     }
-    if signature.constructors.len() != count {
-        return Err(KernelError::NonExhaustiveDataCase);
+    let owed = super::loops::loops(arena, presentations, datatype);
+    let constructors = signature.constructors.len();
+    let looped = if count == constructors {
+        if owed.is_empty() {
+            Looped::Settled
+        }
+        else {
+            Looped::Owed
+        }
     }
+    else if !owed.is_empty() && constructors.checked_add(owed.len()) == Some(count) {
+        Looped::Settled
+    }
+    else {
+        return Err(KernelError::NonExhaustiveDataCase);
+    };
     let mut goals = Vec::with_capacity(count);
     for (index, fields) in signature.constructors.iter().enumerate() {
         let expected = branch_type(
@@ -458,9 +488,24 @@ pub(super) fn case(
         };
         goals.push(Goal::CheckComp(branch, expected));
     }
+    if count != constructors {
+        for (position, &owed_loop) in owed.iter().enumerate() {
+            let expected =
+                super::loops::arm_type(arena, presentations, (case, datatype, motive), owed_loop)?;
+            let arm = match arena.computation(case) {
+                | Some(&Computation::DataCase { ref branches, .. }) => constructors
+                    .checked_add(position)
+                    .and_then(|index| branches.get(index))
+                    .copied()
+                    .ok_or(KernelError::ArenaFault)?,
+                | _ => return Err(KernelError::ArenaFault),
+            };
+            goals.push(Goal::CheckComp(arm, expected));
+        }
+    }
     let (table, memo) = session.rewrite_parts();
     let result = rewrite::substitute_comp_type(arena, table, memo, motive, scrutinee);
-    Ok((result, goals))
+    Ok((result, goals, looped))
 }
 
 quenchant_shape::reason_enum! {

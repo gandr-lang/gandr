@@ -1,0 +1,42 @@
+// Cases over the circle its loop refuses, and one it admits that looks as
+// though it should not. A case over the circle owes its loop: carried along
+// the loop, its answer at the point must be that answer, by conversion or by
+// a loop arm at the path between the two.
+
+/// The circle: one point and a loop at it.
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+/// Every point joined to the point: reflexivity at `Base`, which the loop
+/// carries to the loop, not to reflexivity, and no loop arm supplies the path
+/// between them. The circle is not contractible.
+@[ refuses("LoopNotRespected") ]
+def contractible(x : Circle) -> -F Path(Circle, Base, x) {
+  case x {
+    Base => here(Base)
+  }
+}
+
+/// The degree-two map: the loop goes round twice. A loop arm of a
+/// non-dependent case chooses any loop at the image of the point, so the map
+/// is admitted.
+@[ checks ]
+def doubled(x : Circle) -> -F Circle {
+  case x {
+    Base => Base,
+    loop => loop ∷ loop ∷ here(Base)
+  }
+}
+
+/// A dependent loop arm at the wrong endpoints: it owes a path from the
+/// answer carried along the loop, the loop, to the answer, reflexivity, and
+/// answers reflexivity at reflexivity.
+@[ refuses("EndpointMismatch") ]
+def misjoined(x : Circle) -> -F Path(Circle, Base, x) {
+  case x {
+    Base => here(Base),
+    loop => here(here(Base))
+  }
+}

@@ -1095,7 +1095,12 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(site.out(FragmentBoundary::Unannotated));
         };
-        if self.answers_path(site, answer.node)? == Answered::Flow {
+        // A loop arm answers the path over its loop, whatever its case answers.
+        let answered = match answer.over {
+            | super::native::Over::Written => self.answers_path(site, answer.node)?,
+            | super::native::Over::Loop { .. } => Answered::Path,
+        };
+        if answered == Answered::Flow {
             match derivation {
                 | Derivation::Then { first, second } => {
                     self.read(first, Reading::Value(frame));
@@ -1294,18 +1299,41 @@ impl<'source> Lowerer<'_, 'source>
         let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
         let answered = self.relocate(sink.arena, written, derived.answer.frame, lift, None);
         let identity = match sink.arena.comp_type(answered) {
-            | Some(&CompType::Returner { result, .. }) => match sink.arena.value_type(result) {
-                | Some(&ValueType::Path {
-                    carrier,
-                    left,
-                    right,
-                }) => Some((Answered::Path, carrier, left, right)),
-                | Some(&ValueType::Flow {
-                    carrier,
-                    source,
-                    target,
-                }) => Some((Answered::Flow, carrier, source, target)),
-                | _ => None,
+            | Some(&CompType::Returner { result, .. }) => {
+                match (derived.answer.over, sink.arena.value_type(result)) {
+                    // A loop arm's operation stands at `Path(B, y, y)`, `y` the
+                    // answer at the loop's point its arm binds innermost.
+                    | (super::native::Over::Loop { arm }, Some(_)) => {
+                        let gap = self
+                            .scope
+                            .telescope_binders(derived.frame)
+                            .count()
+                            .saturating_sub(self.scope.telescope_binders(arm).count());
+                        let index = u32::try_from(gap).unwrap_or(u32::MAX);
+                        let point = sink.arena.value_variable(
+                            gandr_core_term::Zone::Intuitionistic,
+                            gandr_kernel_term::DeBruijnIndex::from(index),
+                        );
+                        Some((Answered::Path, result, point, point))
+                    },
+                    | (
+                        super::native::Over::Written,
+                        Some(&ValueType::Path {
+                            carrier,
+                            left,
+                            right,
+                        }),
+                    ) => Some((Answered::Path, carrier, left, right)),
+                    | (
+                        super::native::Over::Written,
+                        Some(&ValueType::Flow {
+                            carrier,
+                            source,
+                            target,
+                        }),
+                    ) => Some((Answered::Flow, carrier, source, target)),
+                    | (..) => None,
+                }
             },
             | _ => None,
         };

@@ -853,6 +853,7 @@ fn checked(
         | CheckRefusal::NonExhaustiveDataCase(at)
         | CheckRefusal::RuleNotRespected { at, .. }
         | CheckRefusal::NotApart { at, .. }
+        | CheckRefusal::LoopNotRespected { at, .. }
         | CheckRefusal::AbsentRecordField(at)
         | CheckRefusal::AbsentTupleComponent(at)
         | CheckRefusal::NonCovariantMotive { at }
@@ -1103,6 +1104,7 @@ impl fmt::Display for Checked
                 gandr_kernel_term::Apartness::Diverges { outer, inner } => write!(f, "rules {} and {} of the datatype do not converge", usize::from(outer), usize::from(inner)),
                 gandr_kernel_term::Apartness::Undecided => f.write_str("the endpoints were not decided within the rewrite budget"),
             },
+            CheckRefusal::LoopNotRespected { cell, .. } => write!(f, "the case is not shown to respect loop {} of its sort: carried along the loop, its answer at the loop's point does not convert with that answer", usize::from(cell)),
             CheckRefusal::AbstractKindNotUniverse(_) => f.write_str("an abstract type's kind must be a value universe"),
             CheckRefusal::RepresentationAboveKind {..} => f.write_str("a sealed representation exceeds its abstract type's universe"),
             CheckRefusal::NotAnAbstractType(constant) => write!(f,"declaration {} is not an abstract type",usize::from(constant)),

@@ -305,6 +305,8 @@ use crate::domain::Unfolding;
 use crate::free::CoreTerm;
 use crate::free::Free;
 
+mod words;
+
 /// The number of machine steps an evaluation may take.
 ///
 /// A step is one task popped. The budget exists because β and `force` alone
@@ -456,6 +458,9 @@ pub struct LoweredChain
     bodies: BTreeMap<GlobalIndex, ValueId>,
     /// The rules of each presented data declaration, by admission position.
     presentations: BTreeMap<ConstantIndex, crate::presented::Presented>,
+    /// How many constructors each data declaration takes, by admission
+    /// position: where a case's loop arms start after its constructors'.
+    constructors: BTreeMap<ConstantIndex, gandr_kernel_term::ConstructorCount>,
 }
 
 impl LoweredChain
@@ -529,6 +534,7 @@ impl LoweredChain
             chain,
             bodies,
             presentations: BTreeMap::new(),
+            constructors: BTreeMap::new(),
         })
     }
 
@@ -612,6 +618,35 @@ impl LoweredChain
     )
     {
         let _replaced = self.presentations.insert(constant, presented);
+    }
+
+    /// Record that the data declaration at `constant` takes `constructors`
+    /// constructors.
+    ///
+    /// # Specification
+    /// - requires: `constructors` is the length of the declaration's
+    ///   constructor table.
+    /// - ensures: [`Definitions::constructors`] answers `constructors` at
+    ///   `constant` for every run over this chain; an earlier record at
+    ///   `constant` is replaced.
+    /// - provides: where a case over a sort its words loop at keeps its loop
+    ///   arms: after one branch per constructor.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a map out of the circle carries its loop's image only
+    ///   once the circle's constructor count is recorded.
+    /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
+    #[inline]
+    #[spec(ensures: self.constructors.get(&constant) == Some(&constructors))]
+    pub fn admit_data(
+        &mut self,
+        constant: ConstantIndex,
+        constructors: gandr_kernel_term::ConstructorCount,
+    )
+    {
+        let _replaced = self.constructors.insert(constant, constructors);
     }
 
     /// The definitions, in admission order.
@@ -865,6 +900,72 @@ impl<'run> Definitions<'run>
     ) -> Option<&'run crate::presented::Presented>
     {
         self.chain.presentations.get(&constant)
+    }
+
+    /// How many constructors the data declaration at `constant` takes, when
+    /// the chain recorded it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn constructors(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<gandr_kernel_term::ConstructorCount>
+    {
+        self.chain.constructors.get(&constant).copied()
+    }
+
+    /// The types of words whose cells loop in the sort admitted at `sort`, by
+    /// admission position ascending, each with its cells.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn looping(
+        &self,
+        sort: ConstantIndex,
+    ) -> impl Iterator<Item = (ConstantIndex, &'run gandr_kernel_term::FreeCells)>
+    {
+        self.chain
+            .presentations
+            .iter()
+            .filter_map(move |(&words, presented)| {
+                presented
+                    .cells()
+                    .filter(|cells| cells.sort() == sort)
+                    .map(|cells| (words, cells))
+            })
+    }
+
+    /// The body of the definition at `constant` as the scope reads it
+    /// manifest, whatever the run's constant stance: the function a family's
+    /// endpoint runs its binder through, read for the image of a loop.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unknown constant is admissible input.
+    /// - ensures: the lowered body exactly when the chain holds one for
+    ///   `constant` and the scope reads it as manifest; `None` for an axiom, a
+    ///   sealed definition or an unknown position.
+    /// - provides: the reading [`Self::manifest`] gives a cong chain's
+    ///   functions, for a loop's image.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::unfolding`] under [`Self::manifest`].
+    /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
+    #[inline]
+    #[spec(ensures: |ret| ret.is_some() == matches!(self.manifest().unfolding(constant), Unfolding::Unforced(entry) if self.bodies().contains_key(&entry)))]
+    pub(crate) fn definition(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<ValueId>
+    {
+        match self.manifest().unfolding(constant) {
+            | Unfolding::Unforced(entry) => self.bodies().get(&entry).copied(),
+            | Unfolding::Rigid | Unfolding::Forced(_) => None,
+        }
     }
 
     /// The definitional height of `constant`, or the floor when the chain
@@ -3008,6 +3109,11 @@ fn run(
                 && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. })
                     if matches!(domain.value(value), Some(&DomainValue::ListCons { first, second, .. })
                         if first == head && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == Some(second)))),
+            Task::Body { body: crate::closure::CompBody::AlongWord { motive, rest }, env } => machine.comps.len() == entry_comps
+                && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)).is_some_and(|bound| machine.values.ends_with(&[rest, bound])))
+                && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::PathTransport(held)]) if held == motive),
+            Task::Body { body: crate::closure::CompBody::Conjugated { .. } | crate::closure::CompBody::Mapping { .. }, .. } => machine.values.len() == entry_values
+                && (machine.comps.len() == entry_comps.saturating_add(1) || machine.tasks.len() > entry_tasks),
             Task::PathProduct(_) => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && entry_values.checked_sub(1) == Some(machine.values.len())
                 && matches!(machine.values.last().and_then(|&id| domain.value(id)), Some(&DomainValue::PathProduct { first, second, .. })
@@ -3277,6 +3383,46 @@ fn step(
                         .push(domain.comp_return(cell, CompTermFace::Reduced));
                     Ok(())
                 },
+                // `y. tr(P, u, y)`: the rest of the word moves the value the
+                // first letter moved.
+                | crate::closure::CompBody::AlongWord { motive, rest } => {
+                    machine.tasks.push(Task::PathTransport(motive));
+                    machine.values.extend([rest, bound]);
+                    Ok(())
+                },
+                | crate::closure::CompBody::Conjugated {
+                    motive,
+                    along,
+                    value,
+                    stage,
+                } => words::conjugated(
+                    core,
+                    domain,
+                    machine,
+                    (motive, along, value),
+                    (stage, bound),
+                ),
+                | crate::closure::CompBody::Mapping {
+                    motive,
+                    side,
+                    call,
+                    rest,
+                    mapped,
+                    orientation,
+                } => words::mapped(
+                    core,
+                    domain,
+                    machine,
+                    words::Mapping {
+                        motive,
+                        side,
+                        call,
+                        rest,
+                        mapped,
+                        orientation,
+                    },
+                    bound,
+                ),
             }
         },
         | Task::PathProduct(term) => {
@@ -4965,20 +5111,23 @@ fn step_transport(
 /// - requires: the path, then the operand, occupy the top of the value stack;
 ///   `motive` closes a value type under one binder over the environment the
 ///   transport was read in.
-/// - ensures: reflexivity returns the operand unchanged; a product motive read
-///   against a tuple of its arity transports each component in its own motive,
-///   binding each before the next, and returns their tuple; a sum motive read
-///   against an injection transports the payload in its summand's motive and
-///   binds it into its injection; a list motive returns `nil` unchanged and
-///   binds a cell's head, transported in the element's motive, before its tail,
-///   transported in the list's — the kernel's reducts, so a component stuck on
-///   a definition holds the components after it; the decode of the motive's own
-///   binder hands a universe path to native transport; the singleton `y.
-///   Path(D, l, y)`, its carrier and left endpoint closed over the binder, read
-///   against reflexivity returns the path itself; any other configuration over
-///   a stuck path stacks the transport on the path's spine.
-/// - provides: transport's computation rules — identity on `here`, through the
-///   motive's constructors, and the singleton's — and its stuck form.
+/// - ensures: reflexivity returns the operand unchanged, and so does a motive
+///   that never reads its binder, the kernel's constant row; a product motive
+///   read against a tuple of its arity transports each component in its own
+///   motive, binding each before the next, and returns their tuple; a sum
+///   motive read against an injection transports the payload in its summand's
+///   motive and binds it into its injection; a list motive returns `nil`
+///   unchanged and binds a cell's head, transported in the element's motive,
+///   before its tail, transported in the list's — the kernel's reducts, so a
+///   component stuck on a definition holds the components after it; the decode
+///   of the motive's own binder hands a universe path to native transport; the
+///   singleton `y. Path(D, l, y)`, its carrier and left endpoint closed over
+///   the binder, read against reflexivity returns the path itself; a word moves
+///   by the rules of the `words` module; any other configuration over a stuck
+///   path stacks the transport on the path's spine.
+/// - provides: transport's computation rules — identity on `here` and in a
+///   constant motive, through the motive's constructors, the singleton's, and
+///   along a word — and its stuck form.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing operand or a motive
 ///   closure holding no type; [`EvalFault::TransportedNonPath`] for a path that
 ///   is neither reflexivity nor stuck; domain faults for dangling nodes;
@@ -4989,13 +5138,14 @@ fn step_transport(
 /// An `EvalFault`, as above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — reflexivity, a stuck path in a product motive over a
-///   tuple, a stuck path in a sum motive over an injection, a stuck path in the
-///   singleton over reflexivity, and a stuck path in a base motive each reach
-///   their own arm; dropping the reflexivity rule, reordering components,
-///   losing the summand or computing a family whose left endpoint moves changes
-///   the read-back term.
+/// - hypothesis: L3 — reflexivity, a constant motive, a stuck path in a product
+///   motive over a tuple, a stuck path in a sum motive over an injection, a
+///   stuck path in the singleton over reflexivity, and a stuck path in a motive
+///   reading its binder each reach their own arm; dropping the reflexivity or
+///   the constant rule, reordering components, losing the summand or computing
+///   a family whose left endpoint moves changes the read-back term.
 /// - witness: `identity::tests::transport_along_here_is_the_identity`
+/// - witness: `identity::tests::transport_in_a_constant_motive_returns_the_operand`
 /// - witness: `identity::tests::transport_through_a_product_is_componentwise`
 /// - witness: `identity::tests::transport_through_a_sum_keeps_the_summand`
 /// - witness: `identity::tests::transport_in_the_singleton_returns_the_path`
@@ -5006,7 +5156,7 @@ fn step_transport(
     ensures: |ret| ret.is_err()
         || (machine.comps.len() == comps.saturating_add(1_usize) && machine.tasks.len() == tasks
             && machine.values.len() == values.saturating_sub(2_usize))
-        || (machine.comps.len() == comps && machine.tasks.len() > tasks && machine.values.len() <= values),
+        || (machine.comps.len() <= comps.saturating_add(1_usize) && machine.tasks.len() > tasks && machine.values.len() <= values),
 )]
 fn step_path_transport(
     core: &CoreArena,
@@ -5031,6 +5181,16 @@ fn step_path_transport(
         return Err(EvalFault::MachineInvariant);
     };
     let environment = closure.environment().clone();
+    let read = crate::identity::binder_read(core, family).map_err(|fault| match fault {
+        | crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
+        | crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
+    })?;
+    if read == crate::free::Membership::Absent {
+        machine
+            .comps
+            .push(domain.comp_return(value, CompTermFace::Reduced));
+        return Ok(());
+    }
     match (
         core.value_type(family),
         *domain.value(value).ok_or(dangling)?,
@@ -5118,6 +5278,20 @@ fn step_path_transport(
             }
         },
         | _ => {},
+    }
+    if let DomainValue::Constructor { .. } = carried
+        && words::transport(core, domain, machine, motive, (path, value))? == words::Moved::Stepped
+    {
+        return Ok(());
+    }
+    if let Some(body) = words::named(core, domain, machine, path)? {
+        words::reread(
+            machine,
+            motive,
+            (path, value),
+            (gandr_kernel_term::Side::Left, body),
+        );
+        return Ok(());
     }
     let DomainValue::Neutral { neutral, .. } = carried
     else {

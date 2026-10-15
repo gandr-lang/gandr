@@ -66,6 +66,7 @@ use anodized::spec;
 use gandr_kernel_term::DeBruijnIndex;
 
 use crate::CoreArena;
+use crate::arena::CompTypeId;
 use crate::arena::ComputationId;
 use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
@@ -255,6 +256,58 @@ pub fn cong(
     arena.computation_path_transport(motive, path, base)
 }
 
+/// The answer of a case over `branches` at `point`, `b`: the value the
+/// point's branch returns when the point is a constructor without fields, the
+/// case at the point otherwise.
+///
+/// A loop's path is built over `b`: the checker owes the loop at it and reads
+/// a loop arm's type off it, and the lowering substitutes it for the binder a
+/// loop arm reads the answer through, so both read it here.
+///
+/// # Specification
+/// - requires: `point` is a closed constructor term of the case's sort, and
+///   `branches` the case's branches at `motive`.
+/// - ensures: `v` exactly when `point` has no fields and the branch its tag
+///   selects is `return v`, which stands in the case's own context; `⟨case
+///   point { branches }⟩` otherwise. The two convert, since a case at a
+///   constructor runs the branch it selects. Reading the branch's value leaves
+///   a path type over `b` at the point its value spells, where the words a word
+///   answers at read it.
+/// - provides: the case's answer at a loop's point.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a case that returns a value at a point without fields
+///   answers that value; a branch that computes, or a point with fields,
+///   answers the case at the point. Answering the case where a value is
+///   returned, or the value of the wrong branch, changes the built term.
+/// - witness: `identity::tests::a_case_answers_at_a_point_by_the_value_its_branch_returns`
+#[spec(ensures: |ret| branches.iter().any(|&branch| matches!(arena.computation(branch), Some(&crate::syntax::Computation::Return(value)) if value == ret))
+    || matches!(arena.value(ret), Some(&crate::syntax::Value::Returned(case))
+        if matches!(arena.computation(case), Some(&crate::syntax::Computation::DataCase { scrutinee, .. }) if scrutinee == point)))]
+#[inline]
+#[must_use]
+pub fn answer_at(
+    arena: &mut CoreArena,
+    point: ValueId,
+    motive: CompTypeId,
+    branches: &[ComputationId],
+) -> ValueId
+{
+    if let Some(&crate::syntax::Value::Constructor {
+        tag, ref fields, ..
+    }) = arena.value(point)
+        && fields.is_empty()
+        && let Some(&branch) = branches.get(usize::from(tag))
+        && let Some(&crate::syntax::Computation::Return(value)) = arena.computation(branch)
+    {
+        return value;
+    }
+    let answered = arena.computation_data_case(point, motive, branches.to_vec());
+    arena.value_returned(answered)
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -431,6 +484,56 @@ mod tests
             compared(&arena, built, capturing),
             CertificateEquality::Different,
             "an unshifted map reads the motive's own binder"
+        );
+    }
+
+    #[test]
+    fn a_case_answers_at_a_point_by_the_value_its_branch_returns()
+    {
+        let mut arena = CoreArena::new();
+        let sort = arena.value_type_data(
+            gandr_kernel_term::ConstantIndex::from(0_usize),
+            alloc::vec::Vec::new(),
+        );
+        let point = arena.value_constructor(
+            sort,
+            gandr_kernel_term::ConstructorTag::from(0_usize),
+            alloc::vec::Vec::new(),
+        );
+        let field = arena.value_unit();
+        let fielded = arena.value_constructor(
+            sort,
+            gandr_kernel_term::ConstructorTag::from(1_usize),
+            alloc::vec![field],
+        );
+        let motive = arena.comp_type_returner(sort);
+        let held = variable(&mut arena, 0_u32.into());
+        let (at_point, at_fielded) = (
+            arena.computation_return(point),
+            arena.computation_return(held),
+        );
+        let branches = [at_point, at_fielded];
+        assert_eq!(
+            super::answer_at(&mut arena, point, motive, &branches),
+            point,
+            "a point without fields answers the value its branch returns"
+        );
+
+        let case_at = |arena: &CoreArena, answered| {
+            matches!(arena.value(answered), Some(&crate::syntax::Value::Returned(case))
+                if matches!(arena.computation(case), Some(&crate::syntax::Computation::DataCase { scrutinee, .. }) if scrutinee == point || scrutinee == fielded))
+        };
+        let answered = super::answer_at(&mut arena, fielded, motive, &branches);
+        assert!(
+            case_at(&arena, answered),
+            "a point with fields answers the case at it"
+        );
+        let forced = arena.computation_force(held);
+        let computing = [forced, at_fielded];
+        let answered = super::answer_at(&mut arena, point, motive, &computing);
+        assert!(
+            case_at(&arena, answered),
+            "a branch that computes answers the case at the point"
         );
     }
 }

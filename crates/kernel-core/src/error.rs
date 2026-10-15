@@ -561,6 +561,10 @@ pub enum KernelError
     /// A case of no branches over a path type whose endpoints are not shown
     /// apart: the reason the apartness rule names.
     NotApart(gandr_kernel_term::Apartness),
+    /// A case over a sort its words loop at is not shown to respect the named
+    /// loop: carried along it, its answer at the loop's point does not convert
+    /// with that answer.
+    LoopNotRespected(gandr_kernel_term::CellIndex),
     /// A fixpoint's structural-descent claim did not replay.
     DescentNotReplayed(gandr_kernel_term::DescentRefusal),
     /// A required record field is absent.
@@ -837,6 +841,9 @@ impl core::fmt::Display for KernelError
             },
             | Self::NotApart(_) => {
                 f.write_str("a case of no branches met a path whose endpoints are not apart")
+            },
+            | Self::LoopNotRespected(_) => {
+                f.write_str("a case over a looped sort was not shown to respect its loops")
             },
             | Self::DescentNotReplayed(_) => {
                 f.write_str("a fixpoint's structural-descent claim did not replay")

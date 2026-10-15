@@ -665,6 +665,213 @@ mod native_formers
         );
     }
 
+    /// The parts of the one-loop circle the loop witnesses build on.
+    struct OneLoop
+    {
+        /// The sort, `S`.
+        carrier: ValueTypeId,
+        /// Its point, `Base`.
+        point: ValueId,
+        /// The words' empty word, reflexivity at the point.
+        empty: ValueId,
+        /// The word of the loop's inverse letter.
+        inverse: ValueId,
+        /// The constant `loop`, whose body is the word of its letter.
+        named: ValueId,
+    }
+
+    /// The one-point sort at constant 0, the words of one loop at its point at
+    /// constant 1, and `loop` at constant 2, the word of its one letter at
+    /// `Path(S, Base, Base)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn one_loop(arena: &mut CoreArena) -> (Vec<Declaration>, OneLoop)
+    {
+        use gandr_kernel_term::FreeCell;
+        use gandr_kernel_term::FreeCells;
+        use gandr_kernel_term::Presentation;
+        use gandr_kernel_term::RuleNode;
+
+        let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let (sort, words) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
+        let carrier = arena.value_type_data(sort, vec![]);
+        let own = arena.value_type_data(words, vec![]);
+        let point = arena.value_constructor(carrier, ConstructorTag::from(0_usize), vec![]);
+        let path = arena.value_type_path(carrier, point, point);
+        let base =
+            || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
+        let cells = FreeCells::new(sort, vec![FreeCell::new(base(), base())]);
+        let empty = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![]);
+        let letter = arena.value_constructor(own, ConstructorTag::from(1_usize), vec![empty]);
+        let inverse = arena.value_constructor(own, ConstructorTag::from(2_usize), vec![empty]);
+        let named = arena.value_constant(ConstantIndex::from(2_usize));
+        let declarations = vec![
+            Declaration::data(
+                sort,
+                DataSignature::new(vec![], vec![vec![]], kind).into(),
+                OriginToken::from(0_usize),
+            ),
+            Declaration::data(
+                words,
+                DataSignature::new(vec![], vec![vec![], vec![own], vec![own]], kind)
+                    .presented(Presentation::words(cells))
+                    .into(),
+                OriginToken::from(1_usize),
+            ),
+            definition(ConstantIndex::from(2_usize), path, letter),
+        ];
+        (declarations, OneLoop {
+            carrier,
+            point,
+            empty,
+            inverse,
+            named,
+        })
+    }
+
+    /// `thunk (λx. case x { Base ⇒ return answer; loop ⇒ arm… })` at
+    /// `motive`, the case's motive and the function's codomain alike.
+    ///
+    /// # Specification
+    /// trivial.
+    fn case_over(
+        arena: &mut CoreArena,
+        (carrier, motive): (ValueTypeId, gandr_core_term::CompTypeId),
+        answer: ValueId,
+        arms: &[ValueId],
+    ) -> (ValueTypeId, ValueId)
+    {
+        let mut branches = vec![arena.computation_return(answer)];
+        branches.extend(arms.iter().map(|&arm| arena.computation_return(arm)));
+        let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = arena.computation_data_case(scrutinee, motive, branches);
+        let lambda = arena.computation_lambda(case);
+        let pi = arena.comp_type_pi(carrier, motive);
+        (arena.value_type_thunk(pi), arena.value_thunk(lambda))
+    }
+
+    #[test]
+    fn a_case_over_the_circle_owes_its_loop()
+    {
+        let mut arena = CoreArena::new();
+        let (mut declarations, circle) = one_loop(&mut arena);
+        let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let joined = arena.value_type_path(circle.carrier, circle.point, x);
+        let joined = arena.comp_type_returner(joined);
+        let looped = arena.value_type_path(circle.carrier, x, x);
+        let looped = arena.comp_type_returner(looped);
+        let kept = arena.comp_type_returner(circle.carrier);
+        // Reflexivity joining the point to every point, which the loop carries
+        // to the loop; reflexivity and the loop at every point, each of which
+        // conjugation by the loop fixes; and the map collapsing the circle,
+        // whose constant family owes nothing.
+        for (position, (motive, answer)) in [
+            (joined, circle.empty),
+            (looped, circle.empty),
+            (looped, circle.named),
+            (kept, circle.point),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (declared, body) = case_over(&mut arena, (circle.carrier, motive), answer, &[]);
+            let constant = ConstantIndex::from(position.saturating_add(3));
+            declarations.push(definition(constant, declared, body));
+        }
+        let (report, crossed) = run(&mut arena, &declarations);
+        assert!(
+            matches!(
+                report.judged()[3].verdict(),
+                Verdict::Refused(CheckRefusal::LoopNotRespected { cell, .. })
+                    if cell == gandr_kernel_term::CellIndex::from(0_usize)
+            ),
+            "the circle is not contractible: carried along the loop, reflexivity at the \
+             point is the loop: {:?}",
+            report.judged()[3].verdict()
+        );
+        for (position, what) in [
+            (4, "reflexivity at every point respects the loop"),
+            (
+                5,
+                "the loop at every point respects the loop, read as its word",
+            ),
+            (6, "a non-dependent case owes no loop"),
+        ] {
+            assert!(
+                matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+                "{what}: {:?}",
+                report.judged()[position].verdict()
+            );
+            assert!(
+                matches!(
+                    crossed.readmitted()[position].outcome(),
+                    Outcome::Defined { .. }
+                ),
+                "and the kernel re-derives it: {:?}",
+                crossed.readmitted()[position].outcome()
+            );
+        }
+    }
+
+    #[test]
+    fn a_loop_arm_checks_at_the_path_over_its_loop()
+    {
+        let mut arena = CoreArena::new();
+        let (mut declarations, circle) = one_loop(&mut arena);
+        let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let joined = arena.value_type_path(circle.carrier, circle.point, x);
+        let joined = arena.comp_type_returner(joined);
+        let looped = arena.value_type_path(circle.carrier, x, x);
+        let looped = arena.comp_type_returner(looped);
+        let kept = arena.comp_type_returner(circle.carrier);
+        let stays = arena.value_here(circle.empty);
+        // The flip: the loop's image is its inverse, a loop at the point's
+        // image. Reflexivity at every point, its arm the path from its
+        // conjugate to itself. Reflexivity joining the point to every point,
+        // whose arm owes a path from the loop to reflexivity and offers
+        // reflexivity at reflexivity.
+        for (position, (motive, answer, arm)) in [
+            (kept, circle.point, circle.inverse),
+            (looped, circle.empty, stays),
+            (joined, circle.empty, stays),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (declared, body) = case_over(&mut arena, (circle.carrier, motive), answer, &[arm]);
+            let constant = ConstantIndex::from(position.saturating_add(3));
+            declarations.push(definition(constant, declared, body));
+        }
+        let (report, crossed) = run(&mut arena, &declarations);
+        for (position, what) in [
+            (3, "a non-dependent loop arm chooses the loop's image"),
+            (4, "a dependent loop arm checks at the path over the loop"),
+        ] {
+            assert!(
+                matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+                "{what}: {:?}",
+                report.judged()[position].verdict()
+            );
+            assert!(
+                matches!(
+                    crossed.readmitted()[position].outcome(),
+                    Outcome::Defined { .. }
+                ),
+                "and the kernel re-derives it: {:?}",
+                crossed.readmitted()[position].outcome()
+            );
+        }
+        assert!(
+            matches!(
+                report.judged()[5].verdict(),
+                Verdict::Refused(CheckRefusal::EndpointMismatch { .. })
+            ),
+            "a dependent loop arm at the wrong endpoints is refused: {:?}",
+            report.judged()[5].verdict()
+        );
+    }
+
     #[test]
     fn an_absurd_case_rests_on_apart_endpoints_in_both_checkers()
     {
