@@ -5853,7 +5853,7 @@ pub(super) fn record_since(
         Carried::Value(held, written) => sink.arena.values_since(floor).next().is_none_or(|first| written < first)
             || matches!(sink.origins.binding(held), Maybe::Absent(_))
             || matches!(sink.origins.binding(written), Maybe::Present(_)),
-        _ => true,
+        Carried::Computation(..) | Carried::ValueType(..) | Carried::CompType(..) => true,
     }),
 )]
 fn carry_bindings(

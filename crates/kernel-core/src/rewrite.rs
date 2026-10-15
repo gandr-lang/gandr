@@ -261,7 +261,7 @@ impl RewriteOutcome
     ///   distinct from the fallback; exact projections distinguish a discarded
     ///   matching result and adoption of a mismatched family.
     /// - witness: `rewrite::tests::outcome_projections_keep_matching_ids_and_decline_other_families`
-    #[spec(ensures: |ret| ret == match self { Self::Value(id) => id, _ => original })]
+    #[spec(ensures: |ret| ret == match self { Self::Value(id) => id, Self::Computation(_) | Self::ValueType(_) | Self::CompType(_) => original })]
     #[inline]
     fn value_or(
         self,
@@ -288,7 +288,7 @@ impl RewriteOutcome
     ///   distinct from the fallback; exact projections distinguish a discarded
     ///   matching result and adoption of a mismatched family.
     /// - witness: `rewrite::tests::outcome_projections_keep_matching_ids_and_decline_other_families`
-    #[spec(ensures: |ret| ret == match self { Self::Computation(id) => id, _ => original })]
+    #[spec(ensures: |ret| ret == match self { Self::Computation(id) => id, Self::Value(_) | Self::ValueType(_) | Self::CompType(_) => original })]
     #[inline]
     fn computation_or(
         self,
@@ -315,7 +315,7 @@ impl RewriteOutcome
     ///   distinct from the fallback; exact projections distinguish a discarded
     ///   matching result and adoption of a mismatched family.
     /// - witness: `rewrite::tests::outcome_projections_keep_matching_ids_and_decline_other_families`
-    #[spec(ensures: |ret| ret == match self { Self::ValueType(id) => id, _ => original })]
+    #[spec(ensures: |ret| ret == match self { Self::ValueType(id) => id, Self::Value(_) | Self::Computation(_) | Self::CompType(_) => original })]
     #[inline]
     fn value_type_or(
         self,
@@ -342,7 +342,7 @@ impl RewriteOutcome
     ///   distinct from the fallback; exact projections distinguish a discarded
     ///   matching result and adoption of a mismatched family.
     /// - witness: `rewrite::tests::outcome_projections_keep_matching_ids_and_decline_other_families`
-    #[spec(ensures: |ret| ret == match self { Self::CompType(id) => id, _ => original })]
+    #[spec(ensures: |ret| ret == match self { Self::CompType(id) => id, Self::Value(_) | Self::Computation(_) | Self::ValueType(_) => original })]
     #[inline]
     fn comp_type_or(
         self,
@@ -1344,10 +1344,10 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 /// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(captures: before = tasks.len(),
     ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
-    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ForwardFlow { ref outputs, .. } => outputs.len().saturating_add(2), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } | Value::FunctionFlow { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::PathProduct(..) | Value::FlowProduct(..) | Value::StaticApplication(..) | Value::Then { .. } => 2, _ => 1 }),
-    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::SigmaSplit { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, _ => 1 }),
-    AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } | ValueType::Flow { .. } => 3, ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::StaticPi { .. } | ValueType::Sigma { .. } => 2, _ => 1 }),
-    AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, _ => 1 }),
+    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ForwardFlow { ref outputs, .. } => outputs.len().saturating_add(2), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } | Value::FunctionFlow { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::PathProduct(..) | Value::FlowProduct(..) | Value::StaticApplication(..) | Value::Then { .. } => 2, Value::Stay { .. } | Value::PathRefl(_) | Value::Here { .. } | Value::Returned(_) | Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) => 1 }),
+    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::SigmaSplit { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::With(..) => 2, Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Project(..) | Computation::Fixpoint { .. } => 1 }),
+    AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } | ValueType::Flow { .. } => 3, ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::StaticPi { .. } | ValueType::Sigma { .. } => 2, ValueType::Session { .. } | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1 }),
+    AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, CompType::Returner(_) | CompType::Element { .. } => 1 }),
 }
         && added.iter().all(|task| matches!(*task, RewriteTask::Open(_, child_depth, step)
             if step == rewrite && (child_depth == depth || child_depth == depth.deeper() || child_depth == depth.deeper().deeper() || child_depth == depth.deeper().deeper().deeper())))))]
@@ -1979,7 +1979,7 @@ Value::HigherEvaluation { ref components, .. } => components.len().saturating_mu
 Value::QuantifiedEvaluation { ref children, .. } => children.len(),
 Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::FlowProduct(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Then { .. } => 2,
 Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) | Value::Here { .. } | Value::Stay { .. } | Value::Returned(_) => 1,
-_ => 0,
+Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil => 0,
 })],
     ensures: |ret| results.len() == before.saturating_sub(arity) && match arena.value(id) {
         None => ret == id,
@@ -2511,7 +2511,7 @@ Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::Sigm
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::With(..) => 2,
-_ => 1,
+Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Project(..) | Computation::Fixpoint { .. } => 1,
 })],
     ensures: |ret| results.len() == before.saturating_sub(arity) && arena.computation(id).map_or_else(|| ret == id, |node| arena.computation(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten))),
 )]
@@ -2873,7 +2873,7 @@ ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(),
 ValueType::Path { .. } | ValueType::Flow { .. } => 3,
 ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) => 2,
 ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::List(_) | ValueType::Session { .. } => 1,
-_ => 0,
+ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0,
 }), element = match arena.value_type(id) { Some(&ValueType::Element { code, .. }) => Some(results.last().copied().map_or(code, |outcome| outcome.value_or(code))), _ => None }],
     ensures: |ret| results.len() == before.saturating_sub(arity) && element.map_or_else(
         || arena.value_type(id).map_or_else(|| ret == id, |node| arena.value_type(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten))),
@@ -3099,7 +3099,7 @@ fn close_value_type(
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
 /// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
 #[spec(captures: before = results.len(),
-    ensures: |ret| results.len() == before.saturating_sub(arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, _ => 1 }))
+    ensures: |ret| results.len() == before.saturating_sub(arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } | CompType::With(..) => 2, CompType::Returner(_) | CompType::Element { .. } => 1 }))
         && arena.comp_type(id).map_or(ret == id, |source| matches!(source, &CompType::Element { .. }) || arena.comp_type(ret).is_some_and(|result|
             core::mem::discriminant(source) == core::mem::discriminant(result))))]
 fn close_comp_type(

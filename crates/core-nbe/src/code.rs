@@ -664,7 +664,7 @@ impl<'run> Walk<'run>
                 },
                 _ => node,
             },
-            _ => node,
+            Node::ValueType(..) | Node::CompType(..) | Node::Held(_) | Node::Stuck(..) => node,
         };
         match node {
         Node::Code(code, place) => self.core.value(code).map_or_else(|| ret == Err(ConversionFault::MachineInvariant), |matched_native_node| match *matched_native_node {
@@ -675,7 +675,7 @@ Value::Lift { .. } => ret == Ok(Atom::Lift(code, place)),
 Value::StaticLambda(_) => ret == Ok(Atom::Operator(code, place)),
 Value::StaticApplication(head, argument) => ret == Ok(Atom::Applied(Node::Code(head, place), Node::Code(argument, place))),
 Value::Constructor { .. } | Value::Record(_) | Value::Tuple(_) | Value::ListNil | Value::ListCons(..) | Value::Literal(_) | Value::Injection(..) => ret == Ok(Atom::FirstOrder(node)),
-_ => ret == Ok(Atom::Other(node)),
+Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Thunk(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => ret == Ok(Atom::Other(node)),
 }),
         Node::Held(value) => self.domain.value(value).map_or_else(|| ret == Err(ConversionFault::Domain(DomainFault::Dangling)), |matched_native_node| match *matched_native_node {
 DomainValue::Neutral { neutral, .. } => self.domain.neutral(neutral).map_or_else(
@@ -695,9 +695,9 @@ DomainValue::Code { code, .. } => self.domain.value_closure(code).map_or_else(
                 }),
 DomainValue::StaticLambda { lambda, .. } => self.domain.value_closure(lambda).map_or_else(
                 || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
-                |closure| match closure.body() { crate::ValueBody::Source(body) => ret == Ok(Atom::Operator(body,Self::opened(lambda))), _ => ret == Err(ConversionFault::MachineInvariant) }),
+                |closure| match closure.body() { crate::ValueBody::Source(body) => ret == Ok(Atom::Operator(body,Self::opened(lambda))), crate::ValueBody::ValueType(_) | crate::ValueBody::CompType(_) => ret == Err(ConversionFault::MachineInvariant) }),
 DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::Tuple { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Literal { .. } | DomainValue::Injection { .. } => ret == Ok(Atom::FirstOrder(node)),
-_ => ret == Ok(Atom::Other(node)),
+DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Flow { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } => ret == Ok(Atom::Other(node)),
 }),
         Node::Stuck(neutral, prefix) => ret == self.stuck(neutral, prefix),
         Node::ValueType(..) | Node::CompType(..) => ret == Ok(Atom::Other(node)),
@@ -1305,7 +1305,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     (Some(left), Some(right)) => match *left {
                         CompType::Returner { effects: ref first, .. } => match *right {
                             CompType::Returner { effects: ref second, .. } if matching_effect_shapes(first, second) == Alike::Same => Ok((Alike::Same, 1_usize.saturating_add(first.types().count()), 0)),
-                            _ => Ok((Alike::Different, 0, 0)),
+                            CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) => Ok((Alike::Different, 0, 0)),
                         },
                         CompType::With(..) | CompType::Arrow { .. } | CompType::Pi { .. } => if core::mem::discriminant(left) == core::mem::discriminant(right) { Ok((Alike::Same, 2, 0)) } else { Ok((Alike::Different, 0, 0)) },
                         CompType::Element { code, ref target } => match *right {
@@ -1314,7 +1314,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                     self.atom(Node::Code(code, here)).and_then(|_| self.atom(Node::Code(other_code, there))).map(|_| (Alike::Same, 0, 1))
                                 } else { Err(ConversionFault::MachineInvariant) }
                             },
-                            _ => Ok((Alike::Different, 0, 0)),
+                            CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) => Ok((Alike::Different, 0, 0)),
                         },
                         CompType::Unknown => Ok((Alike::Different, 0, 0)),
                     },

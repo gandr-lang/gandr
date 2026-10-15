@@ -462,7 +462,7 @@ impl TermSubst
     ///   Re-entering an image or dropping a binding changes the resulting term.
     /// - witness: `term::tests::substitution_walks_are_transactional_and_bounded`
     #[spec(ensures: |output| output.0.len() == term.0.iter().fold(0_usize, |size, head| size.saturating_add(match *head {
-        Head::Var(ref var) => self.0.get(var).map_or(1, |image| image.0.len()), _ => 1,
+        Head::Var(ref var) => self.0.get(var).map_or(1, |image| image.0.len()), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) => 1,
     })) && (term.vars().any(|var| self.0.contains_key(var)) || output == *term))]
     fn apply_once(
         &self,
@@ -1268,7 +1268,7 @@ impl CellAlphabet for TermAlphabet
     /// - witness: `term::tests::metadata_names_and_orders_observe_boundaries`
     #[inline]
     #[spec(ensures: |output| output.vars().next().is_none() && output.0.len() == cmd.0.len()
-        && output.0.iter().zip(&cmd.0).all(|(after, before)| match *before { Head::Var(ref var) => matches!(*after, Head::Konst(ref constant) if constant == var), _ => after == before }))]
+        && output.0.iter().zip(&cmd.0).all(|(after, before)| match *before { Head::Var(ref var) => matches!(*after, Head::Konst(ref constant) if constant == var), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) => after == before }))]
     fn skolemize(cmd: &Self::Cmd) -> Self::Cmd
     {
         cmd.relabel(|var| Head::Konst(var.clone()))

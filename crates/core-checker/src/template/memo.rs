@@ -1185,7 +1185,7 @@ impl Memo
                 report.drafting == Drafting::Accepted(kind) && report.spent.producing.is_zero(),
             FamilyAdmission::Partial { ref members, .. } =>
                 !members.is_empty() && members.len() <= family.members.len(),
-            _ => !matches!(report.drafting, Drafting::Accepted(_)),
+            FamilyAdmission::Admitted { .. } | FamilyAdmission::Plain(_) | FamilyAdmission::WorkBoundExceeded(_) | FamilyAdmission::Refused(_) => !matches!(report.drafting, Drafting::Accepted(_)),
         }))]
     #[inline]
     pub fn admit_family<C>(
@@ -1416,7 +1416,7 @@ struct Job<'memo, 'family>
     && output.as_ref().ok().is_none_or(|report| match report.admission {
         FamilyAdmission::Admitted { origin: Origin::Drafted(kind), .. } =>
             report.drafting == Drafting::Accepted(kind) && report.spent.producing.is_zero(),
-        _ => !matches!(report.drafting, Drafting::Accepted(_)),
+        FamilyAdmission::Admitted { .. } | FamilyAdmission::Partial { .. } | FamilyAdmission::Plain(_) | FamilyAdmission::WorkBoundExceeded(_) | FamilyAdmission::Refused(_) => !matches!(report.drafting, Drafting::Accepted(_)),
     }))]
 fn admit<C>(
     ticket: &mut Ticket<'_>,

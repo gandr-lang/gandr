@@ -2663,7 +2663,7 @@ fn decode_dialogues(
 /// - witness: `decode::tests::identity_nodes_round_trip_and_refuse_their_malformed_sites`
 #[spec(ensures: |ret| match error {
     DecodeError::Malformed { site: MalformedSite::Polarity } => ret == DecodeError::Malformed { site },
-    other => ret == other,
+    other @ (DecodeError::Truncated | DecodeError::UnknownTag { .. } | DecodeError::Malformed { .. } | DecodeError::ReservedDeclarationKind { .. } | DecodeError::ReservedSlotOccupied { .. } | DecodeError::UnsupportedVersion { .. }) => ret == other,
 })]
 fn named_polarity(
     error: DecodeError,
@@ -3293,7 +3293,7 @@ fn decode_definition_slots(reader: &mut ByteReader<'_>) -> Result<Vec<ConstantIn
             && reader.position <= reader.image.length()
             && ret.is_ok() == (reader.image.byte_at(start) == Some(WireByte::from(0_u8)))
             && (ret.is_err() || reader.position.0 == start.0.saturating_add(1))
-            && ret.as_ref().err().is_none_or(|error| match *error { DecodeError::ReservedSlotOccupied { slot: found } => found == slot, DecodeError::Truncated | DecodeError::Malformed { site: MalformedSite::Varint } => true, _ => false }),
+            && ret.as_ref().err().is_none_or(|error| match *error { DecodeError::ReservedSlotOccupied { slot: found } => found == slot, DecodeError::Truncated | DecodeError::Malformed { site: MalformedSite::Varint } => true, DecodeError::UnknownTag { .. } | DecodeError::Malformed { .. } | DecodeError::ReservedDeclarationKind { .. } | DecodeError::UnsupportedVersion { .. } => false }),
 )]
 #[inline]
 fn expect_empty_slot(

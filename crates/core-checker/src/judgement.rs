@@ -7581,7 +7581,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `bridge::tests::native_lists_check_and_round_trip`
     #[spec(captures: depth = usize::from(self.context.depth(Zone::Intuitionistic)),
         ensures: |ret| ret.is_err() || usize::from(self.context.depth(Zone::Intuitionistic)) == match phase {
-            ListPhase::Nil => depth.saturating_add(2), ListPhase::Cons => depth.saturating_sub(2), _ => depth,
+            ListPhase::Nil => depth.saturating_add(2), ListPhase::Cons => depth.saturating_sub(2), ListPhase::Element | ListPhase::Result | ListPhase::Input => depth,
         })]
     fn list_fold(
         &mut self,

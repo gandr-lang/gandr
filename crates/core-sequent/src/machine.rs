@@ -1173,7 +1173,7 @@ impl<'program> Machine<'program>
         Next::Host { at, payload } => at == id && self.store.value(payload).is_some(),
         Next::Continue(Control::Run(body, inner)) => self.arena.command(body).is_some()
             && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(crate::store::Covalue::FallThrough),
-        _ => false,
+        Next::Continue(_) | Next::Halt(_) => false,
     }))]
     fn control_command(
         &mut self,
@@ -1284,7 +1284,7 @@ impl<'program> Machine<'program>
         Next::Continue(Control::Run(_, inner)) => self.store.lookup_value(inner, DeBruijnIndex::from(1_u32)) == Some(payload)
             && self.store.lookup_value(inner, DeBruijnIndex::from(0_u32)).is_some_and(|stack|
                 matches!(self.store.value(stack), Some(HeapValue::Stack { frames }) if matches!(frames.first(), Some(Frame::Handler { .. })))),
-        _ => false,
+        Next::Continue(_) | Next::Halt(_) => false,
     }))]
     fn perform(
         &mut self,

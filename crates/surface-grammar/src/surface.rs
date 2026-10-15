@@ -615,7 +615,7 @@ fn lookup_prec(
 ///   observations catch source-order leakage and omitted lookups; every subset
 ///   of constants is not exhausted.
 /// - witness: `surface::tests::precedence_names_keep_constant_order`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| match *error { PbgError::MissingPrec { name } => PREC_GROUPS.iter().find(|&&(candidate, _)| !spec.groups().any(|(_, present, _)| present == candidate)).is_some_and(|&(missing, _)| missing == name), _ => false }, |names| names.len() == PREC_GROUPS.len() && names.iter().zip(PREC_GROUPS.iter()).all(|(&(name, prec), &(expected, _))| name.0 == expected && spec.name(prec).is_some_and(|actual| actual == expected))))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| match *error { PbgError::MissingPrec { name } => PREC_GROUPS.iter().find(|&&(candidate, _)| !spec.groups().any(|(_, present, _)| present == candidate)).is_some_and(|&(missing, _)| missing == name), PbgError::InvalidSort { .. } | PbgError::PrecedenceSpec(_) | PbgError::PrecedenceCycle { .. } | PbgError::PrecedenceDag(_) | PbgError::Walk(_) | PbgError::InvalidPrec { .. } | PbgError::DuplicateRule { .. } | PbgError::AdjacentSorts { .. } | PbgError::DuplicateTile { .. } | PbgError::Assumption3Conflict { .. } | PbgError::MoldOverflow | PbgError::UnknownMold { .. } | PbgError::UnknownRCtx { .. } => false }, |names| names.len() == PREC_GROUPS.len() && names.iter().zip(PREC_GROUPS.iter()).all(|(&(name, prec), &(expected, _))| name.0 == expected && spec.name(prec).is_some_and(|actual| actual == expected))))]
 fn prec_table_names(spec: &PrecSpec) -> Result<Vec<(PrecName, Prec)>, PbgError>
 {
     PREC_GROUPS
@@ -643,10 +643,10 @@ fn prec_table_names(spec: &PrecSpec) -> Result<Vec<(PrecName, Prec)>, PbgError>
 ///   not exhausted.
 /// - witness: `surface::tests::precedence_helper_failures_preserve_named_context`
 /// - witness: `surface::tests::cyclic_named_precedence_spec_reports_closed_named_witness`
-#[spec(captures: expected = (core::mem::discriminant(&error), match &error { &PrecDagError::Cycle(PrecCycle { ref witness }) => Some((witness.len(), witness.first().map(|&prec| static_prec_name(spec, prec)), witness.last().map(|&prec| static_prec_name(spec, prec)))), _ => None }), ensures: |ret| match ret {
+#[spec(captures: expected = (core::mem::discriminant(&error), match &error { &PrecDagError::Cycle(PrecCycle { ref witness }) => Some((witness.len(), witness.first().map(|&prec| static_prec_name(spec, prec)), witness.last().map(|&prec| static_prec_name(spec, prec)))), &PrecDagError::Graph(_) | &PrecDagError::Inconsistent => None }), ensures: |ret| match ret {
     PbgError::PrecedenceCycle { ref witness } => expected.1.is_some_and(|(len, first, last)| witness.len() == len && witness.first().copied().map(PrecName) == first && witness.last().copied().map(PrecName) == last),
     PbgError::PrecedenceDag(ref cause) => expected.1.is_none() && core::mem::discriminant(cause) == expected.0,
-    _ => false,
+    PbgError::InvalidSort { .. } | PbgError::MissingPrec { .. } | PbgError::PrecedenceSpec(_) | PbgError::Walk(_) | PbgError::InvalidPrec { .. } | PbgError::DuplicateRule { .. } | PbgError::AdjacentSorts { .. } | PbgError::DuplicateTile { .. } | PbgError::Assumption3Conflict { .. } | PbgError::MoldOverflow | PbgError::UnknownMold { .. } | PbgError::UnknownRCtx { .. } => false,
 })]
 fn dag_error(
     spec: &PrecSpec,

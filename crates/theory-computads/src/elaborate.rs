@@ -1344,7 +1344,7 @@ fn inverts<G>(
                                     )
                                 })
                         }
-                        _ => false,
+                        TermView::Var(_) | TermView::Ctor { .. } | TermView::Op { .. } | TermView::Results { .. } => false,
                     })
             }
             _ => false,

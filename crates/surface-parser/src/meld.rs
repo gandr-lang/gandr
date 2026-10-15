@@ -1691,7 +1691,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| bool::from(ret) == self.frontiers.last().and_then(|&index| match self.stack.get(index)?.role { Role::FormTile { mold, open: true, .. } => Some(mold), _ => None }).is_some_and(|open| self.pbg.adjacencies().binary_search(&(open, mold)).is_ok()))]
+    #[spec(ensures: |ret| bool::from(ret) == self.frontiers.last().and_then(|&index| match self.stack.get(index)?.role { Role::FormTile { mold, open: true, .. } => Some(mold), Role::Operand | Role::FormTile { .. } | Role::Operator { .. } => None }).is_some_and(|open| self.pbg.adjacencies().binary_search(&(open, mold)).is_ok()))]
     pub fn would_continue_form(
         &self,
         mold: MoldId,
@@ -3858,7 +3858,7 @@ impl<'pbg> MeldState<'pbg>
     ///   expose the optional mold/precedence/sort payload. Reading a neighbor
     ///   or returning an operand as an operator changes the reduction key.
     /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
-    #[spec(ensures: |ret| ret == self.stack.get(index.0).and_then(|cell| match cell.role { Role::Operator { mold, prec, sort, .. } => Some((mold, prec, sort)), _ => None }))]
+    #[spec(ensures: |ret| ret == self.stack.get(index.0).and_then(|cell| match cell.role { Role::Operator { mold, prec, sort, .. } => Some((mold, prec, sort)), Role::Operand | Role::FormTile { .. } => None }))]
     fn operator_at(
         &self,
         index: OperatorIndex,
@@ -4820,7 +4820,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::finalize_closes_each_frontier_at_its_innermost_material`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.innermost <= ret.expected.len() && ret.obligations.len() <= self.stack.len().saturating_mul(2) && ret.obligations.iter().all(|obligation| match obligation.class { Oblig::MissingMeld => obligation.span.start() == obligation.span.end(), Oblig::MissingTile => true, _ => false }))]
+    #[spec(ensures: |ret| ret.innermost <= ret.expected.len() && ret.obligations.len() <= self.stack.len().saturating_mul(2) && ret.obligations.iter().all(|obligation| match obligation.class { Oblig::MissingMeld => obligation.span.start() == obligation.span.end(), Oblig::MissingTile => true, Oblig::IncompleteTile | Oblig::UnmoldedTok | Oblig::InconMeld | Oblig::ExtraMeld | Oblig::ReservedKeyword | Oblig::AmbiguousPrec => false }))]
     pub fn finalize(&self) -> Completion
     {
         let mut expected: Vec<Expected> = Vec::new();
@@ -5056,7 +5056,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.innermost <= ret.expected.len() && ret.obligations.len() <= self.stack.len().saturating_mul(2) && ret.obligations.iter().all(|obligation| match obligation.class { Oblig::MissingMeld => obligation.span.start() == obligation.span.end(), Oblig::MissingTile => true, _ => false }))]
+    #[spec(ensures: |ret| ret.innermost <= ret.expected.len() && ret.obligations.len() <= self.stack.len().saturating_mul(2) && ret.obligations.iter().all(|obligation| match obligation.class { Oblig::MissingMeld => obligation.span.start() == obligation.span.end(), Oblig::MissingTile => true, Oblig::IncompleteTile | Oblig::UnmoldedTok | Oblig::InconMeld | Oblig::ExtraMeld | Oblig::ReservedKeyword | Oblig::AmbiguousPrec => false }))]
     pub fn expected(&self) -> Completion
     {
         self.finalize()

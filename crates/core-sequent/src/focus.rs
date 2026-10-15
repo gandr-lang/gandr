@@ -972,7 +972,7 @@ impl<'run> Focusing<'run>
             | &Task::Reify(source) => self.core.value(source).is_none_or(|node| match *node {
                 Value::Reify(ref frames) => self.producers.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Apply(_))).count()
                     && self.commands.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Bind(_))).count(),
-                _ => true,
+                Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } => true,
             }),
             | &Task::Control { source, .. } => self.core.computation(source).is_none_or(|node| match *node {
                 Computation::Perform { .. } => !self.producers.is_empty(),
@@ -981,7 +981,7 @@ impl<'run> Focusing<'run>
                 Computation::Resume(..) => !self.producers.is_empty() && !self.commands.is_empty(),
                 Computation::Reset(_) | Computation::Shift(_) => !self.commands.is_empty(),
                 Computation::With(..) => self.commands.len() >= 2,
-                _ => true,
+                Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Project(..) | Computation::Session(_) => true,
             }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
             | &Task::ListCons | &Task::Combinator { .. } => self.producers.len() >= 2,

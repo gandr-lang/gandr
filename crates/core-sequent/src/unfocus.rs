@@ -585,7 +585,7 @@ impl Unfocusing<'_>
             | &Task::Reify(source) => self.arena.producer(source).is_none_or(|node| match *node {
                 ProducerNode::Reify(ref frames) => self.values.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Apply(_))).count()
                     && self.computations.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Bind(_))).count(),
-                _ => true,
+                ProducerNode::Primitive { .. } | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } | ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => true,
             }),
             | &Task::Control(source, _) => self.arena.command(source).is_none_or(|node| match *node {
                 CommandNode::Perform { route: Route::Nearest, .. } => !self.values.is_empty(),

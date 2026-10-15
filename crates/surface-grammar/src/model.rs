@@ -1414,7 +1414,7 @@ impl Error for PbgError
             Self::PrecedenceSpec(ref error) => ret.and_then(|source| source.downcast_ref::<PrecSpecError>()) == Some(error),
             Self::PrecedenceDag(ref error) => ret.and_then(|source| source.downcast_ref::<PrecDagError>()) == Some(error),
             Self::Walk(ref error) => ret.and_then(|source| source.downcast_ref::<WalkBuildError>()) == Some(error),
-            _ => ret.is_none(),
+            Self::InvalidSort { .. } | Self::MissingPrec { .. } | Self::PrecedenceCycle { .. } | Self::InvalidPrec { .. } | Self::DuplicateRule { .. } | Self::AdjacentSorts { .. } | Self::DuplicateTile { .. } | Self::Assumption3Conflict { .. } | Self::MoldOverflow | Self::UnknownMold { .. } | Self::UnknownRCtx { .. } => ret.is_none(),
         })]
     #[inline]
     fn source(&self) -> Option<&(dyn Error + 'static)>
@@ -2508,7 +2508,7 @@ impl Pbg
     |error| match *error {
         PbgError::InvalidPrec { rule, prec } => dag.name(prec).is_none() && rules.iter().any(|item| item.name == rule && item.prec == prec),
         PbgError::DuplicateRule { name } => rules.iter().filter(|rule| rule.name == name).take(2).count() == 2,
-        _ => false,
+        PbgError::InvalidSort { .. } | PbgError::MissingPrec { .. } | PbgError::PrecedenceSpec(_) | PbgError::PrecedenceCycle { .. } | PbgError::PrecedenceDag(_) | PbgError::Walk(_) | PbgError::AdjacentSorts { .. } | PbgError::DuplicateTile { .. } | PbgError::Assumption3Conflict { .. } | PbgError::MoldOverflow | PbgError::UnknownMold { .. } | PbgError::UnknownRCtx { .. } => false,
     },
     |&()| rules.iter().all(|rule| dag.name(rule.prec).is_some()) && rules.iter().enumerate().all(|(index, rule)| rules.iter().take(index).all(|prior| prior.name != rule.name))))]
 fn validate_rule_headers(

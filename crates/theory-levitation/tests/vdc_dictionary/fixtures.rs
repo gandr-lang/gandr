@@ -98,7 +98,7 @@ pub fn succ(inner: FreeTerm) -> FreeTerm
     }
     match node.view() {
         TermView::Ctor { name, args } => name.as_ref() == "Zero" && args.count() == 0,
-        _ => false,
+        TermView::Var(_) | TermView::Op { .. } | TermView::Results { .. } => false,
     }
 })]
 pub fn nat(n: NumeralCount) -> FreeTerm

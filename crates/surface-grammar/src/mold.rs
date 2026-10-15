@@ -3122,7 +3122,7 @@ fn expand<'regex>(
     RegexShape::Optional(_) | RegexShape::Repeat(_) => ret.nullable,
     RegexShape::Seq(items) if items.is_empty() => ret.nullable && ret.first.is_empty() && ret.last.is_empty(),
     RegexShape::Alt(items) if items.is_empty() => !ret.nullable && ret.first.is_empty() && ret.last.is_empty(),
-    _ => true,
+    RegexShape::Seq(_) | RegexShape::Alt(_) => true,
 })]
 fn face_of(regex: RegexView<'_>) -> FaceCtx
 {

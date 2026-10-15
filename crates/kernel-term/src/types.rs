@@ -490,7 +490,7 @@ impl ValueType
     /// - hypothesis: L3 — a product of two parts, the unit and the empty type
     ///   separate the product reading from the sum reading.
     /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
-    #[spec(ensures: |ret| match *self { Self::Product(ref parts) => ret == Some(&**parts), _ => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Product(ref parts) => ret == Some(&**parts), Self::Data { .. } | Self::Record(_) | Self::Session { .. } | Self::PathUniverse(..) | Self::FlowUniverse(..) | Self::Path { .. } | Self::Flow { .. } | Self::Base(_) | Self::Sigma { .. } | Self::Sum(_) | Self::List(_) | Self::Thunk(_) | Self::Universe { .. } | Self::Lift { .. } | Self::Element { .. } | Self::Abstract(_) | Self::StaticPi { .. } => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn product_parts(&self) -> Option<&[ValueTypeId]>
@@ -512,7 +512,7 @@ impl ValueType
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::product_parts`].
     /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
-    #[spec(ensures: |ret| match *self { Self::Sum(ref summands) => ret == Some(&**summands), _ => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Sum(ref summands) => ret == Some(&**summands), Self::Data { .. } | Self::Record(_) | Self::Session { .. } | Self::PathUniverse(..) | Self::FlowUniverse(..) | Self::Path { .. } | Self::Flow { .. } | Self::Base(_) | Self::Product(_) | Self::Sigma { .. } | Self::List(_) | Self::Thunk(_) | Self::Universe { .. } | Self::Lift { .. } | Self::Element { .. } | Self::Abstract(_) | Self::StaticPi { .. } => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn summands(&self) -> Option<&[ValueTypeId]>

@@ -1393,7 +1393,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
 
                 && actual_indentation == indentation
 
-                && actual_force == force)), _ => false }), Step::Result(ref set) => before.1.checked_add(memo_work) == Some(self.work.len())
+                && actual_force == force)), Maybe::Present(DocNode::Empty | DocNode::Text(_) | DocNode::Verbatim(_) | DocNode::Line | DocNode::HardLine) | Maybe::Absent(_) => false }), Step::Result(ref set) => before.1.checked_add(memo_work) == Some(self.work.len())
 
                 && matches!(self.arena.node(node), Maybe::Present(DocNode::Empty | DocNode::Text(_) | DocNode::Verbatim(_) | DocNode::Line | DocNode::HardLine))
 
@@ -2016,7 +2016,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(
-        captures: before = (self.work.len(), match right_set { MeasureSet::Tainted(TaintPromise::Deferred { doc, column, indentation }) => Some((doc, column, indentation)), _ => None }, state.remaining.first().copied(), state.right, state.indentation, state.force, state.taint == WidthTaint::Tainted || matches!(right_set, MeasureSet::Tainted(TaintPromise::Ready(_))), state.left, state.remaining.len(), state.results.len(), match right_set { MeasureSet::Frontier(ref frontier) => frontier.last().copied(), MeasureSet::Tainted(TaintPromise::Ready(measure)) => Some(measure), MeasureSet::Tainted(TaintPromise::Deferred { .. }) => None }, match right_set { MeasureSet::Frontier(ref frontier) => frontier.len(), MeasureSet::Tainted(TaintPromise::Ready(_)) => 1, MeasureSet::Tainted(TaintPromise::Deferred { .. }) => 0 }),
+        captures: before = (self.work.len(), match right_set { MeasureSet::Tainted(TaintPromise::Deferred { doc, column, indentation }) => Some((doc, column, indentation)), MeasureSet::Frontier(_) | MeasureSet::Tainted(_) => None }, state.remaining.first().copied(), state.right, state.indentation, state.force, state.taint == WidthTaint::Tainted || matches!(right_set, MeasureSet::Tainted(TaintPromise::Ready(_))), state.left, state.remaining.len(), state.results.len(), match right_set { MeasureSet::Frontier(ref frontier) => frontier.last().copied(), MeasureSet::Tainted(TaintPromise::Ready(measure)) => Some(measure), MeasureSet::Tainted(TaintPromise::Deferred { .. }) => None }, match right_set { MeasureSet::Frontier(ref frontier) => frontier.len(), MeasureSet::Tainted(TaintPromise::Ready(_)) => 1, MeasureSet::Tainted(TaintPromise::Deferred { .. }) => 0 }),
         ensures: |ret| ret.as_ref().map_or(true,
             |step| { if let Some((doc, column, indentation)) = before.1 { return matches!(*step, Step::Scheduled)
 

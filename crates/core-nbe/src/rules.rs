@@ -550,7 +550,7 @@ pub fn fixpoint_source(
 #[spec(ensures:|ret| core.computation(source).map_or_else(|| ret == Err(ConversionFault::MachineInvariant), |matched_native_node| match *matched_native_node {
 gandr_core_term::Computation::RecordProjection(_,ref label) => ret == Ok(ProjectionKey::Label(label)),
 gandr_core_term::Computation::TupleProjection(_,component) => ret == Ok(ProjectionKey::Component(component)),
-_ => ret == Err(ConversionFault::MachineInvariant),
+gandr_core_term::Computation::Primitive { .. } | gandr_core_term::Computation::Transport(..) | gandr_core_term::Computation::PathTransport { .. } | gandr_core_term::Computation::Ride { .. } | gandr_core_term::Computation::TelescopeTransport { .. } | gandr_core_term::Computation::Lambda(_) | gandr_core_term::Computation::Fixpoint { .. } | gandr_core_term::Computation::Application(..) | gandr_core_term::Computation::Return(_) | gandr_core_term::Computation::Bind(..) | gandr_core_term::Computation::Force(_) | gandr_core_term::Computation::Case { .. } | gandr_core_term::Computation::Split { .. } | gandr_core_term::Computation::DataCase { .. } | gandr_core_term::Computation::Hole(_) | gandr_core_term::Computation::Mark { .. } | gandr_core_term::Computation::ListFold { .. } | gandr_core_term::Computation::Perform { .. } | gandr_core_term::Computation::Handle { .. } | gandr_core_term::Computation::Exercise { .. } | gandr_core_term::Computation::Scope { .. } | gandr_core_term::Computation::Resume(..) | gandr_core_term::Computation::Reset(_) | gandr_core_term::Computation::Shift(_) | gandr_core_term::Computation::With(..) | gandr_core_term::Computation::Project(..) | gandr_core_term::Computation::Session(_) => ret == Err(ConversionFault::MachineInvariant),
 }))]
 pub fn projection_key(
     core: &CoreArena,
@@ -586,7 +586,7 @@ pub fn projection_key(
     Elimination::Projection(source) => ret == projection_key(core,source).map(EliminationShape::Projection),
     Elimination::Split(closure) => ret == split_source(core,domain,closure).map(|(arity,_)| EliminationShape::Split(arity)),
     Elimination::Case(branches) => ret == domain.branches(branches).map(|held| EliminationShape::Case(held.len())).map_err(ConversionFault::Domain),
-    _ => ret == Ok(EliminationShape::Ordinary(core::mem::discriminant(&elimination))),
+    Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Apply(_) | Elimination::Force | Elimination::Bind(_) | Elimination::ListFold { .. } | Elimination::StaticApply(_) | Elimination::Fixpoint(_) => ret == Ok(EliminationShape::Ordinary(core::mem::discriminant(&elimination))),
 })]
 fn elimination_shape<'core>(
     core: &'core CoreArena,
@@ -879,7 +879,7 @@ pub enum Spines
                 EliminationShape::Projection(_) => 0_usize,
                 EliminationShape::Case(branches) => branches,
                 EliminationShape::Split(_) => 1_usize,
-                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::PathTransport { .. } | Elimination::Ride { .. } => 2_usize,Elimination::TelescopeTransport { .. } => 4_usize,_ => 1_usize },
+                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::PathTransport { .. } | Elimination::Ride { .. } => 2_usize,Elimination::TelescopeTransport { .. } => 4_usize,Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Apply(_) | Elimination::Bind(_) | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_) => 1_usize },
             };
             Ok((true,count.saturating_add(added)))
         });
@@ -1463,7 +1463,7 @@ pub fn bind_step(
 #[spec(ensures: |ret| match value {
     DomainValue::Neutral { neutral, .. } => ret == head(domain, frozen, side, neutral)
         .map(|read| Neutrality::Neutral(neutral, read)),
-    _ => ret == Ok(Neutrality::Former),
+    DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::Tuple { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret == Ok(Neutrality::Former),
 })]
 fn value_neutrality(
     domain: &DomainArena,
@@ -1520,7 +1520,7 @@ fn value_neutrality(
 #[spec(ensures: |ret| match comp {
     DomainComp::Neutral { neutral, .. } => ret == head(domain, frozen, side, neutral)
         .map(|read| Neutrality::Neutral(neutral, read)),
-    _ => ret == Ok(Neutrality::Former),
+    DomainComp::Lambda { .. } | DomainComp::Return { .. } | DomainComp::Fixpoint { .. } => ret == Ok(Neutrality::Former),
 })]
 fn comp_neutrality(
     domain: &DomainArena,

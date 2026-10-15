@@ -2806,7 +2806,7 @@ where
                             || children.iter().any(|child| self.processes.get(child.0).is_some_and(|process|
                                 matches!(process.outcome, Outcome::Settled(Settled::NotConvertible) | Outcome::Evaluated(_)))))
                 }
-                _ => false,
+                Next::Classify | Next::Move(_) | Next::Combine(_) => false,
             },
         }
     )]
@@ -3618,7 +3618,7 @@ where
             let children = match goal.next {
                 Next::Combine(Combine::Biased(ref children)) if !matches!(choice, Choice::Frozen { .. }) => Some(children),
                 Next::Combine(Combine::Either(ref children)) if matches!(choice, Choice::Frozen { .. }) => Some(children),
-                _ => None,
+                Next::Classify | Next::Move(_) | Next::Combine(_) => None,
             };
             self.spent.0 == before.saturating_add(u64::try_from(expected.len()).unwrap_or(u64::MAX))
                 && children.is_some_and(|children| children.len() == expected.len()
@@ -3860,7 +3860,7 @@ where
                         Next::Combine(Combine::All { .. }) => all,
                         Next::Combine(Combine::Biased(_)) => biased,
                         Next::Combine(Combine::Either(_)) => !all && !biased,
-                        _ => false,
+                        Next::Classify | Next::Move(_) => false,
                     },
                     Ok(Turn::Again) | Err(_) => false,
                 })
@@ -7238,9 +7238,9 @@ mod tests
         ensures: |ret| core.value(ret).is_some_and(|value| match *value {
          Value::Thunk(body) => core.computation(body).is_some_and(|comp| match *comp {
          Computation::Lambda(body) => core.computation(body).is_some_and(|comp| match *comp {
-         Computation::Return(value) => matches!(core.value(value), Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), _ => false,
-         }), _ => false,
-         }), _ => false,
+         Computation::Return(value) => matches!(core.value(value), Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) => false,
+         }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) => false,
+         }), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => false,
         })
     )]
     fn identity(core: &mut CoreArena) -> ValueId
@@ -8245,10 +8245,10 @@ mod tests
          Computation::Bind(bound,body) => matches!(core.computation(bound),Some(&Computation::Return(value)) if core.value(value) == Some(&Value::Constant(below)))
           && core.computation(body).is_some_and(|comp| match *comp {
            Computation::Return(value) => core.value(value).is_some_and(|value| match *value {
-            Value::Tuple(ref components) => matches!(**components, [left, right] if left == right) && matches!(components.first().and_then(|&left| core.value(left)),Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), _ => false,
-           }), _ => false,
-          }), _ => false,
-         }), _ => false,
+            Value::Tuple(ref components) => matches!(**components, [left, right] if left == right) && matches!(components.first().and_then(|&left| core.value(left)),Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => false,
+           }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) => false,
+          }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) => false,
+         }), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => false,
         })
     )]
     fn doubled(
