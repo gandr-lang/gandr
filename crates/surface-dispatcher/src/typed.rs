@@ -96,17 +96,20 @@ use gandr_core_checker::Typings;
 use gandr_core_checker::level_of;
 use gandr_core_checker::type_module;
 use gandr_core_term::Binders;
+use gandr_core_term::CertificateEquality;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ConstructorTag;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
 use gandr_core_term::Sort;
+use gandr_core_term::TypeImporter;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::equal_type_syntax;
 use gandr_core_term::instantiate_value_type;
 use gandr_core_term::pattern::Pattern;
 use gandr_core_term::pattern::PatternId;
@@ -125,6 +128,7 @@ use gandr_surface_lowering::PatternReading;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::described::DescribedRole;
+use gandr_surface_parser::parse;
 use gandr_surface_pretty::BinderIndex;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
@@ -143,6 +147,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::compose::ComposeFault;
 use crate::compose::Lowered;
+use crate::compose::Lowering;
 use crate::compose::LoweringCount;
 use crate::compose::adapt;
 use crate::compose::lower_source;
@@ -277,6 +282,69 @@ pub enum Declared
     /// The lowering's refusal of the declaration, as text: no judgement
     /// reached it.
     Refused(String),
+}
+
+/// Which printed type of a table a read back reads: an entry's own, the type
+/// an outer judgement checked the entry against, or a declaration's.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ReadSite
+{
+    /// The type an entry at this span answers with.
+    Own(ByteSpan),
+    /// The type an outer judgement checked the term at this span against,
+    /// spelled otherwise than its own.
+    CheckedAgainst(ByteSpan),
+    /// The type of the declaration whose form has this key.
+    Declared(NodeKey),
+}
+
+/// What reading one printed type back gave.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum RoundTrip
+{
+    /// The printed type parses and lowers to the certificate the node
+    /// carries.
+    Equal,
+    /// The printed type lowers to another certificate.
+    Different,
+    /// The printed type names a binder of the node's context: it reads back
+    /// under that context alone, which a closed signature does not state.
+    Open,
+    /// The printed type holds a `?` the printer wrote where it cannot spell
+    /// what the checker holds — an unknown type, a hole: no source spelling
+    /// denotes it.
+    Unknown,
+    /// The printer could not lay the type out.
+    Unspelled,
+    /// The printed type does not parse as a signature's type.
+    Unparsed,
+    /// The lowering refused the printed type; the refusal, as text.
+    Refused(String),
+}
+
+/// One printed type of a table and what reading it back gave.
+///
+/// # Specification
+/// - requires: answered by [`TypeTable::read_back`].
+/// - ensures: `spelled` is the type as a face prints it at `site`, and `trip`
+///   what parsing and lowering that spelling gave against the type node the
+///   table holds there.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary;
+///   [`TypeTable::read_back`] carries the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TypeTable::read_back`].
+/// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReadBack
+{
+    /// Where the type was printed.
+    pub site: ReadSite,
+    /// The type as printed.
+    pub spelled: String,
+    /// What reading it back gave.
+    pub trip: RoundTrip,
 }
 
 /// One typed node as the table keeps it: the type nodes it is spelled at when
@@ -1454,6 +1522,202 @@ impl TypeTable
         names.reverse();
         names
     }
+
+    /// Every type the table prints — each entry's own, the type an outer
+    /// judgement checked a term against, each declaration's — spelled in
+    /// `form` on a page of `page` columns and read back: parsed as a
+    /// signature's type, lowered after the source the table was built from,
+    /// and compared with the type node the table holds.
+    ///
+    /// # Specification
+    /// - requires: `grammar` is the grammar the table was built under.
+    /// - ensures: one read back per printed type, entries in table order then
+    ///   declarations in key order, each with the type as [`Self::at`] or
+    ///   [`Self::declared`] prints it. A type the printer cannot lay out is
+    ///   [`RoundTrip::Unspelled`]; one holding a `?` the printer wrote is
+    ///   [`RoundTrip::Unknown`]; one whose spelling under the node's binders
+    ///   differs from its spelling under none names a binder and is
+    ///   [`RoundTrip::Open`]; one that does not parse as the type of `def x : …
+    ///   ;` with no repair is [`RoundTrip::Unparsed`]. Every other is appended
+    ///   to the source as a signature of a fresh name — a computation type `C`
+    ///   as `+U (C)` — the whole lowered once, and is [`RoundTrip::Equal`] when
+    ///   the signature's type has the syntax of the table's node, `U C` for a
+    ///   computation type, compared by [`equal_type_syntax`] with path evidence
+    ///   erased; [`RoundTrip::Different`] otherwise; and [`RoundTrip::Refused`]
+    ///   with the refusal when the lowering refused the signature or the whole
+    ///   source.
+    /// - provides: the read-back half of the hover's content guarantee.
+    /// - fails: never; a type that does not read back says why.
+    /// - panics: none.
+    /// - intension: one lowering per call, whatever the number of types; equal
+    ///   spellings are appended once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a data type, a thunked function type in its sugared
+    ///   spelling, a universe, a computation type and a declaration read back
+    ///   equal; a term typed under a parameter reads as open; and the corpus
+    ///   census reads back every printed type of every source, failing on a
+    ///   class the findings do not pin.
+    /// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
+    /// - witness: `census::census::every_printed_type_reads_back_to_its_certificate`
+    #[spec(ensures: |ret| ret.len() >= self.entries.len())]
+    #[inline]
+    #[must_use]
+    pub fn read_back(
+        &self,
+        grammar: &Pbg,
+        page: PageWidth,
+        form: Form,
+    ) -> Vec<ReadBack>
+    {
+        // Each printed type with the node it was printed from, and its trip
+        // when it is settled before any lowering.
+        let mut printed: Vec<(ReadSite, TypeNode, String, Option<RoundTrip>)> = Vec::new();
+        for entry in &self.entries {
+            let binders = self.standing(entry.standing);
+            let own = self.spell(entry.ty, &binders, page, form);
+            let mut sides = Vec::from([(ReadSite::Own(entry.span), entry.ty, own.clone())]);
+            if entry.last != entry.ty {
+                let last = self.spell(entry.last, &binders, page, form);
+                if !matches!((&last, &own), (Maybe::Present(last), Maybe::Present(own)) if last == own)
+                {
+                    sides.push((ReadSite::CheckedAgainst(entry.span), entry.last, last));
+                }
+            }
+            for (site, node, spelled) in sides {
+                printed.push(match spelled {
+                    | Maybe::Present(spelled) => {
+                        let closed = self.spell(node, &[], page, form);
+                        let settled = if !spelled.unspelled().is_empty() {
+                            Some(RoundTrip::Unknown)
+                        }
+                        else if matches!(closed, Maybe::Present(ref closed) if *closed == spelled)
+                        {
+                            None
+                        }
+                        else {
+                            Some(RoundTrip::Open)
+                        };
+                        (site, node, spelled.to_string(), settled)
+                    },
+                    | Maybe::Absent(_) => (site, node, String::new(), Some(RoundTrip::Unspelled)),
+                });
+            }
+        }
+        for (&key, held) in &self.declared {
+            if let Held::Typed(node) = *held {
+                let site = ReadSite::Declared(key);
+                printed.push(match self.spell(node, &[], page, form) {
+                    | Maybe::Present(spelled) => {
+                        let settled =
+                            (!spelled.unspelled().is_empty()).then_some(RoundTrip::Unknown);
+                        (site, node, spelled.to_string(), settled)
+                    },
+                    | Maybe::Absent(_) => (site, node, String::new(), Some(RoundTrip::Unspelled)),
+                });
+            }
+        }
+        // Each distinct signature that parses whole, appended once under a
+        // fresh name.
+        let signature = |node: TypeNode, spelled: &str| match node {
+            | TypeNode::Value(_) => String::from(spelled),
+            | TypeNode::Computation(_) => format!("+U ({spelled})"),
+        };
+        let mut appended: BTreeMap<String, String> = BTreeMap::new();
+        let mut augmented = self.naming.text.clone();
+        for &(_, node, ref spelled, ref settled) in &printed {
+            if settled.is_some() {
+                continue;
+            }
+            let written = signature(node, spelled);
+            if appended.contains_key(&written) {
+                continue;
+            }
+            let whole = format!("def read_back : {written} ;\n");
+            if parse(grammar, SourceText::from(whole.as_str()))
+                .is_ok_and(|parsed| parsed.obligations().is_empty())
+            {
+                let name = format!("read_back_{}", appended.len());
+                for part in ["\ndef ", name.as_str(), " : ", written.as_str(), " ;\n"] {
+                    augmented.push_str(part);
+                }
+                let _fresh = appended.insert(written, name);
+            }
+        }
+        // The appended signatures' types, imported into a copy of the table's
+        // arena beside the nodes they are compared with.
+        let mut arena = self.arena.clone();
+        let held: Vec<ValueTypeId> = printed
+            .iter()
+            .map(|&(_, node, ..)| match node {
+                | TypeNode::Value(id) => id,
+                | TypeNode::Computation(id) => arena.value_type_thunk(id),
+            })
+            .collect();
+        let mut lowered: BTreeMap<String, Result<ValueTypeId, String>> = BTreeMap::new();
+        match lower_source(
+            grammar,
+            SourceText::from(augmented.as_str()),
+            &mut LoweringCount::default(),
+        )
+        .map(Lowering::into_lowered)
+        {
+            | Ok(Lowered::Module {
+                module,
+                arena: read,
+            }) => {
+                let mut importer = TypeImporter::new(&read, &mut arena);
+                for declaration in module.declarations() {
+                    let name = declaration.name();
+                    if !name.as_ref().starts_with("read_back_") {
+                        continue;
+                    }
+                    let outcome = match declaration.outcome() {
+                        | DeclarationOutcome::Uncompleted { declared_type } => importer
+                            .value_type(declared_type)
+                            .map_err(|fault| format!("{fault:?}")),
+                        | DeclarationOutcome::Refused(refusal) => Err(refusal.to_string()),
+                        | other => Err(format!("{other:?}")),
+                    };
+                    let _first = lowered.insert(String::from(name.as_ref()), outcome);
+                }
+            },
+            | Ok(Lowered::Refused(refusal)) => {
+                for name in appended.values() {
+                    let _first = lowered.insert(name.clone(), Err(refusal.to_string()));
+                }
+            },
+            | Err(fault) => {
+                for name in appended.values() {
+                    let _first = lowered.insert(name.clone(), Err(fault.to_string()));
+                }
+            },
+        }
+        printed
+            .into_iter()
+            .zip(held)
+            .map(|((site, node, spelled, settled), held)| {
+                let trip = settled.unwrap_or_else(|| {
+                    match appended
+                        .get(&signature(node, &spelled))
+                        .and_then(|name| lowered.get(name))
+                    {
+                        | None => RoundTrip::Unparsed,
+                        | Some(&Err(ref refusal)) => RoundTrip::Refused(refusal.clone()),
+                        | Some(&Ok(read)) => match equal_type_syntax(&arena, held, read) {
+                            | CertificateEquality::Equal => RoundTrip::Equal,
+                            | CertificateEquality::Different => RoundTrip::Different,
+                        },
+                    }
+                });
+                ReadBack {
+                    site,
+                    spelled,
+                    trip,
+                }
+            })
+            .collect()
+    }
 }
 
 /// A match's scrutinee as the typed run found it: its first type, and where
@@ -1778,6 +2042,8 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::Declared;
+    use super::ReadSite;
+    use super::RoundTrip;
     use super::Subject;
     use super::TypeTable;
     use super::checked_against;
@@ -1894,6 +2160,48 @@ mod tests
             at("\n\n"),
             Maybe::Absent(typing::Absent::Untyped),
             "layout between declarations is no node's"
+        );
+    }
+
+    #[test]
+    fn a_printed_type_reads_back_to_its_certificate()
+    {
+        let source = SourceText::from(
+            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef f(x : Nat) -> \
+             -F Nat { return x }\ndef h(a : Type, y : a) -> -F a { return y }\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared);
+        let trip = |spelled: &str, declared: bool| {
+            read.iter()
+                .filter(|read| {
+                    read.spelled == spelled
+                        && matches!(read.site, ReadSite::Declared(_)) == declared
+                })
+                .map(|read| read.trip.clone())
+                .collect::<Vec<RoundTrip>>()
+        };
+        for (spelled, declared, what) in [
+            ("Nat", false, "a data type"),
+            ("Type", false, "a universe"),
+            ("Type[-]", false, "a computation universe"),
+            ("-F Nat", false, "a computation type"),
+            (
+                "Nat => Nat",
+                true,
+                "a declaration's thunked function type, sugared",
+            ),
+        ] {
+            let trips = trip(spelled, declared);
+            assert!(
+                !trips.is_empty() && trips.iter().all(|trip| *trip == RoundTrip::Equal),
+                "{what} reads back equal: {trips:?}"
+            );
+        }
+        let open = trip("a", false);
+        assert!(
+            !open.is_empty() && open.iter().all(|trip| *trip == RoundTrip::Open),
+            "a term typed under a parameter reads as open: {open:?}"
         );
     }
 

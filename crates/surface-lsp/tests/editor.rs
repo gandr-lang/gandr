@@ -20,5 +20,6 @@ mod editor
     mod client;
     mod editing;
     mod scenarios;
+    mod shapes;
     mod typist;
 }
