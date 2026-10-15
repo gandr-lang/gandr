@@ -123,20 +123,37 @@ def rec spinHom(a : Int, b : Int) -> -F Path(Path(Circle, Base, Base), spin(plus
 /// induction on the first loop, written last because a recursion descends
 /// its last parameter, and summed with `wind(q)` first because the sum
 /// descends its second summand: `here(wind(q))` on the empty word, and the
-/// recursive call carried along `up` or `down`. The checker accepts that
-/// body and the kernel refuses it, the fault of #424, so the law is owed.
-@[ owes(1) ]
-def windHom : (q : Path(Circle, Base, Base), p : Path(Circle, Base, Base)) => Path(Int, wind(p then q), plus(wind(q), wind(p))) ;
+/// recursive call carried along `up` or `down`.
+@[ checks ]
+def rec windHom(q : Path(Circle, Base, Base), p : Path(Circle, Base, Base)) -> -F Path(Int, wind(p then q), plus(wind(q), wind(p))) {
+  case p {
+    here => here(wind(q)),
+    loop ∷ r => cong(up, windHom[<](q, r)),
+    back(loop) ∷ r => cong(down, windHom[<](q, r))
+  }
+}
 
-/// A successor on the left of a sum comes out of it; owed as in
-/// `int-sum.gandr`, where the kernel refuses its proof (#424).
-@[ owes(1) ]
-def plusS : (a : Int, b : Int) => Path(Int, plus(S(a), b), S(plus(a, b))) ;
+/// A successor on the left of a sum comes out of it (cubical's `sucℤ+`), by
+/// induction on the right summand, as `int-sum.gandr` proves it.
+@[ checks ]
+def rec plusS(a : Int, b : Int) -> -F Path(Int, plus(S(a), b), S(plus(a, b))) {
+  case b {
+    Z => here(S(a)),
+    S(x) => cong(up, plusS[<](a, x)),
+    P(x) => cong(down, plusS[<](a, x))
+  }
+}
 
-/// A predecessor on the left of a sum comes out of it; owed as `plusS` is
-/// (#424).
-@[ owes(1) ]
-def plusP : (a : Int, b : Int) => Path(Int, plus(P(a), b), P(plus(a, b))) ;
+/// A predecessor on the left of a sum comes out of it (cubical's `predℤ+`),
+/// as `plusS`.
+@[ checks ]
+def rec plusP(a : Int, b : Int) -> -F Path(Int, plus(P(a), b), P(plus(a, b))) {
+  case b {
+    Z => here(P(a)),
+    S(x) => cong(up, plusP[<](a, x)),
+    P(x) => cong(down, plusP[<](a, x))
+  }
+}
 
 /// Zero is a left unit of the sum, by induction on the right summand.
 @[ checks ]

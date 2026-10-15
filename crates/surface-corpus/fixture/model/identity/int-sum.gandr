@@ -37,16 +37,29 @@ def rec plus(a : Int, b : Int) -> -F Int {
   }
 }
 
-/// A successor on the left of a sum comes out of it. Owed: proved by
-/// induction on `b` with `cong(up, …)` and `cong(down, …)`, it checks and the
-/// kernel refuses it (#424).
-@[ owes(1) ]
-def plusS : (a : Int, b : Int) => Path(Int, plus(S(a), b), S(plus(a, b))) ;
+/// A successor on the left of a sum comes out of it (cubical's `sucℤ+`), by
+/// induction on the right summand: the kernel reads the endpoint `S(plus(a,
+/// P(x)))` by `Int`'s rules down to `plus(a, x)`, and the `cong(up, …)` and
+/// `cong(down, …)` arms as transports along the recursive path.
+@[ checks ]
+def rec plusS(a : Int, b : Int) -> -F Path(Int, plus(S(a), b), S(plus(a, b))) {
+  case b {
+    Z => here(S(a)),
+    S(x) => cong(up, plusS[<](a, x)),
+    P(x) => cong(down, plusS[<](a, x))
+  }
+}
 
-/// A predecessor on the left of a sum comes out of it; owed as `plusS` is
-/// (#424).
-@[ owes(1) ]
-def plusP : (a : Int, b : Int) => Path(Int, plus(P(a), b), P(plus(a, b))) ;
+/// A predecessor on the left of a sum comes out of it (cubical's `predℤ+`),
+/// as `plusS`.
+@[ checks ]
+def rec plusP(a : Int, b : Int) -> -F Path(Int, plus(P(a), b), P(plus(a, b))) {
+  case b {
+    Z => here(P(a)),
+    S(x) => cong(up, plusP[<](a, x)),
+    P(x) => cong(down, plusP[<](a, x))
+  }
+}
 
 /// Zero is a left unit of the sum, by induction on the right summand.
 @[ checks ]

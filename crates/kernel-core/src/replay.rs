@@ -1946,6 +1946,26 @@ where
             goal.right = self.present(right)?;
             goal.left = self.fuse(goal.left)?;
             goal.right = self.fuse(goal.right)?;
+            // A presented constructor whose rules rewrite it to one of its
+            // returned leaves (`S(P(plus(a, x)))` to `plus(a, x)`) presents as
+            // that leaf: read it by its computation, as a goal's returned
+            // endpoint is read on entry, before its shape.
+            if let (Term::Value(left), Term::Value(right)) = (goal.left, goal.right)
+                && [left, right]
+                    .into_iter()
+                    .any(|side| matches!(self.arena.value(side), Some(&Value::Returned(_))))
+            {
+                continue;
+            }
+            // `return (returned c)` against a side that returns nothing yet is
+            // `c` itself, as a pure computation returns `v` exactly when it
+            // converts with `return v`: a sum whose case answers its summand
+            // (`plus(wind(q), Z)` to `return wind(q)`) is read on as the call
+            // it returned. Two returns still decompose by their values.
+            if let Some((side, computation)) = self.returned_return(&goal) {
+                goal.set(side, Term::Computation(computation));
+                continue;
+            }
             // One node on both sides converts by reflexivity: the forced loop
             // closes it as an engine's shared comparison would, rather than
             // descend into a term its shapes may not read.
@@ -2088,6 +2108,64 @@ where
             goal.set(side, Term::Computation(computation));
         }
         goal.reduction = Reduction::Endpoint;
+    }
+
+    /// The side of a computation goal that returns a returned endpoint while
+    /// the other side returns nothing yet, with that endpoint's computation.
+    ///
+    /// `return (returned c)` converts with `c`, as a pure computation returns
+    /// `v` exactly when it converts with `return v`; reading it so is forced,
+    /// and no decision of the trace vocabulary records it. Two returns are left
+    /// to decompose by their values, as the engine's trace does.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some((side, c))` exactly when the goal's `side` is a
+    ///   computation `return v` with `v` the returned endpoint of `c`, and the
+    ///   other side is a computation that is no `return`, the left side first;
+    ///   `None` otherwise.
+    /// - provides: the replay's reading of a returned endpoint a computation
+    ///   returns.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `return (returned (force f))` converts with `force f`
+    ///   on either side and not with `force g`; without this reading the forced
+    ///   loop contradicts at its first step.
+    /// - witness: `element_identity::tests::a_returned_endpoint_a_computation_returns_replays_as_its_computation`
+    #[spec(ensures: |ret| match ret {
+        Some((side, computation)) => {
+            let (own, other) = match side {
+                ConversionSide::Left => (goal.left, goal.right),
+                ConversionSide::Right => (goal.right, goal.left),
+            };
+            matches!(own, Term::Computation(id) if matches!(self.arena.computation(id),
+                Some(&Computation::Return(value)) if self.arena.value(value) == Some(&Value::Returned(computation))))
+                && matches!(other, Term::Computation(id) if !matches!(self.arena.computation(id), Some(&Computation::Return(_))))
+        },
+        None => true,
+    })]
+    fn returned_return(
+        &self,
+        goal: &Goal,
+    ) -> Option<(ConversionSide, ComputationId)>
+    {
+        let returned = |term: Term| match term {
+            Term::Computation(id) => match self.arena.computation(id) {
+                Some(&Computation::Return(value)) => match self.arena.value(value) {
+                    Some(&Value::Returned(computation)) => Some(Some(computation)),
+                    _ => Some(None),
+                },
+                _ => None,
+            },
+            Term::Value(_) => Some(None),
+        };
+        match (returned(goal.left), returned(goal.right)) {
+            (Some(Some(computation)), None) => Some((ConversionSide::Left, computation)),
+            (None, Some(Some(computation))) => Some((ConversionSide::Right, computation)),
+            _ => None,
+        }
     }
 
     /// A value headed by a constructor of a presented type, rewritten to its
@@ -5245,11 +5323,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 let (call, mut outer, before, first) = next;
                 let (call, bind) = self.next_bind(call, &mut outer);
                 match bind {
-                    // A call stuck on a path transport is not read through:
-                    // its spine names it for the rule table alone, and reading
-                    // a bind through it would transport along the returned
-                    // endpoint of the call it stands for, unfolding a cong
-                    // chain link by link where [`Self::fuse`] reads it whole.
+                    // A stuck transport chained into another transport is a
+                    // `cong` chain, left whole for `fuse` to compose: reading
+                    // through it rebuilds the chain over its own returned leaf
+                    // without end.
                     Some(body)
                         if !first
                             || matches!(
@@ -5261,7 +5338,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 Ok(Shape::Neutral(
                                     Head::Variable(_) | Head::Constant(_, Status::Opaque),
                                     ref spine
-                                )) if !spine.iter().any(|elimination| matches!(elimination, Elimination::PathTransport(_)))
+                                )) if !(matches!(spine.as_slice(), [.., Elimination::PathTransport(_)])
+                                    && matches!(
+                                        self.arena.computation(body),
+                                        Some(&Computation::PathTransport { .. })
+                                    ))
                             ) =>
                     {
                         if self.continuation_of(body) == Continuation::Eliminates {
