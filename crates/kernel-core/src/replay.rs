@@ -1924,6 +1924,7 @@ where
     /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
     /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
     /// - witness: `replay::tests::a_cong_chain_composing_to_the_identity_replays_as_its_path`
+    /// - witness: `replay::tests::the_laws_of_bind_replay_by_name`
     #[spec(
         captures: before = (self.spent, goals.len(), goal.expect),
         ensures: |ret| {
@@ -3480,6 +3481,7 @@ where
     /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
     /// - witness: `path_universe::tests::it_computes_through_a_former`
     /// - witness: `flow_universe::tests::formation_boundaries_refuse`
+    /// - witness: `replay::tests::a_refutation_at_a_presented_term_is_not_authoritative`
     #[spec(
         requires: rule(left, right) == Rule::Structural,
         captures: before = (goals.len(), self.position),
@@ -4270,6 +4272,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `path_universe::tests::refl_collapses`
     /// - witness: `replay::tests::a_projection_runs_its_side_of_a_pairing`
     /// - witness: `replay::tests::a_ride_unfolds_its_flow_where_the_dialogue_names_it`
+    /// - witness: `replay::tests::an_introduction_under_a_spine_is_unreadable`
     #[spec(ensures: |ret| match term {
         Term::Value(value) => match self.arena.value(value) {
             Some(&Value::Variable(index)) => matches!(ret, Ok(Shape::Neutral(Head::Variable(found), ref spine)) if found == index && spine.is_empty()),
@@ -4936,6 +4939,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `replay::tests::an_endpoint_reads_a_bind_through_its_stuck_call`
     /// - witness: `replay::tests::an_endpoint_passes_over_a_bind_its_own_elimination_built`
     /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
+    /// - witness: `replay::tests::an_endpoint_continuation_is_spent_only_with_its_frames`
     #[spec(
         captures: before = self.spent,
         ensures: |ret| match term {
@@ -5677,6 +5681,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   the bind; a fixpoint applied to a call it waits on unfolds that call.
     /// - witness: `element_identity::tests::a_returned_endpoint_replays_as_its_computation`
     /// - witness: `replay::tests::a_fixpoint_at_a_returned_endpoint_runs_the_endpoint_first`
+    /// - witness: `replay::tests::each_elimination_runs_the_returned_endpoint_it_meets`
     #[spec(ensures: |ret| match ret {
         Ok(bind) => matches!(self.arena.computation(bind), Some(&Computation::Bind(bound, _)) if bound == returned),
         Err(_) => true,
@@ -5773,6 +5778,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   reading may not unfold leaves the endpoint apart from its value.
     /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
     /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
+    /// - witness: `replay::tests::a_stuck_endpoint_reads_as_what_it_reduced_to`
     #[spec(ensures: |ret| match ret {
         Ok(read) => self.arena.value(read).is_some(),
         Err(Stop::Budget) => self.spent >= self.budget,
