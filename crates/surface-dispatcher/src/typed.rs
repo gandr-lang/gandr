@@ -98,6 +98,8 @@ use gandr_core_checker::level_of;
 use gandr_core_checker::type_module;
 use gandr_core_term::Binders;
 use gandr_core_term::CertificateEquality;
+use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ConstructorTag;
@@ -115,6 +117,7 @@ use gandr_core_term::instantiate_value_type;
 use gandr_core_term::pattern::Pattern;
 use gandr_core_term::pattern::PatternId;
 use gandr_core_term::shift_value;
+use gandr_core_term::shift_value_type_under;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Side;
@@ -445,8 +448,8 @@ enum Standing
 struct NamedContext(usize);
 
 /// One intuitionistic binder a typed node stands under: the binder around
-/// it, the name the source writes for it, and whether it is a capability
-/// scope's own, whose region a capability type may name.
+/// it, the name the source writes for it, whether it is a capability scope's
+/// own, whose region a capability type may name, and the former opening it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Bound
 {
@@ -457,11 +460,15 @@ struct Bound
     name: Option<String>,
     /// Whether the binder is the capability a scope binds over its subject.
     scope: bool,
+    /// The former that opens it, whose type, or whose judgement's, states
+    /// the type it binds.
+    opener: CoreNode,
 }
 
 /// The context an entry's type is spelled in: the names of the
 /// intuitionistic binders around it, and of the capability scopes among
-/// them, each outermost first.
+/// them, each outermost first, and the type each binder binds where the
+/// table knows it.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Context
 {
@@ -469,6 +476,38 @@ struct Context
     binders: Vec<Option<String>>,
     /// The capability scopes' names, the first the outermost scope's region.
     regions: Vec<Option<String>>,
+    /// The type each binder binds, in the context of the binders before it;
+    /// none where the table knows none.
+    types: Vec<Option<ValueTypeId>>,
+}
+
+/// The binders a printed type naming them stands under, declared as the
+/// parameters of a function the type is read back as the last parameter of.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Under
+{
+    /// Each binder as a parameter, `name : type, `, outermost first.
+    parameters: String,
+    /// The binders' names the parameters declare, and the types they bind.
+    context: Context,
+}
+
+/// One printed type the read-back reads: where it was printed, the node it
+/// was printed from and its spelling, its trip when it is settled before any
+/// lowering, and the binders a type naming them stands under.
+#[derive(Clone, Debug)]
+struct Printed
+{
+    /// Where the type was printed.
+    site: ReadSite,
+    /// The node the type was printed from.
+    node: TypeNode,
+    /// The spelling, empty when the printer could not spell it.
+    spelled: String,
+    /// The trip, when it is settled before any lowering.
+    settled: Option<RoundTrip>,
+    /// The binders a type naming them stands under.
+    under: Option<Under>,
 }
 
 /// What the table keeps to name the binders an entry stands under when a
@@ -485,6 +524,9 @@ struct Naming
     /// Each lambda and bind with where the binder it opens is written,
     /// ascending by id.
     openers: Vec<(ComputationId, ByteSpan)>,
+    /// Each dependent arrow with where the name it binds is written,
+    /// ascending by id.
+    arrows: Vec<(CompTypeId, ByteSpan)>,
     /// Each written use of a variable with where a name for its binder is
     /// written: first where the origin table records the binder a use
     /// resolves to, then the use itself, which a type's variables have and no
@@ -499,8 +541,8 @@ impl Naming
     /// # Specification
     /// - requires: `module` was lowered from `source`.
     /// - ensures: the source text, each value declaration's roots by its
-    ///   constant, the origin table's binders, and its bindings then its
-    ///   written values as uses.
+    ///   constant, the origin table's binders and dependent arrows, and its
+    ///   bindings then its written values as uses.
     /// - provides: the input of [`scopes`], kept for an answer.
     /// - fails: never.
     /// - panics: none.
@@ -560,10 +602,16 @@ impl Naming
                     .map(|&(variable, origin)| (variable, origin.span())),
             )
             .collect();
+        let arrows = origins
+            .arrows()
+            .iter()
+            .map(|&(arrow, origin)| (arrow, origin.span()))
+            .collect();
         Self {
             text: String::from(<&str>::from(source)),
             roots,
             openers,
+            arrows,
             uses,
         }
     }
@@ -646,6 +694,11 @@ pub struct TypeTable
     /// The data signatures the typed run formed, by admission position: the
     /// words a path type reads as when a printed type is read back.
     signatures: BTreeMap<ConstantIndex, Arc<DataSignature>>,
+    /// The type each term former opening a binder binds, by the former,
+    /// ascending: a lambda's domain, a bind's returned value, a fixpoint's
+    /// own thunk, a static lambda's domain, read off the first type the typed
+    /// run kept for the former, or for a bind for its bound computation.
+    opened: Vec<(CoreNode, ValueTypeId)>,
 }
 
 /// The intuitionistic binder at or around `at`.
@@ -735,6 +788,7 @@ fn scopes(
                 around: intuitionistic(&scopes, binder.parent()),
                 name,
                 scope,
+                opener: binder.opener(),
             }
         })
         .collect();
@@ -974,6 +1028,55 @@ impl TypeTable
                 .map(|&(_, first, _, _, constant)| (first, constant))
         };
         let first_type = |term: TermNode| first_of(term).map(|(first, _)| first);
+        // Each binder a term former opens, at the type the first judgement of
+        // the former, or of a bind's bound computation, states it binds.
+        let mut opened: Vec<(CoreNode, ValueTypeId)> = Vec::new();
+        for &(term, first, ..) in &kept {
+            let bound = match (term, first) {
+                (TermNode::Computation(id), TypeNode::Computation(ty)) => {
+                    match arena.computation(id) {
+                        Some(&Computation::Lambda(_)) => match arena.comp_type(ty) {
+                            Some(
+                                &(CompType::Pi { domain, .. } | CompType::Arrow { domain, .. }),
+                            ) => Some(domain),
+                            Some(_) | None => None,
+                        },
+                        Some(&Computation::Fixpoint { .. }) => Some(arena.value_type_thunk(ty)),
+                        Some(&Computation::Bind(bound, _)) => {
+                            match first_type(TermNode::Computation(bound)) {
+                                Some(TypeNode::Computation(returned)) => {
+                                    match arena.comp_type(returned) {
+                                        Some(&CompType::Returner { result, .. }) => Some(result),
+                                        Some(_) | None => None,
+                                    }
+                                },
+                                Some(TypeNode::Value(_)) | None => None,
+                            }
+                        },
+                        Some(_) | None => None,
+                    }
+                },
+                (TermNode::Value(id), TypeNode::Value(ty)) => {
+                    match (arena.value(id), arena.value_type(ty)) {
+                        (
+                            Some(&Value::StaticLambda(_)),
+                            Some(&ValueType::StaticPi { domain, .. }),
+                        ) => Some(domain),
+                        (Some(_) | None, Some(_) | None) => None,
+                    }
+                },
+                (TermNode::Computation(_), TypeNode::Value(_))
+                | (TermNode::Value(_), TypeNode::Computation(_)) => None,
+            };
+            if let Some(ty) = bound {
+                let node = match term {
+                    TermNode::Value(id) => CoreNode::Value(id),
+                    TermNode::Computation(id) => CoreNode::Computation(id),
+                };
+                opened.push((node, ty));
+            }
+        }
+        opened.sort_by_key(|&(node, _)| node);
         // Each action's endpoint at the first session type a run found it
         // standing at, and the declaration whose run found it.
         let mut endpoints: Vec<(TermNode, TypeNode, ConstantIndex)> = typed
@@ -1253,6 +1356,7 @@ impl TypeTable
             contexts,
             orientations,
             signatures,
+            opened,
         })
     }
 
@@ -1545,12 +1649,13 @@ impl TypeTable
         form: Form,
     ) -> Maybe<Presentation, typing::Absent>
     {
-        self.spell_in(&self.arena, node, context, page, form)
+        self.spell_in(&self.arena, node, context, &[], page, form)
     }
 
     /// `node` of `arena` spelled as [`Self::spell`] spells a node of the
     /// table's own arena: `arena` holds the table's nodes at their ids, so the
-    /// constants and constructors are named alike.
+    /// constants and constructors are named alike, and each dependent arrow
+    /// `read` names past them binds the name it holds.
     ///
     /// # Specification
     /// trivial.
@@ -1559,6 +1664,7 @@ impl TypeTable
         arena: &CoreArena,
         node: TypeNode,
         context: &Context,
+        read: &[(CompTypeId, String)],
         page: PageWidth,
         form: Form,
     ) -> Maybe<Presentation, typing::Absent>
@@ -1578,9 +1684,26 @@ impl TypeTable
             .iter()
             .map(|name| name.as_deref().map(Name::from))
             .collect();
+        let mut arrows: Vec<(CompTypeId, Name<'_>)> = self
+            .naming
+            .arrows
+            .iter()
+            .filter_map(|&(arrow, span)| {
+                self.naming
+                    .text
+                    .get(usize::from(span.start()) .. usize::from(span.end()))
+                    .map(|name| (arrow, Name::from(name)))
+            })
+            .chain(
+                read.iter()
+                    .map(|&(arrow, ref name)| (arrow, Name::from(name.as_str()))),
+            )
+            .collect();
+        arrows.sort_by_key(|&(arrow, _)| arrow);
         let constructors = self.families.naming(&names);
         let printer = CoreSource::new(arena, &names)
             .naming(&constructors)
+            .naming_arrows(&arrows)
             .within(&binders)
             .scoped(&regions);
         present_type(&printer, root(node), page, form)
@@ -1630,6 +1753,7 @@ impl TypeTable
                         .map(|names| names.iter().cloned().map(Some).collect())
                         .unwrap_or_default(),
                     regions: Vec::new(),
+                    types: Vec::new(),
                 };
             },
             Standing::Judged(within) => within,
@@ -1656,17 +1780,116 @@ impl TypeTable
                 context.regions.push(name.clone());
             }
             context.binders.push(name);
+            context.types.push(self.bound_type(binder.opener));
             at = binder.around.filter(|&around| around < index);
         }
         context.binders.reverse();
         context.regions.reverse();
+        context.types.reverse();
         context
+    }
+
+    /// The type the binder `opener` opens binds, in the context of the
+    /// binders around it, where the table knows it: a dependent arrow's
+    /// domain, a static Π's, a dependent pair's first component's, and a term
+    /// former's as [`Self::opened`] keeps it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bound_type(
+        &self,
+        opener: CoreNode,
+    ) -> Option<ValueTypeId>
+    {
+        match opener {
+            CoreNode::CompType(id) => match self.arena.comp_type(id) {
+                Some(&CompType::Pi { domain, .. }) => Some(domain),
+                Some(_) | None => None,
+            },
+            CoreNode::ValueType(id) => match self.arena.value_type(id) {
+                Some(
+                    &(ValueType::StaticPi { domain: bound, .. }
+                    | ValueType::Sigma { first: bound, .. }),
+                ) => Some(bound),
+                Some(_) | None => None,
+            },
+            CoreNode::Computation(_) | CoreNode::Value(_) => self
+                .opened
+                .binary_search_by_key(&opener, |&(held, _)| held)
+                .ok()
+                .and_then(|at| self.opened.get(at))
+                .map(|&(_, ty)| ty),
+        }
+    }
+
+    /// The binders of `context` declared as parameters, each type spelled
+    /// under the parameters before it, a binder the source names nothing
+    /// named afresh.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one parameter per binder of `context`, outermost first, each
+    ///   `name : type, ` with its type spelled in `form` on a page of `page`
+    ///   columns under the names before it; none when `context` binds nothing,
+    ///   or a binder's type is unknown to the table or spells a `?`.
+    /// - provides: the context [`Self::read_back`] reads an open type under.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::read_back`], whose witnesses read open
+    ///   types through it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::read_back`].
+    /// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
+    fn telescope(
+        &self,
+        context: &Context,
+        page: PageWidth,
+        form: Form,
+    ) -> Option<Under>
+    {
+        if context.binders.is_empty() {
+            return None;
+        }
+        let mut parameters = String::new();
+        let mut names: Vec<Option<String>> = Vec::with_capacity(context.binders.len());
+        for (at, name) in context.binders.iter().enumerate() {
+            let ty = context.types.get(at).copied().flatten()?;
+            let before = Context {
+                binders: names.clone(),
+                regions: Vec::new(),
+                types: Vec::new(),
+            };
+            let Maybe::Present(spelled) = self.spell(TypeNode::Value(ty), &before, page, form)
+            else {
+                return None;
+            };
+            if !spelled.unspelled().is_empty() {
+                return None;
+            }
+            let name = name
+                .clone()
+                .unwrap_or_else(|| format!("read_back_bound_{at}"));
+            for part in [name.as_str(), " : ", spelled.to_string().as_str(), ", "] {
+                parameters.push_str(part);
+            }
+            names.push(Some(name));
+        }
+        Some(Under {
+            parameters,
+            context: Context {
+                binders: names,
+                regions: context.regions.clone(),
+                types: context.types.clone(),
+            },
+        })
     }
 
     /// Every type the table prints — each entry's own, the type an outer
     /// judgement checked a term against, each declaration's — spelled in
     /// `form` on a page of `page` columns and read back: parsed as a
-    /// signature's type, lowered after the source the table was built from,
+    /// signature's type, or as a parameter's under parameters declaring the
+    /// binders it names, lowered after the source the table was built from,
     /// and compared with the type node the table holds.
     ///
     /// # Specification
@@ -1675,29 +1898,37 @@ impl TypeTable
     ///   declarations in key order, each with the type as [`Self::at`] or
     ///   [`Self::declared`] prints it. A type the printer cannot lay out is
     ///   [`RoundTrip::Unspelled`]; one holding a `?` the printer wrote is
-    ///   [`RoundTrip::Unknown`]; one whose spelling under the node's binders
-    ///   differs from its spelling under none names a binder and is
-    ///   [`RoundTrip::Open`]; one that does not parse as the type of `def x : …
-    ///   ;` with no repair is [`RoundTrip::Unparsed`]. Every other is appended
-    ///   to the source as a signature of a fresh name — a computation type `C`
-    ///   as `+U (C)` — the whole lowered once, and is [`RoundTrip::Equal`] when
-    ///   the signature's type reads as the table's node, `U C` for a
-    ///   computation type, compared by [`equal_type_reading`] under the
-    ///   source's data signatures — the same syntax with path evidence erased,
-    ///   a type of words as the path at its point, a session type by its
-    ///   protocol's behaviour from its state; [`RoundTrip::Different`]
-    ///   otherwise; and [`RoundTrip::Refused`] with the refusal when the
-    ///   lowering refused the signature or the whole source.
+    ///   [`RoundTrip::Unknown`]. One whose spelling under the node's binders
+    ///   differs from its spelling under none names a binder: when the table
+    ///   knows every binder's type and spells it, the binders are declared as
+    ///   the parameters of a fresh function, `def f(x₁ : A₁, …, xₙ : Aₙ, it :
+    ///   T) -> -F Unit`, each `Aᵢ` spelled under the names before it, and the
+    ///   type read as `it`'s under all `n`, the binders the lowering dropped
+    ///   from a non-dependent arrow put back; it is [`RoundTrip::Open`] when
+    ///   the table does not know a binder's type — a capability scope's, a
+    ///   described member's — or the function does not lower. A closed one that
+    ///   does not parse as the type of `def x : … ;` with no repair is
+    ///   [`RoundTrip::Unparsed`]. Every other is appended to the source as a
+    ///   signature of a fresh name — a computation type `C` as `+U (C)` — the
+    ///   whole lowered once, and is [`RoundTrip::Equal`] when the type read is
+    ///   the table's node, `U C` for a computation type, compared by
+    ///   [`equal_type_reading`] under the source's data signatures — the same
+    ///   syntax with path evidence erased, a type of words as the path at its
+    ///   point, a session type by its protocol's behaviour from its state;
+    ///   [`RoundTrip::Different`] otherwise; and [`RoundTrip::Refused`] with
+    ///   the refusal when the lowering refused a closed signature or the whole
+    ///   source.
     /// - provides: the read-back half of the hover's content guarantee.
     /// - fails: never; a type that does not read back says why.
     /// - panics: none.
     /// - intension: one lowering per call, whatever the number of types; equal
-    ///   spellings are appended once.
+    ///   declarations are appended once.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a data type, a thunked function type in its sugared
     ///   spelling, a universe, a computation type and a declaration read back
-    ///   equal; a term typed under a parameter reads as open; and the corpus
+    ///   equal; a term typed under parameters and a bind, one of them a binder
+    ///   the type does not name, reads back equal under them; and the corpus
     ///   census reads back every printed type of every source, failing on a
     ///   class the findings do not pin.
     /// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
@@ -1712,9 +1943,10 @@ impl TypeTable
         form: Form,
     ) -> Vec<ReadBack>
     {
-        // Each printed type with the node it was printed from, and its trip
-        // when it is settled before any lowering.
-        let mut printed: Vec<(ReadSite, TypeNode, String, Option<RoundTrip>)> = Vec::new();
+        // Each printed type with the node it was printed from, its trip when
+        // it is settled before any lowering, and for a type naming a binder
+        // the binders it stands under with the parameters declaring them.
+        let mut printed: Vec<Printed> = Vec::new();
         for entry in &self.entries {
             let binders = self.standing(entry.standing);
             let own = self.spell(entry.ty, &binders, page, form);
@@ -1730,19 +1962,32 @@ impl TypeTable
                 printed.push(match spelled {
                     Maybe::Present(spelled) => {
                         let closed = self.spell(node, &Context::default(), page, form);
-                        let settled = if !spelled.unspelled().is_empty() {
-                            Some(RoundTrip::Unknown)
+                        let (settled, under) = if !spelled.unspelled().is_empty() {
+                            (Some(RoundTrip::Unknown), None)
                         }
                         else if matches!(closed, Maybe::Present(ref closed) if *closed == spelled)
                         {
-                            None
+                            (None, None)
                         }
                         else {
-                            Some(RoundTrip::Open)
+                            self.telescope(&binders, page, form)
+                                .map_or((Some(RoundTrip::Open), None), |under| (None, Some(under)))
                         };
-                        (site, node, spelled.to_string(), settled)
+                        Printed {
+                            site,
+                            node,
+                            spelled: spelled.to_string(),
+                            settled,
+                            under,
+                        }
                     },
-                    Maybe::Absent(_) => (site, node, String::new(), Some(RoundTrip::Unspelled)),
+                    Maybe::Absent(_) => Printed {
+                        site,
+                        node,
+                        spelled: String::new(),
+                        settled: Some(RoundTrip::Unspelled),
+                        under: None,
+                    },
                 });
             }
         }
@@ -1750,53 +1995,90 @@ impl TypeTable
             if let Held::Typed(node) = *held {
                 let site = ReadSite::Declared(key);
                 printed.push(match self.spell(node, &Context::default(), page, form) {
-                    Maybe::Present(spelled) => {
-                        let settled =
-                            (!spelled.unspelled().is_empty()).then_some(RoundTrip::Unknown);
-                        (site, node, spelled.to_string(), settled)
+                    Maybe::Present(spelled) => Printed {
+                        site,
+                        node,
+                        settled: (!spelled.unspelled().is_empty()).then_some(RoundTrip::Unknown),
+                        spelled: spelled.to_string(),
+                        under: None,
                     },
-                    Maybe::Absent(_) => (site, node, String::new(), Some(RoundTrip::Unspelled)),
+                    Maybe::Absent(_) => Printed {
+                        site,
+                        node,
+                        spelled: String::new(),
+                        settled: Some(RoundTrip::Unspelled),
+                        under: None,
+                    },
                 });
             }
         }
-        // Each distinct signature that parses whole, appended once under a
-        // fresh name.
+        // Each distinct declaration that parses whole, appended once under a
+        // fresh name: a closed type as a signature, a type naming binders as
+        // the last parameter of a function whose parameters declare them.
         let signature = |node: TypeNode, spelled: &str| match node {
             TypeNode::Value(_) => String::from(spelled),
             TypeNode::Computation(_) => format!("+U ({spelled})"),
         };
+        let probe = |node: TypeNode, spelled: &str, under: Option<&Under>| {
+            under.map_or_else(
+                || format!(" : {} ;\n", signature(node, spelled)),
+                |under| {
+                    format!(
+                        "({}read_back_it : {}) -> -F Unit {{ return unit }}\n",
+                        under.parameters,
+                        signature(node, spelled),
+                    )
+                },
+            )
+        };
         let mut appended: BTreeMap<String, String> = BTreeMap::new();
+        // Each function's name with how many binders its parameters declare
+        // before the read type's.
+        let mut parameterised: BTreeMap<String, usize> = BTreeMap::new();
         let mut augmented = self.naming.text.clone();
-        for &(_, node, ref spelled, ref settled) in &printed {
+        for &Printed {
+            node,
+            ref spelled,
+            ref settled,
+            ref under,
+            ..
+        } in &printed
+        {
             if settled.is_some() {
                 continue;
             }
-            let written = signature(node, spelled);
+            let written = probe(node, spelled, under.as_ref());
             if appended.contains_key(&written) {
                 continue;
             }
-            let whole = format!("def read_back : {written} ;\n");
+            let whole = format!("def read_back{written}");
             if parse(grammar, SourceText::from(whole.as_str()))
                 .is_ok_and(|parsed| parsed.obligations().is_empty())
             {
                 let name = format!("read_back_{}", appended.len());
-                for part in ["\ndef ", name.as_str(), " : ", written.as_str(), " ;\n"] {
+                for part in ["\ndef ", name.as_str(), written.as_str()] {
                     augmented.push_str(part);
+                }
+                if let Some(under) = under.as_ref() {
+                    let _fresh = parameterised.insert(name.clone(), under.context.binders.len());
                 }
                 let _fresh = appended.insert(written, name);
             }
         }
-        // The appended signatures' types, imported into a copy of the table's
-        // arena beside the nodes they are compared with.
+        // The appended types, imported into a copy of the table's arena beside
+        // the nodes they are compared with.
         let mut arena = self.arena.clone();
         let held: Vec<ValueTypeId> = printed
             .iter()
-            .map(|&(_, node, ..)| match node {
+            .map(|&Printed { node, .. }| match node {
                 TypeNode::Value(id) => id,
                 TypeNode::Computation(id) => arena.value_type_thunk(id),
             })
             .collect();
         let mut lowered: BTreeMap<String, Result<ValueTypeId, String>> = BTreeMap::new();
+        // The names the lowering keeps beside the read types' dependent
+        // arrows, at the arrows' images, so a reprint binds what was written.
+        let mut read_arrows: Vec<(CompTypeId, String)> = Vec::new();
         match lower_source(
             grammar,
             SourceText::from(augmented.as_str()),
@@ -1815,16 +2097,25 @@ impl TypeTable
                         continue;
                     }
                     let outcome = match declaration.outcome() {
-                        DeclarationOutcome::Uncompleted { declared_type } => importer
+                        DeclarationOutcome::Uncompleted { declared_type }
+                        | DeclarationOutcome::Completed { declared_type, .. } => importer
                             .value_type(declared_type)
                             .map_err(|fault| format!("{fault:?}")),
                         DeclarationOutcome::Refused(refusal) => Err(refusal.to_string()),
-                        other @ (DeclarationOutcome::Completed { .. }
-                        | DeclarationOutcome::Bodied { .. }
+                        other @ (DeclarationOutcome::Bodied { .. }
                         | DeclarationOutcome::Data(_)
                         | DeclarationOutcome::Abstract(_)) => Err(format!("{other:?}")),
                     };
                     let _first = lowered.insert(String::from(name.as_ref()), outcome);
+                }
+                for &(arrow, origin) in module.origins().arrows() {
+                    let span = origin.span();
+                    if let (Some(image), Some(name)) = (
+                        importer.comp_type_image(arrow),
+                        augmented.get(usize::from(span.start()) .. usize::from(span.end())),
+                    ) {
+                        read_arrows.push((image, String::from(name)));
+                    }
                 }
             },
             Ok(Lowered::Refused(refusal)) => {
@@ -1838,52 +2129,122 @@ impl TypeTable
                 }
             },
         }
+        let last_parameter =
+            |arena: &mut CoreArena, declared: ValueTypeId, count: usize| -> Option<ValueTypeId> {
+                let &ValueType::Thunk(mut at) = arena.value_type(declared)?
+                else {
+                    return None;
+                };
+                // Whether each parameter before the last kept its binder.
+                let mut kept: Vec<bool> = Vec::with_capacity(count);
+                loop {
+                    let (domain, codomain, dependent) = match arena.comp_type(at) {
+                        Some(&CompType::Pi { domain, codomain }) => (domain, codomain, true),
+                        Some(&CompType::Arrow { domain, codomain }) => (domain, codomain, false),
+                        Some(_) | None => return None,
+                    };
+                    if kept.len() == count {
+                        let mut ty = domain;
+                        for dropped in (0 .. count).rev() {
+                            if kept.get(dropped) != Some(&false) {
+                                continue;
+                            }
+                            let scope = kept
+                                .iter()
+                                .skip(dropped)
+                                .skip(1)
+                                .filter(|&&present| present)
+                                .fold(Binders::NONE, |scope, _| scope.deeper());
+                            ty = shift_value_type_under(arena, ty, scope, Binders::ONE);
+                            if let Some(slot) = kept.get_mut(dropped) {
+                                *slot = true;
+                            }
+                        }
+                        return Some(ty);
+                    }
+                    kept.push(dependent);
+                    at = codomain;
+                }
+            };
+        // A function's read type is its last parameter's, read under every
+        // parameter before it: the lowering forms a parameter its codomain
+        // never names as a non-dependent arrow, its binder dropped, so each
+        // dropped binder is put back around the type, innermost first.
+        for (name, &count) in &parameterised {
+            let Some(read) = lowered.get_mut(name)
+            else {
+                continue;
+            };
+            let Ok(declared) = *read
+            else {
+                continue;
+            };
+            *read = last_parameter(&mut arena, declared, count)
+                .ok_or_else(|| String::from("the declaration is no function of its parameters"));
+        }
         printed
             .into_iter()
             .zip(held)
-            .map(|((site, node, spelled, settled), held)| {
-                let read = match settled {
-                    Some(_) => None,
-                    None => appended
-                        .get(&signature(node, &spelled))
-                        .and_then(|name| lowered.get(name)),
-                };
-                let trip = settled.unwrap_or_else(|| match read {
-                    None => RoundTrip::Unparsed,
-                    Some(&Err(ref refusal)) => RoundTrip::Refused(refusal.clone()),
-                    Some(&Ok(read)) => {
-                        match equal_type_reading(&arena, &self.signatures, held, read) {
-                            CertificateEquality::Equal => RoundTrip::Equal,
-                            CertificateEquality::Different => RoundTrip::Different,
-                        }
+            .map(
+                |(
+                    Printed {
+                        site,
+                        node,
+                        spelled,
+                        settled,
+                        under,
                     },
-                });
-                // The lowered type printed again, a computation type from
-                // under the thunk its signature wraps it in.
-                let reprinted = match read {
-                    Some(&Ok(read)) => {
-                        let again = match (node, arena.value_type(read)) {
-                            (TypeNode::Computation(_), Some(&ValueType::Thunk(inner))) => {
-                                TypeNode::Computation(inner)
-                            },
-                            (TypeNode::Computation(_) | TypeNode::Value(_), _) => {
-                                TypeNode::Value(read)
-                            },
-                        };
-                        match self.spell_in(&arena, again, &Context::default(), page, form) {
-                            Maybe::Present(again) => Maybe::Present(again.to_string()),
-                            Maybe::Absent(_) => Maybe::Absent(reprinted::Absent::Unspelled),
-                        }
-                    },
-                    Some(&Err(_)) | None => Maybe::Absent(reprinted::Absent::Unlowered),
-                };
-                ReadBack {
-                    site,
-                    spelled,
-                    trip,
-                    reprinted,
-                }
-            })
+                    held,
+                )| {
+                    let read = match settled {
+                        Some(_) => None,
+                        None => appended
+                            .get(&probe(node, &spelled, under.as_ref()))
+                            .and_then(|name| lowered.get(name)),
+                    };
+                    // A type naming binders that the declaration of its binders
+                    // does not read stays open: the declaration is the table's
+                    // own rendering of the context, not the source's.
+                    let trip = settled.unwrap_or_else(|| match (read, &under) {
+                        (None | Some(&Err(_)), &Some(_)) => RoundTrip::Open,
+                        (None, &None) => RoundTrip::Unparsed,
+                        (Some(&Err(ref refusal)), &None) => RoundTrip::Refused(refusal.clone()),
+                        (Some(&Ok(read)), _) => {
+                            match equal_type_reading(&arena, &self.signatures, held, read) {
+                                CertificateEquality::Equal => RoundTrip::Equal,
+                                CertificateEquality::Different => RoundTrip::Different,
+                            }
+                        },
+                    });
+                    // The lowered type printed again under the same binders, a
+                    // computation type from under the thunk its signature wraps
+                    // it in.
+                    let reprinted = match read {
+                        Some(&Ok(read)) => {
+                            let again = match (node, arena.value_type(read)) {
+                                (TypeNode::Computation(_), Some(&ValueType::Thunk(inner))) => {
+                                    TypeNode::Computation(inner)
+                                },
+                                (TypeNode::Computation(_) | TypeNode::Value(_), _) => {
+                                    TypeNode::Value(read)
+                                },
+                            };
+                            let context = under.map(|under| under.context).unwrap_or_default();
+                            match self.spell_in(&arena, again, &context, &read_arrows, page, form) {
+                                Maybe::Present(again) => Maybe::Present(again.to_string()),
+                                Maybe::Absent(_) => Maybe::Absent(reprinted::Absent::Unspelled),
+                            }
+                        },
+                        Some(&Err(_)) | None => Maybe::Absent(reprinted::Absent::Unlowered),
+                    };
+                    ReadBack {
+                        site,
+                        spelled,
+                        trip,
+                        reprinted,
+                    }
+                },
+            )
             .collect()
     }
 
@@ -2580,7 +2941,8 @@ mod tests
     {
         let source = SourceText::from(
             "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef f(x : Nat) -> \
-             -F Nat { return x }\ndef h(a : Type, y : a) -> -F a { return y }\n",
+             -F Nat { return x }\ndef h(a : Type, y : a) -> -F a { return y }\ndef k(a : Type, y : \
+             a) -> -F a { run z <- h(a, y) ; return z }\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared);
@@ -2610,10 +2972,12 @@ mod tests
                 "{what} reads back equal: {trips:?}"
             );
         }
+        // `a` under `a`, `y` and `z`: the parameter `y` and the bind's `z`,
+        // which the type does not name, read back as binders all the same.
         let open = trip("a", false);
         assert!(
-            !open.is_empty() && open.iter().all(|trip| *trip == RoundTrip::Open),
-            "a term typed under a parameter reads as open: {open:?}"
+            open.len() >= 2 && open.iter().all(|trip| *trip == RoundTrip::Equal),
+            "a term typed under its parameters and a bind reads back equal under them: {open:?}"
         );
     }
 

@@ -443,6 +443,36 @@ impl<'source, 'target> TypeImporter<'source, 'target>
         }
     }
 
+    /// The image of the source computation type `source`, when an import of
+    /// this session copied it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the target node the importer relocated `source` to; none when
+    ///   no root imported so far reaches it.
+    /// - provides: a side table keyed by source nodes, such as the names a
+    ///   lowering keeps beside its dependent arrows, carried to the target.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dependent arrow inside an imported annotation
+    ///   answers its relocated node, and one no import reached answers none.
+    /// - witness: `import::tests::an_imported_arrow_answers_its_image`
+    #[spec(ensures: |ret| ret.is_none_or(|image| self.target.comp_type(image).is_some()))]
+    #[inline]
+    #[must_use]
+    pub fn comp_type_image(
+        &self,
+        source: CompTypeId,
+    ) -> Option<CompTypeId>
+    {
+        match self.images.get(&Node::CompType(source)) {
+            Some(&Node::CompType(image)) => Some(image),
+            Some(&(Node::Value(_) | Node::Computation(_) | Node::ValueType(_))) | None => None,
+        }
+    }
+
     /// Copy a reachable value-type graph, retaining previous imported nodes.
     ///
     /// # Specification
@@ -1004,5 +1034,42 @@ mod tests
             })
         );
         assert_eq!(importer.target.value(variable), Some(&Value::Quote(unit)));
+    }
+
+    #[test]
+    fn an_imported_arrow_answers_its_image()
+    {
+        let mut source = CoreArena::new();
+        let universe = source.value_type_unit();
+        let variable =
+            source.value_variable(crate::Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let dependent = source.value_type_element(variable, Level::zero());
+        let returner = source.comp_type_returner(dependent);
+        let arrow = source.comp_type_pi(universe, returner);
+        let thunk = source.value_type_thunk(arrow);
+        let unreached = source.comp_type_returner(universe);
+        let mut target = CoreArena::new();
+        let _occupied = target.value_type_unit();
+        let mut importer = TypeImporter::new(&source, &mut target);
+        assert_eq!(
+            importer.comp_type_image(arrow),
+            None,
+            "nothing is imported yet"
+        );
+        let copied = importer.value_type(thunk).expect("source graph resolves");
+        let Some(&ValueType::Thunk(image)) = importer.target.value_type(copied)
+        else {
+            panic!("a thunk");
+        };
+        assert_eq!(
+            importer.comp_type_image(arrow),
+            Some(image),
+            "the arrow answers its image"
+        );
+        assert_eq!(
+            importer.comp_type_image(unreached),
+            None,
+            "a node no import reached answers none"
+        );
     }
 }

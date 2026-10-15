@@ -1179,8 +1179,9 @@ enum Reading<'signatures>
     /// As a printed type reads back: the words of the signatures' presented
     /// types as the path at their point, two session types by their protocols'
     /// behaviour, a decoded static redex as its reduct, as every checker reads
-    /// them, and a staged type as its base, which is all of it the surface
-    /// writes.
+    /// them, a staged type as its base, which is all of it the surface
+    /// writes, and a call kept unelaborated as the value it returns, which is
+    /// all a printed `f(x)` says.
     Printed(&'signatures BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>),
 }
 
@@ -1281,7 +1282,8 @@ pub fn equal_type_syntax(
 ///   labels, `end` — whatever their nodes' positions; a decode whose code is a
 ///   static abstraction applied to no more arguments than its chain has binders
 ///   is read as the decode of the abstraction's body instantiated at the
-///   arguments, at most [`StaticSteps::ALLOWED`] times along one comparison.
+///   arguments, at most [`StaticSteps::ALLOWED`] times along one comparison;
+///   and a call kept unelaborated is read as the value it returns.
 /// - provides: the comparison a printed type's reading back is held to: a type
 ///   of words has no name the surface writes, and is spelled as the path type
 ///   it reads as; a session type at a state is spelled as the protocol from
@@ -1301,11 +1303,14 @@ pub fn equal_type_syntax(
 ///   differing payload or label stays different. A decoded redex against its
 ///   reduct compares equal; against another type it stays different. A staged
 ///   type, alone and as an arrow's domain, reads as its base where the syntax
-///   alone tells them apart, and stays different from another type.
+///   alone tells them apart, and stays different from another type. A path
+///   between a call returned reads as one between the call kept, and not as one
+///   between another call.
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
 /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state`
 /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
 /// - witness: `syntax::tests::a_staged_type_reads_as_its_base`
+/// - witness: `syntax::tests::a_kept_call_reads_as_the_value_it_returns`
 #[spec(ensures: |ret| ret == CertificateEquality::Different || (arena.value_type(left).is_some() && arena.value_type(right).is_some()))]
 #[inline]
 #[must_use]
@@ -1947,11 +1952,12 @@ fn session_children(
 ///   after path evidence is erased or, under [`Reading::Printed`], is a pair a
 ///   printed type reads back as one type: each value type at its base when it
 ///   is staged, a value-type pair the signatures read as one type of words
-///   ([`read_as_words`]) agreeing outright, and two session types whose
-///   protocols behave alike from their states ([`session_children`]), and a
-///   decoded static redex read as its reduct ([`decoded_value_type`],
-///   [`decoded_comp_type`]); under [`Reading::Syntax`] no reduction is
-///   performed.
+///   ([`read_as_words`]) agreeing outright, two session types whose protocols
+///   behave alike from their states ([`session_children`]), a decoded static
+///   redex read as its reduct ([`decoded_value_type`], [`decoded_comp_type`]),
+///   and a call kept unelaborated read as the value it returns, as the lowering
+///   keeps it where a type after it reads it; under [`Reading::Syntax`] no
+///   reduction is performed.
 /// - executable: none — the contract is the inductive graph comparison, not a
 ///   second traversal pretending to be an independent postcondition.
 ///
@@ -2083,6 +2089,17 @@ fn equal_syntax(
                     }
                     else if let Value::Returned(a) = *matched_left_value
                         && let Value::Returned(b) = *matched_right_value
+                    {
+                        pending.push(C(a, b));
+                    }
+                    // A call printed in a type, `f(x)`, is one spelling the
+                    // lowering keeps unelaborated where the checker decides
+                    // it and as the value it returns where a type after it
+                    // reads it; read back, either is the value it returns.
+                    else if matches!(reading, Reading::Printed(_))
+                        && let (&Value::Returned(a), &Value::Nested(b))
+                        | (&Value::Nested(a), &Value::Returned(b)) =
+                            (matched_left_value, matched_right_value)
                     {
                         pending.push(C(a, b));
                     }
@@ -3328,6 +3345,49 @@ mod tests
             equal_type_reading(&arena, &signatures, staged, other),
             CertificateEquality::Different,
             "a staged type does not read as another type"
+        );
+    }
+
+    #[test]
+    fn a_kept_call_reads_as_the_value_it_returns()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        // `f(x)` with `f` and `x` the two binders around the type.
+        let function = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let forced = arena.computation_force(function);
+        let call = arena.computation_application(forced, argument);
+        let other = arena.computation_force(argument);
+        let returned = arena.value_returned(call);
+        let nested = arena.value_nested(call);
+        let elsewhere = arena.value_nested(other);
+        let at = |arena: &mut crate::CoreArena, end: ValueId| arena.value_type_path(int, end, end);
+        let (returned, nested, elsewhere) = (
+            at(&mut arena, returned),
+            at(&mut arena, nested),
+            at(&mut arena, elsewhere),
+        );
+        for (left, right, what) in [
+            (returned, nested, "a call returned against the call kept"),
+            (nested, returned, "in either order"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, returned, elsewhere),
+            CertificateEquality::Different,
+            "a call does not read as another call kept"
         );
     }
 }

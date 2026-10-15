@@ -453,6 +453,11 @@ pub struct OriginTable
     /// The name each lambda or bind binds, by the computation that opens the
     /// binder, ascending by id: the syntax the binder's name was written at.
     binders: Vec<(ComputationId, Origin)>,
+    /// The name each dependent arrow binds, by the arrow, ascending by id:
+    /// the syntax its binder's name was written at, a parameter's or a
+    /// telescope entry's. The core carries no name; the printer reads it
+    /// here.
+    arrows: Vec<(CompTypeId, Origin)>,
     /// Each variable written in the source, with its binder's span, ascending
     /// by id.
     bindings: Vec<(ValueId, ByteSpan)>,
@@ -628,6 +633,21 @@ impl OriginTable
         record(&mut self.comp_types, id, origin);
     }
 
+    /// Record where the name a freshly minted dependent arrow binds is
+    /// written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn record_arrow(
+        &mut self,
+        id: CompTypeId,
+        binder: Origin,
+    )
+    {
+        record(&mut self.arrows, id, binder);
+    }
+
     /// Record, for each node a rewrite of the lowered terms minted, the origin
     /// of the node it stands for: a rebuilt node takes the origin of the node
     /// it was rebuilt from, with that node's binder name and a variable's
@@ -641,9 +661,10 @@ impl OriginTable
     /// - ensures: each minted node whose source answers an origin records it,
     ///   the source being the node `carried` pairs it with, or for a bind the
     ///   run `binds` pairs it with, the run first and the first pair after it;
-    ///   a rebuilt opener records its source's binder and a rebuilt variable
-    ///   its source's binder span; a minted bind records no binder; nothing
-    ///   recorded before changes, and every family stays ascending.
+    ///   a rebuilt opener records its source's binder, a rebuilt dependent
+    ///   arrow the name its source binds, and a rebuilt variable its source's
+    ///   binder span; a minted bind records no binder; nothing recorded before
+    ///   changes, and every family stays ascending.
     /// - provides: the nodes of a body the checker elaborated, located as the
     ///   written nodes they elaborate, so a refusal of the second run is
     ///   published where the first run's is.
@@ -723,6 +744,9 @@ impl OriginTable
         for (written, held) in comp_types {
             if let Maybe::Present(origin) = self.comp_type(held) {
                 self.record_comp_type(written, origin);
+            }
+            if let Maybe::Present(binder) = find(&self.arrows, held) {
+                self.record_arrow(written, binder);
             }
         }
     }
@@ -1069,6 +1093,18 @@ impl OriginTable
     pub fn comp_types(&self) -> &[(CompTypeId, Origin)]
     {
         &self.comp_types
+    }
+
+    /// Each dependent arrow with where the name it binds is written,
+    /// ascending by id.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn arrows(&self) -> &[(CompTypeId, Origin)]
+    {
+        &self.arrows
     }
 
     /// How many core nodes this table recorded an origin for.

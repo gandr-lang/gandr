@@ -1896,8 +1896,9 @@ enum Task<Node>
         /// How many value formers enclose the node.
         depth: ValueDepth,
     },
-    /// Open a binder in a zone, of the former whose child follows.
-    Bind(Zone),
+    /// Open a binder in a zone, of the former whose child follows: the former
+    /// itself when it opens that one binder, whose name the source may write.
+    Bind(Zone, Option<Node>),
     /// Close the innermost binder.
     Unbind,
     /// Open one binder per finished piece of the top this many, the deepest
@@ -2288,6 +2289,11 @@ struct Walk<'walk, 'names>
     pieces: Vec<Piece>,
     /// The binder names by position.
     binders: Binders<'names>,
+    /// The name each binder position took when a binder last opened there:
+    /// the one the source writes, when it captures no other, else the first
+    /// generated name no binder around it holds; none for a redex's binder,
+    /// which spells as its argument, and once the names ran out.
+    names: Vec<Option<BinderName>>,
     /// The zone of each open binder, outermost first; a binder's position
     /// among them names it.
     opened: Vec<Zone>,
@@ -2630,9 +2636,9 @@ impl Walk<'_, '_>
             .unwrap_or(usize::MAX)
             .saturating_sub(open);
         let spelled = match found {
-            Some(position) => match self.binders.name_at(position) {
-                Maybe::Present(name) => Ok(name.0.clone()),
-                Maybe::Absent(_) => Err(Unspelled::Exhausted),
+            Some(position) => match self.names.get(position.0) {
+                Some(&Some(ref name)) => Ok(name.0.clone()),
+                Some(&None) | None => Err(Unspelled::Exhausted),
             },
             None => match zone {
                 Zone::Intuitionistic => self
@@ -2762,6 +2768,13 @@ impl Walk<'_, '_>
             let _fresh = self
                 .substituted
                 .insert(OpenBinders(self.opened.len()), argument);
+            let position = self.opened.len();
+            if self.names.len() <= position {
+                self.names.resize(position.saturating_add(1_usize), None);
+            }
+            if let Some(slot) = self.names.get_mut(position) {
+                *slot = None;
+            }
             self.opened.push(Zone::Intuitionistic);
         }
         Ok(())
@@ -3745,8 +3758,9 @@ impl Walk<'_, '_>
                 admits: slot.admits,
                 depth: below,
             }));
+            let opener = (slot.binds.count == 1_usize).then_some(node);
             for _ in 0_usize .. slot.binds.count {
-                tasks.push(Task::Bind(slot.binds.zone));
+                tasks.push(Task::Bind(slot.binds.zone, opener));
             }
             if let Some(label) = slot.label {
                 tasks.push(Task::Label(label));
@@ -4026,8 +4040,11 @@ impl Walk<'_, '_>
     /// # Specification
     /// - requires: the open count is the join's own, its children's binders
     ///   closed, so position `open + offset` names the binder.
-    /// - ensures: the generated name is a leaf; an exhausted counter yields `?`
-    ///   and marks the presentation approximate without adding a piece.
+    /// - ensures: the name the binder took when it opened ([`Self::bind`]) is a
+    ///   leaf, and a position no binder opened — the last label of a dependent
+    ///   record — takes the first generated name no binder below it holds; a
+    ///   binder that took none, or no generated name left, yields `?` and marks
+    ///   the presentation approximate without adding a piece.
     /// - fails: the builder's refusal.
     /// - panics: none.
     ///
@@ -4040,13 +4057,13 @@ impl Walk<'_, '_>
     /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-    /// - witness: `walk::tests::binder_exhaustion_preserves_existing_names`
+    /// - witness: `goldens::tests::an_arrow_binder_spells_as_the_source_names_it`
     #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity,
-            exhausted = self.opened.len().saturating_add(offset.0) >= self.binders.generated.len() && self.binders.next.0 == u32::MAX],
+            unnamed = matches!(self.names.get(self.opened.len().saturating_add(offset.0)), Some(&None))],
         ensures: |ref ret| self.pieces.len() == entry
             && (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
-            && (!exhausted || self.fidelity == Fidelity::Approximate)
+            && (!unnamed || self.fidelity == Fidelity::Approximate)
             && match *ret {
                 | Ok(doc) => doc != Doc::EMPTY,
                 | Err(PresentationError::Build(_)) => true,
@@ -4058,18 +4075,100 @@ impl Walk<'_, '_>
         offset: OpenBinders,
     ) -> Result<Doc, PresentationError>
     {
-        let position = OpenBinders(self.opened.len().saturating_add(offset.0));
-        match self.binders.name_at(position) {
-            Maybe::Present(name) => {
-                let name = name.clone();
-                self.leaf(Glyphs(name.0.as_str()))
-            },
-            Maybe::Absent(_) => {
-                self.fidelity = Fidelity::Approximate;
-                let _fresh = self.unspelled.insert(Unspelled::Exhausted);
-                self.leaf(Glyphs("?"))
-            },
+        let position = self.opened.len().saturating_add(offset.0);
+        let name = match self.names.get(position) {
+            Some(&Some(ref name)) => Some(name.clone()),
+            Some(&None) => None,
+            None => self.fresh(offset),
+        };
+        if let Some(name) = name {
+            self.leaf(Glyphs(name.0.as_str()))
         }
+        else {
+            self.fidelity = Fidelity::Approximate;
+            let _fresh = self.unspelled.insert(Unspelled::Exhausted);
+            self.leaf(Glyphs("?"))
+        }
+    }
+
+    /// The first generated name ([`Binders::name_at`]) no binder below the
+    /// one `offset` past the innermost open binder holds; none once the names
+    /// ran out.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fresh(
+        &mut self,
+        offset: OpenBinders,
+    ) -> Option<BinderName>
+    {
+        let position = self.opened.len().saturating_add(offset.0);
+        let outer = self
+            .names
+            .get(.. position.min(self.names.len()))
+            .unwrap_or_default();
+        (0_usize ..)
+            .map_while(|at| match self.binders.name_at(OpenBinders(at)) {
+                Maybe::Present(name) => Some(name.clone()),
+                Maybe::Absent(_) => None,
+            })
+            .find(|name| !outer.iter().flatten().any(|held| held.0 == name.0))
+    }
+
+    /// Open a binder in `zone`, named as the source writes it for `opener`
+    /// where that name captures nothing, and by the first generated name no
+    /// binder around it holds otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one binder more is open, in `zone`; its position takes the
+    ///   name `opener`'s source writes ([`Source::arrow_binder`]) when it is a
+    ///   printable name the term mentions nowhere else and no open binder
+    ///   holds, else the first generated name ([`Binders::name_at`]) no open
+    ///   binder holds, else none. With no written names, the binder at position
+    ///   `p` takes the `p`-th generated name, as it always did.
+    /// - provides: the name each occurrence of the binder and its former's join
+    ///   read.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declared type spells its parameters' names; a
+    ///   written name a constant of the type holds, or an outer binder's, falls
+    ///   back to a generated one; generated names skip a written name an outer
+    ///   binder took.
+    /// - witness: `goldens::tests::an_arrow_binder_spells_as_the_source_names_it`
+    #[spec(
+        captures: [opened = self.opened.len()],
+        ensures: self.opened.len() == opened.saturating_add(1_usize)
+            && self.names.len() > opened,
+    )]
+    fn bind<S>(
+        &mut self,
+        source: &S,
+        zone: Zone,
+        opener: Option<S::Node>,
+    ) where
+        S: Source + ?Sized,
+    {
+        let position = self.opened.len();
+        self.names.truncate(position);
+        let outer = self.names.as_slice();
+        let taken = |name: &str| outer.iter().flatten().any(|held| held.0 == name);
+        let written = opener
+            .and_then(|node| source.arrow_binder(node))
+            .filter(|name| {
+                let text: &str = name.as_ref();
+                !text.is_empty()
+                    && !text.contains(['\n', '\r', '\t'])
+                    && !self.binders.mentioned.contains(text)
+                    && !taken(text)
+            })
+            .map(|name| BinderName(String::from(name.as_ref())));
+        let name = written.or_else(|| self.fresh(OpenBinders(0)));
+        self.names.resize(position, None);
+        self.names.push(name);
+        self.opened.push(zone);
     }
 
     /// `name` as a part's text, or `?` for a name a line cannot hold or the
@@ -5144,6 +5243,7 @@ where
         builder,
         pieces: Vec::new(),
         binders: Binders::new(mentioned),
+        names: Vec::new(),
         opened: Vec::new(),
         substituted: BTreeMap::new(),
         context,
@@ -5182,7 +5282,7 @@ where
                 walk.remaining = left;
                 Walk::returned(source, node, depth, &mut tasks);
             },
-            Task::Bind(zone) => walk.opened.push(zone),
+            Task::Bind(zone, opener) => walk.bind(source, zone, opener),
             Task::Unbind => {
                 let _closed = walk.opened.pop();
                 let _argument = walk.substituted.remove(&OpenBinders(walk.opened.len()));
@@ -5428,6 +5528,7 @@ mod tests
             builder: &mut paged,
             pieces: super::Vec::new(),
             binders: super::Binders::new(super::BTreeSet::new()),
+            names: super::Vec::new(),
             opened: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
@@ -5475,6 +5576,7 @@ mod tests
             builder: &mut paged,
             pieces: super::Vec::new(),
             binders: super::Binders::new(super::BTreeSet::new()),
+            names: super::Vec::new(),
             opened: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
