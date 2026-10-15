@@ -1,0 +1,52 @@
+// A call written where a value is read runs, and a pure one whose value a type
+// after it reads stands there as what it returns: a dependent record's first
+// component under the second's type, and a dependent function's argument
+// under the parameters after it (#426).
+
+/// The circle: one point and one loop.
+@[ checks ]
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+/// The integers, presented by successor and predecessor.
+@[ checks ]
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
+}
+
+/// A map's image of the loop, at the map's image of the point, owed here:
+/// the rows below read its type alone.
+@[ owes(1) ]
+def loopImage : (f : +U[ω] (Circle -> -F Int)) => Path(Int, f(Base), f(Base)) ;
+
+/// A map out of the circle as a point and a loop there: the second
+/// component's type reads the first, the call `f(Base)`.
+@[ checks ]
+def toLoop(f : +U[ω] (Circle -> -F Int)) -> -F (#{point : Int, around : Path(Int, point, point)}) {
+  #{f(Base), loopImage(f)}
+}
+
+/// Another map's loop is not one at this map's point.
+@[ refuses("TypeMismatch") ]
+def toOtherLoop(f : +U[ω] (Circle -> -F Int), g : +U[ω] (Circle -> -F Int)) -> -F (#{point : Int, around : Path(Int, point, point)}) {
+  #{f(Base), loopImage(g)}
+}
+
+/// The map a point and a loop there determine.
+@[ checks ]
+def fromLoopAt(x : Int, p : Path(Int, x, x), c : Circle) -> -F Int {
+  case c { Base => x, loop => p }
+}
+
+/// A record's projections as the arguments of that map: the second
+/// parameter's type reads the first argument, the projection `r.point`.
+@[ checks ]
+def fromRecord(r : #{point : Int, around : Path(Int, point, point)}, c : Circle) -> -F Int {
+  fromLoopAt(r.point, r.around, c)
+}

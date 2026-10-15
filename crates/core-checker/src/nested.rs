@@ -47,6 +47,19 @@
 //! written node that elaborated — the nested call's own span at its bind —
 //! and no diagnostic names the minted variable.
 //!
+//! **What a type reads stays readable.** A pure run whose value a type after
+//! it reads — a dependent pair's first component under its second's type, a
+//! dependent function's argument under the types after it — stands as the
+//! value it returns, `⟨c⟩`, rather than a bind's variable: the variable is
+//! opaque, so `#{f(Base), cong(f, loop)}` at `#{point : Int, around :
+//! Path(Int, point, point)}` would check its second component at `Path(Int,
+//! x, x)` for a fresh `x`, which `f(Base)`'s path does not reach. A returned
+//! value is what a compound endpoint already is, and it computes the same
+//! value as the bind for a computation that performs nothing. An effectful
+//! run still binds, in written order. The alternative was a bind whose
+//! variable the body's types unfold to its computation, a let the core does
+//! not have. Reversal: such a let.
+//!
 //! The lowering decided every other bridge because the checker returned
 //! verdicts, not terms, and every position's sort was read off the syntax. A
 //! computation in value position is the position that recorded decision named
@@ -88,6 +101,9 @@ pub enum Nesting
     Suspended,
     /// Run before its region, its returner performing effects or none.
     Ran(Purity),
+    /// Run purely where a type after it reads it: it stands as the value it
+    /// returns, `⟨c⟩`, rather than a bind's variable.
+    Returned,
 }
 
 /// What elaborating one declaration's body did: every decision the judgement
@@ -183,6 +199,7 @@ pub fn elaborate(
             (at, match decided {
                 Nesting::Suspended => gandr_core_term::Nesting::Thunk,
                 Nesting::Ran(_) => gandr_core_term::Nesting::Run,
+                Nesting::Returned => gandr_core_term::Nesting::Returned,
             })
         })
         .collect();
