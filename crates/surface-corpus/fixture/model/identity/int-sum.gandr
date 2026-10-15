@@ -1,9 +1,7 @@
 // The integers' sum and its laws, after cubical Agda's `Cubical/Data/Int`:
 // the sum by recursion on its second summand, zero a unit of it, a successor
 // or a predecessor brought out of its left, and the sum commuting.
-// `circle-group.gandr` reads these laws through the winding number. A row
-// the tree refuses today states the refusal it meets and the issue that holds
-// it.
+// `circle-group.gandr` reads these laws through the winding number.
 
 /// The integers as a presented type: a successor and a predecessor that
 /// cancel.
@@ -75,7 +73,7 @@ def rec plusZ(b : Int) -> -F Path(Int, plus(Z, b), b) {
 /// each step the recursive call carried along `up` or `down` and then the
 /// summand brought out of the left. The arms compose to no conversion of the
 /// answer at `x`, yet `Int` is a set, so its rules are respected by their
-/// endpoints alone (#427).
+/// endpoints alone.
 @[ checks ]
 def rec plusComm(a : Int, b : Int) -> -F Path(Int, plus(a, b), plus(b, a)) {
   case b {

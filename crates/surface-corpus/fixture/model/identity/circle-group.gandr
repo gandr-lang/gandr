@@ -5,8 +5,7 @@
 // it uses, as every corpus source does. `int-sum.gandr` holds the integers'
 // sum and its laws, and `circle-rotation.gandr` the circle's multiplication.
 // Where cubical fills a cube by `hcomp`, a law here is conversion on words or
-// `cong`. A row the tree refuses today states the refusal it meets and the
-// issue that holds it.
+// `cong`.
 //
 // Out of reach by design: `ΩS¹≡ℤ`, the loops equal to the integers as types,
 // needs univalence; `isSetΩS¹` and `toPropElim` need the h-level ladder;
@@ -109,7 +108,7 @@ def spinDown(n : Int) -> -F Path(Path(Circle, Base, Base), spin(P(n)), back(loop
 /// cubical's `intLoop` puts it last, so the law composes the spins the other
 /// way round, as the words compute: `(loop ∷ p) then q` is
 /// `loop ∷ (p then q)`. At zero `spin(Z)` is a call that returns the empty
-/// word, and the composite over it runs that call first (#473).
+/// word, and the composite over it runs that call first.
 @[ checks ]
 def rec spinHom(a : Int, b : Int) -> -F Path(Path(Circle, Base, Base), spin(plus(a, b)), spin(b) then spin(a)) {
   case b {
@@ -166,7 +165,7 @@ def rec plusZ(b : Int) -> -F Path(Int, plus(Z, b), b) {
 }
 
 /// The sum commutes (cubical's `+Comm`), as `int-sum.gandr` proves it: `Int`
-/// is a set, so the case respects its rules by their endpoints alone (#427).
+/// is a set, so the case respects its rules by their endpoints alone.
 @[ checks ]
 def rec plusComm(a : Int, b : Int) -> -F Path(Int, plus(a, b), plus(b, a)) {
   case b {
