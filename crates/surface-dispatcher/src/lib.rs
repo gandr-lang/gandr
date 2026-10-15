@@ -148,6 +148,7 @@ pub use crate::entry::entries;
 pub use crate::evaluate::Evaluation;
 pub use crate::evaluate::Program;
 pub use crate::evaluate::RunStatus;
+pub use crate::evaluate::SealedRun;
 pub use crate::evaluate::Unfinished;
 pub use crate::evaluate::Unrunnable;
 pub use crate::evaluate::ValueSpelling;
