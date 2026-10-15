@@ -154,7 +154,7 @@ const COUNTED: &[&str] = &[
     "item extern_block name",
     "item import_declaration",
     "item import_declaration name",
-    "item module_declaration",
+    "item module_declaration", // shape: #405
     "item module_declaration name",
     "item operator_declaration",
     "item rec_block",
@@ -163,13 +163,13 @@ const COUNTED: &[&str] = &[
     "item sign_declaration name",
     "module_member module_declaration",
     "module_member module_declaration name",
-    "pattern cons_pattern",
+    "pattern cons_pattern", // shape: #408
     "pattern cons_pattern name",
     "pattern constructor_pattern",
     "pattern constructor_pattern name",
     "pattern hole",
     "pattern identifier",
-    "pattern labelled_sum_pattern",
+    "pattern labelled_sum_pattern", // shape: #408
     "pattern labelled_sum_pattern name",
     "pattern literal_pattern",
     "pattern or_pattern",
@@ -182,7 +182,7 @@ const COUNTED: &[&str] = &[
     "type capability_type",
     "type capability_type name",
     "type end_session_type",
-    "type f_type",
+    "type f_type", // shape: #404
     "type f_type name",
     "type function_type",
     "type labelled_sum_type",
@@ -196,23 +196,23 @@ const COUNTED: &[&str] = &[
     "type parenthesized_type",
     "type path_type",
     "type primitive_type",
-    "type product_type",
+    "type product_type", // shape: #404
     "type receive_session_type",
     "type send_session_type",
-    "type static_abstraction",
+    "type static_abstraction", // shape: #404
     "type static_abstraction name",
     "type sum_type",
     "type telescope_type",
     "type type_application",
     "type type_application name",
     "type type_identifier",
-    "type type_path",
+    "type type_path", // shape: #404
     "type type_path name",
     "type type_variable",
-    "type u_type",
+    "type u_type", // shape: #404
     "type universe_type",
     "type unknown_type",
-    "type value_function_type",
+    "type value_function_type", // shape: #404
 ];
 
 /// The node kinds with no meaning of their own to hover, each with why: the
@@ -403,16 +403,15 @@ pub(super) struct Owner
 /// - ensures: one owner per tile and grout of the tree, ordered by where the
 ///   leaf starts: a name a form spells as one of its own tiles — an identifier,
 ///   a constructor, a type's name or variable, such as a declaration's name, a
-///   parameter, a loop or a word pattern's letter, and a positional label, the
-///   number after one of the form's `.` tiles (#408) — is owned by itself, as
-///   kind `<sort> <form> name`, its form the form spelling it; any other tile
-///   of the form its parent completes — a keyword, a delimiter, an operator —
-///   by that form; any other tile, an atom such as a name, a constructor or a
-///   literal, by itself; grout by itself, as kind `grout`. A kind is the sort
-///   of the owning form's mold and its named kind, so a name in a pattern and a
-///   name in a term are two kinds. Every leaf inside an attribute block or a
-///   module member's inline `@[ … ]` — its payload's strings, numbers and names
-///   as well as its own tiles — is owned by the attribute, as kind `item
+///   parameter, a loop or a word pattern's letter — is owned by itself, as kind
+///   `<sort> <form> name`, its form the form spelling it; any other tile of the
+///   form its parent completes — a keyword, a delimiter, an operator — by that
+///   form; any other tile, an atom such as a name, a constructor or a literal,
+///   by itself; grout by itself, as kind `grout`. A kind is the sort of the
+///   owning form's mold and its named kind, so a name in a pattern and a name
+///   in a term are two kinds. Every leaf inside an attribute block or a module
+///   member's inline `@[ … ]` — its payload's strings, numbers and names as
+///   well as its own tiles — is owned by the attribute, as kind `item
 ///   attribute_block`, or `item attribute_block name` for a name: an
 ///   attribute's payload states what its declaration is expected to do, not a
 ///   term of the program.
@@ -462,7 +461,6 @@ fn owners(
     };
     let mut owners = Vec::new();
     let mut attributes: Vec<(usize, usize)> = Vec::new();
-    let mut after_dot: Option<(usize, usize)> = None;
     for position in tree.positions() {
         let node = tree.node(position).expect("a position names a node");
         let (owner, form, kind) = match node.label() {
@@ -506,17 +504,10 @@ fn owners(
                     .copied()
                     .flatten()
                     .and_then(|parent| tree.node(parent));
-                let label = grammar.mold(mold).expect("a tree's mold is known").label;
-                let dotted = after_dot.take();
                 match parent.map(|parent| (parent, parent.label())) {
                     Some((parent, NodeLabel::Meld(form))) if rule(form) == rule(mold) => {
-                        // A positional label, the number after a form's `.`, names
-                        // its entry as a written label does.
-                        if label == "." {
-                            after_dot = Some(range(parent));
-                        }
-                        if NAMES.contains(&label)
-                            || (label == "number" && dotted == Some(range(parent)))
+                        if NAMES
+                            .contains(&grammar.mold(mold).expect("a tree's mold is known").label)
                         {
                             (range(node), range(parent), format!("{} name", kind(form)))
                         }
@@ -818,9 +809,8 @@ pub(super) struct Hovered
 /// # Specification
 /// - requires: `source` parses under `grammar`.
 /// - ensures: one entry per character boundary of the text and its end, in
-///   order, each with whether a comment holds it — a line comment holding the
-///   newline that closes it — the owner of the written leaf holding it — none
-///   for layout and comments — and the hover's answer.
+///   order, each with whether a comment holds it, the owner of the written leaf
+///   holding it — none for layout and comments — and the hover's answer.
 /// - provides: the input of the sweep and of the hover goldens.
 /// - panics: a written byte lies in no leaf, or the server faults.
 ///
@@ -829,7 +819,6 @@ pub(super) struct Hovered
 ///   through this, and the goldens pin every answer of five sources.
 /// - witness: `editor::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
 /// - witness: `editor::editor::shapes::the_headline_sources_hover_as_their_goldens`
-/// - witness: `editor::editor::scenarios::a_line_comment_holds_the_newline_closing_it`
 #[spec(ensures: |ret| ret.len() == source.text.chars().count().saturating_add(1))]
 pub(super) fn hovered(
     grammar: &Pbg,
@@ -852,15 +841,7 @@ pub(super) fn hovered(
             let start = usize::try_from(token.start).ok()?;
             let end = usize::try_from(token.end).ok()?;
             let layout = source.text.get(start .. end)?;
-            // A line comment's token stops short of the newline closing it,
-            // which belongs to the comment: commenting an item moves no count.
-            let closes = layout.starts_with("//")
-                && source
-                    .text
-                    .get(end ..)
-                    .is_some_and(|rest| rest.starts_with('\n'));
-            (layout.starts_with("//") || layout.starts_with("/*"))
-                .then_some((start, end.saturating_add(usize::from(closes))))
+            (layout.starts_with("//") || layout.starts_with("/*")).then_some((start, end))
         })
         .collect();
     source
@@ -1234,32 +1215,6 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
         quiet.lapse(),
         Vec::<Vec<Value>>::new(),
         "the finished declaration holds nothing"
-    );
-}
-
-/// A line comment holds the newline that closes it, so commenting an item adds
-/// no position the sweep counts (#456): every position from the `//` through
-/// the line's end is a comment's, and the next line's first is not.
-#[test]
-fn a_line_comment_holds_the_newline_closing_it()
-{
-    let text = "// a note\ndata Unit : Type { Tt : Unit; }\n";
-    let source = Source {
-        uri: String::from("file:///comment-line-end.gandr"),
-        text: String::from(text),
-    };
-    let grammar = built_in().expect("the built-in grammar builds");
-    let hovers = hovered(&grammar, &source);
-    let newline = text.find('\n').expect("the comment ends its line");
-    let commented: Vec<usize> = hovers
-        .iter()
-        .filter(|hover| hover.comment)
-        .map(|hover| hover.offset)
-        .collect();
-    assert_eq!(
-        commented,
-        (0_usize ..= newline).collect::<Vec<_>>(),
-        "the comment holds its text and its closing newline, nothing after"
     );
 }
 
