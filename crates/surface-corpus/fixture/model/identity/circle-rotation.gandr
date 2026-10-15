@@ -3,8 +3,7 @@
 // that rotates by the loop and its four inverse laws, every point's loop told
 // apart from every point's reflexivity as functions, and the circle's
 // universal property, maps out of it as a point with a loop.
-// `circle-group.gandr` holds the loop space's group laws. A row the tree
-// refuses today states the refusal it meets and the issue that holds it.
+// `circle-group.gandr` holds the loop space's group laws.
 //
 // Out of reach by design: `rotIsEquiv` needs equivalences as structure, and
 // `invS¹Equiv` and `invS¹Path` univalence as well.
@@ -69,7 +68,7 @@ def mul(a : Circle, b : Circle) -> -F Circle {
 
 /// The unit squared: `mul(Base, Base)` computes the point without spelling
 /// it, so the path from it to itself is the circle's words, and reflexivity
-/// at the point inhabits it (#485).
+/// at the point inhabits it.
 @[ checks ]
 def unitSquared : Path(Circle, mul(Base, Base), mul(Base, Base)) ;
 def unitSquared = here(Base) ;
@@ -80,7 +79,7 @@ def unitSquared = here(Base) ;
 /// through `mul`'s second argument as itself; the one over `b` moves it
 /// through both of the outer `mul`'s arguments, the loop then its inverse.
 /// The square of the two loops is not owed: the paths of the circle are its
-/// words, a set (#464).
+/// words, a set.
 @[ checks ]
 def rotInv1(a : Circle, b : Circle) -> -F Path(Circle, mul(mul(b, a), invLooper(b)), a) {
   case a {
@@ -154,7 +153,7 @@ def toLoop(f : +U[ω] (Circle -> -F Int)) -> -F (#{point : Int, around : Path(In
 }
 
 /// A point and a loop at it make a map out of the circle, at a point of it: a
-/// non-dependent case whose loop arm is the given loop (#388).
+/// non-dependent case whose loop arm is the given loop.
 @[ checks ]
 def fromLoopAt(x : Int, p : Path(Int, x, x), c : Circle) -> -F Int {
   case c {
