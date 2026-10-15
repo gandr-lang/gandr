@@ -284,6 +284,8 @@ pub enum RefusalName
     NotApart,
     /// The checker reports `LoopNotRespected`.
     LoopNotRespected,
+    /// The checker reports `LoopUndecided`.
+    LoopUndecided,
     /// The checker reports `AbstractKindNotUniverse`.
     AbstractKindNotUniverse,
     /// The checker reports `RepresentationAboveKind`.
@@ -580,7 +582,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 140_usize] = [
+    pub const VOCABULARY: [Self; 141_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -588,6 +590,7 @@ impl RefusalName
         Self::RuleNotRespected,
         Self::NotApart,
         Self::LoopNotRespected,
+        Self::LoopUndecided,
         Self::AbstractKindNotUniverse,
         Self::RepresentationAboveKind,
         Self::NotAnAbstractType,
@@ -794,6 +797,7 @@ impl RefusalName
         | (Self::RuleNotRespected, b"RuleNotRespected")
         | (Self::NotApart, b"NotApart")
         | (Self::LoopNotRespected, b"LoopNotRespected")
+        | (Self::LoopUndecided, b"LoopUndecided")
         | (Self::AbstractKindNotUniverse, b"AbstractKindNotUniverse")
         | (Self::RepresentationAboveKind, b"RepresentationAboveKind")
         | (Self::NotAnAbstractType, b"NotAnAbstractType")
@@ -882,6 +886,7 @@ impl RefusalName
             Self::RuleNotRespected => "RuleNotRespected",
             Self::NotApart => "NotApart",
             Self::LoopNotRespected => "LoopNotRespected",
+            Self::LoopUndecided => "LoopUndecided",
             Self::AbstractKindNotUniverse => "AbstractKindNotUniverse",
             Self::RepresentationAboveKind => "RepresentationAboveKind",
             Self::NotAnAbstractType => "NotAnAbstractType",
@@ -1236,6 +1241,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::RuleNotRespected { .. }), RefusalName::RuleNotRespected)
         | (Self::Checking(CheckRefusal::NotApart { .. }), RefusalName::NotApart)
         | (Self::Checking(CheckRefusal::LoopNotRespected { .. }), RefusalName::LoopNotRespected)
+        | (Self::Checking(CheckRefusal::LoopUndecided { .. }), RefusalName::LoopUndecided)
         | (Self::Checking(CheckRefusal::AbstractKindNotUniverse(_)), RefusalName::AbstractKindNotUniverse)
         | (Self::Checking(CheckRefusal::RepresentationAboveKind { .. }), RefusalName::RepresentationAboveKind)
         | (Self::Checking(CheckRefusal::NotAnAbstractType(_)), RefusalName::NotAnAbstractType)
@@ -1491,6 +1497,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::RuleNotRespected { .. }, RefusalName::RuleNotRespected)
         | (CheckRefusal::NotApart { .. }, RefusalName::NotApart)
         | (CheckRefusal::LoopNotRespected { .. }, RefusalName::LoopNotRespected)
+        | (CheckRefusal::LoopUndecided { .. }, RefusalName::LoopUndecided)
         | (CheckRefusal::AbstractKindNotUniverse(_), RefusalName::AbstractKindNotUniverse)
         | (CheckRefusal::RepresentationAboveKind { .. }, RefusalName::RepresentationAboveKind)
         | (CheckRefusal::NotAnAbstractType(_), RefusalName::NotAnAbstractType)
@@ -1579,6 +1586,7 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::RuleNotRespected { .. } => RefusalName::RuleNotRespected,
         CheckRefusal::NotApart { .. } => RefusalName::NotApart,
         CheckRefusal::LoopNotRespected { .. } => RefusalName::LoopNotRespected,
+        CheckRefusal::LoopUndecided { .. } => RefusalName::LoopUndecided,
         CheckRefusal::AbstractKindNotUniverse(_) => RefusalName::AbstractKindNotUniverse,
         CheckRefusal::RepresentationAboveKind { .. } => RefusalName::RepresentationAboveKind,
         CheckRefusal::NotAnAbstractType(_) => RefusalName::NotAnAbstractType,

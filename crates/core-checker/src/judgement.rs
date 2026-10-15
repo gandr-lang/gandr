@@ -7331,6 +7331,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::RuleNotRespected { .. }
                     | CheckRefusal::NotApart { .. }
                     | CheckRefusal::LoopNotRespected { .. }
+                    | CheckRefusal::LoopUndecided { .. }
                     | CheckRefusal::AbstractKindNotUniverse(_)
                     | CheckRefusal::RepresentationAboveKind { .. }
                     | CheckRefusal::NotAnAbstractType(_)

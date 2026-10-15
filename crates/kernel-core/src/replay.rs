@@ -935,6 +935,66 @@ pub fn convert(
     concluded(outcome, Expect::Convertible)
 }
 
+/// The kernel's own conversion of two terms with definitions unfolding.
+///
+/// The forced rules of [`convert`] apply, and at a head naming a definition
+/// `unfoldings` holds, the one δ-step it admits, the left side's first.
+///
+/// This is the conversion an obligation the record decides "by conversion"
+/// asks for, where a side runs a definition the other side states by what it
+/// computes: a case's loop obligation, whose loop arm may answer with a call
+/// at the transported point. Every step, the δ-steps among them, is charged to
+/// `budget`, and a run past it is declined as
+/// [`ReplayDecline::Budget`], never read as apart.
+///
+/// # Specification
+/// - requires: the two sides, and every body in `unfoldings`, live in `arena`.
+/// - ensures: [`KernelVerdict::Convertible`] exactly when the forced rules and
+///   the δ-steps derive the two sides convertible within `budget`;
+///   [`KernelVerdict::Declined`] with [`ReplayDecline::Budget`] when the run
+///   outruns it, and some other decline otherwise; never
+///   [`KernelVerdict::NotConvertible`]. `arena` holds what it held on entry.
+/// - provides: the conversion a loop obligation is decided by.
+/// - fails: never — a decline is a verdict.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition run at a head converts with what it computes
+///   here and declines under [`convert`], and a definition that unfolds to
+///   itself runs past a small budget and is declined as such.
+/// - witness: `replay::tests::the_kernel_unfolds_a_defined_head_within_its_budget`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| arena.watermark() == before && ret != KernelVerdict::NotConvertible,
+)]
+#[inline]
+#[must_use]
+pub fn convert_unfolding(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    sides: ReplaySides,
+    budget: ReplayBudget,
+) -> KernelVerdict
+{
+    let (left, right) = terms(sides);
+    let watermark = arena.watermark();
+    let mut run = Replay {
+        arena,
+        unfoldings,
+        evaluator: unfoldings,
+        trace: core::iter::empty().peekable(),
+        reading: Reading::Unfolding,
+        position: 0,
+        spent: 0,
+        budget: u64::from(budget),
+        table: ContentTable::new(),
+        memo: NullMemo,
+    };
+    let outcome = run.drive(Goal::premise(Premise { left, right }, Expect::Convertible));
+    run.arena.truncate_to(watermark);
+    concluded(outcome, Expect::Convertible)
+}
+
 /// The kernel's own reading of the step `left` to `right`.
 ///
 /// Each side is read as a returned endpoint is: its computation normalized
@@ -1631,6 +1691,11 @@ enum Reading
     /// Each fires where the shapes force it, reading nothing: the kernel's own
     /// conversion, which has no trace.
     Forced,
+    /// As [`Reading::Forced`], and a defined head unfolds by the one δ-step it
+    /// admits, the left side's first: the kernel's own conversion where its
+    /// evaluator reads definitions, as an obligation decided by conversion
+    /// asks ([`convert_unfolding`]).
+    Unfolding,
 }
 
 /// A one-sided rewrite the shapes force, as the trace names it.
@@ -1884,7 +1949,7 @@ where
             // One node on both sides converts by reflexivity: the forced loop
             // closes it as an engine's shared comparison would, rather than
             // descend into a term its shapes may not read.
-            if self.reading == Reading::Forced && goal.left == goal.right {
+            if self.reading != Reading::Recorded && goal.left == goal.right {
                 return self.close(goal.expect, Expect::Convertible);
             }
             let left_shape = self.shape(goal.left, &goal.frozen, ConversionSide::Left)?;
@@ -1941,6 +2006,9 @@ where
                 },
             }
             match rule(&left_shape, &right_shape) {
+                Rule::Constants if self.reading == Reading::Unfolding => {
+                    self.unfold_defined(&mut goal, [&left_shape, &right_shape])?;
+                },
                 Rule::Constants => {
                     let flow = self.constants(
                         &mut goal,
@@ -2480,6 +2548,62 @@ where
         built.pop().ok_or_else(unreadable)
     }
 
+    /// Unfold a defined head by the one δ-step it admits, the left side's if
+    /// it has one, the right side's otherwise: the constant rule of
+    /// [`Reading::Unfolding`], which reads no decision.
+    ///
+    /// **Choice.** The left side unfolds first and nothing is frozen or
+    /// shortcut: a forced conversion takes no decision, so it reads each side
+    /// down to a head no definition stands at, and only then compares them by
+    /// name or structure. **Alternatives.** Shortcutting two sides headed by
+    /// one constant by their spines, which is a choice a trace records, and a
+    /// refutation through it is not authoritative. **Reversal.** An obligation
+    /// whose sides only meet by a shortcut, and diverge when unfolded, takes a
+    /// recorded dialogue.
+    ///
+    /// # Specification
+    /// - requires: `shapes` are the goal's left and right shapes, at least one
+    ///   with a defined head.
+    /// - ensures: the side whose head is defined, the left one first, replaced
+    ///   by its δ-reduct as [`Self::unfold`] gives it; the other side
+    ///   unchanged.
+    /// - provides: the δ-step of the kernel's unfolding conversion.
+    /// - fails: as [`Self::unfold`]; [`ReplayRefusal::Unreadable`] when neither
+    ///   shape has a defined head.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a side running a definition at its head unfolds it
+    ///   and meets the other side, while the δ-free conversion compares the
+    ///   definition's name and declines.
+    /// - witness: `replay::tests::the_kernel_unfolds_a_defined_head_within_its_budget`
+    #[spec(
+        captures: before = (goal.left, goal.right),
+        ensures: |ret| ret.is_err() || goal.left != before.0 || goal.right != before.1,
+    )]
+    fn unfold_defined(
+        &mut self,
+        goal: &mut Goal,
+        shapes: [&Shape; 2],
+    ) -> Result<(), Stop>
+    {
+        let (side, constant) = match shapes {
+            [
+                &Shape::Neutral(Head::Constant(constant, Status::Defined), _),
+                _,
+            ] => (ConversionSide::Left, constant),
+            [
+                _,
+                &Shape::Neutral(Head::Constant(constant, Status::Defined), _),
+            ] => (ConversionSide::Right, constant),
+            _ => return Err(unreadable()),
+        };
+        self.unfold(goal, side, constant)
+    }
+
     /// Apply the δ-rule decision the trace names at a goal with a defined
     /// head.
     ///
@@ -2699,7 +2823,7 @@ where
                 },
                 _ => false,
             };
-            self.position == before.0.saturating_add(match self.reading { Reading::Recorded => 2, Reading::Forced => 0 })
+            self.position == before.0.saturating_add(match self.reading { Reading::Recorded => 2, Reading::Forced | Reading::Unfolding => 0 })
                 && agrees(before.1, goal.left) && agrees(before.2, goal.right)
         } else {
             goal.left == before.1 && goal.right == before.2
@@ -2817,7 +2941,7 @@ where
     #[spec(
         captures: before = (self.position, goal.side(side), goal.side(opposite(side))),
         ensures: |ret| if ret.is_ok() {
-            self.position == before.0.saturating_add(match self.reading { Reading::Recorded => 1, Reading::Forced => 0 })
+            self.position == before.0.saturating_add(match self.reading { Reading::Recorded => 1, Reading::Forced | Reading::Unfolding => 0 })
                 && match (before.2, goal.side(opposite(side)), goal.side(side)) {
                     (Term::Computation(lambda), Term::Computation(body), Term::Computation(applied)) =>
                         self.arena.computation(lambda) == Some(&Computation::Lambda(body))
@@ -2935,7 +3059,7 @@ where
     /// - requires: the shapes force `wanted` at the current goal.
     /// - ensures: under [`Reading::Recorded`], `Ok` after consuming exactly one
     ///   decision when the next one names `wanted`, side and all; under
-    ///   [`Reading::Forced`], `Ok` without reading.
+    ///   [`Reading::Forced`] and [`Reading::Unfolding`], `Ok` without reading.
     /// - provides: the one place a forced rewrite meets the trace.
     /// - fails: a refusal when the trace names anything else or has ended.
     /// - panics: none.
@@ -2953,9 +3077,9 @@ where
     #[spec(
         captures: before = self.position,
         ensures: |ret| match (self.reading, ret) {
-            (Reading::Forced, Ok(())) | (Reading::Recorded, Err(_)) => self.position == before,
+            (Reading::Forced | Reading::Unfolding, Ok(())) | (Reading::Recorded, Err(_)) => self.position == before,
             (Reading::Recorded, Ok(())) => self.position == before.saturating_add(1),
-            (Reading::Forced, Err(_)) => false,
+            (Reading::Forced | Reading::Unfolding, Err(_)) => false,
         },
     )]
     fn read(
@@ -2963,7 +3087,7 @@ where
         wanted: Forced,
     ) -> Result<(), Stop>
     {
-        if self.reading == Reading::Forced {
+        if self.reading != Reading::Recorded {
             return Ok(());
         }
         let next = self.peek();
@@ -6161,6 +6285,7 @@ mod tests
     use super::Unfoldable;
     use super::Unfoldings;
     use super::convert;
+    use super::convert_unfolding;
     use super::replay;
     use crate::env::Environment;
     use crate::presented::Presentations;
@@ -7126,6 +7251,54 @@ mod tests
             ),
             KernelVerdict::Declined(_)
         ));
+        assert_eq!(arena.watermark(), watermark);
+    }
+
+    #[test]
+    fn the_kernel_unfolds_a_defined_head_within_its_budget()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let returned = arena.computation_return(unit);
+        // `one = thunk(return unit)` and `spin = thunk(force spin)`.
+        let one_body = arena.value_thunk(returned);
+        let spin = arena.value_constant(ConstantIndex::from(1_usize));
+        let spun = arena.computation_force(spin);
+        let spin_body = arena.value_thunk(spun);
+        let unfoldings = Unfoldings::new(Vec::from([
+            Unfoldable::Body(one_body),
+            Unfoldable::Body(spin_body),
+        ]));
+        let one = arena.value_constant(ConstantIndex::from(0_usize));
+        let forced = arena.computation_force(one);
+        let other_unit = arena.value_unit();
+        let expected = arena.computation_return(other_unit);
+        let watermark = arena.watermark();
+        let met = ReplaySides::Computations(forced, expected);
+
+        assert_eq!(
+            convert_unfolding(&mut arena, &unfoldings, met, ReplayBudget::default()),
+            KernelVerdict::Convertible,
+            "a definition run at the head is read by what it computes"
+        );
+        assert!(
+            matches!(
+                convert(&mut arena, &unfoldings, met, ReplayBudget::default()),
+                KernelVerdict::Declined(_)
+            ),
+            "the δ-free conversion compares the definition by its name and declines"
+        );
+        assert_eq!(
+            convert_unfolding(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Computations(spun, expected),
+                ReplayBudget::from(64_u64)
+            ),
+            KernelVerdict::Declined(ReplayDecline::Budget),
+            "a definition that unfolds to itself runs past the budget and is declined as \
+             such, never read as apart"
+        );
         assert_eq!(arena.watermark(), watermark);
     }
 

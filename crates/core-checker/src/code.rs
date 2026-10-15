@@ -94,6 +94,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_nbe::BinderLevel;
+use gandr_core_nbe::DeclineReason;
 use gandr_core_nbe::Definitions;
 use gandr_core_nbe::DomainArena;
 use gandr_core_nbe::DomainCompId;
@@ -178,6 +179,9 @@ quenchant_shape::reason_enum! {
             /// or a variable, an opaque constant or an effect stood where a
             /// value was owed.
             Apart,
+            /// Evaluating a side ran out of fuel, or the machine ran past its
+            /// budget, before the pair met or parted: unfolding may not end.
+            Undecided,
         }
     }
 }
@@ -1382,13 +1386,16 @@ impl CodeDefinitions
     ///   binders.
     /// - ensures: `Present` exactly when the machine finds the pair convertible
     ///   under [`gandr_core_nbe::Constants::Rigid`];
-    ///   [`converted::Absent::Apart`] when it refutes or declines the pair, and
-    ///   when either side does not evaluate or the machine faults.
+    ///   [`converted::Absent::Undecided`] when evaluating a side runs out of
+    ///   fuel or the machine declines for its budget;
+    ///   [`converted::Absent::Apart`] when it refutes or otherwise declines the
+    ///   pair, and when either side does not evaluate or the machine faults.
     /// - provides: the δ-free conversion a case's respect for its type's rules
     ///   is decided by, the one the kernel re-derives by its own forced rules,
     ///   where no constant unfolds either. A pair it cannot decide is not shown
     ///   convertible, which refuses rather than admits.
-    /// - fails: never — a fault is an apart answer.
+    /// - fails: never — a fault is an apart answer, a spent budget an undecided
+    ///   one.
     /// - panics: none.
     /// - executable: none — the verdict is the machine's on terms it evaluates;
     ///   the witnesses observe both answers through the case rule.
@@ -1402,39 +1409,52 @@ impl CodeDefinitions
     pub fn convert_rigidly(
         &self,
         core: &CoreArena,
-        (left, right): (ComputationId, ComputationId),
+        pair: (ComputationId, ComputationId),
     ) -> Maybe<(), converted::Absent>
     {
-        let apart = Maybe::Absent(converted::Absent::Apart);
-        let reach = |side| loose_reach(core, CoreNode::Term(TermNode::Computation(side)));
-        let (Ok(one), Ok(other)) = (reach(left), reach(right))
-        else {
-            return apart;
-        };
-        let Ok(open) = u32::try_from(usize::from(one).max(usize::from(other)))
-        else {
-            return apart;
-        };
-        let open = OpenBinders(open);
         let definitions =
             Definitions::new(&self.lowered, &self.environment, self.environment.root()).rigid();
-        let mut domain = DomainArena::new();
-        let Ok((one, other)) = evaluated_pair(core, &mut domain, definitions, (left, right), open)
-        else {
-            return apart;
-        };
-        let decided = decide::<NullSink, ResharingMemo>(
-            core,
-            &mut domain,
-            definitions,
-            MachineSettings::default(),
-            Problem::computations(one, other).under(BinderLevel::from(open.0)),
-            &mut NullSink,
-        );
-        match decided.map(|report| report.verdict()) {
-            Ok(MachineVerdict::Convertible) => Maybe::Present(()),
-            Ok(MachineVerdict::NotConvertible | MachineVerdict::Declined(_)) | Err(_) => apart,
-        }
+        convert_computations(core, definitions, pair)
+    }
+
+    /// Decide whether two computations standing under the same binders
+    /// convert, every definition this table holds unfolding as the machine
+    /// needs it: each evaluated with the binders either reaches read as rigid
+    /// variables.
+    ///
+    /// # Specification
+    /// - requires: both computations live in `core` and stand under the same
+    ///   binders.
+    /// - ensures: `Present` exactly when the machine finds the pair convertible
+    ///   with this table's definitions unfolding;
+    ///   [`converted::Absent::Undecided`] when evaluating a side runs out of
+    ///   fuel or the machine declines for its budget;
+    ///   [`converted::Absent::Apart`] when it refutes or otherwise declines the
+    ///   pair, and when either side does not evaluate or the machine faults.
+    /// - provides: the conversion a case's loop obligation is decided by: an
+    ///   arm answering with a definition applied at the transported point is
+    ///   read by what that definition computes there.
+    /// - fails: never — a fault is an apart answer, a spent budget an undecided
+    ///   one.
+    /// - panics: none.
+    /// - executable: none — the verdict is the machine's on terms it evaluates;
+    ///   the witnesses observe both answers through the case rule.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a case whose point branch runs a definition meets its
+    ///   obligation once the definition unfolds, at a family conjugation fixes,
+    ///   and is still refused at a fixed left endpoint.
+    /// - witness: `native_formers::native_formers::a_loop_obligation_unfolds_the_arm_s_definitions`
+    #[inline]
+    pub fn convert_unfolding(
+        &self,
+        core: &CoreArena,
+        pair: (ComputationId, ComputationId),
+    ) -> Maybe<(), converted::Absent>
+    {
+        let definitions =
+            Definitions::new(&self.lowered, &self.environment, self.environment.root());
+        convert_computations(core, definitions, pair)
     }
 
     /// Evaluate the closed claim `claim`, `thunk (λⁿ. M)`, to the value its
@@ -1820,6 +1840,69 @@ fn rigid_problem(
     Ok(Problem::values(one, other).under(BinderLevel::from(open)))
 }
 
+/// Decide whether two computations standing under the same binders convert
+/// at the stance `definitions` holds: each evaluated with the binders either
+/// reaches read as rigid variables.
+///
+/// # Specification
+/// - requires: both computations live in `core` and stand under the same
+///   binders.
+/// - ensures: `Present` exactly when the machine finds the pair convertible
+///   with `definitions`; [`converted::Absent::Undecided`] when evaluating a
+///   side runs out of fuel or the machine declines for its budget;
+///   [`converted::Absent::Apart`] when it refutes or otherwise declines the
+///   pair, and when either side does not evaluate or the machine faults.
+/// - provides: the body of [`CodeDefinitions::convert_rigidly`] and
+///   [`CodeDefinitions::convert_unfolding`], which differ only in the stance.
+/// - fails: never — a fault is an apart answer, a spent budget an undecided
+///   one.
+/// - panics: none.
+/// - executable: none — the verdict is the machine's on terms it evaluates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the two callers.
+/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+/// - witness: `native_formers::native_formers::a_loop_obligation_unfolds_the_arm_s_definitions`
+fn convert_computations(
+    core: &CoreArena,
+    definitions: Definitions<'_>,
+    (left, right): (ComputationId, ComputationId),
+) -> Maybe<(), converted::Absent>
+{
+    let apart = Maybe::Absent(converted::Absent::Apart);
+    let reach = |side| loose_reach(core, CoreNode::Term(TermNode::Computation(side)));
+    let (Ok(one), Ok(other)) = (reach(left), reach(right))
+    else {
+        return apart;
+    };
+    let Ok(open) = u32::try_from(usize::from(one).max(usize::from(other)))
+    else {
+        return apart;
+    };
+    let open = OpenBinders(open);
+    let mut domain = DomainArena::new();
+    let (one, other) = match evaluated_pair(core, &mut domain, definitions, (left, right), open) {
+        Ok(pair) => pair,
+        Err(EvalFault::OutOfFuel) => return Maybe::Absent(converted::Absent::Undecided),
+        Err(_) => return apart,
+    };
+    let decided = decide::<NullSink, ResharingMemo>(
+        core,
+        &mut domain,
+        definitions,
+        MachineSettings::default(),
+        Problem::computations(one, other).under(BinderLevel::from(open.0)),
+        &mut NullSink,
+    );
+    match decided.map(|report| report.verdict()) {
+        Ok(MachineVerdict::Convertible) => Maybe::Present(()),
+        Ok(MachineVerdict::Declined(DeclineReason::Budget)) => {
+            Maybe::Absent(converted::Absent::Undecided)
+        },
+        Ok(MachineVerdict::NotConvertible | MachineVerdict::Declined(_)) | Err(_) => apart,
+    }
+}
+
 /// Evaluate two computations standing under `open` binders, each binder read
 /// as a rigid variable, in one environment.
 ///
@@ -1829,8 +1912,7 @@ fn rigid_problem(
 /// - ensures: both evaluations, in the order given, over one environment of
 ///   `open` rigid intuitionistic variables, the innermost binder the newest.
 /// - provides: the shared preamble of [`CodeDefinitions::trace_conversion`] and
-///   [`CodeDefinitions::convert_rigidly`], which differ in what unfolds and in
-///   the sink.
+///   [`convert_computations`], which differ in what unfolds and in the sink.
 /// - fails: the evaluator's fault, for a side that does not evaluate or a
 ///   neutral the domain cannot mint.
 /// - panics: none.

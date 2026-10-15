@@ -472,6 +472,17 @@ pub enum CheckRefusal
         /// The answer at the point.
         right: ComputationId,
     },
+    /// A case's obligation for one of its sort's loops ran past the budget
+    /// of the conversion that decides it: unfolding the definitions its sides
+    /// run neither met nor parted them in the steps allowed.
+    LoopUndecided
+    {
+        /// The case.
+        at: ComputationId,
+        /// The loop whose obligation was left undecided, its position among
+        /// its words' cells.
+        cell: gandr_kernel_term::CellIndex,
+    },
     /// An abstract type's kind is not a value universe.
     AbstractKindNotUniverse(ValueTypeId),
     /// A sealed representation forms above its abstract type's universe.
@@ -1062,7 +1073,8 @@ impl CheckRefusal
         | Self::AdmissionOrder { .. }
         | Self::SealSiteRepeated(_)
         | Self::MachineInvariant
-        | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
+        | Self::Undecided { .. }
+        | Self::LoopUndecided { .. } => matches!(ret, FailureClass::EngineFault),
         | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. }
         | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
@@ -1164,7 +1176,8 @@ impl CheckRefusal
             | Self::AdmissionOrder { .. }
             | Self::SealSiteRepeated(_)
             | Self::MachineInvariant
-            | Self::Undecided { .. } => FailureClass::EngineFault,
+            | Self::Undecided { .. }
+            | Self::LoopUndecided { .. } => FailureClass::EngineFault,
         }
     }
 
@@ -1334,6 +1347,7 @@ impl CheckRefusal
             | Self::AdmissionOrder { .. }
             | Self::MachineInvariant
             | Self::Undecided { .. }
+            | Self::LoopUndecided { .. }
             | Self::FamilyArity { .. }
             | Self::StaticLambdaArgument { .. }
             | Self::NegativeOccurrence(_)

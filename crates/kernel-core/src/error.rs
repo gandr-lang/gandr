@@ -568,6 +568,10 @@ pub enum KernelError
     /// loop: carried along it, its answer at the loop's point does not convert
     /// with that answer.
     LoopNotRespected(gandr_kernel_term::CellIndex),
+    /// A case's obligation for the named loop ran past its conversion's
+    /// budget: unfolding the definitions its sides run neither met nor parted
+    /// them in the steps allowed.
+    LoopUndecided(gandr_kernel_term::CellIndex),
     /// A value checked where the recursion typing wants a stage it does not
     /// stand at or below: a self-reference's argument not strictly below the
     /// fixpoint's stage, or a constructor with no recursive field where no
@@ -861,6 +865,10 @@ impl core::fmt::Display for KernelError
             Self::LoopNotRespected(_) => {
                 f.write_str("a case over a looped sort was not shown to respect its loops")
             },
+            Self::LoopUndecided(_) => f.write_str(
+                "a case over a looped sort ran past its budget deciding whether it respects its \
+                 loops",
+            ),
             Self::StageNotBelow { .. } => {
                 f.write_str("a value did not stand below the stage its recursion wants")
             },

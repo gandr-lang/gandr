@@ -8,11 +8,11 @@
 //! contractible. The book's dependent eliminator takes, beside `b : P(Base)`,
 //! a path `ℓ : transport(P, loop, b) = b` per loop, and the case owes the same:
 //!
-//! - **no loop arm**: `transport(P, loop, b) ≡ b`, decided by conversion as a
-//!   rule's respect is decided, δ-free with the functions a family's endpoint
-//!   calls read through their definitions, the right side spelled as the
-//!   transport along the empty word so that an answer a definition names (`Base
-//!   => loop`) meets its word on both sides;
+//! - **no loop arm**: `transport(P, loop, b) ≡ b`, decided by conversion with
+//!   every definition unfolding, so an arm answering with a definition at the
+//!   point (`mul`'s `loop => selfloop(b)`) is read by what it computes there,
+//!   the right side spelled as the transport along the empty word so that an
+//!   answer a definition names (`Base => loop`) meets its word on both sides;
 //! - **a loop arm per loop**: the arm `loop => e` is checked at the dependent
 //!   path `Path(P(Base), transport(P, loop, b), b)` and nothing else is owed;
 //!   for a non-dependent case, at `Path(B, b, b)`, where the arm chooses the
@@ -27,7 +27,9 @@
 //! transport is the identity: such a case owes nothing, and with no loop arm
 //! the loop's image under the map it computes is reflexivity at `b`. A case
 //! that fails the obligation is refused [`CheckRefusal::LoopNotRespected`],
-//! naming the case, the cell and the two sides as built.
+//! naming the case, the cell and the two sides as built; one whose conversion
+//! runs past its budget is refused [`CheckRefusal::LoopUndecided`], naming the
+//! case and the cell, never read as the sides being apart.
 //!
 //! The loops a case owes are read off the declarations whose cells loop in the
 //! scrutinee's sort, in admission order and then in written order, and a loop
@@ -44,6 +46,14 @@
 //! law, which needs a model the case does not name. **Reversal.** A loop at a
 //! point of a parameterised family, whose words carry the family's arguments,
 //! makes the point a term over them and the obligation one per instance.
+//!
+//! **Choice.** The obligation unfolds definitions, as every other judgement
+//! by conversion does, and the kernel re-derives it by its own unfolding
+//! conversion; the unfolding is bounded by the machine's fuel and budget.
+//! **Alternative.** The δ-free stance a rule's respect is decided in, which
+//! compares a definition by its name and so refuses every arm that calls one.
+//! **Reversal.** An obligation whose unfolding diverges where a recorded
+//! dialogue would close it takes the dialogue.
 
 use alloc::vec::Vec;
 
@@ -66,6 +76,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::CheckRefusal;
 use crate::CheckingContext;
+use crate::code::converted;
 
 /// One loop a case over a sort owes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -147,12 +158,14 @@ pub fn loops(
 ///   Carried along the empty word, an answer a definition names reads as its
 ///   word — `loop` as the loop's letter — as it does carried along the loop, so
 ///   the two sides meet in the δ-free stance.
-/// - fails: [`CheckRefusal::LoopNotRespected`] at `at` naming the first loop
-///   whose sides do not convert, with the two sides as built, or naming the
-///   first loop with the case itself as both sides for a motive that reads its
-///   binder but is no returner; [`CheckRefusal::MachineInvariant`] for a type
-///   of words the context does not hold, a point that is no closed term or a
-///   case node the arena does not hold.
+/// - fails: [`CheckRefusal::LoopUndecided`] at `at` naming the first loop whose
+///   conversion runs past its budget; [`CheckRefusal::LoopNotRespected`] at
+///   `at` naming the first loop whose sides do not convert otherwise, with the
+///   two sides as built, or naming the first loop with the case itself as both
+///   sides for a motive that reads its binder but is no returner;
+///   [`CheckRefusal::MachineInvariant`] for a type of words the context does
+///   not hold, a point that is no closed term or a case node the arena does not
+///   hold.
 /// - panics: none.
 ///
 /// # Errors
@@ -169,7 +182,7 @@ pub fn loops(
 ///   x)` and `Base => loop` there are admitted, and a non-dependent case owes
 ///   nothing.
 /// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
-#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::LoopNotRespected { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::LoopNotRespected { at: refused, .. } | CheckRefusal::LoopUndecided { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 pub fn respected(
     context: &mut CheckingContext<'_>,
     at: ComputationId,
@@ -224,19 +237,26 @@ pub fn respected(
         let carried = gandr_core_term::identity::answer_at(arena, point, motive, &branches);
         let transported = arena.computation_path_transport(family, word, carried);
         let stayed = arena.computation_path_transport(family, empty, carried);
-        if context
+        match context
             .definitions()
-            .convert_rigidly(context.arena(), (transported, stayed))
-            == Maybe::Present(())
+            .convert_unfolding(context.arena(), (transported, stayed))
         {
-            continue;
+            Maybe::Present(()) => {},
+            Maybe::Absent(converted::Absent::Undecided) => {
+                return Err(CheckRefusal::LoopUndecided {
+                    at,
+                    cell: owed.cell,
+                });
+            },
+            Maybe::Absent(converted::Absent::Apart) => {
+                return Err(CheckRefusal::LoopNotRespected {
+                    at,
+                    cell: owed.cell,
+                    left: transported,
+                    right: stayed,
+                });
+            },
         }
-        return Err(CheckRefusal::LoopNotRespected {
-            at,
-            cell: owed.cell,
-            left: transported,
-            right: stayed,
-        });
     }
     Ok(())
 }

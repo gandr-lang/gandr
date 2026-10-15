@@ -815,6 +815,60 @@ mod native_formers
     }
 
     #[test]
+    fn a_loop_obligation_unfolds_the_arm_s_definitions()
+    {
+        let mut arena = CoreArena::new();
+        let (mut declarations, circle) = one_loop(&mut arena);
+        // `stay = thunk(return refl)` at constant 3, a definition the case's
+        // point branch runs rather than a value it names.
+        let at_point = arena.value_type_path(circle.carrier, circle.point, circle.point);
+        let returner = arena.comp_type_returner(at_point);
+        let suspended = arena.value_type_thunk(returner);
+        let returned = arena.computation_return(circle.empty);
+        let stay = arena.value_thunk(returned);
+        declarations.push(definition(ConstantIndex::from(3_usize), suspended, stay));
+        let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let looped = arena.value_type_path(circle.carrier, x, x);
+        let looped = arena.comp_type_returner(looped);
+        let joined = arena.value_type_path(circle.carrier, circle.point, x);
+        let joined = arena.comp_type_returner(joined);
+        // `λx. case x { Base ⇒ force stay }` at `Path(S, x, x)`, whose answer
+        // conjugation by the loop fixes once `stay` unfolds, and at
+        // `Path(S, Base, x)`, which the loop carries to the loop however far
+        // `stay` unfolds.
+        for (position, motive) in [(4_usize, looped), (5_usize, joined)] {
+            let named = arena.value_constant(ConstantIndex::from(3_usize));
+            let branch = arena.computation_force(named);
+            let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let case = arena.computation_data_case(scrutinee, motive, vec![branch]);
+            let lambda = arena.computation_lambda(case);
+            let pi = arena.comp_type_pi(circle.carrier, motive);
+            let declared = arena.value_type_thunk(pi);
+            let body = arena.value_thunk(lambda);
+            declarations.push(definition(ConstantIndex::from(position), declared, body));
+        }
+        let (report, crossed) = run(&mut arena, &declarations);
+        assert!(
+            matches!(report.judged()[4].verdict(), Verdict::Checked { .. }),
+            "the obligation reads `stay` by what it computes: {:?}",
+            report.judged()[4].verdict()
+        );
+        assert!(
+            matches!(crossed.readmitted()[4].outcome(), Outcome::Defined { .. }),
+            "and the kernel re-derives it by its own unfolding: {:?}",
+            crossed.readmitted()[4].outcome()
+        );
+        assert!(
+            matches!(
+                report.judged()[5].verdict(),
+                Verdict::Refused(CheckRefusal::LoopNotRespected { .. })
+            ),
+            "unfolding admits no case the obligation refutes: {:?}",
+            report.judged()[5].verdict()
+        );
+    }
+
+    #[test]
     fn a_loop_arm_checks_at_the_path_over_its_loop()
     {
         let mut arena = CoreArena::new();
