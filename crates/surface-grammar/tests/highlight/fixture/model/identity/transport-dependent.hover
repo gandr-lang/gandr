@@ -59,23 +59,23 @@
 8:127-8:127 ) ⇒ Path(Nat, Zero, Zero) @8:118-8:128
 8:128-8:128 ) ⇒ Path(Path(Nat, Zero, Zero), here(Zero), here(Zero)) @8:113-8:129
 8:129-8:129 , ⇒ -F Nat @8:25-8:142
-8:131-8:135 Succ( ⇒ Nat @8:131-8:141
+8:131-8:135 Succ( ⇒ Succ(Zero) : Nat @8:131-8:141
 8:136-8:139 Zero ⇒ Zero : Nat @8:136-8:140
-8:140-8:140 ) ⇒ Nat @8:131-8:141
+8:140-8:140 ) ⇒ Succ(Zero) : Nat @8:131-8:141
 8:141-8:141 ) ⇒ -F Nat @8:25-8:142
 8:142-8:142 , ⇒ Path(Nat, transport(+U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat), here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) : Type @8:15-8:155
-8:144-8:148 Succ( ⇒ Nat @8:144-8:154
+8:144-8:148 Succ( ⇒ Succ(Zero) : Nat @8:144-8:154
 8:149-8:152 Zero ⇒ Zero : Nat @8:149-8:153
-8:153-8:153 ) ⇒ Nat @8:144-8:154
+8:153-8:153 ) ⇒ Succ(Zero) : Nat @8:144-8:154
 8:154-8:154 ) ⇒ Path(Nat, transport(+U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat), here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) : Type @8:15-8:155
 8:155-8:155 ; ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> (b : Path(Nat, Zero, a)) -> -F Nat),⏎  here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @8:1-8:156
 9:1-9:3 def ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> (b : Path(Nat, Zero, a)) -> -F Nat),⏎  here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @9:1-9:32
 9:5-9:11 reduced ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> (b : Path(Nat, Zero, a)) -> -F Nat),⏎  here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @9:5-9:12
 9:13-9:13 = ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> (b : Path(Nat, Zero, a)) -> -F Nat),⏎  here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @9:1-9:32
 9:15-9:19 here( ⇒ Path(Nat, transport(+U ((a : Nat) -> (b : Path(Nat, Zero, a)) -> -F Nat),⏎  here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @9:15-9:31
-9:20-9:24 Succ( ⇒ Nat @9:20-9:30
+9:20-9:24 Succ( ⇒ Succ(Zero) : Nat @9:20-9:30
 9:25-9:28 Zero ⇒ Zero : Nat @9:25-9:29
-9:29-9:29 ) ⇒ Nat @9:20-9:30
+9:29-9:29 ) ⇒ Succ(Zero) : Nat @9:20-9:30
 9:30-9:30 ) ⇒ Path(Nat, transport(+U ((a : Nat) -> (b : Path(Nat, Zero, a)) -> -F Nat),⏎  here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @9:15-9:31
 9:31-9:31 ; ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> (b : Path(Nat, Zero, a)) -> -F Nat),⏎  here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @9:1-9:32
 11:1-11:11 @[ checks ] ⇒ flipped : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a)) @11:1-12:1

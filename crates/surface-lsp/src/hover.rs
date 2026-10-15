@@ -500,14 +500,17 @@ fn declared<Store, Blocks>(
 ///
 /// # Specification
 /// - requires: `entry` was read from the table of the `quoted` document.
-/// - ensures: a block: a binder's name, a written type's text and a term the
+/// - ensures: a block: a binder's name, a written type's text, a term the
 ///   document writes as one name — one highlighter span over exactly the term,
 ///   in a name's role: a variable, a parameter, a function, a member, a
 ///   constructor, a type, a type variable or a label, never a literal, a
-///   keyword or an operator — each when it is one line of the source and in the
-///   colours the document gives it, then ` : ` and the entry's type; any other
-///   term's type alone; for a term checked against a type spelled otherwise, a
-///   second block of that type after a line saying so.
+///   keyword or an operator — and a constructor applied to its arguments — a
+///   term whose first highlighter span starts it in a constructor's role, or a
+///   type's where a type's argument writes it — each when it is one line of the
+///   source and in the colours the document gives it, then ` : ` and the
+///   entry's type; any other term's type alone; for a term checked against a
+///   type spelled otherwise, a second block of that type after a line saying
+///   so.
 /// - provides: the node half of [`hover`].
 /// - fails: never.
 /// - panics: none.
@@ -526,13 +529,16 @@ fn typed(
 {
     let start = usize::from(entry.span().start());
     let end = usize::from(entry.span().end());
+    let at = quoted
+        .spans
+        .partition_point(|span| usize::from(span.range.start()) < start);
+    let first = quoted
+        .spans
+        .get(at)
+        .filter(|span| usize::from(span.range.start()) == start);
     let named = || {
-        let at = quoted
-            .spans
-            .partition_point(|span| usize::from(span.range.start()) < start);
-        quoted.spans.get(at).is_some_and(|span| {
-            usize::from(span.range.start()) == start
-                && usize::from(span.range.end()) == end
+        first.is_some_and(|span| {
+            usize::from(span.range.end()) == end
                 && matches!(
                     span.role,
                     HlRole::FunctionDef
@@ -549,12 +555,14 @@ fn typed(
                 )
         })
     };
+    let constructed =
+        || first.is_some_and(|span| matches!(span.role, HlRole::Constructor | HlRole::Type));
     let written = <&str>::from(quoted.text)
         .get(start .. end)
         .filter(|written| !written.contains('\n'))
         .filter(|_| match entry.subject() {
             Subject::Binder | Subject::Type => true,
-            Subject::Term => named(),
+            Subject::Term => named() || constructed(),
         });
     let mut code = Code::new(markup);
     match written {
@@ -709,7 +717,7 @@ mod tests
     #[test]
     fn each_marked_position_hovers_its_answer()
     {
-        let rows: [(&str, &str, Result<String, hovered::Absent>); 20] = [
+        let rows: [(&str, &str, Result<String, hovered::Absent>); 21] = [
             (
                 "a synthesised declaration's name",
                 "def ans$0wer = 42 ;\n",
@@ -782,6 +790,13 @@ mod tests
                  Type { case f { On => return Integer, Off => return Unit } }\ndef kept(f : \
                  Flag, n : decoded$0(f)) -> -F decoded(f) { return n }\n",
                 Ok(fenced(SourceText::from("decoded(f) : Type"))),
+            ),
+            (
+                "a constructor applied inside a type (#420)",
+                "data U : Type {\n  NatC : U;\n  Arrow : (a : U, b : U) --> U;\n}\ndef el(u : U) \
+                 -> -F Type { case u { NatC => return Integer, Arrow(a, b) => return Unit } \
+                 }\ndef k : el(Arrow$0(NatC, NatC)) ;\n",
+                Ok(fenced(SourceText::from("Arrow(NatC, NatC) : U"))),
             ),
             (
                 "a keyword opening a term",

@@ -85,7 +85,9 @@ enum Shape
     /// the scrutinee's, at that place.
     Constructor,
     /// `<written> : <universe>`, or the universe alone where the written type
-    /// spans lines: `Type`, `Type[…]`, `Sig`, or a static arrow of those.
+    /// spans lines: `Type`, `Type[…]`, or a static arrow of those; or, for a
+    /// value written as a type's argument — a constructor, a code — the value's
+    /// `<written> : <type>`, as [`Self::Subject`] holds it.
     Universe,
     /// The literal's native type alone.
     Native(&'static str),
@@ -272,12 +274,12 @@ pub(super) fn judged(
                 .is_ok_and(|parsed| parsed.obligations().is_empty())
         })
     };
-    // A universe: `Type`, `Type[…]` or `Sig`, alone or in a static arrow.
+    // A universe: `Type` or `Type[…]`, alone or in a static arrow.
     let universe = |spelled: &str| {
         spelled.split("->").all(|part| {
             let atom = part
                 .trim_matches(|glyph: char| glyph == '(' || glyph == ')' || glyph.is_whitespace());
-            atom == "Type" || atom == "Sig" || (atom.starts_with("Type[") && atom.ends_with(']'))
+            atom == "Type" || (atom.starts_with("Type[") && atom.ends_with(']'))
         })
     };
     // Each constructor pattern's own answer, and each form's first name: the
@@ -358,7 +360,7 @@ pub(super) fn judged(
                     }) && parses(ty)
                 }),
                 Shape::Universe if node.contains('\n') => universe(block),
-                Shape::Universe => typed(node).is_some_and(universe),
+                Shape::Universe => typed(node).is_some_and(|ty| universe(ty) || parses(ty)),
                 Shape::Native(native) => block == native,
                 Shape::Form => parses(block) || typed(node).is_some_and(&mut parses),
                 Shape::Declaration => {

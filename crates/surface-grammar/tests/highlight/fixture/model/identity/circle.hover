@@ -38,19 +38,19 @@
 33:15-33:19 ) --> ⇒ ∅
 33:21-33:23 Int ⇒ Int : Type @33:21-33:24
 33:24-34:6 ;⏎  rule ⇒ ∅
-34:8-34:9 S( ⇒ Int @34:8-34:15
-34:10-34:11 P( ⇒ Int @34:10-34:14
+34:8-34:9 S( ⇒ S(P(x)) : Int @34:8-34:15
+34:10-34:11 P( ⇒ P(x) : Int @34:10-34:14
 34:12-34:12 x ⇒ x : Int @34:12-34:13
-34:13-34:13 ) ⇒ Int @34:10-34:14
-34:14-34:14 ) ⇒ Int @34:8-34:15
+34:13-34:13 ) ⇒ P(x) : Int @34:10-34:14
+34:14-34:14 ) ⇒ S(P(x)) : Int @34:8-34:15
 34:16-34:18 <=> ⇒ oriented left to right @34:16-34:19
 34:20-34:20 x ⇒ x : Int @34:20-34:21
 34:21-35:6 ;⏎  rule ⇒ ∅
-35:8-35:9 P( ⇒ Int @35:8-35:15
-35:10-35:11 S( ⇒ Int @35:10-35:14
+35:8-35:9 P( ⇒ P(S(x)) : Int @35:8-35:15
+35:10-35:11 S( ⇒ S(x) : Int @35:10-35:14
 35:12-35:12 x ⇒ x : Int @35:12-35:13
-35:13-35:13 ) ⇒ Int @35:10-35:14
-35:14-35:14 ) ⇒ Int @35:8-35:15
+35:13-35:13 ) ⇒ S(x) : Int @35:10-35:14
+35:14-35:14 ) ⇒ P(S(x)) : Int @35:8-35:15
 35:16-35:18 <=> ⇒ oriented left to right @35:16-35:19
 35:20-35:20 x ⇒ x : Int @35:20-35:21
 35:21-36:1 ;⏎} ⇒ ∅
@@ -241,12 +241,12 @@
 75:10-75:10 ∷ ⇒ loop ∷ q : Path(Circle, Base, Base) @75:5-75:13
 75:12-75:12 q ⇒ q : Path(Circle, Base, Base) @75:12-75:13
 75:14-75:15 => ⇒ -F Int @73:3-77:4
-75:17-75:18 S( ⇒ Int @75:17-75:30
+75:17-75:18 S( ⇒ S(wind[<](q)) : Int @75:17-75:30
 75:19-75:25 wind[<] ⇒ Path(Circle, Base, Base) => Int @75:19-75:26
 75:26-75:26 ( ⇒ -F Int @75:19-75:29
 75:27-75:27 q ⇒ q : Path(Circle, Base, Base) @75:27-75:28
 75:28-75:28 ) ⇒ -F Int @75:19-75:29
-75:29-75:29 ) ⇒ Int @75:17-75:30
+75:29-75:29 ) ⇒ S(wind[<](q)) : Int @75:17-75:30
 75:30-75:30 , ⇒ -F Int @73:3-77:4
 76:5-76:9 back( ⇒ back(loop) : Path(Circle, Base, Base) @76:5-76:15
 76:10-76:13 loop ⇒ loop : Path(Circle, Base, Base) @76:10-76:14
@@ -254,12 +254,12 @@
 76:16-76:16 ∷ ⇒ back(loop) ∷ q : Path(Circle, Base, Base) @76:5-76:19
 76:18-76:18 q ⇒ q : Path(Circle, Base, Base) @76:18-76:19
 76:20-76:21 => ⇒ -F Int @73:3-77:4
-76:23-76:24 P( ⇒ Int @76:23-76:36
+76:23-76:24 P( ⇒ P(wind[<](q)) : Int @76:23-76:36
 76:25-76:31 wind[<] ⇒ Path(Circle, Base, Base) => Int @76:25-76:32
 76:32-76:32 ( ⇒ -F Int @76:25-76:35
 76:33-76:33 q ⇒ q : Path(Circle, Base, Base) @76:33-76:34
 76:34-76:34 ) ⇒ -F Int @76:25-76:35
-76:35-76:35 ) ⇒ Int @76:23-76:36
+76:35-76:35 ) ⇒ P(wind[<](q)) : Int @76:23-76:36
 77:3-77:3 } ⇒ -F Int @73:3-77:4
 78:1-78:1 } ⇒ wind : Path(Circle, Base, Base) => Int⏎⏎The winding number: a loop counts one up, its inverse one down. It respects⏎the cancellations by `Int`'s rules. @72:1-78:2
 82:1-82:7 def rec ⇒ spin : Int => Path(Circle, Base, Base)⏎⏎Spinning a count: a successor is one more loop, a predecessor one more⏎inverse. It respects `Int`'s rules by the cancellations. @82:1-82:54
@@ -414,11 +414,11 @@
 104:27-104:27 ( ⇒ -F Int @104:23-104:42
 104:28-104:31 spin ⇒ spin : Int => Path(Circle, Base, Base) @104:28-104:32
 104:32-104:32 ( ⇒ -F Path(Circle, Base, Base) @104:28-104:41
-104:33-104:34 S( ⇒ Int @104:33-104:40
-104:35-104:36 S( ⇒ Int @104:35-104:39
+104:33-104:34 S( ⇒ S(S(Z)) : Int @104:33-104:40
+104:35-104:36 S( ⇒ S(Z) : Int @104:35-104:39
 104:37-104:37 Z ⇒ Z : Int @104:37-104:38
-104:38-104:38 ) ⇒ Int @104:35-104:39
-104:39-104:39 ) ⇒ Int @104:33-104:40
+104:38-104:38 ) ⇒ S(Z) : Int @104:35-104:39
+104:39-104:39 ) ⇒ S(S(Z)) : Int @104:33-104:40
 104:40-104:40 ) ⇒ -F Path(Circle, Base, Base) @104:28-104:41
 104:41-104:41 ) ⇒ -F Int @104:23-104:42
 104:43-104:43 } ⇒ () => Int @104:15-104:44
@@ -558,9 +558,9 @@
 135:20-135:21 -F ⇒ -F Int : Type[-] @135:20-135:26
 135:23-135:25 Int ⇒ Int : Type @135:23-135:26
 135:27-135:27 { ⇒ up : Int => Int⏎⏎One successor more. @135:1-137:2
-136:3-136:4 S( ⇒ Int @136:3-136:7
+136:3-136:4 S( ⇒ S(n) : Int @136:3-136:7
 136:5-136:5 n ⇒ n : Int @136:5-136:6
-136:6-136:6 ) ⇒ Int @136:3-136:7
+136:6-136:6 ) ⇒ S(n) : Int @136:3-136:7
 137:1-137:1 } ⇒ up : Int => Int⏎⏎One successor more. @135:1-137:2
 140:1-140:3 def ⇒ down : Int => Int⏎⏎One predecessor more. @140:1-140:29
 140:5-140:9 down( ⇒ down : Int => Int⏎⏎One predecessor more. @140:5-140:9
@@ -571,9 +571,9 @@
 140:22-140:23 -F ⇒ -F Int : Type[-] @140:22-140:28
 140:25-140:27 Int ⇒ Int : Type @140:25-140:28
 140:29-140:29 { ⇒ down : Int => Int⏎⏎One predecessor more. @140:1-142:2
-141:3-141:4 P( ⇒ Int @141:3-141:7
+141:3-141:4 P( ⇒ P(n) : Int @141:3-141:7
 141:5-141:5 n ⇒ n : Int @141:5-141:6
-141:6-141:6 ) ⇒ Int @141:3-141:7
+141:6-141:6 ) ⇒ P(n) : Int @141:3-141:7
 142:1-142:1 } ⇒ down : Int => Int⏎⏎One predecessor more. @140:1-142:2
 147:1-147:11 @[ checks ] ⇒ retr : +U ((a : Int) -> -F Path(Int, wind(spin(a)), a))⏎⏎Winding undoes spinning at every count: the other round trip, by⏎induction over the presented integers, a successor carried along `up` and⏎a predecessor along `down`. @147:1-148:1
 148:1-148:7 def rec ⇒ retr : +U ((a : Int) -> -F Path(Int, wind(spin(a)), a))⏎⏎Winding undoes spinning at every count: the other round trip, by⏎induction over the presented integers, a successor carried along `up` and⏎a predecessor along `down`. @148:1-148:57
