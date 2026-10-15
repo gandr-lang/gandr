@@ -1281,15 +1281,47 @@ fn member_selection_and_complete_replay_reject_near_misses()
             ..step
         }]),
     };
-    assert_eq!(
+    let readmitted = |arena: &mut Arena, budget| {
         readmit(
-            &mut arena,
+            arena,
             &[token],
             &corrupt,
-            &[Production::Go(template)],
-            &mut Budget(100_000)
-        ),
+            &[Production::Go(template.clone())],
+            &mut Budget(budget),
+        )
+    };
+    assert_eq!(
+        readmitted(&mut arena, 100_000),
         Err(StageError::InvalidCertificate)
+    );
+    assert_eq!(
+        readmitted(&mut arena, 0),
+        Err(StageError::InvalidCertificate),
+        "the template refutes the step before any replay is spent"
+    );
+}
+
+/// A produced template counts one replayed step for each inheritance check
+/// that inherits.
+#[test]
+fn a_produced_template_counts_each_inherited_check_as_a_replayed_step()
+{
+    let (arena, family) = cancellations(Members(64), Arms(2));
+    let produced = produce(
+        &arena,
+        &family,
+        PriceGate::Unmemoized,
+        &mut InheritanceCache::new(),
+        &mut Budget(100_000),
+    )
+    .unwrap();
+    assert!(matches!(produced, Production::Go(_)));
+    let cost = produced.cost();
+    assert!(usize::from(cost.triples_checked) > 0);
+    assert_eq!(
+        usize::from(cost.replayed_steps),
+        usize::from(cost.triples_checked),
+        "every check of a produced template inherits"
     );
 }
 
@@ -2504,6 +2536,53 @@ fn drafts_equal_fresh_runs_across_the_edit_traces()
     );
 }
 
+/// A member whose skeleton disagrees with the held template is rebased only
+/// while rebasing is allowed: every walk of the edit traces that rebases misses
+/// on the skeleton when rebasing is never allowed.
+#[test]
+fn a_disagreeing_member_rebases_only_where_rebasing_is_allowed()
+{
+    let mut rebases = 0_usize;
+    for trace in &edit_traces() {
+        let mut memo = Memo::default();
+        let mut cache = InheritanceCache::new();
+        for edition in trace {
+            let (arena, certificates) = normalized(*edition);
+            for family in harvest(&arena, ProgramId(0), &certificates).unwrap() {
+                if let Maybe::Present(held) = memo.template(&family) {
+                    let walk = |rebasing| match held
+                        .walk(
+                            &arena,
+                            &family.members,
+                            Widening::Widened,
+                            rebasing,
+                            &mut Drafter::default(),
+                        )
+                        .unwrap()
+                    {
+                        Walk::Matched { kind, .. } => Maybe::Present(kind),
+                        Walk::Missed(miss) => Maybe::Absent(miss),
+                    };
+                    if let Maybe::Present(DraftKind::Rebased(..)) = walk(Rebasing::Allowed) {
+                        assert_eq!(walk(Rebasing::Never), Maybe::Absent(Miss::Skeleton));
+                        rebases = rebases.checked_add(1).unwrap();
+                    }
+                }
+                memo.admit_family(
+                    &arena,
+                    &family,
+                    PriceGate::Memoized,
+                    &mut cache,
+                    &mut Budget(100_000_000),
+                    &mut memo::tests::Stopped,
+                )
+                .unwrap();
+            }
+        }
+    }
+    assert!(rebases > 0, "the edit traces rebase");
+}
+
 #[test]
 fn a_kernel_refused_draft_falls_back_to_the_producer()
 {
@@ -2794,4 +2873,92 @@ fn distinct_members_generalize_as_every_member()
         }
     }
     assert!(repeated >= 4);
+}
+
+/// A member graph starts from its template's classifier vocabulary: every
+/// classifier the template interned reads the same through the member.
+#[test]
+fn a_member_graph_starts_from_its_templates_vocabulary()
+{
+    let mut arena = Arena::default();
+    let nat = arena.alloc_type(Type::Nat(Stage::Outer)).unwrap();
+    let inner = arena.alloc_type(Type::In(Model(3))).unwrap();
+    let codes = [
+        arena.alloc(Term::Code(nat)).unwrap(),
+        arena.alloc(Term::Code(inner)).unwrap(),
+    ];
+    let mut reference = Graph::default();
+    let roots = reference.import(&arena, &codes).unwrap();
+    let member = reference.member();
+    for root in roots {
+        let Head::Code(ty) = reference.node(root).unwrap().head
+        else {
+            panic!("a code imports as a code");
+        };
+        assert_eq!(member.ty(ty), reference.ty(ty));
+    }
+}
+
+/// Content comparison refuses a pair whose trees differ below an agreeing
+/// root, and accepts a tree against itself.
+#[test]
+fn comparison_refuses_content_that_differs_below_the_root()
+{
+    let mut arena = Arena::default();
+    let quotes = [Natural(1), Natural(2)].map(|value| {
+        let body = arena.alloc(Term::Natural(Stage::Outer, value)).unwrap();
+        arena.alloc(Term::Quote(body)).unwrap()
+    });
+    let mut graph = Graph::default();
+    let [one, two] = *graph.import(&arena, &quotes).unwrap()
+    else {
+        panic!("two roots");
+    };
+    assert_eq!(graph.compare(one, &graph, one), Ok(()));
+    assert_eq!(
+        graph.compare(one, &graph, two),
+        Err(StageError::InvalidCertificate)
+    );
+}
+
+/// Export makes one opaque constant for each unbound point and for each
+/// predecessor of one; a predecessor of a bound point is that point's value
+/// less one and takes no constant.
+#[test]
+fn export_mints_a_constant_per_unbound_point_and_its_predecessor()
+{
+    let mut graph = Graph::default();
+    let mut intern = |head, child| {
+        graph
+            .intern(Node {
+                head,
+                children: Children([child, None, None]),
+            })
+            .unwrap()
+    };
+    let bound = intern(Head::Point(EntryIndex::from(0)), None);
+    let below_bound = intern(Head::Predecessor, Some(bound));
+    let free = intern(Head::Point(EntryIndex::from(1)), None);
+    let below_free = intern(Head::Predecessor, Some(free));
+    let five = intern(Head::OuterNatural(Natural(5)), None);
+    let bindings = BTreeMap::from([(EntryIndex::from(0), five)]);
+    let mut arena = Arena::default();
+    // Interning a fresh classifier reads the arena's classifier count.
+    let before = arena.alloc_type(Type::In(Model(0))).unwrap();
+    let exported = graph
+        .export(&mut arena, &[below_bound, free, below_free], &bindings)
+        .unwrap();
+    let after = arena.alloc_type(Type::In(Model(1))).unwrap();
+    assert_eq!(
+        after.0 - before.0 - 1,
+        2,
+        "one constant for the free point and one for its predecessor"
+    );
+    let term = |index: usize| arena.term(exported[index]).unwrap();
+    assert_eq!(term(0), Term::Natural(Stage::Outer, Natural(4)));
+    let (Term::Code(free), Term::Code(below_free)) = (term(1), term(2))
+    else {
+        panic!("an unbound point and its predecessor export as constants");
+    };
+    assert_ne!(free, below_free);
 }

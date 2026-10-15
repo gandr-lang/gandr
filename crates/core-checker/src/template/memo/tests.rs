@@ -228,3 +228,160 @@ fn the_fresh_arm_cap_withdraws_a_widening_that_costs_the_producers_time()
         Attempt::Ready(_, DraftKind::Widened(ArmCount(2)))
     ));
 }
+
+/// A clock that advances one microsecond at every reading, so every timed
+/// stretch measures a positive time.
+#[repr(transparent)]
+struct Ticking(Duration);
+
+impl Clock for Ticking
+{
+    /// One microsecond past the last reading.
+    ///
+    /// # Specification
+    /// trivial.
+    fn now(&mut self) -> Duration
+    {
+        self.0 = self.0.saturating_add(Duration::from_micros(1));
+        self.0
+    }
+}
+
+/// The break-even is the refused share over the accepted saving plus the
+/// refused share, and both the memo's switch and a key's verdict decline at
+/// it exactly and draft just above it.
+#[test]
+fn drafting_stops_exactly_at_the_break_even()
+{
+    let bound = 0.25_f64 / (1.0_f64 - 0.5_f64 + 0.25_f64);
+    assert_eq!(
+        break_even(Share(0.5), Share(0.25)),
+        Maybe::Present(Share(bound)),
+        "a* = r / (1 - d + r)"
+    );
+    let above = Share(bound + 1.0e-9_f64);
+    let mut switch = Memo::default().switch;
+    switch.accepted = Tracked::Sampled(Share(0.5));
+    switch.refused = Tracked::Sampled(Share(0.25));
+    switch.acceptance = Share(bound);
+    assert_eq!(
+        switch.off(),
+        Decision::Decline(Decline::Off),
+        "the memo stops at the bound"
+    );
+    switch.acceptance = above;
+    assert_eq!(switch.off(), Decision::Draft, "and drafts above it");
+    let mut controls = Controls::fresh();
+    controls.producing = Estimate::Measured(Duration::from_secs(4));
+    controls.accepted = Estimate::Measured(Duration::from_secs(2));
+    controls.refused = Estimate::Measured(Duration::from_secs(1));
+    controls.acceptance = Share(bound);
+    assert_eq!(
+        controls.verdict(),
+        Decision::Decline(Decline::BelowBreakEven),
+        "a key stops at its bound"
+    );
+    controls.acceptance = above;
+    assert_eq!(controls.verdict(), Decision::Draft, "and drafts above it");
+}
+
+/// A drafted family's time is sampled as a share of its key's producer time
+/// only when that time is measured and positive.
+#[test]
+fn a_draft_is_sampled_against_a_positive_producer_time_only()
+{
+    let sampled = |producing| {
+        let mut controls = Controls::fresh();
+        controls.producing = producing;
+        match controls.observe(Acceptance::Accepted, Duration::from_secs(1)) {
+            DraftSample::Drafted { share, .. } => share,
+            DraftSample::Undrafted => panic!("an observed draft is drafted"),
+        }
+    };
+    assert_eq!(
+        sampled(Estimate::Measured(Duration::from_secs(4))),
+        Tracked::Sampled(Share(0.25))
+    );
+    assert_eq!(
+        sampled(Estimate::Measured(Duration::ZERO)),
+        Tracked::Unsampled,
+        "a free producer gives no share"
+    );
+    assert_eq!(sampled(Estimate::Unmeasured), Tracked::Unsampled);
+}
+
+/// The fresh-arm cap weighs the fresh arms times the per-arm cost against
+/// the producer's time, and a finished widening measures its import per arm.
+#[test]
+fn the_cap_weighs_arms_times_cost_and_measures_the_import_per_arm()
+{
+    let (arena, certificates) = cancellations(Count(64), Count(2));
+    let families = harvest(&arena, ProgramId(0), &certificates).unwrap();
+    let [ref family] = *families.as_slice()
+    else {
+        panic!("one cancellation family");
+    };
+    let Production::Go(template) = produce(
+        &arena,
+        &family.members,
+        PriceGate::Unmemoized,
+        &mut InheritanceCache::new(),
+        &mut Budget(1_000_000),
+    )
+    .unwrap()
+    else {
+        panic!("two arms over 64 members pay");
+    };
+    let (arena, certificates) = cancellations(Count(64), Count(4));
+    let families = harvest(&arena, ProgramId(0), &certificates).unwrap();
+    let [ref wider] = *families.as_slice()
+    else {
+        panic!("one cancellation family");
+    };
+    // Two fresh arms at three seconds each cost six against a producer of
+    // five and a half: capped, where their sum or quotient would not be.
+    let mut cap = Cap {
+        producing: Estimate::Measured(Duration::from_millis(5_500)),
+        arm: Tracked::Sampled(Share(3.0)),
+        measured: Tracked::Unsampled,
+    };
+    let attempt = template
+        .attempt(
+            &arena,
+            &wider.members,
+            PriceGate::Unmemoized,
+            &mut cap,
+            &mut Drafter::default(),
+            &mut Stopped,
+        )
+        .unwrap();
+    assert!(matches!(
+        attempt,
+        Attempt::Withdrawn(Drafting::Capped(ArmCount(2)))
+    ));
+    // Under a clock that advances, the import takes time, and the cap
+    // measures it per fresh arm.
+    let mut cap = Cap {
+        producing: Estimate::Measured(Duration::from_secs(1)),
+        arm: Tracked::Unsampled,
+        measured: Tracked::Unsampled,
+    };
+    let mut drafter = Drafter::default();
+    let attempt = template
+        .attempt(
+            &arena,
+            &wider.members,
+            PriceGate::Unmemoized,
+            &mut cap,
+            &mut drafter,
+            &mut Ticking(Duration::ZERO),
+        )
+        .unwrap();
+    assert!(matches!(
+        attempt,
+        Attempt::Ready(_, DraftKind::Widened(ArmCount(2)))
+    ));
+    let importing = drafter.importing().as_secs_f64();
+    assert!(importing > 0.0_f64, "the import took time");
+    assert_eq!(cap.measured, Tracked::Sampled(Share(importing / 2.0_f64)));
+}
