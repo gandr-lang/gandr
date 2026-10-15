@@ -16,8 +16,10 @@
 //! a case's scrutinee, an application's head, an unsigned definition — there
 //! is nothing to decide by, and the judgement refuses it by name,
 //! [`CheckRefusal::NotSynthesisable`] with [`CheckingForm::Nested`], rather
-//! than guessing. A written `run c` always runs and synthesises the value `c`
-//! returns.
+//! than guessing. One synthesis position decides by its own sort: the path an
+//! element transport follows is never a thunk, so a nested computation there
+//! runs, as `cong(loopOn, sect[<](q))` carries the recursive call's path. A
+//! written `run c` always runs and synthesises the value `c` returns.
 //!
 //! **Order: written order, before the innermost enclosing computation.** A
 //! run's region is the innermost computation whose values it stands in; an

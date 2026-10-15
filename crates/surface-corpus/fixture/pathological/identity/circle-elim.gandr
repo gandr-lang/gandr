@@ -1,7 +1,8 @@
 // Cases over the circle its loop refuses, and one it admits that looks as
 // though it should not. A case over the circle owes its loop: carried along
 // the loop, its answer at the point must be that answer, by conversion or by
-// a loop arm at the path between the two.
+// a loop arm at the path between the two. Last, two operations on paths,
+// written with no path type stated, that their operands refuse.
 
 /// The circle: one point and a loop at it.
 data Circle : Type {
@@ -40,3 +41,24 @@ def misjoined(x : Circle) -> -F Path(Circle, Base, x) {
     loop => here(here(Base))
   }
 }
+
+/// A point with a loop at it, and a second point the loop never reaches.
+data Marked : Type {
+  Mark : Marked;
+  Elsewhere : Marked;
+  turn : Mark <-> Mark;
+}
+
+/// A composite whose second path starts where the first does not end: the
+/// turn ends at `Mark`, and `here(Elsewhere)` starts at `Elsewhere`. Read off
+/// the turn, the composite's transport checks the turn at the path into
+/// `Elsewhere`, which it is not.
+@[ refuses("TypeMismatch") ]
+def misjoined_then : Path(Marked, Mark, Elsewhere) ;
+def misjoined_then = turn then here(Elsewhere) ;
+
+/// `cong` maps a path by a function, and the point's constructor is not one:
+/// `Base` names the point, not a map out of the circle.
+@[ refuses("OutOfFragment") ]
+def cong_at_point : Path(Circle, Base, Base) ;
+def cong_at_point = cong(Base, loop) ;

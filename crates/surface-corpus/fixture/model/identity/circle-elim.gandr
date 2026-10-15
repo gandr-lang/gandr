@@ -5,7 +5,9 @@
 // its image. Transport along a word computes as the book's § 2.11 states it:
 // in a family of paths it composes on the side the endpoint varies, in a
 // constant family it is the identity, and in a family running its point
-// through a map it is the map's image of the word.
+// through a map it is the map's image of the word. `then`, `back` and `cong`
+// stand bare where no path type is written: each reads its path's type off
+// the words it acts on.
 
 /// The circle: one point and a loop at it.
 data Circle : Type {
@@ -68,16 +70,24 @@ def collapse(x : Circle) -> -F Circle {
   }
 }
 
-/// The collapse's image of a path at the point.
+/// The collapse's image of the loop is reflexivity: `cong` reads its path's
+/// type off the loop and the collapse's written result, so it stands bare in
+/// the type.
 @[ checks ]
-def collapsed(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
-  cong(collapse, p)
-}
-
-/// The collapse's image of the loop is reflexivity.
-@[ checks ]
-def collapsed_loop : Path(Path(Circle, Base, Base), collapsed(loop), here(Base)) ;
+def collapsed_loop : Path(Path(Circle, Base, Base), cong(collapse, loop), here(Base)) ;
 def collapsed_loop = here(here(Base)) ;
+
+/// The loop twice around, composed with no path type written at the
+/// composite: it is a path from the point the first loop leaves to the point
+/// the second reaches.
+@[ checks ]
+def two : Path(Circle, Base, Base) ;
+def two = loop then loop ;
+
+/// The inverse of the composite, read off the composite's own path type.
+@[ checks ]
+def undone : Path(Circle, Base, Base) ;
+def undone = back(loop then loop) ;
 
 /// Transport in a family of paths from the point moves the endpoint: it
 /// post-composes with the loop.

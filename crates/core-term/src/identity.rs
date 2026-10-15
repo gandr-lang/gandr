@@ -44,12 +44,16 @@
 //!   number of entries, would make every transport pay for a telescope its
 //!   first-order motive does not have. Reversal: a third entry earns the
 //!   general former.
-//! - **The motive is written, not inferred.** A caller names the carrier and
-//!   the fixed endpoint, which a checking position reads off its expected path
-//!   type. The alternative, inferring them from the path's own type, needs the
-//!   checker to elaborate, and the vocabulary has no elaboration-only former
-//!   for it. Reversal: implicit arguments in the core would let the motive be
-//!   read off the path instead.
+//! - **The motive is written by the caller, read at the words.** A caller names
+//!   the carrier and the fixed endpoint: a checking position reads them off its
+//!   expected path type, and anywhere else the lowering reads them off the
+//!   operands, a word standing at the path at its words' point and a derived
+//!   path at the path type its own motive gave. No node is added for the
+//!   synthesis; the transports are the ones a written answer would mint. The
+//!   alternative, an annotated spelling only, repeats the type the words
+//!   already state. Reversal: a word whose endpoints are not spelled, a cell
+//!   between distinct points, leaves no point to read, and its operations need
+//!   the written answer.
 //! - **`cong` applies through a compound endpoint.** `f y` inside the motive is
 //!   [`Value::Returned`] over `force f y`, so the image of the moving endpoint
 //!   is compared by what `f` computes. A first-order map is all it needs; a

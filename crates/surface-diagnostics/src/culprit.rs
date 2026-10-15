@@ -146,6 +146,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             | FragmentBoundary::Arity(_) => "the wrong number of operands",
             | FragmentBoundary::Indexed => "a family applied to an index",
             | FragmentBoundary::Unannotated => "needs a stated type",
+            | FragmentBoundary::NotAFunction => "a constructor, not a function",
             | FragmentBoundary::NonUniform => "not the parameter itself",
             | FragmentBoundary::NotInTail => "not on a path through a body",
             | FragmentBoundary::JoinsBlock => "an answer the arms do not give",

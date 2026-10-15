@@ -2573,6 +2573,10 @@ struct Lowerer<'run, 'source>
     /// or a match's answer states it, or the block a statement's local ends
     /// continue answers.
     answers: BTreeMap<NodeIndex, native::Answer>,
+    /// Each derived operation standing where no type is answered, its motive
+    /// synthesised from its operands: the innermost first once
+    /// [`Self::refuse_unsynthesised`] has read them, for the mint sweep.
+    synthesised: Vec<Site>,
     /// The terms standing inside a type: a path type's endpoints and every
     /// node under one, whose bound names count only the frames that bind in
     /// the type's telescope and make the arrow binding them dependent.
@@ -2758,6 +2762,9 @@ struct Sink<'run>
     /// Every returner a `break` minted, and each copy a match leaf made of
     /// one: a local end of its loop's position rather than of its body.
     breaks: BTreeSet<ComputationId>,
+    /// Every derived operation's transport, with the path type it returns an
+    /// element of: what an operation over it reads where no type is answered.
+    identities: BTreeMap<ComputationId, identity::Identity>,
 }
 
 /// Lower one module into `arena`, declaring its names over `outermost`.
@@ -2974,6 +2981,7 @@ pub fn lower_module<'source>(
     lowerer.seed()?;
     lowerer.survey()?;
     lowerer.classify()?;
+    lowerer.refuse_unsynthesised()?;
     lowerer.propagate_manifests();
     while lowerer.refuse_unrepresented().0 {
         lowerer.propagate_manifests();
@@ -2987,6 +2995,7 @@ pub fn lower_module<'source>(
         host: capability::Host::Unminted,
         loops: BTreeSet::new(),
         breaks: BTreeSet::new(),
+        identities: BTreeMap::new(),
     };
     lowerer.mint(&mut sink)?;
     lowerer.mint_abstracts(&mut sink);
@@ -3151,6 +3160,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             labels: Vec::new(),
             stand_ins: BTreeSet::new(),
             answers: BTreeMap::new(),
+            synthesised: Vec::new(),
             in_type: BTreeSet::new(),
             at_endpoint: BTreeSet::new(),
             leaves,
@@ -8398,22 +8408,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   descending, so a type head that stands for one adopts a type already
     ///   minted wherever it sits; every functor application is renamed before
     ///   the first of those types written after it, so an instance's manifest
-    ///   type is minted before a type naming it; every answer type a match
-    ///   reads its motive from is minted next, the same way, so a match deeper
-    ///   than its function's result finds that result minted, and every
-    ///   application not yet renamed is renamed. Every other planned node is
-    ///   then minted, with its children already minted because the level-order
-    ///   layout puts them at strictly higher positions; every minted node gets
-    ///   an origin naming the syntax node that produced it, terms and types
-    ///   alike, while an adopted child keeps its own. A node whose position
-    ///   bridges its sort has the bridge minted over its own core node, with
-    ///   the same syntax node's origin marked as inserted. A node under a
-    ///   declaration that refused is not minted, and neither is any node above
-    ///   it, unless it lies inside an attribute payload: the side table files a
-    ///   payload whatever its declaration's outcome, so an expectation about a
-    ///   refused declaration stays readable. Last, the body of every witness of
-    ///   a member whose member and own type are unrefused is minted as that
-    ///   member's constant, its origin the form that stated the second type.
+    ///   type is minted before a type naming it; every function result a
+    ///   synthesised `cong` reads its codomain off, then every answer type a
+    ///   match reads its motive from, is minted next, the same way, so a `cong`
+    ///   in a type and a match deeper than its function's result find that
+    ///   result minted, and every application not yet renamed is renamed. Every
+    ///   other planned node is then minted, with its children already minted
+    ///   because the level-order layout puts them at strictly higher positions;
+    ///   every minted node gets an origin naming the syntax node that produced
+    ///   it, terms and types alike, while an adopted child keeps its own. A
+    ///   node whose position bridges its sort has the bridge minted over its
+    ///   own core node, with the same syntax node's origin marked as inserted.
+    ///   A node under a declaration that refused is not minted, and neither is
+    ///   any node above it, unless it lies inside an attribute payload: the
+    ///   side table files a payload whatever its declaration's outcome, so an
+    ///   expectation about a refused declaration stays readable. Last, the body
+    ///   of every witness of a member whose member and own type are unrefused
+    ///   is minted as that member's constant, its origin the form that stated
+    ///   the second type.
     /// - provides: the whole allocation half of the lowering.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the sweep outruns the
     ///   allowance; nothing else, because every decision was made ascending.
@@ -8473,6 +8485,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         stated.sort_unstable_by_key(|defined| (defined.span.start(), defined.node));
         stated.dedup();
         let mut manifests: Vec<NodeIndex> = stated.iter().map(|defined| defined.node).collect();
+        manifests.extend(self.codomains());
         manifests.extend(self.answers.values().map(|answer| answer.node));
         manifests.reverse();
         let mut subtree: Vec<NodeIndex> = Vec::new();

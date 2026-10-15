@@ -207,6 +207,10 @@ fn lowered(
                     f.write_str("indexed datatype families are not supported yet")
                 },
                 | FragmentBoundary::Unannotated => write!(f, "the {form} needs a type annotation"),
+                | FragmentBoundary::NotAFunction => f.write_str(
+                    "`cong` maps a path by a function, and a constructor is not one; write a \
+                     function definition that applies it",
+                ),
                 | FragmentBoundary::NonUniform => f.write_str(
                     "a recursive call must pass the earlier parameters unchanged; only the last \
                      one descends",
