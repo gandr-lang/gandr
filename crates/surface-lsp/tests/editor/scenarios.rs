@@ -59,6 +59,7 @@ use super::editing::Oracle;
 use super::editing::Session;
 use super::editing::panic_message;
 use super::shapes;
+use super::typist::Stride;
 
 /// The node kinds the hover sweep counts: the kind — its form's grammar
 /// sort, then its named kind — of the corpus positions whose smallest
@@ -1315,6 +1316,36 @@ mod sweeps
         size: SampleSize(24),
     };
 
+    /// The most keystrokes a sampled erasure spends on one source. Each
+    /// keystroke checks the whole text left, so erasing a source line by line
+    /// costs its length squared: the 196 lines of the circle group's model
+    /// took 13.7 s alone on a local machine and timed out on the Linux runner,
+    /// about three times slower. A sampled erasure of a longer source deletes
+    /// as many lines per keystroke as keep it to this many; the circle group
+    /// erases five at a time, about 3 s locally. The `sweeps` profile erases
+    /// every source line by line.
+    const ERASED_KEYSTROKES: usize = 48;
+
+    /// The stride a run erases `source` at: one line per keystroke under the
+    /// `sweeps` profile, at most [`ERASED_KEYSTROKES`] keystrokes otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn erased_stride(source: &Source) -> Stride
+    {
+        match gandr_workflow_sweep::Coverage::asked() {
+            gandr_workflow_sweep::Coverage::Full => Stride(1),
+            gandr_workflow_sweep::Coverage::Sampled => Stride(
+                source
+                    .text
+                    .lines()
+                    .count()
+                    .div_ceil(ERASED_KEYSTROKES)
+                    .max(1),
+            ),
+        }
+    }
+
     /// The hover sweep's sample with specifications enforced: forty-eight
     /// sources, every position hovered.
     const HOVERED: Sample = Sample {
@@ -1409,7 +1440,7 @@ mod sweeps
                 Typing::Assisted,
                 Oracle::Keystroke,
             );
-            session.erase_lines();
+            session.erase_lines(erased_stride(source));
             assert!(
                 session.buffer().text().0.is_empty(),
                 "the document is erased"
