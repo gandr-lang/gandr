@@ -447,6 +447,8 @@ impl TileName
     pub const PATH: Self = Self("Path");
     /// The capability type's head `Cap`.
     pub const CAP: Self = Self("Cap");
+    /// The keyword `at` placing a capability type in a scope's region.
+    pub const AT: Self = Self("at");
     /// The capability scope's lead `handle`.
     pub const HANDLE: Self = Self("handle");
     /// The keyword `hold`, opening a statement that holds a value.
@@ -725,6 +727,9 @@ pub enum Former
     /// The capability type `Cap[r]? {op, …}`: the authority to exercise the
     /// named host operations.
     CapabilityType,
+    /// A capability type placed in a scope's region, `Cap {op, …} at c`: the
+    /// capability lives until the scope binding `c` ends.
+    AtType,
     /// The capability scope `handle c : I { … } with { … }`: a deep handler
     /// for the host interface `I` whose body holds the capability it
     /// introduces.
@@ -864,7 +869,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 68_usize] = [
+pub const FORMERS: [(&str, Former); 69_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -914,6 +919,7 @@ pub const FORMERS: [(&str, Former); 68_usize] = [
     ("parenthesized_type", Former::ParenthesizedType),
     ("path_type", Former::PathType),
     ("capability_type", Former::CapabilityType),
+    ("at_type", Former::AtType),
     ("handle_expression", Former::Scope),
     ("def_value", Former::Declaration),
     ("attribute_block", Former::AttributeBlock),

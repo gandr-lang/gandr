@@ -118,6 +118,7 @@ use gandr_core_term::shift_value;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Side;
+use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_grammar::Pbg;
@@ -132,6 +133,7 @@ use gandr_surface_lowering::Role;
 use gandr_surface_lowering::described::DescribedRole;
 use gandr_surface_parser::parse;
 use gandr_surface_pretty::BinderIndex;
+use gandr_surface_pretty::ChildSlot;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Form;
@@ -139,6 +141,7 @@ use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Scopes;
+use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_type;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -148,11 +151,14 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::compose::ComposeFault;
+use crate::compose::Composed;
 use crate::compose::Lowered;
 use crate::compose::Lowering;
 use crate::compose::LoweringCount;
 use crate::compose::adapt;
+use crate::compose::compose;
 use crate::compose::lower_source;
+use crate::evaluate::Evaluation;
 
 quenchant_shape::reason_enum! {
     /// Why a position or a declaration has no type in the table.
@@ -178,6 +184,36 @@ quenchant_shape::reason_enum! {
             /// No outer judgement checked the term against a type spelled
             /// otherwise, or the entry is no term.
             Agreed,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a spelling has no reprint.
+    pub mod reprinted {
+        /// The reason the spelling was not printed again.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The spelling was not lowered: it was settled before any
+            /// lowering, did not parse, or the lowering refused it.
+            Unlowered,
+            /// The printer could not lay the lowered node out.
+            Unspelled,
+            /// The read-back run did not settle or did not run to a value.
+            Unrun,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a value is read back with no declaration's type.
+    pub mod signed {
+        /// The reason the value is read unsigned.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No run returned the value: a normal form, whose constructors
+            /// carry its type.
+            Unsigned,
         }
     }
 }
@@ -347,6 +383,9 @@ pub struct ReadBack
     pub spelled: String,
     /// What reading it back gave.
     pub trip: RoundTrip,
+    /// The type the spelling lowered to, printed again as the table prints:
+    /// the printer is a fixed point exactly when this is the spelling.
+    pub reprinted: Maybe<String, reprinted::Absent>,
 }
 
 /// One typed node as the table keeps it: the type nodes it is spelled at when
@@ -404,7 +443,8 @@ enum Standing
 struct NamedContext(usize);
 
 /// One intuitionistic binder a typed node stands under: the binder around
-/// it and the name the source writes for it.
+/// it, the name the source writes for it, and whether it is a capability
+/// scope's own, whose region a capability type may name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Bound
 {
@@ -413,6 +453,20 @@ struct Bound
     /// The name written at the binder, or at a use resolving to it; none
     /// where the source writes none.
     name: Option<String>,
+    /// Whether the binder is the capability a scope binds over its subject.
+    scope: bool,
+}
+
+/// The context an entry's type is spelled in: the names of the
+/// intuitionistic binders around it, and of the capability scopes among
+/// them, each outermost first.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Context
+{
+    /// The binders' names; none where the source writes none.
+    binders: Vec<Option<String>>,
+    /// The capability scopes' names, the first the outermost scope's region.
+    regions: Vec<Option<String>>,
 }
 
 /// What the table keeps to name the binders an entry stands under when a
@@ -587,6 +641,9 @@ pub struct TypeTable
     contexts: Vec<Vec<String>>,
     /// Each oriented rule's span and the direction the order chose.
     orientations: Vec<(ByteSpan, ChosenDirection)>,
+    /// The data signatures the typed run formed, by admission position: the
+    /// words a path type reads as when a printed type is read back.
+    signatures: BTreeMap<ConstantIndex, Arc<DataSignature>>,
 }
 
 /// The intuitionistic binder at or around `at`.
@@ -657,18 +714,25 @@ fn scopes(
     let mut bound: Vec<Bound> = scopes
         .binders()
         .map(|(_, binder)| {
-            let name = match binder.opener() {
-                CoreNode::Computation(opener) => naming
-                    .openers
-                    .binary_search_by_key(&opener, |&(held, _)| held)
-                    .ok()
-                    .and_then(|at| naming.openers.get(at))
-                    .and_then(|&(_, span)| naming.written(span)),
-                CoreNode::Value(_) | CoreNode::ValueType(_) | CoreNode::CompType(_) => None,
+            let (name, scope) = match binder.opener() {
+                CoreNode::Computation(opener) => (
+                    naming
+                        .openers
+                        .binary_search_by_key(&opener, |&(held, _)| held)
+                        .ok()
+                        .and_then(|at| naming.openers.get(at))
+                        .and_then(|&(_, span)| naming.written(span)),
+                    binder.slot() == ChildSlot::FIRST
+                        && matches!(arena.computation(opener), Some(&Computation::Scope { .. })),
+                ),
+                CoreNode::Value(_) | CoreNode::ValueType(_) | CoreNode::CompType(_) => {
+                    (None, false)
+                },
             };
             Bound {
                 around: intuitionistic(&scopes, binder.parent()),
                 name,
+                scope,
             }
         })
         .collect();
@@ -812,6 +876,7 @@ impl TypeTable
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         context.keep_formations(Formations::Firsts(wanted));
         let typed = type_module(&mut context, &declarations);
+        let signatures = context.data_signatures().clone();
         // Each wanted type is formed at most once, so the formations sorted by
         // type find a written type's own by search; the stable sort keeps the
         // first should a type appear twice.
@@ -1152,6 +1217,7 @@ impl TypeTable
             families: Families::of(&module),
             contexts,
             orientations,
+            signatures,
         })
     }
 
@@ -1391,7 +1457,7 @@ impl TypeTable
     ) -> Maybe<Declared, typing::Absent>
     {
         match self.declared.get(&key) {
-            Some(&Held::Typed(node)) => match self.spell(node, &[], page, form) {
+            Some(&Held::Typed(node)) => match self.spell(node, &Context::default(), page, form) {
                 Maybe::Present(spelled) => Maybe::Present(Declared::Typed(spelled)),
                 Maybe::Absent(reason) => Maybe::Absent(reason),
             },
@@ -1430,15 +1496,34 @@ impl TypeTable
     }
 
     /// `node` spelled through the shared printer in `form` on a page of `page`
-    /// columns, writing each constant by its name and each variable of the
-    /// context whose innermost binder is `context` by the name written for it.
+    /// columns, writing each constant by its name, each variable of `context`
+    /// by the name written for its binder, and each capability scope's
+    /// region by its scope's name.
     ///
     /// # Specification
     /// trivial.
     fn spell(
         &self,
         node: TypeNode,
-        binders: &[Option<String>],
+        context: &Context,
+        page: PageWidth,
+        form: Form,
+    ) -> Maybe<Presentation, typing::Absent>
+    {
+        self.spell_in(&self.arena, node, context, page, form)
+    }
+
+    /// `node` of `arena` spelled as [`Self::spell`] spells a node of the
+    /// table's own arena: `arena` holds the table's nodes at their ids, so the
+    /// constants and constructors are named alike.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spell_in(
+        &self,
+        arena: &CoreArena,
+        node: TypeNode,
+        context: &Context,
         page: PageWidth,
         form: Form,
     ) -> Maybe<Presentation, typing::Absent>
@@ -1448,29 +1533,39 @@ impl TypeTable
             .iter()
             .map(|name| Name::from(name.as_str()))
             .collect();
-        let binders: Vec<Option<Name<'_>>> = binders
+        let binders: Vec<Option<Name<'_>>> = context
+            .binders
+            .iter()
+            .map(|name| name.as_deref().map(Name::from))
+            .collect();
+        let regions: Vec<Option<Name<'_>>> = context
+            .regions
             .iter()
             .map(|name| name.as_deref().map(Name::from))
             .collect();
         let constructors = self.families.naming(&names);
-        let printer = CoreSource::new(&self.arena, &names)
+        let printer = CoreSource::new(arena, &names)
             .naming(&constructors)
-            .within(&binders);
+            .within(&binders)
+            .scoped(&regions);
         present_type(&printer, root(node), page, form)
             .map_or(Maybe::Absent(typing::Absent::Unspelled), Maybe::Present)
     }
 
-    /// The names of the intuitionistic binders an entry standing at
-    /// `standing` is read under, outermost first: for a judged node, by
-    /// walking the scopes of its declaration alone; for a described member,
-    /// its context's names.
+    /// The context an entry standing at `standing` is read under: the names
+    /// of its intuitionistic binders and of the capability scopes among them,
+    /// each outermost first — for a judged node, by walking the scopes of its
+    /// declaration alone; for a described member, its context's names and no
+    /// scope.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: for a judged node, for each intuitionistic binder from the
     ///   outermost to the innermost around the node, the name [`scopes`] gives
-    ///   it; for a described member, each name its context binds; empty for a
-    ///   closed node or one its declaration does not reach.
+    ///   it, and the same name again among the regions for each binder a
+    ///   capability scope binds over its subject; for a described member, each
+    ///   name its context binds; empty for a closed node or one its declaration
+    ///   does not reach.
     /// - provides: the context an entry's type is spelled in.
     /// - fails: never.
     /// - panics: none.
@@ -1479,23 +1574,28 @@ impl TypeTable
     /// # Adequacy
     /// - hypothesis: L3 — as [`scopes`]: a body's terms answer under their
     ///   binders' names, and an endpoint under its signature's; a sign's
-    ///   operation under the sorts before it.
+    ///   operation under the sorts before it; a capability inside a scope's
+    ///   subject names the scope.
     /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     /// - witness: `typed::tests::a_sign_member_answers_under_the_sorts_before_it`
+    /// - witness: `typed::tests::a_scoped_capability_answers_at_its_scope`
     fn standing(
         &self,
         standing: Standing,
-    ) -> Vec<Option<String>>
+    ) -> Context
     {
         let Within { constant, node } = match standing {
-            Standing::Closed => return Vec::new(),
+            Standing::Closed => return Context::default(),
             Standing::Named(context) => {
-                return self
-                    .contexts
-                    .get(context.0)
-                    .map(|names| names.iter().cloned().map(Some).collect())
-                    .unwrap_or_default();
+                return Context {
+                    binders: self
+                        .contexts
+                        .get(context.0)
+                        .map(|names| names.iter().cloned().map(Some).collect())
+                        .unwrap_or_default(),
+                    regions: Vec::new(),
+                };
             },
             Standing::Judged(within) => within,
         };
@@ -1506,21 +1606,26 @@ impl TypeTable
             .ok()
             .and_then(|at| self.naming.roots.get(at))
         else {
-            return Vec::new();
+            return Context::default();
         };
         let (scopes, mut bound) = scopes(&self.arena, &self.names, &self.naming, roots);
-        let mut names = Vec::new();
+        let mut context = Context::default();
         let mut at = intuitionistic(&scopes, scopes.innermost(node).flatten());
         while let Some(index) = at {
             let Some(binder) = bound.get_mut(usize::from(index))
             else {
                 break;
             };
-            names.push(binder.name.take());
+            let name = binder.name.take();
+            if binder.scope {
+                context.regions.push(name.clone());
+            }
+            context.binders.push(name);
             at = binder.around.filter(|&around| around < index);
         }
-        names.reverse();
-        names
+        context.binders.reverse();
+        context.regions.reverse();
+        context
     }
 
     /// Every type the table prints — each entry's own, the type an outer
@@ -1541,12 +1646,13 @@ impl TypeTable
     ///   ;` with no repair is [`RoundTrip::Unparsed`]. Every other is appended
     ///   to the source as a signature of a fresh name — a computation type `C`
     ///   as `+U (C)` — the whole lowered once, and is [`RoundTrip::Equal`] when
-    ///   the signature's type has the syntax of the table's node, `U C` for a
-    ///   computation type, compared by [`equal_type_reading`] with path
-    ///   evidence erased and a type of words read as the path type it is
-    ///   spelled as; [`RoundTrip::Different`] otherwise; and
-    ///   [`RoundTrip::Refused`] with the refusal when the lowering refused the
-    ///   signature or the whole source.
+    ///   the signature's type reads as the table's node, `U C` for a
+    ///   computation type, compared by [`equal_type_reading`] under the
+    ///   source's data signatures — the same syntax with path evidence erased,
+    ///   a type of words as the path at its point, a session type by its
+    ///   protocol's behaviour from its state; [`RoundTrip::Different`]
+    ///   otherwise; and [`RoundTrip::Refused`] with the refusal when the
+    ///   lowering refused the signature or the whole source.
     /// - provides: the read-back half of the hover's content guarantee.
     /// - fails: never; a type that does not read back says why.
     /// - panics: none.
@@ -1588,7 +1694,7 @@ impl TypeTable
             for (site, node, spelled) in sides {
                 printed.push(match spelled {
                     Maybe::Present(spelled) => {
-                        let closed = self.spell(node, &[], page, form);
+                        let closed = self.spell(node, &Context::default(), page, form);
                         let settled = if !spelled.unspelled().is_empty() {
                             Some(RoundTrip::Unknown)
                         }
@@ -1608,7 +1714,7 @@ impl TypeTable
         for (&key, held) in &self.declared {
             if let Held::Typed(node) = *held {
                 let site = ReadSite::Declared(key);
-                printed.push(match self.spell(node, &[], page, form) {
+                printed.push(match self.spell(node, &Context::default(), page, form) {
                     Maybe::Present(spelled) => {
                         let settled =
                             (!spelled.unspelled().is_empty()).then_some(RoundTrip::Unknown);
@@ -1656,10 +1762,6 @@ impl TypeTable
             })
             .collect();
         let mut lowered: BTreeMap<String, Result<ValueTypeId, String>> = BTreeMap::new();
-        // The data declarations the read type names, by constant: a type of
-        // words is spelled as the path type it reads as, and compares through
-        // that reading.
-        let mut signatures: BTreeMap<ConstantIndex, Arc<DataSignature>> = BTreeMap::new();
         match lower_source(
             grammar,
             SourceText::from(augmented.as_str()),
@@ -1673,12 +1775,6 @@ impl TypeTable
             }) => {
                 let mut importer = TypeImporter::new(&read, &mut arena);
                 for declaration in module.declarations() {
-                    if let DeclarationOutcome::Data(index) = declaration.outcome()
-                        && let Maybe::Present(signature) = module.data(index)
-                    {
-                        let _first =
-                            signatures.insert(declaration.constant(), Arc::clone(signature));
-                    }
                     let name = declaration.name();
                     if !name.as_ref().starts_with("read_back_") {
                         continue;
@@ -1711,30 +1807,252 @@ impl TypeTable
             .into_iter()
             .zip(held)
             .map(|((site, node, spelled, settled), held)| {
-                let trip = settled.unwrap_or_else(|| {
-                    match appended
+                let read = match settled {
+                    Some(_) => None,
+                    None => appended
                         .get(&signature(node, &spelled))
-                        .and_then(|name| lowered.get(name))
-                    {
-                        None => RoundTrip::Unparsed,
-                        Some(&Err(ref refusal)) => RoundTrip::Refused(refusal.clone()),
-                        Some(&Ok(read)) => {
-                            match equal_type_reading(&arena, &signatures, held, read) {
-                                CertificateEquality::Equal => RoundTrip::Equal,
-                                CertificateEquality::Different => RoundTrip::Different,
-                            }
-                        },
-                    }
+                        .and_then(|name| lowered.get(name)),
+                };
+                let trip = settled.unwrap_or_else(|| match read {
+                    None => RoundTrip::Unparsed,
+                    Some(&Err(ref refusal)) => RoundTrip::Refused(refusal.clone()),
+                    Some(&Ok(read)) => {
+                        match equal_type_reading(&arena, &self.signatures, held, read) {
+                            CertificateEquality::Equal => RoundTrip::Equal,
+                            CertificateEquality::Different => RoundTrip::Different,
+                        }
+                    },
                 });
+                // The lowered type printed again, a computation type from
+                // under the thunk its signature wraps it in.
+                let reprinted = match read {
+                    Some(&Ok(read)) => {
+                        let again = match (node, arena.value_type(read)) {
+                            (TypeNode::Computation(_), Some(&ValueType::Thunk(inner))) => {
+                                TypeNode::Computation(inner)
+                            },
+                            (TypeNode::Computation(_) | TypeNode::Value(_), _) => {
+                                TypeNode::Value(read)
+                            },
+                        };
+                        match self.spell_in(&arena, again, &Context::default(), page, form) {
+                            Maybe::Present(again) => Maybe::Present(again.to_string()),
+                            Maybe::Absent(_) => Maybe::Absent(reprinted::Absent::Unspelled),
+                        }
+                    },
+                    Some(&Err(_)) | None => Maybe::Absent(reprinted::Absent::Unlowered),
+                };
                 ReadBack {
                     site,
                     spelled,
                     trip,
+                    reprinted,
                 }
             })
             .collect()
     }
+
+    /// The value `written` spells, read in the source the table was built
+    /// from as the value a run of `signed` returns and printed again as a run
+    /// prints it: the printer's fixed point over the values it prints,
+    /// `print(parse(print(v)))`.
+    ///
+    /// # Specification
+    /// - requires: `grammar` is the grammar the table was built under.
+    /// - ensures: `written` appended to the source as the body of a fresh thunk
+    ///   declaration, read first as it is written, with no signature: the whole
+    ///   lowered once and the thunk's computation printed as a run's value
+    ///   prints, on one line in the sugared form, its constants and
+    ///   constructors named as the table names them. Where that reading is
+    ///   refused — a constructor needs the type its position states — and
+    ///   `signed` declares a type, the declaration is signed with it, with the
+    ///   computation returning it when it is no thunk, the whole source judged
+    ///   and the fresh declaration run, its value spelled as the run spells it;
+    ///   [`reprinted::Absent::Unrun`] when the source did not settle or the run
+    ///   reached no value. [`reprinted::Absent::Unlowered`] when the lowering
+    ///   refused it or the source, and [`reprinted::Absent::Unspelled`] when
+    ///   the printer could not lay it out.
+    /// - provides: the reprint a presentation census compares a printed value
+    ///   with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the census reprints every run value and normal form
+    ///   the corpus states; a value whose spelling lowers to another prints
+    ///   otherwise and fails it.
+    /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    #[inline]
+    #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
+    pub fn reprint_value(
+        &self,
+        grammar: &Pbg,
+        signed: Maybe<ConstantIndex, signed::Absent>,
+        written: SourceText<'_>,
+    ) -> Maybe<String, reprinted::Absent>
+    {
+        const NAME: &str = REPRINTED;
+        let declared = match signed {
+            Maybe::Present(signed) => self
+                .naming
+                .roots
+                .binary_search_by_key(&signed, |&(held, _)| held)
+                .ok()
+                .and_then(|at| self.naming.roots.get(at))
+                .and_then(|&(_, [declared, body])| body.and(declared)),
+            Maybe::Absent(signed::Absent::Unsigned) => None,
+        };
+        let signature = if let Some(CoreNode::ValueType(declared)) = declared {
+            let Maybe::Present(spelled) = self.spell(
+                TypeNode::Value(declared),
+                &Context::default(),
+                PageWidth::from(u32::from(u16::MAX)),
+                Form::Sugared,
+            )
+            else {
+                return Maybe::Absent(reprinted::Absent::Unspelled);
+            };
+            if matches!(self.arena.value_type(declared), Some(&ValueType::Thunk(_))) {
+                format!("\ndef {NAME} : {spelled} ;")
+            }
+            else {
+                format!("\ndef {NAME} : +U (-F ({spelled})) ;")
+            }
+        }
+        else {
+            String::new()
+        };
+        let body = format!("\ndef {NAME} = thunk {{ {written} }} ;\n");
+        let mut unsigned = self.naming.text.clone();
+        unsigned.push_str(&body);
+        match self.lowered_reprint(grammar, SourceText::from(unsigned.as_str())) {
+            Maybe::Absent(reprinted::Absent::Unlowered) if !signature.is_empty() => {
+                let mut signed = self.naming.text.clone();
+                signed.push_str(&signature);
+                signed.push_str(&body);
+                Self::run_reprinted(grammar, SourceText::from(signed.as_str()))
+            },
+            again @ (Maybe::Present(_) | Maybe::Absent(_)) => again,
+        }
+    }
+
+    /// The thunk the declaration [`REPRINTED`] of `source` defines, lowered
+    /// and its computation printed as a run's value prints.
+    ///
+    /// # Specification
+    /// - requires: `grammar` is the grammar the source is read under.
+    /// - ensures: the computation on one line in the sugared form, its
+    ///   constants and constructors named as the table names them;
+    ///   [`reprinted::Absent::Unlowered`] when the lowering refused the source
+    ///   or the declaration, or defined no thunk, and
+    ///   [`reprinted::Absent::Unspelled`] when the printer could not lay it
+    ///   out.
+    /// - provides: the unsigned half of [`Self::reprint_value`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::reprint_value`].
+    /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
+    fn lowered_reprint(
+        &self,
+        grammar: &Pbg,
+        source: SourceText<'_>,
+    ) -> Maybe<String, reprinted::Absent>
+    {
+        let Ok(Lowered::Module { module, arena }) =
+            lower_source(grammar, source, &mut LoweringCount::default())
+                .map(Lowering::into_lowered)
+        else {
+            return Maybe::Absent(reprinted::Absent::Unlowered);
+        };
+        let thunk = module.declarations().iter().find_map(|declaration| {
+            if declaration.name().as_ref() != REPRINTED {
+                return None;
+            }
+            match declaration.outcome() {
+                DeclarationOutcome::Bodied { body }
+                | DeclarationOutcome::Completed { body, .. } => Some(body),
+                DeclarationOutcome::Uncompleted { .. }
+                | DeclarationOutcome::Data(_)
+                | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::Refused(_) => None,
+            }
+        });
+        let Some(&Value::Thunk(computation)) = thunk.and_then(|body| arena.value(body))
+        else {
+            return Maybe::Absent(reprinted::Absent::Unlowered);
+        };
+        let names: Vec<Name<'_>> = self
+            .names
+            .iter()
+            .map(|name| Name::from(name.as_str()))
+            .collect();
+        let constructors = self.families.naming(&names);
+        let printer = CoreSource::new(&arena, &names).naming(&constructors);
+        present_computation_line(&printer, CoreNode::Computation(computation), Form::Sugared)
+            .map_or(Maybe::Absent(reprinted::Absent::Unspelled), |again| {
+                Maybe::Present(again.to_string())
+            })
+    }
+
+    /// The value the declaration [`REPRINTED`] of `source` runs to, spelled as
+    /// a run spells it.
+    ///
+    /// # Specification
+    /// - requires: `grammar` is the grammar the source is read under.
+    /// - ensures: the run's spelling when the source settles as a whole and the
+    ///   declaration runs to a value; [`reprinted::Absent::Unlowered`] when the
+    ///   source is refused or faults, [`reprinted::Absent::Unrun`] when no
+    ///   declaration is [`REPRINTED`] or its run reaches no value.
+    /// - provides: the run half of [`Self::reprint_value`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::reprint_value`].
+    /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
+    fn run_reprinted(
+        grammar: &Pbg,
+        source: SourceText<'_>,
+    ) -> Maybe<String, reprinted::Absent>
+    {
+        let Ok(Composed::Settled { mut program, .. }) = compose(
+            grammar,
+            CorpusRoot::Fixture,
+            source,
+            &mut LoweringCount::default(),
+        )
+        else {
+            return Maybe::Absent(reprinted::Absent::Unlowered);
+        };
+        let Maybe::Present(last) = program.target()
+        else {
+            return Maybe::Absent(reprinted::Absent::Unrun);
+        };
+        let constant = (0_usize ..= usize::from(last))
+            .map(ConstantIndex::from)
+            .find(|&constant| {
+                matches!(program.name(constant), Maybe::Present(held) if held.as_ref() == REPRINTED)
+            });
+        match constant.map(|constant| program.evaluate(constant)) {
+            Some(Evaluation::Value(value)) => Maybe::Present(value.presentation().to_string()),
+            Some(
+                Evaluation::Blamed(_)
+                | Evaluation::Stuck(_)
+                | Evaluation::Unfinished(_)
+                | Evaluation::Unrunnable(_),
+            )
+            | None => Maybe::Absent(reprinted::Absent::Unrun),
+        }
+    }
 }
+
+/// The name of the declaration [`TypeTable::reprint_value`] appends to a
+/// source to read a printed value back.
+const REPRINTED: &str = "reprinted_value";
 
 /// A match's scrutinee as the typed run found it: its first type, and where
 /// it stands, so a pattern typed from it is read under the same binders.
@@ -2226,6 +2544,34 @@ mod tests
         assert!(
             !open.is_empty() && open.iter().all(|trip| *trip == RoundTrip::Open),
             "a term typed under a parameter reads as open: {open:?}"
+        );
+    }
+
+    #[test]
+    fn a_scoped_capability_answers_at_its_scope()
+    {
+        let source = SourceText::from(
+            "def f() -> -F Unit {\n  handle c : Proc {\n    run d : Cap {exit} at c <- pure c ;\n    \
+             c.exit(1)\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return \
+             unit\n  }\n}\n",
+        );
+        let table = table(source);
+        let used = || answer(&table, source, SourceText::from("c ;"));
+        assert!(
+            matches!(used(), Maybe::Present(Answer { ref ty, .. }) if ty == "Cap {exit} at c"),
+            "a capability in the scope's subject names the scope: {:?}",
+            used()
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let read = table.read_back(&grammar, PageWidth::from(80_u32), Form::Sugared);
+        let scoped: Vec<&RoundTrip> = read
+            .iter()
+            .filter(|read| read.spelled == "Cap {exit} at c")
+            .map(|read| &read.trip)
+            .collect();
+        assert!(
+            !scoped.is_empty() && scoped.iter().all(|trip| **trip == RoundTrip::Open),
+            "a type naming a scope reads under that scope, as open: {scoped:?}"
         );
     }
 

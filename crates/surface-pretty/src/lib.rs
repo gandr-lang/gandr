@@ -39,10 +39,24 @@
 //! what the surface grammar parses, so a printed type reads back as the type
 //! it names.
 //!
+//! Every production spells a mold, every mold has a production: each spelling
+//! the printer writes is one the grammar molds and the lowering reads back to
+//! the node printed, and each node the core holds has a spelling or is the
+//! honest `?` below. The dispatcher's corpus census holds the contract over
+//! every printed type, run value and normal form the corpus states: a
+//! spelling that does not parse, that the lowering refuses or that the
+//! printer cannot lay out fails it by name, and so does a spelling whose
+//! reading prints otherwise, `print(parse(print(x))) = print(x)` up to
+//! layout. A parameterised constructor is written against its family,
+//! `(MkIx : Ix(3))`, except where its position states its type — a family's
+//! argument, `Vec(MkIx)` — whose parameter the lowering classifies it by.
+//!
 //! **Explicit** gives every former one spelling: `Integer`, `String`, `Unit`,
 //! `Void`, `Bool`, `#{A, B, …}`, `#{l : A, …}`, `+{A, B, …}`, `&{C, D}`,
-//! `+U C`, `-F A`, `A -> C`, `(x : A) -> C`, the static Pi `A -> B` between
-//! value types, `Type`, `Type[-]`, `Type[+, l]`, `Type[-, l]`, an abstract
+//! `+U C`, `-F A`, `-F [I, …] A` over a row of interfaces, `A -> C`,
+//! `(x : A) -> C`, the static Pi `A -> B` between value types, a
+//! continuation's type `Stack(C, D)`, `Type`,
+//! `Type[-]`, `Type[+, l]`, `Type[-, l]`, an abstract
 //! type and a constant by name, and a decode as the code it reads; values are
 //! `unit`, literals with their canonical digits and escapes, `#{a, b, …}`,
 //! `#{.l = v, …}`, `+{.i = v}`, `here(a)`, `funext(f, g)`, `equiv(f, g)`,
@@ -74,16 +88,16 @@
 //! operand up to a sum and its right up to `&`, and an arrow's domain up to
 //! `&`, its codomain bare. A static abstraction binds as loosely as an arrow,
 //! its body running to the right, and an application is an atom whose
-//! operator is parenthesized unless it is one, so a redex reads
-//! `(\a. a)(Integer)`.
+//! operator is parenthesized unless it is one. A static redex prints as its
+//! reduct, each binder written as the argument it takes, so the type a
+//! classifier applied to an abstraction denotes reads as it is written plainly.
 //!
 //! A node the surface has no spelling for — a lift, the numeric atom, a linear
 //! or unbound variable, a term where a type stands — is written `?`, and a
 //! thunk value presented alone `<thunk>`; each makes the presentation
-//! approximate. Effectful returners display their interface names as
-//! diagnostic notation, approximate too. Fidelity is recorded by the nodes the
-//! walk met, so a name that happens to contain `?` stays faithful. A page the
-//! one-line spelling fits selects it unchanged.
+//! approximate. Fidelity is recorded by the nodes the walk met, so a name that
+//! happens to contain `?` stays faithful. A page the one-line spelling fits
+//! selects it unchanged.
 //!
 //! The recorded design gave every former one spelling and printed none of the
 //! sugar, so that the printer wrote what the core holds: a thunked arrow read
@@ -242,6 +256,7 @@ pub use crate::former::Unreadable;
 pub use crate::former::Unspelled;
 pub use crate::scope::Binder;
 pub use crate::scope::BinderIndex;
+pub use crate::scope::ChildSlot;
 pub use crate::scope::Scopes;
 use crate::walk::Admits;
 use crate::walk::Tail;

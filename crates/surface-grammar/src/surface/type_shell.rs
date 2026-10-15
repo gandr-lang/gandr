@@ -327,6 +327,23 @@ fn add_type_rules(
     //
     // So the carrier stays type-sorted and the two endpoints are
     // **expression-sorted**, which is what they are: terms occurring in a type.
+    //
+    // Where the carrier is spelled as a universe — `Type`, `Type[+, 1]` — the
+    // endpoints are codes of types, and they parse at the **type** sort:
+    // `Path(Type, Unit + Unit, ?String. end)` reads its endpoints as the sum and
+    // the session type they spell, where the expression sort would read `+` as
+    // addition and refuse the session type. Any other carrier — a name, an
+    // application, a code — keeps expression endpoints.
+    //
+    // The universe is the form's own tiles, not a type hole, so the endpoint
+    // sort is decided at the carrier's first tile; and it is one alternative of
+    // this rule rather than a rule of its own, so `Path` keeps one mold and the
+    // two readings part at the token after `(`. A second rule over the same
+    // `Path (` would tie its opener with this one's at every path type, and a
+    // tie inside a lookahead window keeps the lesser mold, so a path type
+    // nested in another's carrier would mold as the universe form and fail. The
+    // universe alternative comes first, so where both read a carrier spelled
+    // `Type` alike the universe reading is the lesser mold.
     rules.push(rule(
         RuleName("path_type"),
         ty,
@@ -334,11 +351,31 @@ fn add_type_rules(
         Regex::seq([
             tile(TileLabel("Path")),
             tile(TileLabel("(")),
-            Regex::sort(ty),
-            tile(TileLabel(",")),
-            Regex::sort(Sort::Expression),
-            tile(TileLabel(",")),
-            Regex::sort(Sort::Expression),
+            Regex::alt([
+                Regex::seq([
+                    tile(TileLabel("Type")),
+                    Regex::optional(Regex::seq([
+                        tile(TileLabel("[")),
+                        Regex::alt([tile(TileLabel("+")), tile(TileLabel("-"))]),
+                        Regex::optional(Regex::seq([
+                            tile(TileLabel(",")),
+                            tile(TileLabel("number")),
+                        ])),
+                        tile(TileLabel("]")),
+                    ])),
+                    tile(TileLabel(",")),
+                    Regex::sort(ty),
+                    tile(TileLabel(",")),
+                    Regex::sort(ty),
+                ]),
+                Regex::seq([
+                    Regex::sort(ty),
+                    tile(TileLabel(",")),
+                    Regex::sort(Sort::Expression),
+                    tile(TileLabel(",")),
+                    Regex::sort(Sort::Expression),
+                ]),
+            ]),
             tile(TileLabel(")")),
         ]),
     ));

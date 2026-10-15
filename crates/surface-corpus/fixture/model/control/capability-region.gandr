@@ -1,0 +1,88 @@
+// A capability a scope introduces lives in that scope's region, and its type
+// says so: `Cap {exit} at c` is the capability living until the scope binding
+// `c` ends.
+
+/// The scope's own capability is bound at the type that names its region.
+@[ checks ]
+def named() -> -F Unit {
+  handle c : Proc {
+    run d : Cap {exit} at c <- pure c ;
+    return unit
+  } with {
+    pure(x) => return x,
+    oper exit(code, k) => return unit
+  }
+}
+
+/// A capability held for the whole run is not one a scope introduced: the
+/// scope's capability would outlive its scope there.
+@[ refuses("CapabilityEscaped") ]
+def held() -> -F Unit {
+  handle c : Proc {
+    run d : Cap {exit} <- pure c ;
+    return unit
+  } with {
+    pure(x) => return x,
+    oper exit(code, k) => return unit
+  }
+}
+
+/// Inside a second scope the outer capability still names the outer region.
+@[ checks ]
+def outer() -> -F Unit {
+  handle c : Proc {
+    handle e : Proc {
+      run d : Cap {exit} at c <- pure c ;
+      return unit
+    } with {
+      pure(x) => return x,
+      oper exit(code, k) => return unit
+    }
+  } with {
+    pure(x) => return x,
+    oper exit(code, k) => return unit
+  }
+}
+
+/// An outer capability may stand where the inner region is named, since it
+/// lives longer; the inner one may not stand in the outer region.
+@[ refuses("CapabilityEscaped") ]
+def swapped() -> -F Unit {
+  handle c : Proc {
+    handle e : Proc {
+      run d : Cap {exit} at e <- pure c ;
+      run f : Cap {exit} at c <- pure e ;
+      return unit
+    } with {
+      pure(x) => return x,
+      oper exit(code, k) => return unit
+    }
+  } with {
+    pure(x) => return x,
+    oper exit(code, k) => return unit
+  }
+}
+
+/// A region is named by a scope's capability, never by another binder.
+@[ refuses("UnresolvedName") ]
+def unbound(c : Integer) -> -F Unit {
+  handle e : Proc {
+    run d : Cap {exit} at c <- pure e ;
+    return unit
+  } with {
+    pure(x) => return x,
+    oper exit(code, k) => return unit
+  }
+}
+
+/// Only a capability lives in a region.
+@[ refuses("OutOfFragment") ]
+def plain() -> -F Unit {
+  handle c : Proc {
+    run d : Integer at c <- pure 1 ;
+    return unit
+  } with {
+    pure(x) => return x,
+    oper exit(code, k) => return unit
+  }
+}

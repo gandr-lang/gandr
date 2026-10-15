@@ -38,6 +38,19 @@ def lap(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Path(Integer, p.n, p.
   return p.v
 }
 
+/// A selection by position names the same entry: `.0` the first, `.1` the
+/// second.
+@[ checks ]
+def lap_by_position(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Path(Integer, p.0, p.0) {
+  return p.1
+}
+
+/// A pair has two positions.
+@[ refuses("OutOfFragment") ]
+def third(p : Integer * String) -> -F String {
+  return p.2
+}
+
 /// A split's answer may name its scrutinee: each arm answers it at the pair.
 @[ checks ]
 def rebuilt(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Path(#{n : Integer, v : Path(Integer, n, n)}, p, p) {

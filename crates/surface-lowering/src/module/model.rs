@@ -978,6 +978,7 @@ pub fn spine_domains<'source>(
             | Former::ParenthesizedType
             | Former::PathType
             | Former::CapabilityType
+            | Former::AtType
             | Former::Scope
             | Former::Declaration
             | Former::AttributeBlock

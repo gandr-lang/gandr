@@ -24,6 +24,9 @@ mod census
     use gandr_surface_dispatcher::Step;
     use gandr_surface_dispatcher::TypeTable;
     use gandr_surface_dispatcher::Walk;
+    use gandr_surface_dispatcher::reprinted;
+    use gandr_surface_dispatcher::signed;
+    use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::built_in;
     use gandr_surface_pretty::Form;
     use gandr_surface_pretty::PageWidth;
@@ -31,6 +34,7 @@ mod census
     use gandr_surface_pretty::Unreadable;
     use gandr_surface_pretty::Unspelled;
     use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
     /// The page a hover spells on.
@@ -132,12 +136,68 @@ mod census
         }
     }
 
+    /// `text` with every run of whitespace collapsed to one space and the ends
+    /// stripped: the spelling a fixed point compares.
+    ///
+    /// # Specification
+    /// trivial.
+    fn collapsed(text: SourceText<'_>) -> String
+    {
+        text.as_ref()
+            .split_whitespace()
+            .collect::<Vec<&str>>()
+            .join(" ")
+    }
+
+    /// The printer as a fixed point over the values the corpus states: each
+    /// run value and normal form, printed, read back in its source and printed
+    /// again, is the same spelling after whitespace collapses. A spelling the
+    /// grammar reads as another value prints otherwise.
+    #[derive(Debug, Default)]
+    struct Fixed
+    {
+        /// Spellings read back and printed again.
+        read: usize,
+        /// Each spelling that printed otherwise or did not read back: the
+        /// source, the spelling and what came back.
+        moved: Vec<String>,
+    }
+
+    impl Fixed
+    {
+        /// Read `spelled` back in `table`, signed as `signed`'s run returns
+        /// it, and compare its reprint.
+        ///
+        /// # Specification
+        /// trivial.
+        fn value(
+            &mut self,
+            path: &Path,
+            table: &TypeTable,
+            grammar: &Pbg,
+            signed: Maybe<ConstantIndex, signed::Absent>,
+            spelled: SourceText<'_>,
+        )
+        {
+            self.read = self.read.saturating_add(1);
+            let again = table.reprint_value(grammar, signed, spelled);
+            if !matches!(again, Maybe::Present(ref again) if collapsed(SourceText::from(again.as_str())) == collapsed(spelled))
+            {
+                self.moved.push(format!(
+                    "{}: `{spelled}` reprints as {again:?}",
+                    path.display()
+                ));
+            }
+        }
+    }
+
     #[test]
     fn every_typed_entry_spells_without_a_dishonest_question_mark()
     {
         let grammar = built_in().expect("the built-in grammar builds");
         let page = PageWidth::from(PAGE);
         let mut census = Census::default();
+        let mut fixed = Fixed::default();
         let mut values = 0_usize;
         let mut walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
         while let Maybe::Present(step) = walk.step() {
@@ -150,7 +210,8 @@ mod census
             else {
                 continue;
             };
-            if let Ok(table) = TypeTable::of(&grammar, text) {
+            let table = TypeTable::of(&grammar, text).ok();
+            if let Some(ref table) = table {
                 for entry in table.entries(page, Form::Sugared) {
                     let Maybe::Present(entry) = entry
                     else {
@@ -182,6 +243,24 @@ mod census
                     })
                     .map(|declaration| declaration.name().to_string())
                     .collect();
+                // Each normal form the corpus states, as the printer wrote it:
+                // the side after `~>`.
+                if let Some(ref table) = table {
+                    for declaration in report.declarations() {
+                        if let Stated::Verdict(Outcome::Normalizes(ref spelled)) =
+                            *declaration.stated()
+                            && let Some((_, normal)) = spelled.as_ref().split_once("~>")
+                        {
+                            fixed.value(
+                                path,
+                                table,
+                                &grammar,
+                                Maybe::Absent(signed::Absent::Unsigned),
+                                SourceText::from(normal.trim()),
+                            );
+                        }
+                    }
+                }
                 let Maybe::Present(last) = program.target()
                 else {
                     continue;
@@ -198,12 +277,24 @@ mod census
                     if let Evaluation::Value(value) = program.evaluate(constant) {
                         values = values.saturating_add(1);
                         census.count(path, Site::Run(constant), value.presentation());
+                        if let Some(ref table) = table
+                            && value.presentation().unspelled().is_empty()
+                        {
+                            fixed.value(
+                                path,
+                                table,
+                                &grammar,
+                                Maybe::Present(constant),
+                                SourceText::from(value.presentation().as_ref()),
+                            );
+                        }
                     }
                 }
             }
         }
         eprintln!("presentations read: {}", census.read);
         eprintln!("run values read: {values}");
+        eprintln!("values read back and printed again: {}", fixed.read);
         for (reason, count) in &census.reasons {
             eprintln!("| {reason} | {count} |");
         }
@@ -214,6 +305,15 @@ mod census
             Vec::<String>::new(),
             "every `?` is a member of the honest set"
         );
+        assert!(
+            fixed.read > 0_usize,
+            "the corpus states values to print again"
+        );
+        assert_eq!(
+            fixed.moved,
+            Vec::<String>::new(),
+            "every printed value reads back to a value printed alike"
+        );
     }
 
     /// The read-back sweep: every printed type of each corpus source read back
@@ -223,16 +323,19 @@ mod census
     /// issue, never by a count every landing must move. The classes:
     ///
     /// - `Equal`: the spelling reads back to the certificate's type.
-    /// - `Different`: a spelling that reads back as another type — an unused
-    ///   binder printed (#398), a session state or a capability region dropped
-    ///   (#400), a term inside a type read as another (#402).
-    /// - `Open`: a type naming a binder in scope, not read (#403).
-    /// - `Refused`: a spelling that parses and refuses to lower (#401, #402).
+    /// - `Different`: a spelling that reads back as another type.
+    /// - `Open`: a type naming a binder or a capability scope of its context,
+    ///   not read under it (#403).
+    /// - `Refused`: a spelling that parses and refuses to lower.
     /// - `Unknown`: a type the printer writes with `?`, which the census of
     ///   honest `?` holds; nothing to read back.
-    /// - `Unparsed`: a spelling the grammar refuses (#401).
-    /// - `Unspelled`: a type the printer could not spell at all — the one class
-    ///   held to zero, since every type spells.
+    /// - `Unparsed`: a spelling the grammar refuses.
+    /// - `Unspelled`: a type the printer could not spell at all.
+    ///
+    /// A visited type that reads back as another, does not parse, refuses to
+    /// lower or cannot be laid out fails the sweep by name, as does one whose
+    /// reading prints again otherwise (the printer as a fixed point): every
+    /// printed type is a written type that reads back to its certificate.
     ///
     /// The sweep visits its sample under every pull-request profile and every
     /// source under the `sweeps` profile, as every sweep does
@@ -273,6 +376,8 @@ mod census
                 visited.into_iter().map(|source| source.path).collect();
             let corpus = gandr_workflow_sweep::corpus::directory().expect("the corpus resolves");
             let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
+            let mut unread: Vec<String> = Vec::new();
+            let mut moved: Vec<String> = Vec::new();
             let mut walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
             while let Maybe::Present(step) = walk.step() {
                 let Step::Source { path, text, .. } = step
@@ -289,14 +394,66 @@ mod census
                 for read in table.read_back(&grammar, page, Form::Sugared) {
                     let class = match read.trip {
                         RoundTrip::Equal => "Equal",
-                        RoundTrip::Different => "Different",
                         RoundTrip::Open => "Open",
-                        RoundTrip::Refused(_) => "Refused",
                         RoundTrip::Unknown => "Unknown",
-                        RoundTrip::Unparsed => "Unparsed",
-                        RoundTrip::Unspelled => "Unspelled",
+                        RoundTrip::Different => {
+                            unread.push(format!(
+                                "{}: `{}` reads back as another type",
+                                path.display(),
+                                read.spelled
+                            ));
+                            "Different"
+                        },
+                        RoundTrip::Refused(ref refusal) => {
+                            unread.push(format!(
+                                "{}: `{}` refuses: {refusal}",
+                                path.display(),
+                                read.spelled
+                            ));
+                            "Refused"
+                        },
+                        RoundTrip::Unparsed => {
+                            unread.push(format!(
+                                "{}: `{}` does not parse",
+                                path.display(),
+                                read.spelled
+                            ));
+                            "Unparsed"
+                        },
+                        RoundTrip::Unspelled => {
+                            unread.push(format!(
+                                "{}: {:?} is unspelled",
+                                path.display(),
+                                read.site
+                            ));
+                            "Unspelled"
+                        },
                     };
                     *trips.entry(class).or_default() += 1;
+                    // The fixed point: the spelling's reading, printed again,
+                    // is the spelling.
+                    match read.reprinted {
+                        Maybe::Present(ref again)
+                            if collapsed(SourceText::from(again.as_str()))
+                                != collapsed(SourceText::from(read.spelled.as_str())) =>
+                        {
+                            moved.push(format!(
+                                "{}: `{}` reprints as `{again}`",
+                                path.display(),
+                                read.spelled
+                            ));
+                        },
+                        Maybe::Absent(reprinted::Absent::Unspelled) => {
+                            moved.push(format!(
+                                "{}: `{}` reads back to a type the printer cannot lay out",
+                                path.display(),
+                                read.spelled
+                            ));
+                        },
+                        Maybe::Present(_)
+                        | Maybe::Absent(reprinted::Absent::Unlowered | reprinted::Absent::Unrun) =>
+                            {},
+                    }
                 }
             }
             for (class, count) in &trips {
@@ -307,9 +464,14 @@ mod census
                 "the corpus's printed types read back"
             );
             assert_eq!(
-                trips.get("Unspelled").copied().unwrap_or_default(),
-                0_usize,
-                "every type spells"
+                moved,
+                Vec::<String>::new(),
+                "every printed type is the printer's fixed point"
+            );
+            assert_eq!(
+                unread,
+                Vec::<String>::new(),
+                "every printed type reads back to its certificate"
             );
         }
     }

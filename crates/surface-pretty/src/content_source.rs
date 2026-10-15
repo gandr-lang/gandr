@@ -289,6 +289,11 @@ impl Source for ContentSource<'_>
                             constructors.placement(family, Arity::from(fields.len()))
                         },
                     ),
+                    classifier: matches!(
+                        self.nodes.get(usize::from(datatype)),
+                        Some(ContentNode::Data { arguments, .. }) if !arguments.is_empty()
+                    )
+                    .then_some(datatype),
                 }
             },
             ContentNode::DataCase {

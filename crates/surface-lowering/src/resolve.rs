@@ -1327,6 +1327,38 @@ impl<'source> Scope<'source>
         })
     }
 
+    /// The frames of the chain rooted at `from`, from `from` to the outermost.
+    ///
+    /// # Specification
+    /// - requires: `from` is outermost or an existing frame position.
+    /// - ensures: `from`'s own frame first, then each parent in turn; nothing
+    ///   for the outermost frame.
+    /// - fails: never.
+    /// - panics: none. Parent links name an earlier frame, so the walk ends.
+    /// - executable: none — the specification facade wraps the body in a
+    ///   closure, which cannot return the opaque iterator; the witness counts a
+    ///   chain's scopes through it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a capability at the inner of two nested scopes counts
+    ///   both; a walk stopping early or skipping a frame miscounts the depth.
+    /// - witness: `lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
+    #[inline]
+    pub fn chain(
+        &self,
+        from: Frame,
+    ) -> impl Iterator<Item = ScopeId> + '_
+    {
+        let first = match from {
+            Frame::Inner(id) => Some(id),
+            Frame::Outermost => None,
+        };
+        core::iter::successors(first, |id| match self.frames.get(id.0)?.parent {
+            Frame::Inner(parent) => Some(parent),
+            Frame::Outermost => None,
+        })
+    }
+
     /// The names of the frames of the chain rooted at `from` that bind in a
     /// telescope, outermost first: the context a type read under `from` is
     /// spelled in.

@@ -47,18 +47,19 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// temporary access: the `hold x = e;` statement inlined at every block
-/// position, and the `access`, `resume` and `abort` expressions.
-const BUILT_IN_FINGERPRINT: u64 = 0x2f4c_b05f_949a_d462;
+/// printer fidelity: a selection by position `p.0`, a path type whose carrier
+/// is a universe reading its endpoints as types, and the scoped capability
+/// `Cap {…} at c`.
+const BUILT_IN_FINGERPRINT: u64 = 0x5b42_f41a_90bb_98d8;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2960);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2970);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 84;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 85;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
@@ -76,11 +77,11 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (")", 217),
     ("*", 2),
     ("*/", 1),
-    ("+", 6),
+    ("+", 7),
     ("++", 1),
     ("+U", 1),
-    (",", 221),
-    ("-", 3),
+    (",", 224),
+    ("-", 4),
     ("-->", 26),
     ("->", 15),
     ("-F", 2),
@@ -117,13 +118,13 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Path", 1),
     ("String", 1),
     ("Symbol", 1),
-    ("Type", 1),
+    ("Type", 2),
     ("Unit", 1),
     ("Unknown", 1),
     ("Void", 1),
-    ("[", 16),
+    ("[", 17),
     ("\\", 1),
-    ("]", 22),
+    ("]", 23),
     ("_", 43),
     ("abort", 1),
     ("access", 1),
@@ -186,7 +187,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("negation", 1),
     ("newline", 1),
     ("node", 3),
-    ("number", 31),
+    ("number", 33),
     ("offer", 1),
     ("op", 3),
     ("oper", 8),

@@ -432,6 +432,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::ParenthesizedType
                 | Former::PathType
                 | Former::CapabilityType
+                | Former::AtType
                 | Former::Scope
                 | Former::Declaration
                 | Former::AttributeBlock
@@ -533,6 +534,7 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::StaticAbstraction
                         | Former::PathType
                         | Former::CapabilityType
+                        | Former::AtType
                         | Former::Scope
                         | Former::Declaration
                         | Former::AttributeBlock
@@ -589,6 +591,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::StaticAbstraction
                 | Former::PathType
                 | Former::CapabilityType
+                | Former::AtType
                 | Former::Scope
                 | Former::Declaration
                 | Former::AttributeBlock

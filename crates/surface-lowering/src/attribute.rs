@@ -780,6 +780,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::ParenthesizedType
         | Former::PathType
         | Former::CapabilityType
+        | Former::AtType
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock

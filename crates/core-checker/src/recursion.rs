@@ -373,9 +373,11 @@ enum Changed
 /// opened.
 ///
 /// # Specification
-/// - requires: `branch` is the Pi telescope over one binder per entry of
-///   `fields` that [`crate::former::branch_type`] built over `datatype`.
-/// - ensures: the same telescope with each recursive field domain at `child`.
+/// - requires: `branch` is the telescope over one binder per entry of `fields`
+///   that [`crate::former::branch_type`] built over `datatype`: a Π where the
+///   rest names the field, a plain arrow otherwise.
+/// - ensures: the same telescope, each field under the same former, with each
+///   recursive field domain at `child`.
 /// - fails: [`CheckRefusal::MachineInvariant`] for a telescope shorter than
 ///   `fields`; the conversion's refusal.
 /// - panics: none.
@@ -385,8 +387,11 @@ enum Changed
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the successor's field moves to the case's stage and a
-///   call on it is admitted, while the zero branch binds nothing.
+///   call on it is admitted, while the zero branch binds nothing; a rose tree's
+///   node, whose result names none of its fields, stages its children under the
+///   plain arrows `branch_type` builds there.
 /// - witness: `recursion::tests::a_recursion_descends_on_its_first_parameter`
+/// - witness: `recursion::tests::a_rose_tree_recurses_through_map_at_its_children_s_stage`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&staged| context.arena().comp_type(staged).is_some()))]
 pub fn stage_branch(
     context: &mut CheckingContext<'_>,
@@ -398,23 +403,33 @@ pub fn stage_branch(
     let mut domains = Vec::with_capacity(fields.len());
     let mut focus = branch;
     for _field in fields {
-        let Some(&CompType::Pi { domain, codomain }) = context.arena().comp_type(focus)
-        else {
-            return Err(CheckRefusal::MachineInvariant);
+        let (domain, codomain, dependence) = match context.arena().comp_type(focus) {
+            Some(&CompType::Arrow { domain, codomain }) => (domain, codomain, Dependence::Ambient),
+            Some(&CompType::Pi { domain, codomain }) => (domain, codomain, Dependence::Dependent),
+            Some(
+                &(CompType::Returner { .. }
+                | CompType::With(..)
+                | CompType::Element { .. }
+                | CompType::Unknown),
+            )
+            | None => return Err(CheckRefusal::MachineInvariant),
         };
-        domains.push(domain);
+        domains.push((domain, dependence));
         focus = codomain;
     }
-    for (index, domain) in domains.iter_mut().enumerate() {
-        let depth = u32::try_from(index).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
-        // The field stands under the fields before it: the family read at the
-        // field's own depth.
+    // A field stands under the Π binders before it, and only those: a plain
+    // arrow's rest was strengthened past its field.
+    let mut depth = 0_u32;
+    for &mut (ref mut domain, dependence) in &mut domains {
         let recursive =
             gandr_core_term::shift_value_type(context.arena_mut(), datatype, Binders::from(depth));
         *domain = stage_field(context, *domain, recursive, Stage::At(child))?;
+        if dependence == Dependence::Dependent {
+            depth = depth.checked_add(1).ok_or(CheckRefusal::MachineInvariant)?;
+        }
     }
-    for &domain in domains.iter().rev() {
-        focus = context.arena_mut().comp_type_pi(domain, focus);
+    for &(domain, dependence) in domains.iter().rev() {
+        focus = dependence.former(context.arena_mut(), domain, focus);
     }
     Ok(focus)
 }

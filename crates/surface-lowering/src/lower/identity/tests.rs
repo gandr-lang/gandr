@@ -592,6 +592,37 @@ fn a_type_endpoint_is_quoted()
     );
 }
 
+/// A path at a universe its own tiles spell reads each endpoint at the type
+/// sort: a sum and a session protocol, neither of which reads as a value,
+/// each stand as the quoted code of the type it spells.
+#[test]
+fn a_path_at_a_universe_reads_its_endpoints_as_types()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def sums : Path(Type, +{Unit, Unit}, +{Unit, Unit});\ndef sessions : Path(Type, ?Integer. end, ?Integer. end);\n",
+        ),
+        &mut arena,
+    );
+    for name in ["sums", "sessions"] {
+        let DeclarationOutcome::Uncompleted { declared_type } = outcome_of(&module, name.into())
+        else {
+            panic!("{name}'s signature lowers");
+        };
+        let Some(&ValueType::Path { left, right, .. }) = arena.value_type(declared_type)
+        else {
+            panic!("{name}'s signature is a path type");
+        };
+        for endpoint in [left, right] {
+            assert!(
+                matches!(arena.value(endpoint), Some(&Value::Quote(_))),
+                "{name}'s endpoint is a quoted code"
+            );
+        }
+    }
+}
+
 #[test]
 fn a_bound_name_shadows_an_identity_operation()
 {
