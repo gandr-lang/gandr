@@ -1,0 +1,35 @@
+// The typed bind `run x : A <- c`: the annotation states the type the
+// computation returns, so a computation that only checks may be bound.
+
+/// The naturals the bound computations return.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// A return checks only against a type, and the annotation states it.
+@[ checks ]
+def next(n : Nat) -> -F Nat {
+  run m : Nat <- pure Succ(n) ;
+  return Succ(m)
+}
+
+/// The bind runs: `next` binds the successor and returns the next one.
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def three : +U (-F Nat) ;
+def three = thunk { become next(Succ(Zero)) } ;
+
+/// A suspended function is named at its written type and called.
+@[ checks ]
+def apply(n : Nat) -> -F Nat {
+  run f : (Nat) => Nat <- pure thunk { fn (x) { return Succ(x) } } ;
+  f(n)
+}
+
+/// A computation that returns a `Nat` is no `Unit`.
+@[ refuses("TypeMismatch") ]
+def mistyped(n : Nat) -> -F Nat {
+  run m : Unit <- pure Succ(n) ;
+  return n
+}

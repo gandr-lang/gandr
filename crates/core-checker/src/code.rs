@@ -2179,6 +2179,10 @@ pub fn loose_reach(
                         (CoreNode::Term(TermNode::Computation(first)), depth),
                         (CoreNode::Term(TermNode::Computation(second)), depth),
                     ]),
+                    Computation::Ascribe { body, ty } => work.extend([
+                        (CoreNode::Term(TermNode::Computation(body)), depth),
+                        (CoreNode::Type(TypeNode::Computation(ty)), depth),
+                    ]),
                     Computation::Reset(body)
                     | Computation::Project(_, body)
                     | Computation::Mark { body, .. } => {

@@ -89,7 +89,7 @@ The checker owns acceptance. The caller supplies a formed expected type; this bo
 
 Effect and continuation syntax is executable by the sequent runtime, not this positive image. Lowering returns `OutsideSlice(Form::Control(former))` with the exact `ControlFormer`; it neither executes nor erases that control instruction. Extending this image requires a versioned runtime representation and host protocol, not an adapter that bypasses the checker.
 
-Return and injection introductions are check-only in the current core. A bind's bound computation and a case's scrutinee must synthesize there, so direct return-bound and injection-scrutinee machine examples are not automatically typed examples. This API preserves those checker refusals; it does not weaken the judgement to admit machine programs. Core annotation/synthesis support and grade formers govern the complete typed-versus-machine floor.
+Return and injection introductions are check-only in the current core. A bind's bound computation and a case's scrutinee must synthesize there, so direct return-bound and injection-scrutinee machine examples are typed only under an ascription, `Computation::Ascribe`, which this image lowers as the computation it ascribes. This API preserves the checker's refusals; it does not weaken the judgement to admit machine programs. Grade formers govern the rest of the typed-versus-machine floor.
 
 ## Evidence and deferred rows
 

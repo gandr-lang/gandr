@@ -1711,6 +1711,7 @@ fn rebuild(
         | Computation::Fixpoint { .. }
         | Computation::Application(..)
         | Computation::Return(_)
+        | Computation::Ascribe { .. }
         | Computation::Force(_)
         | Computation::RecordProjection(..)
         | Computation::TupleProjection(..)

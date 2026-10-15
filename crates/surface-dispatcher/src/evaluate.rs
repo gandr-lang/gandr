@@ -1363,7 +1363,8 @@ fn references(
                 Some(
                     &(Computation::Reset(body)
                     | Computation::Shift(body)
-                    | Computation::Project(_, body)),
+                    | Computation::Project(_, body)
+                    | Computation::Ascribe { body, .. }),
                 ) => pending.push(Node::Computation(body)),
                 Some(&Computation::With(first, second)) => {
                     pending.extend([Node::Computation(first), Node::Computation(second)]);

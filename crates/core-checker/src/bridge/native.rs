@@ -139,6 +139,12 @@ impl Erasure<'_, '_>
                             .extend(branches.iter().rev().copied().map(computation));
                         self.frames.push(value(*scrutinee));
                     },
+                    // The body crosses first, then the type it is ascribed.
+                    Computation::Ascribe { body, ty } => {
+                        self.frames
+                            .push(Frame::NativeNext(CoreNode::Type(TypeNode::Computation(ty))));
+                        self.frames.push(computation(body));
+                    },
                     Computation::Primitive { .. }
                     | Computation::Transport(..)
                     | Computation::PathTransport { .. }
@@ -356,6 +362,9 @@ impl Erasure<'_, '_>
                         )?;
                         target.computation_case(scrutinee, &branches)
                     },
+                    Computation::Ascribe { body, ty } => {
+                        ascription(target, computation(body)?, comp_type(ty)?)
+                    },
                     Computation::Primitive { .. }
                     | Computation::Transport(..)
                     | Computation::PathTransport { .. }
@@ -468,6 +477,62 @@ impl Erasure<'_, '_>
             CoreNode::Type(TypeNode::Computation(_)) => Err(Refusal::MachineInvariant),
         }
     }
+}
+
+/// The kernel image of the ascription of `body` to `ty`: a typed position the
+/// kernel already judges, so the ascription is replayed rather than claimed.
+///
+/// The kernel has no ascription former; its one computation that both states
+/// a type and checks a computation against it is the fold, whose result type
+/// is written and whose nil branch checks against its returner. Folding the
+/// empty list of units runs the nil branch alone, so the image runs as the
+/// body does. A returner `F A` is ascribed by the fold whose nil branch is the
+/// body and whose result is `A`; any other type `C` by the fold returning the
+/// body suspended, at `U C`, bound and forced. Alternatives were a kernel
+/// ascription former, which grows the trusted vocabulary and its wire format
+/// for what an existing typed position already judges, and erasing the
+/// ascription to its body, which leaves a check-only body in synthesis
+/// position for the kernel to refuse and the stated type unreplayed. Reversal:
+/// the kernel gains a former of its own once a typed position is wanted that
+/// the fold cannot state.
+///
+/// # Specification
+/// - requires: `body` and `ty` are kernel images in `target`.
+/// - ensures: for `ty` a returner `F A`, the fold of the empty list of units at
+///   result `A` whose nil branch is `body` and whose cons branch returns the
+///   folded result; otherwise `x ← fold(nil; return thunk body) : F (U ty);
+///   force x`.
+/// - provides: the bridge's image of [`Computation::Ascribe`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an ascribed returner and an ascribed lambda, each by one
+///   of the two images, cross and the kernel replays both at the stated type; a
+///   check-only body in either image is judged in a checking position, so
+///   neither is replayed by erasure.
+/// - witness: `bridge::tests::an_ascription_crosses_as_a_typed_position_the_kernel_replays`
+#[spec(ensures: |ret| target.computation(ret).is_some())]
+fn ascription(
+    target: &mut TermArena,
+    body: gandr_kernel_term::ComputationId,
+    ty: gandr_kernel_term::CompTypeId,
+) -> gandr_kernel_term::ComputationId
+{
+    let element = target.value_type_unit();
+    let nil = target.value_list_nil();
+    let folded = target.value_variable(gandr_kernel_term::DeBruijnIndex::from(0_u32));
+    let on_cons = target.computation_return(folded);
+    if let Some(&gandr_kernel_term::CompType::Returner(result)) = target.comp_type(ty) {
+        return target.computation_list_fold(element, result, nil, body, on_cons);
+    }
+    let suspended = target.value_thunk(body);
+    let on_nil = target.computation_return(suspended);
+    let result = target.value_type_thunk(ty);
+    let bound = target.computation_list_fold(element, result, nil, on_nil, on_cons);
+    let bound_variable = target.value_variable(gandr_kernel_term::DeBruijnIndex::from(0_u32));
+    let forced = target.computation_force(bound_variable);
+    target.computation_bind(bound, forced)
 }
 
 /// The kernel's session graph of `session`'s protocol, node for node, rooted

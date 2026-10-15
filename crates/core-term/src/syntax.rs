@@ -752,6 +752,28 @@ pub enum Computation
     Return(ValueId),
     /// A sequencing bind `x ← M; N`, binding the value `M` returns into `N`.
     Bind(ComputationId, ComputationId),
+    /// An ascription `(M : C)`: the computation `M` checked against the
+    /// stated type `C`, which the ascription synthesises. It is the
+    /// bidirectional switch, standing a checking form where a type is
+    /// synthesised; it runs as `M` runs, and the kernel replays it at a
+    /// typed position of its own rather than trusting it.
+    ///
+    /// The surface writes one as the typed bind `run x : A <- c ;`, which
+    /// ascribes `c` the pure `-F A`: the annotation writes no row, so an
+    /// effectful `c` is refused there. Alternatives: ascribing the returned
+    /// value instead, `x ← c ; (return x : F A)`, which keeps `c`'s row but
+    /// leaves a `c` that only checks, a return or a case, unsynthesisable;
+    /// and a value-type ascription at the row the bind's continuation
+    /// allows, which synthesis does not carry. Reversal: once synthesis
+    /// carries the row a continuation allows, the typed bind ascribes that
+    /// row and an effectful `c` checks.
+    Ascribe
+    {
+        /// The computation ascribed.
+        body: ComputationId,
+        /// The type it is checked against, in the ambient context.
+        ty: CompTypeId,
+    },
     /// A force `force v` of a thunk value `v : U C`, running it as `C`.
     Force(ValueId),
     /// A sum elimination, binding the injected value into the branch of its
@@ -1946,6 +1968,10 @@ fn equal_syntax(
                     | (&Computation::Bind(a, b), &Computation::Bind(c, d)) => {
                         pending.extend([C(a, c), C(b, d)]);
                     },
+                    (
+                        &Computation::Ascribe { body: a, ty: b },
+                        &Computation::Ascribe { body: c, ty: d },
+                    ) => pending.extend([C(a, c), CT(b, d)]),
                     (&Computation::Project(a, b), &Computation::Project(c, d)) if a == c => {
                         pending.push(C(b, d));
                     },

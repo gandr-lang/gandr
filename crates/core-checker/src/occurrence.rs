@@ -655,6 +655,10 @@ fn worst(
                     pending.push((AnyNode::Computation(first), reach));
                     pending.push((AnyNode::Computation(second), reach));
                 },
+                Some(&Computation::Ascribe { body, ty }) => {
+                    pending.push((AnyNode::Computation(body), reach));
+                    pending.push((AnyNode::CompType(ty), reach));
+                },
                 Some(
                     &(Computation::Resume(stack, body)
                     | Computation::Split {

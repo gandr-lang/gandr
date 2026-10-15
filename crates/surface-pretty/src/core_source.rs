@@ -935,6 +935,8 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Computation::Shift(body)), Former::Shift(actual)) => actual == CoreNode::Computation(body),
         | (Some(&Computation::Bind(bound, rest)), Former::Bind(actual_bound, actual_rest)) =>
             actual_bound == CoreNode::Computation(bound) && actual_rest == CoreNode::Computation(rest),
+        | (Some(&Computation::Ascribe { body, ty }), Former::Ascription { body: actual_body, ty: actual_ty }) =>
+            actual_body == CoreNode::Computation(body) && actual_ty == CoreNode::CompType(ty),
         | (Some(&Computation::Application(function, argument)), Former::Application(actual_function, actual_argument)) =>
             actual_function == CoreNode::Computation(function) && actual_argument == CoreNode::Value(argument),
         | (Some(&Computation::Primitive { primitive, ref arguments }), Former::Primitive { name, arity }) =>
@@ -986,6 +988,10 @@ impl<'arena> CoreSource<'arena>
         match *held {
             Computation::Return(returned) => Former::Return(value(returned)),
             Computation::Bind(bound, rest) => Former::Bind(computation(bound), computation(rest)),
+            Computation::Ascribe { body, ty } => Former::Ascription {
+                body: computation(body),
+                ty: CoreNode::CompType(ty),
+            },
             Computation::Force(thunk) => Former::Force(value(thunk)),
             Computation::Application(function, argument) => {
                 Former::Application(computation(function), value(argument))
@@ -1417,6 +1423,7 @@ impl Source for CoreSource<'_>
                 | Computation::Hole(_)
                 | Computation::Mark { .. }
                 | Computation::ListFold { .. }
+                | Computation::Ascribe { .. }
                 | Computation::Perform { .. }
                 | Computation::Exercise { .. }
                 | Computation::Resume(..)
@@ -1577,6 +1584,7 @@ impl Source for CoreSource<'_>
                 | Computation::Reset(_)
                 | Computation::Shift(_)
                 | Computation::With(..)
+                | Computation::Ascribe { .. }
                 | Computation::Project(..) => None,
             },
             CoreNode::CompType(_) => None,

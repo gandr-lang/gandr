@@ -21,7 +21,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 
 ## Provided features
 
-- `Value`, `Computation`, `ValueType` and `CompType`: core syntax, including dependent arrows, both universe towers, quotes and decodes, static operators, nominal Data applications and constructors, structural records, dependent cases, record projections, positional tuple projections, the fixpoint `Computation::Fixpoint` with its `FixpointEvidence`, and native `PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct` and `Transport`.
+- `Value`, `Computation`, `ValueType` and `CompType`: core syntax, including dependent arrows, both universe towers, quotes and decodes, static operators, nominal Data applications and constructors, structural records, dependent cases, record projections, positional tuple projections, the fixpoint `Computation::Fixpoint` with its `FixpointEvidence`, the ascription `Computation::Ascribe` that synthesises the type it checks its body against, and native `PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct` and `Transport`.
 - `Classifier`, `Sort` and `SortParameter`: a type's ground sort and level, and the sort a universe is written at.
 - `shift_value_type`, `shift_comp_type`, `instantiate_comp_type`, `instantiate_value` and `strengthen_comp_type`, with `Binders`: the binder machines over types and codes.
 - `CoreArena` with `ValueId`, `ComputationId`, `ValueTypeId` and `CompTypeId`: one constructor per former, a checked lookup per family, and `ArenaWatermark` with `CoreArena::truncate_to` and the per-family suffixes minted since a mark (`values_since`, `computations_since`, `value_types_since`, `comp_types_since`). Witness: `arena::tests::allocation_suffixes_keep_their_family`.

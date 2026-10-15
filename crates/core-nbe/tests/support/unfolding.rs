@@ -139,7 +139,7 @@ pub struct Unfolded(pub u64);
                     Computation::Perform { ref signature, .. } => 2_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).expect("walkable interface arity"),
                     Computation::Handle { ref signature, ref clauses, .. } | Computation::Scope { ref signature, ref clauses, .. } => 3_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).and_then(|count| count.checked_add(u64::try_from(clauses.len()).expect("walkable clause arity"))).expect("walkable handler arity"),
                     Computation::Exercise { ref signature, .. } => 3_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).expect("walkable interface arity"),
-                    Computation::Resume(..) | Computation::Split { .. } | Computation::With(..) | Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _) => 3,
+                    Computation::Resume(..) | Computation::Split { .. } | Computation::With(..) | Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _) | Computation::Ascribe { .. } => 3,
                     Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 2,
                     Computation::Hole(_) => 1,
                     Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 6,
@@ -372,6 +372,9 @@ pub fn unfolded(
                     },
                     Computation::With(first, second) => pending
                         .extend([CoreNode::Computation(first), CoreNode::Computation(second)]),
+                    Computation::Ascribe { body, ty } => {
+                        pending.extend([CoreNode::Computation(body), CoreNode::CompType(ty)]);
+                    },
                     Computation::Reset(body)
                     | Computation::Shift(body)
                     | Computation::Project(_, body)

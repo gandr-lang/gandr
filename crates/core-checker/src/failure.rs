@@ -117,6 +117,8 @@ pub enum FrameRole
     SigmaSplitMotive,
     /// A projection waits on its operand's type.
     NativeProjection,
+    /// An ascription waits on its stated type's formation.
+    Ascription,
     /// An operation request waits on its interface's formation.
     PerformPayload,
     /// A later premise waits for the one under way.
@@ -347,6 +349,7 @@ impl fmt::Display for FrameRole
             Self::SigmaSplitScrutinee => "SigmaSplitScrutinee",
             Self::SigmaSplitMotive => "SigmaSplitMotive",
             Self::NativeProjection => "NativeProjection",
+            Self::Ascription => "Ascription",
             Self::PerformPayload => "PerformPayload",
             Self::Next => "Next",
             Self::Resume => "Resume",
@@ -802,6 +805,7 @@ mod tests
             FrameRole::SigmaSplitScrutinee,
             FrameRole::SigmaSplitMotive,
             FrameRole::NativeProjection,
+            FrameRole::Ascription,
             FrameRole::PerformPayload,
             FrameRole::Next,
             FrameRole::Resume,

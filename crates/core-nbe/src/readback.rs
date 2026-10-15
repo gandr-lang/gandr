@@ -2414,6 +2414,7 @@ fn step(
                 | Computation::Application(..)
                 | Computation::Return(_)
                 | Computation::Bind(..)
+                | Computation::Ascribe { .. }
                 | Computation::Force(_)
                 | Computation::Case { .. }
                 | Computation::Split { .. }

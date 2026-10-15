@@ -983,7 +983,7 @@ impl<'run> Focusing<'run>
                 Computation::Resume(..) => !self.producers.is_empty() && !self.commands.is_empty(),
                 Computation::Reset(_) | Computation::Shift(_) => !self.commands.is_empty(),
                 Computation::With(..) => self.commands.len() >= 2,
-                Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) => true,
+                Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) => true,
             }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
             | &Task::ListCons | &Task::Combinator { .. } => self.producers.len() >= 2,
@@ -1413,6 +1413,7 @@ impl<'run> Focusing<'run>
                     | Computation::Application(..)
                     | Computation::Return(_)
                     | Computation::Bind(..)
+                    | Computation::Ascribe { .. }
                     | Computation::Force(_)
                     | Computation::Case { .. }
                     | Computation::Split { .. }
@@ -1526,6 +1527,7 @@ impl<'run> Focusing<'run>
             | Computation::Application(..)
             | Computation::Return(_)
             | Computation::Bind(..)
+            | Computation::Ascribe { .. }
             | Computation::Force(_)
             | Computation::Case { .. }
             | Computation::Split { .. }
@@ -1992,6 +1994,14 @@ impl<'run> Focusing<'run>
                 self.tasks.push(Task::Computation {
                     computation: subject,
                     continuation: frame,
+                });
+            },
+            // An ascription is the checker's: the sequent runs its body
+            // against the same continuation.
+            Computation::Ascribe { body, .. } => {
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation,
                 });
             },
             Computation::ListFold {

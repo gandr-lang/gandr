@@ -4331,7 +4331,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `native_formers::native_formers::empty_data_elimination_preserves_the_ambient_scope`
     /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(
-        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) => Some(1_usize) })],
+        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) => Some(1_usize) })],
         ensures: |ret| match held {
             | Some(Image::Erased(image)) => ret == Ok(Step::Ascend(AnyNode::Computation(image))) && self.frames.len() == before,
             | Some(Image::Open) => ret == Err(Refusal::Cyclic { node: CoreNode::Term(TermNode::Computation(at)) }) && self.frames.len() == before,
@@ -4361,7 +4361,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let (frame, child) = match *computation {
             Computation::DataCase { .. }
             | Computation::RecordProjection(..)
-            | Computation::TupleProjection(..) => {
+            | Computation::TupleProjection(..)
+            | Computation::Ascribe { .. } => {
                 return self.prepare_native(target, node);
             },
             Computation::Perform { .. } => return Err(unadmitted(UnadmittedFormer::Perform)),
@@ -7653,6 +7654,58 @@ mod tests
         let artifact = readmission.export(BTreeMap::new());
         let decoded = decode(artifact.as_image()).expect("the lazy product exports");
         assert_eq!(decoded.declarations().len(), 2);
+    }
+
+    #[test]
+    fn an_ascription_crosses_as_a_typed_position_the_kernel_replays()
+    {
+        // def given : U (F Integer) =
+        //     thunk { f ← (return thunk { \x. return x }
+        //                  : F (U (Integer -> F Integer))) ;
+        //             (force f)(0) } ;
+        // def same : U (F Integer) =
+        //     thunk { (\x. return x : Integer -> F Integer)(0) } ;
+        // Each ascribed body only checks and stands where the kernel
+        // synthesises, so an image that erased the ascription is refused.
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returns_integer = arena.comp_type_returner(integer);
+        let given_type = arena.value_type_thunk(returns_integer);
+        let arrow = arena.comp_type_arrow(integer, returns_integer);
+        let suspended_arrow = arena.value_type_thunk(arrow);
+        let returns_suspended = arena.comp_type_returner(suspended_arrow);
+        let zero = arena.value_literal(integer_literal());
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let identity = arena.computation_return(bound);
+        let lambda = arena.computation_lambda(identity);
+        let suspended = arena.value_thunk(lambda);
+        let returns_thunk = arena.computation_return(suspended);
+        let ascribed = arena.computation_ascribe(returns_thunk, returns_suspended);
+        let forced = arena.computation_force(bound);
+        let called = arena.computation_application(forced, zero);
+        let bind = arena.computation_bind(ascribed, called);
+        let given_body = arena.value_thunk(bind);
+        let ascribed_lambda = arena.computation_ascribe(lambda, arrow);
+        let applied = arena.computation_application(ascribed_lambda, zero);
+        let same_body = arena.value_thunk(applied);
+        let same_type = given_type;
+        let (_, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(
+                At(0),
+                Maybe::Present(given_type),
+                Maybe::Present(given_body),
+            ),
+            declaration(At(1), Maybe::Present(same_type), Maybe::Present(same_body)),
+        ]);
+        assert_eq!(readmission.readmitted().len(), 2);
+        for entry in readmission.readmitted() {
+            assert!(
+                matches!(*entry.outcome(), Outcome::Defined { .. }),
+                "the kernel checks each ascribed body, a return and a lambda that only \
+                 check, at the stated type: {:?}",
+                entry.outcome()
+            );
+        }
     }
 
     #[test]

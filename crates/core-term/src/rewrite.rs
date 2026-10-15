@@ -1110,7 +1110,7 @@ Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::Spli
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
-Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
+Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 Computation::Session(ref action) => action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count()),
@@ -1358,6 +1358,10 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 Some(&Computation::With(first, second)) => {
                     self.tasks.push(open(Node::Computation(second), depth));
                     self.tasks.push(open(Node::Computation(first), depth));
+                },
+                Some(&Computation::Ascribe { body, ty }) => {
+                    self.tasks.push(open(Node::CompType(ty), depth));
+                    self.tasks.push(open(Node::Computation(body), depth));
                 },
                 Some(
                     &(Computation::Reset(body)
@@ -2295,7 +2299,7 @@ Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::Spli
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
-Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
+Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 Computation::Session(ref action) => action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count()),
@@ -2481,6 +2485,16 @@ Computation::Memory(ref form) => form.values().count().saturating_add(form.compu
                 else {
                     self.arena
                         .computation_with(rewritten_first, rewritten_second)
+                }
+            },
+            Computation::Ascribe { body, ty } => {
+                let rewritten_ty = Self::comp_type(&mut self.results, ty);
+                let rewritten_body = Self::computation(&mut self.results, body);
+                if (rewritten_body, rewritten_ty) == (body, ty) {
+                    id
+                }
+                else {
+                    self.arena.computation_ascribe(rewritten_body, rewritten_ty)
                 }
             },
             Computation::Reset(body) => {
@@ -3966,7 +3980,8 @@ fn survey_computation(
         | Computation::Reset(body)
         | Computation::Shift(body)
         | Computation::Project(_, body)
-        | Computation::Mark { body, .. } => next.push(Position::Computation(body, own)),
+        | Computation::Mark { body, .. }
+        | Computation::Ascribe { body, .. } => next.push(Position::Computation(body, own)),
         Computation::Bind(first, second) | Computation::With(first, second) => {
             next.extend([
                 Position::Computation(first, own),
@@ -6251,6 +6266,7 @@ mod tests
                             | crate::Computation::TupleProjection(..)
                             | crate::Computation::Hole(_)
                             | crate::Computation::Mark { .. }
+                            | crate::Computation::Ascribe { .. }
                             | crate::Computation::ListFold { .. }
                             | crate::Computation::Perform { .. }
                             | crate::Computation::Handle { .. }

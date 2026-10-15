@@ -2091,4 +2091,37 @@ mod tests
             );
         }
     }
+
+    /// A bind of a computation ascribed a pure returner spells as the typed
+    /// bind it lowered from, its value type written after the binder; an
+    /// ascription anywhere else stands as its body, approximately, for the
+    /// surface writes it nowhere else.
+    #[test]
+    fn a_typed_bind_spells_as_written()
+    {
+        let mut core = CoreArena::new();
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let one = integer(&mut core, Sign::NonNegative, Written("1"));
+        let integer_type = core.value_type_base(BaseType::Integer);
+        let returns_integer = core.comp_type_returner(integer_type);
+        let pure_one = core.computation_return(one);
+        let ascribed = core.computation_ascribe(pure_one, returns_integer);
+        let returned = core.computation_return(bound);
+        let typed = core.computation_bind(ascribed, returned);
+        let body = |id| Root::Computation(CoreNode::Computation(id));
+        let source = CoreSource::new(&core, &[]);
+        assert_eq!(
+            spelled(&source, body(typed)),
+            (
+                "run a : Integer <- pure 1 ; a".to_owned(),
+                Fidelity::Faithful
+            ),
+            "the typed bind spells its annotation"
+        );
+        assert_eq!(
+            spelled(&source, body(ascribed)),
+            ("1".to_owned(), Fidelity::Approximate),
+            "a lone ascription stands as its body"
+        );
+    }
 }

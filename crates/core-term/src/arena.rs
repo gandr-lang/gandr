@@ -268,6 +268,7 @@ impl CoreArena
                         | Computation::Application(..)
                         | Computation::Return(_)
                         | Computation::Bind(..)
+                        | Computation::Ascribe { .. }
                         | Computation::Force(_)
                         | Computation::Case { .. }
                         | Computation::Split { .. }
@@ -1168,6 +1169,30 @@ impl CoreArena
     ) -> ComputationId
     {
         self.alloc_computation(Computation::Bind(bound, body))
+    }
+
+    /// Mint an ascription of the computation `body` to the type `ty`.
+    ///
+    /// # Specification
+    /// - requires: `body` names a computation node and `ty` a computation type
+    ///   already allocated in this arena.
+    /// - ensures: appends the ascription and returns a fresh computation id.
+    /// - provides: the only way to mint this former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::computation_bind`]: the minted node holds
+    ///   both children, unswapped.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Ascribe { body, ty }))]
+    #[inline]
+    pub fn computation_ascribe(
+        &mut self,
+        body: ComputationId,
+        ty: CompTypeId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Ascribe { body, ty })
     }
 
     /// Mint a force over an already-allocated value.
@@ -2888,6 +2913,13 @@ mod tests
             (
                 arena.computation_bind(left, right),
                 crate::Computation::Bind(left, right),
+            ),
+            (
+                arena.computation_ascribe(right, result),
+                crate::Computation::Ascribe {
+                    body: right,
+                    ty: result,
+                },
             ),
             (
                 arena.computation_force(second),

@@ -1608,6 +1608,16 @@ enum StatementBinding
     /// `run (x, y, …) <- c ;` splits the tuple it returns, under a binder no
     /// name reaches, into one named binder per component.
     Split(gandr_core_term::ComponentCount),
+    /// `run x : A <- c ;` ascribes `c` the returner `-F A`, pure as the
+    /// annotation writes no row, and names the value it returns for the rest
+    /// of the block, so a computation that returns no `A` refuses.
+    Typed
+    {
+        /// The name's own node.
+        name: NodeIndex,
+        /// The value type `A` written, read in the statement's own frame.
+        annotation: NodeIndex,
+    },
     /// `fork (c : S) t as d ;` runs `t`, under `c`'s linear binder, beside
     /// the rest of the block, under `d`'s: the fork's protocol `S` and its
     /// child `t`.
@@ -5671,11 +5681,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   statement's name over `frame`, which the rest of the block reads
     ///   under, is returned. A tuple pattern `(x, y, …)` binds the returned
     ///   tuple under a nameless binder and each component's name over it, in
-    ///   order, and the statement is recorded as that split.
+    ///   order, and the statement is recorded as that split. A name annotated
+    ///   `x : A` reads `A` in `frame` and binds the name over it, and the
+    ///   statement is recorded as the bind of `c` ascribed `-F A`.
     /// - provides: the one statement the fragment reads.
-    /// - fails: yields the unadmitted refusal for an annotated binder and for a
-    ///   binder pattern other than a name, a wildcard or a tuple of those, and
-    ///   a fault naming the bind statement for a hole or a tile out of shape.
+    /// - fails: yields the unadmitted refusal for an annotated tuple pattern
+    ///   and for a binder pattern other than a name, a wildcard or a tuple of
+    ///   those, and a fault naming the bind statement for a hole or a tile out
+    ///   of shape.
     /// - panics: none.
     ///
     /// # Errors
@@ -5685,9 +5698,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — each run statement reads its bound computation in the
     ///   previous frame and introduces its names only for subsequent
     ///   computations; a two-component tuple binds both names in order, so a
-    ///   swapped binding reads the other component.
+    ///   swapped binding reads the other component; an annotated name checks
+    ///   the bound computation against its type before binding it.
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     /// - witness: `lower::tests::a_tuple_binder_splits_the_returned_tuple_in_order`
+    /// - witness: `lower::tests::a_typed_bind_ascribes_its_computation`
     #[spec(
         captures: before = self.statements.len(),
         ensures: |ret| match ret {
@@ -5695,7 +5710,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.statements.len() == before.saturating_add(1_usize)
                     && self.statements.last().is_some_and(|last| {
                         last.origin == run.node
-                            && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Split(_))
+                            && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Split(_) | StatementBinding::Typed { .. })
                             && self.reading(last.bound) == Reading::Computation(frame)
                     })
             },
@@ -5716,18 +5731,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
             reading: Reading::Computation(frame),
         };
         let binder = statement.one(cursor.operands())?;
-        if let Maybe::Present(colon) = cursor.at(TileName::COLON) {
-            return Err(LoweringRefusal::OutOfFragment {
-                span: colon.span,
-                form: FormName::ANNOTATION,
-                sort: FragmentSort::Computation,
-                boundary: FragmentBoundary::Unadmitted,
-            });
+        let annotation = if let Maybe::Present(colon) = cursor.tile(TileName::COLON) {
+            Some((colon, statement.one(cursor.operands())?))
         }
+        else {
+            None
+        };
         closed(statement, cursor, TileName::BIND)?;
         let bound = statement.one(cursor.operands())?;
         closed(statement, cursor, TileName::SEMICOLON)?;
         if let Maybe::Present(components) = self.tuple_binders(statement, binder)? {
+            if let Some((colon, _)) = annotation {
+                return Err(LoweringRefusal::OutOfFragment {
+                    span: colon.span,
+                    form: FormName::ANNOTATION,
+                    sort: FragmentSort::Computation,
+                    boundary: FragmentBoundary::Unadmitted,
+                });
+            }
             let mut names = Vec::with_capacity(components.len());
             for &component in &components {
                 let name = self.binder_name(statement, component)?;
@@ -5757,6 +5778,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let name = self.binder_name(statement, binder)?;
         self.note_binder(binder, name)?;
+        if let Some((_, annotation)) = annotation {
+            self.read(bound.node, Reading::Computation(frame));
+            self.read(annotation.node, Reading::ValueType(frame));
+            self.statements.push(Statement {
+                origin: run.node,
+                bound: bound.node,
+                binding: StatementBinding::Typed {
+                    name: binder.node,
+                    annotation: annotation.node,
+                },
+                rest: exits::Rest::Bound,
+            });
+            return Ok(Frame::Inner(self.scope.extend(
+                frame,
+                name,
+                Maybe::Present(binder.span),
+            )));
+        }
         self.read(bound.node, Reading::Computation(frame));
         self.statements.push(Statement {
             origin: run.node,
@@ -10083,7 +10122,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: every node the block names is already minted or absent.
     /// - ensures: `run x1 <- c1 ; … run xn <- cn ; c` mints as `bind(c1, …
-    ///   bind(cn, c))`, each bind's origin its statement's `run` tile; a fork
+    ///   bind(cn, c))`, each bind's origin its statement's `run` tile, and a
+    ///   typed `run x : A <- c ;` binds `c` ascribed the pure `-F A`; a fork
     ///   `fork (c : S) t as d ;` mints as the fork of `t` at `S` whose parent
     ///   is the rest of the block, at its `fork` tile's origin; a hold `hold x
     ///   = e ;` mints as the hold of `e` whose scope is the rest of the block,
@@ -10181,6 +10221,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             let split = match statement.binding {
                 StatementBinding::Named(_)
+                | StatementBinding::Typed { .. }
                 | StatementBinding::Forked { .. }
                 | StatementBinding::Held { .. } => None,
                 StatementBinding::Discarded => Some(gandr_core_term::ComponentCount::default()),
@@ -10195,9 +10236,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.origins.record_computation(split, origin);
                 chain = split;
             }
+            let bound = match statement.binding {
+                StatementBinding::Typed { annotation, .. } => {
+                    let Maybe::Present(result) = self.value_type_at(annotation)
+                    else {
+                        return Maybe::Absent(lowered::Absent::Unminted);
+                    };
+                    let returner = sink.arena.comp_type_returner(result);
+                    sink.origins.record_comp_type(returner, origin);
+                    let ascribed = sink.arena.computation_ascribe(bound, returner);
+                    sink.origins.record_computation(ascribed, origin);
+                    ascribed
+                },
+                StatementBinding::Named(_)
+                | StatementBinding::Discarded
+                | StatementBinding::Split(_)
+                | StatementBinding::Forked { .. }
+                | StatementBinding::Held { .. } => bound,
+            };
             let id = sink.arena.computation_bind(bound, chain);
             sink.origins.record_computation(id, origin);
-            if let StatementBinding::Named(name) = statement.binding
+            if let StatementBinding::Named(name) | StatementBinding::Typed { name, .. } =
+                statement.binding
                 && let Maybe::Present(name) = self.origin_at(name)
             {
                 sink.origins.record_binder(id, name);
@@ -10229,6 +10289,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(ensures: |ret| match statement.binding {
         | StatementBinding::Forked { protocol, child } => (ret == Maybe::Present(())) == (matches!(self.value_type_at(protocol), Maybe::Present(_)) && matches!(self.computation_at(child), Maybe::Present(_))),
         | StatementBinding::Held { value } => (ret == Maybe::Present(())) == matches!(self.value_at(value), Maybe::Present(_)),
+        | StatementBinding::Typed { annotation, .. } => (ret == Maybe::Present(())) == (matches!(self.computation_at(statement.bound), Maybe::Present(_)) && matches!(self.value_type_at(annotation), Maybe::Present(_))),
         | _ => (ret == Maybe::Present(())) == matches!(self.computation_at(statement.bound), Maybe::Present(_)),
     })]
     fn statement_parts(
@@ -10242,6 +10303,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .and_then(|_protocol| self.computation_at(child))
                 .map(|_child| ()),
             StatementBinding::Held { value } => self.value_at(value).map(|_value| ()),
+            StatementBinding::Typed { annotation, .. } => self
+                .computation_at(statement.bound)
+                .and_then(|_bound| self.value_type_at(annotation))
+                .map(|_annotation| ()),
             StatementBinding::Named(_)
             | StatementBinding::Discarded
             | StatementBinding::Split(_) => self.computation_at(statement.bound).map(|_bound| ()),
@@ -15106,6 +15171,43 @@ mod tests
         );
     }
 
+    /// `run q : Integer <- c ;` binds `c` ascribed the pure returner of the
+    /// written type, and the rest of the block reads `q` as the bind's own
+    /// binder.
+    #[test]
+    fn a_typed_bind_ascribes_its_computation()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def a = thunk { run q : Integer <- pure 1 ; return q } ;"),
+            &mut arena,
+        );
+        let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[0]))
+        else {
+            panic!("the thunk lowers to a thunk value");
+        };
+        let Some(&Computation::Bind(bound, rest)) = arena.computation(suspended)
+        else {
+            panic!("the statement binds over the rest of the block");
+        };
+        let Some(&Computation::Ascribe { body, ty }) = arena.computation(bound)
+        else {
+            panic!("the bound computation is ascribed");
+        };
+        assert!(
+            matches!(arena.computation(body), Some(&Computation::Return(value)) if arena.value(value) == Some(&Value::Literal(integer(SourceFragment::from("1"))))),
+            "the written computation is the one ascribed"
+        );
+        assert!(
+            matches!(arena.comp_type(ty), Some(&CompType::Returner { result, ref effects }) if arena.value_type(result) == Some(&ValueType::Base(BaseType::Integer)) && *effects == gandr_core_term::effect::EffectRow::EMPTY),
+            "the ascription is the pure returner of the written type"
+        );
+        assert!(
+            matches!(arena.computation(rest), Some(&Computation::Return(value)) if arena.value(value) == Some(&Value::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) })),
+            "the rest reads the name as the bind's binder"
+        );
+    }
+
     #[test]
     fn a_block_standing_as_a_computation_binds_its_statements()
     {
@@ -16188,10 +16290,10 @@ mod tests
                 ),
             ),
             (
-                "def a = thunk { run y : -F Integer <- pure 1; return y } ;",
+                "def a = thunk { run (y, z) : Integer <- pure (1, 2); return y } ;",
                 unadmitted(
-                    22_usize,
-                    23_usize,
+                    27_usize,
+                    28_usize,
                     FormName::ANNOTATION,
                     FragmentSort::Computation,
                 ),
