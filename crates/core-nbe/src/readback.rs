@@ -2421,7 +2421,8 @@ fn step(
                 | Computation::Shift(_)
                 | Computation::With(..)
                 | Computation::Project(..)
-                | Computation::Session(_) => return Err(ReadbackFault::MachineInvariant),
+                | Computation::Session(_)
+                | Computation::Memory(_) => return Err(ReadbackFault::MachineInvariant),
             };
             let projected = machine.pop_value()?;
             let assembled = match projection {

@@ -191,6 +191,34 @@
 //! `machine::tests::literal_stacks_close_flat_frame_scopes_and_resume_in_order`.
 //! These directed outcomes cover runtime control independently of the pure NBE
 //! oracle, which refuses effect and control instructions by former.
+//!
+//! # Temporary access
+//!
+//! A hold binds its evaluated value in the environment's linear chain and
+//! runs its body; the binding is the held value's one cell, and a read of
+//! it copies the value it holds now. An access looks up the held binding,
+//! binds a view holding the value it holds, and pushes one
+//! [`Frame::Access`] above its loaded continuation before its body runs. A
+//! resume evaluates the value it writes back and records it on that frame;
+//! an abort records that it ran. The frame's pop does what was recorded:
+//! a resume's value is written into the held binding and the answer passes
+//! on; an abort pushes [`Frame::Answer`] and runs the unwind, whose unit
+//! that frame discards for the answer, writing nothing. Nothing is
+//! allocated per access beyond the view's binding and the frame; an
+//! eliminator returns a fresh unit.
+//!
+//! An eliminator finds its frame by the view's binding, the nearest frame
+//! naming it, so a captured stack resumed later still ends its own access.
+//! A stack resumed twice replays the access twice: the checker refuses a
+//! capture naming a view, and a handler outside the access that resumes its
+//! continuation twice is the multi-shot case the linear zone does not yet
+//! govern. An access whose body answers with its view unended is stuck as
+//! [`Stuck::Unended`]; the checker refuses such a body.
+//!
+//! Witnesses:
+//! `machine::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`,
+//! `store::tests::a_linear_binding_is_written_in_place`,
+//! `store::tests::a_view_ends_once_on_its_own_frame`.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -201,6 +229,7 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_theory_cell_complexes::Polarity;
@@ -224,6 +253,7 @@ use crate::readback::ReadbackRefusal;
 use crate::readback::read_back_terminal;
 use crate::readback::read_back_value;
 use crate::store::ContinuationMark;
+use crate::store::Ending;
 use crate::store::Environment;
 use crate::store::ForceEntry;
 use crate::store::Frame;
@@ -233,6 +263,8 @@ use crate::store::Introduced;
 use crate::store::Memo;
 use crate::store::Store;
 use crate::store::StoreFault;
+use crate::store::ValueBindingId;
+
 /// What a constant stands for when a run meets it.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Definition
@@ -383,6 +415,8 @@ pub enum Stuck
     /// A consumer the arena does not hold, or one whose children contradict
     /// its head.
     IllFormedConsumer(ConsumerId),
+    /// An access answered with its view never ended: neither eliminator ran.
+    Unended(ValueBindingId),
 }
 
 impl fmt::Display for Stuck
@@ -422,6 +456,7 @@ impl fmt::Display for Stuck
             Self::IllFormedCommand(id) => write!(f, "command {id} is not well formed"),
             Self::IllFormedProducer(id) => write!(f, "producer {id} is not well formed"),
             Self::IllFormedConsumer(id) => write!(f, "consumer {id} is not well formed"),
+            Self::Unended(view) => write!(f, "view {view} reached its access's end unended"),
         }
     }
 }
@@ -1101,7 +1136,7 @@ impl<'program> Machine<'program>
     #[spec(ensures: |ref ret| match ret.as_ref().copied() {
         | Err(_) => self.arena.command(id).is_some() || *ret == Err(Stop::Stuck(Stuck::IllFormedCommand(id))),
         | Ok(next) => self.arena.command(id).is_some_and(|node| {
-            let &CommandNode::Cut { polarity, producer, consumer } = node else { return matches!(next, Next::Continue(Control::Run(..)) | Next::Host { .. }); };
+            let &CommandNode::Cut { polarity, producer, consumer } = node else { return matches!(next, Next::Continue(Control::Run(..) | Control::Deliver(..)) | Next::Host { .. }); };
             let strict_capture = self.arena.producer(producer).and_then(|node| match *node {
                 | ProducerNode::Mu { body } if polarity != Polarity::Negative
                     || !matches!(self.arena.consumer(consumer), Some(&ConsumerNode::MuTilde { .. })) => Some(body),
@@ -1154,25 +1189,34 @@ impl<'program> Machine<'program>
         )))
     }
 
-    /// Enter an effect or delimited-control instruction.
+    /// Enter an effect, delimited-control or memory instruction.
     ///
     /// # Specification
     /// - ensures: each body receives a fresh local return; reset and handler
     ///   install their delimiter, resume reinstalls its reusable prefix, and
     ///   perform or shift capture only through the nearest eligible delimiter.
+    ///   A hold binds its value linearly; an access binds its view and pushes
+    ///   its frame; an eliminator records its view's ending on that frame and
+    ///   delivers the unit to its continuation.
     /// - fails: malformed instructions, absent delimiters, non-stack
-    ///   resumptions, and the store's capacity or stale-mark faults.
+    ///   resumptions, an unbound linear index, a view with no live access or
+    ///   one ended already, and the store's capacity or stale-mark faults.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — deep re-entry, repeated resumption and an ambient
     ///   projection distinguish lost delimiters, destructive captures and
-    ///   duplicated tails.
+    ///   duplicated tails; a counter resumed and aborted distinguishes a
+    ///   write-back from none.
     /// - witness: `machine::tests::hand_built_effect_cases_agree`
     /// - witness: `machine::tests::hand_built_shift_cases_agree`
+    /// - witness: `machine::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
     #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|next| match *next {
         Next::Host { at, payload } => at == id && self.store.value(payload).is_some(),
         Next::Continue(Control::Run(body, inner)) => self.arena.command(body).is_some()
             && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(crate::store::Covalue::FallThrough),
+        Next::Continue(Control::Deliver(unit, found, inner)) => inner == environment
+            && self.store.value(unit).is_some()
+            && matches!(self.arena.command(id), Some(&CommandNode::Memory { continuation, .. }) if continuation == found),
         Next::Continue(_) | Next::Halt(_) => false,
     }))]
     fn control_command(
@@ -1253,7 +1297,100 @@ impl<'program> Machine<'program>
                     .bind_covalue(environment, crate::store::Covalue::FallThrough)?;
                 Ok(Next::Continue(Control::Run(body, inner)))
             },
+            CommandNode::Memory {
+                ref form,
+                continuation,
+            } => self.memory(form, continuation, environment),
         }
+    }
+
+    /// Enter a memory instruction.
+    ///
+    /// # Specification
+    /// - ensures: a hold loads its continuation and runs its body with the held
+    ///   value bound innermost in the linear chain; an access binds a view
+    ///   holding what the held binding holds now, pushes its open
+    ///   [`Frame::Access`] above its loaded continuation and runs its body; a
+    ///   resume records its evaluated value on its view's frame and an abort
+    ///   records that it ran, each then delivering a fresh unit to its
+    ///   continuation.
+    /// - fails: [`Stuck::UnboundVariable`] for a linear index past the chain;
+    ///   the store's [`StoreFault::NoAccess`] or [`StoreFault::Ended`] for an
+    ///   eliminator; an evaluation's or the store's capacity faults.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter resumed with its successor reads one after,
+    ///   and one aborted reads what it held, its unwind run once.
+    /// - witness: `machine::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
+    #[spec(ensures: |ref ret| ret.is_err() || match *form {
+        | MemoryForm::Hold { .. } | MemoryForm::Access { .. } => matches!(ret, Ok(Next::Continue(Control::Run(..)))),
+        | MemoryForm::Resume { .. } | MemoryForm::Abort { .. } => matches!(ret, Ok(Next::Continue(Control::Deliver(_, found, inner))) if *found == continuation && *inner == environment),
+    })]
+    fn memory(
+        &mut self,
+        form: &MemoryForm<ProducerId, CommandId>,
+        continuation: ConsumerId,
+        environment: Environment,
+    ) -> Result<Next, Stop>
+    {
+        let resident = |index: DeBruijnIndex, store: &Store| {
+            store
+                .lookup_linear(environment, index)
+                .ok_or(Stuck::UnboundVariable {
+                    zone: Zone::Linear,
+                    index,
+                })
+        };
+        let (view, ending) = match *form {
+            MemoryForm::Hold { value, body } => {
+                self.load(continuation, environment)?;
+                let held = self.evaluate(value, environment)?;
+                let (scope, _) = self.store.bind_linear(environment, held)?;
+                let inner = self
+                    .store
+                    .bind_covalue(scope, crate::store::Covalue::FallThrough)?;
+                return Ok(Next::Continue(Control::Run(body, inner)));
+            },
+            MemoryForm::Access { held, body, unwind } => {
+                let cell = resident(held, &self.store)?;
+                let lent = self
+                    .store
+                    .linear(cell)
+                    .ok_or(StoreFault::DanglingBinding(cell))?;
+                self.load(continuation, environment)?;
+                let (scope, view) = self.store.bind_linear(environment, lent)?;
+                self.store.push_frame(Frame::Access {
+                    held: cell,
+                    view,
+                    unwind,
+                    environment,
+                    ending: Ending::Open,
+                })?;
+                let inner = self
+                    .store
+                    .bind_covalue(scope, crate::store::Covalue::FallThrough)?;
+                return Ok(Next::Continue(Control::Run(body, inner)));
+            },
+            MemoryForm::Resume { view, value } => {
+                let view = resident(view, &self.store)?;
+                (view, Ending::Resumed(self.evaluate(value, environment)?))
+            },
+            MemoryForm::Abort { view } => (resident(view, &self.store)?, Ending::Aborted),
+        };
+        self.store.settle(view, ending)?;
+        let unit = self.store.allocate(HeapValue::Constructed {
+            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
+            fields: Box::from([]),
+        })?;
+        Ok(Next::Continue(Control::Deliver(
+            unit,
+            continuation,
+            environment,
+        )))
     }
 
     /// Capture a claimed operation, or offer it with its live continuation
@@ -1736,6 +1873,10 @@ impl<'program> Machine<'program>
     /// - ensures: a destructor frame observes the value, a binder frame binds
     ///   it, a match frame selects on it, a selection frame passes its field
     ///   on, and an update frame writes it back to its cell and passes it on.
+    ///   An access frame whose view resumed writes the resumed value into its
+    ///   held binding and passes the value on; one whose view aborted runs its
+    ///   unwind under an answer frame, which passes the value on in place of
+    ///   the unwind's unit.
     /// - provides: returning into the frame region.
     /// - fails: as [`Self::step`].
     /// - panics: none.
@@ -1747,13 +1888,15 @@ impl<'program> Machine<'program>
     /// - hypothesis: L3 — returning through bind, match, destructor and update
     ///   frames is observed by the resulting value and memo cell; an empty
     ///   region halts at the exact return budget. Reentrant forcing
-    ///   distinguishes duplicate updates and skipped write-back.
+    ///   distinguishes duplicate updates and skipped write-back; a counter
+    ///   resumed and aborted distinguishes a write-back from none.
     /// - witness: `machine::tests::the_step_budget_bounds_a_run`
     /// - witness: `machine::tests::bind_threads_a_value`
     /// - witness: `machine::tests::case_selects_the_matching_arm`
     /// - witness: `machine::tests::a_shared_thunk_is_forced_once`
     /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
     /// - witness: `machine::tests::a_selection_reads_the_width_of_the_value_it_meets`
+    /// - witness: `machine::tests::a_counter_observes_write_back_on_resume_and_none_on_abort`
     #[spec(
         captures: [height = self.store.frame_height()],
         ensures: |ref ret| if usize::from(height) == 0 { *ret == Ok(Next::Halt(value)) }
@@ -1803,6 +1946,27 @@ impl<'program> Machine<'program>
                 self.store.write_back(cell, value)?;
                 Ok(Next::Continue(Control::Pop(value)))
             },
+            Frame::Access {
+                held,
+                view,
+                unwind,
+                environment,
+                ending,
+            } => match ending {
+                Ending::Resumed(written) => {
+                    self.store.write_linear(held, written)?;
+                    Ok(Next::Continue(Control::Pop(value)))
+                },
+                Ending::Aborted => {
+                    self.store.push_frame(Frame::Answer { value })?;
+                    let inner = self
+                        .store
+                        .bind_covalue(environment, crate::store::Covalue::FallThrough)?;
+                    Ok(Next::Continue(Control::Run(unwind, inner)))
+                },
+                Ending::Open => Err(Stuck::Unended(view).into()),
+            },
+            Frame::Answer { value: answer } => Ok(Next::Continue(Control::Pop(answer))),
         }
     }
 
@@ -2382,8 +2546,8 @@ impl<'program> Machine<'program>
                 self.arena.producer(root).zip(self.store.value(value)).is_some_and(|(node, held)| match *node {
                     | ProducerNode::Reify(ref source) => matches!(held, HeapValue::Stack { frames } if frames.len() == source.len()),
                     | ProducerNode::Primitive { .. } => self.scalar(value).is_ok(),
-                    | ProducerNode::Variable { zone, index } => zone == Zone::Intuitionistic
-                        && self.store.lookup_value(environment, index) == Some(value),
+                    | ProducerNode::Variable { zone: Zone::Intuitionistic, index } => self.store.lookup_value(environment, index) == Some(value),
+                    | ProducerNode::Variable { zone: Zone::Linear, index } => self.store.lookup_linear(environment, index).and_then(|binding| self.store.linear(binding)) == Some(value),
                     | ProducerNode::Constant(constant) => self.unfolding(constant) == Ok(Unfolding::Done(value)),
                     | ProducerNode::Literal(ref literal) => matches!(*held, HeapValue::Literal(ref found) if literal == found),
                     | ProducerNode::Constructor { ref tag, ref producers, ref consumers } => consumers.is_empty()
@@ -2485,7 +2649,10 @@ impl<'program> Machine<'program>
                         ProducerNode::Variable { zone, index } => {
                             let bound = match zone {
                                 Zone::Intuitionistic => self.store.lookup_value(environment, index),
-                                Zone::Linear => None,
+                                Zone::Linear => self
+                                    .store
+                                    .lookup_linear(environment, index)
+                                    .and_then(|binding| self.store.linear(binding)),
                             };
                             bound.ok_or(Stuck::UnboundVariable { zone, index })?
                         },
@@ -3444,6 +3611,103 @@ mod tests
         let reset = core.computation_reset(bound);
         assert_control(&mut core, reset, ControlExpectation::Value(one));
         assert_control(&mut core, handled, ControlExpectation::Shift);
+    }
+
+    /// A counter held at zero: an access that increments through its view
+    /// and resumes writes one back, a second that increments and aborts
+    /// writes nothing though it answers its own sum, an aborted access runs
+    /// its unwind and a resumed one does not, and an access whose body a
+    /// handler outside the hold resumes still writes back through the frame
+    /// the resumption replays.
+    #[test]
+    fn a_counter_observes_write_back_on_resume_and_none_on_abort()
+    {
+        let mut core = CoreArena::new();
+        let zero = integer(&mut core, Digits("0"));
+        let one = integer(&mut core, Digits("1"));
+        let two = integer(&mut core, Digits("2"));
+        let ten = integer(&mut core, Digits("10"));
+        let resident = core.value_variable(Zone::Linear, 0_u32.into());
+        let innermost = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let outer = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let unit = core.value_unit();
+        let ret_unit = core.computation_return(unit);
+        let ret_outer = core.computation_return(outer);
+        let ret_resident = core.computation_return(resident);
+        let add = gandr_core_term::primitive::PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "add")
+            .expect("native add");
+        let successor = core.computation_primitive(
+            add,
+            gandr_core_term::primitive::Arguments::Binary([resident, one]),
+        );
+        let view = DeBruijnIndex::from(0_u32);
+        let resume = core.computation_memory(MemoryForm::Resume {
+            view,
+            value: innermost,
+        });
+        let abort = core.computation_memory(MemoryForm::Abort { view });
+        // n <- v + 1 ; _ <- resume(v, n) ; return n
+        let resumed = core.computation_bind(resume, ret_outer);
+        let resuming = core.computation_bind(successor, resumed);
+        // n <- v + 1 ; _ <- abort(v) ; return n
+        let aborted = core.computation_bind(abort, ret_outer);
+        let aborting = core.computation_bind(successor, aborted);
+        let access = |core: &mut CoreArena, body, unwind| {
+            core.computation_memory(MemoryForm::Access {
+                held: view,
+                body,
+                unwind,
+            })
+        };
+        let first = access(&mut core, resuming, ret_unit);
+        let second = access(&mut core, aborting, ret_unit);
+        let triple = core.value_tuple(&[resident, outer, innermost]);
+        let ret_triple = core.computation_return(triple);
+        let rest = core.computation_bind(second, ret_triple);
+        let body = core.computation_bind(first, rest);
+        let counter = core.computation_memory(MemoryForm::Hold { value: zero, body });
+        let observed = core.value_tuple(&[one, one, two]);
+        assert_control(&mut core, counter, ControlExpectation::Value(observed));
+
+        let signature = effect(&mut core, "Probe".into(), "op".into());
+        let probe = core.computation_perform(signature.clone(), "op".into(), zero);
+        for (body, expected) in [
+            (resuming, ControlExpectation::Value(one)),
+            (aborting, ControlExpectation::Perform("Probe", "op")),
+        ] {
+            let probed = access(&mut core, body, probe);
+            let then = core.computation_bind(probed, ret_resident);
+            let held = core.computation_memory(MemoryForm::Hold {
+                value: zero,
+                body: then,
+            });
+            assert_control(&mut core, held, expected);
+        }
+
+        // n <- perform op(v) ; _ <- resume(v, n) ; return n, under a handler
+        // outside the hold whose clause resumes with the payload plus ten.
+        let performed = core.computation_perform(signature.clone(), "op".into(), resident);
+        let asked = core.computation_bind(performed, resumed);
+        let asking = access(&mut core, asked, ret_unit);
+        let then = core.computation_bind(asking, ret_resident);
+        let held = core.computation_memory(MemoryForm::Hold {
+            value: zero,
+            body: then,
+        });
+        let payload = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let raised = core.computation_primitive(
+            add,
+            gandr_core_term::primitive::Arguments::Binary([payload, ten]),
+        );
+        let resumption = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let ret_innermost = core.computation_return(innermost);
+        let replayed = core.computation_resume(resumption, ret_innermost);
+        let clause = core.computation_bind(raised, replayed);
+        let handled = handler(&mut core, signature, held, ret_innermost, clause);
+        assert_control(&mut core, handled, ControlExpectation::Value(ten));
     }
 
     #[test]

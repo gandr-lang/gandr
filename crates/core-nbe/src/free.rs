@@ -40,6 +40,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
 use gandr_kernel_term::DeBruijnIndex;
 
@@ -616,8 +617,11 @@ impl FreeIndices
     ) -> Result<Free, FreeFault>
     {
         let mut free = Free::default();
-        // A fork's child and parent each stand under one linear binder.
+        // A fork's child and parent each stand under one linear binder, and
+        // so do a hold's body and an access's body; an access's unwind
+        // stands under none.
         let mut forked = Lowering::NONE;
+        let mut scoped: [Lowering; 2] = [Lowering::NONE; 2];
         match node {
             Reached::Term(CoreTerm::Value(id)) => {
                 let held = core.value(id).ok_or(FreeFault::Dangling)?;
@@ -639,14 +643,32 @@ impl FreeIndices
                         },
                     }
                 }
+                if let Computation::Memory(ref form) = *held {
+                    match *form {
+                        MemoryForm::Access { held: index, .. }
+                        | MemoryForm::Resume { view: index, .. }
+                        | MemoryForm::Abort { view: index } => {
+                            free = Free::variable(Zone::Linear, index);
+                        },
+                        MemoryForm::Hold { .. } => {},
+                    }
+                    for (slot, (_, binders)) in scoped.iter_mut().zip(form.scoped()) {
+                        *slot = Lowering(u32::from(binders));
+                    }
+                }
             },
             Reached::ValueType(_) | Reached::CompType(_) => {},
         }
         let below = Children::of(core, node)?;
+        let mut computations = 0_usize;
         for (child, binders) in below.iter() {
             let answered = self.read(child)?;
             let linear = match child {
-                Reached::Term(CoreTerm::Computation(_)) => forked,
+                Reached::Term(CoreTerm::Computation(_)) => {
+                    let opened = scoped.get(computations).copied().unwrap_or(Lowering::NONE);
+                    computations = computations.saturating_add(1);
+                    forked.max(opened)
+                },
                 Reached::Term(CoreTerm::Value(_))
                 | Reached::ValueType(_)
                 | Reached::CompType(_) => Lowering::NONE,
@@ -1221,6 +1243,18 @@ Err(_) => false,
                         SessionAction::Receive { .. }
                         | SessionAction::Select { .. }
                         | SessionAction::Close { .. } => [None, None, None, None, None],
+                    },
+                    Computation::Memory(ref form) => match *form {
+                        MemoryForm::Hold { value: held, body } => {
+                            two(value(held), computation(body), Lowering::NONE)
+                        },
+                        MemoryForm::Access { body, unwind, .. } => {
+                            two(computation(body), computation(unwind), Lowering::NONE)
+                        },
+                        MemoryForm::Resume { value: written, .. } => {
+                            one(value(written), Lowering::NONE)
+                        },
+                        MemoryForm::Abort { .. } => [None, None, None, None, None],
                     },
                 }
             },

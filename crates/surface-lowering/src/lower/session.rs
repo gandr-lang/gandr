@@ -442,6 +442,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::SessionType
                 | Former::Action
                 | Former::Offer
+                | Former::Access
                 | Former::Reserved
                 | Former::Unadmitted => written,
             };
@@ -541,6 +542,7 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::Instantiation
                         | Former::Action
                         | Former::Offer
+                        | Former::Access
                         | Former::Reserved
                         | Former::Unadmitted => self.choice(here, former, cursor, &mut draft)?,
                     }
@@ -596,6 +598,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Instantiation
                 | Former::Action
                 | Former::Offer
+                | Former::Access
                 | Former::Reserved
                 | Former::Unadmitted => return Err(continuation),
             };

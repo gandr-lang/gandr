@@ -681,6 +681,18 @@ fn walk(
                             .map(|child| (AnyNode::Computation(child), depth, results)),
                     );
                 },
+                // A memory form binds linearly; the intuitionistic depth
+                // stays.
+                Some(&Computation::Memory(ref form)) => {
+                    pending.extend(
+                        form.values()
+                            .map(|value| (AnyNode::Value(value), depth, results)),
+                    );
+                    pending.extend(
+                        form.computations()
+                            .map(|child| (AnyNode::Computation(child), depth, results)),
+                    );
+                },
                 Some(&Computation::Hole(_)) | None => {},
             },
             AnyNode::ValueType(id) => match arena.value_type(id) {

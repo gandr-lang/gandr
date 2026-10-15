@@ -221,6 +221,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::MarkIndex;
+use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
@@ -714,6 +715,9 @@ pub enum ContentNode
     /// A session action: payload, arms, fork protocol and halves as edges,
     /// endpoints and labels as written.
     Session(gandr_core_term::session::SessionAction<NodeIndex, NodeIndex, NodeIndex>),
+    /// A memory form: a held or written-back value and the bodies as edges,
+    /// the linear slots as written.
+    Memory(gandr_core_term::memory::MemoryForm<NodeIndex, NodeIndex>),
     /// A base-type atom.
     Base(BaseType),
     /// A product type over its components, in order; the empty product is
@@ -1073,6 +1077,7 @@ impl ContentNode
         | Self::ComputationHole(_)
         | Self::ComputationMark { .. }
         | Self::Session(_)
+        | Self::Memory(_)
         | Self::Fixpoint { .. } => matches!(ret, Sort::Computation),
         | Self::Data { .. }
         | Self::RecordType(_)
@@ -1177,6 +1182,7 @@ impl ContentNode
             | Self::ComputationHole(_)
             | Self::ComputationMark { .. }
             | Self::Session(_)
+            | Self::Memory(_)
             | Self::Fixpoint { .. } => Sort::Computation,
             Self::Data { .. }
             | Self::RecordType(_)
@@ -1254,6 +1260,7 @@ impl ContentNode
             | Self::With(first, second) => actual == Some(&[(first, M), (second, M)][..]),
             | Self::Primitive(_, arguments) => actual.is_some_and(|children| children.iter().copied().eq(arguments.iter().copied().map(|argument| (argument, V)))),
             | Self::Session(ref action) => ret.iter().eq(action.value_types().map(|ty| (ty, A)).chain(action.values().map(|value| (value, V))).chain(action.computations().map(|body| (body, M)))),
+            | Self::Memory(ref form) => ret.iter().eq(form.values().map(|value| (value, V)).chain(form.computations().map(|body| (body, M)))),
             | Self::SessionType(ref session) => ret.iter().eq(session.payloads().iter().map(|&payload| (payload, A))),
             | Self::PrimitiveValue(_) | Self::Variable { .. }
             | Self::Constant(_)
@@ -1414,6 +1421,12 @@ impl ContentNode
                 SessionAction::Receive { .. }
                 | SessionAction::Select { .. }
                 | SessionAction::Close { .. } => Children::default(),
+            },
+            Self::Memory(ref form) => match *form {
+                MemoryForm::Hold { value, body } => Children::of(&[(value, V), (body, M)]),
+                MemoryForm::Access { body, unwind, .. } => Children::of(&[(body, M), (unwind, M)]),
+                MemoryForm::Resume { value, .. } => Children::of(&[(value, V)]),
+                MemoryForm::Abort { .. } => Children::default(),
             },
             Self::SessionType(ref session) => {
                 Children::default().followed_by(session.payloads(), A)
@@ -1580,7 +1593,7 @@ impl ContentNode
     /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
-        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::Session(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
+        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
     {
@@ -1613,6 +1626,7 @@ impl ContentNode
             | Self::Shift(_)
             | Self::With(..)
             | Self::Session(_)
+            | Self::Memory(_)
             | Self::SessionType(_)
             | Self::Project(..)
             | Self::PrimitiveValue(_)
@@ -2848,6 +2862,17 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     )
                     .unwrap_or_else(|never| match never {}),
             ),
+            Computation::Memory(ref form) => ContentNode::Memory(
+                form.try_map(
+                    gandr_core_term::session::ChildOrder::Forward,
+                    self,
+                    |reader, value| {
+                        Ok::<_, core::convert::Infallible>(reader.discover(ArenaNode::Value(value)))
+                    },
+                    |reader, body| Ok(reader.discover(ArenaNode::Computation(body))),
+                )
+                .unwrap_or_else(|never| match never {}),
+            ),
             Computation::Perform {
                 ref signature,
                 ref operation,
@@ -3431,6 +3456,15 @@ where
                     |image, ty| Ok(image(ty)),
                 )
                 .unwrap_or_else(|never| match never {}),
+        ),
+        ContentNode::Memory(ref form) => ContentNode::Memory(
+            form.try_map(
+                gandr_core_term::session::ChildOrder::Forward,
+                image,
+                |image, value| Ok::<_, core::convert::Infallible>(image(value)),
+                |image, body| Ok(image(body)),
+            )
+            .unwrap_or_else(|never| match never {}),
         ),
         ContentNode::SessionType(ref session) => ContentNode::SessionType(
             session
@@ -4281,6 +4315,7 @@ fn mint_node(
         | ContentNode::Reify(_)
         | ContentNode::Perform { .. }
         | ContentNode::Session(_)
+        | ContentNode::Memory(_)
         | ContentNode::Handle { .. }
         | ContentNode::Exercise { .. }
         | ContentNode::Scope { .. }

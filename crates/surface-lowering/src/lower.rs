@@ -206,12 +206,14 @@
 //! the checker refuses a discarded result of any other type at the statement,
 //! and the lowering needs no annotation of its own. A block with no last
 //! computation is refused at the block as `Arity` with zero. `recv(c) as x;`
-//! binds `x` as `run x <- c;` does, and `fork (c : S) t as d;` runs `t`
-//! beside the rest of the block (the `lower::session` module). The statements
-//! `val`, `unpack` and `leta` are refused as `Unadmitted`, and `acquire`,
-//! `release` and the shared `fork !` as `Reserved`, each named by its form at
-//! its keyword; and a `run` binder that is annotated or is a pattern other
-//! than a name is refused as `Unadmitted`, at the annotation or the pattern.
+//! binds `x` as `run x <- c;` does, `fork (c : S) t as d;` runs `t` beside
+//! the rest of the block (the `lower::session` module), and `hold x = e;`
+//! holds `e` for the rest of the block (the `lower::access` module). The
+//! statements `val`, `unpack` and `leta` are refused as `Unadmitted`, and
+//! `acquire`, `release` and the shared `fork !` as `Reserved`, each named by
+//! its form at its keyword; and a `run` binder that is annotated or is a
+//! pattern other than a name is refused as `Unadmitted`, at the annotation or
+//! the pattern.
 //!
 //! The one expression statement admitted is an exit closing its block, `{ run m
 //! <- f(n); return m; }`: `return v;` or `become c;` written before the closing
@@ -485,6 +487,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::Protocol;
 use gandr_core_term::session::SessionAction;
 use gandr_kernel_strata::Level;
@@ -601,6 +604,8 @@ use crate::resolve::binder_site;
 use crate::resolve::binder_type;
 use crate::resolve::type_atom;
 use crate::resolve::type_former;
+
+mod access;
 
 mod arity;
 
@@ -1201,7 +1206,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::CapabilityType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::CapabilityType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1259,6 +1264,7 @@ fn ending(former: Former) -> Ending
         | Former::Data
         | Former::SessionType
         | Former::Action
+        | Former::Access
         | Former::Reserved
         | Former::Unadmitted => Ending::Inferred,
     }
@@ -1282,7 +1288,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::CapabilityType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::CapabilityType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1353,7 +1359,8 @@ fn iterating(former: Former) -> Ending
                     | Former::Instantiation
                     | Former::Scope
                     | Former::Action
-                    | Former::Offer,
+                    | Former::Offer
+                    | Former::Access,
                 Family::Term
             ) | (
                 Former::TypeHead
@@ -1423,7 +1430,8 @@ const fn family_of(former: Former) -> Family
         | Former::Instantiation
         | Former::Scope
         | Former::Action
-        | Former::Offer => Family::Term,
+        | Former::Offer
+        | Former::Access => Family::Term,
         Former::TypeHead
         | Former::TypePath
         | Former::Universe
@@ -1568,7 +1576,7 @@ struct Stretch
 }
 
 /// What a block statement does with the value its computation returns, or
-/// the fork it is.
+/// the fork or the hold it is.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum StatementBinding
 {
@@ -1590,6 +1598,13 @@ enum StatementBinding
         protocol: NodeIndex,
         /// The child computation.
         child: NodeIndex,
+    },
+    /// `hold x = e ;` holds the value `e`, under `x`'s linear binder, over the
+    /// rest of the block.
+    Held
+    {
+        /// The value held.
+        value: NodeIndex,
     },
 }
 
@@ -2184,6 +2199,9 @@ enum Plan
     /// A session action over the nodes of its payload, its arms and a fork's
     /// protocol and children, with the bytes its endpoint is written at.
     Action(SessionAction<NodeIndex, NodeIndex, NodeIndex>, ByteSpan),
+    /// A temporary-access form: an access over its body and unwind, or an
+    /// eliminator of its view.
+    Access(access::Accessed),
 }
 
 /// A node's lowered core node, at the sort its own form produced.
@@ -4298,6 +4316,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::Instantiation => self.instantiation(site, cursor),
             Former::SessionType => self.session_type(site),
             Former::Action | Former::Offer => self.session_action(site, cursor),
+            Former::Access => self.access_form(site, pieces),
             Former::Declaration | Former::Module => self.function(site, cursor),
             Former::AttributeBlock
             | Former::Import
@@ -5432,18 +5451,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: each `run x <- c ;` statement reads its computation under the
     ///   frame the statements before it extended and binds `x` in a frame
     ///   extending that one; `recv(c) as x ;` binds `x` the same way, and `fork
-    ///   (c : S) t as d ;` binds `d` linearly over the rest of the block; the
-    ///   last computation, written bare or as a statement `c ;` before the
-    ///   closing `}` and then recorded as stated, reads under the frame every
-    ///   statement extended; the statements and the last computation are
-    ///   returned, with the cursor past the closing `}` and nothing after it.
+    ///   (c : S) t as d ;` binds `d` and `hold x = e ;` binds `x` linearly over
+    ///   the rest of the block; the last computation, written bare or as a
+    ///   statement `c ;` before the closing `}` and then recorded as stated,
+    ///   reads under the frame every statement extended; the statements and the
+    ///   last computation are returned, with the cursor past the closing `}`
+    ///   and nothing after it.
     /// - provides: the body reading of thunks, lambdas and function tails.
     /// - fails: yields the unadmitted or the reserved refusal for a statement
     ///   the fragment does not read, by the statement's own name; the
-    ///   unadmitted refusal for a fork in a block whose ends continue an
-    ///   enclosing one past an early exit; the arity refusal, as a block, for a
-    ///   block with no last computation; and each statement's and hole's own
-    ///   refusal.
+    ///   unadmitted refusal for a fork or a hold in a block whose ends continue
+    ///   an enclosing one past an early exit; the arity refusal, as a block,
+    ///   for a block with no last computation; and each statement's and hole's
+    ///   own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -5459,6 +5479,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
     /// - witness: `lower::session::tests::a_fork_an_exit_would_continue_is_declined`
+    /// - witness: `lower::access::tests::an_exit_inside_an_access_is_refused`
     /// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
     #[spec(
         captures: before = (self.statements.len(), frame),
@@ -5583,10 +5604,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     else if self.joined.contains(&site.at.node) {
                         return Err(LoweringRefusal::OutOfFragment {
                             span: at.span,
-                            form: FormName::FORK_STATEMENT,
+                            form: if label == TileName::HOLD {
+                                FormName::HOLD_STATEMENT
+                            }
+                            else {
+                                FormName::FORK_STATEMENT
+                            },
                             sort: FragmentSort::Computation,
                             boundary: FragmentBoundary::Unadmitted,
                         });
+                    }
+                    else if label == TileName::HOLD {
+                        self.hold(cursor, at, frame)?
                     }
                     else {
                         self.fork(cursor, at, frame)?
@@ -8827,7 +8856,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::FlowProduct(..)
                 | Plan::Recorded(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(..) | Plan::Ride(..) | Plan::FlowThen(..) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -9074,6 +9103,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.mint_session(protocol, payloads, written, sink, origin)
             },
             Plan::Action(ref action, subject) => self.mint_action(action, subject, sink, origin),
+            Plan::Access(accessed) => self.mint_access(accessed, sink, origin),
             Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),
             Plan::Ride(motive, flow, value) => self.mint_ride((motive, flow, value), sink, origin),
             Plan::FlowThen(first, second) => self.mint_flow_then(first, second, sink, origin),
@@ -9900,6 +9930,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Derived(_)
             | Plan::Session(..)
             | Plan::Action(..)
+            | Plan::Access(_)
             | Plan::TelescopeTransport(_)
             | Plan::Capability(..)
             | Plan::Effectful(..)
@@ -9919,9 +9950,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: `run x1 <- c1 ; … run xn <- cn ; c` mints as `bind(c1, …
     ///   bind(cn, c))`, each bind's origin its statement's `run` tile; a fork
     ///   `fork (c : S) t as d ;` mints as the fork of `t` at `S` whose parent
-    ///   is the rest of the block, at its `fork` tile's origin; a block of no
-    ///   statements is its last computation; nothing is minted when any
-    ///   computation or protocol of the block did not lower.
+    ///   is the rest of the block, at its `fork` tile's origin; a hold `hold x
+    ///   = e ;` mints as the hold of `e` whose scope is the rest of the block,
+    ///   at its `hold` tile's origin; a block of no statements is its last
+    ///   computation; nothing is minted when any computation, value or protocol
+    ///   of the block did not lower.
     /// - provides: the block half of thunks, lambdas and function tails.
     /// - fails: never.
     /// - panics: none.
@@ -9980,6 +10013,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
+            if let StatementBinding::Held { value } = statement.binding {
+                let Maybe::Present(value) = self.value_at(value)
+                else {
+                    return Maybe::Absent(lowered::Absent::Unminted);
+                };
+                let id = sink
+                    .arena
+                    .computation_memory(MemoryForm::Hold { value, body: chain });
+                sink.origins.record_computation(id, origin);
+                chain = id;
+                continue;
+            }
             if let StatementBinding::Forked { protocol, child } = statement.binding {
                 let (Maybe::Present(protocol), Maybe::Present(child)) =
                     (self.value_type_at(protocol), self.computation_at(child))
@@ -10000,7 +10045,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
             let split = match statement.binding {
-                StatementBinding::Named(_) | StatementBinding::Forked { .. } => None,
+                StatementBinding::Named(_)
+                | StatementBinding::Forked { .. }
+                | StatementBinding::Held { .. } => None,
                 StatementBinding::Discarded => Some(gandr_core_term::ComponentCount::default()),
                 StatementBinding::Split(arity) => Some(arity),
             };
@@ -10046,6 +10093,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     #[spec(ensures: |ret| match statement.binding {
         | StatementBinding::Forked { protocol, child } => (ret == Maybe::Present(())) == (matches!(self.value_type_at(protocol), Maybe::Present(_)) && matches!(self.computation_at(child), Maybe::Present(_))),
+        | StatementBinding::Held { value } => (ret == Maybe::Present(())) == matches!(self.value_at(value), Maybe::Present(_)),
         | _ => (ret == Maybe::Present(())) == matches!(self.computation_at(statement.bound), Maybe::Present(_)),
     })]
     fn statement_parts(
@@ -10058,6 +10106,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .value_type_at(protocol)
                 .and_then(|_protocol| self.computation_at(child))
                 .map(|_child| ()),
+            StatementBinding::Held { value } => self.value_at(value).map(|_value| ()),
             StatementBinding::Named(_)
             | StatementBinding::Discarded
             | StatementBinding::Split(_) => self.computation_at(statement.bound).map(|_bound| ()),
@@ -12385,8 +12434,8 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 5_usize] = [
 /// - requires: `cursor` stands at the tile `label`, in a block, at a place a
 ///   statement may start.
 /// - ensures: `fork` followed by `!` is the shared fork, reserved; a keyword of
-///   the table its form and boundary; `run`, `recv` and `fork` without `!` open
-///   statements the block reads, [`statement::Absent::Read`].
+///   the table its form and boundary; `run`, `recv`, `hold` and `fork` without
+///   `!` open statements the block reads, [`statement::Absent::Read`].
 /// - provides: the names a block's refused statements are written as;
 ///   [`statement::Absent::NotAKeyword`] for a tile no statement starts with.
 /// - fails: never.
@@ -12407,7 +12456,7 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 5_usize] = [
         ret == if shared {
             Maybe::Present((FormName::FORK_SHARED_STATEMENT, FragmentBoundary::Reserved))
         }
-        else if label == TileName::FORK || label == TileName::RUN || label == TileName::RECV {
+        else if label == TileName::FORK || label == TileName::RUN || label == TileName::RECV || label == TileName::HOLD {
             Maybe::Absent(statement::Absent::Read)
         }
         else {
@@ -12436,7 +12485,7 @@ fn statement_form(
             Maybe::Absent(_) => Maybe::Absent(statement::Absent::Read),
         };
     }
-    if label == TileName::RUN || label == TileName::RECV {
+    if label == TileName::RUN || label == TileName::RECV || label == TileName::HOLD {
         return Maybe::Absent(statement::Absent::Read);
     }
 
@@ -12909,6 +12958,7 @@ pub fn parse_literal(
         | Former::SessionType
         | Former::Action
         | Former::Offer
+        | Former::Access
         | Former::Reserved
         | Former::Unadmitted => return Maybe::Absent(literal::Absent::NotALiteral),
     };

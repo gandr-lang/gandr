@@ -882,6 +882,9 @@ pub enum Computation
     /// A session action: send, receive, select, offer or close on a linear
     /// endpoint, or fork a new pair of endpoints.
     Session(crate::session::SessionAction),
+    /// A memory form: hold a value exclusively, access it through a view,
+    /// or end a view by resuming or aborting it.
+    Memory(crate::memory::MemoryForm),
 }
 
 /// A value type: the positive fragment of the core type vocabulary.
@@ -2072,6 +2075,17 @@ fn equal_syntax(
                                 .zip(right.value_types())
                                 .map(|(a, b)| VT(a, b)),
                         );
+                        pending.extend(left.values().zip(right.values()).map(|(a, b)| V(a, b)));
+                        pending.extend(
+                            left.computations()
+                                .zip(right.computations())
+                                .map(|(a, b)| C(a, b)),
+                        );
+                    },
+                    (&Computation::Memory(ref left), &Computation::Memory(ref right)) => {
+                        if left.shape() != right.shape() {
+                            return CertificateEquality::Different;
+                        }
                         pending.extend(left.values().zip(right.values()).map(|(a, b)| V(a, b)));
                         pending.extend(
                             left.computations()

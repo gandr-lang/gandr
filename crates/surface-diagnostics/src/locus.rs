@@ -43,6 +43,7 @@ use gandr_core_checker::RunFault;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::UnadmittedFormer;
+use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::compared;
 use gandr_core_checker::session::Capture;
 use gandr_core_checker::session::LinearityDefect;
@@ -685,7 +686,7 @@ impl Annotations
             | CheckRefusal::MachineInvariant | CheckRefusal::CapabilityUngranted { .. } => ret.primary == Maybe::Present(Annotation {
                 span: declaration, label,
             }) && ret.context == UNNAMED,
-        CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::RepresentationAboveKind { .. } | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::DependentStack { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::DescentNotReplayed { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityForged { .. } | CheckRefusal::CapabilityAmplified(_) | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityEscaped { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } => ret.context == UNNAMED,
+        CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::RepresentationAboveKind { .. } | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::DependentStack { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::DescentNotReplayed { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityForged { .. } | CheckRefusal::CapabilityAmplified(_) | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityEscaped { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } => ret.context == UNNAMED,
     }
 })]
 fn checked(
@@ -905,7 +906,8 @@ fn checked(
                 LinearityDefect::Delegated
                 | LinearityDefect::Unrestricted
                 | LinearityDefect::Unbound { .. },
-        } => (node(origins, at), UNNAMED),
+        }
+        | CheckRefusal::Access { at, .. } => (node(origins, at), UNNAMED),
     };
     let primary = match primary {
         Maybe::Present(span) => Maybe::Present(Annotation { span, label }),
@@ -1339,6 +1341,28 @@ impl fmt::Display for Checked
                     u32::from(index)
                 ),
             },
+            | CheckRefusal::Access { defect, .. } => match defect {
+                | AccessDefect::NotHeld => f.write_str("the access names a linear slot that holds no value"),
+                | AccessDefect::Lent => f.write_str("the held value is lent to an access and cannot be named here"),
+                | AccessDefect::HeldCaptured { by } => write!(
+                    f,
+                    "the held value is named inside {}, which may run its holding other than once",
+                    Captor(by)
+                ),
+                | AccessDefect::Escaped { by } => write!(
+                    f,
+                    "the view is named inside {}, which may outlive the access's body",
+                    Captor(by)
+                ),
+                | AccessDefect::Unended => {
+                    f.write_str("the access's body ends with its view neither resumed nor aborted")
+                },
+                | AccessDefect::Spent => f.write_str("the view is used after its resume or abort"),
+                | AccessDefect::NotAView => f.write_str("the resume or abort names a linear slot that is no view"),
+                | AccessDefect::UnwindEffect => f.write_str(
+                    "the access's unwind performs an effect: an unwind runs under the empty row",
+                ),
+            },
             | CheckRefusal::CapabilityForged { .. } => f.write_str(
                 "a capability type is inhabited only by a capability hypothesis, and this term \
                  is none",
@@ -1597,6 +1621,7 @@ impl fmt::Display for Former
                 "a recorded run or a ride at the pure kernel boundary, moved by the recorded-run consumer"
             },
             | UnadmittedFormer::HigherFlow => "a flow at a universe above level zero",
+            | UnadmittedFormer::Memory => "a memory form at the pure kernel boundary",
         })
     }
 }

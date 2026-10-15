@@ -146,6 +146,7 @@ pub struct Unfolded(pub u64);
                     Computation::Primitive { arguments, .. } => if arguments.len() == 1 { 2 } else { 3 },
                     Computation::Case { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } => 4,
                     Computation::Session(ref action) => 1_u64.saturating_add(u64::try_from(action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count())).unwrap_or(u64::MAX)),
+                    Computation::Memory(ref form) => 1_u64.saturating_add(u64::try_from(form.values().count().saturating_add(form.computations().count())).unwrap_or(u64::MAX)),
                 }
             },
             CoreNode::ValueType(id) => {
@@ -448,6 +449,10 @@ pub fn unfolded(
                         pending.extend(action.value_types().map(CoreNode::ValueType));
                         pending.extend(action.values().map(CoreNode::Value));
                         pending.extend(action.computations().map(CoreNode::Computation));
+                    },
+                    Computation::Memory(ref form) => {
+                        pending.extend(form.values().map(CoreNode::Value));
+                        pending.extend(form.computations().map(CoreNode::Computation));
                     },
                 }
             },

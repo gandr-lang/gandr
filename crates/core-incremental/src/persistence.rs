@@ -1785,6 +1785,7 @@ mod tests
             Typing::Refused(Refusal::RunNotAdmitted { .. }) => "run-not-admitted",
             Typing::Refused(Refusal::ForwardUnsupported(_)) => "forward-unsupported",
             Typing::Refused(Refusal::Boundary(_)) => "boundary",
+            Typing::Refused(Refusal::Access { .. }) => "access",
             Typing::Refused(Refusal::EffectSignatureConflict { .. }) => "effect-signature-conflict",
             Typing::Refused(Refusal::UnknownOperation { .. }) => "unknown-operation",
             Typing::Refused(Refusal::HandlerCoverage { .. }) => "handler-coverage",

@@ -356,7 +356,8 @@ enum Kind
         | Former::ListFold { .. } | Former::Perform { .. } | Former::Handle { .. } | Former::Exercise { .. }
         | Former::Scope { .. } | Former::Resume(..) | Former::Reset(_) | Former::Shift(_) | Former::Lazy(..)
         | Former::Project(..) | Former::Send { .. } | Former::Receive(_) | Former::Select { .. } | Former::Offer { .. }
-        | Former::Close(_) | Former::Fork { .. }),
+        | Former::Close(_) | Former::Fork { .. } | Former::Hold { .. } | Former::Access { .. } | Former::ResumeView { .. }
+        | Former::AbortView(_)),
     | Kind::Unknown => matches!(*former, Former::Unreadable(_)),
 })]
 const fn kind<Node>(former: &Former<'_, Node>) -> Kind
@@ -451,7 +452,11 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Select { .. }
         | Former::Offer { .. }
         | Former::Close(_)
-        | Former::Fork { .. } => Kind::Computation,
+        | Former::Fork { .. }
+        | Former::Hold { .. }
+        | Former::Access { .. }
+        | Former::ResumeView { .. }
+        | Former::AbortView(_) => Kind::Computation,
         Former::Unreadable(_) => Kind::Unknown,
     }
 }
@@ -757,12 +762,13 @@ where
 ///   under one per component, a data case's branch under one per field of its
 ///   constructor, a fold's cell branch and a handler's operation clauses under
 ///   two, a scope's subject under the capability's and a fork's child and
-///   parent each under one linear binder; the computation a bind runs, the
-///   function an application applies and a computation where a value is read
-///   admit computations where the body goes on, a body in braces one where it
-///   ends, and a bind's rest and the branches of a case what its own position
-///   admits; a thunk's body is a child only where bodies are spelled; every
-///   leaf former has none.
+///   parent each under one linear binder, a hold's scope and an access's body
+///   each under one linear binder; the computation a bind runs, the function an
+///   application applies and a computation where a value is read admit
+///   computations where the body goes on, a body in braces one where it ends,
+///   and a bind's rest and the branches of a case what its own position admits;
+///   a thunk's body is a child only where bodies are spelled; every leaf former
+///   has none.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -793,9 +799,13 @@ where
     | Former::Offer { arms, .. } => ret.len() == usize::from(arms),
     | Former::Fork { .. } => ret.len() == 3_usize
         && ret.iter().skip(1_usize).all(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
+    | Former::Hold { .. } => ret.len() == 2_usize
+        && ret.last().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
+    | Former::Access { .. } => ret.len() == 2_usize
+        && ret.first().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
     | Former::BaseType(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
         | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
-        | Former::Reify | Former::Receive(_) | Former::Select { .. } | Former::Close(_) | Former::Unreadable(_) => ret.is_empty(),
+        | Former::Reify | Former::Receive(_) | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::Unreadable(_) => ret.is_empty(),
     | _ => !ret.is_empty(),
 })]
 pub fn children<S>(
@@ -920,7 +930,8 @@ where
         | Former::RecordProjection(child, _)
         | Former::TupleProjection(child, _)
         | Former::Perform { payload: child, .. }
-        | Former::Send { payload: child, .. } => Vec::from([value(child)]),
+        | Former::Send { payload: child, .. }
+        | Former::ResumeView { value: child, .. } => Vec::from([value(child)]),
         Former::Injection(summand, child) => Vec::from([Slot {
             label: Some(Labelled {
                 of: node,
@@ -1046,6 +1057,20 @@ where
                 Slot::of(parent, admits, linear),
             ])
         },
+        Former::Hold { value: held, body } => Vec::from([
+            value(held),
+            Slot::of(body, admits, Binds {
+                zone: Zone::Linear,
+                count: 1_usize,
+            }),
+        ]),
+        Former::Access { body, unwind, .. } => Vec::from([
+            ends(body, Binds {
+                zone: Zone::Linear,
+                count: 1_usize,
+            }),
+            ends(unwind, Binds::NONE),
+        ]),
         Former::BaseType(_)
         | Former::Universe { .. }
         | Former::Abstract(_)
@@ -1059,6 +1084,7 @@ where
         | Former::Receive(_)
         | Former::Select { .. }
         | Former::Close(_)
+        | Former::AbortView(_)
         | Former::Unreadable(_) => Vec::new(),
     }
 }
@@ -2800,6 +2826,10 @@ impl Walk<'_, '_>
                 | Former::Offer { .. }
                 | Former::Close(_)
                 | Former::Fork { .. }
+                | Former::Hold { .. }
+                | Former::Access { .. }
+                | Former::ResumeView { .. }
+                | Former::AbortView(_)
                 | Former::Unreadable(_) => return None,
             }
         }
@@ -3219,7 +3249,11 @@ impl Walk<'_, '_>
             | Former::Select { .. }
             | Former::Offer { .. }
             | Former::Close(_)
-            | Former::Fork { .. } => Some(self.form(source, node, &former)),
+            | Former::Fork { .. }
+            | Former::Hold { .. }
+            | Former::Access { .. }
+            | Former::ResumeView { .. }
+            | Former::AbortView(_) => Some(self.form(source, node, &former)),
             | Former::Reify => return self.approximate(Glyphs("<stack>")),
             | Former::Stack(..) => {
                 self.fidelity = Fidelity::Approximate;
@@ -4058,6 +4092,40 @@ impl Walk<'_, '_>
                     .part(Part::Line)
                     .piece(Binding::Sequence);
                 Binding::Sequence
+            },
+            Former::Hold { .. } => {
+                let _ = parts
+                    .text("hold ")
+                    .part(Part::Binder(0_usize))
+                    .text(" = ")
+                    .piece(Binding::Arrow)
+                    .text(" ;")
+                    .part(Part::Line)
+                    .piece(Binding::Sequence);
+                Binding::Sequence
+            },
+            Former::Access { held, .. } => {
+                let _ = parts
+                    .text("access ")
+                    .part(Part::Endpoint(held))
+                    .text(" as ")
+                    .part(Part::Binder(0_usize))
+                    .text(" {")
+                    .body()
+                    .text(" unwind {")
+                    .body();
+                Binding::Prefix
+            },
+            Former::ResumeView { view, .. } => {
+                let _ = parts
+                    .text("resume(")
+                    .part(Part::Endpoint(view))
+                    .rest(Arity(1_usize));
+                Binding::Atom
+            },
+            Former::AbortView(view) => {
+                let _ = parts.text("abort(").part(Part::Endpoint(view)).text(")");
+                Binding::Atom
             },
             Former::Reify
             | Former::Stack(..)

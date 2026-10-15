@@ -125,8 +125,9 @@
 //! ### Pure normalization boundary
 //!
 //! Conversion refuses all eight runtime-control formers with
-//! `EvalFault::RuntimeControl(ControlFormer)` and every session action with
-//! `EvalFault::SessionAction`; it never invokes a host. Stack/With type codes
+//! `EvalFault::RuntimeControl(ControlFormer)`, every session action with
+//! `EvalFault::SessionAction` and every memory form with
+//! `EvalFault::MemoryForm`; it never invokes a host. Stack/With type codes
 //! still compare and read back structurally with captured scope and
 //! effect-operation types intact.
 //!
@@ -360,6 +361,9 @@ pub enum EvalFault
     /// A session action communicates over an endpoint; it runs in a session
     /// runtime, never in the certificate normalizer.
     SessionAction,
+    /// A memory form reads and writes a held slot; it runs on the abstract
+    /// machine, never in the certificate normalizer.
+    MemoryForm,
     /// Runtime-native arithmetic is outside the certificate normalizer.
     NativePrimitive(gandr_core_term::primitive::Primitive),
     /// Transport met neither a native path nor a neutral path operand.
@@ -4073,6 +4077,7 @@ fn step_comp(
             gandr_core_term::control::ControlFormer::Project,
         )),
         Computation::Session(_) => Err(EvalFault::SessionAction),
+        Computation::Memory(_) => Err(EvalFault::MemoryForm),
         Computation::Exercise { .. } => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Exercise,
         )),
@@ -6829,7 +6834,8 @@ fn step_projection(
             | Computation::Shift(_)
             | Computation::With(..)
             | Computation::Project(..)
-            | Computation::Session(_) => EvalFault::MachineInvariant,
+            | Computation::Session(_)
+            | Computation::Memory(_) => EvalFault::MachineInvariant,
         })?;
     machine
         .comps

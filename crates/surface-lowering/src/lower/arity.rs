@@ -1075,6 +1075,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Instantiation
                 | Former::Action
                 | Former::Offer
+                | Former::Access
                 | Former::Reserved
                 | Former::Unadmitted => return Ok(TypeZone::Ordinary),
             };

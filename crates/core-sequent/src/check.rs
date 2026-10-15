@@ -32,7 +32,9 @@
 //! application frames negative, and variables, constants, `μ`, covariables,
 //! `μ̃` and `★` take the cut's polarity. On success it answers the command's
 //! free variables and covariables, counted from the command, so a caller asks
-//! for a closed command by asking for an empty `FreeSet`.
+//! for a closed command by asking for an empty `FreeSet`. A linear variable is
+//! bound only by a memory form's hold or access body; every other binder
+//! leaves it free.
 //!
 //! The arena is acyclic by construction, so the walk is a loop with no depth
 //! limit. The alternative was a full two-sided type check, which needs the
@@ -45,6 +47,7 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_core_term::Zone;
+use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_theory_cell_complexes::Polarity;
 
@@ -277,6 +280,9 @@ struct Depth
     producers: u32,
     /// Covariable binders.
     covariables: u32,
+    /// Linear producer binders: the held values and views of the memory
+    /// forms above.
+    linears: u32,
 }
 
 impl Depth
@@ -287,7 +293,8 @@ impl Depth
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each depth is increased by its corresponding arity, with
-    ///   arities wider than `u32` and sums past its ceiling saturating there.
+    ///   arities wider than `u32` and sums past its ceiling saturating there;
+    ///   the linear depth is unchanged.
     /// - provides: independent scope offsets for the two binding namespaces.
     /// - panics: none.
     ///
@@ -299,6 +306,7 @@ impl Depth
     #[spec(ensures: |ret|
         ret.producers == self.producers.saturating_add(u32::try_from(usize::from(producers)).unwrap_or(u32::MAX))
             && ret.covariables == self.covariables.saturating_add(u32::try_from(usize::from(covariables)).unwrap_or(u32::MAX))
+            && ret.linears == self.linears
     )]
     fn under(
         self,
@@ -312,6 +320,19 @@ impl Depth
             covariables: self
                 .covariables
                 .saturating_add(widen(usize::from(covariables))),
+            linears: self.linears,
+        }
+    }
+
+    /// The depth under one more linear binder, saturating at the ceiling.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn under_linear(self) -> Self
+    {
+        Self {
+            linears: self.linears.saturating_add(1),
+            ..self
         }
     }
 }
@@ -368,7 +389,7 @@ impl Walk<'_>
             CommandNode::Cut { producer, consumer, .. } => work.checked_add(2) == Some(self.stack.len())
                 && matches!(self.stack.get(work), Some(&Visit::Consumer(found, under)) if found == consumer && under == depth)
                 && matches!(self.stack.last(), Some(&Visit::Producer(found, under)) if found == producer && under == depth),
-            CommandNode::Perform { .. } | CommandNode::Handle { .. } | CommandNode::Resume { .. } | CommandNode::Reset { .. } | CommandNode::Shift { .. } => self.stack.len() > work,
+            CommandNode::Perform { .. } | CommandNode::Handle { .. } | CommandNode::Resume { .. } | CommandNode::Reset { .. } | CommandNode::Shift { .. } | CommandNode::Memory { .. } => self.stack.len() > work,
         }),
     )]
     fn command(
@@ -506,8 +527,51 @@ impl Walk<'_>
                     depth.under(ProducerArity::ONE, ConsumerArity::ONE),
                 ));
             },
+            CommandNode::Memory {
+                ref form,
+                continuation,
+            } => {
+                self.stack.push(Visit::Consumer(continuation, depth));
+                for (body, linears) in form.scoped() {
+                    let under = depth.under(ProducerArity::ZERO, ConsumerArity::ONE);
+                    let under = if linears == gandr_core_term::Binders::NONE {
+                        under
+                    }
+                    else {
+                        under.under_linear()
+                    };
+                    self.stack.push(Visit::Command(body, under));
+                }
+                for value in form.values() {
+                    self.stack.push(Visit::Producer(value, depth));
+                }
+                match *form {
+                    MemoryForm::Access { held: index, .. }
+                    | MemoryForm::Resume { view: index, .. }
+                    | MemoryForm::Abort { view: index } => self.linear(index, depth),
+                    MemoryForm::Hold { .. } => {},
+                }
+            },
         }
         Ok(())
+    }
+
+    /// Record a linear occurrence free when it counts past the linear binders
+    /// above it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn linear(
+        &mut self,
+        index: DeBruijnIndex,
+        depth: Depth,
+    )
+    {
+        if let Some(past) = u32::from(index).checked_sub(depth.linears) {
+            self.free
+                .producers
+                .insert((Zone::Linear, DeBruijnIndex::from(past)));
+        }
     }
 
     /// Check one producer and schedule its children.
@@ -538,12 +602,12 @@ impl Walk<'_>
     #[spec(
         captures: [free = self.free.producers.len()],
         ensures: |ref ret| ret.is_err() || self.arena.producer(id).is_some_and(|node| match *node {
-            | ProducerNode::Variable { zone, index } => match zone {
-                | Zone::Linear => self.free.producers.contains(&(zone, index)),
-                | Zone::Intuitionistic => u32::from(index).checked_sub(depth.producers)
-                    .map_or_else(|| self.free.producers.len() == free,
-                        |past| self.free.producers.contains(&(zone, DeBruijnIndex::from(past)))),
-            },
+            | ProducerNode::Variable { zone, index } => u32::from(index).checked_sub(match zone {
+                | Zone::Linear => depth.linears,
+                | Zone::Intuitionistic => depth.producers,
+            })
+                .map_or_else(|| self.free.producers.len() == free,
+                    |past| self.free.producers.contains(&(zone, DeBruijnIndex::from(past)))),
             | _ => true,
         }),
     )]
@@ -579,16 +643,15 @@ impl Walk<'_>
                     self.stack.push(Visit::Producer(*argument, depth));
                 }
             },
-            ProducerNode::Variable { zone, index } => {
-                let past = match zone {
-                    Zone::Intuitionistic => u32::from(index).checked_sub(depth.producers),
-                    Zone::Linear => Some(u32::from(index)),
-                };
-                if let Some(past) = past {
-                    self.free
-                        .producers
-                        .insert((zone, DeBruijnIndex::from(past)));
-                }
+            ProducerNode::Variable { zone, index } => match zone {
+                Zone::Intuitionistic => {
+                    if let Some(past) = u32::from(index).checked_sub(depth.producers) {
+                        self.free
+                            .producers
+                            .insert((zone, DeBruijnIndex::from(past)));
+                    }
+                },
+                Zone::Linear => self.linear(index, depth),
             },
             ProducerNode::Constant(_) | ProducerNode::Literal(_) => {},
             ProducerNode::Constructor {
@@ -1528,29 +1591,35 @@ mod tests
             (0_u32, 0_u32, 0_usize, 0_usize, Depth {
                 producers: 0,
                 covariables: 0,
+                linears: 4,
             }),
             (2, 7, 3, 5, Depth {
                 producers: 5,
                 covariables: 12,
+                linears: 4,
             }),
             (u32::MAX.saturating_sub(1), 2, 2, 4, Depth {
                 producers: u32::MAX,
                 covariables: 6,
+                linears: 4,
             }),
             (1, u32::MAX, 2, 1, Depth {
                 producers: 3,
                 covariables: u32::MAX,
+                linears: 4,
             }),
             (1, 0, usize::MAX, usize::MAX, Depth {
                 producers: u32::MAX,
                 covariables: u32::MAX,
+                linears: 4,
             }),
         ] {
             assert_eq!(
                 expected,
                 Depth {
                     producers,
-                    covariables
+                    covariables,
+                    linears: 4,
                 }
                 .under(add_producers.into(), add_covariables.into())
             );
@@ -1684,6 +1753,7 @@ mod tests
                 Depth {
                     producers: 2,
                     covariables: 2,
+                    linears: 0,
                 },
                 BTreeSet::from([
                     (Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),

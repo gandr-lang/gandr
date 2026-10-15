@@ -286,7 +286,8 @@ impl CoreArena
                         | Computation::Shift(_)
                         | Computation::With(..)
                         | Computation::Project(..)
-                        | Computation::Session(_) => None,
+                        | Computation::Session(_)
+                        | Computation::Memory(_) => None,
                     }),
             )
     }

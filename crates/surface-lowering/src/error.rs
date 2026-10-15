@@ -207,8 +207,8 @@ impl fmt::Display for FragmentSort
 /// - requires: the producer identifies the boundary crossed by the source form.
 /// - ensures: reserved, unadmitted, wrong-sort, wrong-arity, indexed,
 ///   unannotated, not-a-function, non-uniform, not-in-tail, joins-block,
-///   empty-list, endpoint and non-contractive reports remain distinct; an arity
-///   report carries the number of operands offered.
+///   empty-list, endpoint, non-contractive, held and view reports remain
+///   distinct; an arity report carries the number of operands offered.
 /// - provides: why a parsed form has no representation at this position.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -230,6 +230,7 @@ impl fmt::Display for FragmentSort
 /// - witness: `lower::exits::tests::a_match_continuing_its_block_answers_what_the_block_does`
 /// - witness: `lower::session::tests::an_action_on_no_endpoint_is_refused`
 /// - witness: `lower::session::tests::a_malformed_protocol_is_refused_where_it_is_written`
+/// - witness: `lower::access::tests::an_access_names_a_held_value_and_an_eliminator_its_view`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FragmentBoundary
 {
@@ -283,6 +284,13 @@ pub enum FragmentBoundary
     /// The form is a `mu` whose body is a `mu` or a recursion variable, so
     /// the protocol recurses before any action: not contractive.
     NonContractive,
+    /// The name an access lends is no linear slot: a value, a declaration
+    /// or an ordinary binder, where only a name a `hold` holds can be lent.
+    Held,
+    /// The name a `resume` or an `abort` ends is no linear slot: a value, a
+    /// declaration or an ordinary binder, where only the view an `access`
+    /// binds can be ended.
+    View,
 }
 
 impl fmt::Display for FragmentBoundary
@@ -332,6 +340,12 @@ impl fmt::Display for FragmentBoundary
             Self::NonContractive => f.write_str(
                 "recurses before any action: a `mu` body that is a `mu` or a variable unfolds \
                  to itself",
+            ),
+            Self::Held => {
+                f.write_str("is no held value: an access lends a name a `hold` statement holds")
+            },
+            Self::View => f.write_str(
+                "is no view: `resume` and `abort` end the name an `access` binds after `as`",
             ),
         }
     }

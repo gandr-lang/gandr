@@ -279,7 +279,8 @@ fn machine_stop(
         | Stuck::CyclicConstant(_)
         | Stuck::IllFormedCommand(_)
         | Stuck::IllFormedProducer(_)
-        | Stuck::IllFormedConsumer(_) => {
+        | Stuck::IllFormedConsumer(_)
+        | Stuck::Unended(_) => {
             panic!("no focused core term stops the machine as: {stuck}")
         },
     }
@@ -402,6 +403,7 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::ReturnedNonReturner
         | EvalFault::AppliedNonOperator
         | EvalFault::SessionAction
+        | EvalFault::MemoryForm
         | EvalFault::MachineInvariant => {
             panic!("no pure core term faults the normaliser as: {fault:?}")
         },

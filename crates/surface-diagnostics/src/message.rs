@@ -40,6 +40,7 @@ use core::fmt;
 
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
+use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
@@ -235,6 +236,12 @@ fn lowered(
                 FragmentBoundary::NonContractive => f.write_str(
                     "this recursive session type recurses before any action; put a send, a \
                      receive or a choice under its `mu`",
+                ),
+                FragmentBoundary::Held => {
+                    f.write_str("an `access` lends a held value: a name a `hold` statement holds")
+                },
+                FragmentBoundary::View => f.write_str(
+                    "`resume` and `abort` end a view: the name an `access` binds after `as`",
                 ),
             }
         },
@@ -731,6 +738,34 @@ fn checked(
                 f.write_str("internal error: a session action names an endpoint no `fork` opened")
             },
         },
+        CheckRefusal::Access { defect, .. } => match defect {
+            AccessDefect::NotHeld => {
+                f.write_str("`access` needs a value opened by `hold`; this names something else")
+            },
+            AccessDefect::Lent => f.write_str(
+                "the held value is lent to an `access` here, which ends before it can be read",
+            ),
+            AccessDefect::HeldCaptured { by } => write!(
+                f,
+                "the held value is used inside {}, which may run it other than once",
+                Captor(by)
+            ),
+            AccessDefect::Escaped { by } => write!(
+                f,
+                "the view is used inside {}, which may outlive its `access`",
+                Captor(by)
+            ),
+            AccessDefect::Unended => {
+                f.write_str("the body of this `access` must end its view with `resume` or `abort`")
+            },
+            AccessDefect::Spent => f.write_str("the view is used after its `resume` or `abort`"),
+            AccessDefect::NotAView => {
+                f.write_str("`resume` and `abort` need the view an `access` opened")
+            },
+            AccessDefect::UnwindEffect => {
+                f.write_str("an `unwind` runs under the empty row and cannot perform an effect")
+            },
+        },
         CheckRefusal::CapabilityForged { .. } => f.write_str(
             "a capability cannot be made from a term; only one held or granted can stand here",
         ),
@@ -770,6 +805,7 @@ mod tests
     use gandr_core_checker::TermNode;
     use gandr_core_checker::TypeNode;
     use gandr_core_checker::UnadmittedFormer;
+    use gandr_core_checker::access::AccessDefect;
     use gandr_core_checker::session::Capture;
     use gandr_core_checker::session::Endpoint;
     use gandr_core_checker::session::ForkSide;
@@ -1264,6 +1300,38 @@ mod tests
                 defect: LinearityDefect::Unbound {
                     index: DeBruijnIndex::from(0_u32),
                 },
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::NotHeld,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Lent,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::HeldCaptured { by: Capture::Thunk },
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Escaped { by: Capture::Thunk },
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Unended,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Spent,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::NotAView,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::UnwindEffect,
             },
             CheckRefusal::CapabilityForged {
                 at: value,

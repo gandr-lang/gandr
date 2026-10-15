@@ -118,7 +118,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Focusing, records, codes and native universe paths | [`focus`](src/focus.rs) |
 | Unfocusing | [`unfocus`](src/unfocus.rs) |
 | The typed-IL check | [`check`](src/check.rs) |
-| Marks, fixpoints, effects and delimited control | [`machine`](src/machine.rs) |
+| Marks, fixpoints, effects, delimited control and temporary access | [`machine`](src/machine.rs) |
 | Readback | [`readback`](src/readback.rs) |
 | The two-region store and the cell protocol | [`store`](src/store.rs) |
 | The bridge from cells and its polarity | [`bridge`](src/bridge.rs) |

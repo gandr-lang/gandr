@@ -1,0 +1,47 @@
+// Temporary access. `hold c = e;` keeps a value for the rest of a block, and
+// `access c as v { … }` lends it to the view `v`, which the body ends exactly
+// once: `resume(v, e)` writes `e` back, `abort(v)` leaves the held value as it
+// was and runs the access's `unwind` clause instead. The unwind runs under the
+// empty row, and an access with none unwinds by doing nothing.
+
+/// The successor, a call whose type synthesises where a statement binds it.
+@[ checks ]
+def succ(n : Integer) -> -F Integer {
+  pure n + 1
+}
+
+/// A count held at zero and two accesses through the view: the first resumes
+/// with the increment, the second aborts. The count observes the write-back on
+/// `resume` and none on `abort`.
+@[ runs("1") ]
+def counter() -> -F Integer {
+  hold c = 0;
+  access c as v { run n <- succ(v) ; resume(v, n) };
+  access c as v { abort(v) } unwind { pure unit };
+  pure c
+}
+
+/// The view reads the value it lends, so each write-back sees the one before
+/// it.
+@[ runs("12") ]
+def doubled() -> -F Integer {
+  hold c = 3;
+  access c as v { resume(v, v + v) };
+  access c as v { resume(v, v + 6) };
+  pure c
+}
+
+/// A held value beside a parameter: the write-back reads both, and an access
+/// that aborts without an `unwind` clause unwinds by doing nothing.
+@[ checks ]
+def add_to(n : Integer) -> -F Integer {
+  hold c = 1;
+  access c as v { resume(v, v + n) };
+  access c as v { abort(v) };
+  pure c
+}
+
+/// One held, five added.
+@[ runs("6") ]
+def add_five : +U (-F Integer) ;
+def add_five = thunk { add_to(5) } ;

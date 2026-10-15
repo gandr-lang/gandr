@@ -406,7 +406,9 @@ impl<'run> Reading<'run>
                             | crate::store::Frame::Case { .. }
                             | crate::store::Frame::ListFold { .. }
                             | crate::store::Frame::Select { .. }
-                            | crate::store::Frame::Update { .. } => {
+                            | crate::store::Frame::Update { .. }
+                            | crate::store::Frame::Access { .. }
+                            | crate::store::Frame::Answer { .. } => {
                                 return Err(ReadbackRefusal::NonLiteralStack(id));
                             },
                         }
@@ -536,7 +538,9 @@ impl<'run> Reading<'run>
                         | crate::store::Frame::Case { .. }
                         | crate::store::Frame::ListFold { .. }
                         | crate::store::Frame::Select { .. }
-                        | crate::store::Frame::Update { .. } => {
+                        | crate::store::Frame::Update { .. }
+                        | crate::store::Frame::Access { .. }
+                        | crate::store::Frame::Answer { .. } => {
                             return Err(ReadbackRefusal::NonLiteralStack(id));
                         },
                     });

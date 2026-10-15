@@ -705,6 +705,14 @@ pub enum Refusal
     ForwardUnsupported(Site),
     /// A function flow's boundary that runs against its variance.
     Boundary(Site),
+    /// A held value or a view outside its access discipline.
+    Access
+    {
+        /// The node where the defect was found.
+        at: Site,
+        /// What the discipline refuses.
+        defect: gandr_core_checker::access::AccessDefect,
+    },
 }
 
 /// An item's typing: its verdict, projected.
@@ -1162,6 +1170,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let (CheckRefusal::SessionNotEquivalent { at }, &Refusal::SessionNotEquivalent(projected)) | (CheckRefusal::SessionNotSubtype { at }, &Refusal::SessionNotSubtype(projected)) | (CheckRefusal::SessionCodeExpected { at }, &Refusal::SessionCodeExpected(projected)) | (CheckRefusal::ForwardUnsupported { at }, &Refusal::ForwardUnsupported(projected)) | (CheckRefusal::Boundary { at }, &Refusal::Boundary(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Value(at)) }
  else if let (CheckRefusal::NonCovariantMotive { at }, &Refusal::NonCovariantMotive(projected)) | (CheckRefusal::RideUnsupported { at }, &Refusal::RideUnsupported(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::RunNotAdmitted { at, fault } = matched_left_value && let Refusal::RunNotAdmitted { at: projected, fault: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == fault }
+ else if let CheckRefusal::Access { at, defect } = matched_left_value && let Refusal::Access { at: projected, defect: kept } = *matched_right_value { projected == self.core_site(at) && kept == defect }
  else { false }
 })]
     fn refusal(
@@ -1518,6 +1527,10 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 Refusal::ForwardUnsupported(self.site(ArenaNode::Value(at)))
             },
             CheckRefusal::Boundary { at } => Refusal::Boundary(self.site(ArenaNode::Value(at))),
+            CheckRefusal::Access { at, defect } => Refusal::Access {
+                at: self.core_site(at),
+                defect,
+            },
         }
     }
 }

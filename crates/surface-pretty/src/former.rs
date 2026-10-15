@@ -753,6 +753,36 @@ pub enum Former<'source, Node>
         /// The continuation.
         parent: Node,
     },
+    /// A hold, `hold x = v ; t`: the scope under the held slot's linear
+    /// binder.
+    Hold
+    {
+        /// The value held.
+        value: Node,
+        /// The scope.
+        body: Node,
+    },
+    /// An access, `access x as w { t } unwind { u }`: the body under the
+    /// view's linear binder.
+    Access
+    {
+        /// The held slot lent, a linear index.
+        held: DeBruijnIndex,
+        /// The body.
+        body: Node,
+        /// The unwind.
+        unwind: Node,
+    },
+    /// A view's resume, `resume(w, v)`.
+    ResumeView
+    {
+        /// The view, a linear index.
+        view: DeBruijnIndex,
+        /// The value written back.
+        value: Node,
+    },
+    /// A view's abort, `abort(w)`.
+    AbortView(DeBruijnIndex),
     /// A node with no former the printer spells, and why.
     Unreadable(Unreadable),
 }

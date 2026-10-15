@@ -122,6 +122,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Definition heights and per-scope transparency | [`definition`](src/definition.rs) |
 | The failure vocabulary | [`failure`](src/failure.rs) |
 | Effects, handlers and control | [`effect`](src/effect.rs), [`control`](src/control.rs) |
+| Temporary access: hold, access, resume and abort | [`memory`](src/memory.rs) |
 | References and specification attributes | [`src/lib.rs`](src/lib.rs) |
 
 ## License

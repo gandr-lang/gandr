@@ -141,7 +141,9 @@ impl Image
                 | Value::Reify(_)
                 | Value::Hole(_),
             )
-            | Self::Computation(Computation::Hole(_) | Computation::Session(_))
+            | Self::Computation(
+                Computation::Hole(_) | Computation::Session(_) | Computation::Memory(_),
+            )
             | Self::ValueType(
                 ValueType::Base(_)
                 | ValueType::Product(_)
@@ -538,6 +540,8 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         }
                                     }));
                                 },
+                                // refused_by: container_member · collision: none (both sides
+                                // edited, nowhere the same lines)
                                 Value::Primitive { .. }
                                 | Value::PathRefl(_)
                                 | Value::PathProduct(..)
@@ -633,6 +637,17 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                             )
                                             .chain(
                                                 action.computations().map(|body| {
+                                                    Task::Open(Node::Computation(body))
+                                                }),
+                                            ),
+                                    );
+                                },
+                                Computation::Memory(ref form) => {
+                                    self.pending.extend(
+                                        form.values()
+                                            .map(|value| Task::Open(Node::Value(value)))
+                                            .chain(
+                                                form.computations().map(|body| {
                                                     Task::Open(Node::Computation(body))
                                                 }),
                                             ),
@@ -892,6 +907,14 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 |&mut (), value| map_value(value),
                                 |&mut (), body| map_computation(body),
                                 |&mut (), ty| map_type(ty),
+                            )?;
+                        },
+                        Image::Computation(Computation::Memory(ref mut form)) => {
+                            *form = form.try_map(
+                                crate::session::ChildOrder::Forward,
+                                &mut (),
+                                |&mut (), value| map_value(value),
+                                |&mut (), body| map_computation(body),
                             )?;
                         },
                         Image::ValueType(ValueType::Session(ref mut session)) => {

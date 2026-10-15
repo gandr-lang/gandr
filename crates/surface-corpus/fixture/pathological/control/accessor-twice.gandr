@@ -1,0 +1,15 @@
+/// A view ended twice: once resumed, the view is spent, and the abort after it
+/// has nothing to end.
+@[ refuses("ViewSpent") ]
+def twice() -> -F Unit {
+  hold c = 0;
+  access c as v { resume(v, 1); abort(v) }
+}
+
+/// A view the body never ends: the access would return without a write-back
+/// or an unwind.
+@[ refuses("ViewUnended") ]
+def unended() -> -F Unit {
+  hold c = 0;
+  access c as v { pure unit }
+}

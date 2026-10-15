@@ -20,6 +20,8 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::Zone;
+use gandr_core_term::memory::MemoryForm;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
@@ -295,6 +297,7 @@ fn render<'arena>(
     | (Some(&CommandNode::Handle { subject, on_return, ref clauses, continuation, .. }), pieces) => pieces.iter().filter_map(|piece| match *piece { Piece::Command(id, _) => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq([subject, on_return].into_iter().chain(clauses.iter().map(|clause| clause.body))) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | (Some(&CommandNode::Resume { stack, body, continuation }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Producer(found, _) if found == stack)) && pieces.iter().any(|piece| matches!(*piece, Piece::Command(found, under) if found == body && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, _) if found == continuation)),
     | (Some(&CommandNode::Reset { body, continuation } | &CommandNode::Shift { body, continuation }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Command(found, under) if found == body && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
+    | (Some(&CommandNode::Memory { ref form, continuation }), pieces) => pieces.iter().filter_map(|piece| match *piece { Piece::Command(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(form.computations()) && pieces.iter().filter_map(|piece| match *piece { Piece::Producer(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(form.values()) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | _ => false,
 })]
 fn command(
@@ -411,6 +414,42 @@ fn command(
             Piece::Consumer(continuation, depth),
             text!(")")
         ],
+        CommandNode::Memory {
+            ref form,
+            continuation,
+        } => {
+            let linear =
+                |index: DeBruijnIndex| Piece::Owned(alloc::format!("l{}", u32::from(index)));
+            let mut pieces = match *form {
+                MemoryForm::Hold { value, body } => alloc::vec![
+                    text!("hold("),
+                    Piece::Producer(value, depth),
+                    text!("; (l; α) ⇒ "),
+                    Piece::Command(body, depth),
+                ],
+                MemoryForm::Access { held, body, unwind } => alloc::vec![
+                    text!("access("),
+                    linear(held),
+                    text!("; (l; α) ⇒ "),
+                    Piece::Command(body, depth),
+                    text!(" | unwind(α) ⇒ "),
+                    Piece::Command(unwind, depth),
+                ],
+                MemoryForm::Resume { view, value } => alloc::vec![
+                    text!("writeback("),
+                    linear(view),
+                    text!(", "),
+                    Piece::Producer(value, depth),
+                ],
+                MemoryForm::Abort { view } => alloc::vec![text!("abort("), linear(view)],
+            };
+            pieces.extend([
+                text!("; "),
+                Piece::Consumer(continuation, depth),
+                text!(")"),
+            ]);
+            pieces
+        },
     }
 }
 

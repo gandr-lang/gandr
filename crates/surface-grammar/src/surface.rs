@@ -405,6 +405,8 @@ pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
 /// recorded as adaptation surfaces.
 pub const PBG_ONLY_KINDS: &[&str] = &[
     // construct kinds (new rule provenances)
+    "abort_expression",
+    "access_expression",
     "become_expression",
     "break_expression",
     "break_value_expression",
@@ -416,6 +418,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "for_expression",
     "glob_expression",
     "handle_expression",
+    "hold_statement",
     "import_declaration",
     "circuit_declaration",
     "labelled_sum_expression",
@@ -430,6 +433,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "path_type",
     "unpack_statement",
     "rec_block",
+    "resume_expression",
     "return_expression",
     "run_expression",
     "sign_declaration",

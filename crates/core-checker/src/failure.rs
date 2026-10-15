@@ -298,6 +298,16 @@ pub enum FrameRole
     ArrowAgainst,
     /// A stay's point is checked at the carrier, then met with both endpoints.
     StayEndpoints,
+    /// A hold waits on its value's synthesis, then opens the held slot.
+    HoldValue,
+    /// A hold's scope is being judged with the held slot bound.
+    HoldBody,
+    /// An access's body is being judged with its view bound.
+    AccessBody,
+    /// An access's unwind is being checked under the empty row.
+    AccessUnwind,
+    /// A resume waits on its value's check, then spends its view.
+    ResumeValue,
 }
 
 impl fmt::Display for FrameRole
@@ -423,6 +433,11 @@ impl fmt::Display for FrameRole
             Self::ArrowCodomain => "ArrowCodomain",
             Self::ArrowAgainst => "ArrowAgainst",
             Self::StayEndpoints => "StayEndpoints",
+            Self::HoldValue => "HoldValue",
+            Self::HoldBody => "HoldBody",
+            Self::AccessBody => "AccessBody",
+            Self::AccessUnwind => "AccessUnwind",
+            Self::ResumeValue => "ResumeValue",
         })
     }
 }
@@ -873,6 +888,11 @@ mod tests
             FrameRole::ArrowCodomain,
             FrameRole::ArrowAgainst,
             FrameRole::StayEndpoints,
+            FrameRole::HoldValue,
+            FrameRole::HoldBody,
+            FrameRole::AccessBody,
+            FrameRole::AccessUnwind,
+            FrameRole::ResumeValue,
         ];
         let names: Vec<_> = roles.iter().map(ToString::to_string).collect();
         for (index, name) in names.iter().enumerate() {

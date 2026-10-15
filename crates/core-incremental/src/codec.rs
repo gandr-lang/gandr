@@ -46,6 +46,7 @@ use gandr_core_checker::RunFault;
 use gandr_core_checker::RunStep;
 use gandr_core_checker::StaticArity;
 use gandr_core_checker::UnadmittedFormer;
+use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::body;
 use gandr_core_checker::session::Capture;
 use gandr_core_checker::session::ForkSide;
@@ -57,6 +58,7 @@ use gandr_core_term::SortParameter;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::MarkIndex;
+use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::ActionKind;
 use gandr_core_term::session::PayloadCount;
 use gandr_core_term::session::PayloadSlot;
@@ -1366,6 +1368,34 @@ where
         ContentNode::Session(ref action) => {
             writer.tag(Tag(0x61));
             write_session_action(writer, action)?;
+        },
+        ContentNode::Memory(ref form) => {
+            writer.tag(Tag(0x7E));
+            let slot = |writer: &mut Writer<'_, Out>, index: DeBruijnIndex| {
+                writer.word(Word(u64::from(u32::from(index))));
+            };
+            match *form {
+                MemoryForm::Hold { value, body } => {
+                    writer.tag(Tag(0));
+                    write_index(writer, value)?;
+                    write_index(writer, body)?;
+                },
+                MemoryForm::Access { held, body, unwind } => {
+                    writer.tag(Tag(1));
+                    slot(writer, held);
+                    write_index(writer, body)?;
+                    write_index(writer, unwind)?;
+                },
+                MemoryForm::Resume { view, value } => {
+                    writer.tag(Tag(2));
+                    slot(writer, view);
+                    write_index(writer, value)?;
+                },
+                MemoryForm::Abort { view } => {
+                    writer.tag(Tag(3));
+                    slot(writer, view);
+                },
+            }
         },
         ContentNode::SessionRelated {
             relation,
@@ -3097,6 +3127,7 @@ fn read_effect_row(
                     | ContentNode::WithType(..) => tag == 0x73,
                     | ContentNode::SessionType(_) => tag == 0x60,
                     | ContentNode::Session(_) => tag == 0x61,
+                    | ContentNode::Memory(_) => tag == 0x7E,
                     | ContentNode::SessionRelated { .. } => tag == 0x62,
                     | ContentNode::Stay(_) => tag == 0x63,
                     | ContentNode::Then(..) => tag == 0x64,
@@ -3261,6 +3292,34 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         0x73 => ContentNode::WithType(read_index(reader)?, read_index(reader)?),
         0x60 => ContentNode::SessionType(read_session_type(reader)?),
         0x61 => ContentNode::Session(read_session_action(reader)?),
+        0x7E => {
+            let kind = reader.tag()?.0;
+            let slot = |reader: &mut Reader<'_>| {
+                let index = reader.word()?;
+                u32::try_from(index.0)
+                    .map(DeBruijnIndex::from)
+                    .map_err(|_overflow| CodecError::Corrupt)
+            };
+            ContentNode::Memory(match kind {
+                0 => MemoryForm::Hold {
+                    value: read_index(reader)?,
+                    body: read_index(reader)?,
+                },
+                1 => MemoryForm::Access {
+                    held: slot(reader)?,
+                    body: read_index(reader)?,
+                    unwind: read_index(reader)?,
+                },
+                2 => MemoryForm::Resume {
+                    view: slot(reader)?,
+                    value: read_index(reader)?,
+                },
+                3 => MemoryForm::Abort {
+                    view: slot(reader)?,
+                },
+                _ => return Err(CodecError::Corrupt),
+            })
+        },
         0x62 => ContentNode::SessionRelated {
             relation: match reader.tag()?.0 {
                 0 => SessionRelation::Equivalence,
@@ -4583,7 +4642,7 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in stable wire order.
-const FORMERS: [UnadmittedFormer; 21] = [
+const FORMERS: [UnadmittedFormer; 22] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::NumericAtom,
@@ -4605,6 +4664,7 @@ const FORMERS: [UnadmittedFormer; 21] = [
     UnadmittedFormer::Scope,
     UnadmittedFormer::Run,
     UnadmittedFormer::HigherFlow,
+    UnadmittedFormer::Memory,
 ];
 
 /// The shapes a rule can require, in stable wire order.
@@ -5473,6 +5533,24 @@ where
             writer.tag(Tag(71));
             write_site(writer, at)?;
         },
+        Refusal::Access { at, defect } => {
+            writer.tag(Tag(76));
+            write_site(writer, at)?;
+            let (kind, by) = match defect {
+                AccessDefect::NotHeld => (0, None),
+                AccessDefect::Lent => (1, None),
+                AccessDefect::HeldCaptured { by } => (2, Some(by)),
+                AccessDefect::Escaped { by } => (3, Some(by)),
+                AccessDefect::Unended => (4, None),
+                AccessDefect::Spent => (5, None),
+                AccessDefect::NotAView => (6, None),
+                AccessDefect::UnwindEffect => (7, None),
+            };
+            writer.tag(Tag(kind));
+            if let Some(by) = by {
+                write_listed(writer, &CAPTURES, &by)?;
+            }
+        },
     }
     Ok(())
 }
@@ -5620,6 +5698,7 @@ where
                     | Refusal::RunNotAdmitted { .. } => 69,
                     | Refusal::ForwardUnsupported(_) => 70,
                     | Refusal::Boundary(_) => 71,
+                    | Refusal::Access { .. } => 76,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -5928,6 +6007,25 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         68 => Refusal::RideUnsupported(read_site(reader)?),
         70 => Refusal::ForwardUnsupported(read_site(reader)?),
         71 => Refusal::Boundary(read_site(reader)?),
+        76 => {
+            let at = read_site(reader)?;
+            let defect = match reader.tag()?.0 {
+                0 => AccessDefect::NotHeld,
+                1 => AccessDefect::Lent,
+                2 => AccessDefect::HeldCaptured {
+                    by: read_listed(reader, &CAPTURES)?,
+                },
+                3 => AccessDefect::Escaped {
+                    by: read_listed(reader, &CAPTURES)?,
+                },
+                4 => AccessDefect::Unended,
+                5 => AccessDefect::Spent,
+                6 => AccessDefect::NotAView,
+                7 => AccessDefect::UnwindEffect,
+                _ => return Err(CodecError::NonCanonical),
+            };
+            Refusal::Access { at, defect }
+        },
         69 => {
             let at = read_site(reader)?;
             let kind = reader.tag()?.0;
@@ -6172,7 +6270,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
         Ok(()) => answer.nodes().iter().all(|node| !matches!(node,ContentNode::Unresolved(_))),
         Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node) {
 ContentNode::Unresolved(ref found) => Some(*found),
-ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
+ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
 }) == Some(sort),
         Err(CodecError::Unrepresentable) => true,
         _ => false,
@@ -6559,7 +6657,8 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::RideUnsupported(_)
             | Refusal::RunNotAdmitted { .. }
             | Refusal::ForwardUnsupported(_)
-            | Refusal::Boundary(_) => [None, None],
+            | Refusal::Boundary(_)
+            | Refusal::Access { .. } => [None, None],
         },
         Typing::Data | Typing::Checked { .. } | Typing::Owed => [None, None],
     };
